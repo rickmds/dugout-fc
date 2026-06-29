@@ -40,7 +40,9 @@ const NAV: NavEntry[] = [
   { href: '/dashboard/tryouts/schedule',          icon: CalendarDays, label: 'Practice',    adminOnly: true },
   { href: '/dashboard/tryouts/games',             icon: Trophy,      label: 'Games',        adminOnly: true },
   { href: '/dashboard/tryouts/finances',          icon: DollarSign,  label: 'Finances',     adminOnly: true },
-  { href: '/dashboard/tryouts/settings/teams',    icon: Settings,    label: 'Tryout Setup', adminOnly: true },
+  { href: '/dashboard/tryouts/settings/teams',    icon: Settings,    label: 'Setup: Teams',      adminOnly: true },
+  { href: '/dashboard/tryouts/settings/form',     icon: ClipboardList, label: 'Setup: Reg Form',  adminOnly: true },
+  { href: '/dashboard/tryouts/settings/offers',   icon: DollarSign,  label: 'Setup: Offers',     adminOnly: true },
 ];
 
 function NavItem({ href, icon: Icon, label, exact = false, primary }: {
