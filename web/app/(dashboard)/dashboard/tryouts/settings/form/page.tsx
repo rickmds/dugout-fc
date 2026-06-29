@@ -189,7 +189,185 @@ Wednesday, April 15, 2026 (Boys ONLY)
   ],
 };
 
-const QUESTION_TYPES = ['text','textarea','select','radio','multiselect','date','checkbox'] as const;
+const QUESTION_TYPES: { value: Question['type']; label: string; icon: string; color: string }[] = [
+  { value: 'radio',       label: 'Multiple choice', icon: '◉', color: '#6366F1' },
+  { value: 'checkbox',    label: 'Checkbox',        icon: '☑',  color: '#8B5CF6' },
+  { value: 'text',        label: 'Short text',      icon: 'T',  color: '#0EA5E9' },
+  { value: 'textarea',    label: 'Long text',       icon: '≡',  color: '#0EA5E9' },
+  { value: 'select',      label: 'Dropdown',        icon: '▾',  color: '#F59E0B' },
+  { value: 'multiselect', label: 'Multi-select',    icon: '☰',  color: '#F59E0B' },
+  { value: 'date',        label: 'Date',            icon: '📅', color: '#22C55E' },
+];
+
+const BUILT_IN_FIELDS = [
+  { label: 'First & last name', icon: '👤' },
+  { label: 'Date of birth',     icon: '🎂' },
+  { label: 'Gender',            icon: '⚥' },
+  { label: 'Grade',             icon: '🏫' },
+  { label: 'Positions',         icon: '⚽' },
+  { label: 'Parent name',       icon: '👨‍👩‍👦' },
+  { label: 'Email',             icon: '✉️' },
+  { label: 'Phone',             icon: '📱' },
+  { label: 'Town',              icon: '📍' },
+  { label: 'How did you hear',  icon: '📣' },
+];
+
+function QuestionCard({ q, idx, total, onMove, onUpdate, onRemove }: {
+  q: Question; idx: number; total: number;
+  onMove: (dir: -1|1) => void;
+  onUpdate: (patch: Partial<Question>) => void;
+  onRemove: () => void;
+}) {
+  const [optionDraft, setOptionDraft] = useState('');
+  const typeInfo = QUESTION_TYPES.find(t => t.value === q.type) ?? QUESTION_TYPES[0];
+  const hasOptions = ['radio','select','multiselect'].includes(q.type);
+
+  function addOption() {
+    const val = optionDraft.trim();
+    if (!val) return;
+    onUpdate({ options: [...q.options, val] });
+    setOptionDraft('');
+  }
+  function removeOption(i: number) {
+    onUpdate({ options: q.options.filter((_, j) => j !== i) });
+  }
+  function editOption(i: number, val: string) {
+    const opts = [...q.options]; opts[i] = val; onUpdate({ options: opts });
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      {/* Card header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px', borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
+        {/* Number badge */}
+        <div style={{ width: '26px', height: '26px', borderRadius: '7px', background: typeInfo.color + '18', border: `1.5px solid ${typeInfo.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: typeInfo.color, flexShrink: 0 }}>
+          {idx + 1}
+        </div>
+
+        {/* Type badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 9px', borderRadius: '20px', background: typeInfo.color + '12', border: `1px solid ${typeInfo.color}30`, flexShrink: 0 }}>
+          <span style={{ fontSize: '11px' }}>{typeInfo.icon}</span>
+          <span style={{ fontSize: '11px', fontWeight: '700', color: typeInfo.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{typeInfo.label}</span>
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Required toggle */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', flexShrink: 0 }}>
+          <div
+            onClick={() => onUpdate({ required: !q.required })}
+            style={{
+              width: '34px', height: '19px', borderRadius: '10px', flexShrink: 0, cursor: 'pointer',
+              background: q.required ? '#22C55E' : '#E2E8F0', transition: 'background 0.2s', position: 'relative',
+            }}>
+            <div style={{
+              position: 'absolute', top: '2px', left: q.required ? '17px' : '2px',
+              width: '15px', height: '15px', borderRadius: '50%', background: '#fff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s',
+            }} />
+          </div>
+          <span style={{ fontSize: '12px', fontWeight: '600', color: q.required ? '#374151' : '#94A3B8' }}>Required</span>
+        </label>
+
+        {/* Move buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
+          <button onClick={() => onMove(-1)} disabled={idx === 0}
+            style={{ width: '20px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid #E2E8F0', borderRadius: '4px', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#E2E8F0' : '#64748B', fontSize: '9px', padding: 0 }}>▲</button>
+          <button onClick={() => onMove(1)} disabled={idx === total - 1}
+            style={{ width: '20px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: '1px solid #E2E8F0', borderRadius: '4px', cursor: idx === total - 1 ? 'default' : 'pointer', color: idx === total - 1 ? '#E2E8F0' : '#64748B', fontSize: '9px', padding: 0 }}>▼</button>
+        </div>
+
+        <button onClick={onRemove}
+          style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '7px', cursor: 'pointer', flexShrink: 0 }}>
+          <Trash2 size={13} color="#EF4444" />
+        </button>
+      </div>
+
+      {/* Card body */}
+      <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+        {/* Question label + type selector */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px', alignItems: 'start' }}>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Question</label>
+            <input
+              placeholder="e.g. Which tryout date will you attend?"
+              value={q.label}
+              onChange={e => onUpdate({ label: e.target.value })}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #E2E8F0', fontSize: '14px', color: '#0F172A', fontWeight: '500', background: '#fff', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div style={{ minWidth: '150px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Answer type</label>
+            <select
+              value={q.type}
+              onChange={e => onUpdate({ type: e.target.value as Question['type'], options: [] })}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #E2E8F0', fontSize: '13px', color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' }}
+            >
+              {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Help text */}
+        <div>
+          <label style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Helper text <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>(optional — shown below the question)</span></label>
+          <input
+            placeholder="e.g. Players born in Aug/Sep may be in a different grade…"
+            value={q.helpText}
+            onChange={e => onUpdate({ helpText: e.target.value })}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #E2E8F0', fontSize: '13px', color: '#374151', background: '#F9FAFB', outline: 'none', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* Options (radio / select / multiselect) */}
+        {hasOptions && (
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '8px' }}>
+              Answer options <span style={{ fontWeight: '400', textTransform: 'none', letterSpacing: 0 }}>({q.options.length})</span>
+            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+              {q.options.map((opt, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '20px', height: '20px', borderRadius: q.type === 'radio' ? '50%' : '5px', border: '2px solid #D1D5DB', background: '#F9FAFB', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: q.type === 'radio' ? '50%' : '2px', background: '#D1D5DB' }} />
+                  </div>
+                  <input
+                    value={opt}
+                    onChange={e => editOption(i, e.target.value)}
+                    style={{ flex: 1, padding: '7px 10px', borderRadius: '7px', border: '1.5px solid #E2E8F0', fontSize: '13px', color: '#0F172A', background: '#fff', outline: 'none' }}
+                  />
+                  <button onClick={() => removeOption(i)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#CBD5E1', flexShrink: 0 }}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                placeholder="New option…"
+                value={optionDraft}
+                onChange={e => setOptionDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addOption(); } }}
+                style={{ flex: 1, padding: '7px 10px', borderRadius: '7px', border: '1.5px dashed #CBD5E1', fontSize: '13px', color: '#374151', background: '#F9FAFB', outline: 'none' }}
+              />
+              <button onClick={addOption}
+                style={{ padding: '7px 14px', borderRadius: '7px', background: '#F1F5F9', border: '1px solid #E2E8F0', fontSize: '12px', fontWeight: '700', color: '#475569', cursor: 'pointer' }}>
+                + Add
+              </button>
+            </div>
+            {q.options.length === 0 && (
+              <div style={{ fontSize: '12px', color: '#F59E0B', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                ⚠ Add at least one option for this question type
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function TryoutFormConfigPage() {
   const { club } = useDashboard();
@@ -215,7 +393,7 @@ export default function TryoutFormConfigPage() {
   }
 
   function addQuestion() {
-    const q: Question = { id: genId(), type: 'text', label: '', helpText: '', required: false, options: [], fieldKey: genId(), builtIn: false };
+    const q: Question = { id: genId(), type: 'radio', label: '', helpText: '', required: false, options: [], fieldKey: genId(), builtIn: false };
     setConfig(c => ({ ...c, questions: [...c.questions, q] }));
   }
   function updateQ(id: string, patch: Partial<Question>) {
@@ -259,8 +437,8 @@ export default function TryoutFormConfigPage() {
           )}
         </div>
         <button onClick={handleSave} disabled={saving}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', padding: '9px 18px', fontWeight: '700', fontSize: '13.5px', cursor: 'pointer', flexShrink: 0 }}>
-          <Save size={14} />{saved ? 'Saved!' : saving ? 'Saving…' : 'Save Form'}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', padding: '9px 18px', fontWeight: '700', fontSize: '13.5px', cursor: 'pointer', flexShrink: 0, boxShadow: saved ? 'none' : '0 2px 8px #22C55E40' }}>
+          <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save Form'}
         </button>
       </div>
 
@@ -294,13 +472,13 @@ export default function TryoutFormConfigPage() {
               <div>{lbl('Welcome / intro text')}<textarea value={config.welcomeText} onChange={e => setConfig(c => ({ ...c, welcomeText: e.target.value }))} rows={6} style={ta} /></div>
               <div>{lbl('Location')}<input value={config.locationText} onChange={e => setConfig(c => ({ ...c, locationText: e.target.value }))} style={inp} /></div>
               <div>{lbl('Important info (bullet points)')}<textarea value={config.importantInfoText} onChange={e => setConfig(c => ({ ...c, importantInfoText: e.target.value }))} rows={4} style={ta} /></div>
-              <div>{lbl('Contact information')}<input value={config.contactText} onChange={e => setConfig(c => ({ ...c, contactText: e.target.value }))} style={inp} /></div>
+              <div>{lbl('Contact information')}<textarea value={config.contactText} onChange={e => setConfig(c => ({ ...c, contactText: e.target.value }))} rows={2} style={ta} /></div>
             </div>
           </div>
 
           <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '6px' }}>Drop-down option lists <span style={{ fontWeight: '400', color: '#94A3B8', fontSize: '12px' }}>(comma-separated)</span></div>
-            <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '14px' }}>These populate the Grade, Position, How did you hear, and Jersey Size dropdowns on the form.</div>
+            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '4px' }}>Drop-down option lists</div>
+            <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '14px' }}>These populate the Grade, Position, Referral, and Jersey Size pickers on the form. Comma-separated.</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {([['gradeOptions','Grade options'],['positionOptions','Position options'],['referralOptions','Referral source options'],['jerseySizeOptions','Jersey size options']] as const).map(([key, label]) => (
                 <div key={key}>
@@ -318,12 +496,13 @@ export default function TryoutFormConfigPage() {
       {activeTab === 'schedule' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '14px' }}>Session schedule</div>
-            <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '10px' }}>This text appears on the registration form above the date selection question.</div>
+            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '6px' }}>Session schedule</div>
+            <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '10px' }}>Displayed on the registration form above the date selection question.</div>
             <textarea value={config.sessionScheduleText} onChange={e => setConfig(c => ({ ...c, sessionScheduleText: e.target.value }))} rows={14} style={ta} />
           </div>
           <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '14px' }}>Offer process & timeline</div>
+            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '6px' }}>Offer process & timeline</div>
+            <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '10px' }}>Shown in the info section before the form fields.</div>
             <textarea value={config.offerTimelineText} onChange={e => setConfig(c => ({ ...c, offerTimelineText: e.target.value }))} rows={5} style={ta} />
           </div>
         </div>
@@ -331,45 +510,50 @@ export default function TryoutFormConfigPage() {
 
       {activeTab === 'questions' && (
         <div>
-          <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '10px', padding: '12px 16px', marginBottom: '16px', fontSize: '12.5px', color: '#1D4ED8', lineHeight: '1.6' }}>
-            <strong>Built-in fields</strong> (always included automatically): Player first &amp; last name, Date of birth, Gender, Grade, Primary positions, Parent name, Email, Phone, Town, How did you hear.<br />
-            Add <strong>custom questions</strong> below for anything beyond those fields.
+          {/* Built-in fields */}
+          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '12px', padding: '16px 18px', marginBottom: '20px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#15803D', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>✓</span> Always included automatically — no setup needed
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {BUILT_IN_FIELDS.map(f => (
+                <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '20px', background: '#fff', border: '1px solid #D1FAE5', fontSize: '12px', color: '#065F46', fontWeight: '500' }}>
+                  <span style={{ fontSize: '12px' }}>{f.icon}</span> {f.label}
+                </div>
+              ))}
+            </div>
           </div>
 
+          {/* Tip about {{clubName}} */}
+          <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '12.5px', color: '#92400E', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>💡</span>
+            <span>Use <code style={{ background: '#FEF3C7', padding: '1px 5px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '12px' }}>{'{{clubName}}'}</code> anywhere in labels or options — it&apos;ll be replaced with your club name on the live form.</span>
+          </div>
+
+          {/* Question cards */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-            {config.questions.map((q, idx) => (
-              <div key={q.id} style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px', background: '#FAFAFA' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
-                    <button onClick={() => moveQ(q.id, -1)} disabled={idx === 0} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', color: '#94A3B8', fontSize: '10px', lineHeight: 1 }}>▲</button>
-                    <button onClick={() => moveQ(q.id, 1)} disabled={idx === config.questions.length - 1} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', color: '#94A3B8', fontSize: '10px', lineHeight: 1 }}>▼</button>
-                  </div>
-                  <GripVertical size={14} color="#CBD5E1" />
-                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
-                    <input placeholder="Question label" value={q.label} onChange={e => updateQ(q.id, { label: e.target.value })} style={inp} />
-                    <select value={q.type} onChange={e => updateQ(q.id, { type: e.target.value as Question['type'] })} style={inp}>
-                      {QUESTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <input type="checkbox" checked={q.required} onChange={e => updateQ(q.id, { required: e.target.checked })} /> Required
-                  </label>
-                  <button onClick={() => removeQ(q.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', flexShrink: 0 }}><Trash2 size={14} /></button>
-                </div>
-                <input placeholder="Help text (optional)" value={q.helpText} onChange={e => updateQ(q.id, { helpText: e.target.value })} style={{ ...inp, fontSize: '12.5px', marginBottom: ['select','radio','multiselect'].includes(q.type) ? '8px' : '0' }} />
-                {['select','radio','multiselect'].includes(q.type) && (
-                  <div style={{ marginTop: '8px' }}>
-                    {lbl('Options (comma-separated)')}
-                    <input value={q.options.join(', ')} onChange={e => updateQ(q.id, { options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} style={{ ...inp, fontSize: '12.5px' }} />
-                  </div>
-                )}
+            {config.questions.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', background: '#FAFBFC', border: '1px dashed #E2E8F0', borderRadius: '14px' }}>
+                <div style={{ fontSize: '28px', marginBottom: '10px' }}>📋</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '4px' }}>No custom questions yet</div>
+                <div style={{ fontSize: '13px', color: '#94A3B8' }}>Add questions below for anything beyond the built-in fields above.</div>
               </div>
+            )}
+            {config.questions.map((q, idx) => (
+              <QuestionCard
+                key={q.id} q={q} idx={idx} total={config.questions.length}
+                onMove={dir => moveQ(q.id, dir)}
+                onUpdate={patch => updateQ(q.id, patch)}
+                onRemove={() => removeQ(q.id)}
+              />
             ))}
           </div>
 
           <button onClick={addQuestion}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '10px', padding: '10px 18px', fontSize: '13px', cursor: 'pointer', color: '#64748B', fontWeight: '600', width: '100%', justifyContent: 'center' }}>
-            <Plus size={14} /> Add custom question
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', border: '2px dashed #CBD5E1', borderRadius: '12px', padding: '14px 20px', fontSize: '13.5px', cursor: 'pointer', color: '#475569', fontWeight: '700', width: '100%', justifyContent: 'center', transition: 'border-color 0.15s' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#22C55E'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#CBD5E1'}>
+            <Plus size={15} color="#22C55E" /> Add custom question
           </button>
         </div>
       )}
