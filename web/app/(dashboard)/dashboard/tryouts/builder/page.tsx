@@ -5,7 +5,12 @@ import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
-import { Lock, Unlock, Send, GripVertical, ChevronDown } from 'lucide-react';
+import { Lock, Unlock, Send, GripVertical, Plus, X, Edit2, Trash2 } from 'lucide-react';
+
+const TEAM_PALETTE = ['#3B82F6','#22C55E','#EF4444','#F59E0B','#6366F1','#EC4899','#14B8A6','#8B5CF6','#F97316','#06B6D4'];
+
+type NewTeamForm = { name: string; color: string; age_group: string; gender: string; format: string };
+const blankTeam = (ag: string, gender: string): NewTeamForm => ({ name: '', color: TEAM_PALETTE[0], age_group: ag, gender, format: '11v11' });
 
 type Player = { id: string; first_name: string; last_name: string; dob: string | null; grade: string | null; gender: string | null; final_age_group: string | null; positions: string[] | null };
 type Ranking = { player_id: string; tryout_rank: number | null; coach_rank: number | null };
@@ -35,6 +40,9 @@ export default function TeamBuilderPage() {
   const [sortField, setSortField] = useState<'tryout_rank' | 'coach_rank' | 'last_name'>('tryout_rank');
   const [loading, setLoading]   = useState(true);
   const [sendingId, setSendId]  = useState<string | null>(null);
+  const [showAddTeam, setShowAddTeam] = useState(false);
+  const [editTeam, setEditTeam] = useState<TryoutTeam | null>(null);
+  const [delTeamId, setDelTeamId] = useState<string | null>(null);
 
   const seasonYear = seasonLabelToYear(season);
   const getAg = (p: Player) => p.final_age_group || (p.dob ? calcAgeGroup(p.dob, seasonYear) : 'Unknown');
@@ -163,6 +171,21 @@ export default function TeamBuilderPage() {
     } finally { setSendId(null); }
   }
 
+  async function deleteTeam(teamId: string) {
+    if (!club) return;
+    // Move all players in this team back to pool
+    const teamName = teams.find(t => t.id === teamId)?.name;
+    if (teamName) {
+      const affectedIds = [...assigns.entries()].filter(([, a]) => a.team === teamName).map(([id]) => id);
+      if (affectedIds.length > 0) {
+        await supabase.from('tryout_assignments').update({ team: 'Unassigned' }).eq('club_id', club.id).in('player_id', affectedIds);
+      }
+    }
+    await supabase.from('tryout_teams').delete().eq('id', teamId);
+    setDelTeamId(null);
+    load();
+  }
+
   if (loading) return <div style={{ padding: '40px', color: '#94A3B8' }}>Loading…</div>;
 
   const agTabs = ['All', ...AGE_GROUPS.filter(ag => players.some(p => getAg(p) === ag))];
@@ -185,6 +208,10 @@ export default function TeamBuilderPage() {
               <option value="coach_rank">Sort: Coach Rank</option>
               <option value="last_name">Sort: Name</option>
             </select>
+            <button onClick={() => { setEditTeam(null); setShowAddTeam(true); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 13px', borderRadius: '7px', background: '#22C55E', color: '#fff', border: 'none', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+              <Plus size={14} /> Add Team
+            </button>
           </div>
         </div>
 
@@ -231,10 +258,20 @@ export default function TeamBuilderPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.25)', color: '#fff', borderRadius: '10px', padding: '1px 7px', fontWeight: '700' }}>{ids.length}</span>
                         {team && (
-                          <button onClick={() => toggleLock(team)} title={team.roster_locked ? 'Unlock roster' : 'Lock roster'}
-                            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '3px 5px', display: 'flex', alignItems: 'center' }}>
-                            {team.roster_locked ? <Lock size={11} color="#fff" /> : <Unlock size={11} color="rgba(255,255,255,0.7)" />}
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            <button onClick={() => toggleLock(team)}
+                              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '3px 5px', display: 'flex', alignItems: 'center' }}>
+                              {team.roster_locked ? <Lock size={11} color="#fff" /> : <Unlock size={11} color="rgba(255,255,255,0.7)" />}
+                            </button>
+                            <button onClick={() => { setEditTeam(team); setShowAddTeam(true); }}
+                              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '3px 5px', display: 'flex', alignItems: 'center' }}>
+                              <Edit2 size={10} color="rgba(255,255,255,0.85)" />
+                            </button>
+                            <button onClick={() => setDelTeamId(team.id)}
+                              style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '3px 5px', display: 'flex', alignItems: 'center' }}>
+                              <Trash2 size={10} color="rgba(255,255,255,0.7)" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -308,6 +345,118 @@ export default function TeamBuilderPage() {
             })}
           </div>
         </DragDropContext>
+      </div>
+
+      {showAddTeam && (
+        <AddTeamModal
+          club={club as ClubT}
+          team={editTeam}
+          defaultAg={filterAg !== 'All' ? filterAg : ''}
+          defaultGender={filterGender !== 'All' ? filterGender : ''}
+          usedColors={teams.map(t => t.color)}
+          onClose={() => { setShowAddTeam(false); setEditTeam(null); }}
+          onSaved={load}
+        />
+      )}
+
+      {delTeamId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '28px', width: '360px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A', marginBottom: '6px' }}>Delete this team?</div>
+            <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '20px' }}>All players in this team will be moved back to the Unassigned Pool.</div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button onClick={() => setDelTeamId(null)} style={{ padding: '9px 22px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', fontSize: '13.5px' }}>Cancel</button>
+              <button onClick={() => deleteTeam(delTeamId)} style={{ padding: '9px 22px', borderRadius: '9px', background: '#EF4444', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '13.5px' }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddTeamModal({ club, team, defaultAg, defaultGender, usedColors, onClose, onSaved }: {
+  club: ClubT; team: TryoutTeam | null; defaultAg: string; defaultGender: string;
+  usedColors: string[]; onClose: () => void; onSaved: () => void;
+}) {
+  const nextColor = TEAM_PALETTE.find(c => !usedColors.includes(c)) ?? TEAM_PALETTE[0];
+  const [form, setForm] = useState<NewTeamForm>(
+    team
+      ? { name: team.name, color: team.color, age_group: team.age_group ?? defaultAg, gender: team.gender ?? defaultGender, format: team.format ?? '11v11' }
+      : blankTeam(defaultAg, defaultGender)
+  );
+  // Pick next unused color for new teams
+  const [color, setColor] = useState(team ? team.color : nextColor);
+  const [saving, setSaving] = useState(false);
+
+  const inp: React.CSSProperties = { padding: '8px 11px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' };
+  const lbl = (t: string) => <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>{t}</label>;
+
+  async function save() {
+    if (!club || !form.name.trim()) return;
+    setSaving(true);
+    const payload = { club_id: club.id, name: form.name.trim(), color, age_group: form.age_group || null, gender: form.gender || null, format: form.format || null, is_active: true, sort_order: 0, roster_locked: false };
+    if (team) {
+      await supabase.from('tryout_teams').update(payload).eq('id', team.id);
+    } else {
+      await supabase.from('tryout_teams').insert(payload);
+    }
+    setSaving(false);
+    onSaved();
+    onClose();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: '16px', width: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>{team ? 'Edit Team' : 'Add Team'}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#64748B" /></button>
+        </div>
+
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>{lbl('Team name *')}<input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. U9 Boys A" autoFocus style={inp} /></div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>{lbl('Age Group')}<select value={form.age_group} onChange={e => setForm(f => ({ ...f, age_group: e.target.value }))} style={inp}>
+              <option value="">— Any —</option>
+              {AGE_GROUPS.map(ag => <option key={ag}>{ag}</option>)}
+            </select></div>
+            <div>{lbl('Gender')}<select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} style={inp}>
+              <option value="">— Any —</option>
+              <option>Male</option>
+              <option>Female</option>
+            </select></div>
+          </div>
+
+          <div>{lbl('Format')}<select value={form.format} onChange={e => setForm(f => ({ ...f, format: e.target.value }))} style={inp}>
+            <option value="7v7">7v7</option>
+            <option value="9v9">9v9</option>
+            <option value="11v11">11v11</option>
+          </select></div>
+
+          <div>
+            {lbl('Team color')}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+              {TEAM_PALETTE.map(c => (
+                <button key={c} onClick={() => setColor(c)}
+                  style={{ width: '28px', height: '28px', borderRadius: '50%', background: c, border: color === c ? '3px solid #0F172A' : '2px solid transparent', cursor: 'pointer', outline: 'none', boxShadow: color === c ? '0 0 0 2px #fff inset' : 'none' }} />
+              ))}
+            </div>
+            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '20px', height: '20px', borderRadius: '4px', background: color }} />
+              <input value={color} onChange={e => setColor(e.target.value)} style={{ ...inp, width: '100px' }} placeholder="#3B82F6" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: '14px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13.5px', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={save} disabled={saving || !form.name.trim()}
+            style={{ padding: '9px 18px', borderRadius: '9px', background: color, color: '#fff', border: 'none', fontSize: '13.5px', fontWeight: '700', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
+            {saving ? 'Saving…' : team ? 'Save Changes' : 'Create Team'}
+          </button>
+        </div>
       </div>
     </div>
   );
