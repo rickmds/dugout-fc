@@ -39,13 +39,13 @@ type FormConfig = {
 function genId() { return Math.random().toString(36).slice(2, 9); }
 
 const MAROONS_DEFAULT: FormConfig = {
-  formTitle: 'Maroons Soccer Club Tryout Registration',
+  formTitle: '{{clubName}} Tryout Registration',
   formSubtitle: 'Fall 2026 – Spring 2027 Season',
-  welcomeText: `Welcome to the Maroons Soccer Club Tryouts for the Fall 2026 – Spring 2027 season!
+  welcomeText: `Welcome to the {{clubName}} Tryouts for the Fall 2026 – Spring 2027 season!
 
 We are excited to evaluate players interested in joining our competitive teams for the upcoming year. Please complete this form to register for tryouts.
 
-US Soccer Age Group Update: Beginning Fall 2026, US Soccer is transitioning youth soccer from calendar-year age groups to a seasonal-year model (August 1 – July 31). At Maroons Soccer Club, tryout groupings and team placement are based on school grade under the new US Soccer seasonal-year model. For players born in August or September, grade-based alignment will be applied so those players remain with their school peer group.
+US Soccer Age Group Update: Beginning Fall 2026, US Soccer is transitioning youth soccer from calendar-year age groups to a seasonal-year model (August 1 – July 31). At {{clubName}}, tryout groupings and team placement are based on school grade under the new US Soccer seasonal-year model. For players born in August or September, grade-based alignment will be applied so those players remain with their school peer group.
 
 Tryout Process: Each player is required to attend one tryout session. Following the tryout, selected players may be invited to a team training session for further evaluation. After evaluations are complete, offer letters will be sent based on performance, roster needs, and team balance. Not every player who attends will be offered a roster spot.`,
   locationText: 'Superdome Sports, 134 Hopper Ave, Waldwick, NJ 07463',
@@ -70,14 +70,14 @@ Wednesday, April 15, 2026 (Boys ONLY)
   importantInfoText: `• Players must bring shin guards, cleats, and a properly inflated ball
 • Please arrive at least 15 minutes early for check-in
 • Tryouts are free of charge, but registration is required`,
-  contactText: 'Boys Program: Rick Breheny – rick@maroonssoccer.com | Girls Program: Ben Manning – ben@maroonssoccer.com',
+  contactText: 'Boys Program: Rick Breheny – rick@maroonssoccer.com\nGirls Program: Ben Manning – ben@maroonssoccer.com',
   seasonLabel: '2026-27',
   submitLabel: 'Submit Registration',
   successTitle: 'Registration Complete!',
-  successBody: 'Thank you for registering for Maroons SC Tryouts. Offer letters will be sent on June 1st. We look forward to seeing you on the field — good luck!',
+  successBody: 'Thank you for registering for {{clubName}} Tryouts. Offer letters will be sent on June 1st. We look forward to seeing you on the field — good luck!',
   gradeOptions: ['1st Grade','2nd Grade','3rd Grade','4th Grade','5th Grade','6th Grade','7th Grade','8th Grade'],
   positionOptions: ['GK','Defender','Midfielder','Forward','Not Sure'],
-  referralOptions: ['Friend','Social Media','Website','Attended a camp/clinic with Maroons','Coach Referral','Other'],
+  referralOptions: ['Friend','Social Media','Website','Attended a camp/clinic with {{clubName}}','Coach Referral','Other'],
   jerseySizeOptions: ['YS','YM','YL','AS','AM','AL','AXL'],
   questions: [
     {
@@ -111,7 +111,7 @@ Wednesday, April 15, 2026 (Boys ONLY)
     {
       id: 'q_email_secondary',
       type: 'text',
-      label: 'Additional Parent/Guardian Email (Optional)',
+      label: 'Additional Parent / Guardian Email (Optional)',
       helpText: 'If provided, offer letters and important updates will also be sent to this address.',
       required: false,
       options: [],
@@ -124,7 +124,7 @@ Wednesday, April 15, 2026 (Boys ONLY)
       label: 'Previous Soccer Experience',
       helpText: '',
       required: true,
-      options: ['Rec', 'Travel', 'Club', 'None'],
+      options: ['Recreational', 'Travel / Select', 'Club', 'No prior experience'],
       fieldKey: 'prev_experience',
       builtIn: false,
     },
@@ -136,7 +136,7 @@ Wednesday, April 15, 2026 (Boys ONLY)
       required: true,
       options: [
         'Yes, I plan to dual card and play for another club.',
-        'No, Maroons SC will be my primary and only club.',
+        'No, {{clubName}} will be my primary and only club.',
         'Not sure yet.',
       ],
       fieldKey: 'dual_card',
@@ -145,8 +145,8 @@ Wednesday, April 15, 2026 (Boys ONLY)
     {
       id: 'q_dual_card_league',
       type: 'radio',
-      label: 'If Yes, what league will that club compete in?',
-      helpText: 'Only complete if you answered Yes to the question above.',
+      label: 'If yes, what league will that club compete in?',
+      helpText: 'Only complete if you answered Yes above.',
       required: false,
       options: ['US CLUB (NCSA & NPL)', 'NJYS (EDP)', 'Not Sure'],
       fieldKey: 'dual_card_league',
@@ -155,13 +155,13 @@ Wednesday, April 15, 2026 (Boys ONLY)
     {
       id: 'q_maroons_status',
       type: 'radio',
-      label: 'What is your current status with Maroons SC?',
+      label: 'What is your current status with {{clubName}}?',
       helpText: '',
       required: true,
       options: [
-        'I am currently rostered on a Maroons SC team',
-        'I previously played for Maroons SC but have left and want to return',
-        'I have never played for Maroons SC and am a new player',
+        'I am currently rostered on a {{clubName}} team',
+        'I previously played for {{clubName}} and want to return',
+        'I have never played for {{clubName}} and am a new player',
       ],
       fieldKey: 'maroons_status',
       builtIn: false,
@@ -169,7 +169,7 @@ Wednesday, April 15, 2026 (Boys ONLY)
     {
       id: 'q_agreement_1',
       type: 'checkbox',
-      label: 'By submitting this form, I confirm that the information provided is accurate, and I understand the tryout process and club policies.',
+      label: 'I confirm that the information provided is accurate, and I understand the tryout process and club policies.',
       helpText: '',
       required: true,
       options: [],
@@ -179,7 +179,7 @@ Wednesday, April 15, 2026 (Boys ONLY)
     {
       id: 'q_agreement_2',
       type: 'checkbox',
-      label: 'By submitting this form, I acknowledge that I will be contacted regarding tryout results and next steps.',
+      label: 'I acknowledge that I will be contacted regarding tryout results and next steps.',
       helpText: '',
       required: true,
       options: [],
