@@ -119,16 +119,6 @@ Wednesday, April 15, 2026 (Boys ONLY)
       builtIn: false,
     },
     {
-      id: 'q_current_team',
-      type: 'text',
-      label: 'Current Team Name / Level',
-      helpText: 'e.g. A, B, C, Academy, Rec, etc.',
-      required: true,
-      options: [],
-      fieldKey: 'current_team',
-      builtIn: false,
-    },
-    {
       id: 'q_prev_experience',
       type: 'radio',
       label: 'Previous Soccer Experience',
