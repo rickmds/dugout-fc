@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["5U6J5AR2B4.app.dugoutfc.mobile"],
+        "components": [
+          { "/": "/join", "?": { "token": "*" }, "comment": "Invite links" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+:root {
+  --green: #22c55e;
+  --bg: #080808;
+  --surface: #111111;
+  --border: #1e1e1e;
+  --text: #f0f0f0;
+  --text-secondary: #888;
+  --text-muted: #444;
+  --font: var(--font-jakarta), -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+input, textarea, select {
+  background: #0f0f0f;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 15px;
+  width: 100%;
+  outline: none;
+  font-family: var(--font);
+  transition: border-color 0.15s;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #333;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Dashboard resets — override dark marketing theme for all form controls */
+#dashboard input,
+#dashboard textarea,
+#dashboard select {
+  background: #fff;
+  border-color: #E2E8F0;
+  color: #0F172A;
+}
+#dashboard input::placeholder,
+#dashboard textarea::placeholder {
+  color: #94A3B8;
+}
+#dashboard input:focus,
+#dashboard textarea:focus,
+#dashboard select:focus {
+  border-color: #CBD5E1;
+}
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.ticker-track {
+  animation: ticker 28s linear infinite;
+  white-space: nowrap;
+}
+
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes notifIn {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.notif {
+  opacity: 0;
+  animation: notifIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes countUp {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.count-item {
+  opacity: 0;
+  animation: countUp 0.3s ease forwards;
+}
+
+@keyframes chatMsgIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes typingDot {
+  0%, 60%, 100% { transform: translateY(0);    opacity: 0.3; }
+  30%           { transform: translateY(-4px); opacity: 1;   }
+}
+
+@keyframes popIn {
+  0%   { opacity: 0; transform: scale(0.5); }
+  70%  { transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}

@@ -1,13 +1,27 @@
 {
   "expo": {
-    "name": "dugout-temp",
-    "slug": "dugout-temp",
+    "name": "Dugout FC",
+    "slug": "dugout-fc",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "scheme": "dugoutfc",
+    "splash": {
+      "backgroundColor": "#000000"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "app.dugoutfc.mobile",
+      "associatedDomains": [
+        "applinks:dugoutfc.app"
+      ],
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Used to upload your profile photo and club logo.",
+        "NSCameraUsageDescription": "Used to take a profile photo.",
+        "NSLocationWhenInUseUsageDescription": "Used to show driving time to event locations.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -20,6 +34,26 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-web-browser",
+      "expo-apple-authentication",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Used to show driving time to event locations."
+        }
+      ],
+      "expo-splash-screen",
+      "expo-video"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3b35d5d3-278b-42c4-b66b-1a487815ce31"
+      }
     }
   }
 }
