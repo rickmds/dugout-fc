@@ -96,25 +96,34 @@ function TryoutFormContent() {
     if (!validate() || !clubId) return;
     setSubmitting(true);
 
-    // Pull email_secondary from custom responses if present
+    // Pull known fields out of custom responses
     const emailSecondary = customResponses['q_email_secondary'] as string | undefined;
-    const maroonsSt = customResponses['q_maroons_status'] as string | undefined;
     const currentTeamVal = customResponses['q_current_team'] as string | undefined;
+
+    // Map the maroons_status free-text response to the DB enum
+    const maroonsRaw = (customResponses['q_maroons_status'] as string | undefined) ?? '';
+    let maroonsStatus: 'new' | 'current' | 'returning' | 'unknown' = 'unknown';
+    if (maroonsRaw.toLowerCase().includes('currently rostered')) maroonsStatus = 'current';
+    else if (maroonsRaw.toLowerCase().includes('previously') || maroonsRaw.toLowerCase().includes('return')) maroonsStatus = 'returning';
+    else if (maroonsRaw.toLowerCase().includes('never') || maroonsRaw.toLowerCase().includes('new player')) maroonsStatus = 'new';
 
     const { data: player } = await supabase.from('tryout_players').insert({
       club_id: clubId,
       first_name: firstName.trim(), last_name: lastName.trim(),
-      gender: gender || null, dob: dob || null, grade: grade || null,
+      gender: gender || null,
+      date_of_birth: dob || null,
+      grade: grade || null,
       parent_name: parentName.trim() || null,
       email_primary: emailPrimary.trim() || null,
       email_secondary: emailSecondary?.trim() || null,
-      phone: phone.trim() || null, town: town.trim() || null,
+      phone: phone.trim() || null,
+      town: town.trim() || null,
       current_team: currentTeamVal?.trim() || null,
       positions: positions.length ? positions : null,
       referral_source: referralSource || null,
       season_label: config?.seasonLabel ?? null,
       source: 'registration',
-      maroons_status: maroonsSt ?? null,
+      maroons_status: maroonsStatus,
       custom_responses: customResponses,
     }).select('id').single();
 
