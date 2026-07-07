@@ -86,6 +86,11 @@ export default function RegisterScreen() {
     setSocialLoading('google');
     try {
       await signInWithGoogle();
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        setSocialLoading(null);
+        return;
+      }
       await routeAfterRegister();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Google sign-in failed.');
@@ -99,6 +104,11 @@ export default function RegisterScreen() {
     setSocialLoading('apple');
     try {
       await signInWithApple();
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        setSocialLoading(null);
+        return;
+      }
       await routeAfterRegister();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Apple sign-in failed.');

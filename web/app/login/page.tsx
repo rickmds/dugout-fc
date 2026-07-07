@@ -107,18 +107,18 @@ export default function LoginPage() {
   }
 
   function inputBorder(focused: boolean) {
-    if (error) return '1.5px solid #F87171';
+    if (error) return '1.5px solid #ef4444';
     if (focused) return '1.5px solid #22C55E';
-    return '1.5px solid #E2E8F0';
+    return '1.5px solid #2a2a2a';
   }
 
   const baseInput: React.CSSProperties = {
     width: '100%',
-    background: '#fff',
+    background: '#1a1a1a',
     borderRadius: '10px',
     padding: '11px 14px',
     fontSize: '15px',
-    color: '#0F172A',
+    color: '#f0f0f0',
     outline: 'none',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -128,7 +128,7 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: '#F1F5F9',
+      backgroundColor: '#080808',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -138,37 +138,28 @@ export default function LoginPage() {
       <div style={{ width: '100%', maxWidth: '420px' }}>
 
         {/* Logo lockup */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '36px' }}>
-          <div style={{
-            width: '42px', height: '42px',
-            background: 'linear-gradient(135deg, #22C55E 0%, #16A34A 100%)',
-            borderRadius: '12px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '22px',
-            boxShadow: '0 2px 8px rgba(34,197,94,0.30)',
-          }}>
-            ⚽
-          </div>
-          <span style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', letterSpacing: '-0.3px' }}>
-            Dugout FC
-          </span>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '36px' }}>
+          <a href="/" style={{ textDecoration: 'none' }}>
+            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 16px', display: 'inline-flex', alignItems: 'center' }}>
+              <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '32px', width: 'auto' }} />
+            </div>
+          </a>
         </div>
 
         {/* Card */}
         <div style={{
-          background: '#fff',
+          background: '#111',
           borderRadius: '20px',
-          border: '1px solid #E2E8F0',
+          border: '1px solid #1e1e1e',
           padding: '36px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
         }}>
           <h1 style={{
-            fontSize: '20px', fontWeight: '800', color: '#0F172A',
+            fontSize: '20px', fontWeight: '800', color: '#fff',
             marginBottom: '4px', letterSpacing: '-0.2px',
           }}>
             Coach &amp; Admin Sign In
           </h1>
-          <p style={{ fontSize: '14px', color: '#64748B', marginBottom: '28px', lineHeight: 1.5 }}>
+          <p style={{ fontSize: '14px', color: '#666', marginBottom: '28px', lineHeight: 1.5 }}>
             Manage your teams from your desktop
           </p>
 
@@ -177,7 +168,7 @@ export default function LoginPage() {
             {/* Email */}
             <div>
               <label style={{
-                fontSize: '11px', fontWeight: '700', color: '#64748B',
+                fontSize: '11px', fontWeight: '700', color: '#555',
                 letterSpacing: '0.07em', textTransform: 'uppercase',
                 display: 'block', marginBottom: '7px',
               }}>
@@ -199,7 +190,7 @@ export default function LoginPage() {
             {/* Password */}
             <div>
               <label style={{
-                fontSize: '11px', fontWeight: '700', color: '#64748B',
+                fontSize: '11px', fontWeight: '700', color: '#555',
                 letterSpacing: '0.07em', textTransform: 'uppercase',
                 display: 'block', marginBottom: '7px',
               }}>
@@ -221,12 +212,12 @@ export default function LoginPage() {
             {/* Error */}
             {error && (
               <div style={{
-                background: '#FEF2F2',
-                border: '1px solid #FECACA',
+                background: '#1a0808',
+                border: '1px solid #ef444430',
                 borderRadius: '10px',
                 padding: '12px 14px',
                 fontSize: '13px',
-                color: '#DC2626',
+                color: '#f87171',
                 lineHeight: 1.5,
               }}>
                 {error}
@@ -239,8 +230,8 @@ export default function LoginPage() {
               disabled={loading}
               style={{
                 width: '100%',
-                background: loading ? '#86EFAC' : btnHover ? '#16A34A' : '#22C55E',
-                color: '#fff',
+                background: loading ? '#166534' : btnHover ? '#16A34A' : '#22C55E',
+                color: loading ? '#4ade80' : '#000',
                 fontWeight: '700',
                 fontSize: '15px',
                 padding: '13px',
@@ -250,9 +241,7 @@ export default function LoginPage() {
                 transition: 'background 0.15s, box-shadow 0.15s, transform 0.1s',
                 fontFamily: 'inherit',
                 transform: btnHover && !loading ? 'translateY(-1px)' : 'none',
-                boxShadow: btnHover && !loading
-                  ? '0 4px 12px rgba(34,197,94,0.35)'
-                  : '0 1px 4px rgba(34,197,94,0.20)',
+                boxShadow: btnHover && !loading ? '0 4px 12px rgba(34,197,94,0.3)' : 'none',
                 letterSpacing: '0.01em',
               }}
               onMouseEnter={() => setBtnHover(true)}
@@ -263,9 +252,9 @@ export default function LoginPage() {
 
             {/* Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ flex: 1, height: '1px', background: '#E2E8F0' }} />
-              <span style={{ fontSize: '12px', color: '#94A3B8', fontWeight: '500' }}>or continue with</span>
-              <div style={{ flex: 1, height: '1px', background: '#E2E8F0' }} />
+              <div style={{ flex: 1, height: '1px', background: '#222' }} />
+              <span style={{ fontSize: '12px', color: '#444', fontWeight: '500' }}>or continue with</span>
+              <div style={{ flex: 1, height: '1px', background: '#222' }} />
             </div>
 
             {/* OAuth */}
@@ -291,15 +280,15 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p style={{ textAlign: 'center', fontSize: '13px', color: '#64748B', marginTop: '20px' }}>
+        <p style={{ textAlign: 'center', fontSize: '13px', color: '#555', marginTop: '20px' }}>
           New club?{' '}
           <a href="/onboarding" style={{ color: '#22C55E', textDecoration: 'none', fontWeight: '600' }}>
             Get started →
           </a>
         </p>
-        <p style={{ textAlign: 'center', fontSize: '12px', color: '#94A3B8', marginTop: '8px' }}>
+        <p style={{ textAlign: 'center', fontSize: '12px', color: '#444', marginTop: '8px' }}>
           For parents &amp; players — download the{' '}
-          <a href="/" style={{ color: '#64748B', textDecoration: 'none', fontWeight: '500' }}>
+          <a href="/" style={{ color: '#555', textDecoration: 'none', fontWeight: '500' }}>
             Dugout FC app
           </a>
         </p>

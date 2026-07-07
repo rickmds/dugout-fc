@@ -11,9 +11,10 @@ export default function TermsPage() {
     <div className="min-h-screen bg-[#080808] text-[#f0f0f0]">
       {/* Nav */}
       <header className="px-6 sm:px-10 py-5 flex items-center justify-between border-b border-[#111] max-w-5xl mx-auto">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-5 h-5 rounded-full bg-[#22c55e] flex-shrink-0" />
-          <span className="font-extrabold text-white text-[14px] tracking-tight">DUGOUT FC</span>
+        <Link href="/">
+          <div style={{ background: '#fff', borderRadius: '10px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center' }}>
+            <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '28px', width: 'auto' }} />
+          </div>
         </Link>
         <Link href="/" className="text-[#555] text-[13px] hover:text-white transition-colors">← Back</Link>
       </header>
@@ -25,7 +26,7 @@ export default function TermsPage() {
 
         <Section title="1. Acceptance of terms">
           <p>By creating an account or using the Dugout FC platform (the &ldquo;Service&rdquo;), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
-          <p>The Service is operated by Rick Breheny (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). You can contact us at <a href="mailto:rick@mdssoccer.com">rick@mdssoccer.com</a>.</p>
+          <p>You can contact us at <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a>.</p>
         </Section>
 
         <Section title="2. Who can use Dugout FC">
@@ -34,7 +35,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="3. Your account">
-          <p>You are responsible for maintaining the security of your account credentials. You must notify us immediately at <a href="mailto:rick@mdssoccer.com">rick@mdssoccer.com</a> if you suspect unauthorised access to your account.</p>
+          <p>You are responsible for maintaining the security of your account credentials. You must notify us immediately at <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a> if you suspect unauthorised access to your account.</p>
           <p>You are responsible for all activity that occurs under your account. We are not liable for any loss or damage arising from your failure to keep your credentials secure.</p>
           <p>One account per person. You may not create multiple accounts or share your account with others.</p>
         </Section>
@@ -73,7 +74,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="9. Termination">
-          <p>You may close your account at any time via Settings → Delete Account in the app or by emailing <a href="mailto:rick@mdssoccer.com">rick@mdssoccer.com</a>.</p>
+          <p>You may close your account at any time via Settings → Delete Account in the app or by emailing <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a>.</p>
           <p>We may suspend or terminate your account if you breach these terms, with or without notice depending on the severity of the breach. Upon termination, your right to use the Service ends immediately.</p>
         </Section>
 
@@ -94,22 +95,20 @@ export default function TermsPage() {
         <Section title="13. Contact">
           <p>Questions about these terms? Contact us at:</p>
           <p className="mt-2">
-            <strong>Rick Breheny</strong><br />
-            Dugout FC<br />
-            <a href="mailto:rick@mdssoccer.com">rick@mdssoccer.com</a>
+            <strong>Dugout FC</strong><br />
+            <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a>
           </p>
         </Section>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[#111] px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-4 h-4 rounded-full bg-[#22c55e] flex-shrink-0 opacity-50" />
-          <span className="font-extrabold text-[#2a2a2a] text-[13px] tracking-tight">DUGOUT FC</span>
+        <div style={{ background: '#fff', borderRadius: '8px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
+          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
         </div>
         <div className="flex items-center gap-6">
-          <Link href="/privacy" className="text-[#333] text-[12px] hover:text-[#555] transition-colors">Privacy Policy</Link>
-          <p className="text-[#1e1e1e] text-[12px]">© {new Date().getFullYear()} Dugout FC</p>
+          <Link href="/privacy" className="text-[#555] text-[12px] hover:text-[#bbb] transition-colors">Privacy Policy</Link>
+          <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Dugout FC</p>
         </div>
       </footer>
     </div>

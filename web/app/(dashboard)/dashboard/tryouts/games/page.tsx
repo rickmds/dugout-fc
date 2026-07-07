@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Plus, Edit2, Trash2, X, Home, Plane } from 'lucide-react';
+import { Plus, Edit2, Trash2, X } from 'lucide-react';
 
 type Game = { id: string; season_label: string | null; age_group: string | null; gender: string | null; team: string | null; opponent_name: string | null; is_home_game: boolean; game_date: string | null; start_time: string | null; field_name: string | null; away_location: string | null; league: string | null; status: string; notes: string | null };
 
@@ -16,6 +16,19 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 };
 
 const blank = (): Omit<Game,'id'> => ({ season_label: '', age_group: null, gender: null, team: '', opponent_name: '', is_home_game: true, game_date: '', start_time: null, field_name: '', away_location: '', league: '', status: 'unscheduled', notes: '' });
+
+function HoverRow({ children, baseBackground, borderBottom }: { children: React.ReactNode; baseBackground: string; borderBottom: string }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <tr
+      style={{ borderBottom, background: hovered ? '#F8FAFC' : baseBackground, transition: 'background 0.1s' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children}
+    </tr>
+  );
+}
 
 export default function TryoutGamesPage() {
   const { club } = useDashboard();
@@ -55,63 +68,79 @@ export default function TryoutGamesPage() {
   const lbl = (t: string) => <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>{t}</label>;
 
   return (
-    <div style={{ padding: '32px 40px', maxWidth: '1000px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* Sticky page header */}
+      <div style={{ padding: '20px 28px 16px', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '700', color: '#0F172A', margin: 0 }}>Games Schedule</h1>
-          <p style={{ fontSize: '13.5px', color: '#64748B', margin: '4px 0 0' }}>Track all games for the tryout season.</p>
+          <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Season Management</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', margin: '2px 0 0' }}>Games Schedule</h1>
         </div>
-        <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', padding: '9px 16px', fontWeight: '600', fontSize: '13.5px', cursor: 'pointer' }}>
+        <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', padding: '9px 18px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
           <Plus size={15} /> Add Game
         </button>
       </div>
 
-      {loading ? <div style={{ color: '#94A3B8' }}>Loading…</div> : games.length === 0 ? (
-        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>No games yet.</div>
-      ) : (
-        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                {['Date','Team','Opponent','','Location','Status',''].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '11.5px', fontWeight: '700', color: '#64748B', letterSpacing: '0.04em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {games.map((g, i) => {
-                const badge = STATUS_COLORS[g.status] ?? STATUS_COLORS.unscheduled;
-                return (
-                  <tr key={g.id} style={{ borderBottom: i < games.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                    <td style={{ padding: '11px 14px', fontSize: '13px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap' }}>
-                      {g.game_date ? new Date(g.game_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
-                      {g.start_time && <div style={{ fontSize: '11px', color: '#94A3B8' }}>{g.start_time.slice(0,5)}</div>}
-                    </td>
-                    <td style={{ padding: '11px 14px' }}>
-                      <div style={{ fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{g.team ?? '—'}</div>
-                      <div style={{ fontSize: '11px', color: '#94A3B8' }}>{[g.age_group, g.gender].filter(Boolean).join(' · ')}</div>
-                    </td>
-                    <td style={{ padding: '11px 14px', fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{g.opponent_name ?? '—'}</td>
-                    <td style={{ padding: '11px 14px' }}>
-                      {g.is_home_game ? <Home size={13} color="#22C55E" /> : <Plane size={13} color="#3B82F6" />}
-                    </td>
-                    <td style={{ padding: '11px 14px', fontSize: '12.5px', color: '#64748B' }}>{g.is_home_game ? g.field_name : g.away_location}</td>
-                    <td style={{ padding: '11px 14px' }}>
-                      <span style={{ fontSize: '11.5px', background: badge.bg, color: badge.color, borderRadius: '6px', padding: '3px 8px', fontWeight: '600', textTransform: 'capitalize' }}>{g.status}</span>
-                    </td>
-                    <td style={{ padding: '11px 14px' }}>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button onClick={() => openEdit(g)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#64748B' }}><Edit2 size={13} /></button>
-                        <button onClick={() => setDeleteId(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#EF4444' }}><Trash2 size={13} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Scrollable content area */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', background: '#F8FAFC' }}>
+        {loading ? (
+          <div style={{ color: '#94A3B8' }}>Loading…</div>
+        ) : games.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 24px' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px', fontSize: '28px' }}>⚽</div>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No games yet</div>
+            <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '24px', maxWidth: '280px', margin: '0 auto 24px' }}>Add your first game to start building the season schedule.</div>
+            <button onClick={openAdd} style={{ padding: '10px 22px', background: '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '700', cursor: 'pointer', fontSize: '14px', boxShadow: '0 2px 8px rgba(34,197,94,0.3)' }}>Add First Game</button>
+          </div>
+        ) : (
+          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {['Date','Team','Opponent','','Location','Status',''].map(h => (
+                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#F8FAFC' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {games.map((g, i) => {
+                  const badge = STATUS_COLORS[g.status] ?? STATUS_COLORS.unscheduled;
+                  return (
+                    <HoverRow key={g.id} baseBackground={i % 2 === 0 ? '#fff' : '#FAFAFA'} borderBottom={i < games.length - 1 ? '1px solid #F1F5F9' : 'none'}>
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontWeight: '700', fontSize: '14px', color: '#0F172A' }}>
+                          {g.game_date ? new Date(g.game_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+                        </div>
+                        {g.start_time && <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>{g.start_time.slice(0,5)}</div>}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{g.team ?? '—'}</div>
+                        <div style={{ fontSize: '11px', color: '#94A3B8' }}>{[g.age_group, g.gender].filter(Boolean).join(' · ')}</div>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{g.opponent_name ?? '—'}</td>
+                      <td style={{ padding: '12px 16px' }}>
+                        {g.is_home_game
+                          ? <span style={{ display: 'inline-block', background: '#F0FDF4', color: '#16A34A', fontSize: '10.5px', fontWeight: '800', borderRadius: '20px', padding: '3px 10px', letterSpacing: '0.06em', border: '1px solid #BBF7D0' }}>HOME</span>
+                          : <span style={{ display: 'inline-block', background: '#EFF6FF', color: '#2563EB', fontSize: '10.5px', fontWeight: '800', borderRadius: '20px', padding: '3px 10px', letterSpacing: '0.06em', border: '1px solid #BFDBFE' }}>AWAY</span>
+                        }
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: '12.5px', color: '#64748B' }}>{g.is_home_game ? g.field_name : g.away_location}</td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <span style={{ fontSize: '11.5px', background: badge.bg, color: badge.color, borderRadius: '20px', padding: '4px 10px', fontWeight: '700', textTransform: 'capitalize' }}>{g.status}</span>
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button onClick={() => openEdit(g)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#64748B' }}><Edit2 size={13} /></button>
+                          <button onClick={() => setDeleteId(g.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#EF4444' }}><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </HoverRow>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '24px' }} onClick={() => setShowModal(false)}>

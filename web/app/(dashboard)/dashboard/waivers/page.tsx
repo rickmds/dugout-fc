@@ -219,15 +219,28 @@ export default function WaiversPage() {
         {/* Waiver list */}
         <div style={{ width: '320px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '60px' }}>
-              <div style={{ width: '24px', height: '24px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+              {[1, 2, 3].map(i => (
+                <div key={i} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                  <div style={{ height: '13px', borderRadius: '5px', width: '75%', marginBottom: '12px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
+                  <div style={{ height: '5px', borderRadius: '3px', marginBottom: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
+                  <div style={{ height: '11px', borderRadius: '5px', width: '55%', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
+                </div>
+              ))}
             </div>
           ) : waivers.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0' }}>
-              <FileText size={36} color="#CBD5E1" style={{ marginBottom: '12px' }} />
-              <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748B' }}>No waivers yet</div>
-              <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '4px' }}>Create your first consent form</div>
+            <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+              <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                <FileText size={24} color="#CBD5E1" />
+              </div>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '5px' }}>No waivers yet</div>
+              <div style={{ fontSize: '12px', color: '#94A3B8', lineHeight: '1.6', marginBottom: '16px' }}>Create consent forms for liability, photos, or medical info</div>
+              {profile?.role === 'org_admin' && (
+                <button onClick={() => setShowCreate(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '9px 18px', borderRadius: '9px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <Plus size={14} /> Create First Waiver
+                </button>
+              )}
             </div>
           ) : waivers.map((w) => {
             const wpct = w.total_players > 0 ? Math.round((w.signed_count / w.total_players) * 100) : 0;
@@ -235,7 +248,7 @@ export default function WaiversPage() {
             const overdue = w.required_by && new Date(w.required_by) < new Date() && wpct < 100;
             return (
               <button key={w.id} onClick={() => setActiveWaiver(w)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', background: isSelected ? `${primary}08` : '#fff', border: `1.5px solid ${isSelected ? primary : '#E2E8F0'}`, borderRadius: '14px', padding: '16px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ display: 'block', width: '100%', textAlign: 'left', background: isSelected ? `${primary}08` : '#fff', border: `1.5px solid ${isSelected ? primary : '#E2E8F0'}`, borderRadius: '14px', padding: '16px', cursor: 'pointer', fontFamily: 'inherit', boxShadow: isSelected ? `0 2px 12px ${primary}20` : '0 1px 4px rgba(0,0,0,0.04)', transition: 'box-shadow 0.15s, border-color 0.15s' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
                   <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', lineHeight: 1.3 }}>{w.title}</div>
                   {overdue && <AlertTriangle size={14} color="#D97706" style={{ flexShrink: 0, marginTop: '1px' }} />}
@@ -291,8 +304,9 @@ export default function WaiversPage() {
               </div>
 
               {sigLoading ? (
-                <div style={{ padding: '40px', textAlign: 'center' }}>
-                  <div style={{ width: '22px', height: '22px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+                <div style={{ padding: '48px', textAlign: 'center' }}>
+                  <div style={{ width: '24px', height: '24px', border: `2.5px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
+                  <div style={{ fontSize: '13px', color: '#94A3B8' }}>Loading signatures…</div>
                 </div>
               ) : (
                 <div style={{ maxHeight: '480px', overflowY: 'auto' }}>
@@ -313,7 +327,12 @@ export default function WaiversPage() {
                               <td style={{ ...tdSt, color: '#94A3B8', fontSize: '12px' }}>{u.parent_email ?? 'No email on file'}</td>
                               <td style={{ ...tdSt, textAlign: 'right' }}>
                                 {u.parent_email && (
-                                  <button onClick={() => sendReminder(u)} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                  <button
+                                    onClick={() => sendReminder(u)}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 11px', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '8px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
+                                    onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.background = `${primary}10`; b.style.borderColor = `${primary}40`; b.style.color = primary; }}
+                                    onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.background = '#F8FAFC'; b.style.borderColor = '#E2E8F0'; b.style.color = '#64748B'; }}
+                                  >
                                     <Send size={11} /> Remind
                                   </button>
                                 )}
@@ -429,5 +448,5 @@ export default function WaiversPage() {
   );
 }
 
-const labelSt: React.CSSProperties = { fontSize: '11px', fontWeight: '700', color: '#64748B', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' };
+const labelSt: React.CSSProperties = { fontSize: '10px', fontWeight: '700', color: '#94A3B8', letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' };
 const inputSt: React.CSSProperties = { width: '100%', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '10px 13px', fontSize: '14px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' };

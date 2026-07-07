@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   Plus, CalendarDays, MapPin, Clock, Bell, BellOff, Pencil,
   Trash2, X, ChevronDown, Users, Check,
@@ -214,10 +214,10 @@ function EventRow({ ev, primary, selected, onSelect, onEdit, onDelete }: {
   const pending = Math.max(0, ev.total - ev.attending - ev.not_attending);
 
   return (
-    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+    <div id={`event-${ev.id}`} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       onClick={onSelect}
       style={{
-        background: selected ? `${primary}06` : '#fff',
+        background: selected ? `${primary}0D` : '#fff',
         borderRadius: '14px',
         border: `1.5px solid ${selected ? primary : hover ? '#CBD5E1' : '#E2E8F0'}`,
         display: 'flex', alignItems: 'stretch', overflow: 'hidden',
@@ -285,6 +285,7 @@ function EventRow({ ev, primary, selected, onSelect, onEdit, onDelete }: {
 
 export default function TeamSchedulePage() {
   const { teamId } = useParams<{ teamId: string }>();
+  const searchParams = useSearchParams();
   const { profile, club, teams } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const today   = new Date().toISOString().slice(0, 10);
@@ -345,6 +346,18 @@ export default function TeamSchedulePage() {
   }, [teamId, tab]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Auto-select and scroll to event from ?event= query param
+  useEffect(() => {
+    const eventId = searchParams.get('event');
+    if (!eventId || !events.length) return;
+    const match = events.find((e) => e.id === eventId);
+    if (!match) return;
+    setSelectedEvent(match);
+    setTimeout(() => {
+      document.getElementById(`event-${eventId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }, [events, searchParams]);
 
   // Load RSVP players when an event is selected
   useEffect(() => {
@@ -466,10 +479,16 @@ export default function TeamSchedulePage() {
   }
 
   async function handleDelete(id: string) {
+    const ev = events.find((e) => e.id === id);
     await supabase.from('events').delete().eq('id', id);
     if (selectedEvent?.id === id) setSelectedEvent(null);
     delDialogRef.current?.close();
     load();
+    if (ev && teamId) {
+      supabase.functions.invoke('send-push', {
+        body: { team_id: teamId, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } },
+      }).catch(() => {});
+    }
   }
 
   // Date grouping
@@ -512,12 +531,17 @@ export default function TeamSchedulePage() {
               <div style={{ width: '28px', height: '28px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             </div>
           ) : sortedDates.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
-              <CalendarDays size={40} color="#CBD5E1" style={{ marginBottom: '12px' }} />
-              <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>No {tab} events</div>
+            <div style={{ textAlign: 'center', padding: '64px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                <CalendarDays size={26} color="#94A3B8" />
+              </div>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No {tab} events</div>
+              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: tab === 'upcoming' ? '20px' : '0' }}>
+                {tab === 'upcoming' ? 'Create your first event to get started.' : 'No past events recorded for this team.'}
+              </div>
               {tab === 'upcoming' && (
-                <button onClick={openCreate} style={{ background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', marginTop: '16px' }}>
-                  + Add Event
+                <button onClick={openCreate} style={{ background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '10px 22px', borderRadius: '9px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Add Event
                 </button>
               )}
             </div>

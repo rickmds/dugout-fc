@@ -306,10 +306,17 @@ export default function SchedulePage() {
   }
 
   async function handleDelete(id: string) {
+    const ev = events.find((e) => e.id === id);
     await supabase.from('events').delete().eq('id', id);
     setEvents((prev) => prev.filter((e) => e.id !== id));
     if (selectedEvent?.id === id) setSelectedEvent(null);
     setDeleteConfirm(null);
+    if (ev) {
+      const teamName = teams.find((t) => t.id === ev.team_id)?.name ?? 'your team';
+      supabase.functions.invoke('send-push', {
+        body: { team_id: ev.team_id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } },
+      }).catch(() => {});
+    }
   }
 
   async function handleSave() {
@@ -400,81 +407,90 @@ export default function SchedulePage() {
   const pending = rsvpPlayers.filter((p) => p.status === 'pending');
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: selectedEvent ? '1200px' : '960px', transition: 'max-width 0.2s' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .sched-header { padding: 12px 16px !important; }
+          .sched-header-actions { flex-wrap: wrap !important; gap: 8px !important; }
+          .sched-content { padding: 14px 16px !important; }
+          .sched-layout { flex-direction: column !important; gap: 16px !important; }
+          .sched-sidebar { width: 100% !important; position: static !important; flex-shrink: 0; }
+          .cal-scroll { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
+          .cal-inner { min-width: 420px !important; }
+        }
+      `}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+      {/* Sticky header */}
+      <div className="sched-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '2px' }}>Schedule</h1>
-          <p style={{ fontSize: '13px', color: '#64748B' }}>Manage events across your teams</p>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{club?.name ?? 'Club'}</div>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Schedule</h1>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => setShowAI(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '14px', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid #E2E8F0', cursor: 'pointer' }}>
-            <Sparkles size={15} color="#8B5CF6" /> AI Import
-          </button>
-          <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', fontWeight: '700', fontSize: '14px', padding: '10px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer' }}>
-            <Plus size={16} /> New Event
-          </button>
-        </div>
-      </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
 
-      {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-
-        {/* View mode toggle */}
-        <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px' }}>
-          {([['list', <List key="l" size={13} />, 'List'], ['calendar', <CalendarDays key="c" size={13} />, 'Calendar']] as const).map(([mode, icon, label]) => (
-            <button key={mode} onClick={() => setViewMode(mode)} style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '13px',
-              fontWeight: viewMode === mode ? '700' : '500',
-              background: viewMode === mode ? '#fff' : 'transparent',
-              color: viewMode === mode ? '#0F172A' : '#64748B',
-              boxShadow: viewMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-            }}>
-              {icon}{label}
-            </button>
-          ))}
-        </div>
-
-        {/* Upcoming / Past (list only) */}
-        {viewMode === 'list' && (
-          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px' }}>
-            {(['upcoming', 'past'] as const).map((t) => (
-              <button key={t} onClick={() => setTab(t)} style={{
-                padding: '6px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '13px',
-                fontWeight: tab === t ? '700' : '500',
-                background: tab === t ? '#fff' : 'transparent',
-                color: tab === t ? '#0F172A' : '#64748B',
-                boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+          {/* View mode toggle */}
+          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '10px', padding: '3px', gap: '2px' }}>
+            {([['list', <List key="l" size={13} />, 'List'], ['calendar', <CalendarDays key="c" size={13} />, 'Calendar']] as const).map(([mode, icon, label]) => (
+              <button key={mode} onClick={() => setViewMode(mode)} style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '7px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px',
+                fontWeight: viewMode === mode ? '700' : '500',
+                background: viewMode === mode ? '#fff' : 'transparent',
+                color: viewMode === mode ? '#0F172A' : '#64748B',
+                boxShadow: viewMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               }}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {icon}{label}
               </button>
             ))}
           </div>
-        )}
 
-        {/* Team filter */}
-        {teams.length > 1 && (
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <select value={filterTeam} onChange={(e) => setFilterTeam(e.target.value)}
-              style={{ appearance: 'none', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '7px 32px 7px 12px', fontSize: '13px', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>
-              <option value="all">All teams</option>
-              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <ChevronDown size={14} color="#64748B" style={{ position: 'absolute', right: '10px', pointerEvents: 'none' }} />
-          </div>
-        )}
+          {/* Upcoming / Past (list only) */}
+          {viewMode === 'list' && (
+            <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '10px', padding: '3px', gap: '2px' }}>
+              {(['upcoming', 'past'] as const).map((t) => (
+                <button key={t} onClick={() => setTab(t)} style={{
+                  padding: '7px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px',
+                  fontWeight: tab === t ? '700' : '500',
+                  background: tab === t ? '#fff' : 'transparent',
+                  color: tab === t ? '#0F172A' : '#64748B',
+                  boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Team filter */}
+          {teams.length > 1 && (
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <select value={filterTeam} onChange={(e) => setFilterTeam(e.target.value)}
+                style={{ appearance: 'none', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '7px 32px 7px 12px', fontSize: '13px', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <option value="all">All teams</option>
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <ChevronDown size={14} color="#64748B" style={{ position: 'absolute', right: '10px', pointerEvents: 'none' }} />
+            </div>
+          )}
+
+          <button onClick={() => setShowAI(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '13px', padding: '9px 14px', borderRadius: '9px', border: '1.5px solid #E2E8F0', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <Sparkles size={14} color="#8B5CF6" /> AI Import
+          </button>
+          <button onClick={openCreate} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Plus size={15} /> New Event
+          </button>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+      <div className="sched-content" style={{ padding: '24px 32px' }}>
+      <div className="sched-layout" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
 
         {/* ── Main content ── */}
         <div style={{ flex: 1, minWidth: 0 }}>
 
           {/* Calendar view */}
           {viewMode === 'calendar' && (
-            <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+            <div className="cal-scroll"><div className="cal-inner" style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
               {/* Month nav */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #F1F5F9' }}>
                 <button onClick={() => { setCalMonth(({ year, month }) => month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }); setSelectedCalDay(null); }}
@@ -522,21 +538,22 @@ export default function SchedulePage() {
                     <div key={i}
                       onClick={() => day && setSelectedCalDay(isSelected ? null : day)}
                       style={{
-                        minHeight: '90px',
-                        borderRight: (i + 1) % 7 !== 0 ? '1px solid #F1F5F9' : 'none',
-                        borderBottom: isLast ? 'none' : '1px solid #F1F5F9',
-                        padding: '8px',
-                        background: isSelected ? `${primary}08` : day ? '#fff' : '#FAFAFA',
+                        minHeight: '80px',
+                        border: '1px solid #E2E8F0',
+                        borderWidth: isLast ? '1px 1px 0 0' : (i + 1) % 7 !== 0 ? '1px 1px 1px 0' : '1px 0 1px 0',
+                        padding: '4px 6px',
+                        background: isSelected ? `${primary}08` : isToday ? `${primary}08` : day ? '#fff' : '#FAFAFA',
                         cursor: day ? 'pointer' : 'default',
                         transition: 'background 0.1s',
-                        outline: isSelected ? `2px solid ${primary}40` : 'none',
+                        outline: isToday ? `1.5px solid ${primary}` : isSelected ? `2px solid ${primary}40` : 'none',
                         outlineOffset: '-2px',
+                        position: 'relative',
                       }}
                     >
                       {day && (
                         <>
-                          <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: isToday ? primary : isSelected ? `${primary}20` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: isToday || isSelected ? '800' : '500', color: isToday ? '#fff' : isSelected ? primary : '#374151' }}>{day}</span>
+                          <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: isToday ? primary : isSelected ? `${primary}20` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: isToday ? '#fff' : isSelected ? primary : '#0F172A' }}>{day}</span>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                             {dayEvents.slice(0, 3).map((ev) => {
@@ -641,7 +658,7 @@ export default function SchedulePage() {
                   </div>
                 );
               })()}
-            </div>
+            </div></div>
           )}
 
           {/* List view */}
@@ -664,16 +681,16 @@ export default function SchedulePage() {
                 )}
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                 {sortedDates.map((date) => {
                   const isToday = date === today;
                   return (
                     <div key={date}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '800', letterSpacing: '0.06em', textTransform: 'uppercase', color: isToday ? primary : '#64748B', background: isToday ? `${primary}12` : '#F1F5F9', padding: '3px 10px', borderRadius: '20px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px', marginTop: '20px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: isToday ? primary : '#94A3B8', padding: '4px 0', flexShrink: 0 }}>
                           {fmtDate(date)}
                         </span>
-                        <div style={{ flex: 1, height: '1px', background: '#F1F5F9' }} />
+                        <div style={{ flex: 1, height: '1px', background: '#E2E8F0' }} />
                         <span style={{ fontSize: '11px', color: '#CBD5E1', flexShrink: 0 }}>{grouped[date].length} event{grouped[date].length !== 1 ? 's' : ''}</span>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -701,7 +718,7 @@ export default function SchedulePage() {
 
         {/* ── RSVP Panel ── */}
         {selectedEvent && (
-          <div style={{ width: '340px', flexShrink: 0, background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
+          <div className="sched-sidebar" style={{ width: '340px', flexShrink: 0, background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '80px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
 
             {/* Panel header */}
             <div style={{ padding: '16px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
@@ -1027,6 +1044,8 @@ export default function SchedulePage() {
         </div>
       )}
 
+      </div>{/* end padding wrapper */}
+
       {showAI && <AIScheduleImport onClose={() => setShowAI(false)} onDone={() => loadEvents()} />}
 
       {deleteConfirm && (
@@ -1183,16 +1202,16 @@ function EventRow({ ev, primary, showTeam, selected, rsvpSummary, onSelect, onEd
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
-        background: selected ? `${primary}06` : '#fff',
+        background: selected ? `${primary}08` : '#fff',
         borderRadius: '14px',
-        border: `1.5px solid ${selected ? primary : hover ? '#CBD5E1' : '#E2E8F0'}`,
+        border: selected ? `2px solid ${primary}` : `1px solid ${hover ? '#CBD5E1' : '#E2E8F0'}`,
         display: 'flex', alignItems: 'stretch', overflow: 'hidden',
-        boxShadow: hover ? '0 4px 16px rgba(0,0,0,0.07)' : '0 1px 3px rgba(0,0,0,0.04)',
-        transition: 'all 0.15s', transform: hover ? 'translateY(-1px)' : 'none', cursor: 'pointer',
+        boxShadow: hover ? '0 4px 12px rgba(0,0,0,0.1)' : '0 1px 4px rgba(0,0,0,0.04)',
+        transition: 'box-shadow 0.15s, transform 0.15s', transform: hover ? 'translateY(-1px)' : 'none', cursor: 'pointer',
       }}
       onClick={onSelect}
     >
-      <div style={{ width: '5px', flexShrink: 0, background: `linear-gradient(180deg, ${color}, ${color}80)` }} />
+      <div style={{ width: '3px', flexShrink: 0, background: color }} />
       <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '14px 16px 14px 14px', borderRight: '1px solid #F8FAFC', minWidth: '72px' }}>
         <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A', lineHeight: 1 }}>{ev.event_time ? fmtTime(ev.event_time).split(' ')[0] : '—'}</span>
         {ev.event_time && <span style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8', marginTop: '2px' }}>{fmtTime(ev.event_time).split(' ')[1]}</span>}

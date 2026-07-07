@@ -17,32 +17,45 @@ export type Database = {
       announcements: {
         Row: {
           body: string
+          club_id: string | null
           created_at: string | null
           created_by: string | null
           id: string
+          is_club_wide: boolean | null
           pinned: boolean | null
-          team_id: string
+          team_id: string | null
           title: string
         }
         Insert: {
           body: string
+          club_id?: string | null
           created_at?: string | null
           created_by?: string | null
           id?: string
+          is_club_wide?: boolean | null
           pinned?: boolean | null
-          team_id: string
+          team_id?: string | null
           title: string
         }
         Update: {
           body?: string
+          club_id?: string | null
           created_at?: string | null
           created_by?: string | null
           id?: string
+          is_club_wide?: boolean | null
           pinned?: boolean | null
-          team_id?: string
+          team_id?: string | null
           title?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "announcements_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "announcements_created_by_fkey"
             columns: ["created_by"]
@@ -62,32 +75,38 @@ export type Database = {
       clubs: {
         Row: {
           created_at: string | null
+          currency: string
           id: string
           logo_url: string | null
           name: string
           primary_color: string | null
           secondary_color: string | null
           slug: string
+          suspended_at: string | null
           tagline: string | null
         }
         Insert: {
           created_at?: string | null
+          currency?: string
           id?: string
           logo_url?: string | null
           name: string
           primary_color?: string | null
           secondary_color?: string | null
           slug: string
+          suspended_at?: string | null
           tagline?: string | null
         }
         Update: {
           created_at?: string | null
+          currency?: string
           id?: string
           logo_url?: string | null
           name?: string
           primary_color?: string | null
           secondary_color?: string | null
           slug?: string
+          suspended_at?: string | null
           tagline?: string | null
         }
         Relationships: []
@@ -157,6 +176,57 @@ export type Database = {
           },
         ]
       }
+      email_logs: {
+        Row: {
+          body: string
+          club_id: string | null
+          id: string
+          recipient_count: number
+          sent_at: string | null
+          sent_by: string | null
+          subject: string
+          team_ids: string[] | null
+          team_names: string[] | null
+        }
+        Insert: {
+          body: string
+          club_id?: string | null
+          id?: string
+          recipient_count?: number
+          sent_at?: string | null
+          sent_by?: string | null
+          subject: string
+          team_ids?: string[] | null
+          team_names?: string[] | null
+        }
+        Update: {
+          body?: string
+          club_id?: string | null
+          id?: string
+          recipient_count?: number
+          sent_at?: string | null
+          sent_by?: string | null
+          subject?: string
+          team_ids?: string[] | null
+          team_names?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_logs_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_logs_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_rsvps: {
         Row: {
           created_at: string | null
@@ -218,6 +288,8 @@ export type Database = {
           ai_suggested_lock_at: string | null
           arrival_buffer_minutes: number | null
           arrive_early_minutes: number | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
           coach_notes: string | null
           created_at: string | null
           created_by: string | null
@@ -226,6 +298,7 @@ export type Database = {
           event_time: string | null
           field_notes: string | null
           field_type: string | null
+          home_away: string | null
           id: string
           lat: number | null
           lng: number | null
@@ -234,10 +307,9 @@ export type Database = {
           recurrence_id: string | null
           require_rsvp: boolean
           rsvp_lock_at: string | null
+          surface: string | null
           team_id: string
           title: string
-          home_away: string | null
-          surface: string | null
           type: string | null
           uniform: string | null
         }
@@ -246,6 +318,8 @@ export type Database = {
           ai_suggested_lock_at?: string | null
           arrival_buffer_minutes?: number | null
           arrive_early_minutes?: number | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
           coach_notes?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -274,6 +348,8 @@ export type Database = {
           ai_suggested_lock_at?: string | null
           arrival_buffer_minutes?: number | null
           arrive_early_minutes?: number | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
           coach_notes?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -310,6 +386,105 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fee_categories: {
+        Row: {
+          amount: number
+          club_id: string
+          created_at: string | null
+          created_by: string | null
+          currency: string
+          description: string | null
+          id: string
+          name: string
+          season: string | null
+        }
+        Insert: {
+          amount?: number
+          club_id: string
+          created_at?: string | null
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          id?: string
+          name: string
+          season?: string | null
+        }
+        Update: {
+          amount?: number
+          club_id?: string
+          created_at?: string | null
+          created_by?: string | null
+          currency?: string
+          description?: string | null
+          id?: string
+          name?: string
+          season?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fee_categories_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fee_categories_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fee_payments: {
+        Row: {
+          amount: number
+          id: string
+          method: string | null
+          notes: string | null
+          paid_at: string | null
+          player_fee_id: string
+          recorded_by: string | null
+          reference: string | null
+        }
+        Insert: {
+          amount: number
+          id?: string
+          method?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          player_fee_id: string
+          recorded_by?: string | null
+          reference?: string | null
+        }
+        Update: {
+          amount?: number
+          id?: string
+          method?: string | null
+          notes?: string | null
+          paid_at?: string | null
+          player_fee_id?: string
+          recorded_by?: string | null
+          reference?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fee_payments_player_fee_id_fkey"
+            columns: ["player_fee_id"]
+            isOneToOne: false
+            referencedRelation: "player_fees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fee_payments_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -661,6 +836,98 @@ export type Database = {
           },
         ]
       }
+      player_fees: {
+        Row: {
+          amount_due: number
+          amount_paid: number
+          category_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string
+          discount: number
+          discount_reason: string | null
+          due_date: string | null
+          id: string
+          installment_number: number | null
+          installment_total: number | null
+          notes: string | null
+          plan_group_id: string | null
+          player_id: string
+          status: string | null
+          team_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          amount_due?: number
+          amount_paid?: number
+          category_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description: string
+          discount?: number
+          discount_reason?: string | null
+          due_date?: string | null
+          id?: string
+          installment_number?: number | null
+          installment_total?: number | null
+          notes?: string | null
+          plan_group_id?: string | null
+          player_id: string
+          status?: string | null
+          team_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          amount_due?: number
+          amount_paid?: number
+          category_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string
+          discount?: number
+          discount_reason?: string | null
+          due_date?: string | null
+          id?: string
+          installment_number?: number | null
+          installment_total?: number | null
+          notes?: string | null
+          plan_group_id?: string | null
+          player_id?: string
+          status?: string | null
+          team_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_fees_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fee_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_fees_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_fees_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_fees_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_match_periods: {
         Row: {
           event_id: string
@@ -859,6 +1126,154 @@ export type Database = {
           },
         ]
       }
+      registration_forms: {
+        Row: {
+          club_id: string
+          confirmation_message: string | null
+          created_at: string | null
+          created_by: string | null
+          currency: string | null
+          deadline: string | null
+          description: string | null
+          fields: Json
+          id: string
+          max_spots: number | null
+          payment_options: string | null
+          plan_deposit: number | null
+          plan_frequency: string | null
+          plan_installments: number | null
+          price: number | null
+          send_confirmation_email: boolean | null
+          status: string | null
+          team_id: string | null
+          title: string
+          token: string
+        }
+        Insert: {
+          club_id: string
+          confirmation_message?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          currency?: string | null
+          deadline?: string | null
+          description?: string | null
+          fields?: Json
+          id?: string
+          max_spots?: number | null
+          payment_options?: string | null
+          plan_deposit?: number | null
+          plan_frequency?: string | null
+          plan_installments?: number | null
+          price?: number | null
+          send_confirmation_email?: boolean | null
+          status?: string | null
+          team_id?: string | null
+          title: string
+          token?: string
+        }
+        Update: {
+          club_id?: string
+          confirmation_message?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          currency?: string | null
+          deadline?: string | null
+          description?: string | null
+          fields?: Json
+          id?: string
+          max_spots?: number | null
+          payment_options?: string | null
+          plan_deposit?: number | null
+          plan_frequency?: string | null
+          plan_installments?: number | null
+          price?: number | null
+          send_confirmation_email?: boolean | null
+          status?: string | null
+          team_id?: string | null
+          title?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "registration_forms_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_forms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_forms_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      registration_submissions: {
+        Row: {
+          amount_due: number | null
+          amount_paid: number | null
+          data: Json
+          form_id: string
+          id: string
+          notes: string | null
+          payment_choice: string | null
+          payment_status: string | null
+          reviewer_id: string | null
+          status: string | null
+          submitted_at: string | null
+        }
+        Insert: {
+          amount_due?: number | null
+          amount_paid?: number | null
+          data?: Json
+          form_id: string
+          id?: string
+          notes?: string | null
+          payment_choice?: string | null
+          payment_status?: string | null
+          reviewer_id?: string | null
+          status?: string | null
+          submitted_at?: string | null
+        }
+        Update: {
+          amount_due?: number | null
+          amount_paid?: number | null
+          data?: Json
+          form_id?: string
+          id?: string
+          notes?: string | null
+          payment_choice?: string | null
+          payment_status?: string | null
+          reviewer_id?: string | null
+          status?: string | null
+          submitted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "registration_submissions_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "registration_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_submissions_reviewer_id_fkey"
+            columns: ["reviewer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sub_plans: {
         Row: {
           created_at: string | null
@@ -973,6 +1388,7 @@ export type Database = {
           age_group: string | null
           club_id: string
           created_at: string | null
+          gender: string | null
           id: string
           name: string
           season: string | null
@@ -981,6 +1397,7 @@ export type Database = {
           age_group?: string | null
           club_id: string
           created_at?: string | null
+          gender?: string | null
           id?: string
           name: string
           season?: string | null
@@ -989,6 +1406,7 @@ export type Database = {
           age_group?: string | null
           club_id?: string
           created_at?: string | null
+          gender?: string | null
           id?: string
           name?: string
           season?: string | null
@@ -1003,22 +1421,931 @@ export type Database = {
           },
         ]
       }
+      tryout_assignments: {
+        Row: {
+          club_id: string
+          created_at: string | null
+          declined_note: string | null
+          declined_reason: string | null
+          id: string
+          offer_responded_at: string | null
+          offer_sent_at: string | null
+          offer_status: string | null
+          offer_token: string | null
+          player_id: string
+          reminder_count: number | null
+          reminder_sent_at: string | null
+          status: string | null
+          team: string | null
+        }
+        Insert: {
+          club_id: string
+          created_at?: string | null
+          declined_note?: string | null
+          declined_reason?: string | null
+          id?: string
+          offer_responded_at?: string | null
+          offer_sent_at?: string | null
+          offer_status?: string | null
+          offer_token?: string | null
+          player_id: string
+          reminder_count?: number | null
+          reminder_sent_at?: string | null
+          status?: string | null
+          team?: string | null
+        }
+        Update: {
+          club_id?: string
+          created_at?: string | null
+          declined_note?: string | null
+          declined_reason?: string | null
+          id?: string
+          offer_responded_at?: string | null
+          offer_sent_at?: string | null
+          offer_status?: string | null
+          offer_token?: string | null
+          player_id?: string
+          reminder_count?: number | null
+          reminder_sent_at?: string | null
+          status?: string | null
+          team?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_assignments_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_assignments_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "tryout_players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_coach_assignments: {
+        Row: {
+          age_group: string | null
+          club_id: string
+          coach_id: string
+          created_at: string | null
+          gender: string | null
+          id: string
+          role: string | null
+          team: string | null
+        }
+        Insert: {
+          age_group?: string | null
+          club_id: string
+          coach_id: string
+          created_at?: string | null
+          gender?: string | null
+          id?: string
+          role?: string | null
+          team?: string | null
+        }
+        Update: {
+          age_group?: string | null
+          club_id?: string
+          coach_id?: string
+          created_at?: string | null
+          gender?: string | null
+          id?: string
+          role?: string | null
+          team?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_coach_assignments_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_coach_assignments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "tryout_coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_coaches: {
+        Row: {
+          club_id: string
+          created_at: string | null
+          email: string | null
+          full_name: string
+          hourly_rate: number | null
+          id: string
+          is_active: boolean | null
+          license: string | null
+          notes: string | null
+          phone: string | null
+        }
+        Insert: {
+          club_id: string
+          created_at?: string | null
+          email?: string | null
+          full_name: string
+          hourly_rate?: number | null
+          id?: string
+          is_active?: boolean | null
+          license?: string | null
+          notes?: string | null
+          phone?: string | null
+        }
+        Update: {
+          club_id?: string
+          created_at?: string | null
+          email?: string | null
+          full_name?: string
+          hourly_rate?: number | null
+          id?: string
+          is_active?: boolean | null
+          license?: string | null
+          notes?: string | null
+          phone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_coaches_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_email_templates: {
+        Row: {
+          body_html: string | null
+          club_id: string
+          created_at: string | null
+          from_name: string | null
+          id: string
+          subject: string
+          template_key: string
+          updated_at: string | null
+        }
+        Insert: {
+          body_html?: string | null
+          club_id: string
+          created_at?: string | null
+          from_name?: string | null
+          id?: string
+          subject: string
+          template_key: string
+          updated_at?: string | null
+        }
+        Update: {
+          body_html?: string | null
+          club_id?: string
+          created_at?: string | null
+          from_name?: string | null
+          id?: string
+          subject?: string
+          template_key?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_email_templates_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_expenses: {
+        Row: {
+          amount: number
+          category: string
+          club_id: string
+          created_at: string | null
+          description: string | null
+          id: string
+          notes: string | null
+          season_label: string | null
+        }
+        Insert: {
+          amount?: number
+          category: string
+          club_id: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          notes?: string | null
+          season_label?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: string
+          club_id?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          notes?: string | null
+          season_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_expenses_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_fields: {
+        Row: {
+          club_id: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          sort_order: number | null
+          sub_zones: string[] | null
+        }
+        Insert: {
+          club_id: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          sort_order?: number | null
+          sub_zones?: string[] | null
+        }
+        Update: {
+          club_id?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          sort_order?: number | null
+          sub_zones?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_fields_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_form_config: {
+        Row: {
+          club_id: string
+          config_json: Json
+          created_at: string | null
+          id: string
+          season_label: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          club_id: string
+          config_json?: Json
+          created_at?: string | null
+          id?: string
+          season_label?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          club_id?: string
+          config_json?: Json
+          created_at?: string | null
+          id?: string
+          season_label?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_form_config_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_games: {
+        Row: {
+          age_group: string | null
+          away_location: string | null
+          club_id: string
+          coach_id: string | null
+          created_at: string | null
+          end_time: string | null
+          field_name: string | null
+          game_date: string | null
+          gender: string | null
+          id: string
+          is_home_game: boolean | null
+          league: string | null
+          notes: string | null
+          opponent_name: string | null
+          season_label: string | null
+          start_time: string | null
+          status: string | null
+          sub_zone: string | null
+          team: string | null
+        }
+        Insert: {
+          age_group?: string | null
+          away_location?: string | null
+          club_id: string
+          coach_id?: string | null
+          created_at?: string | null
+          end_time?: string | null
+          field_name?: string | null
+          game_date?: string | null
+          gender?: string | null
+          id?: string
+          is_home_game?: boolean | null
+          league?: string | null
+          notes?: string | null
+          opponent_name?: string | null
+          season_label?: string | null
+          start_time?: string | null
+          status?: string | null
+          sub_zone?: string | null
+          team?: string | null
+        }
+        Update: {
+          age_group?: string | null
+          away_location?: string | null
+          club_id?: string
+          coach_id?: string | null
+          created_at?: string | null
+          end_time?: string | null
+          field_name?: string | null
+          game_date?: string | null
+          gender?: string | null
+          id?: string
+          is_home_game?: boolean | null
+          league?: string | null
+          notes?: string | null
+          opponent_name?: string | null
+          season_label?: string | null
+          start_time?: string | null
+          status?: string | null
+          sub_zone?: string | null
+          team?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_games_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_games_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "tryout_coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_offer_settings: {
+        Row: {
+          club_id: string
+          club_website_url: string | null
+          created_at: string | null
+          deposit_amount: string | null
+          email_body_html: string | null
+          email_body_html_u8: string | null
+          email_subject: string | null
+          from_name: string | null
+          id: string
+          offer_deadline: string | null
+          payment_due_date: string | null
+          payment_link: string | null
+          season_fee: string | null
+          teamsnap_registration_url: string | null
+          uniform_shop_url: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          club_id: string
+          club_website_url?: string | null
+          created_at?: string | null
+          deposit_amount?: string | null
+          email_body_html?: string | null
+          email_body_html_u8?: string | null
+          email_subject?: string | null
+          from_name?: string | null
+          id?: string
+          offer_deadline?: string | null
+          payment_due_date?: string | null
+          payment_link?: string | null
+          season_fee?: string | null
+          teamsnap_registration_url?: string | null
+          uniform_shop_url?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          club_id?: string
+          club_website_url?: string | null
+          created_at?: string | null
+          deposit_amount?: string | null
+          email_body_html?: string | null
+          email_body_html_u8?: string | null
+          email_subject?: string | null
+          from_name?: string | null
+          id?: string
+          offer_deadline?: string | null
+          payment_due_date?: string | null
+          payment_link?: string | null
+          season_fee?: string | null
+          teamsnap_registration_url?: string | null
+          uniform_shop_url?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_offer_settings_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_players: {
+        Row: {
+          age_group_override: boolean | null
+          birth_year: number | null
+          club_id: string
+          created_at: string | null
+          current_team: string | null
+          custom_responses: Json | null
+          date_of_birth: string | null
+          duplicate_of: string | null
+          early_decision_details: string | null
+          early_decision_request: boolean | null
+          email_primary: string | null
+          email_secondary: string | null
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          emergency_contact_relationship: string | null
+          final_age_group: string | null
+          first_name: string
+          full_name: string | null
+          gender: string | null
+          grade: string | null
+          id: string
+          image_permission: boolean | null
+          is_duplicate_flagged: boolean | null
+          jersey_size: string | null
+          last_name: string
+          maroons_status: string | null
+          maybe_flag: boolean | null
+          medical_notes: string | null
+          notes: string | null
+          parent_name: string | null
+          phone: string | null
+          positions: string[] | null
+          referral_source: string | null
+          school_attending: string | null
+          season_label: string | null
+          shorts_size: string | null
+          source: string | null
+          town: string | null
+          tryout_date: string | null
+          tryout_session: string | null
+        }
+        Insert: {
+          age_group_override?: boolean | null
+          club_id: string
+          created_at?: string | null
+          current_team?: string | null
+          custom_responses?: Json | null
+          date_of_birth?: string | null
+          duplicate_of?: string | null
+          early_decision_details?: string | null
+          early_decision_request?: boolean | null
+          email_primary?: string | null
+          email_secondary?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          emergency_contact_relationship?: string | null
+          final_age_group?: string | null
+          first_name: string
+          gender?: string | null
+          grade?: string | null
+          id?: string
+          image_permission?: boolean | null
+          is_duplicate_flagged?: boolean | null
+          jersey_size?: string | null
+          last_name: string
+          maroons_status?: string | null
+          maybe_flag?: boolean | null
+          medical_notes?: string | null
+          notes?: string | null
+          parent_name?: string | null
+          phone?: string | null
+          positions?: string[] | null
+          referral_source?: string | null
+          school_attending?: string | null
+          season_label?: string | null
+          shorts_size?: string | null
+          source?: string | null
+          town?: string | null
+          tryout_date?: string | null
+          tryout_session?: string | null
+        }
+        Update: {
+          age_group_override?: boolean | null
+          club_id?: string
+          created_at?: string | null
+          current_team?: string | null
+          custom_responses?: Json | null
+          date_of_birth?: string | null
+          duplicate_of?: string | null
+          early_decision_details?: string | null
+          early_decision_request?: boolean | null
+          email_primary?: string | null
+          email_secondary?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          emergency_contact_relationship?: string | null
+          final_age_group?: string | null
+          first_name?: string
+          gender?: string | null
+          grade?: string | null
+          id?: string
+          image_permission?: boolean | null
+          is_duplicate_flagged?: boolean | null
+          jersey_size?: string | null
+          last_name?: string
+          maroons_status?: string | null
+          maybe_flag?: boolean | null
+          medical_notes?: string | null
+          notes?: string | null
+          parent_name?: string | null
+          phone?: string | null
+          positions?: string[] | null
+          referral_source?: string | null
+          school_attending?: string | null
+          season_label?: string | null
+          shorts_size?: string | null
+          source?: string | null
+          town?: string | null
+          tryout_date?: string | null
+          tryout_session?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_players_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_players_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "tryout_players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_practice_slots: {
+        Row: {
+          age_group: string | null
+          club_id: string
+          created_at: string | null
+          day_of_week: string | null
+          end_time: string | null
+          field_name: string | null
+          gender: string | null
+          id: string
+          notes: string | null
+          season_label: string | null
+          start_time: string | null
+          sub_zone: string | null
+          team: string | null
+        }
+        Insert: {
+          age_group?: string | null
+          club_id: string
+          created_at?: string | null
+          day_of_week?: string | null
+          end_time?: string | null
+          field_name?: string | null
+          gender?: string | null
+          id?: string
+          notes?: string | null
+          season_label?: string | null
+          start_time?: string | null
+          sub_zone?: string | null
+          team?: string | null
+        }
+        Update: {
+          age_group?: string | null
+          club_id?: string
+          created_at?: string | null
+          day_of_week?: string | null
+          end_time?: string | null
+          field_name?: string | null
+          gender?: string | null
+          id?: string
+          notes?: string | null
+          season_label?: string | null
+          start_time?: string | null
+          sub_zone?: string | null
+          team?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_practice_slots_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_rankings: {
+        Row: {
+          club_id: string
+          coach_rank: number | null
+          combined_score: number | null
+          created_at: string | null
+          id: string
+          player_id: string
+          ranking_age_group: string | null
+          tryout_rank: number | null
+          tryout_status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          club_id: string
+          coach_rank?: number | null
+          combined_score?: number | null
+          created_at?: string | null
+          id?: string
+          player_id: string
+          ranking_age_group?: string | null
+          tryout_rank?: number | null
+          tryout_status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          club_id?: string
+          coach_rank?: number | null
+          combined_score?: number | null
+          created_at?: string | null
+          id?: string
+          player_id?: string
+          ranking_age_group?: string | null
+          tryout_rank?: number | null
+          tryout_status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_rankings_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_rankings_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "tryout_players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_teams: {
+        Row: {
+          age_group: string | null
+          club_id: string
+          color: string | null
+          created_at: string | null
+          deposit_amount: string | null
+          format: string | null
+          gender: string | null
+          head_coach_id: string | null
+          id: string
+          is_active: boolean | null
+          logo_url: string | null
+          name: string
+          roster_locked: boolean | null
+          season_fee: string | null
+          sort_order: number | null
+          tier: string | null
+        }
+        Insert: {
+          age_group?: string | null
+          club_id: string
+          color?: string | null
+          created_at?: string | null
+          deposit_amount?: string | null
+          format?: string | null
+          gender?: string | null
+          head_coach_id?: string | null
+          id?: string
+          is_active?: boolean | null
+          logo_url?: string | null
+          name: string
+          roster_locked?: boolean | null
+          season_fee?: string | null
+          sort_order?: number | null
+          tier?: string | null
+        }
+        Update: {
+          age_group?: string | null
+          club_id?: string
+          color?: string | null
+          created_at?: string | null
+          deposit_amount?: string | null
+          format?: string | null
+          gender?: string | null
+          head_coach_id?: string | null
+          id?: string
+          is_active?: boolean | null
+          logo_url?: string | null
+          name?: string
+          roster_locked?: boolean | null
+          season_fee?: string | null
+          sort_order?: number | null
+          tier?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_teams_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_teams_head_coach_id_fkey"
+            columns: ["head_coach_id"]
+            isOneToOne: false
+            referencedRelation: "tryout_coaches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      waiver_assignments: {
+        Row: {
+          created_at: string | null
+          id: string
+          team_id: string
+          waiver_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          team_id: string
+          waiver_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          team_id?: string
+          waiver_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waiver_assignments_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_assignments_waiver_id_fkey"
+            columns: ["waiver_id"]
+            isOneToOne: false
+            referencedRelation: "waivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      waiver_signatures: {
+        Row: {
+          id: string
+          player_id: string
+          signed_at: string | null
+          signed_by_name: string
+          waiver_id: string
+        }
+        Insert: {
+          id?: string
+          player_id: string
+          signed_at?: string | null
+          signed_by_name: string
+          waiver_id: string
+        }
+        Update: {
+          id?: string
+          player_id?: string
+          signed_at?: string | null
+          signed_by_name?: string
+          waiver_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waiver_signatures_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waiver_signatures_waiver_id_fkey"
+            columns: ["waiver_id"]
+            isOneToOne: false
+            referencedRelation: "waivers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      waivers: {
+        Row: {
+          body: string
+          club_id: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          required_by: string | null
+          title: string
+        }
+        Insert: {
+          body: string
+          club_id: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          required_by?: string | null
+          title: string
+        }
+        Update: {
+          body?: string
+          club_id?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          required_by?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "waivers_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "waivers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       accept_invite: { Args: { p_token: string }; Returns: Json }
-      current_user_club_id: { Args: never; Returns: string }
-      current_user_role: { Args: never; Returns: string }
-      delete_account: { Args: never; Returns: undefined }
-      is_conversation_participant: {
-        Args: { p_conversation_id: string }
-        Returns: boolean
-      }
+      current_user_club_id: { Args: Record<string, never>; Returns: string }
+      current_user_role: { Args: Record<string, never>; Returns: string }
+      delete_account: { Args: Record<string, never>; Returns: undefined }
       find_direct_conversation: {
         Args: { p_other_profile_id: string }
         Returns: string | null
+      }
+      is_club_admin: { Args: { cid: string }; Returns: boolean }
+      is_club_conversation: {
+        Args: { p_conversation_id: string }
+        Returns: boolean
+      }
+      is_conversation_participant: {
+        Args: { p_conversation_id: string }
+        Returns: boolean
       }
       is_team_coach: { Args: { p_team_id: string }; Returns: boolean }
       is_team_member: { Args: { p_team_id: string }; Returns: boolean }

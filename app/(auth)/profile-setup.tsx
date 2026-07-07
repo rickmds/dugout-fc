@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,7 +19,7 @@ import ErrorBanner from '../../components/ui/ErrorBanner';
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
-  const { user, profile, club, refreshProfile } = useAuth();
+  const { user, profile, club, refreshProfile, signOut } = useAuth();
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +66,23 @@ export default function ProfileSetupScreen() {
 
         <PrimaryButton title="Let's go" onPress={handleContinue} loading={loading} style={styles.continueButton} />
 
-        <TouchableOpacity onPress={finishAndRedirect} style={styles.skipLink}>
+        <TouchableOpacity
+          onPress={() => {
+            if (!club) {
+              Alert.alert(
+                'Join a team first',
+                'You need an invite code or club name to continue. Ask your coach.',
+                [
+                  { text: 'Find team', onPress: () => router.replace('/(auth)/find-team') },
+                  { text: 'Sign out', style: 'destructive', onPress: signOut },
+                ],
+              );
+            } else {
+              finishAndRedirect();
+            }
+          }}
+          style={styles.skipLink}
+        >
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
       </ScrollView>

@@ -4,11 +4,20 @@ import { useEffect, useState, useCallback } from 'react';
 import { Shield, Upload, Palette, Globe, Bell, Download, CreditCard, Trash2, Check, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 
 const SECTIONS = ['Club Profile', 'Branding', 'Notifications', 'Data Exports', 'Subscription', 'Danger Zone'];
 
+const CURRENCIES = [
+  { code: 'USD', symbol: '$', label: 'USD — US Dollar ($)' },
+  { code: 'GBP', symbol: '£', label: 'GBP — British Pound (£)' },
+  { code: 'EUR', symbol: '€', label: 'EUR — Euro (€)' },
+  { code: 'CAD', symbol: 'CA$', label: 'CAD — Canadian Dollar (CA$)' },
+  { code: 'AUD', symbol: 'A$', label: 'AUD — Australian Dollar (A$)' },
+];
+
 export default function ClubAdminPage() {
-  const { club, profile, reload } = useDashboard();
+  const { club, profile, reload, canUse } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
   const [active,  setActive]  = useState('Club Profile');
@@ -18,7 +27,7 @@ export default function ClubAdminPage() {
 
   // Club profile form
   const [profileForm, setProfileForm] = useState({
-    name: '', slug: '', website: '', contact_email: '', tagline: '',
+    name: '', slug: '', website: '', contact_email: '', tagline: '', currency: 'USD',
   });
 
   // Branding form
@@ -29,7 +38,7 @@ export default function ClubAdminPage() {
 
   useEffect(() => {
     if (!club) return;
-    setProfileForm({ name: club.name ?? '', slug: (club as any).slug ?? '', website: (club as any).website ?? '', contact_email: (club as any).contact_email ?? '', tagline: (club as any).tagline ?? '' });
+    setProfileForm({ name: club.name ?? '', slug: (club as any).slug ?? '', website: (club as any).website ?? '', contact_email: (club as any).contact_email ?? '', tagline: (club as any).tagline ?? '', currency: (club as any).currency ?? 'USD' });
     setBrandForm({ primary_color: club.primary_color ?? '#22C55E', secondary_color: (club as any).secondary_color ?? '#ffffff' });
     setLogoPreview(club.logo_url);
   }, [club]);
@@ -40,7 +49,7 @@ export default function ClubAdminPage() {
     await supabase.from('clubs').update({
       name: profileForm.name, slug: profileForm.slug,
       website: profileForm.website, contact_email: profileForm.contact_email,
-      tagline: profileForm.tagline,
+      tagline: profileForm.tagline, currency: profileForm.currency,
     }).eq('id', club.id);
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
     reload();
@@ -92,29 +101,41 @@ export default function ClubAdminPage() {
     a.click();
   }
 
-  const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '9px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' as const };
+  const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '9px', border: '1.5px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' as const };
   const labelStyle = { fontSize: '12px', fontWeight: '600' as const, color: '#374151', display: 'block' as const, marginBottom: '5px' };
-  const sectionCard = { background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' as const };
+  const sectionCard = { background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' as const, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' };
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: '900px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '26px', fontWeight: '800', color: '#0F172A', margin: '0 0 4px', letterSpacing: '-0.5px' }}>Club Administration</h1>
-        <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>Manage your club settings, branding, and data</p>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+      {/* Sticky header */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Administration</h1>
+          <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748B' }}>Manage your club settings, branding, and data</p>
+        </div>
       </div>
+      <div style={{ padding: '24px 32px' }}>
 
       <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '20px', alignItems: 'start' }}>
 
         {/* Sidebar nav */}
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '20px' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '20px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {SECTIONS.map(s => (
             <button key={s} onClick={() => setActive(s)} style={{
-              display: 'block', width: '100%', textAlign: 'left', padding: '11px 16px',
-              background: active === s ? `${primary}10` : 'transparent',
+              display: 'block', width: '100%', textAlign: 'left',
+              padding: '8px 12px 8px 14px',
+              borderRadius: '8px',
+              background: active === s ? `${primary}12` : 'transparent',
               color: active === s ? primary : '#374151',
+              borderTop: 'none',
+              borderRight: 'none',
+              borderBottom: 'none',
               borderLeft: active === s ? `3px solid ${primary}` : '3px solid transparent',
-              border: 'none', borderBottom: '1px solid #F1F5F9', cursor: 'pointer',
+              cursor: 'pointer',
               fontSize: '13px', fontWeight: active === s ? '700' : '500',
+              fontFamily: 'inherit',
+              transition: 'background 0.12s, color 0.12s',
             }}>
               {s}
             </button>
@@ -127,7 +148,7 @@ export default function ClubAdminPage() {
           {active === 'Club Profile' && (
             <div style={sectionCard}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
-                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Club Profile</div>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Club Profile</div>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Your club's public-facing details</div>
               </div>
               <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -140,20 +161,40 @@ export default function ClubAdminPage() {
                   <label style={labelStyle}>Website<input value={profileForm.website} onChange={e => setProfileForm(f => ({...f, website: e.target.value}))} placeholder="https://" style={{ ...inputStyle, marginTop: '5px' }} /></label>
                   <label style={labelStyle}>Contact email<input type="email" value={profileForm.contact_email} onChange={e => setProfileForm(f => ({...f, contact_email: e.target.value}))} style={{ ...inputStyle, marginTop: '5px' }} /></label>
                 </div>
+                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '16px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Currency</div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {CURRENCIES.map(c => (
+                      <button key={c.code} onClick={() => setProfileForm(f => ({ ...f, currency: c.code }))}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '9px', border: `2px solid ${profileForm.currency === c.code ? primary : '#E2E8F0'}`, background: profileForm.currency === c.code ? `${primary}10` : '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: profileForm.currency === c.code ? '700' : '500', color: profileForm.currency === c.code ? primary : '#374151', transition: 'all 0.15s' }}>
+                        <span style={{ fontSize: '15px', fontWeight: '700' }}>{c.symbol}</span>
+                        <span>{c.code}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '8px' }}>
+                    Applies to all fees and offer letters across the club.
+                  </div>
+                </div>
               </div>
               <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 {saved && <span style={{ fontSize: '13px', color: '#22C55E', display: 'flex', alignItems: 'center', gap: '5px' }}><Check size={14} /> Saved</span>}
-                <button onClick={saveProfile} disabled={saving} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>
+                <button onClick={saveProfile} disabled={saving} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
                   {saving ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>
             </div>
           )}
 
-          {active === 'Branding' && (
+          {active === 'Branding' && !canUse('branding') && (
+            <div style={{ ...sectionCard, padding: '32px' }}>
+              <UpgradePrompt feature="Custom Branding" description="Add your club logo and brand colours so every screen, email, and notification feels like your club — not a generic app." requiredPlan="Team Pro" />
+            </div>
+          )}
+          {active === 'Branding' && canUse('branding') && (
             <div style={sectionCard}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
-                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Branding</div>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Branding</div>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Logo and colours used across the app and emails</div>
               </div>
               <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -205,7 +246,7 @@ export default function ClubAdminPage() {
               </div>
               <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 {saved && <span style={{ fontSize: '13px', color: '#22C55E', display: 'flex', alignItems: 'center', gap: '5px' }}><Check size={14} /> Saved</span>}
-                <button onClick={saveBranding} disabled={saving} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>Save Branding</button>
+                <button onClick={saveBranding} disabled={saving} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Save Branding</button>
               </div>
             </div>
           )}
@@ -213,7 +254,7 @@ export default function ClubAdminPage() {
           {active === 'Notifications' && (
             <div style={sectionCard}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
-                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Notification Preferences</div>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Notification Preferences</div>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Club-wide defaults (coaches and parents can override per-device)</div>
               </div>
               <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '0' }}>
@@ -245,7 +286,7 @@ export default function ClubAdminPage() {
           {active === 'Data Exports' && (
             <div style={sectionCard}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
-                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Data Exports</div>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Data Exports</div>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Download your club data as CSV</div>
               </div>
               <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -271,7 +312,7 @@ export default function ClubAdminPage() {
           {active === 'Subscription' && (
             <div style={sectionCard}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
-                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Subscription & Billing</div>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Subscription & Billing</div>
               </div>
               <div style={{ padding: '24px' }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: '10px', padding: '8px 14px', marginBottom: '20px' }}>
@@ -295,7 +336,7 @@ export default function ClubAdminPage() {
           )}
 
           {active === 'Danger Zone' && (
-            <div style={{ ...sectionCard, border: '1px solid #FEE2E2' }}>
+            <div style={{ ...sectionCard, border: '1px solid #FEE2E2', borderLeft: '4px solid #EF4444' }}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #FEE2E2', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AlertTriangle size={18} color="#EF4444" />
                 <div style={{ fontSize: '15px', fontWeight: '800', color: '#EF4444' }}>Danger Zone</div>
@@ -315,6 +356,7 @@ export default function ClubAdminPage() {
           )}
 
         </div>
+      </div>
       </div>
     </div>
   );

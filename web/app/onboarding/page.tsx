@@ -156,8 +156,10 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
   return (
     <div className="max-w-md mx-auto">
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#22c55e1a] border border-[#22c55e33] mb-4">
-          <span className="text-3xl">⚽</span>
+        <div className="flex justify-center mb-4">
+          <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 16px', display: 'inline-flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+            <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '32px', width: 'auto' }} />
+          </div>
         </div>
         <h1 className="text-2xl font-extrabold text-white mb-1">Add your club to Dugout FC</h1>
         <p className="text-[#9ca3af] text-sm">Create your account to get started</p>
@@ -750,14 +752,6 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] py-12 px-4">
       <div className="max-w-lg mx-auto">
-
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 bg-[#111] border border-[#222] rounded-full px-4 py-2">
-            <span className="text-lg">⚽</span>
-            <span className="font-extrabold text-white text-sm tracking-wide">DUGOUT FC</span>
-          </div>
-        </div>
 
         {step !== 'auth' && step !== 'done' && <StepBar current={step} />}
 

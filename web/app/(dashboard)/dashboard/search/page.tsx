@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Users, Mail, Hash, ShieldHalf } from 'lucide-react';
+import { Search, X, Users, Mail, Hash, ShieldHalf, SearchX } from 'lucide-react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -153,14 +153,19 @@ export default function SearchPage() {
   }, {});
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: '760px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '2px' }}>Search players</h1>
-        <p style={{ fontSize: '13px', color: '#64748B' }}>Find any player across all {teams.length} team{teams.length !== 1 ? 's' : ''}</p>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+
+      {/* Sticky header */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px' }}>
+        <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
+        <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Search</h1>
+        <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748B' }}>Find any player across all {teams.length} team{teams.length !== 1 ? 's' : ''}</p>
       </div>
 
+      <div style={{ padding: '24px 32px', maxWidth: '792px' }}>
+
       {/* Search input */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: `2px solid ${query ? primary : '#E2E8F0'}`, borderRadius: '14px', padding: '12px 16px', marginBottom: '24px', transition: 'border-color 0.15s', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: `2px solid ${query ? primary : '#E2E8F0'}`, borderRadius: '14px', padding: '12px 16px', marginBottom: '24px', transition: 'border-color 0.15s', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
         <Search size={18} color={query ? primary : '#94A3B8'} />
         <input
           ref={inputRef}
@@ -181,16 +186,20 @@ export default function SearchPage() {
 
       {/* Results */}
       {!query || query.trim().length < 2 ? (
-        <div style={{ textAlign: 'center', padding: '60px 40px', color: '#94A3B8' }}>
-          <Users size={40} color="#E2E8F0" style={{ marginBottom: '12px' }} />
-          <div style={{ fontSize: '15px', fontWeight: '600', color: '#CBD5E1' }}>Search across all players</div>
-          <div style={{ fontSize: '13px', marginTop: '4px' }}>Name · #jersey · position · parent email</div>
+        <div style={{ textAlign: 'center', padding: '64px 32px' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Users size={26} color="#94A3B8" />
+          </div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>Search across all players</div>
+          <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.6 }}>Name &middot; #jersey number &middot; position &middot; parent email</div>
         </div>
       ) : searched && results.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 40px' }}>
-          <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔍</div>
-          <div style={{ fontSize: '15px', fontWeight: '600', color: '#64748B' }}>No players found</div>
-          <div style={{ fontSize: '13px', color: '#94A3B8', marginTop: '4px' }}>Try a different name or spelling</div>
+        <div style={{ textAlign: 'center', padding: '64px 32px' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <SearchX size={26} color="#EF4444" />
+          </div>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No players found</div>
+          <div style={{ fontSize: '13px', color: '#64748B' }}>Try a different name, number, or spelling</div>
         </div>
       ) : results.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -259,6 +268,7 @@ export default function SearchPage() {
       ) : null}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
     </div>
   );
 }

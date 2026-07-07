@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  RefreshControl,
   ScrollView,
   SectionList,
   Share,
@@ -11,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
@@ -31,7 +33,7 @@ type Event = {
   event_time: string | null;
   location: string | null;
   duration_minutes: number | null;
-  arrive_early_minutes: number | null;
+  arrival_buffer_minutes: number | null;
   uniform: string | null;
   field_type: 'turf' | 'grass' | null;
   cancelled_at: string | null;
@@ -108,6 +110,7 @@ export default function ScheduleScreen() {
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [playerCount, setPlayerCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [activeTab, setActiveTab] = useState<Tab>('upcoming');
 
@@ -132,7 +135,7 @@ export default function ScheduleScreen() {
 
     const [eventsRes, playerRes, countRes] = await Promise.all([
       supabase.from('events')
-        .select('id, title, type, event_date, event_time, location, duration_minutes, arrive_early_minutes, uniform, field_type, cancelled_at')
+        .select('id, title, type, event_date, event_time, location, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at')
         .eq('team_id', team.id).order('event_date').order('event_time'),
       profile?.id
         ? supabase.from('players').select('id').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle()
@@ -151,6 +154,12 @@ export default function ScheduleScreen() {
       await fetchRsvpData(evs.map((e) => e.id), pid);
     }
     setLoading(false);
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
   }
 
   async function fetchRsvpData(eventIds: string[], pid: string | null) {
@@ -178,6 +187,7 @@ export default function ScheduleScreen() {
 
   async function handleRsvp(eventId: string, status: 'attending' | 'not_attending') {
     if (!myPlayerId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const current = myRsvps[eventId];
     if (current === status) {
       await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', myPlayerId);
@@ -435,7 +445,9 @@ export default function ScheduleScreen() {
       <View style={styles.center}>
         <Ionicons name="calendar-outline" size={48} color={DUGOUT_COLORS.ui.muted} />
         <Text style={{ color: DUGOUT_COLORS.ui.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
-        <Text style={{ color: DUGOUT_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>Import your club or create a team to get started.</Text>
+        <Text style={{ color: DUGOUT_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
+          {isCoach ? 'Import your club or create a team to get started.' : "Ask your coach for an invite to join a team."}
+        </Text>
       </View>
     );
   }
@@ -522,6 +534,7 @@ export default function ScheduleScreen() {
             keyExtractor={(e) => e.id}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
             ListHeaderComponent={
               <TouchableOpacity
                 style={[styles.syncBanner, { backgroundColor: rgba(0.07), borderColor: rgba(0.22) }]}
@@ -569,6 +582,7 @@ export default function ScheduleScreen() {
             keyExtractor={(e) => e.id}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
             renderSectionHeader={({ section }) => renderSectionHeader(section.title, section.data.length)}
             renderItem={({ item }) => renderCard(item)}
           />
@@ -577,7 +591,11 @@ export default function ScheduleScreen() {
 
       {/* ── Calendar tab ── */}
       {activeTab === 'calendar' && (
-        <ScrollView contentContainerStyle={styles.calScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.calScroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
+        >
 
           {/* Month navigator */}
           <View style={styles.calNav}>

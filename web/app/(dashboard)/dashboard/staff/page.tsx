@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Mail, X, Trash2, Search, Check, Pencil, Shield, User } from 'lucide-react';
+import { Plus, Mail, X, Trash2, Search, Check, Pencil, Shield, User, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -135,6 +135,13 @@ export default function StaffPage() {
     return (name ?? '??').split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
   }
 
+  const AVATAR_PALETTE = ['#6366F1', '#EC4899', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6'];
+  function avatarColor(id: string): string {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
+  }
+
   function formatDate(iso: string | null) {
     if (!iso) return null;
     return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -146,27 +153,33 @@ export default function StaffPage() {
     teams.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: '900px' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '28px' }}>
+      {/* Sticky header */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '2px' }}>Staff</h1>
-          <p style={{ fontSize: '13px', color: '#64748B' }}>Manage coaches and admins, assign them to teams</p>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Staff</h1>
         </div>
-        <button onClick={() => setShowInvite(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '10px', padding: '11px 18px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>
-          <Plus size={16} /> Add staff
+        <button onClick={() => setShowInvite(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <Plus size={15} /> Invite staff
         </button>
       </div>
+
+      {/* Content area */}
+      <div style={{ padding: '24px 32px' }}>
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#94A3B8' }}>Loading…</div>
       ) : staff.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '64px', textAlign: 'center' }}>
-          <div style={{ fontSize: '36px', marginBottom: '16px' }}>👥</div>
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '64px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Users size={26} color="#94A3B8" />
+          </div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No staff yet</div>
-          <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '24px' }}>Add coaches and admins to give them dashboard access</div>
-          <button onClick={() => setShowInvite(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 22px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>
-            <Plus size={15} /> Add first staff member
+          <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '24px' }}>Invite coaches and admins to give them dashboard access</div>
+          <button onClick={() => setShowInvite(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <Plus size={15} /> Invite first staff member
           </button>
         </div>
       ) : (
@@ -176,22 +189,28 @@ export default function StaffPage() {
             const visible  = assignedNames.slice(0, 3);
             const overflow = assignedNames.length - 3;
             const isMe     = s.id === profile?.id;
+            const aColor   = avatarColor(s.id);
 
             return (
-              <div key={s.id} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div key={s.id} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
 
-                <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', color: '#fff', flexShrink: 0 }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: aColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: '#fff', flexShrink: 0, boxShadow: `0 0 0 3px ${aColor}22` }}>
                   {initials(s.full_name)}
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>{s.full_name ?? 'Unnamed'}</span>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#8B5CF6' : '#0EA5E9', background: s.role === 'org_admin' ? 'rgba(139,92,246,0.1)' : 'rgba(14,165,233,0.1)', borderRadius: '20px', padding: '2px 8px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '20px', padding: '3px 9px', border: `1px solid ${s.role === 'org_admin' ? '#DDD6FE' : `${primary}30`}` }}>
                       {s.role === 'org_admin' ? 'Admin' : 'Coach'}
                     </span>
+                    {s.assigned_teams.length > 0 && (
+                      <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748B', background: '#F1F5F9', borderRadius: '20px', padding: '3px 9px', border: '1px solid #E2E8F0' }}>
+                        {s.assigned_teams.length} {s.assigned_teams.length === 1 ? 'team' : 'teams'}
+                      </span>
+                    )}
                     {isMe && (
-                      <span style={{ fontSize: '11px', color: primary, background: `${primary}15`, borderRadius: '20px', padding: '2px 8px', fontWeight: '600' }}>You</span>
+                      <span style={{ fontSize: '11px', color: primary, background: `${primary}15`, borderRadius: '20px', padding: '3px 9px', fontWeight: '600' }}>You</span>
                     )}
                   </div>
 
@@ -230,6 +249,8 @@ export default function StaffPage() {
           })}
         </div>
       )}
+
+      </div>{/* end content area */}
 
       {/* ── Edit modal ────────────────────────────────────────────────────────── */}
       {editModal && (
@@ -495,6 +516,7 @@ export default function StaffPage() {
     </div>
   );
 }
+
 
 const sectionLabelSt: React.CSSProperties = {
   fontSize: '10px', fontWeight: '800', color: '#94A3B8',

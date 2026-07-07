@@ -33,6 +33,15 @@ type EventRow = {
   not_attending: number;
 };
 
+type AttendancePlayer = {
+  id: string;
+  full_name: string;
+  jersey_number: number | null;
+  attended: number;
+  total: number;
+  pct: number;
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const TYPE_CFG = {
@@ -337,6 +346,10 @@ export default function AdminPanel() {
   const [search, setSearch]               = useState('');
   const [editTeamOpen, setEditTeamOpen]   = useState(false);
 
+  const [attendancePlayers,  setAttendancePlayers]  = useState<AttendancePlayer[]>([]);
+  const [pastEventCount,     setPastEventCount]     = useState(0);
+  const [attendanceExpanded, setAttendanceExpanded] = useState(false);
+
   const avgRsvp = useMemo(() => {
     if (!upcoming.length || !total) return '—';
     const avg = upcoming.reduce((s, e) => s + e.attending / total, 0) / upcoming.length;
@@ -351,21 +364,61 @@ export default function AdminPanel() {
     setLoading(true);
     const today = new Date().toISOString().split('T')[0];
 
-    const [upRes, pastRes, playerRes] = await Promise.all([
+    const [upRes, pastRes, playerRes, pastEventsRes, rosterRes] = await Promise.all([
       supabase.from('events')
         .select('id, title, type, event_date, event_time, location')
         .eq('team_id', team.id).gte('event_date', today)
+        .is('cancelled_at', null)
         .order('event_date').order('event_time').limit(20),
       supabase.from('events')
         .select('id, title, type, event_date, event_time, location')
         .eq('team_id', team.id).lt('event_date', today)
+        .is('cancelled_at', null)
         .order('event_date', { ascending: false }).limit(5),
       supabase.from('players')
         .select('*', { count: 'exact', head: true }).eq('team_id', team.id),
+      supabase.from('events')
+        .select('id')
+        .eq('team_id', team.id).lt('event_date', today)
+        .is('cancelled_at', null),
+      supabase.from('players')
+        .select('id, full_name, jersey_number')
+        .eq('team_id', team.id)
+        .order('jersey_number'),
     ]);
 
     const playerCount = playerRes.count ?? 0;
     setTotal(playerCount);
+
+    // ── Attendance calculation ──────────────────────────────────────────────
+    const pastEventIds = (pastEventsRes.data ?? []).map((e) => e.id);
+    setPastEventCount(pastEventIds.length);
+    if (pastEventIds.length > 0 && (rosterRes.data ?? []).length > 0) {
+      const { data: rsvps } = await supabase
+        .from('event_rsvps')
+        .select('event_id, player_id')
+        .in('event_id', pastEventIds)
+        .eq('status', 'attending');
+      const attendedMap: Record<string, number> = {};
+      (rsvps ?? []).forEach((r) => {
+        attendedMap[r.player_id] = (attendedMap[r.player_id] ?? 0) + 1;
+      });
+      const roster = (rosterRes.data ?? []) as { id: string; full_name: string; jersey_number: number | null }[];
+      const players: AttendancePlayer[] = roster.map((p) => {
+        const attended = attendedMap[p.id] ?? 0;
+        return {
+          id: p.id,
+          full_name: p.full_name,
+          jersey_number: p.jersey_number,
+          attended,
+          total: pastEventIds.length,
+          pct: Math.round((attended / pastEventIds.length) * 100),
+        };
+      }).sort((a, b) => b.pct - a.pct);
+      setAttendancePlayers(players);
+    } else {
+      setAttendancePlayers([]);
+    }
 
     async function enrich(rows: any[]): Promise<EventRow[]> {
       if (!rows.length) return [];
@@ -618,6 +671,56 @@ export default function AdminPanel() {
             </>
           )}
 
+          {/* Attendance */}
+          <SectionRow label="ATTENDANCE" />
+          <View style={st.aiGroup}>
+            {pastEventCount === 0 ? (
+              <View style={st.attendanceEmpty}>
+                <Ionicons name="bar-chart-outline" size={24} color={DUGOUT_COLORS.ui.muted} />
+                <Text style={st.attendanceEmptyText}>No completed events yet — attendance will appear here.</Text>
+              </View>
+            ) : (
+              <>
+                {(attendanceExpanded ? attendancePlayers : attendancePlayers.slice(0, 5)).map((p, i) => {
+                  const barColor = p.pct >= 75 ? '#22C55E' : p.pct >= 50 ? '#F59E0B' : '#EF4444';
+                  return (
+                    <View key={p.id}>
+                      {i > 0 && <View style={atndSt.divider} />}
+                      <View style={atndSt.row}>
+                        <View style={atndSt.jersey}>
+                          <Text style={atndSt.jerseyText}>{p.jersey_number ?? '—'}</Text>
+                        </View>
+                        <Text style={atndSt.name} numberOfLines={1}>{p.full_name}</Text>
+                        <View style={atndSt.rightCol}>
+                          <Text style={[atndSt.pct, { color: barColor }]}>{p.attended}/{p.total} · {p.pct}%</Text>
+                          <View style={atndSt.barTrack}>
+                            <View style={[atndSt.barFill, { flex: p.pct, backgroundColor: barColor }]} />
+                            {p.pct < 100 && <View style={[atndSt.barEmpty, { flex: 100 - p.pct }]} />}
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+                {attendancePlayers.length > 5 && (
+                  <>
+                    <View style={atndSt.divider} />
+                    <TouchableOpacity style={atndSt.viewAllRow} onPress={() => setAttendanceExpanded((e) => !e)} activeOpacity={0.7}>
+                      <Text style={[atndSt.viewAllText, { color: primaryColor }]}>
+                        {attendanceExpanded ? 'Show less' : `View all ${attendancePlayers.length} players`}
+                      </Text>
+                      <Ionicons
+                        name={attendanceExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={primaryColor}
+                      />
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
+            )}
+          </View>
+
           {/* Manage */}
           <SectionRow label="MANAGE" />
           <View style={st.manageGrid}>
@@ -821,6 +924,30 @@ const st = StyleSheet.create({
     borderColor: DUGOUT_COLORS.ui.border,
     overflow: 'hidden',
   },
+
+  // Attendance
+  attendanceEmpty: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 20,
+  },
+  attendanceEmptyText: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, flex: 1, lineHeight: 18 },
+});
+
+// ─── Attendance row styles ────────────────────────────────────────────────────
+
+const atndSt = StyleSheet.create({
+  divider:    { height: 1, backgroundColor: DUGOUT_COLORS.ui.border, marginHorizontal: 16 },
+  row:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  jersey:     { width: 28, height: 28, borderRadius: 7, backgroundColor: DUGOUT_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  jerseyText: { fontSize: 11, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
+  name:       { flex: 1, fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
+  rightCol:   { alignItems: 'flex-end', gap: 4, minWidth: 90 },
+  pct:        { fontSize: 11, fontWeight: '700' },
+  barTrack:   { height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row', width: 80, backgroundColor: DUGOUT_COLORS.ui.border },
+  barFill:    { height: '100%' },
+  barEmpty:   { height: '100%' },
+  viewAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 12 },
+  viewAllText:{ fontSize: 13, fontWeight: '600' },
 });
 
 // ─── Team picker modal styles ─────────────────────────────────────────────────

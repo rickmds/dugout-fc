@@ -12,7 +12,6 @@ type ResponseData = {
   club_name?: string;
   club_logo?: string;
   club_color?: string;
-  teamsnap_url?: string;
   current_status?: string;
   error?: string;
 };
@@ -85,15 +84,13 @@ function OfferResponseContent() {
   if (data?.ok && data?.action === 'accept') return container(<>
     <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#F0FDF4', border: '2px solid #22C55E', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: '24px' }}>✓</div>
     <div style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A', marginBottom: '8px' }}>Welcome to {data.team_name}!</div>
-    <div style={{ fontSize: '14px', color: '#64748B', marginBottom: data.teamsnap_url ? '24px' : '0', lineHeight: '1.6' }}>
-      {data.player_name ? `${data.player_name}'s` : 'Your'} spot has been confirmed on <strong>{data.team_name}</strong> with {data.club_name}. We'll be in touch with next steps.
+    <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '24px', lineHeight: '1.6' }}>
+      {data.player_name ? `${data.player_name}'s` : 'Your'} spot has been confirmed on <strong>{data.team_name}</strong> with {data.club_name}. Download the Dugout FC app to connect with your team.
     </div>
-    {data.teamsnap_url && (
-      <a href={data.teamsnap_url} target="_blank" rel="noreferrer"
-        style={{ display: 'inline-block', background: color, color: '#fff', borderRadius: '12px', padding: '12px 28px', fontWeight: '700', fontSize: '15px', textDecoration: 'none', marginTop: '8px' }}>
-        Complete Registration →
-      </a>
-    )}
+    <a href="https://dugoutfc.app" target="_blank" rel="noreferrer"
+      style={{ display: 'inline-block', background: color, color: '#fff', borderRadius: '12px', padding: '12px 28px', fontWeight: '700', fontSize: '15px', textDecoration: 'none' }}>
+      Download Dugout FC →
+    </a>
   </>);
 
   if (data?.ok && data?.action === 'decline') return container(<>

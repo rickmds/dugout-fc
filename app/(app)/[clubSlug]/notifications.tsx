@@ -111,6 +111,11 @@ export default function NotificationsScreen() {
           ? router.push(`/(app)/${slug}/event/${d.event_id}` as any)
           : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
         break;
+      case 'rsvp_reminder':
+        d?.event_id
+          ? router.push(`/(app)/${slug}/event/${d.event_id}` as any)
+          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+        break;
       case 'new_announcement':
         router.push(`/(app)/${slug}/(tabs)/chat` as any); break;
       case 'new_dm':
@@ -119,7 +124,10 @@ export default function NotificationsScreen() {
           : router.push(`/(app)/${slug}/(tabs)/chat` as any);
         break;
       case 'invite_accepted':
-        router.push(`/(app)/${slug}/admin` as any); break;
+        (profile?.role === 'org_admin' || profile?.role === 'coach')
+          ? router.push(`/(app)/${slug}/admin` as any)
+          : router.push(`/(app)/${slug}/(tabs)/roster` as any);
+        break;
       default:
         break;
     }

@@ -107,7 +107,11 @@ export default function PracticeSchedulePage() {
       {view === 'fields' ? (
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
           {fields.length === 0 ? (
-            <div style={{ padding: '48px', textAlign: 'center', color: '#94A3B8' }}>No fields yet. Add your first field.</div>
+            <div style={{ padding: '80px 48px', textAlign: 'center' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: '22px' }}>📍</div>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '5px' }}>No fields yet</div>
+              <div style={{ fontSize: '13px', color: '#94A3B8' }}>Add your first field to start scheduling.</div>
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {fields.map(f => (
@@ -134,13 +138,17 @@ export default function PracticeSchedulePage() {
         /* Grid view: rows = fields, cols = days */
         <div style={{ flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
           {fieldNames.length === 0 ? (
-            <div style={{ padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '13.5px' }}>No practice slots yet. Add a slot or manage fields first.</div>
+            <div style={{ padding: '80px 48px', textAlign: 'center' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', fontSize: '22px' }}>📅</div>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '5px' }}>No practice slots yet</div>
+              <div style={{ fontSize: '13px', color: '#94A3B8' }}>Add a slot or manage fields first.</div>
+            </div>
           ) : (
             <table style={{ borderCollapse: 'collapse', minWidth: '100%', fontSize: '12.5px' }}>
               <thead>
                 <tr style={{ background: '#F8FAFC', position: 'sticky', top: 0, zIndex: 2 }}>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0', width: '140px', background: '#F8FAFC' }}>FIELD</th>
-                  {DAYS.map(d => <th key={d} style={{ padding: '10px 12px', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#94A3B8', borderRight: '1px solid #E2E8F0', borderBottom: '1px solid #E2E8F0', minWidth: '120px', background: '#F8FAFC' }}>{d.toUpperCase()}</th>)}
+                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#64748B', letterSpacing: '0.06em', borderRight: '1px solid #E2E8F0', borderBottom: '2px solid #E2E8F0', width: '150px', background: '#F8FAFC' }}>FIELD</th>
+                  {DAYS.map(d => <th key={d} style={{ padding: '10px 12px', textAlign: 'center', fontSize: '10.5px', fontWeight: '700', color: '#64748B', letterSpacing: '0.06em', borderRight: '1px solid #E2E8F0', borderBottom: '2px solid #E2E8F0', minWidth: '130px', background: '#F8FAFC' }}>{d.toUpperCase()}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -154,14 +162,20 @@ export default function PracticeSchedulePage() {
                           {daySlots.map(s => {
                             const color = s.team ? (teamColorMap[s.team] ?? '#6366F1') : '#94A3B8';
                             return (
-                              <div key={s.id} style={{ background: `${color}18`, border: `1px solid ${color}50`, borderRadius: '6px', padding: '5px 8px', marginBottom: '4px', cursor: 'pointer' }}
-                                onClick={() => { setEditSlot(s); setShowAddSlot(true); }}>
-                                <div style={{ fontWeight: '700', fontSize: '11.5px', color }}>{s.team ?? 'Open'}</div>
-                                <div style={{ fontSize: '10.5px', color: '#64748B', marginTop: '1px' }}>
-                                  {timeStr(s.start_time)}{s.end_time ? `–${timeStr(s.end_time)}` : ''}
-                                  {s.sub_zone ? ` · ${s.sub_zone}` : ''}
+                              <div key={s.id}
+                                style={{ background: `${color}14`, border: `1.5px solid ${color}45`, borderRadius: '8px', padding: '7px 10px', marginBottom: '5px', cursor: 'pointer', borderLeft: `3px solid ${color}`, transition: 'box-shadow 0.12s' }}
+                                onClick={() => { setEditSlot(s); setShowAddSlot(true); }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = 'none'}>
+                                <div style={{ fontWeight: '800', fontSize: '12px', color, lineHeight: 1.2 }}>{s.team ?? 'Open'}</div>
+                                {(s.start_time || s.end_time) && (
+                                  <div style={{ fontSize: '10.5px', color: '#64748B', marginTop: '3px', fontWeight: '600' }}>
+                                    {timeStr(s.start_time)}{s.end_time ? `–${timeStr(s.end_time)}` : ''}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '2px' }}>
+                                  {[s.age_group, s.gender ? s.gender.slice(0,1) : null, s.sub_zone].filter(Boolean).join(' · ')}
                                 </div>
-                                {s.age_group && <div style={{ fontSize: '10px', color: '#94A3B8' }}>{s.age_group}{s.gender ? ` ${s.gender.slice(0,1)}` : ''}</div>}
                               </div>
                             );
                           })}

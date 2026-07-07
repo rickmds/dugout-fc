@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { DollarSign, Plus, X, ChevronDown, Send, Download, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 
 type FeeCategory = { id: string; name: string; amount: number; description: string | null };
 type Player = { id: string; full_name: string; jersey_number: number | null; position: string | null };
@@ -14,6 +15,9 @@ type PlayerFee = {
   discount: number; discount_reason: string | null;
   due_date: string | null; status: string; notes: string | null;
   category_id: string | null;
+  plan_group_id: string | null;
+  installment_number: number | null;
+  installment_total: number | null;
 };
 type Payment = { id: string; player_fee_id: string; amount: number; method: string; reference: string | null; notes: string | null; paid_at: string };
 
@@ -29,7 +33,7 @@ const METHODS = ['cash','bank_transfer','card','cheque','stripe','other'];
 
 export default function TeamFeesPage() {
   const { teamId } = useParams<{ teamId: string }>();
-  const { club, profile } = useDashboard();
+  const { club, profile, canUse } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
   const [fees,       setFees]       = useState<PlayerFee[]>([]);
@@ -49,7 +53,7 @@ export default function TeamFeesPage() {
   // Assign fee form
   const [assignForm, setAssignForm] = useState({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false });
   // Payment form
-  const [payForm, setPayForm] = useState({ amount: '', method: 'cash', reference: '', notes: '' });
+  const [payForm, setPayForm] = useState({ amount: '', method: 'cash', reference: '', notes: '', pay_plan_full: false });
   // Category form
   const [catForm, setCatForm] = useState({ name: '', amount: '', description: '' });
   // Waive form
@@ -71,12 +75,16 @@ export default function TeamFeesPage() {
     // Load player fees with player names via join
     const { data: feesData } = await supabase
       .from('player_fees')
-      .select('id,player_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,notes,category_id,players(full_name)')
+      .select('id,player_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,notes,category_id,plan_group_id,installment_number,installment_total,players(full_name)')
       .eq('team_id', teamId)
       .order('due_date', { ascending: true, nullsFirst: false });
 
     const mapped: PlayerFee[] = (feesData ?? []).map((f: any) => ({
-      ...f, player_name: f.players?.full_name ?? 'Unknown',
+      ...f,
+      player_name: f.players?.full_name ?? 'Unknown',
+      plan_group_id: f.plan_group_id ?? null,
+      installment_number: f.installment_number ?? null,
+      installment_total: f.installment_total ?? null,
     }));
     setFees(mapped);
 
@@ -112,7 +120,7 @@ export default function TeamFeesPage() {
     const playerIds = assignForm.apply_to_all ? players.map(p => p.id) : [assignForm.player_id];
     const cat = categories.find(c => c.id === assignForm.category_id);
     for (const pid of playerIds) {
-      await supabase.from('player_fees').insert({
+      const { data: inserted } = await supabase.from('player_fees').insert({
         player_id: pid, team_id: teamId,
         category_id: assignForm.category_id || null,
         description: assignForm.description || cat?.name || 'Fee',
@@ -122,7 +130,14 @@ export default function TeamFeesPage() {
         due_date: assignForm.due_date || null,
         notes: assignForm.notes || null,
         created_by: profile.id,
-      });
+      }).select('id').single();
+      if (inserted?.id) {
+        fetch('/api/send-fee-notification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player_fee_id: inserted.id }),
+        }).catch(() => {/* fire and forget */});
+      }
     }
     setShowAssign(false);
     setAssignForm({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false });
@@ -133,17 +148,48 @@ export default function TeamFeesPage() {
   async function handlePayment() {
     if (!showPayment || !profile) return;
     setSaving(true);
-    const amt = parseFloat(payForm.amount);
-    await supabase.from('fee_payments').insert({
-      player_fee_id: showPayment.id, amount: amt,
-      method: payForm.method, reference: payForm.reference || null,
-      notes: payForm.notes || null, recorded_by: profile.id,
-    });
-    const newPaid = showPayment.amount_paid + amt;
-    const newStatus = newPaid >= (showPayment.amount_due - showPayment.discount) ? 'paid' : 'partial';
-    await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', showPayment.id);
+
+    if (payForm.pay_plan_full && showPayment.plan_group_id) {
+      // Pay all outstanding instalments in this plan group
+      const planFees = fees.filter(f =>
+        f.plan_group_id === showPayment.plan_group_id && !['paid','waived'].includes(f.status)
+      );
+      let totalPaid = 0;
+      for (const pf of planFees) {
+        const remaining = pf.amount_due - pf.discount - pf.amount_paid;
+        if (remaining <= 0) continue;
+        await supabase.from('fee_payments').insert({
+          player_fee_id: pf.id, amount: remaining,
+          method: payForm.method, reference: payForm.reference || null,
+          notes: payForm.notes || null, recorded_by: profile.id,
+        });
+        await supabase.from('player_fees').update({ amount_paid: pf.amount_paid + remaining, status: 'paid' }).eq('id', pf.id);
+        totalPaid += remaining;
+      }
+      // Send one confirmation for the full plan payment
+      fetch('/api/send-payment-confirmation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_fee_id: showPayment.id, amount_paid: totalPaid }),
+      }).catch(() => {});
+    } else {
+      const amt = parseFloat(payForm.amount);
+      await supabase.from('fee_payments').insert({
+        player_fee_id: showPayment.id, amount: amt,
+        method: payForm.method, reference: payForm.reference || null,
+        notes: payForm.notes || null, recorded_by: profile.id,
+      });
+      const newPaid = showPayment.amount_paid + amt;
+      const newStatus = newPaid >= (showPayment.amount_due - showPayment.discount) ? 'paid' : 'partial';
+      await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', showPayment.id);
+      fetch('/api/send-payment-confirmation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_fee_id: showPayment.id, amount_paid: amt }),
+      }).catch(() => {});
+    }
+
     setShowPayment(null);
-    setPayForm({ amount: '', method: 'cash', reference: '', notes: '' });
+    setPayForm({ amount: '', method: 'cash', reference: '', notes: '', pay_plan_full: false });
     setSaving(false);
     load();
   }
@@ -169,14 +215,35 @@ export default function TeamFeesPage() {
   }
 
   async function sendReminder(fee: PlayerFee) {
-    // Find guardian email via invites
-    const { data: inv } = await supabase.from('invites').select('email').eq('player_id', fee.player_id).eq('accepted_at', null).maybeSingle();
-    // In production, trigger an email reminder — for now just show feedback
-    alert(inv?.email ? `Reminder would be sent to ${inv.email}` : 'No guardian email on file for this player.');
+    const res = await fetch('/api/send-fee-reminder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player_fee_id: fee.id }),
+    });
+    const json = await res.json();
+    if (json.skipped) {
+      alert('No guardian email on file for this player.');
+    } else if (!res.ok) {
+      alert('Failed to send reminder. Please try again.');
+    } else {
+      alert(`Reminder sent${json.pushSent > 0 ? ' (email + push notification)' : ' (email only — parent app not set up yet)'}. `);
+    }
   }
 
   const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' as const };
   const labelStyle = { fontSize: '12px', fontWeight: '600' as const, color: '#374151', display: 'block' as const, marginBottom: '5px' };
+
+  if (!canUse('fees')) {
+    return (
+      <div style={{ padding: '48px 0', maxWidth: '560px' }}>
+        <UpgradePrompt
+          feature="Fee Collection"
+          description="Assign fees to players, track payments, record cash and bank transfers, and send automated payment reminders to parents."
+          requiredPlan="Team Pro"
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: '960px' }}>
@@ -239,12 +306,28 @@ export default function TeamFeesPage() {
 
       {/* Fees table */}
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: '64px', borderRadius: '10px', background: '#E2E8F0' }} />)}
-        </div>
+        <>
+          <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[1,2,3].map(i => <div key={i} style={{ height: '64px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+          </div>
+        </>
       ) : filtered.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>
-          {filter === 'all' ? 'No fees assigned yet. Click "Assign Fee" to get started.' : `No ${filter} fees.`}
+        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '56px 40px', textAlign: 'center' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            <DollarSign size={24} color="#94A3B8" />
+          </div>
+          <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>
+            {filter === 'all' ? 'No fees assigned yet' : `No ${filter} fees`}
+          </div>
+          <div style={{ fontSize: '13px', color: '#64748B', marginBottom: filter === 'all' ? '20px' : '0' }}>
+            {filter === 'all' ? 'Assign your first fee to start tracking player payments.' : `No fees are currently ${filter}.`}
+          </div>
+          {filter === 'all' && (
+            <button onClick={() => setShowAssign(true)} style={{ padding: '9px 22px', borderRadius: '9px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Assign Fee
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
@@ -267,6 +350,11 @@ export default function TeamFeesPage() {
                         <span style={{ fontSize: '13.5px', fontWeight: '700', color: '#0F172A' }}>{fee.player_name}</span>
                         <span style={{ fontSize: '12px', color: '#94A3B8' }}>·</span>
                         <span style={{ fontSize: '13px', color: '#64748B' }}>{fee.description}</span>
+                        {fee.installment_number && fee.installment_total && (
+                          <span style={{ fontSize: '10px', color: '#94A3B8', background: '#F1F5F9', borderRadius: '4px', padding: '1px 6px', fontWeight: '600' }}>
+                            Instalment {fee.installment_number}/{fee.installment_total}
+                          </span>
+                        )}
                         {fee.due_date && <span style={{ fontSize: '11px', color: fee.status === 'overdue' ? '#EF4444' : '#94A3B8' }}>Due {fee.due_date}</span>}
                       </div>
                     </div>
@@ -306,7 +394,7 @@ export default function TeamFeesPage() {
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       {!['paid','waived'].includes(fee.status) && (
                         <>
-                          <button onClick={() => { setShowPayment(fee); setPayForm({ amount: Math.max(owed,0).toFixed(2), method: 'cash', reference: '', notes: '' }); }}
+                          <button onClick={() => { setShowPayment(fee); setPayForm({ amount: Math.max(owed,0).toFixed(2), method: 'cash', reference: '', notes: '', pay_plan_full: false }); }}
                             style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <CheckCircle size={13} /> Record Payment
                           </button>
@@ -411,9 +499,26 @@ export default function TeamFeesPage() {
               <button onClick={() => setShowPayment(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} color="#94A3B8" /></button>
             </div>
             <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Pay plan in full option */}
+              {showPayment?.plan_group_id && (() => {
+                const planRemaining = fees
+                  .filter(f => f.plan_group_id === showPayment.plan_group_id && !['paid','waived'].includes(f.status))
+                  .reduce((s, f) => s + Math.max(f.amount_due - f.discount - f.amount_paid, 0), 0);
+                return planRemaining > 0 ? (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderRadius: '10px', border: `1.5px solid ${payForm.pay_plan_full ? '#22C55E' : '#E2E8F0'}`, background: payForm.pay_plan_full ? '#F0FDF4' : '#F8FAFC', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={payForm.pay_plan_full}
+                      onChange={e => setPayForm(f => ({...f, pay_plan_full: e.target.checked, amount: e.target.checked ? planRemaining.toFixed(2) : f.amount}))}
+                      style={{ width: '16px', height: '16px', accentColor: '#22C55E' }} />
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Pay plan in full</div>
+                      <div style={{ fontSize: '11.5px', color: '#64748B' }}>Clears all {fees.filter(f => f.plan_group_id === showPayment.plan_group_id && !['paid','waived'].includes(f.status)).length} outstanding instalments — ${planRemaining.toFixed(2)} total</div>
+                    </div>
+                  </label>
+                ) : null;
+              })()}
               <label style={labelStyle}>
                 Amount paid ($) *
-                <input type="number" value={payForm.amount} onChange={e => setPayForm(f => ({...f, amount: e.target.value}))} style={inputStyle} />
+                <input type="number" value={payForm.amount} onChange={e => setPayForm(f => ({...f, amount: e.target.value, pay_plan_full: false}))} disabled={payForm.pay_plan_full} style={{ ...inputStyle, opacity: payForm.pay_plan_full ? 0.5 : 1 }} />
               </label>
               <label style={labelStyle}>
                 Payment method

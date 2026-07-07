@@ -641,7 +641,14 @@ export default function EventDetailScreen() {
           {event.cancelled_at && (
             <View style={styles.cancelledBanner}>
               <Ionicons name="close-circle" size={18} color="#ef4444" />
-              <Text style={styles.cancelledBannerText}>This event has been cancelled</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cancelledBannerText}>This event has been cancelled</Text>
+                {event.cancellation_reason ? (
+                  <Text style={{ color: 'rgba(239,68,68,0.7)', fontSize: 13, marginTop: 2, lineHeight: 18 }}>
+                    {event.cancellation_reason}
+                  </Text>
+                ) : null}
+              </View>
             </View>
           )}
 
@@ -919,13 +926,15 @@ export default function EventDetailScreen() {
                 <Text style={styles.actionBtnText}>Lineup Builder</Text>
                 <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openMatchTracker} activeOpacity={0.7}>
-                <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
-                  <Ionicons name="timer-outline" size={17} color={primaryColor} />
-                </View>
-                <Text style={styles.actionBtnText}>Match Tracker</Text>
-                <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />
-              </TouchableOpacity>
+              {event.type === 'game' && (
+                <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openMatchTracker} activeOpacity={0.7}>
+                  <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
+                    <Ionicons name="timer-outline" size={17} color={primaryColor} />
+                  </View>
+                  <Text style={styles.actionBtnText}>Match Tracker</Text>
+                  <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />
+                </TouchableOpacity>
+              )}
             </View>
           )}
 

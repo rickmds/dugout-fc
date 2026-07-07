@@ -3,7 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 interface PushPayload {
-  team_id: string;
+  team_id?: string;
+  profile_ids?: string[];
   title: string;
   body: string;
   exclude_profile_id?: string;
@@ -19,32 +20,40 @@ Deno.serve(async (req) => {
   );
 
   const payload: PushPayload = await req.json();
-  const { team_id, title, body, exclude_profile_id, data } = payload;
+  const { team_id, profile_ids: directProfileIds, title, body, exclude_profile_id, data } = payload;
 
-  // Fetch club slug for deep-link routing
-  const { data: teamRow } = await supabase
-    .from('teams')
-    .select('clubs(slug)')
-    .eq('id', team_id)
-    .single();
-  const clubSlug = (teamRow?.clubs as any)?.slug ?? '';
+  // Fetch club slug for deep-link routing (from team_id if provided)
+  let clubSlug = '';
+  if (team_id) {
+    const { data: teamRow } = await supabase
+      .from('teams')
+      .select('clubs(slug)')
+      .eq('id', team_id)
+      .single();
+    clubSlug = (teamRow?.clubs as any)?.slug ?? '';
+  }
 
   const enrichedData = { ...(data ?? {}), club_slug: clubSlug };
   const notifType = (enrichedData.type as string) ?? 'general';
 
-  // Get all team members
-  const { data: members } = await supabase
-    .from('team_members')
-    .select('profile_id')
-    .eq('team_id', team_id);
+  // Resolve profile IDs — either explicit list or all team members
+  let profileIds: string[];
+  if (directProfileIds?.length) {
+    profileIds = directProfileIds.filter((id) => id !== exclude_profile_id);
+  } else if (team_id) {
+    const { data: members } = await supabase
+      .from('team_members')
+      .select('profile_id')
+      .eq('team_id', team_id);
+    if (!members?.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
+    profileIds = members
+      .map((m: any) => m.profile_id as string)
+      .filter((id: string) => id !== exclude_profile_id);
+  } else {
+    return new Response(JSON.stringify({ error: 'team_id or profile_ids required' }), { status: 400 });
+  }
 
-  if (!members?.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
-
-  const profileIds: string[] = members
-    .map((m: any) => m.profile_id as string)
-    .filter((id: string) => id !== exclude_profile_id);
-
-  if (!profileIds.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
+  if (!profileIds.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
   // ── DM notification collapse ──────────────────────────────────────────────
   // For new_dm: if the recipient already has an unread notification for this

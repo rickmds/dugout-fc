@@ -47,9 +47,9 @@ export default function LoginScreen() {
     if (token) {
       await AsyncStorage.removeItem('pendingInviteToken');
       const { data, error: rpcError } = await supabase.rpc('accept_invite', { p_token: token });
-      if (rpcError) { setError('Failed to accept invite. Please try again.'); return; }
+      if (rpcError) { setLoading(false); setError('Failed to accept invite. Please try again.'); return; }
       const slug = (data as { club_slug?: string } | null)?.club_slug;
-      if (!slug) { setError('Club not found. Please contact your coach.'); return; }
+      if (!slug) { setLoading(false); setError('Club not found. Please contact your coach.'); return; }
       router.replace(`/(app)/${slug}/(tabs)` as never);
       return;
     }
@@ -120,7 +120,12 @@ export default function LoginScreen() {
     try {
       await signInWithGoogle();
       const { data } = await supabase.auth.getUser();
-      if (data.user) await routeAfterAuth(data.user.id);
+      if (data.user) {
+        await routeAfterAuth(data.user.id);
+      } else {
+        setSocialLoading(null);
+        return;
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Google sign-in failed.');
     } finally { setSocialLoading(null); }
@@ -132,7 +137,12 @@ export default function LoginScreen() {
     try {
       await signInWithApple();
       const { data } = await supabase.auth.getUser();
-      if (data.user) await routeAfterAuth(data.user.id);
+      if (data.user) {
+        await routeAfterAuth(data.user.id);
+      } else {
+        setSocialLoading(null);
+        return;
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Apple sign-in failed.');
     } finally { setSocialLoading(null); }

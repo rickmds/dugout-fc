@@ -20,6 +20,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  background: transparent;
+  border: initial;
+  border-radius: 0;
+  font-size: inherit;
+  transition: none;
+}
+
 input, textarea, select {
   background: #0f0f0f;
   border: 1px solid var(--border);

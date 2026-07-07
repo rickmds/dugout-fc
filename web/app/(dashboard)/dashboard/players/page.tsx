@@ -1,15 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, ChevronDown, X } from 'lucide-react';
+import { Search, ChevronDown, X, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import PlayerPanel, { type PlayerForPanel } from '@/components/dashboard/PlayerPanel';
 import Link from 'next/link';
 
 type Player = PlayerForPanel & { team_name: string; age_group: string | null };
-
-const POSITIONS = ['GK','CB','LB','RB','CDM','CM','CAM','LM','RM','LW','RW','ST','CF'];
 
 export default function PlayersPage() {
   const { profile, club, teams } = useDashboard();
@@ -19,7 +17,6 @@ export default function PlayersPage() {
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');
   const [teamFilter, setTeamFilter] = useState('');
-  const [posFilter,  setPosFilter]  = useState('');
   const [ageFilter,  setAgeFilter]  = useState('');
   const [panel,      setPanel]      = useState<Player | null>(null);
 
@@ -43,92 +40,129 @@ export default function PlayersPage() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = players.filter(p => {
-    if (search   && !p.full_name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (teamFilter && p.team_id !== teamFilter) return false;
-    if (posFilter  && p.position !== posFilter)  return false;
+    if (search     && !p.full_name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (teamFilter && p.team_id  !== teamFilter) return false;
     if (ageFilter  && p.age_group !== ageFilter) return false;
     return true;
   });
 
-  const hasFilters = teamFilter || posFilter || ageFilter;
+  const hasFilters = !!(teamFilter || ageFilter);
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: '1100px' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+      <style>{`
+        @media (max-width: 768px) {
+          .players-header { padding: 12px 16px !important; }
+          .players-content { padding: 14px 16px !important; }
+          .players-filters { flex-wrap: wrap !important; }
+          .players-stat-cards { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+          .players-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+        }
+        @media (max-width: 480px) {
+          .players-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+      {/* Sticky header */}
+      <div className="players-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <h1 style={{ fontSize: '26px', fontWeight: '800', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Players</h1>
-          <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 0' }}>{players.length} players across {teams.length} teams</p>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Players</h1>
         </div>
       </div>
 
+      {/* Scrollable content */}
+      <div className="players-content" style={{ padding: '24px 32px' }}>
+
       {/* Search + filters */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '18px', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-          <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+      <div className="players-filters" style={{ display: 'flex', gap: '8px', marginBottom: '20px', alignItems: 'center' }}>
+        {/* Search */}
+        <div style={{ position: 'relative', flex: 1 }}>
+          <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search players…"
-            style={{ width: '100%', padding: '9px 12px 9px 36px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
           />
+          {search && (
+            <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', color: '#94A3B8' }}>
+              <X size={13} />
+            </button>
+          )}
         </div>
 
-        <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}
-          style={{ padding: '9px 12px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13px', color: teamFilter ? '#0F172A' : '#94A3B8', background: '#fff', cursor: 'pointer' }}>
-          <option value="">All teams</option>
-          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
+        {/* Divider */}
+        <div style={{ width: '1px', height: '24px', background: '#E2E8F0', flexShrink: 0 }} />
 
-        <select value={ageFilter} onChange={e => setAgeFilter(e.target.value)}
-          style={{ padding: '9px 12px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13px', color: ageFilter ? '#0F172A' : '#94A3B8', background: '#fff', cursor: 'pointer' }}>
-          <option value="">All ages</option>
-          {ageGroups.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
+        {/* Team filter */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}
+            style={{ appearance: 'none', WebkitAppearance: 'none', padding: '10px 32px 10px 14px', borderRadius: '10px', border: `1.5px solid ${teamFilter ? primary : '#E2E8F0'}`, fontSize: '13px', fontWeight: teamFilter ? '700' : '500', color: teamFilter ? primary : '#64748B', background: teamFilter ? `${primary}08` : '#fff', cursor: 'pointer', outline: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <option value="">All teams</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <ChevronDown size={13} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: teamFilter ? primary : '#94A3B8' }} />
+        </div>
 
-        <select value={posFilter} onChange={e => setPosFilter(e.target.value)}
-          style={{ padding: '9px 12px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13px', color: posFilter ? '#0F172A' : '#94A3B8', background: '#fff', cursor: 'pointer' }}>
-          <option value="">All positions</option>
-          {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
+        {/* Age filter */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <select value={ageFilter} onChange={e => setAgeFilter(e.target.value)}
+            style={{ appearance: 'none', WebkitAppearance: 'none', padding: '10px 32px 10px 14px', borderRadius: '10px', border: `1.5px solid ${ageFilter ? primary : '#E2E8F0'}`, fontSize: '13px', fontWeight: ageFilter ? '700' : '500', color: ageFilter ? primary : '#64748B', background: ageFilter ? `${primary}08` : '#fff', cursor: 'pointer', outline: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <option value="">All ages</option>
+            {ageGroups.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <ChevronDown size={13} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: ageFilter ? primary : '#94A3B8' }} />
+        </div>
 
+        {/* Clear */}
         {hasFilters && (
-          <button onClick={() => { setTeamFilter(''); setPosFilter(''); setAgeFilter(''); }}
-            style={{ padding: '9px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', color: '#64748B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <X size={13} /> Clear
+          <button onClick={() => { setTeamFilter(''); setAgeFilter(''); }}
+            style={{ flexShrink: 0, padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #FCA5A5', background: '#FEF2F2', fontSize: '12.5px', fontWeight: '700', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
+            <X size={12} /> Clear filters
           </button>
         )}
       </div>
 
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '20px' }}>
+      <div className="players-stat-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
           { label: 'Total Players', value: players.length, color: primary },
           { label: 'Showing',       value: filtered.length, color: '#64748B' },
           { label: 'Teams',         value: teams.length,   color: '#8B5CF6' },
           { label: 'Age Groups',    value: ageGroups.length, color: '#F59E0B' },
         ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', padding: '12px 16px' }}>
-            <div style={{ fontSize: '22px', fontWeight: '800', color, letterSpacing: '-0.5px' }}>{value}</div>
-            <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>{label}</div>
+          <div key={label} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ fontSize: '28px', fontWeight: '900', color, lineHeight: 1 }}>{value}</div>
+            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '4px', fontWeight: '600' }}>{label}</div>
           </div>
         ))}
       </div>
 
       {/* Table */}
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {[1,2,3,4,5].map(i => <div key={i} style={{ height: '56px', borderRadius: '10px', background: '#E2E8F0' }} />)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {[1,2,3,4,5].map(i => (
+            <div key={i} style={{ height: '56px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite', border: '1px solid #E2E8F0' }} />
+          ))}
+          <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>
-          {search || hasFilters ? 'No players match your filters.' : 'No players found.'}
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            <Users size={22} color="#94A3B8" />
+          </div>
+          <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>
+            {search || hasFilters ? 'No players match your filters' : 'No players yet'}
+          </div>
+          <div style={{ fontSize: '13px', color: '#64748B' }}>
+            {search || hasFilters ? 'Try clearing your search or filters.' : 'Add players to your teams to see them here.'}
+          </div>
         </div>
       ) : (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+              <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
                 {['Player','#','Position','Team','Age Group',''].map(h => (
                   <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                 ))}
@@ -186,6 +220,7 @@ export default function PlayersPage() {
           }}
         />
       )}
+      </div> {/* end scrollable content */}
     </div>
   );
 }

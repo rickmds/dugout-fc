@@ -49,8 +49,6 @@ export async function GET(req: NextRequest) {
 
   const player = (a as { tryout_players: Record<string, string> }).tryout_players;
   const { data: club } = await sb.from('clubs').select('name, logo_url, primary_color').eq('id', (a as { club_id: string }).club_id).single();
-  const { data: settings } = await sb.from('tryout_offer_settings').select('teamsnap_registration_url').eq('club_id', (a as { club_id: string }).club_id).single();
-
   return NextResponse.json({
     ok: true,
     action,
@@ -59,6 +57,5 @@ export async function GET(req: NextRequest) {
     club_name: club?.name,
     club_logo: club?.logo_url,
     club_color: club?.primary_color,
-    teamsnap_url: settings?.teamsnap_registration_url,
   });
 }

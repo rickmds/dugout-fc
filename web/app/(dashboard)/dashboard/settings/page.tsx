@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Eye, EyeOff, Check, AlertCircle, Lock, User, Palette } from 'lucide-react';
+import { Save, Eye, EyeOff, Check, AlertCircle, Lock, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -21,9 +21,6 @@ export default function SettingsPage() {
   const [showNew, setShowNew]       = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Branding
-  const [primaryColor, setPrimaryColor] = useState(club?.primary_color ?? '#22C55E');
-
   // State
   const [saving, setSaving]         = useState('');
   const [toast, setToast]           = useState<Toast | null>(null);
@@ -33,8 +30,7 @@ export default function SettingsPage() {
       if (user?.email) setEmail(user.email);
     });
     setFullName(profile?.full_name ?? '');
-    setPrimaryColor(club?.primary_color ?? '#22C55E');
-  }, [profile, club]);
+  }, [profile]);
 
   function showToast(type: Toast['type'], msg: string) {
     setToast({ type, msg });
@@ -64,18 +60,8 @@ export default function SettingsPage() {
     showToast('success', 'Password updated');
   }
 
-  // ── Save branding ──────────────────────────────────────────────────────────
-  async function saveBranding() {
-    if (!club) return;
-    setSaving('branding');
-    await supabase.from('clubs').update({ primary_color: primaryColor }).eq('id', club.id);
-    reload();
-    setSaving('');
-    showToast('success', 'Branding saved');
-  }
-
   return (
-    <div style={{ padding: '32px 36px', maxWidth: '640px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
 
       {/* Toast */}
       {toast && (
@@ -95,15 +81,20 @@ export default function SettingsPage() {
       )}
       <style>{`
         @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
 
-      <div style={{ marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '2px', letterSpacing: '-0.3px' }}>Settings</h1>
-        <p style={{ fontSize: '13px', color: '#64748B' }}>Manage your profile, password and club branding</p>
+      {/* Sticky header */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px' }}>
+        <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Account</div>
+        <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Settings</h1>
+        <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748B' }}>Manage your profile and password</p>
       </div>
 
-      {/* ── Profile ───────────────────────────────────────────────────────── */}
-      <Card icon={<User size={16} color={primary} />} title="My Profile" sub="Your display name across the dashboard">
+      <div style={{ padding: '24px 32px', maxWidth: '672px' }}>
+
+        {/* ── Profile ───────────────────────────────────────────────────────── */}
+        <Card icon={<User size={16} color={primary} />} title="My Profile" sub="Your display name across the dashboard">
 
         {/* Name */}
         <div style={{ marginBottom: '16px' }}>
@@ -162,60 +153,8 @@ export default function SettingsPage() {
           </div>
         </div>
         <SaveButton label="Update password" saving={saving === 'password'} primary="#8B5CF6" onClick={changePassword} disabled={!newPass || newPass !== confirmPass || newPass.length < 8} />
-      </Card>
-
-      {/* ── Club Branding ─────────────────────────────────────────────────── */}
-      {profile?.role === 'org_admin' && club && (
-        <Card icon={<Palette size={16} color="#F59E0B" />} title="Club Branding" sub="Logo and colours used across the app">
-
-          {/* Club name (read-only) */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={labelSt}>Club name</label>
-            <div style={{ ...inputSt, background: '#F8FAFC', color: '#64748B' }}>{club.name}</div>
-          </div>
-
-          {/* Colour picker */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={labelSt}>Primary colour</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-                <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: primaryColor, border: '1.5px solid #E2E8F0', cursor: 'pointer', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)}
-                    style={{ width: '56px', height: '56px', border: 'none', outline: 'none', cursor: 'pointer', opacity: 0, position: 'absolute', inset: 0 }} />
-                </div>
-              </div>
-              <input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)}
-                placeholder="#22C55E" style={{ ...inputSt, flex: 1, fontFamily: 'monospace', fontSize: '14px' }} />
-              <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                <div style={{ width: '40px', height: '24px', borderRadius: '6px', background: primaryColor }} />
-                <span style={{ fontSize: '10px', color: '#94A3B8' }}>Preview</span>
-              </div>
-            </div>
-
-            {/* Live badge preview */}
-            <div style={{ marginTop: '14px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '14px 16px' }}>
-              <p style={{ fontSize: '11px', color: '#64748B', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>Preview</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: primaryColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: '#fff' }}>
-                  {club.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
-                </div>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{club.name}</div>
-                  <div style={{ fontSize: '11px', color: primaryColor, fontWeight: '600' }}>Active colour</div>
-                </div>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
-                  <div style={{ width: '28px', height: '8px', borderRadius: '4px', background: primaryColor }} />
-                  <div style={{ width: '20px', height: '8px', borderRadius: '4px', background: `${primaryColor}60` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <SaveButton label="Save branding" saving={saving === 'branding'} primary="#F59E0B" onClick={saveBranding} />
         </Card>
-      )}
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
     </div>
   );
 }

@@ -1,11 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut, ChevronRight,
   Layers, Shield, DollarSign, Target, LayoutGrid, Trophy,
+  FileText, Mail, Megaphone, FileLock2,
 } from 'lucide-react';
 import { useDashboard } from './DashboardContext';
 
@@ -18,31 +19,41 @@ type NavEntry = {
   adminOnly?: boolean;
 };
 
-const NAV: NavEntry[] = [
+const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Overview', exact: true },
   { section: 'Club' },
-  { href: '/dashboard/teams',   icon: Layers,        label: 'Teams' },
-  { href: '/dashboard/players', icon: Users,         label: 'Players' },
-  { href: '/dashboard/staff',   icon: UserCog,       label: 'Staff' },
-  { href: '/dashboard/fields',  icon: MapPin,        label: 'Fields' },
+  { href: '/dashboard/teams',    icon: Layers,        label: 'Teams' },
+  { href: '/dashboard/players',  icon: Users,         label: 'Players' },
+  { href: '/dashboard/staff',    icon: UserCog,       label: 'Staff' },
+  { href: '/dashboard/fields',   icon: MapPin,        label: 'Fields' },
   { section: 'Schedule' },
-  { href: '/dashboard/schedule', icon: CalendarDays, label: 'Schedule' },
+  { href: '/dashboard/schedule',    icon: CalendarDays,  label: 'Schedule' },
+  { section: 'Communicate' },
+  { href: '/dashboard/announcements', icon: Megaphone,   label: 'Announcements' },
+  { href: '/dashboard/email',       icon: Mail,          label: 'Email' },
   { section: 'Manage' },
-  { href: '/dashboard/forms',   icon: ClipboardList, label: 'Forms' },
-  { href: '/dashboard/reports', icon: BarChart2,     label: 'Club Reports' },
-  { href: '/dashboard/admin',   icon: Shield,        label: 'Club Administration', adminOnly: true },
-  { section: 'Tryouts', adminOnly: true },
-  { href: '/dashboard/tryouts',                   icon: Target,      label: 'Overview',     adminOnly: true },
-  { href: '/dashboard/tryouts/players',           icon: Users,       label: 'Player Pool',  adminOnly: true },
-  { href: '/dashboard/tryouts/builder',           icon: LayoutGrid,  label: 'Team Builder', adminOnly: true },
-  { href: '/dashboard/tryouts/rosters',           icon: ClipboardList, label: 'Rosters',    adminOnly: true },
-  { href: '/dashboard/tryouts/coaches',           icon: UserCog,     label: 'Coaches',      adminOnly: true },
-  { href: '/dashboard/tryouts/schedule',          icon: CalendarDays, label: 'Practice',    adminOnly: true },
-  { href: '/dashboard/tryouts/games',             icon: Trophy,      label: 'Games',        adminOnly: true },
-  { href: '/dashboard/tryouts/finances',          icon: DollarSign,  label: 'Finances',     adminOnly: true },
-  { href: '/dashboard/tryouts/settings/teams',    icon: Settings,    label: 'Setup: Teams',      adminOnly: true },
-  { href: '/dashboard/tryouts/settings/form',     icon: ClipboardList, label: 'Setup: Reg Form',  adminOnly: true },
-  { href: '/dashboard/tryouts/settings/offers',   icon: DollarSign,  label: 'Setup: Offers',     adminOnly: true },
+  { href: '/dashboard/fees',        icon: DollarSign,    label: 'Fees' },
+  { href: '/dashboard/forms',       icon: ClipboardList, label: 'Forms' },
+  { href: '/dashboard/waivers',     icon: FileLock2,     label: 'Waivers' },
+  { href: '/dashboard/reports',     icon: BarChart2,     label: 'Reports' },
+  { href: '/dashboard/admin',       icon: Shield,        label: 'Administration', adminOnly: true },
+];
+
+const TRYOUTS_NAV: NavEntry[] = [
+  { href: '/dashboard/tryouts',                 icon: Target,        label: 'Overview',     exact: true, adminOnly: true },
+  { section: 'Setup', adminOnly: true },
+  { href: '/dashboard/tryouts/settings/teams',  icon: Settings,      label: 'Teams',        adminOnly: true },
+  { href: '/dashboard/tryouts/settings/form',   icon: FileText,      label: 'Reg Form',     adminOnly: true },
+  { href: '/dashboard/tryouts/settings/offers', icon: Mail,          label: 'Offers',       adminOnly: true },
+  { section: 'Pipeline', adminOnly: true },
+  { href: '/dashboard/tryouts/players',         icon: Users,         label: 'Player Pool',  adminOnly: true },
+  { href: '/dashboard/tryouts/builder',         icon: LayoutGrid,    label: 'Team Builder', adminOnly: true },
+  { href: '/dashboard/tryouts/rosters',         icon: ClipboardList, label: 'Rosters',      adminOnly: true },
+  { section: 'Season', adminOnly: true },
+  { href: '/dashboard/tryouts/coaches',         icon: UserCog,       label: 'Coaches',      adminOnly: true },
+  { href: '/dashboard/tryouts/schedule',        icon: CalendarDays,  label: 'Practice',     adminOnly: true },
+  { href: '/dashboard/tryouts/games',           icon: Trophy,        label: 'Games',        adminOnly: true },
+  { href: '/dashboard/tryouts/finances',        icon: DollarSign,    label: 'Finances',     adminOnly: true },
 ];
 
 function NavItem({ href, icon: Icon, label, exact = false, primary }: {
@@ -90,14 +101,23 @@ function SectionLabel({ label }: { label: string }) {
 
 export default function Sidebar() {
   const { profile, club, signOut } = useDashboard();
+  const pathname = usePathname();
+  const router   = useRouter();
 
   const primary      = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const initials     = (club?.name ?? 'DG').split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
   const userInitials = (profile?.full_name ?? '??').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
   const isAdmin      = profile?.role === 'org_admin' || profile?.role === 'app_admin';
 
+  const isTryoutsMode = pathname.startsWith('/dashboard/tryouts');
+  const activeNav     = isTryoutsMode ? TRYOUTS_NAV : CLUB_NAV;
+
+  function switchMode(mode: 'club' | 'tryouts') {
+    router.push(mode === 'tryouts' ? '/dashboard/tryouts' : '/dashboard');
+  }
+
   return (
-    <aside style={{
+    <aside id="dash-sidebar" style={{
       width: '228px', height: '100vh', background: '#fff',
       borderRight: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column',
       flexShrink: 0, position: 'sticky', top: 0, overflowY: 'auto',
@@ -106,7 +126,7 @@ export default function Sidebar() {
       {/* Brand */}
       <div style={{ padding: '18px 14px 12px', borderBottom: '1px solid #F1F5F9' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
+          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
         </div>
         {club && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '9px', background: '#F8FAFC', borderRadius: '10px', padding: '9px 11px', border: '1px solid #E2E8F0' }}>
@@ -128,15 +148,48 @@ export default function Sidebar() {
         )}
       </div>
 
+      {/* Mode switcher */}
+      {(
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
+          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '10px', padding: '3px', gap: '2px' }}>
+            <button
+              onClick={() => switchMode('club')}
+              style={{
+                flex: 1, padding: '6px 0', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                fontSize: '12px', fontWeight: '700',
+                background: !isTryoutsMode ? '#fff' : 'transparent',
+                color: !isTryoutsMode ? '#0F172A' : '#94A3B8',
+                boxShadow: !isTryoutsMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all 0.15s',
+              }}
+            >
+              Club
+            </button>
+            <button
+              onClick={() => switchMode('tryouts')}
+              style={{
+                flex: 1, padding: '6px 0', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                fontSize: '12px', fontWeight: '700',
+                background: isTryoutsMode ? '#fff' : 'transparent',
+                color: isTryoutsMode ? '#0F172A' : '#94A3B8',
+                boxShadow: isTryoutsMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all 0.15s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
+              }}
+            >
+              Tryouts
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Nav */}
       <nav style={{ flex: 1, padding: '4px 10px 12px', overflowY: 'auto' }}>
-        {NAV.map((item, i) => {
+        {activeNav.map((item, i) => {
           if (item.section) {
-            if (item.adminOnly && !isAdmin) return null;
             return <SectionLabel key={i} label={item.section} />;
           }
           if (!item.href || !item.icon || !item.label) return null;
-          if (item.adminOnly && !isAdmin) return null;
           return <NavItem key={item.href} href={item.href} icon={item.icon} label={item.label} exact={item.exact} primary={primary} />;
         })}
       </nav>

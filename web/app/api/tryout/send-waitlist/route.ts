@@ -32,8 +32,7 @@ export async function POST(req: NextRequest) {
     age_group: player.final_age_group ?? '',
     club_name: club?.name ?? '',
     season_label: player.season_label ?? '',
-    offer_deadline: '', teamsnap_url: '',
-    accept_link: '', decline_link: '',
+    offer_deadline: '', accept_link: '', decline_link: '',
   });
 
   await resend.emails.send({

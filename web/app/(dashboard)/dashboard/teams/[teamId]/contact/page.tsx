@@ -118,12 +118,22 @@ export default function TeamContactPage() {
           </div>
 
           {loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {[1,2,3].map(i => <div key={i} style={{ height: '80px', borderRadius: '10px', background: '#E2E8F0' }} />)}
-            </div>
+            <>
+              <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {[1,2,3].map(i => <div key={i} style={{ height: '72px', borderRadius: '12px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+              </div>
+            </>
           ) : announcements.length === 0 ? (
-            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '48px', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>
-              No announcements yet. Post one to notify all team parents and coaches.
+            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '56px 40px', textAlign: 'center' }}>
+              <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                <Megaphone size={24} color="#94A3B8" />
+              </div>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No announcements yet</div>
+              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '20px' }}>Post one to notify all team parents and coaches.</div>
+              <button onClick={() => setShowNew(true)} style={{ padding: '9px 22px', borderRadius: '9px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                New Announcement
+              </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

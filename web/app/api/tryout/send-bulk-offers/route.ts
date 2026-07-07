@@ -51,7 +51,6 @@ export async function POST(req: NextRequest) {
       club_name: club?.name ?? '',
       season_label: player.season_label ?? '',
       offer_deadline: settings.offer_deadline ? new Date(settings.offer_deadline).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
-      teamsnap_url: settings.teamsnap_registration_url ?? '',
       accept_link: acceptLink,
       decline_link: declineLink,
     });

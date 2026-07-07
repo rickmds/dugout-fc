@@ -138,6 +138,9 @@ export default function LineupScreen() {
   const [activeTab,       setActiveTab]       = useState<BottomTab>('formation');
   const [drag,            setDrag]            = useState<DragState>(null);
   const [aiSuggesting,    setAiSuggesting]    = useState(false);
+  const [subPlanLoading,  setSubPlanLoading]  = useState(false);
+  const [subPlan,         setSubPlan]         = useState<any>(null);
+  const [subPlanOpen,     setSubPlanOpen]     = useState(false);
 
   const lineup = useLineup(team?.age_group);
 
@@ -353,6 +356,25 @@ export default function LineupScreen() {
       });
       if (rows.length > 0) await supabase.from('lineup_positions').insert(rows);
 
+      // Push to coaches only (parents cannot see lineup)
+      const { data: coachMembers } = await supabase
+        .from('team_members')
+        .select('profile_id')
+        .eq('team_id', event.team_id)
+        .eq('role', 'coach');
+      const coachIds = (coachMembers ?? []).map((m: any) => m.profile_id as string).filter(Boolean);
+      if (coachIds.length) {
+        supabase.functions.invoke('send-push', {
+          body: {
+            profile_ids: coachIds,
+            type: 'lineup_published',
+            title: '📋 Lineup saved',
+            body: `${event.title} lineup has been updated`,
+            data: { type: 'lineup_published', event_id: event.id },
+          },
+        }).catch(() => {});
+      }
+
       Alert.alert('Saved', 'Lineup saved.');
       router.back();
     } catch {
@@ -367,8 +389,7 @@ export default function LineupScreen() {
       Alert.alert('Select a formation first', 'Choose a formation before using AI suggest.');
       return;
     }
-    const attending = players.filter((p) => true); // all loaded players have confirmed RSVP
-    if (attending.length < 7) {
+    if (players.length < 7) {
       Alert.alert('Not enough players', 'Need at least 7 confirmed players to suggest a lineup.');
       return;
     }
@@ -377,7 +398,7 @@ export default function LineupScreen() {
       const pos = lineup.selectedFormation?.positions ?? [];
       const { data, error } = await supabase.functions.invoke('suggest-lineup', {
         body: {
-          players: attending.map((p) => ({ ...p, rsvp_status: 'attending' })),
+          players: players.map((p) => ({ ...p, rsvp_status: 'attending' })),
           formation: lineup.selectedFormationId,
           positions: pos,
           team_name: event.title,
@@ -397,6 +418,39 @@ export default function LineupScreen() {
       Alert.alert('Error', String(e));
     } finally {
       setAiSuggesting(false);
+    }
+  }
+
+  async function handleSubPlan() {
+    if (!eventId) return;
+    setSubPlanLoading(true);
+    try {
+      const { data: existing } = await supabase
+        .from('lineups').select('id').eq('event_id', eventId).maybeSingle();
+      const { data, error } = await supabase.functions.invoke('plan-subs', {
+        body: {
+          event_id: eventId,
+          lineup_id: existing?.id ?? null,
+          squad: players.map((p) => ({
+            id: p.id,
+            full_name: p.full_name,
+            position: p.position,
+            jersey_number: p.jersey_number,
+          })),
+          game_length: 80,
+          halves: 2,
+        },
+      });
+      if (error) {
+        Alert.alert('Sub Plan failed', error.message ?? 'Could not generate plan. Try again.');
+        return;
+      }
+      setSubPlan(data);
+      setSubPlanOpen(true);
+    } catch (e) {
+      Alert.alert('Error', String(e));
+    } finally {
+      setSubPlanLoading(false);
     }
   }
 
@@ -456,6 +510,15 @@ export default function LineupScreen() {
             {aiSuggesting
               ? <ActivityIndicator size="small" color={primaryColor} />
               : <><Ionicons name="sparkles-outline" size={14} color={primaryColor} /><Text style={[styles.aiBtnText, { color: primaryColor }]}>AI</Text></>}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleSubPlan}
+            disabled={subPlanLoading || saving}
+            style={[styles.aiBtn, { borderColor: 'rgba(96,165,250,0.4)', backgroundColor: 'rgba(96,165,250,0.08)' }]}
+          >
+            {subPlanLoading
+              ? <ActivityIndicator size="small" color="#60A5FA" />
+              : <><Ionicons name="swap-horizontal-outline" size={14} color="#60A5FA" /><Text style={[styles.aiBtnText, { color: '#60A5FA' }]}>Subs</Text></>}
           </TouchableOpacity>
           <View style={styles.countPill}>
             <Text style={styles.countPillText}>{assignedCount}/{totalSlots}</Text>
@@ -643,6 +706,55 @@ export default function LineupScreen() {
 
       </View>
 
+      {/* ── Sub Plan Modal ── */}
+      <Modal
+        visible={subPlanOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSubPlanOpen(false)}
+      >
+        <View style={styles.subPlanOverlay}>
+          <View style={styles.subPlanSheet}>
+            <View style={styles.subPlanHandle} />
+            <View style={styles.subPlanHeader}>
+              <Text style={styles.subPlanTitle}>Substitution Plan</Text>
+              <TouchableOpacity onPress={() => setSubPlanOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={22} color={DUGOUT_COLORS.ui.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.subPlanScroll} contentContainerStyle={styles.subPlanContent}>
+              {(() => {
+                if (!subPlan) return null;
+                const plan = subPlan.plan;
+                if (Array.isArray(plan) && plan.length > 0 && typeof plan[0].minute === 'number') {
+                  return (plan as Array<{ minute: number; off: string; on: string }>).map((item, i) => (
+                    <View key={i} style={styles.subRow}>
+                      <View style={styles.subMinuteBadge}>
+                        <Text style={styles.subMinuteText}>{item.minute}'</Text>
+                      </View>
+                      <Text style={styles.subOff}>{item.off}</Text>
+                      <Ionicons name="arrow-forward" size={14} color="#60A5FA" />
+                      <Text style={styles.subOn}>{item.on}</Text>
+                    </View>
+                  ));
+                }
+                return (
+                  <Text style={styles.subPlanJson}>
+                    {JSON.stringify(plan ?? subPlan, null, 2)}
+                  </Text>
+                );
+              })()}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.subPlanCloseBtn, { backgroundColor: primaryColor }]}
+              onPress={() => setSubPlanOpen(false)}
+            >
+              <Text style={styles.subPlanCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Drag ghost (renders above everything) ── */}
       {drag && (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.ghostLayer]}>
@@ -807,6 +919,50 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 28, gap: 6 },
   emptyTitle: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
   emptyBody:  { fontSize: 12, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', paddingHorizontal: 32 },
+
+  // Sub plan modal
+  subPlanOverlay: {
+    flex: 1, justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  subPlanSheet: {
+    backgroundColor: DUGOUT_COLORS.ui.background,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: 32, maxHeight: SCREEN_H * 0.75,
+  },
+  subPlanHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: DUGOUT_COLORS.ui.border,
+    alignSelf: 'center', marginTop: 10, marginBottom: 4,
+  },
+  subPlanHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+  },
+  subPlanTitle: { fontSize: 17, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.3 },
+  subPlanScroll: { maxHeight: SCREEN_H * 0.5 },
+  subPlanContent: { paddingHorizontal: 20, paddingVertical: 12, gap: 10 },
+  subRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: DUGOUT_COLORS.ui.surface,
+    borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+  },
+  subMinuteBadge: {
+    backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 3, minWidth: 38, alignItems: 'center',
+  },
+  subMinuteText: { fontSize: 12, fontWeight: '800', color: '#60A5FA' },
+  subOff: { flex: 1, fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  subOn:  { flex: 1, fontSize: 13, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  subPlanJson: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontFamily: 'monospace', lineHeight: 18 },
+  subPlanCloseBtn: {
+    marginHorizontal: 20, marginTop: 16,
+    borderRadius: 14, paddingVertical: 14,
+    alignItems: 'center',
+  },
+  subPlanCloseBtnText: { fontSize: 15, fontWeight: '800', color: '#000' },
 
   // Ghost overlay
   ghostLayer: { zIndex: 999 },

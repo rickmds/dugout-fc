@@ -70,9 +70,12 @@ export default function TeamFormsPage() {
       </div>
 
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {[1,2].map(i => <div key={i} style={{ height: '64px', borderRadius: '10px', background: '#E2E8F0' }} />)}
-        </div>
+        <>
+          <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[1,2].map(i => <div key={i} style={{ height: '64px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+          </div>
+        </>
       ) : tab === 'forms' ? (
         forms.length === 0 ? (
           <Empty icon={<FileText size={26} color={primary} />} title="No registration forms for this team" action={{ label: 'Create a form', href: '/dashboard/registrations' }} primary={primary} />

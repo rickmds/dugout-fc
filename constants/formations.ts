@@ -494,10 +494,10 @@ export function detectFormat(ageGroup: string | null | undefined): GameFormat {
   const match = ageGroup.match(/U(\d+)/i);
   if (!match) return '11v11';
   const age = parseInt(match[1], 10);
-  if (age <= 8)  return '4v4';
-  if (age <= 10) return '7v7';
-  if (age <= 12) return '9v9';
-  return '11v11';
+  if (age <= 7)  return '4v4';   // U6, U7
+  if (age <= 10) return '7v7';   // U8, U9, U10
+  if (age <= 12) return '9v9';   // U11, U12
+  return '11v11';                // U13+, Senior
 }
 
 export function getFormationById(id: string): Formation | undefined {

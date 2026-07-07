@@ -1,4 +1,6 @@
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
+import { useRef } from 'react';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { DUGOUT_COLORS } from '../../constants/colors';
 
 interface PrimaryButtonProps {
@@ -20,24 +22,44 @@ export default function PrimaryButton({
 }: PrimaryButtonProps) {
   const isOutline = variant === 'outline';
   const isDisabled = disabled || loading;
+  const scale = useRef(new Animated.Value(1)).current;
+
+  function handlePressIn() {
+    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 60, bounciness: 0 }).start();
+  }
+
+  function handlePressOut() {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 60, bounciness: 4 }).start();
+  }
+
+  function handlePress() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  }
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
+    <Pressable
+      onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={isDisabled}
-      style={[
-        styles.button,
-        isOutline ? styles.outline : styles.solid,
-        isDisabled && styles.disabled,
-        style,
-      ]}
     >
-      {loading ? (
-        <ActivityIndicator color={isOutline ? DUGOUT_COLORS.brand.green : DUGOUT_COLORS.brand.black} />
-      ) : (
-        <Text style={[styles.text, isOutline ? styles.outlineText : styles.solidText]}>{title}</Text>
-      )}
-    </TouchableOpacity>
+      <Animated.View
+        style={[
+          styles.button,
+          isOutline ? styles.outline : styles.solid,
+          isDisabled && styles.disabled,
+          { transform: [{ scale }] },
+          style,
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator color={isOutline ? DUGOUT_COLORS.brand.green : DUGOUT_COLORS.brand.black} />
+        ) : (
+          <Text style={[styles.text, isOutline ? styles.outlineText : styles.solidText]}>{title}</Text>
+        )}
+      </Animated.View>
+    </Pressable>
   );
 }
 

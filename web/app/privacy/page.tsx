@@ -11,9 +11,10 @@ export default function PrivacyPage() {
     <div className="min-h-screen bg-[#080808] text-[#f0f0f0]">
       {/* Nav */}
       <header className="px-6 sm:px-10 py-5 flex items-center justify-between border-b border-[#111] max-w-5xl mx-auto">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-5 h-5 rounded-full bg-[#22c55e] flex-shrink-0" />
-          <span className="font-extrabold text-white text-[14px] tracking-tight">DUGOUT FC</span>
+        <Link href="/">
+          <div style={{ background: '#fff', borderRadius: '10px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center' }}>
+            <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '28px', width: 'auto' }} />
+          </div>
         </Link>
         <Link href="/" className="text-[#555] text-[13px] hover:text-white transition-colors">← Back</Link>
       </header>
@@ -24,8 +25,8 @@ export default function PrivacyPage() {
         <p className="text-[#555] text-sm mb-12">Last updated: 23 June 2026</p>
 
         <Section title="1. Who we are">
-          <p>Dugout FC (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is a soccer club management platform operated by Rick Breheny. Our platform is available at dugoutfc.app and through our iOS mobile application.</p>
-          <p>You can contact us at <a href="mailto:rick@mdssoccer.com" className="text-[#22c55e] hover:underline">rick@mdssoccer.com</a>.</p>
+          <p>Dugout FC (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is a soccer club management platform. Our platform is available at dugoutfc.app and through our iOS mobile application.</p>
+          <p>You can contact us at <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>.</p>
         </Section>
 
         <Section title="2. What data we collect">
@@ -69,12 +70,12 @@ export default function PrivacyPage() {
 
         <Section title="5. Data retention">
           <p>We retain your personal data for as long as your account is active. If you delete your account, your personal data is deleted within 30 days. Club and team data may be retained in anonymised form for analytics purposes.</p>
-          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:rick@mdssoccer.com" className="text-[#22c55e] hover:underline">rick@mdssoccer.com</a> or using the Delete Account option in the app settings.</p>
+          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a> or using the Delete Account option in the app settings.</p>
         </Section>
 
         <Section title="6. Children's privacy">
           <p>Our platform is designed for use by coaches and parents. We do not knowingly collect personal data directly from children under 13. Player roster entries (name, jersey number, position) are entered by coaches or parents, not by the players themselves.</p>
-          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:rick@mdssoccer.com" className="text-[#22c55e] hover:underline">rick@mdssoccer.com</a>.</p>
+          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>.</p>
         </Section>
 
         <Section title="7. Your rights">
@@ -86,7 +87,7 @@ export default function PrivacyPage() {
             <li>Export your data in a portable format.</li>
             <li>Withdraw consent at any time (this will not affect the lawfulness of prior processing).</li>
           </ul>
-          <p>To exercise any of these rights, email <a href="mailto:rick@mdssoccer.com" className="text-[#22c55e] hover:underline">rick@mdssoccer.com</a>. We will respond within 30 days.</p>
+          <p>To exercise any of these rights, email <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>. We will respond within 30 days.</p>
         </Section>
 
         <Section title="8. Security">
@@ -104,20 +105,18 @@ export default function PrivacyPage() {
         <Section title="11. Contact">
           <p>If you have any questions about this privacy policy or how we handle your data, please contact:</p>
           <p className="mt-2">
-            <strong>Rick Breheny</strong><br />
-            Dugout FC<br />
-            <a href="mailto:rick@mdssoccer.com" className="text-[#22c55e] hover:underline">rick@mdssoccer.com</a>
+            <strong>Dugout FC</strong><br />
+            <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>
           </p>
         </Section>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[#111] px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-4 h-4 rounded-full bg-[#22c55e] flex-shrink-0 opacity-50" />
-          <span className="font-extrabold text-[#2a2a2a] text-[13px] tracking-tight">DUGOUT FC</span>
+        <div style={{ background: '#fff', borderRadius: '8px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
+          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
         </div>
-        <p className="text-[#1e1e1e] text-[12px]">© {new Date().getFullYear()} Dugout FC</p>
+        <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Dugout FC</p>
       </footer>
     </div>
   );

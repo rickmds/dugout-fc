@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import Constants from 'expo-constants';
 import {
   ActivityIndicator,
   Alert,
@@ -127,6 +128,8 @@ export default function SettingsScreen() {
   const [confirmPw, setConfirmPw]   = useState('');
   const [savingPw, setSavingPw]     = useState(false);
 
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
   const [leavingTeamId, setLeavingTeamId]     = useState<string | null>(null);
   const [myPlayers, setMyPlayers]             = useState<LinkedPlayer[]>([]);
   const [playersLoaded, setPlayersLoaded]     = useState(false);
@@ -246,6 +249,37 @@ export default function SettingsScreen() {
       Alert.alert('Upload failed', String(e));
     } finally {
       setLogoUploading(false);
+    }
+  }
+
+  async function handleAvatarUpload() {
+    if (!profile) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+      base64: true,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    const b64 = asset?.base64;
+    if (!b64) return;
+    setAvatarUploading(true);
+    try {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const path = `${profile.id}-${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(path, bytes, { contentType: asset.mimeType ?? 'image/jpeg', upsert: true });
+      if (uploadError) { Alert.alert('Upload failed', uploadError.message); return; }
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+      await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', profile.id);
+      await refreshProfile();
+    } catch (e) {
+      Alert.alert('Upload failed', String(e));
+    } finally {
+      setAvatarUploading(false);
     }
   }
 
@@ -719,6 +753,33 @@ export default function SettingsScreen() {
         onApply={handleSaveColor}
       />
 
+      {/* ── Profile photo (parents only) ── */}
+      {isParent && (
+        <Section label="PROFILE PHOTO">
+          <View style={st.logoBlock}>
+            <TouchableOpacity
+              style={[st.avatarCircle, { borderColor: primaryColor, backgroundColor: rgba(0.1) }]}
+              onPress={handleAvatarUpload}
+              disabled={avatarUploading}
+              activeOpacity={0.8}
+            >
+              {avatarUploading ? (
+                <ActivityIndicator color={primaryColor} />
+              ) : profile?.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={st.avatarCircleImg} />
+              ) : (
+                <Text style={[st.avatarCircleInitials, { color: primaryColor }]}>{initials}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleAvatarUpload} disabled={avatarUploading} activeOpacity={0.7}>
+              <Text style={[st.logoHint, { color: primaryColor }]}>
+                {profile?.avatar_url ? 'Change photo' : 'Add photo'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Section>
+      )}
+
       {/* ── Profile ── */}
       <Section label="PROFILE">
         {/* Name row — inline edit */}
@@ -909,7 +970,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </Section>
 
-      <Text style={st.version}>Dugout FC · v0.1 dev</Text>
+      <Text style={st.version}>{`Dugout FC · v${Constants.expoConfig?.version ?? '1.0'}`}</Text>
 
       <TeamEditModal
         visible={editingTeam !== null}
@@ -1229,4 +1290,12 @@ const st = StyleSheet.create({
   logoImg: { width: 72, height: 72 },
   logoHint: { fontSize: 13, fontWeight: '700' },
   colorSwatch: { width: 20, height: 20, borderRadius: 10 },
+
+  // Parent avatar circle
+  avatarCircle: {
+    width: 80, height: 80, borderRadius: 40,
+    borderWidth: 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  avatarCircleImg: { width: 80, height: 80 },
+  avatarCircleInitials: { fontSize: 26, fontWeight: '800' },
 });

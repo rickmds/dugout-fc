@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,12 +15,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { POSITION_COLORS, POSITION_DEFAULT } from '../../../../constants/positions';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 
@@ -50,13 +53,7 @@ type PendingCoach = {
 
 const POSITIONS = ['GK', 'DEF', 'MID', 'FWD'];
 
-const POS: Record<string, { primary: string; bg: string; border: string }> = {
-  GK:  { primary: '#F59E0B', bg: 'rgba(245,158,11,0.15)',  border: 'rgba(245,158,11,0.35)' },
-  DEF: { primary: '#60A5FA', bg: 'rgba(96,165,250,0.15)',   border: 'rgba(96,165,250,0.35)' },
-  MID: { primary: '#22C55E', bg: 'rgba(34,197,94,0.15)',    border: 'rgba(34,197,94,0.35)'  },
-  FWD: { primary: '#F87171', bg: 'rgba(248,113,113,0.15)',  border: 'rgba(248,113,113,0.35)'},
-};
-const POS_DEFAULT = { primary: DUGOUT_COLORS.brand.green, bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.28)' };
+const POS = POSITION_COLORS;
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const H_PAD    = 14;
@@ -92,7 +89,7 @@ function PlayerCard({
   // Hide photo from other parents when private
   const url     = canSeeDetail ? (item.photo_url ?? item.profiles?.avatar_url) : null;
   const hasImg  = !!url && !imgErr;
-  const pc      = item.position ? (POS[item.position] ?? POS_DEFAULT) : POS_DEFAULT;
+  const pc      = item.position ? (POS[item.position] ?? POSITION_DEFAULT) : POSITION_DEFAULT;
   const [first, last] = splitName(item.full_name);
 
   return (
@@ -250,16 +247,22 @@ export default function RosterScreen() {
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
 
+  const [search, setSearch]             = useState('');
   const [players, setPlayers]           = useState<Player[]>([]);
   const [coaches, setCoaches]           = useState<Coach[]>([]);
   const [pendingCoaches, setPendingCoaches] = useState<PendingCoach[]>([]);
   const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
   const [saving, setSaving]     = useState(false);
+
+  const filteredPlayers = search.trim()
+    ? players.filter(p => p.full_name.toLowerCase().includes(search.toLowerCase()))
+    : players;
 
   // Add modal flow: picker → player | coach → success
   type AddStep = 'picker' | 'player' | 'coach' | 'success' | null;
   const [addStep, setAddStep]       = useState<AddStep>(null);
-  const [successInfo, setSuccessInfo] = useState<{ type: 'player' | 'coach'; firstName: string; email: string } | null>(null);
+  const [successInfo, setSuccessInfo] = useState<{ type: 'player' | 'coach' | 'player_no_email'; firstName: string; email: string } | null>(null);
 
   // Player form
   const [name, setName]               = useState('');
@@ -332,6 +335,12 @@ export default function RosterScreen() {
     setLoading(false);
   }
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  }
+
   function openAddModal() {
     setName(''); setJersey(''); setPosition('');
     setParentName(''); setParentEmail('');
@@ -342,6 +351,7 @@ export default function RosterScreen() {
 
   async function handleAddPlayer() {
     if (!name.trim() || !team || !profile) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSaving(true);
 
     const { data: playerData } = await supabase
@@ -401,7 +411,8 @@ export default function RosterScreen() {
         setAddStep(null);
       }
     } else {
-      setAddStep(null);
+      setSuccessInfo({ type: 'player_no_email', firstName: name.trim().split(' ')[0], email: '' });
+      setAddStep('success');
     }
 
     setSaving(false);
@@ -410,6 +421,7 @@ export default function RosterScreen() {
 
   async function handleAddCoach() {
     if (!coachName.trim() || !coachEmail.trim() || !team || !profile) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSaving(true);
 
     const { data: inviteData } = await supabase
@@ -499,19 +511,41 @@ export default function RosterScreen() {
         </View>
       </View>
 
+      {/* ── Search bar ── */}
+      <View style={st.searchRow}>
+        <Ionicons name="search-outline" size={16} color={DUGOUT_COLORS.ui.muted} style={st.searchIcon} />
+        <TextInput
+          style={st.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search players…"
+          placeholderTextColor={DUGOUT_COLORS.ui.muted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          clearButtonMode="never"
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close-circle" size={16} color={DUGOUT_COLORS.ui.muted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* ── Grid ── */}
       <FlatList
-        data={players}
+        data={filteredPlayers}
         keyExtractor={p => p.id}
         numColumns={2}
         columnWrapperStyle={st.cardRow}
         contentContainerStyle={st.grid}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
         ListHeaderComponent={
           <ListHeader
             coaches={coaches}
             pendingCoaches={pendingCoaches}
-            count={players.length}
+            count={filteredPlayers.length}
             clubSlug={clubSlug ?? ''}
             onCoachPress={(id) => router.push(`/(app)/${clubSlug}/coach/${id}?source=member` as any)}
             onPendingCoachPress={(id) => router.push(`/(app)/${clubSlug}/coach/${id}?source=invite` as any)}
@@ -571,14 +605,25 @@ export default function RosterScreen() {
                   {successInfo.firstName} {successInfo.type === 'coach' ? 'invited' : 'added'}
                 </Text>
                 <Text style={st.successSub}>
-                  {successInfo.type === 'coach' ? 'Coach invite sent to' : 'Parent invite sent to'}
+                  {successInfo.type === 'coach'
+                    ? 'Coach invite sent to'
+                    : successInfo.type === 'player'
+                      ? 'Parent invite sent to'
+                      : 'Added to the squad — no invite sent'}
                 </Text>
-                <View style={[st.successEmailPill, successInfo.type === 'coach' && { borderColor: 'rgba(96,165,250,0.22)', backgroundColor: 'rgba(96,165,250,0.08)' }]}>
-                  <Ionicons name="mail-outline" size={13} color={successInfo.type === 'coach' ? '#60A5FA' : DUGOUT_COLORS.brand.green} />
-                  <Text style={[st.successEmailText, successInfo.type === 'coach' && { color: '#60A5FA' }]} numberOfLines={1}>
-                    {successInfo.email}
+                {(successInfo.type === 'player' || successInfo.type === 'coach') && (
+                  <View style={[st.successEmailPill, successInfo.type === 'coach' && { borderColor: 'rgba(96,165,250,0.22)', backgroundColor: 'rgba(96,165,250,0.08)' }]}>
+                    <Ionicons name="mail-outline" size={13} color={successInfo.type === 'coach' ? '#60A5FA' : DUGOUT_COLORS.brand.green} />
+                    <Text style={[st.successEmailText, successInfo.type === 'coach' && { color: '#60A5FA' }]} numberOfLines={1}>
+                      {successInfo.email}
+                    </Text>
+                  </View>
+                )}
+                {successInfo.type === 'player_no_email' && (
+                  <Text style={{ fontSize: 12, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginTop: 8, marginBottom: 24, paddingHorizontal: 8, lineHeight: 18 }}>
+                    You can add a parent email from the roster later.
                   </Text>
-                </View>
+                )}
                 <TouchableOpacity
                   style={[st.successDoneBtn, { backgroundColor: successInfo.type === 'coach' ? '#60A5FA' : primaryColor }]}
                   onPress={() => setAddStep(null)}
@@ -791,6 +836,19 @@ const st = StyleSheet.create({
     backgroundColor: DUGOUT_COLORS.ui.surface,
     borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
+  },
+
+  // ── Search bar
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 14, marginTop: 10, marginBottom: 4,
+    backgroundColor: DUGOUT_COLORS.ui.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+  },
+  searchIcon: { flexShrink: 0 },
+  searchInput: {
+    flex: 1, fontSize: 15, color: DUGOUT_COLORS.ui.text,
   },
 
   // ── Grid

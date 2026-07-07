@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -61,6 +61,7 @@ const PROCESSING_MESSAGES = [
 
 export default function RosterImportScreen() {
   const router = useRouter();
+  const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile } = useAuth();
   const { team } = useTeam();
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
@@ -469,7 +470,7 @@ export default function RosterImportScreen() {
             {doneStats.noEmail > 0 && (
               <TouchableOpacity
                 style={[st.primaryBtn, { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, marginTop: 10 }]}
-                onPress={() => router.push(`/(app)/${team?.id ?? ''}/roster` as any)}
+                onPress={() => router.push(`/(app)/${clubSlug ?? ''}/(tabs)/roster` as never)}
                 activeOpacity={0.85}
               >
                 <Text style={[st.primaryBtnText, { color: DUGOUT_COLORS.ui.text }]}>Go to Roster</Text>

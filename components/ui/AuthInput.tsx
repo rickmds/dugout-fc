@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TextInputProps, StyleSheet, TouchableOpacity } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, TextInput, TextInputProps, TouchableOpacity, View } from 'react-native';
 import { DUGOUT_COLORS } from '../../constants/colors';
 
 interface AuthInputProps extends TextInputProps {
@@ -12,10 +12,30 @@ export default function AuthInput({ label, secureToggle, secureTextEntry, ...res
   const [focused, setFocused] = useState(false);
   const isSecure = secureToggle ? !visible : secureTextEntry;
 
+  const focusAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(focusAnim, {
+      toValue: focused ? 1 : 0,
+      duration: 150,
+      useNativeDriver: false,
+    }).start();
+  }, [focused]);
+
+  const borderColor = focusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [DUGOUT_COLORS.ui.border, 'rgba(34,197,94,0.6)'],
+  });
+
+  const backgroundColor = focusAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [DUGOUT_COLORS.ui.surface, 'rgba(34,197,94,0.04)'],
+  });
+
   return (
     <View style={styles.container}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View style={[styles.inputRow, focused && styles.inputRowFocused]}>
+      <Animated.View style={[styles.inputRow, { borderColor, backgroundColor }]}>
         <TextInput
           style={styles.input}
           placeholderTextColor={DUGOUT_COLORS.ui.muted}
@@ -31,7 +51,7 @@ export default function AuthInput({ label, secureToggle, secureTextEntry, ...res
             <Text style={styles.toggleText}>{visible ? 'Hide' : 'Show'}</Text>
           </TouchableOpacity>
         )}
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -47,15 +67,8 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
     borderRadius: 12,
-    transition: 'border-color 0.15s',
-  } as any,
-  inputRowFocused: {
-    borderColor: 'rgba(34,197,94,0.6)',
-    backgroundColor: 'rgba(34,197,94,0.04)',
   },
   input: {
     flex: 1,

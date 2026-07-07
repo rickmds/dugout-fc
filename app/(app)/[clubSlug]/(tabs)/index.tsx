@@ -1,14 +1,17 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
@@ -16,6 +19,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
 import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { positionColor } from '../../../../constants/positions';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import GameDayWidget from '../../../../components/home/GameDayWidget';
 
@@ -44,6 +48,15 @@ type Announcement = {
   created_at: string;
 };
 
+type OutstandingFee = {
+  id: string;
+  description: string;
+  amount_due: number;
+  discount: number;
+  due_date: string | null;
+  status: string;
+};
+
 const DEV_ACCOUNTS = [
   { label: 'Coach', email: 'coach@test.com', password: 'test123456' },
   { label: 'Parent', email: 'parent@test.com', password: 'test123456' },
@@ -56,15 +69,6 @@ const TYPE_CONFIG: Record<string, { icon: React.ComponentProps<typeof Ionicons>[
   other:    { icon: 'pin-outline',      color: '#9CA3AF' },
 };
 
-const POS_COLOR: Record<string, string> = {
-  GK: '#F59E0B', DEF: '#3B82F6', MID: '#22C55E', FWD: '#EF4444',
-};
-
-function posColor(position: string | null): string {
-  if (!position) return DUGOUT_COLORS.ui.muted;
-  const key = position.toUpperCase().slice(0, 3);
-  return POS_COLOR[key] ?? DUGOUT_COLORS.ui.muted;
-}
 
 function greeting(name: string | null | undefined): string {
   const hour = new Date().getHours();
@@ -128,6 +132,55 @@ function QuickAction({ icon, label, onPress }: { icon: React.ComponentProps<type
   );
 }
 
+function HomeSkeleton() {
+  const pulse = useRef(new Animated.Value(0.5)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 750, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.5, duration: 750, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  const SKEL = DUGOUT_COLORS.ui.surface;
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: DUGOUT_COLORS.ui.background }} contentContainerStyle={{ padding: 20, paddingTop: 68, paddingBottom: 48 }} scrollEnabled={false}>
+      <Animated.View style={{ opacity: pulse }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 }}>
+          <View style={{ flex: 1 }}>
+            <View style={{ width: 80, height: 10, borderRadius: 6, backgroundColor: SKEL, marginBottom: 14 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              <View style={{ width: 60, height: 60, borderRadius: 16, backgroundColor: SKEL }} />
+              <View style={{ gap: 6 }}>
+                <View style={{ width: 140, height: 14, borderRadius: 6, backgroundColor: SKEL }} />
+                <View style={{ width: 90, height: 10, borderRadius: 6, backgroundColor: SKEL }} />
+              </View>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
+            {[0, 1].map(i => <View key={i} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: SKEL }} />)}
+          </View>
+        </View>
+        {/* Stats */}
+        <View style={{ flexDirection: 'row', gap: 12, marginBottom: 28 }}>
+          {[0, 1].map(i => (
+            <View key={i} style={{ flex: 1, height: 100, borderRadius: 16, backgroundColor: SKEL }} />
+          ))}
+        </View>
+        {/* Section label */}
+        <View style={{ width: 80, height: 9, borderRadius: 5, backgroundColor: SKEL, marginBottom: 10 }} />
+        {/* Next event card */}
+        <View style={{ height: 120, borderRadius: 16, backgroundColor: SKEL, marginBottom: 28 }} />
+        {/* Announcement label */}
+        <View style={{ width: 100, height: 9, borderRadius: 5, backgroundColor: SKEL, marginBottom: 10 }} />
+        {/* Announcement card */}
+        <View style={{ height: 76, borderRadius: 16, backgroundColor: SKEL }} />
+      </Animated.View>
+    </ScrollView>
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
@@ -144,14 +197,17 @@ export default function HomeScreen() {
   const [latestAnnouncement, setLatestAnnouncement] = useState<Announcement | null>(null);
   const [rsvpLoading, setRsvpLoading]       = useState(false);
   const [loading, setLoading]               = useState(true);
+  const [refreshing, setRefreshing]         = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [outstandingFees, setOutstandingFees] = useState<OutstandingFee[]>([]);
+  const [showFeeModal, setShowFeeModal]     = useState(false);
 
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
   const slug = clubSlug ?? club?.slug ?? '';
 
   // Team picker
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
-  const hasMultipleTeams = allTeams.length > 1 || profile?.role === 'org_admin';
+  const hasMultipleTeams = allTeams.length > 1;
 
   async function handleSelectTeam(teamId: string) {
     setTeamPickerOpen(false);
@@ -216,6 +272,7 @@ export default function HomeScreen() {
       playerRes,
       announcementRes,
       { count: unreadNotifs },
+      { data: upcomingEventsData },
     ] = await Promise.all([
       supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', team.id),
       supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
@@ -223,7 +280,10 @@ export default function HomeScreen() {
       supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).eq('read', false),
+      supabase.from('events').select('id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
     ]);
+
+    const upcomingEventIds = (upcomingEventsData ?? []).map((e: { id: string }) => e.id);
 
     setPlayerCount(pc ?? 0);
     setUpcomingCount(ec ?? 0);
@@ -235,13 +295,31 @@ export default function HomeScreen() {
     setMyPlayer(player);
     setLatestAnnouncement((announcementRes as any).data ?? null);
 
+    if (player && !isCoach) {
+      const { data: feesData } = await (supabase as any)
+        .from('player_fees')
+        .select('id, description, amount_due, discount, due_date, status')
+        .eq('player_id', player.id)
+        .in('status', ['outstanding', 'overdue', 'partial'])
+        .order('due_date', { ascending: true, nullsFirst: false });
+      setOutstandingFees((feesData ?? []) as OutstandingFee[]);
+    } else {
+      setOutstandingFees([]);
+    }
+
     if (player && next) {
-      const [rsvpRes, { count: rc }] = await Promise.all([
-        supabase.from('event_rsvps').select('status').eq('event_id', next.id).eq('player_id', player.id).maybeSingle(),
-        supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('player_id', player.id).eq('status', 'attending'),
-      ]);
-      setMyRsvpStatus((rsvpRes as any).data?.status ?? null);
-      setMyRsvpCount(rc ?? 0);
+      if (upcomingEventIds.length === 0) {
+        const { data: rsvpData } = await supabase.from('event_rsvps').select('status').eq('event_id', next.id).eq('player_id', player.id).maybeSingle();
+        setMyRsvpStatus((rsvpData as any)?.status ?? null);
+        setMyRsvpCount(0);
+      } else {
+        const [rsvpRes, { count: rc }] = await Promise.all([
+          supabase.from('event_rsvps').select('status').eq('event_id', next.id).eq('player_id', player.id).maybeSingle(),
+          supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('player_id', player.id).eq('status', 'attending').in('event_id', upcomingEventIds),
+        ]);
+        setMyRsvpStatus((rsvpRes as any).data?.status ?? null);
+        setMyRsvpCount(rc ?? 0);
+      }
     } else {
       setMyRsvpStatus(null);
       setMyRsvpCount(0);
@@ -250,8 +328,15 @@ export default function HomeScreen() {
     setLoading(false);
   }
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  }
+
   async function handleInlineRsvp(status: 'attending' | 'not_attending') {
     if (!nextEvent || !myPlayer || rsvpLoading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRsvpLoading(true);
     const isSame = myRsvpStatus === status;
     if (isSame) {
@@ -271,12 +356,12 @@ export default function HomeScreen() {
   }
 
   if (teamLoading || loading) {
-    return <View style={styles.center}><ActivityIndicator color={primaryColor} size="large" /></View>;
+    return <HomeSkeleton />;
   }
 
   const teamName = team?.name ?? club?.name ?? 'Your Team';
   const eventCfg = nextEvent ? (TYPE_CONFIG[nextEvent.type] ?? TYPE_CONFIG.other) : null;
-  const playerColor = posColor(myPlayer?.position ?? null);
+  const playerColor = positionColor(myPlayer?.position ?? null);
   const playerInitials = myPlayer?.full_name
     ? myPlayer.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
@@ -284,7 +369,12 @@ export default function HomeScreen() {
 
   return (
     <>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
+      >
 
         {/* Header */}
         <View style={styles.header}>
@@ -444,6 +534,61 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Outstanding fees — parents only */}
+        {!isCoach && outstandingFees.length > 0 && (() => {
+          const hasOverdue = outstandingFees.some(f => f.status === 'overdue' || (f.due_date && new Date(f.due_date) < new Date()));
+          const accentColor = hasOverdue ? DUGOUT_COLORS.status.error : DUGOUT_COLORS.status.warning;
+          const totalOwed = outstandingFees.reduce((s, f) => s + Math.max(0, f.amount_due - (f.discount ?? 0)), 0);
+          const single = outstandingFees.length === 1 ? outstandingFees[0] : null;
+          const fmtDue = (due: string | null) => {
+            if (!due) return null;
+            const d = new Date(due + 'T00:00:00');
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          };
+          return (
+            <>
+              <Text style={styles.sectionTitle}>OUTSTANDING FEES</Text>
+              <TouchableOpacity
+                style={[styles.feeCard, { borderColor: `${accentColor}40` }]}
+                onPress={() => setShowFeeModal(true)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.feeAccent, { backgroundColor: accentColor }]} />
+                <View style={styles.feeBody}>
+                  <View style={styles.feeTop}>
+                    <View style={[styles.feeIconWrap, { backgroundColor: `${accentColor}18` }]}>
+                      <Ionicons name="card-outline" size={20} color={accentColor} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      {single ? (
+                        <>
+                          <Text style={styles.feeTitle}>{single.description}</Text>
+                          <Text style={[styles.feeAmount, { color: accentColor }]}>
+                            ${Math.max(0, single.amount_due - (single.discount ?? 0)).toFixed(2)}
+                            {fmtDue(single.due_date) ? `  ·  Due ${fmtDue(single.due_date)}` : ''}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.feeTitle}>{outstandingFees.length} fees outstanding</Text>
+                          <Text style={[styles.feeAmount, { color: accentColor }]}>${totalOwed.toFixed(2)} total</Text>
+                        </>
+                      )}
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+                  </View>
+                  {hasOverdue && (
+                    <View style={styles.feeOverdueBadge}>
+                      <Ionicons name="alert-circle-outline" size={12} color={DUGOUT_COLORS.status.error} />
+                      <Text style={styles.feeOverdueText}>Payment overdue — contact your coach</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            </>
+          );
+        })()}
+
         {/* My Player — parents only */}
         {!isCoach && myPlayer && (
           <>
@@ -558,6 +703,42 @@ export default function HomeScreen() {
                 </View>
                 {isActive && <Ionicons name="checkmark-circle" size={20} color={primaryColor} />}
               </TouchableOpacity>
+            );
+          })}
+        </View>
+      </Modal>
+
+      {/* Fee detail modal */}
+      <Modal visible={showFeeModal} transparent animationType="slide" onRequestClose={() => setShowFeeModal(false)}>
+        <TouchableOpacity style={styles.devOverlay} activeOpacity={1} onPress={() => setShowFeeModal(false)} />
+        <View style={styles.devSheet}>
+          <View style={styles.devHandle} />
+          <Text style={styles.devTitle}>Outstanding Fees</Text>
+          <Text style={styles.devSub}>Contact your coach or club admin to arrange payment</Text>
+          {outstandingFees.map((fee) => {
+            const net = Math.max(0, fee.amount_due - (fee.discount ?? 0));
+            const isOverdue = fee.status === 'overdue' || (fee.due_date ? new Date(fee.due_date) < new Date() : false);
+            const statusColor = isOverdue ? DUGOUT_COLORS.status.error : fee.status === 'partial' ? DUGOUT_COLORS.status.info : DUGOUT_COLORS.status.warning;
+            const statusLabel = isOverdue ? 'Overdue' : fee.status === 'partial' ? 'Partial' : 'Outstanding';
+            const fmtDue = fee.due_date
+              ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+              : null;
+            return (
+              <View key={fee.id} style={styles.feeModalRow}>
+                <View style={[styles.feeModalAccent, { backgroundColor: statusColor }]} />
+                <View style={{ flex: 1, gap: 4, padding: 14 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={styles.feeModalTitle}>{fee.description}</Text>
+                    <Text style={[styles.feeModalAmount, { color: statusColor }]}>${net.toFixed(2)}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={[styles.feeStatusChip, { backgroundColor: `${statusColor}20`, borderColor: `${statusColor}40` }]}>
+                      <Text style={[styles.feeStatusText, { color: statusColor }]}>{statusLabel}</Text>
+                    </View>
+                    {fmtDue && <Text style={styles.feeModalDue}>Due {fmtDue}</Text>}
+                  </View>
+                </View>
+              </View>
             );
           })}
         </View>
@@ -753,6 +934,44 @@ const styles = StyleSheet.create({
   teamPickerBody: { flex: 1 },
   teamPickerName: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
   teamPickerMeta: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary, marginTop: 2 },
+
+  // Fee card
+  feeCard: {
+    flexDirection: 'row',
+    backgroundColor: DUGOUT_COLORS.ui.surface,
+    borderWidth: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 28,
+  },
+  feeAccent: { width: 4, flexShrink: 0 },
+  feeBody: { flex: 1, padding: 16, gap: 10 },
+  feeTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  feeIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  feeTitle: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 2 },
+  feeAmount: { fontSize: 13, fontWeight: '600' },
+  feeOverdueBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6,
+  },
+  feeOverdueText: { fontSize: 11, fontWeight: '600', color: DUGOUT_COLORS.status.error },
+
+  // Fee modal rows
+  feeModalRow: {
+    flexDirection: 'row', alignItems: 'stretch',
+    backgroundColor: DUGOUT_COLORS.ui.background, borderRadius: 14,
+    overflow: 'hidden', marginBottom: 10, padding: 0,
+  },
+  feeModalAccent: { width: 3, flexShrink: 0 },
+  feeModalTitle: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  feeModalAmount: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
+  feeModalDue: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  feeStatusChip: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 8, borderWidth: 1,
+  },
+  feeStatusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
 
   // Dev switcher / shared sheet styles
   devOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },

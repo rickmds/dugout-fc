@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, CalendarDays } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -159,10 +159,22 @@ export default function TeamAttendancePage() {
       )}
 
       {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {[1,2,3,4,5].map(i => <div key={i} style={{ height: '60px', borderRadius: '10px', background: '#E2E8F0' }} />)}
-        </div>
+        <>
+          <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[1,2,3,4,5].map(i => <div key={i} style={{ height: '60px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+          </div>
+        </>
       ) : tab === 'players' ? (
+        sorted.length === 0 ? (
+          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '56px 40px', textAlign: 'center' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+              <TrendingUp size={24} color="#94A3B8" />
+            </div>
+            <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>No players on roster</div>
+            <div style={{ fontSize: '13px', color: '#64748B' }}>Add players to the roster to track attendance.</div>
+          </div>
+        ) : (
         <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -177,8 +189,8 @@ export default function TeamAttendancePage() {
                 <tr key={p.id} style={{ borderBottom: i < sorted.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '700', color: primary }}>
-                        {p.jersey_number ?? p.full_name[0]}
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: primary, flexShrink: 0 }}>
+                        {p.full_name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
                       </div>
                       <span style={{ fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</span>
                     </div>
@@ -205,10 +217,17 @@ export default function TeamAttendancePage() {
             </tbody>
           </table>
         </div>
+        )
       ) : (
         <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           {events.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>No events in this period</div>
+            <div style={{ padding: '56px 40px', textAlign: 'center' }}>
+              <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                <CalendarDays size={24} color="#94A3B8" />
+              </div>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>No events in this period</div>
+              <div style={{ fontSize: '13px', color: '#64748B' }}>Try extending the date range.</div>
+            </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>

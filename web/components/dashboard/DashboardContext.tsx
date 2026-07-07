@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { type PlanId, PLAN_LIMITS, type PlanLimits } from '@/lib/plans';
 
 export type Profile = {
   id: string;
@@ -17,7 +18,9 @@ export type Club = {
   name: string;
   slug: string;
   primary_color: string | null;
+  secondary_color: string | null;
   logo_url: string | null;
+  currency: string;
 };
 
 export type Team = {
@@ -36,6 +39,9 @@ type DashboardCtx = {
   loading: boolean;
   reload: () => void;
   signOut: () => void;
+  plan: PlanId;
+  limits: PlanLimits;
+  canUse: (feature: keyof PlanLimits) => boolean;
 };
 
 const Ctx = createContext<DashboardCtx | null>(null);
@@ -53,6 +59,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [teams, setTeams]                 = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [loading, setLoading]             = useState(true);
+  const [plan, setPlan]                   = useState<PlanId>('free');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,10 +81,20 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     if (prof.club_id) {
       const { data: c } = await supabase
         .from('clubs')
-        .select('id, name, slug, primary_color, logo_url')
+        .select('id, name, slug, primary_color, secondary_color, logo_url, currency')
         .eq('id', prof.club_id)
         .single();
-      if (c) setClub(c as Club);
+      if (c) {
+        setClub(c as Club);
+        const { data: sub } = await supabase
+          .from('subscriptions')
+          .select('plan')
+          .eq('club_id', (c as Club).id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        setPlan((sub?.plan as PlanId) ?? 'free');
+      }
     }
 
     // Load teams based on role
@@ -111,8 +128,14 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     router.push('/login');
   }
 
+  const limits = PLAN_LIMITS[plan];
+  function canUse(feature: keyof PlanLimits): boolean {
+    const val = limits[feature];
+    return typeof val === 'boolean' ? val : (val as number) > 0;
+  }
+
   return (
-    <Ctx.Provider value={{ profile, club, teams, selectedTeamId, setSelectedTeamId, loading, reload: load, signOut }}>
+    <Ctx.Provider value={{ profile, club, teams, selectedTeamId, setSelectedTeamId, loading, reload: load, signOut, plan, limits, canUse }}>
       {children}
     </Ctx.Provider>
   );

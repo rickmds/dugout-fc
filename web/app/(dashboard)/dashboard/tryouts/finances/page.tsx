@@ -73,10 +73,10 @@ export default function TryoutFinancesPage() {
   }
 
   const StatCard = ({ label, val, sub, green }: { label: string; val: string; sub: string; green?: boolean }) => (
-    <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-      <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{label}</div>
-      <div style={{ fontSize: '22px', fontWeight: '800', color: green === false ? '#EF4444' : green ? '#22C55E' : '#0F172A' }}>{val}</div>
-      <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '2px' }}>{sub}</div>
+    <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '20px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>{label}</div>
+      <div style={{ fontSize: '28px', fontWeight: '900', color: green === false ? '#EF4444' : green ? '#22C55E' : '#0F172A', lineHeight: 1 }}>{val}</div>
+      <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '6px' }}>{sub}</div>
     </div>
   );
 
@@ -100,8 +100,8 @@ export default function TryoutFinancesPage() {
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
         {/* Fee config */}
-        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '12px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fee Config</span>
+        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '14px 20px', marginBottom: '20px', display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', borderLeft: '4px solid #6366F1' }}>
+          <span style={{ fontSize: '11px', fontWeight: '800', color: '#6366F1', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Fee Config</span>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151' }}>
             Tryout Reg Fee $
             <input type="number" value={regFee} onChange={e => setRegFee(Number(e.target.value))} style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', outline: 'none' }} />
@@ -166,29 +166,52 @@ export default function TryoutFinancesPage() {
             <span style={{ fontWeight: '700', fontSize: '13.5px', color: '#EF4444' }}>{fmt(totalExpenses)} total</span>
           </div>
           {expenses.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>No expenses recorded. Add your first expense above.</div>
+            <div style={{ padding: '48px', textAlign: 'center' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                <DollarSign size={20} color="#94A3B8" />
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>No expenses yet</div>
+              <div style={{ fontSize: '12.5px', color: '#94A3B8' }}>Add your first expense to start tracking costs.</div>
+            </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
-                <tr style={{ background: '#F8FAFC' }}>
-                  {['Category','Description','Amount','Notes',''].map(h => <th key={h} style={{ padding: '7px 14px', textAlign: 'left', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #E2E8F0' }}>{h}</th>)}
+                <tr style={{ background: '#F8FAFC', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {['Category','Description','Amount','Notes',''].map(h => <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {expenses.map((e, i) => (
-                  <tr key={e.id} style={{ borderBottom: '1px solid #F8FAFC', background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                    <td style={{ padding: '8px 14px', fontWeight: '600', color: '#374151' }}>{e.category}</td>
-                    <td style={{ padding: '8px 14px', color: '#64748B' }}>{e.description ?? '—'}</td>
-                    <td style={{ padding: '8px 14px', fontWeight: '700', color: '#EF4444' }}>{fmt(e.amount)}</td>
-                    <td style={{ padding: '8px 14px', color: '#94A3B8', fontSize: '12px' }}>{e.notes ?? '—'}</td>
-                    <td style={{ padding: '8px 14px' }}>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button onClick={() => { setEditExp(e); setShowAddExp(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', color: '#64748B', padding: '2px 6px', borderRadius: '4px' }}>Edit</button>
-                        <button onClick={() => setDelExpId(e.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', padding: '2px 4px' }}><Trash2 size={13} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  // Group by category for visual grouping
+                  const grouped: { category: string; items: typeof expenses }[] = [];
+                  for (const e of expenses) {
+                    const last = grouped[grouped.length - 1];
+                    if (last && last.category === e.category) last.items.push(e);
+                    else grouped.push({ category: e.category, items: [e] });
+                  }
+                  return grouped.flatMap((g, gi) => [
+                    <tr key={`cat-${gi}`} style={{ background: '#F8FAFC' }}>
+                      <td colSpan={5} style={{ padding: '7px 14px 5px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{g.category}</span>
+                        <span style={{ fontSize: '10px', color: '#94A3B8', marginLeft: '6px' }}>({g.items.length})</span>
+                      </td>
+                    </tr>,
+                    ...g.items.map((e, i) => (
+                      <tr key={e.id} style={{ borderBottom: '1px solid #F1F5F9', background: '#fff' }}>
+                        <td style={{ padding: '8px 14px 8px 20px', fontWeight: '500', color: '#64748B', fontSize: '12px', width: '150px' }} />
+                        <td style={{ padding: '8px 14px', color: '#374151', fontWeight: '500' }}>{e.description ?? <span style={{ color: '#CBD5E1' }}>—</span>}</td>
+                        <td style={{ padding: '8px 14px', fontWeight: '800', color: '#EF4444' }}>{fmt(e.amount)}</td>
+                        <td style={{ padding: '8px 14px', color: '#94A3B8', fontSize: '12px' }}>{e.notes ?? '—'}</td>
+                        <td style={{ padding: '8px 14px' }}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                            <button onClick={() => { setEditExp(e); setShowAddExp(true); }} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '11.5px', color: '#64748B', padding: '3px 8px', borderRadius: '5px', fontWeight: '600' }}>Edit</button>
+                            <button onClick={() => setDelExpId(e.id)} style={{ background: '#FEF2F2', border: '1px solid #FECACA', cursor: 'pointer', color: '#EF4444', padding: '3px 6px', borderRadius: '5px', display: 'flex', alignItems: 'center' }}><Trash2 size={12} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    )),
+                  ]);
+                })()}
               </tbody>
             </table>
           )}

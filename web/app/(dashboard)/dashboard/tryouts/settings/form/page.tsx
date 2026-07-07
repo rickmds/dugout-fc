@@ -423,11 +423,13 @@ export default function TryoutFormConfigPage() {
   ] as const;
 
   return (
-    <div style={{ padding: '28px 36px', maxWidth: '860px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* Sticky header + tabs */}
+      <div style={{ padding: '20px 28px 0', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '14px' }}>
         <div>
-          <h1 style={{ fontSize: '21px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Registration Form</h1>
+          <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>Tryout Setup</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Registration Form</h1>
           <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 0' }}>Configure your public tryout registration form.</p>
           {publicUrl && (
             <a href={publicUrl} target="_blank" rel="noreferrer"
@@ -443,7 +445,7 @@ export default function TryoutFormConfigPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '2px', marginBottom: '20px', borderBottom: '1px solid #E2E8F0' }}>
+      <div style={{ display: 'flex', gap: '2px' }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             style={{ padding: '8px 18px', border: 'none', borderBottom: activeTab === t.key ? '2px solid #22C55E' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: activeTab === t.key ? '700' : '500', color: activeTab === t.key ? '#22C55E' : '#64748B' }}>
@@ -452,10 +454,15 @@ export default function TryoutFormConfigPage() {
         ))}
       </div>
 
+      </div>{/* end sticky header */}
+
+      {/* Scrollable content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', background: '#F8FAFC' }}>
       {activeTab === 'general' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '14px' }}>Form identity</div>
+          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '0', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Form identity</div>
+            <div style={{ padding: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>{lbl('Season label')}<input value={config.seasonLabel} onChange={e => setConfig(c => ({ ...c, seasonLabel: e.target.value }))} style={inp} /></div>
               <div>{lbl('Form title')}<input value={config.formTitle} onChange={e => setConfig(c => ({ ...c, formTitle: e.target.value }))} style={inp} /></div>
@@ -464,11 +471,12 @@ export default function TryoutFormConfigPage() {
               <div>{lbl('Success title')}<input value={config.successTitle} onChange={e => setConfig(c => ({ ...c, successTitle: e.target.value }))} style={inp} /></div>
               <div style={{ gridColumn: '1/-1' }}>{lbl('Success message')}<textarea value={config.successBody} onChange={e => setConfig(c => ({ ...c, successBody: e.target.value }))} rows={2} style={ta} /></div>
             </div>
+            </div>
           </div>
 
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '14px' }}>Welcome text & info sections</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Welcome text &amp; info sections</div>
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>{lbl('Welcome / intro text')}<textarea value={config.welcomeText} onChange={e => setConfig(c => ({ ...c, welcomeText: e.target.value }))} rows={6} style={ta} /></div>
               <div>{lbl('Location')}<input value={config.locationText} onChange={e => setConfig(c => ({ ...c, locationText: e.target.value }))} style={inp} /></div>
               <div>{lbl('Important info (bullet points)')}<textarea value={config.importantInfoText} onChange={e => setConfig(c => ({ ...c, importantInfoText: e.target.value }))} rows={4} style={ta} /></div>
@@ -476,10 +484,12 @@ export default function TryoutFormConfigPage() {
             </div>
           </div>
 
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '4px' }}>Drop-down option lists</div>
-            <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '14px' }}>These populate the Grade, Position, Referral, and Jersey Size pickers on the form. Comma-separated.</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
+              <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Drop-down option lists</div>
+              <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Populate the Grade, Position, Referral, and Jersey Size pickers. Comma-separated.</div>
+            </div>
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {([['gradeOptions','Grade options'],['positionOptions','Position options'],['referralOptions','Referral source options'],['jerseySizeOptions','Jersey size options']] as const).map(([key, label]) => (
                 <div key={key}>
                   {lbl(label)}
@@ -495,15 +505,23 @@ export default function TryoutFormConfigPage() {
 
       {activeTab === 'schedule' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '6px' }}>Session schedule</div>
-            <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '10px' }}>Displayed on the registration form above the date selection question.</div>
-            <textarea value={config.sessionScheduleText} onChange={e => setConfig(c => ({ ...c, sessionScheduleText: e.target.value }))} rows={14} style={ta} />
+          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
+              <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Session schedule</div>
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Displayed on the registration form above the date selection question.</div>
+            </div>
+            <div style={{ padding: '16px 20px' }}>
+              <textarea value={config.sessionScheduleText} onChange={e => setConfig(c => ({ ...c, sessionScheduleText: e.target.value }))} rows={14} style={ta} />
+            </div>
           </div>
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px' }}>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '6px' }}>Offer process & timeline</div>
-            <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '10px' }}>Shown in the info section before the form fields.</div>
-            <textarea value={config.offerTimelineText} onChange={e => setConfig(c => ({ ...c, offerTimelineText: e.target.value }))} rows={5} style={ta} />
+          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
+              <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Offer process &amp; timeline</div>
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Shown in the info section before the form fields.</div>
+            </div>
+            <div style={{ padding: '16px 20px' }}>
+              <textarea value={config.offerTimelineText} onChange={e => setConfig(c => ({ ...c, offerTimelineText: e.target.value }))} rows={5} style={ta} />
+            </div>
           </div>
         </div>
       )}
@@ -511,14 +529,15 @@ export default function TryoutFormConfigPage() {
       {activeTab === 'questions' && (
         <div>
           {/* Built-in fields */}
-          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '12px', padding: '16px 18px', marginBottom: '20px' }}>
-            <div style={{ fontSize: '12px', fontWeight: '700', color: '#15803D', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>✓</span> Always included automatically — no setup needed
+          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px' }}>
+            <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '16px', height: '16px', borderRadius: '50%', background: '#22C55E', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '900' }}>✓</span>
+              Always included — no setup needed
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
               {BUILT_IN_FIELDS.map(f => (
-                <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '20px', background: '#fff', border: '1px solid #D1FAE5', fontSize: '12px', color: '#065F46', fontWeight: '500' }}>
-                  <span style={{ fontSize: '12px' }}>{f.icon}</span> {f.label}
+                <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '20px', background: '#fff', border: '1px solid #D1FAE5', fontSize: '11.5px', color: '#065F46', fontWeight: '600' }}>
+                  <span style={{ fontSize: '11px' }}>{f.icon}</span> {f.label}
                 </div>
               ))}
             </div>
@@ -557,6 +576,7 @@ export default function TryoutFormConfigPage() {
           </button>
         </div>
       )}
+      </div>{/* end scrollable content */}
     </div>
   );
 }

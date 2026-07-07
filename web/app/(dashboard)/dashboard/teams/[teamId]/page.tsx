@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Users, CalendarDays, DollarSign, CheckCircle, AlertCircle, Clock, MapPin, ChevronRight, TrendingUp } from 'lucide-react';
+import { Users, CalendarDays, DollarSign, CheckCircle, AlertCircle, Clock, MapPin, ChevronRight, TrendingUp, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -104,13 +104,27 @@ export default function TeamSummaryPage() {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '16px' }}>
-      {[1,2,3].map(i => <div key={i} style={{ height: '100px', borderRadius: '14px', background: '#E2E8F0', animation: 'pulse 1.4s ease-in-out infinite' }} />)}
-    </div>
+    <>
+      <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '14px', marginBottom: '24px' }}>
+        {[1,2,3,4].map(i => <div key={i} style={{ height: '100px', borderRadius: '14px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        {[1,2].map(i => <div key={i} style={{ height: '220px', borderRadius: '14px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+      </div>
+    </>
   );
 
   return (
     <div style={{ maxWidth: '960px' }}>
+
+      {/* Breadcrumb */}
+      <Link href="/dashboard/teams" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '600', color: '#94A3B8', textDecoration: 'none', marginBottom: '20px' }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = primary}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#94A3B8'}
+      >
+        <ArrowLeft size={13} /> All teams
+      </Link>
 
       {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '14px', marginBottom: '24px' }}>
@@ -152,35 +166,44 @@ export default function TeamSummaryPage() {
           </div>
           <div style={{ padding: '16px 20px' }}>
             {data?.nextEvent ? (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: TYPE_COLOR[data.nextEvent.type] ?? '#94A3B8', flexShrink: 0 }} />
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A' }}>{data.nextEvent.title}</div>
-                </div>
-                <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '4px' }}>
-                  {fmtDate(data.nextEvent.event_date)}{fmtTime(data.nextEvent.event_time)}
-                </div>
-                {data.nextEvent.location && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#94A3B8' }}>
-                    <MapPin size={11} /> {data.nextEvent.location}
+              <Link
+                href={`${base}/schedule?event=${data.nextEvent.id}`}
+                style={{ textDecoration: 'none', display: 'block' }}
+              >
+                <div
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                  style={{ borderRadius: '10px', padding: '4px', margin: '-4px', cursor: 'pointer', transition: 'background 0.15s' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: TYPE_COLOR[data.nextEvent.type] ?? '#94A3B8', flexShrink: 0 }} />
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A' }}>{data.nextEvent.title}</div>
                   </div>
-                )}
-                <div style={{ marginTop: '14px', padding: '12px', background: '#F8FAFC', borderRadius: '10px' }}>
-                  <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>RSVP Status</div>
-                  <div style={{ display: 'flex', gap: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <CheckCircle size={13} color="#22C55E" />
-                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#22C55E' }}>{data.rsvpAttending}</span>
-                      <span style={{ fontSize: '12px', color: '#64748B' }}>attending</span>
+                  <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '4px' }}>
+                    {fmtDate(data.nextEvent.event_date)}{fmtTime(data.nextEvent.event_time)}
+                  </div>
+                  {data.nextEvent.location && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#94A3B8' }}>
+                      <MapPin size={11} /> {data.nextEvent.location}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <Clock size={13} color="#94A3B8" />
-                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#64748B' }}>{data.rsvpTotal - data.rsvpAttending}</span>
-                      <span style={{ fontSize: '12px', color: '#64748B' }}>pending</span>
+                  )}
+                  <div style={{ marginTop: '14px', padding: '12px', background: '#F1F5F9', borderRadius: '10px' }}>
+                    <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>RSVP Status</div>
+                    <div style={{ display: 'flex', gap: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <CheckCircle size={13} color="#22C55E" />
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#22C55E' }}>{data.rsvpAttending}</span>
+                        <span style={{ fontSize: '12px', color: '#64748B' }}>attending</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Clock size={13} color="#94A3B8" />
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#64748B' }}>{data.rsvpTotal - data.rsvpAttending}</span>
+                        <span style={{ fontSize: '12px', color: '#64748B' }}>pending</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </>
+              </Link>
             ) : (
               <div style={{ textAlign: 'center', padding: '24px 0', color: '#94A3B8', fontSize: '13px' }}>
                 No upcoming events

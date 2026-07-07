@@ -100,6 +100,7 @@ function TeamCard({ team, primary }: { team: TeamStat; primary: string }) {
         transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
         transform: hover ? 'translateY(-1px)' : 'none',
         display: 'flex',
+        cursor: 'pointer',
       }}
     >
       {/* Left accent strip */}
@@ -256,38 +257,49 @@ export default function OverviewPage() {
   const totalUpcoming = stats.filter((t) => t.next_event !== null).length;
 
   return (
-    <div style={{ padding: '36px 40px', maxWidth: '1200px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
       <style>{`
         @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        @media (max-width: 768px) {
+          .ovw-header { padding: 12px 16px !important; flex-wrap: wrap !important; gap: 8px !important; }
+          .ovw-header-actions { display: none !important; }
+          .ovw-content { padding: 14px 16px !important; }
+          .ovw-stat-cards { grid-template-columns: 1fr !important; gap: 10px !important; }
+          .ovw-team-grid { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
-      {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '28px' }}>
+      {/* ── Sticky header ── */}
+      <div className="ovw-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <h1 style={{ fontSize: '26px', fontWeight: '800', color: '#0F172A', marginBottom: '4px', letterSpacing: '-0.5px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>
             {greeting(firstName)} 👋
           </h1>
-          <p style={{ fontSize: '14px', color: '#94A3B8' }}>
+          <p style={{ fontSize: '13px', color: '#94A3B8', margin: '3px 0 0' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
 
         {/* Quick actions */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <Link href="/dashboard/schedule" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '9px', padding: '8px 14px', fontSize: '13px', fontWeight: '600', color: '#374151', textDecoration: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div className="ovw-header-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <Link href="/dashboard/schedule" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '9px', padding: '8px 14px', fontSize: '13px', fontWeight: '600', color: '#374151', textDecoration: 'none' }}>
             <CalendarDays size={14} color="#64748B" /> Schedule
           </Link>
-          <Link href="/dashboard/email" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '9px', padding: '8px 14px', fontSize: '13px', fontWeight: '600', color: '#374151', textDecoration: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <Link href="/dashboard/email" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '9px', padding: '8px 14px', fontSize: '13px', fontWeight: '600', color: '#374151', textDecoration: 'none' }}>
             <Mail size={14} color="#64748B" /> Email team
           </Link>
-          <Link href="/dashboard/roster" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '9px', padding: '8px 14px', fontSize: '13px', fontWeight: '700', color: '#fff', textDecoration: 'none', border: 'none', boxShadow: `0 2px 8px ${primary}40` }}>
+          <Link href="/dashboard/roster" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '9px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', color: '#fff', textDecoration: 'none', border: 'none' }}>
             <Plus size={14} /> Add player
           </Link>
         </div>
       </div>
 
+      {/* ── Scrollable content ── */}
+      <div className="ovw-content" style={{ padding: '24px 32px' }}>
+
       {/* ── Stat cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
+      <div className="ovw-stat-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
         {loading ? (
           [0, 1, 2].map((i) => (
             <div key={i} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
@@ -350,7 +362,7 @@ export default function OverviewPage() {
       </div>
 
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
+        <div className="ovw-team-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
           {[0, 1, 2].map((i) => (
             <div key={i} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', display: 'flex' }}>
               <div style={{ width: '4px', background: '#F1F5F9' }} />
@@ -385,9 +397,14 @@ export default function OverviewPage() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '14px' }}>
-          {stats.map((team) => <TeamCard key={team.id} team={team} primary={primary} />)}
+          {stats.map((team) => (
+            <Link key={team.id} href={`/dashboard/teams/${team.id}`} style={{ textDecoration: 'none', display: 'block' }}>
+              <TeamCard team={team} primary={primary} />
+            </Link>
+          ))}
         </div>
       )}
+      </div> {/* end scrollable content */}
     </div>
   );
 }
