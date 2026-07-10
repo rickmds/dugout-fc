@@ -374,7 +374,7 @@ export default function ScheduleScreen() {
               {item.video_url ? (
                 <View style={styles.videoBadge}>
                   <Ionicons name="play-circle" size={11} color="#A855F7" />
-                  <Text style={styles.videoBadgeText}>Highlights</Text>
+                  <Text style={styles.videoBadgeText}>Video</Text>
                 </View>
               ) : null}
               {showKitBadge && !isPast && (() => {
