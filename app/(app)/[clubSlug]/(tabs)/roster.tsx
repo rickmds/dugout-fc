@@ -375,6 +375,13 @@ export default function RosterScreen() {
       return;
     }
 
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim());
+    if (parentEmail.trim() && !emailOk) {
+      setSaving(false);
+      Alert.alert('Invalid email', 'Please enter a valid parent email address.');
+      return;
+    }
+
     if (parentEmail.trim()) {
       const { data: inviteData } = await supabase
         .from('invites')
