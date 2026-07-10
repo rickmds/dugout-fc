@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -117,10 +118,10 @@ export default function EvaluationsScreen() {
   async function createBatch() {
     if (!team || !profile || !season.trim() || !period.trim()) return;
     setCreating(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('evaluation_batches')
       .insert({
-        club_id: team.club_id,
+        club_id: team.club_id ?? profile.club_id,
         team_id: team.id,
         coach_id: profile.id,
         season_label: season.trim(),
@@ -132,11 +133,19 @@ export default function EvaluationsScreen() {
       .single();
 
     setCreating(false);
-    setShowNew(false);
-    if (data) {
-      setBatch(data as BatchRow);
+
+    if (error || !data) {
+      Alert.alert('Error', `Could not create batch: ${error?.message ?? 'unknown error'}`);
+      return;
     }
-    load();
+
+    setShowNew(false);
+    setSeason('');
+    setPeriod('');
+    // Set batch directly — players are already loaded, no need to re-run load()
+    setBatch(data as BatchRow);
+    // Reset all player eval statuses to null since this is a new batch
+    setPlayers(prev => prev.map(p => ({ ...p, evalStatus: null, evalId: null })));
   }
 
   async function submitBatch() {
