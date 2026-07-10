@@ -186,10 +186,10 @@ export default function PlayerProfileScreen() {
   }, [player?.id, team?.id, teamLoading]);
 
   useEffect(() => {
-    if (activeTab === 'guardians' && player) {
+    if (player) {
       loadGuardians();
     }
-  }, [activeTab, player?.id]);
+  }, [player?.id]);
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -769,6 +769,8 @@ export default function PlayerProfileScreen() {
           isCoach={isCoach}
           isMyPlayer={isMyPlayer}
           canSeeDetails={canSeeDetails}
+          invites={invites}
+          guardianProfile={guardianProfile}
           onDelete={confirmDelete}
           deleting={deleting}
         />
@@ -1173,6 +1175,8 @@ function PlayerTab({
   isCoach,
   isMyPlayer,
   canSeeDetails,
+  invites,
+  guardianProfile,
   onDelete,
   deleting,
 }: {
@@ -1182,10 +1186,14 @@ function PlayerTab({
   isCoach: boolean;
   isMyPlayer: boolean;
   canSeeDetails: boolean;
+  invites: Invite[];
+  guardianProfile: GuardianProfile | null;
   onDelete: () => void;
   deleting: boolean;
 }) {
   const { primaryColor, rgba } = useClub();
+  const primaryInvite = invites[0] ?? null;
+  const guardianName = primaryInvite?.guardian_name ?? guardianProfile?.full_name ?? null;
   const gameTimes     = matchTimes.filter((m) => m.event_type === 'game');
   const gamesPlayed   = gameTimes.length;
   const totalMins     = gameTimes.reduce((s, m) => s + m.minutes, 0);
@@ -1364,6 +1372,62 @@ function PlayerTab({
         </View>
       )}
       </>)}
+
+      {/* ── Guardian contact — for other parents when player is not private ── */}
+      {!isCoach && !isMyPlayer && (
+        <>
+          <Text style={[st.sectionLabel, { marginTop: 24 }]}>GUARDIAN CONTACT</Text>
+          {player.is_private ? (
+            <View style={st.card}>
+              <View style={[st.tableRow, { gap: 10 }]}>
+                <Ionicons name="lock-closed-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14 }}>Contact details are private</Text>
+              </View>
+            </View>
+          ) : primaryInvite ? (
+            <View style={st.card}>
+              {guardianName && (
+                <View style={[st.tableRow, st.tableRowBorder]}>
+                  <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
+                  <Ionicons name="person-outline" size={15} color={PULSE_COLORS.ui.muted} style={{ marginRight: 8 }} />
+                  <Text style={[st.tableTitle, { flex: 1 }]}>{guardianName}</Text>
+                </View>
+              )}
+              <TouchableOpacity
+                style={st.tableRow}
+                onPress={() => Linking.openURL(`mailto:${primaryInvite.email}`)}
+                activeOpacity={0.65}
+              >
+                <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
+                <Ionicons name="mail-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
+                <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.email}</Text>
+                <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+              </TouchableOpacity>
+              {primaryInvite.phone && (
+                <>
+                  <View style={st.tableRowBorder} />
+                  <TouchableOpacity
+                    style={st.tableRow}
+                    onPress={() => Linking.openURL(`tel:${primaryInvite.phone}`)}
+                    activeOpacity={0.65}
+                  >
+                    <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
+                    <Ionicons name="call-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
+                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.phone}</Text>
+                    <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          ) : (
+            <View style={st.card}>
+              <View style={[st.tableRow, { gap: 10, justifyContent: 'center' }]}>
+                <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14 }}>No contact details added yet</Text>
+              </View>
+            </View>
+          )}
+        </>
+      )}
 
       {/* ── Remove player ── */}
       {isCoach && (

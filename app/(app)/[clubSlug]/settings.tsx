@@ -114,6 +114,10 @@ export default function SettingsScreen() {
   const [name, setName]               = useState(profile?.full_name ?? '');
   const [savingName, setSavingName]   = useState(false);
 
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phone, setPhone]               = useState((profile as any)?.phone ?? '');
+  const [savingPhone, setSavingPhone]   = useState(false);
+
   const isOrgAdmin = profile?.role === 'org_admin';
   const [tagline, setTagline]                 = useState(clubTagline ?? '');
   const [editingTagline, setEditingTagline]   = useState(false);
@@ -211,6 +215,15 @@ export default function SettingsScreen() {
     await refreshProfile();
     setSavingName(false);
     setEditingName(false);
+  }
+
+  async function handleSavePhone() {
+    if (!profile) return;
+    setSavingPhone(true);
+    await (supabase as any).from('profiles').update({ phone: phone.trim() || null }).eq('id', profile.id);
+    await refreshProfile();
+    setSavingPhone(false);
+    setEditingPhone(false);
   }
 
   async function handleSaveTagline() {
@@ -853,33 +866,6 @@ export default function SettingsScreen() {
         onApply={handleSaveColor}
       />
 
-      {/* ── Profile photo (parents only) ── */}
-      {isParent && (
-        <Section label="PROFILE PHOTO">
-          <View style={st.logoBlock}>
-            <TouchableOpacity
-              style={[st.avatarCircle, { borderColor: primaryColor, backgroundColor: rgba(0.1) }]}
-              onPress={handleAvatarUpload}
-              disabled={avatarUploading}
-              activeOpacity={0.8}
-            >
-              {avatarUploading ? (
-                <ActivityIndicator color={primaryColor} />
-              ) : profile?.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={st.avatarCircleImg} />
-              ) : (
-                <Text style={[st.avatarCircleInitials, { color: primaryColor }]}>{initials}</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleAvatarUpload} disabled={avatarUploading} activeOpacity={0.7}>
-              <Text style={[st.logoHint, { color: primaryColor }]}>
-                {profile?.avatar_url ? 'Change photo' : 'Add photo'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </Section>
-      )}
-
       {/* ── Profile ── */}
       <Section label="PROFILE">
         {/* Name row — inline edit */}
@@ -906,6 +892,45 @@ export default function SettingsScreen() {
           {editingName ? (
             <TouchableOpacity onPress={handleSaveName} disabled={savingName} style={{ paddingLeft: 10 }}>
               {savingName
+                ? <ActivityIndicator size="small" color={primaryColor} />
+                : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+          )}
+        </View>
+
+        <View style={st.divider} />
+
+        {/* Phone row — inline edit */}
+        <View style={st.row}>
+          <IconCell name="call-outline" color="#fff" bg="#22C55E" />
+          <Text style={st.rowLabel}>Phone</Text>
+          {editingPhone ? (
+            <TextInput
+              style={[st.nameInput, { borderBottomColor: primaryColor }]}
+              value={phone}
+              onChangeText={setPhone}
+              autoFocus
+              keyboardType="phone-pad"
+              returnKeyType="done"
+              placeholder="Mobile number"
+              placeholderTextColor={PULSE_COLORS.ui.muted}
+              onSubmitEditing={handleSavePhone}
+            />
+          ) : (
+            <TouchableOpacity
+              onPress={() => { setPhone((profile as any)?.phone ?? ''); setEditingPhone(true); }}
+              style={{ flex: 1, alignItems: 'flex-end' }}
+            >
+              <Text style={[st.rowValue, !((profile as any)?.phone) && { color: PULSE_COLORS.ui.muted }]}>
+                {(profile as any)?.phone ?? 'Add number'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {editingPhone ? (
+            <TouchableOpacity onPress={handleSavePhone} disabled={savingPhone} style={{ paddingLeft: 10 }}>
+              {savingPhone
                 ? <ActivityIndicator size="small" color={primaryColor} />
                 : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
             </TouchableOpacity>
