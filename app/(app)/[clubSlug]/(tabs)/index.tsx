@@ -409,13 +409,37 @@ export default function HomeScreen() {
             .map((e) => ({ id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null }));
           setAttendanceHistory(history);
           setSeasonTotalMarked(history.length);
-          // WHOOP-style streak: one missed session is a grace period, two in a row breaks it
+          // WHOOP-style streak: one grace period allowed, but grace must be re-earned
+          // with 3 consecutive clean sessions before it can be used again.
           function whoopStreak(evts: typeof history) {
-            let streak = 0; let atRisk = false;
+            let streak = 0;
+            let atRisk = false;
+            let graceAvailable = true;
+            let cleanAfterGrace = 0;
             for (const ev of evts) {
-              if (ev.status === 'present') { streak++; atRisk = false; }
-              else if (!atRisk) { atRisk = true; }
-              else break;
+              if (ev.status === 'present') {
+                streak++;
+                if (atRisk) {
+                  // Saved from at-risk — grace is now spent
+                  atRisk = false;
+                  graceAvailable = false;
+                  cleanAfterGrace = 1;
+                } else if (!graceAvailable) {
+                  // Building back toward earning grace again
+                  cleanAfterGrace++;
+                  if (cleanAfterGrace >= 3) {
+                    graceAvailable = true;
+                    cleanAfterGrace = 0;
+                  }
+                }
+              } else {
+                if (graceAvailable) {
+                  atRisk = true;
+                  graceAvailable = false;
+                } else {
+                  break;
+                }
+              }
             }
             return { streak, atRisk };
           }
