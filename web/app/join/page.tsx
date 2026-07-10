@@ -438,7 +438,7 @@ function JoinContent() {
               <p style={{ ...s.sub, marginBottom: 4 }}>
                 {invite.player_name
                   ? <><strong style={{ color: '#F9FAFB' }}>{invite.player_name}</strong> has been added to</>
-                  : 'You've joined'}
+                  : "You've joined"}
               </p>
               <p style={{ fontSize: 17, fontWeight: 700, color: accent, marginBottom: 32 }}>
                 {invite.team_name} · {invite.club_name}
