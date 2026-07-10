@@ -909,16 +909,16 @@ export default function HomeScreen() {
           const superStreak = combinedStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
           // Flame tier — WHOOP-style color progression
           const flameTier = combinedAtRisk
-            ? { color: '#60A5FA', glow: '#60A5FA', bg: 'rgba(96,165,250,0.15)', overlay: 'rgba(96,165,250,0.38)', label: 'At risk' }
+            ? { color: '#60A5FA', glow: '#60A5FA', label: '⚡ At risk' }
             : combinedStreak >= 10
-              ? { color: '#A855F7', glow: '#A855F7', bg: 'rgba(168,85,247,0.15)', overlay: null, label: '⭐ Legendary' }
+              ? { color: '#A855F7', glow: '#A855F7', label: '⭐ Legendary' }
               : combinedStreak >= 6
-                ? { color: '#EF4444', glow: '#EF4444', bg: 'rgba(239,68,68,0.15)', overlay: null, label: '🔥 On fire' }
+                ? { color: '#EF4444', glow: '#EF4444', label: '🔥 On fire' }
                 : combinedStreak >= 3
-                  ? { color: '#F97316', glow: '#F97316', bg: 'rgba(249,115,22,0.15)', overlay: null, label: 'Building' }
+                  ? { color: '#F97316', glow: '#F97316', label: 'Building' }
                   : combinedStreak >= 1
-                    ? { color: '#EAB308', glow: '#EAB308', bg: 'rgba(234,179,8,0.12)', overlay: null, label: 'Getting started' }
-                    : { color: PULSE_COLORS.ui.muted, glow: 'transparent', bg: rgba(0.08), overlay: null, label: 'No streak yet' };
+                    ? { color: '#EAB308', glow: '#EAB308', label: 'Getting started' }
+                    : { color: PULSE_COLORS.ui.muted, glow: 'transparent', label: 'No streak yet' };
           const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
           return (
             <>
@@ -932,23 +932,13 @@ export default function HomeScreen() {
                 onPress={() => setShowAttendanceSheet(true)}
                 activeOpacity={0.85}
               >
-                {/* Streak — centered, WHOOP-style flame */}
+                {/* Streak — bare emoji with glow, no container */}
                 <View style={styles.seasonStat}>
-                  <View style={[
-                    styles.seasonFlameWrap,
-                    {
-                      backgroundColor: flameTier.bg,
-                      shadowColor: flameTier.glow,
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: combinedStreak >= 1 ? 0.5 : 0,
-                      shadowRadius: 14,
-                    },
-                  ]}>
-                    <Text style={styles.seasonFlameEmoji}>🔥</Text>
-                    {flameTier.overlay ? (
-                      <View style={[StyleSheet.absoluteFill, { borderRadius: 18, backgroundColor: flameTier.overlay }]} pointerEvents="none" />
-                    ) : null}
-                  </View>
+                  <Text style={[styles.seasonFlameEmoji, {
+                    textShadowColor: flameTier.glow,
+                    textShadowOffset: { width: 0, height: 0 },
+                    textShadowRadius: combinedStreak >= 1 ? 20 : 0,
+                  }]}>🔥</Text>
                   <Text style={[styles.seasonStatNum, { color: flameTier.color }]}>{combinedStreak}</Text>
                   <Text style={styles.seasonStatLabel}>{flameTier.label}</Text>
                 </View>
@@ -958,17 +948,15 @@ export default function HomeScreen() {
                   <>
                     <View style={styles.seasonDivider} />
                     <View style={[styles.seasonStat, { flex: 0.85 }]}>
-                      <View style={[styles.seasonFlameWrap,
-                        gPerfect
-                          ? { backgroundColor: 'rgba(34,197,94,0.15)', shadowColor: '#22C55E', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 10 }
-                          : { backgroundColor: rgba(0.08) },
-                      ]}>
-                        <Text style={styles.seasonFlameEmoji}>{gPerfect ? '🥇' : '⚽'}</Text>
-                      </View>
+                      <Text style={[styles.seasonFlameEmoji, gPerfect ? {
+                        textShadowColor: '#22C55E',
+                        textShadowOffset: { width: 0, height: 0 },
+                        textShadowRadius: 16,
+                      } : {}]}>{gPerfect ? '🥇' : '⚽'}</Text>
                       <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.muted, fontSize: 28, lineHeight: 32 }]}>
                         {gamesAttended}/{gamesTotal}
                       </Text>
-                      <Text style={styles.seasonStatLabel}>{gPerfect ? '✅ Perfect!' : 'Games'}</Text>
+                      <Text style={styles.seasonStatLabel}>{gPerfect ? 'Perfect!' : 'Games'}</Text>
                     </View>
                   </>
                 )}
@@ -1269,61 +1257,65 @@ export default function HomeScreen() {
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-            {/* Streak summary cards */}
+            {/* Streak hero */}
             {(() => {
-              const superStreak = trainingStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+              const superStreak = combinedStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+              const tier = combinedAtRisk
+                ? { color: '#60A5FA', glow: '#60A5FA', label: 'At risk' }
+                : combinedStreak >= 10
+                  ? { color: '#A855F7', glow: '#A855F7', label: '⭐ Legendary' }
+                  : combinedStreak >= 6
+                    ? { color: '#EF4444', glow: '#EF4444', label: 'On fire' }
+                    : combinedStreak >= 3
+                      ? { color: '#F97316', glow: '#F97316', label: 'Building momentum' }
+                      : combinedStreak >= 1
+                        ? { color: '#EAB308', glow: '#EAB308', label: 'Getting started' }
+                        : { color: PULSE_COLORS.ui.muted, glow: 'transparent', label: 'No streak yet' };
+              const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
               return (
                 <>
-                  <View style={styles.attSheetStatRow}>
-                    {/* Training streak */}
-                    <View style={[styles.attSheetStat, { borderLeftColor: trainingAtRisk ? '#F59E0B' : primaryColor }]}>
-                      <Text style={styles.attSheetStatEmoji}>
-                        {trainingAtRisk ? '⚡' : trainingStreak >= 5 ? '🔥' : trainingStreak >= 3 ? '⚡' : '📅'}
-                      </Text>
-                      <Text style={[styles.attSheetStatNum, { color: trainingAtRisk ? '#F59E0B' : trainingStreak >= 3 ? '#F59E0B' : primaryColor }]}>
-                        {trainingStreak}
-                      </Text>
-                      <Text style={styles.attSheetStatLabel}>Training streak</Text>
-                      {trainingAtRisk && (
-                        <Text style={styles.attSheetAtRisk}>⚠️ At risk — attend next session to save it</Text>
-                      )}
-                    </View>
-                    {/* Game attendance */}
-                    <View style={[styles.attSheetStat, { borderLeftColor: gamesTotal > 0 && gamesAttended === gamesTotal ? '#22C55E' : gameAtRisk ? '#F59E0B' : PULSE_COLORS.ui.border }]}>
-                      <Text style={styles.attSheetStatEmoji}>
-                        {gamesTotal === 0 ? '⚽' : gamesAttended === gamesTotal ? '🥇' : gameAtRisk ? '⚡' : '⚽'}
-                      </Text>
-                      <Text style={[styles.attSheetStatNum, {
-                        color: gamesTotal > 0 && gamesAttended === gamesTotal ? '#22C55E'
-                          : gameAtRisk ? '#F59E0B' : PULSE_COLORS.ui.muted,
-                      }]}>
-                        {gamesTotal > 0 ? `${gamesAttended}/${gamesTotal}` : '—'}
-                      </Text>
-                      <Text style={styles.attSheetStatLabel}>Games this season</Text>
-                      {gameAtRisk && (
-                        <Text style={styles.attSheetAtRisk}>⚠️ At risk — don't miss the next one</Text>
-                      )}
-                    </View>
+                  {/* Hero — big flame + number */}
+                  <View style={styles.attSheetHero}>
+                    <Text style={[styles.attSheetHeroEmoji, {
+                      textShadowColor: tier.glow,
+                      textShadowOffset: { width: 0, height: 0 },
+                      textShadowRadius: combinedStreak >= 1 ? 24 : 0,
+                    }]}>🔥</Text>
+                    <Text style={[styles.attSheetHeroNum, { color: tier.color }]}>{combinedStreak}</Text>
+                    <Text style={styles.attSheetHeroLabel}>{tier.label}</Text>
+                    {combinedAtRisk && (
+                      <Text style={styles.attSheetHeroSub}>Attend your next session to save your streak</Text>
+                    )}
+                    {superStreak && !combinedAtRisk && (
+                      <View style={styles.attSheetSuperChip}>
+                        <Text style={styles.attSheetSuperChipText}>⭐ SUPER STREAK</Text>
+                      </View>
+                    )}
                   </View>
 
-                  {/* Super streak banner */}
-                  {superStreak && (
-                    <View style={styles.attSheetSuperBanner}>
-                      <Text style={{ fontSize: 24 }}>⭐</Text>
+                  {/* Game attendance */}
+                  {gamesTotal > 0 && (
+                    <View style={styles.attSheetGameRow}>
+                      <Text style={[styles.attSheetGameEmoji, gPerfect ? {
+                        textShadowColor: '#22C55E',
+                        textShadowOffset: { width: 0, height: 0 },
+                        textShadowRadius: 14,
+                      } : {}]}>{gPerfect ? '🥇' : '⚽'}</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.attSheetSuperLabel}>SUPER STREAK ACTIVE</Text>
-                        <Text style={styles.attSheetSuperSub}>Training on fire · perfect game attendance</Text>
+                        <Text style={[styles.attSheetGameNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.textSecondary }]}>
+                          {gamesAttended}/{gamesTotal} games this season
+                        </Text>
+                        {gPerfect && (
+                          <Text style={styles.attSheetGameSub}>Perfect game attendance</Text>
+                        )}
                       </View>
                     </View>
                   )}
 
-                  {/* WHOOP mechanic explainer */}
-                  <View style={styles.attSheetInfoRow}>
-                    <Ionicons name="information-circle-outline" size={14} color={PULSE_COLORS.ui.muted} />
-                    <Text style={styles.attSheetInfoText}>
-                      Miss one session and your streak goes at risk. Attend the next and you save it. Miss two in a row and it resets.
-                    </Text>
-                  </View>
+                  {/* Mechanic note */}
+                  <Text style={styles.attSheetInfoInline}>
+                    Miss one → at risk. Attend next → saved. Need 3 clean sessions to earn another chance.
+                  </Text>
                 </>
               );
             })()}
@@ -1827,10 +1819,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 20, marginBottom: 28,
   },
   seasonStat: { flex: 1, alignItems: 'center', gap: 6 },
-  seasonFlameWrap: {
-    width: 56, height: 56, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-  },
   seasonFlameEmoji: { fontSize: 34 },
   seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, lineHeight: 60 },
   seasonStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', textAlign: 'center' },
@@ -1856,31 +1844,32 @@ const styles = StyleSheet.create({
     backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  attSheetStatRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 20 },
-  attSheetStat: {
-    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderLeftWidth: 3, borderRadius: 14, padding: 14, gap: 2,
+  attSheetHero: {
+    alignItems: 'center', paddingTop: 36, paddingBottom: 24, paddingHorizontal: 20,
   },
-  attSheetStatEmoji: { fontSize: 22, marginBottom: 4 },
-  attSheetStatNum: { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
-  attSheetStatLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', marginTop: 2 },
-  attSheetAtRisk: { fontSize: 11, color: '#F59E0B', fontWeight: '600', marginTop: 6, lineHeight: 15 },
-  attSheetSuperBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    marginHorizontal: 20, marginTop: 14,
-    backgroundColor: 'rgba(245,158,11,0.08)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+  attSheetHeroEmoji: { fontSize: 52 },
+  attSheetHeroNum: { fontSize: 80, fontWeight: '900', letterSpacing: -4, lineHeight: 84, marginTop: 8 },
+  attSheetHeroLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 4 },
+  attSheetHeroSub: { fontSize: 13, color: '#60A5FA', fontWeight: '600', marginTop: 8, textAlign: 'center' },
+  attSheetSuperChip: {
+    marginTop: 12, paddingHorizontal: 12, paddingVertical: 5,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+    borderRadius: 20,
+  },
+  attSheetSuperChipText: { fontSize: 11, fontWeight: '900', color: '#F59E0B', letterSpacing: 0.5 },
+  attSheetGameRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    marginHorizontal: 20, marginBottom: 16,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, padding: 14,
   },
-  attSheetSuperLabel: { fontSize: 12, fontWeight: '900', color: '#F59E0B', letterSpacing: 1 },
-  attSheetSuperSub: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
-  attSheetInfoRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    marginHorizontal: 20, marginTop: 14,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 12, padding: 12,
+  attSheetGameEmoji: { fontSize: 28 },
+  attSheetGameNum: { fontSize: 17, fontWeight: '800' },
+  attSheetGameSub: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  attSheetInfoInline: {
+    fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 17,
+    marginHorizontal: 20, marginBottom: 16, textAlign: 'center',
   },
-  attSheetInfoText: { flex: 1, fontSize: 11, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
   attSheetList: { marginHorizontal: 20, marginTop: 8, gap: 2 },
   attSheetRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
