@@ -781,33 +781,6 @@ export default function HomeScreen() {
           <Text style={styles.heroGreeting}>{greeting(profile?.full_name)}</Text>
         </View>
 
-        {/* Stats — parents only (Going / Upcoming) */}
-        {!isCoach && (
-          <View style={[styles.statsRow, { marginTop: 20 }]}>
-            <TouchableOpacity
-              style={[styles.statCard, { borderTopColor: primaryColor, borderTopWidth: 2 }]}
-              onPress={() => router.push(`/(app)/${slug}/(tabs)/schedule` as never)}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.statIcon, { backgroundColor: rgba(0.1) }]}>
-                <Ionicons name="checkmark-circle-outline" size={18} color={primaryColor} />
-              </View>
-              <Text style={[styles.statNumber, { color: primaryColor }]}>{myRsvpCount}</Text>
-              <Text style={styles.statLabel}>Going</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.statCard, { borderTopColor: primaryColor, borderTopWidth: 2 }]}
-              onPress={() => router.push(`/(app)/${slug}/(tabs)/schedule` as never)}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.statIcon, { backgroundColor: rgba(0.1) }]}>
-                <Ionicons name="calendar-outline" size={18} color={primaryColor} />
-              </View>
-              <Text style={[styles.statNumber, { color: primaryColor }]}>{upcomingCount}</Text>
-              <Text style={styles.statLabel}>Upcoming</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Game Day Outlook — coaches only */}
         {isCoach && (
