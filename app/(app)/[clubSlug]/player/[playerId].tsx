@@ -713,8 +713,8 @@ export default function PlayerProfileScreen() {
           </View>
         )}
 
-        {/* Age + preferred foot — hidden from other parents when private */}
-        {canSeeDetails && (player.date_of_birth || player.preferred_foot) && (
+        {/* Age + preferred foot — visible to all team members */}
+        {(player.date_of_birth || player.preferred_foot) && (
           <View style={st.heroMeta}>
             {player.date_of_birth && (
               <View style={st.heroMetaItem}>
@@ -934,19 +934,23 @@ export default function PlayerProfileScreen() {
                 ))}
               </View>
 
-              {/* ─ NOTES ─ */}
-              <Text style={[st.editSection, { marginTop: 24 }]}>NOTES</Text>
-              <Text style={st.inputLabel}>Coach notes</Text>
-              <TextInput
-                style={[st.input, st.notesInput]}
-                value={editNotes}
-                onChangeText={setEditNotes}
-                placeholder="Strengths, areas to develop, physical attributes…"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-              />
+              {/* ─ NOTES — coaches only ─ */}
+              {isCoach && (
+                <>
+                  <Text style={[st.editSection, { marginTop: 24 }]}>NOTES</Text>
+                  <Text style={st.inputLabel}>Coach notes</Text>
+                  <TextInput
+                    style={[st.input, st.notesInput]}
+                    value={editNotes}
+                    onChangeText={setEditNotes}
+                    placeholder="Strengths, areas to develop, physical attributes…"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
+                </>
+              )}
 
               {/* ─ PRIVACY ─ */}
               <Text style={[st.editSection, { marginTop: 24 }]}>PRIVACY</Text>
@@ -963,12 +967,12 @@ export default function PlayerProfileScreen() {
                   />
                   <View style={st.privacyText}>
                     <Text style={st.privacyLabel}>
-                      {editPrivate ? 'Private — coaches only' : 'Visible to team'}
+                      {editPrivate ? 'Contact details private' : 'Contact details visible'}
                     </Text>
                     <Text style={st.privacySub}>
                       {editPrivate
-                        ? 'Other parents cannot see this player\'s details'
-                        : 'Other parents can see name, photo, and position'}
+                        ? 'Your contact info is only visible to coaches'
+                        : 'Other parents on the team can contact you directly'}
                     </Text>
                   </View>
                 </View>
@@ -1321,8 +1325,9 @@ function PlayerTab({
         </>
       )}
 
-      {/* ── RSVP history ── */}
-      <Text style={[st.sectionLabel, (hasAnyStats || (isCoach && matchTimes.length > 0)) && { marginTop: 24 }]}>
+      {/* ── RSVP history — coaches and own parent only ── */}
+      {(isCoach || isMyPlayer) && (
+      <><Text style={[st.sectionLabel, (hasAnyStats || (isCoach && matchTimes.length > 0)) && { marginTop: 24 }]}>
         RECENT EVENTS
       </Text>
       {rsvpHistory.length === 0 ? (
@@ -1355,6 +1360,7 @@ function PlayerTab({
           })}
         </View>
       )}
+      </>)}
 
       {/* ── Remove player ── */}
       {isCoach && (
