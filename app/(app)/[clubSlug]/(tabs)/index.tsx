@@ -216,10 +216,15 @@ export default function HomeScreen() {
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [outstandingFees, setOutstandingFees] = useState<OutstandingFee[]>([]);
   const [showFeeModal, setShowFeeModal]     = useState(false);
-  const [attendanceStreak, setAttendanceStreak]         = useState(0);
-  const [seasonAttendancePct, setSeasonAttendancePct]   = useState<number | null>(null);
-  const [seasonAttendedCount, setSeasonAttendedCount]   = useState(0);
-  const [seasonTotalMarked, setSeasonTotalMarked]       = useState(0);
+  const [trainingStreak, setTrainingStreak]         = useState(0);
+  const [trainingAtRisk, setTrainingAtRisk]         = useState(false);
+  const [gameStreak, setGameStreak]                 = useState(0);
+  const [gameAtRisk, setGameAtRisk]                 = useState(false);
+  const [gamesAttended, setGamesAttended]           = useState(0);
+  const [gamesTotal, setGamesTotal]                 = useState(0);
+  const [seasonTotalMarked, setSeasonTotalMarked]   = useState(0);
+  const [attendanceHistory, setAttendanceHistory]   = useState<{ id: string; type: string; date: string; status: string | null }[]>([]);
+  const [showAttendanceSheet, setShowAttendanceSheet] = useState(false);
 
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
   const slug = clubSlug ?? club?.slug ?? '';
@@ -381,13 +386,14 @@ export default function HomeScreen() {
       if (!isCoach) {
         const { data: pastEvtsData } = await supabase
           .from('events')
-          .select('id')
+          .select('id, type, event_date')
           .eq('team_id', team.id)
           .lt('event_date', today)
           .is('cancelled_at', null)
           .order('event_date', { ascending: false })
-          .limit(30);
-        const pastIds = (pastEvtsData ?? []).map((e: { id: string }) => e.id);
+          .limit(40);
+        const pastEvts = (pastEvtsData ?? []) as { id: string; type: string; event_date: string }[];
+        const pastIds = pastEvts.map((e) => e.id);
         if (pastIds.length > 0) {
           const { data: attRows } = await supabase
             .from('event_attendance')
@@ -395,17 +401,32 @@ export default function HomeScreen() {
             .eq('player_id', player.id)
             .in('event_id', pastIds);
           const attMap = new Map((attRows ?? []).map((r: any) => [r.event_id as string, r.status as string]));
-          const markedInOrder = pastIds.filter((id) => attMap.has(id));
-          let streak = 0;
-          for (const id of markedInOrder) {
-            if (attMap.get(id) === 'present') streak++;
-            else break;
+          // Only coach-marked sessions, most-recent-first
+          const history = pastEvts
+            .filter((e) => attMap.has(e.id))
+            .map((e) => ({ id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null }));
+          setAttendanceHistory(history);
+          setSeasonTotalMarked(history.length);
+          // WHOOP-style streak: one missed session is a grace period, two in a row breaks it
+          function whoopStreak(evts: typeof history) {
+            let streak = 0; let atRisk = false;
+            for (const ev of evts) {
+              if (ev.status === 'present') { streak++; atRisk = false; }
+              else if (!atRisk) { atRisk = true; }
+              else break;
+            }
+            return { streak, atRisk };
           }
-          const presentCount = markedInOrder.filter((id) => attMap.get(id) === 'present').length;
-          setAttendanceStreak(streak);
-          setSeasonAttendedCount(presentCount);
-          setSeasonTotalMarked(markedInOrder.length);
-          setSeasonAttendancePct(markedInOrder.length > 0 ? Math.round(presentCount / markedInOrder.length * 100) : null);
+          const trainingHistory = history.filter((e) => e.type !== 'game');
+          const gameHistory     = history.filter((e) => e.type === 'game');
+          const tResult = whoopStreak(trainingHistory);
+          const gResult = whoopStreak(gameHistory);
+          setTrainingStreak(tResult.streak);
+          setTrainingAtRisk(tResult.atRisk);
+          setGameStreak(gResult.streak);
+          setGameAtRisk(gResult.atRisk);
+          setGamesTotal(gameHistory.length);
+          setGamesAttended(gameHistory.filter((e) => e.status === 'present').length);
         }
       }
     } else {
@@ -855,59 +876,65 @@ export default function HomeScreen() {
         )}
 
         {/* MY SEASON — players with coach-marked attendance */}
-        {!isCoach && myPlayer && seasonTotalMarked > 0 && (
-          <>
-            <View style={[styles.sectionTitleRow, { marginTop: 24 }]}>
-              <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
-              <Text style={styles.sectionTitle}>MY SEASON</Text>
-            </View>
-            <View style={[styles.seasonCard, { borderLeftWidth: 3, borderLeftColor: primaryColor }]}>
-              <View style={styles.seasonMetric}>
-                <View style={[styles.seasonMetricIcon, { backgroundColor: attendanceStreak >= 3 ? 'rgba(245,158,11,0.12)' : rgba(0.08) }]}>
-                  <Text style={{ fontSize: 20 }}>{attendanceStreak >= 5 ? '🔥' : attendanceStreak >= 3 ? '⚡' : '📅'}</Text>
-                </View>
-                <View style={styles.seasonMetricBody}>
-                  <Text style={[styles.seasonMetricNum, { color: attendanceStreak >= 3 ? '#F59E0B' : primaryColor }]}>
-                    {attendanceStreak}
-                  </Text>
-                  <Text style={styles.seasonMetricLabel}>
-                    {`Session streak${attendanceStreak >= 5 ? '\n🔥 On fire!' : attendanceStreak >= 3 ? '\n⚡ Building!' : ''}`}
-                  </Text>
-                </View>
+        {!isCoach && myPlayer && seasonTotalMarked > 0 && (() => {
+          const superStreak = trainingStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+          const tIcon = trainingAtRisk ? '⚡' : trainingStreak >= 5 ? '🔥' : trainingStreak >= 3 ? '⚡' : '📅';
+          const tColor = trainingAtRisk ? '#F59E0B' : trainingStreak >= 3 ? '#F59E0B' : primaryColor;
+          const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
+          const gIcon = gamesTotal === 0 ? '⚽' : gPerfect ? '🥇' : gameAtRisk ? '⚡' : '⚽';
+          const gColor = gPerfect ? '#22C55E' : gameAtRisk ? '#F59E0B' : PULSE_COLORS.ui.muted;
+          return (
+            <>
+              <View style={[styles.sectionTitleRow, { marginTop: 24 }]}>
+                <View style={[styles.sectionTitleDot, { backgroundColor: superStreak ? '#F59E0B' : primaryColor }]} />
+                <Text style={styles.sectionTitle}>MY SEASON</Text>
+                {superStreak && <Text style={styles.superStreakChip}>⭐ SUPER STREAK</Text>}
               </View>
-              <View style={styles.seasonDivider} />
-              {(() => {
-                const pct = seasonAttendancePct;
-                const medal = pct == null ? null
-                  : pct >= 90 ? { icon: '🥇', color: '#F59E0B' }
-                  : pct >= 70 ? { icon: '🥈', color: '#9CA3AF' }
-                  : pct >= 50 ? { icon: '🥉', color: '#CD7F32' }
-                  : null;
-                const color = medal?.color ?? PULSE_COLORS.ui.muted;
-                return (
-                  <View style={styles.seasonMetric}>
-                    <View style={[styles.seasonMetricIcon, { backgroundColor: medal ? `${color}18` : rgba(0.08) }]}>
-                      <Text style={{ fontSize: 20 }}>{medal?.icon ?? '📊'}</Text>
-                    </View>
-                    <View style={styles.seasonMetricBody}>
-                      <Text style={[styles.seasonMetricNum, { color: pct != null ? color : PULSE_COLORS.ui.muted }]}>
-                        {pct != null ? `${pct}%` : '—'}
-                      </Text>
-                      <Text style={styles.seasonMetricLabel}>
-                        {`Attendance rate\n${seasonAttendedCount}/${seasonTotalMarked} sessions`}
-                      </Text>
-                      {pct != null && (
-                        <View style={[styles.seasonBar, { backgroundColor: PULSE_COLORS.ui.surface }]}>
-                          <View style={[styles.seasonBarFill, { width: `${pct}%` as any, backgroundColor: color }]} />
-                        </View>
-                      )}
-                    </View>
+              <TouchableOpacity
+                style={[styles.seasonCard, { borderLeftWidth: 3, borderLeftColor: superStreak ? '#F59E0B' : primaryColor }]}
+                onPress={() => setShowAttendanceSheet(true)}
+                activeOpacity={0.85}
+              >
+                {/* Training streak */}
+                <View style={styles.seasonMetric}>
+                  <View style={[styles.seasonMetricIcon, { backgroundColor: trainingAtRisk ? 'rgba(245,158,11,0.12)' : trainingStreak >= 3 ? 'rgba(245,158,11,0.12)' : rgba(0.08) }]}>
+                    <Text style={{ fontSize: 20 }}>{tIcon}</Text>
                   </View>
-                );
-              })()}
-            </View>
-          </>
-        )}
+                  <View style={styles.seasonMetricBody}>
+                    <Text style={[styles.seasonMetricNum, { color: tColor }]}>{trainingStreak}</Text>
+                    <Text style={styles.seasonMetricLabel}>
+                      {trainingAtRisk
+                        ? 'Training\n⚠️ At risk!'
+                        : `Training${trainingStreak >= 5 ? '\n🔥 On fire!' : trainingStreak >= 3 ? '\n⚡ Building!' : ''}`}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.seasonDivider} />
+                {/* Game attendance */}
+                <View style={styles.seasonMetric}>
+                  <View style={[styles.seasonMetricIcon, { backgroundColor: gPerfect ? 'rgba(34,197,94,0.12)' : gameAtRisk ? 'rgba(245,158,11,0.12)' : rgba(0.08) }]}>
+                    <Text style={{ fontSize: 20 }}>{gIcon}</Text>
+                  </View>
+                  <View style={styles.seasonMetricBody}>
+                    <Text style={[styles.seasonMetricNum, { color: gColor }]}>
+                      {gamesTotal > 0 ? `${gamesAttended}/${gamesTotal}` : '—'}
+                    </Text>
+                    <Text style={styles.seasonMetricLabel}>
+                      {gamesTotal === 0 ? 'Games\nnone yet'
+                        : gPerfect ? 'Games\n✅ Perfect!'
+                        : gameAtRisk ? 'Games\n⚠️ At risk'
+                        : `Games\n${gameStreak > 0 ? `${gameStreak} streak` : 'keep it up'}`}
+                    </Text>
+                  </View>
+                </View>
+                {/* Tap hint */}
+                <View style={styles.seasonTapHint}>
+                  <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+                </View>
+              </TouchableOpacity>
+            </>
+          );
+        })()}
 
         {/* Next Game + Next Training */}
         {renderNextCard(
@@ -1182,6 +1209,117 @@ export default function HomeScreen() {
           <TouchableOpacity style={styles.devSignOut} onPress={async () => { setDevOpen(false); await signOut(); router.replace('/(auth)/login'); }}>
             <Text style={styles.devSignOutText}>Sign out</Text>
           </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Attendance detail sheet */}
+      <Modal visible={showAttendanceSheet} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAttendanceSheet(false)}>
+        <View style={styles.attSheet}>
+          {/* Header */}
+          <View style={styles.attSheetHeader}>
+            <Text style={styles.attSheetTitle}>My Attendance</Text>
+            <TouchableOpacity onPress={() => setShowAttendanceSheet(false)} style={styles.attSheetClose}>
+              <Ionicons name="close" size={20} color={PULSE_COLORS.ui.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+            {/* Streak summary cards */}
+            {(() => {
+              const superStreak = trainingStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+              return (
+                <>
+                  <View style={styles.attSheetStatRow}>
+                    {/* Training streak */}
+                    <View style={[styles.attSheetStat, { borderLeftColor: trainingAtRisk ? '#F59E0B' : primaryColor }]}>
+                      <Text style={styles.attSheetStatEmoji}>
+                        {trainingAtRisk ? '⚡' : trainingStreak >= 5 ? '🔥' : trainingStreak >= 3 ? '⚡' : '📅'}
+                      </Text>
+                      <Text style={[styles.attSheetStatNum, { color: trainingAtRisk ? '#F59E0B' : trainingStreak >= 3 ? '#F59E0B' : primaryColor }]}>
+                        {trainingStreak}
+                      </Text>
+                      <Text style={styles.attSheetStatLabel}>Training streak</Text>
+                      {trainingAtRisk && (
+                        <Text style={styles.attSheetAtRisk}>⚠️ At risk — attend next session to save it</Text>
+                      )}
+                    </View>
+                    {/* Game attendance */}
+                    <View style={[styles.attSheetStat, { borderLeftColor: gamesTotal > 0 && gamesAttended === gamesTotal ? '#22C55E' : gameAtRisk ? '#F59E0B' : PULSE_COLORS.ui.border }]}>
+                      <Text style={styles.attSheetStatEmoji}>
+                        {gamesTotal === 0 ? '⚽' : gamesAttended === gamesTotal ? '🥇' : gameAtRisk ? '⚡' : '⚽'}
+                      </Text>
+                      <Text style={[styles.attSheetStatNum, {
+                        color: gamesTotal > 0 && gamesAttended === gamesTotal ? '#22C55E'
+                          : gameAtRisk ? '#F59E0B' : PULSE_COLORS.ui.muted,
+                      }]}>
+                        {gamesTotal > 0 ? `${gamesAttended}/${gamesTotal}` : '—'}
+                      </Text>
+                      <Text style={styles.attSheetStatLabel}>Games this season</Text>
+                      {gameAtRisk && (
+                        <Text style={styles.attSheetAtRisk}>⚠️ At risk — don't miss the next one</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Super streak banner */}
+                  {superStreak && (
+                    <View style={styles.attSheetSuperBanner}>
+                      <Text style={{ fontSize: 24 }}>⭐</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.attSheetSuperLabel}>SUPER STREAK ACTIVE</Text>
+                        <Text style={styles.attSheetSuperSub}>Training on fire · perfect game attendance</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* WHOOP mechanic explainer */}
+                  <View style={styles.attSheetInfoRow}>
+                    <Ionicons name="information-circle-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                    <Text style={styles.attSheetInfoText}>
+                      Miss one session and your streak goes at risk. Attend the next and you save it. Miss two in a row and it resets.
+                    </Text>
+                  </View>
+                </>
+              );
+            })()}
+
+            {/* Session history */}
+            {attendanceHistory.length > 0 && (
+              <>
+                <View style={[styles.sectionTitleRow, { marginTop: 24, marginHorizontal: 20 }]}>
+                  <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
+                  <Text style={styles.sectionTitle}>RECENT SESSIONS</Text>
+                </View>
+                <View style={styles.attSheetList}>
+                  {attendanceHistory.map((entry) => {
+                    const isGame = entry.type === 'game';
+                    const present = entry.status === 'present';
+                    const d = new Date(entry.date + 'T00:00:00');
+                    const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    return (
+                      <View key={entry.id} style={styles.attSheetRow}>
+                        <View style={[styles.attSheetTypeBadge,
+                          isGame
+                            ? { backgroundColor: 'rgba(249,115,22,0.12)', borderColor: 'rgba(249,115,22,0.25)' }
+                            : { backgroundColor: rgba(0.08), borderColor: rgba(0.2) },
+                        ]}>
+                          <Text style={[styles.attSheetTypeBadgeText,
+                            { color: isGame ? '#F97316' : primaryColor },
+                          ]}>{isGame ? 'GAME' : 'TRAINING'}</Text>
+                        </View>
+                        <Text style={styles.attSheetRowDate}>{dateStr}</Text>
+                        <View style={[styles.attSheetStatusDot, {
+                          backgroundColor: present ? '#22C55E' : '#EF4444',
+                        }]}>
+                          <Ionicons name={present ? 'checkmark' : 'close'} size={11} color="#fff" />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </ScrollView>
         </View>
       </Modal>
     </>
@@ -1640,7 +1778,7 @@ const styles = StyleSheet.create({
   seasonCard: {
     backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16,
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    flexDirection: 'row', padding: 16, gap: 12, marginBottom: 28,
+    flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, marginBottom: 28,
   },
   seasonMetric: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   seasonMetricIcon: {
@@ -1650,7 +1788,65 @@ const styles = StyleSheet.create({
   seasonMetricBody: { flex: 1 },
   seasonMetricNum: { fontSize: 28, fontWeight: '900', letterSpacing: -1 },
   seasonMetricLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, lineHeight: 16 },
-  seasonDivider: { width: 1, backgroundColor: PULSE_COLORS.ui.border },
-  seasonBar: { height: 4, borderRadius: 2, marginTop: 8, overflow: 'hidden' },
-  seasonBarFill: { height: '100%', borderRadius: 2 },
+  seasonDivider: { width: 1, alignSelf: 'stretch', backgroundColor: PULSE_COLORS.ui.border },
+  seasonTapHint: { flexShrink: 0 },
+  superStreakChip: {
+    fontSize: 9, fontWeight: '900', letterSpacing: 1,
+    color: '#F59E0B', marginLeft: 6,
+  },
+
+  // Attendance detail sheet
+  attSheet: {
+    flex: 1, backgroundColor: PULSE_COLORS.ui.background,
+  },
+  attSheetHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
+  attSheetTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  attSheetClose: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  attSheetStatRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 20 },
+  attSheetStat: {
+    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderLeftWidth: 3, borderRadius: 14, padding: 14, gap: 2,
+  },
+  attSheetStatEmoji: { fontSize: 22, marginBottom: 4 },
+  attSheetStatNum: { fontSize: 32, fontWeight: '900', letterSpacing: -1 },
+  attSheetStatLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', marginTop: 2 },
+  attSheetAtRisk: { fontSize: 11, color: '#F59E0B', fontWeight: '600', marginTop: 6, lineHeight: 15 },
+  attSheetSuperBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 20, marginTop: 14,
+    backgroundColor: 'rgba(245,158,11,0.08)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 14, padding: 14,
+  },
+  attSheetSuperLabel: { fontSize: 12, fontWeight: '900', color: '#F59E0B', letterSpacing: 1 },
+  attSheetSuperSub: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  attSheetInfoRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    marginHorizontal: 20, marginTop: 14,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 12, padding: 12,
+  },
+  attSheetInfoText: { flex: 1, fontSize: 11, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
+  attSheetList: { marginHorizontal: 20, marginTop: 8, gap: 2 },
+  attSheetRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
+  attSheetTypeBadge: {
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1,
+  },
+  attSheetTypeBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  attSheetRowDate: { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  attSheetStatusDot: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
