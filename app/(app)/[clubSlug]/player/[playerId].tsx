@@ -75,6 +75,7 @@ type Invite = {
   token: string;
   guardian_name: string | null;
   phone: string | null;
+  address: string | null;
   relationship: string | null;
   accepted_at: string | null;
   created_at: string;
@@ -161,10 +162,11 @@ export default function PlayerProfileScreen() {
   // Add / edit guardian modal
   const [showAddGuardian, setShowAddGuardian]   = useState(false);
   const [editingInvite, setEditingInvite]       = useState<Invite | null>(null);
-  const [guardianName, setGuardianName]         = useState('');
-  const [guardianEmail, setGuardianEmail]       = useState('');
-  const [guardianPhone, setGuardianPhone]       = useState('');
-  const [guardianRel, setGuardianRel]           = useState('');
+  const [guardianName, setGuardianName]           = useState('');
+  const [guardianEmail, setGuardianEmail]         = useState('');
+  const [guardianPhone, setGuardianPhone]         = useState('');
+  const [guardianAddress, setGuardianAddress]     = useState('');
+  const [guardianRel, setGuardianRel]             = useState('');
   const [savingInvite, setSavingInvite]         = useState(false);
 
   const isCoach    = profile?.role === 'org_admin' || profile?.role === 'coach';
@@ -330,7 +332,7 @@ export default function PlayerProfileScreen() {
         : Promise.resolve({ data: null, error: null }),
       (supabase as any)
         .from('invites')
-        .select('id, email, token, guardian_name, phone, relationship, accepted_at, created_at')
+        .select('id, email, token, guardian_name, phone, address, relationship, accepted_at, created_at')
         .eq('player_id', player.id)
         .order('created_at', { ascending: false }),
     ]);
@@ -508,6 +510,7 @@ export default function PlayerProfileScreen() {
     setGuardianName('');
     setGuardianEmail('');
     setGuardianPhone('');
+    setGuardianAddress('');
     setGuardianRel('');
     setShowAddGuardian(true);
   }
@@ -517,6 +520,7 @@ export default function PlayerProfileScreen() {
     setGuardianName(invite.guardian_name ?? '');
     setGuardianEmail(invite.email);
     setGuardianPhone(invite.phone ?? '');
+    setGuardianAddress(invite.address ?? '');
     setGuardianRel(invite.relationship ?? '');
     setShowAddGuardian(true);
   }
@@ -530,6 +534,7 @@ export default function PlayerProfileScreen() {
       await (supabase as any).from('invites').update({
         guardian_name: guardianName.trim() || null,
         phone: guardianPhone.trim() || null,
+        address: guardianAddress.trim() || null,
         relationship: guardianRel || null,
       }).eq('id', editingInvite.id);
     } else {
@@ -541,6 +546,7 @@ export default function PlayerProfileScreen() {
         email: guardianEmail.trim().toLowerCase(),
         guardian_name: guardianName.trim() || null,
         phone: guardianPhone.trim() || null,
+        address: guardianAddress.trim() || null,
         relationship: guardianRel || null,
         created_by: profile.id,
       });
@@ -1104,6 +1110,16 @@ export default function PlayerProfileScreen() {
                 keyboardType="phone-pad"
               />
 
+              <Text style={st.inputLabel}>Home address</Text>
+              <TextInput
+                style={st.input}
+                value={guardianAddress}
+                onChangeText={setGuardianAddress}
+                placeholder="123 Main St, Anytown, NJ"
+                placeholderTextColor={PULSE_COLORS.ui.muted}
+                autoCapitalize="words"
+              />
+
               {/* ─ RELATIONSHIP ─ */}
               <Text style={[st.editSection, { marginTop: 24 }]}>RELATIONSHIP</Text>
               <Text style={st.inputLabel}>Role</Text>
@@ -1414,6 +1430,21 @@ function PlayerTab({
                     <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
                     <Ionicons name="call-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
                     <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.phone}</Text>
+                    <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+                  </TouchableOpacity>
+                </>
+              )}
+              {primaryInvite.address && (
+                <>
+                  <View style={st.tableRowBorder} />
+                  <TouchableOpacity
+                    style={st.tableRow}
+                    onPress={() => Linking.openURL(`maps://?q=${encodeURIComponent(primaryInvite.address!)}`)}
+                    activeOpacity={0.65}
+                  >
+                    <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
+                    <Ionicons name="home-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
+                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.address}</Text>
                     <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 </>

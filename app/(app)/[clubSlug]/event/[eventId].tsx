@@ -1131,6 +1131,72 @@ export default function EventDetailScreen() {
                 </View>
               </>
             )}
+
+            {/* ── RSVP inside card — parents only ── */}
+            {!isCoach && myPlayerId && (
+              <>
+                <View style={styles.metaDivider} />
+                <View style={[styles.metaRow, { alignItems: 'flex-start', paddingVertical: 14 }]}>
+                  <View style={styles.metaIconWrap}>
+                    <Ionicons
+                      name={
+                        myStatus === 'attending' ? 'checkmark-circle'
+                        : myStatus === 'not_attending' ? 'close-circle'
+                        : 'radio-button-off-outline'
+                      }
+                      size={18}
+                      color={
+                        myStatus === 'attending' ? PULSE_COLORS.rsvp.attending
+                        : myStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending
+                        : PULSE_COLORS.ui.muted
+                      }
+                    />
+                  </View>
+                  <View style={[styles.metaTextBlock, { flex: 1 }]}>
+                    <Text style={[
+                      styles.metaPrimary,
+                      myStatus === 'attending' && { color: PULSE_COLORS.rsvp.attending },
+                      myStatus === 'not_attending' && { color: PULSE_COLORS.rsvp.not_attending },
+                    ]}>
+                      {myStatus === 'attending' ? "You're going"
+                       : myStatus === 'not_attending' ? "Can't make it"
+                       : 'Your RSVP'}
+                    </Text>
+                    {deadlineLabel && (
+                      <Text style={[styles.metaSecondary, rsvpClosed && { color: PULSE_COLORS.status.error }]}>
+                        {deadlineLabel}
+                      </Text>
+                    )}
+                    {!rsvpClosed && upcoming && (
+                      <View style={[styles.rsvpInlineRow, { marginTop: 10 }]}>
+                        <TouchableOpacity
+                          style={[styles.rsvpInlineBtn, myStatus === 'attending' && styles.rsvpInlineBtnGoing]}
+                          onPress={() => handleRsvp('attending')}
+                          disabled={rsvpSaving}
+                          activeOpacity={0.8}
+                        >
+                          {rsvpSaving && myStatus !== 'attending'
+                            ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                            : <><Ionicons name="checkmark" size={14} color={myStatus === 'attending' ? '#000' : PULSE_COLORS.ui.muted} />
+                               <Text style={[styles.rsvpInlineBtnText, myStatus === 'attending' && { color: '#000' }]}>Going</Text></>}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.rsvpInlineBtn, myStatus === 'not_attending' && styles.rsvpInlineBtnNotGoing]}
+                          onPress={() => handleRsvp('not_attending')}
+                          disabled={rsvpSaving}
+                          activeOpacity={0.8}
+                        >
+                          {rsvpSaving && myStatus !== 'not_attending'
+                            ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                            : <><Ionicons name="close" size={14} color={myStatus === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted} />
+                               <Text style={[styles.rsvpInlineBtnText, myStatus === 'not_attending' && { color: '#fff' }]}>Can't go</Text></>}
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </>
+            )}
           </View>
 
           {/* Recording */}
@@ -1177,72 +1243,6 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {/* Parent RSVP */}
-          {!isCoach && myPlayerId && upcoming && (
-            <View style={styles.section}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Your RSVP</Text>
-                {deadlineLabel && (
-                  <Text style={[styles.deadlineLabel, rsvpClosed && styles.deadlineLabelClosed]}>
-                    {deadlineLabel}
-                  </Text>
-                )}
-              </View>
-              {myStatus && (
-                <View style={[
-                  styles.statusChip,
-                  { backgroundColor: myStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
-                ]}>
-                  <Ionicons
-                    name={myStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
-                    size={16}
-                    color={myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
-                  />
-                  <Text style={[
-                    styles.statusChipText,
-                    { color: myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
-                  ]}>
-                    {myStatus === 'attending' ? "You're going" : "You can't make it"}
-                  </Text>
-                </View>
-              )}
-              {!rsvpClosed && (
-                <View style={styles.rsvpRow}>
-                  <TouchableOpacity
-                    style={[styles.rsvpBtn, myStatus === 'attending' && styles.rsvpBtnGoing]}
-                    onPress={() => handleRsvp('attending')}
-                    disabled={rsvpSaving}
-                  >
-                    <Ionicons
-                      name="checkmark-circle-outline"
-                      size={16}
-                      color={myStatus === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
-                    />
-                    {rsvpSaving && myStatus !== 'attending'
-                      ? <ActivityIndicator size="small" color="#000" />
-                      : <Text style={[styles.rsvpBtnText, myStatus === 'attending' && { color: '#000' }]}>Going</Text>
-                    }
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.rsvpBtn, myStatus === 'not_attending' && styles.rsvpBtnNotGoing]}
-                    onPress={() => handleRsvp('not_attending')}
-                    disabled={rsvpSaving}
-                  >
-                    <Ionicons
-                      name="close-circle-outline"
-                      size={16}
-                      color={myStatus === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
-                    />
-                    {rsvpSaving && myStatus !== 'not_attending'
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Text style={[styles.rsvpBtnText, myStatus === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
-                    }
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
-
           {!isCoach && !myPlayerId && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>RSVP</Text>
@@ -1281,10 +1281,18 @@ export default function EventDetailScreen() {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.viewBreakdownBtn} onPress={() => setActiveMainTab('availability')}>
-                <Text style={[styles.viewBreakdownText, { color: primaryColor }]}>View full breakdown</Text>
-                <Ionicons name="chevron-forward" size={13} color={primaryColor} />
-              </TouchableOpacity>
+              <View style={styles.attendanceFooter}>
+                <TouchableOpacity style={styles.viewBreakdownBtn} onPress={() => setActiveMainTab('availability')}>
+                  <Text style={[styles.viewBreakdownText, { color: primaryColor }]}>Full breakdown</Text>
+                  <Ionicons name="chevron-forward" size={13} color={primaryColor} />
+                </TouchableOpacity>
+                {noResponse.length > 0 && upcoming && (
+                  <TouchableOpacity style={styles.nudgeQuickBtn} onPress={handleNudge} activeOpacity={0.7}>
+                    <Ionicons name="notifications-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                    <Text style={styles.nudgeQuickBtnText}>Nudge {noResponse.length}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
 
@@ -2052,16 +2060,16 @@ const styles = StyleSheet.create({
   },
   statusChipText: { fontSize: 14, fontWeight: '600' },
 
-  rsvpRow: { flexDirection: 'row', gap: 10 },
-  rsvpBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 7, paddingVertical: 13, borderRadius: 12,
+  rsvpInlineRow: { flexDirection: 'row', gap: 8 },
+  rsvpInlineBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10,
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     backgroundColor: PULSE_COLORS.ui.surface,
   },
-  rsvpBtnGoing: { backgroundColor: PULSE_COLORS.rsvp.attending, borderColor: PULSE_COLORS.rsvp.attending },
-  rsvpBtnNotGoing: { backgroundColor: PULSE_COLORS.rsvp.not_attending, borderColor: PULSE_COLORS.rsvp.not_attending },
-  rsvpBtnText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  rsvpInlineBtnGoing: { backgroundColor: PULSE_COLORS.rsvp.attending, borderColor: PULSE_COLORS.rsvp.attending },
+  rsvpInlineBtnNotGoing: { backgroundColor: PULSE_COLORS.rsvp.not_attending, borderColor: PULSE_COLORS.rsvp.not_attending },
+  rsvpInlineBtnText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
 
   noPlayerText: { color: PULSE_COLORS.ui.muted, fontSize: 14 },
 
@@ -2082,8 +2090,11 @@ const styles = StyleSheet.create({
   summaryNum: { fontSize: 24, fontWeight: '800' },
   summaryLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 3 },
 
-  viewBreakdownBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end' },
+  attendanceFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  viewBreakdownBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewBreakdownText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
+  nudgeQuickBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  nudgeQuickBtnText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 
   // Actions
   actionBtn: {
