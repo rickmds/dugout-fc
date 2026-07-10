@@ -48,6 +48,7 @@ type Event = {
   home_away: string | null;
   score_home: number | null;
   score_away: number | null;
+  rsvp_lock_at: string | null;
 };
 
 const TEAM_PALETTE = ['#3B82F6', '#22c55e', '#F59E0B', '#8B5CF6', '#EF4444', '#06B6D4'];
@@ -166,7 +167,7 @@ export default function ScheduleScreen() {
 
     const [eventsRes, playersRes, countRes] = await Promise.all([
       supabase.from('events')
-        .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away')
+        .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at')
         .in('team_id', teamIds).order('event_date').order('event_time'),
       profile?.id
         ? supabase.from('players').select('id, team_id').in('team_id', teamIds).eq('profile_id', profile.id)
@@ -269,6 +270,10 @@ export default function ScheduleScreen() {
     const ev = events.find((e) => e.id === eventId);
     const pid = ev ? (playerIdMap.get(ev.team_id) ?? myPlayerId) : myPlayerId;
     if (!pid) return;
+    if (ev?.rsvp_lock_at && new Date(ev.rsvp_lock_at) <= new Date()) {
+      Alert.alert('RSVP closed', 'The RSVP window for this event has closed. Contact your coach if you need to make a change.');
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const current = myRsvps[eventId];
     if (current === status) {

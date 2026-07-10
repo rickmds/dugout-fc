@@ -39,6 +39,7 @@ type NextEvent = {
   uniform: string | null;
   home_away: 'home' | 'away' | null;
   field_type: string | null;
+  rsvp_lock_at: string | null;
 };
 
 type Headcount = { going: number; notGoing: number; tbd: number };
@@ -294,8 +295,8 @@ export default function HomeScreen() {
     ] = await Promise.all([
       supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', team.id),
       supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
       supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).eq('read', false),
@@ -482,6 +483,10 @@ export default function HomeScreen() {
     setLoading: (b: boolean) => void,
   ) {
     if (!myPlayer) return;
+    if (event.rsvp_lock_at && new Date(event.rsvp_lock_at) <= new Date()) {
+      Alert.alert('RSVP closed', 'The RSVP window for this event has closed. Contact your coach if you need to make a change.');
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLoading(true);
     if (currentStatus === status) {
