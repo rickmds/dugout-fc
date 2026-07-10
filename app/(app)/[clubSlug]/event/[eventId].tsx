@@ -1964,16 +1964,16 @@ const styles = StyleSheet.create({
 
   scroll: { padding: 20 },
 
-  typeBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 0 },
+  typeBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   homeAwayBadge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
     borderWidth: 1,
   },
-  homeAwayText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
+  homeAwayText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
 
   typeBadge: {
-    alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 8, marginBottom: 10,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 8,
   },
   typeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
 
