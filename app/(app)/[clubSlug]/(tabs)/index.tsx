@@ -836,6 +836,11 @@ export default function HomeScreen() {
 
           {/* Greeting */}
           <Text style={styles.heroGreeting}>{greeting(profile?.full_name)}</Text>
+          {!isCoach && myPlayer && (
+            <Text style={styles.heroPlayerName}>
+              {myPlayer.full_name}{myPlayer.jersey_number != null ? ` · #${myPlayer.jersey_number}` : ''}
+            </Text>
+          )}
         </View>
 
 
@@ -1250,7 +1255,7 @@ export default function HomeScreen() {
         <View style={styles.attSheet}>
           {/* Header */}
           <View style={styles.attSheetHeader}>
-            <Text style={styles.attSheetTitle}>{profile?.full_name?.split(' ')[0]}'s Season</Text>
+            <Text style={styles.attSheetTitle}>{myPlayer?.full_name?.split(' ')[0]}'s Season</Text>
             <TouchableOpacity onPress={() => setShowAttendanceSheet(false)} style={styles.attSheetClose}>
               <Ionicons name="close" size={20} color={PULSE_COLORS.ui.textSecondary} />
             </TouchableOpacity>
@@ -1569,6 +1574,7 @@ const styles = StyleSheet.create({
   heroTeamRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   heroTeamName: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.85)', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
   heroGreeting: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '500', textAlign: 'center', marginTop: 10, textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  heroPlayerName: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '600', textAlign: 'center', marginTop: 4, letterSpacing: 0.3 },
 
   notifBadge: {
     position: 'absolute', top: -1, right: -1,
