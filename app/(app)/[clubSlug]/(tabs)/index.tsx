@@ -937,7 +937,7 @@ export default function HomeScreen() {
                   <Text style={[styles.seasonFlameEmoji, {
                     textShadowColor: flameTier.glow,
                     textShadowOffset: { width: 0, height: 0 },
-                    textShadowRadius: combinedStreak >= 1 ? 20 : 0,
+                    textShadowRadius: combinedStreak >= 1 ? 12 : 0,
                   }]}>🔥</Text>
                   <Text style={[styles.seasonStatNum, { color: flameTier.color }]}>{combinedStreak}</Text>
                   <Text style={styles.seasonStatLabel}>{flameTier.label}</Text>
@@ -951,9 +951,9 @@ export default function HomeScreen() {
                       <Text style={[styles.seasonFlameEmoji, gPerfect ? {
                         textShadowColor: '#22C55E',
                         textShadowOffset: { width: 0, height: 0 },
-                        textShadowRadius: 16,
+                        textShadowRadius: 10,
                       } : {}]}>{gPerfect ? '🥇' : '⚽'}</Text>
-                      <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.muted, fontSize: 28, lineHeight: 32 }]}>
+                      <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.muted, fontSize: 28, lineHeight: 38 }]}>
                         {gamesAttended}/{gamesTotal}
                       </Text>
                       <Text style={styles.seasonStatLabel}>{gPerfect ? 'Perfect!' : 'Games'}</Text>
@@ -1279,7 +1279,7 @@ export default function HomeScreen() {
                     <Text style={[styles.attSheetHeroEmoji, {
                       textShadowColor: tier.glow,
                       textShadowOffset: { width: 0, height: 0 },
-                      textShadowRadius: combinedStreak >= 1 ? 24 : 0,
+                      textShadowRadius: combinedStreak >= 1 ? 14 : 0,
                     }]}>🔥</Text>
                     <Text style={[styles.attSheetHeroNum, { color: tier.color }]}>{combinedStreak}</Text>
                     <Text style={styles.attSheetHeroLabel}>{tier.label}</Text>
@@ -1818,9 +1818,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 12, paddingTop: 22, paddingBottom: 26, marginBottom: 28,
   },
-  seasonStat: { flex: 1, alignItems: 'center', gap: 8 },
-  seasonFlameEmoji: { fontSize: 34 },
-  seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, lineHeight: 60 },
+  seasonStat: { flex: 1, alignItems: 'center', gap: 4 },
+  seasonFlameEmoji: { fontSize: 34, padding: 12 },
+  seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, lineHeight: 72 },
   seasonStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
   seasonDivider: { width: 1, height: 100, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 8 },
   seasonTapHint: { width: 24, alignItems: 'center' },
@@ -1847,8 +1847,8 @@ const styles = StyleSheet.create({
   attSheetHero: {
     alignItems: 'center', paddingTop: 36, paddingBottom: 24, paddingHorizontal: 20,
   },
-  attSheetHeroEmoji: { fontSize: 52 },
-  attSheetHeroNum: { fontSize: 80, fontWeight: '900', letterSpacing: -4, lineHeight: 84, marginTop: 8 },
+  attSheetHeroEmoji: { fontSize: 52, padding: 16 },
+  attSheetHeroNum: { fontSize: 80, fontWeight: '900', letterSpacing: -4, lineHeight: 96, marginTop: 4 },
   attSheetHeroLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 4 },
   attSheetHeroSub: { fontSize: 13, color: '#60A5FA', fontWeight: '600', marginTop: 8, textAlign: 'center' },
   attSheetSuperChip: {
@@ -1863,7 +1863,7 @@ const styles = StyleSheet.create({
     backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, padding: 14,
   },
-  attSheetGameEmoji: { fontSize: 28 },
+  attSheetGameEmoji: { fontSize: 28, padding: 10 },
   attSheetGameNum: { fontSize: 17, fontWeight: '800' },
   attSheetGameSub: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
   attSheetInfoInline: {
