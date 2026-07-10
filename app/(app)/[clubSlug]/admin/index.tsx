@@ -397,10 +397,10 @@ export default function AdminPanel() {
     setPastEventCount(pastEventIds.length);
     if (pastEventIds.length > 0 && (rosterRes.data ?? []).length > 0) {
       const { data: rsvps } = await supabase
-        .from('event_rsvps')
+        .from('event_attendance')
         .select('event_id, player_id')
         .in('event_id', pastEventIds)
-        .eq('status', 'attending');
+        .eq('status', 'present');
       const attendedMap: Record<string, number> = {};
       (rsvps ?? []).forEach((r) => {
         attendedMap[r.player_id] = (attendedMap[r.player_id] ?? 0) + 1;

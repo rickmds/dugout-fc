@@ -11,6 +11,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
+import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
@@ -41,6 +42,13 @@ export default function SeasonStatsScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { team } = useTeam();
   const router = useRouter();
+  const { profile } = useAuth();
+
+  useEffect(() => {
+    if (profile && !['coach', 'org_admin', 'app_admin'].includes(profile.role ?? '')) {
+      router.back();
+    }
+  }, [profile]);
 
   const [stats, setStats]               = useState<PlayerStat[]>([]);
   const [totalGames, setTotalGames]     = useState(0);

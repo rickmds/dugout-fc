@@ -61,7 +61,7 @@ const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string 
   other:    { label: 'Other',    color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)' },
 };
 
-const TODAY_STR = new Date().toISOString().split('T')[0];
+function getTodayStr() { return new Date().toISOString().split('T')[0]; }
 
 function formatTime(timeStr: string): string {
   const [h, m] = timeStr.split(':').map(Number);
@@ -85,7 +85,7 @@ function isUpcoming(dateStr: string): boolean {
 }
 
 function isToday(dateStr: string): boolean {
-  return dateStr === TODAY_STR;
+  return dateStr === getTodayStr();
 }
 
 function groupByMonth(evs: Event[]): { title: string; data: Event[] }[] {
@@ -144,7 +144,7 @@ export default function ScheduleScreen() {
   const todayDate = new Date();
   const [calYear, setCalYear] = useState(todayDate.getFullYear());
   const [calMonth, setCalMonth] = useState(todayDate.getMonth());
-  const [selectedDate, setSelectedDate] = useState<string | null>(TODAY_STR);
+  const [selectedDate, setSelectedDate] = useState<string | null>(getTodayStr);
 
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
 
@@ -581,7 +581,7 @@ export default function ScheduleScreen() {
 
   function handleSyncCalendar() {
     if (!team) return;
-    const base = `https://pulse-fc.app/api/calendar/${team.id}`;
+    const base = `${process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app'}/api/calendar/${team.id}`;
     const webcal = base.replace('https://', 'webcal://');
     const google = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
     Alert.alert(
@@ -801,7 +801,7 @@ export default function ScheduleScreen() {
                   const hasEvents = eventsByDate.has(dateStr);
                   const isSelected = selectedDate === dateStr;
                   const isTodayCell = isToday(dateStr);
-                  const isPastDay = dateStr < TODAY_STR;
+                  const isPastDay = dateStr < getTodayStr();
 
                   return (
                     <TouchableOpacity

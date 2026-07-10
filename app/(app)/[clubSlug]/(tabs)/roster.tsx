@@ -358,7 +358,7 @@ export default function RosterScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSaving(true);
 
-    const { data: playerData } = await supabase
+    const { data: playerData, error: playerError } = await supabase
       .from('players')
       .insert({
         team_id: team.id,
@@ -369,7 +369,13 @@ export default function RosterScreen() {
       .select('id')
       .single();
 
-    if (parentEmail.trim() && playerData?.id) {
+    if (playerError || !playerData?.id) {
+      setSaving(false);
+      Alert.alert('Error', 'Could not add player. Please try again.');
+      return;
+    }
+
+    if (parentEmail.trim()) {
       const { data: inviteData } = await supabase
         .from('invites')
         .insert({
@@ -384,11 +390,11 @@ export default function RosterScreen() {
 
       if (inviteData?.token) {
         const token       = (inviteData as any).token as string;
-        const appStoreUrl = 'https://apps.apple.com/app/pulse-fc';
-        const deepLink    = `https://pulse-fc.app/join?token=${token}`;
+        const appStoreUrl = 'https://apps.apple.com/app/pulse-fc/id6740793498';
+        const deepLink    = `${process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app'}/join?token=${token}`;
         const greeting    = parentName.trim() ? `Hi ${parentName.trim()},` : 'Hi there,';
         const body =
-          `${greeting}\n\n${name.trim()} has been added to ${team.name} on Pulse FC.\n\n` +
+          `${greeting}\n\n${name.trim()} has been added to ${team.name} on ${clubName}.\n\n` +
           `Download the app to see the schedule, RSVP to events, and message the coach:\n${appStoreUrl}\n\n` +
           `Already have the app? Use this link to join your team:\n${deepLink}\n\n` +
           `Or enter invite code: ${token}`;
@@ -397,7 +403,7 @@ export default function RosterScreen() {
           body: {
             to: [{ email: parentEmail.trim(), name: parentName.trim() || '' }],
             cc: [],
-            subject: `You're invited to join ${team.name} on Pulse FC`,
+            subject: `You're invited to join ${team.name} on ${clubName}`,
             body,
             from_name: profile.full_name ?? 'Your Coach',
             team_name: team.name,
@@ -410,16 +416,16 @@ export default function RosterScreen() {
           },
         });
         setSuccessInfo({ type: 'player', firstName: name.trim().split(' ')[0], email: parentEmail.trim() });
-        setAddStep('success');
       } else {
-        setAddStep(null);
+        // Invite insert failed — player added but email not sent
+        setSuccessInfo({ type: 'player_no_email', firstName: name.trim().split(' ')[0], email: '' });
       }
     } else {
       setSuccessInfo({ type: 'player_no_email', firstName: name.trim().split(' ')[0], email: '' });
-      setAddStep('success');
     }
 
     setSaving(false);
+    setAddStep('success');
     fetchData();
   }
 
@@ -441,11 +447,11 @@ export default function RosterScreen() {
 
     if (inviteData?.token) {
       const token      = (inviteData as any).token as string;
-      const deepLink   = `https://pulse-fc.app/join?token=${token}`;
+      const deepLink   = `${process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app'}/join?token=${token}`;
       const roleLabel  = coachRole || 'Coach';
       const greeting   = `Hi ${coachName.trim()},`;
       const body =
-        `${greeting}\n\nYou've been added as ${roleLabel} for ${team.name} on Pulse FC.\n\n` +
+        `${greeting}\n\nYou've been added as ${roleLabel} for ${team.name} on ${clubName}.\n\n` +
         `Download the app to manage the squad, build lineups, and communicate with parents:\n` +
         `https://apps.apple.com/app/pulse-fc\n\n` +
         `Already have the app? Use this link to join your team:\n${deepLink}\n\n` +
@@ -457,7 +463,7 @@ export default function RosterScreen() {
           cc: [],
           subject: `You've been added as ${roleLabel} for ${team.name}`,
           body,
-          from_name: profile.full_name ?? 'Pulse FC',
+          from_name: profile.full_name ?? clubName,
           team_name: team.name,
           from_email: 'info@pulse-fc.app',
           reply_to: null,

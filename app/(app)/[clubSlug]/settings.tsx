@@ -27,6 +27,7 @@ import { useClub } from '../../../hooks/useClub';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../components/ui/TeamEditModal';
 import ImageEditor from '../../../components/ui/ImageEditor';
+import { useMapApp } from '../../../hooks/useMapApp';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { profile, club, user, signOut, refreshProfile } = useAuth();
   const { allTeams, refetch: refetchTeams } = useActiveTeam();
+  const mapApp = useMapApp();
 
   const [editingName, setEditingName] = useState(false);
   const [name, setName]               = useState(profile?.full_name ?? '');
@@ -1032,6 +1034,22 @@ export default function SettingsScreen() {
 
       {/* ── Support & Legal ── */}
       <Section label="SUPPORT & LEGAL">
+        <SettingsRow
+          icon="map-outline" iconColor="#fff" iconBg="#6B7280"
+          label="Maps app"
+          value={mapApp.preference ? { apple: 'Apple Maps', google: 'Google Maps', waze: 'Waze' }[mapApp.preference] : 'Always ask'}
+          onPress={() => {
+            if (mapApp.preference) {
+              Alert.alert('Maps app', 'Clear your saved preference? You\'ll be asked each time.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Clear', style: 'destructive', onPress: mapApp.clearPreference },
+              ]);
+            } else {
+              Alert.alert('Maps app', 'No preference saved — you\'ll be asked to choose each time you open an address.');
+            }
+          }}
+        />
+        <View style={st.divider} />
         <SettingsRow
           icon="mail-outline" iconColor="#fff" iconBg={primaryColor}
           label="Contact support"

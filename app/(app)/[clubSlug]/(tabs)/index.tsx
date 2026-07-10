@@ -67,11 +67,11 @@ type OutstandingFee = {
   status: string;
 };
 
-const DEV_ACCOUNTS = [
+const DEV_ACCOUNTS = __DEV__ ? [
   { label: 'Coach', email: 'coach@test.com', password: 'test123456' },
   { label: 'Parent', email: 'parent@test.com', password: 'test123456' },
   { label: 'Admin', email: 'admin@test.com', password: 'test123456' },
-];
+] : [];
 
 const TYPE_CONFIG: Record<string, { icon: React.ComponentProps<typeof Ionicons>['name']; color: string }> = {
   game:     { icon: 'football-outline', color: '#F59E0B' },

@@ -10,7 +10,7 @@ export type MapTarget = {
   lng?: number | null;
 };
 
-const STORAGE_KEY = 'pulse_preferred_map_app';
+const STORAGE_KEY = 'pulse_preferred_map_app_v2';
 
 function buildUrl(app: MapApp, target: MapTarget): string {
   const hasCoords = target.lat != null && target.lng != null;
@@ -68,10 +68,28 @@ export function useMapApp() {
     });
   }, []);
 
-  function open(target: MapTarget) {
-    if (!prefLoaded) return;
+  // Process any tap that arrived before AsyncStorage finished loading
+  useEffect(() => {
+    if (!prefLoaded || !pendingTarget || showPicker) return;
     if (Platform.OS !== 'ios') {
-      // Android: always use Google Maps or web
+      openWithApp('google', pendingTarget);
+      setPendingTarget(null);
+      return;
+    }
+    if (preference) {
+      openWithApp(preference, pendingTarget);
+      setPendingTarget(null);
+    } else {
+      setShowPicker(true);
+    }
+  }, [prefLoaded]);
+
+  function open(target: MapTarget) {
+    if (!prefLoaded) {
+      setPendingTarget(target);
+      return;
+    }
+    if (Platform.OS !== 'ios') {
       openWithApp('google', target);
       return;
     }

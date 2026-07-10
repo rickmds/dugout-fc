@@ -36,7 +36,7 @@ export default function RegisterScreen() {
   async function routeAfterRegister() {
     const clubSlug = await acceptInviteIfPending();
     if (!clubSlug) {
-      router.replace('/(auth)/role-select');
+      router.replace('/(auth)/find-team');
       return;
     }
     router.replace(`/(app)/${clubSlug}/(tabs)` as never);

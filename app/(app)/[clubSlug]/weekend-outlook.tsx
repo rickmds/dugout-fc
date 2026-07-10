@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -20,6 +19,8 @@ import { PULSE_COLORS } from '../../../constants/colors';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../lib/weather';
 import { fetchDriveTimes, fetchDriveTimeBetween } from '../../../lib/drivetime';
 import * as Location from 'expo-location';
+import { useMapApp } from '../../../hooks/useMapApp';
+import { MapPickerModal } from '../../../components/ui/MapPickerModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -143,15 +144,6 @@ function cleanDriveText(text: string): string {
   return text.replace(/\s+0\s+mins?\.?$/i, '').trim();
 }
 
-function openMaps(game: WeekendGame) {
-  const dest = game.lat && game.lng
-    ? `${game.lat},${game.lng}`
-    : encodeURIComponent(game.address ?? game.location ?? '');
-  const url = Platform.OS === 'ios'
-    ? `maps://app?daddr=${dest}`
-    : `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
-  Linking.openURL(url).catch(() => {});
-}
 
 function fmtRsvpLock(rsvpLockAt: string | null): { label: string; color: string } | null {
   if (!rsvpLockAt) return null;
@@ -179,10 +171,13 @@ export default function WeekendOutlook() {
   const [games, setGames] = useState<WeekendGame[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const { primaryColor, rgba } = useClub();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const mapApp = useMapApp();
+  const isCoach = ['coach', 'org_admin', 'app_admin'].includes(profile?.role ?? '');
+  const fetchGenRef = useRef(0);
 
   const { satStr, sunStr, label } = useMemo(
     () => getWeekendDates(weekOffset),
@@ -199,6 +194,8 @@ export default function WeekendOutlook() {
   // ── Data fetch ──────────────────────────────────────────────────────────────
 
   async function fetchData() {
+    fetchGenRef.current += 1;
+    const gen = fetchGenRef.current;
     setLoading(true);
     setGames([]);
     try {
@@ -215,18 +212,16 @@ export default function WeekendOutlook() {
         .order('event_date')
         .order('event_time');
 
-      console.log('[WeekendOutlook] events:', eventsData?.length, 'error:', eventsError);
       if (!eventsData?.length) { setLoading(false); return; }
 
       const eventList = eventsData as any[];
       const teamIds = [...new Set(eventList.map((e) => e.team_id))] as string[];
 
-      const [teamsRes, eventsRes] = await Promise.all([
+      const [teamsRes] = await Promise.all([
         supabase
           .from('teams')
           .select('id, name, clubs(id, name, primary_color, slug)')
           .in('id', teamIds),
-        Promise.resolve({ data: eventsData }),
       ]);
 
       const teamMap: Record<string, TeamInfo> = {};
@@ -283,16 +278,16 @@ export default function WeekendOutlook() {
         };
       });
 
+      if (gen !== fetchGenRef.current) return;
       setGames(built);
       setLoading(false);
-      fetchSecondaryData(built);
-    } catch (err) {
-      console.error('WeekendOutlook fetch error:', err);
+      fetchSecondaryData(built, gen);
+    } catch {
       setLoading(false);
     }
   }
 
-  async function fetchSecondaryData(built: WeekendGame[]) {
+  async function fetchSecondaryData(built: WeekendGame[], gen: number) {
     const driveItems = built
       .filter((g) => g.address || g.location)
       .map((g) => ({ id: g.id, location: g.address ?? g.location ?? '' }));
@@ -320,7 +315,6 @@ export default function WeekendOutlook() {
       }
     }
 
-    console.log('[WeekendOutlook] driveItems:', JSON.stringify(driveItems));
     const [driveMap, weatherResults, interResults] = await Promise.all([
       fetchDriveTimes(driveItems),
       Promise.all(
@@ -347,7 +341,7 @@ export default function WeekendOutlook() {
       interMap[nextId] = { driveTime, buffer };
     }
 
-    console.log('[WeekendOutlook] driveMap:', JSON.stringify(driveMap));
+    if (gen !== fetchGenRef.current) return;
     const weatherMap: Record<string, WeatherData> = {};
     for (const { id, w } of weatherResults) { if (w) weatherMap[id] = w; }
 
@@ -440,6 +434,8 @@ export default function WeekendOutlook() {
                 clashedIds={clashedIds}
                 primaryColor={primaryColor}
                 router={router}
+                isCoach={isCoach}
+                onOpenMaps={(g) => mapApp.open({ query: g.address ?? g.location ?? '', lat: g.lat, lng: g.lng })}
               />
             )}
 
@@ -450,11 +446,19 @@ export default function WeekendOutlook() {
                 clashedIds={clashedIds}
                 primaryColor={primaryColor}
                 router={router}
+                isCoach={isCoach}
+                onOpenMaps={(g) => mapApp.open({ query: g.address ?? g.location ?? '', lat: g.lat, lng: g.lng })}
               />
             )}
           </>
         )}
       </ScrollView>
+
+      <MapPickerModal
+        visible={mapApp.showPicker}
+        onConfirm={mapApp.confirm}
+        onDismiss={mapApp.dismiss}
+      />
     </View>
   );
 }
@@ -485,13 +489,15 @@ function NeedsAttentionBanner({
 }
 
 function DaySection({
-  dateStr, games, clashedIds, primaryColor, router,
+  dateStr, games, clashedIds, primaryColor, router, isCoach, onOpenMaps,
 }: {
   dateStr: string;
   games: WeekendGame[];
   clashedIds: Set<string>;
   primaryColor: string;
   router: ReturnType<typeof useRouter>;
+  isCoach: boolean;
+  onOpenMaps: (game: WeekendGame) => void;
 }) {
   const dayClash = games.some((g) => clashedIds.has(g.id));
 
@@ -523,6 +529,8 @@ function DaySection({
             clashes={clashedIds.has(game.id)}
             primaryColor={primaryColor}
             router={router}
+            isCoach={isCoach}
+            onOpenMaps={onOpenMaps}
           />
         </View>
       ))}
@@ -580,12 +588,14 @@ function TravelStrip({ driveTime, buffer }: { driveTime: string; buffer: number 
 }
 
 function GameCard({
-  game, clashes, primaryColor, router,
+  game, clashes, primaryColor, router, isCoach, onOpenMaps,
 }: {
   game: WeekendGame;
   clashes: boolean;
   primaryColor: string;
   router: ReturnType<typeof useRouter>;
+  isCoach: boolean;
+  onOpenMaps: (game: WeekendGame) => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -656,7 +666,7 @@ function GameCard({
           {/* Location — taps to open Maps */}
           {(game.location || game.address) && (
             <TouchableOpacity
-              onPress={() => openMaps(game)}
+              onPress={() => onOpenMaps(game)}
               style={styles.cardMetaRow}
               hitSlop={8}
             >
@@ -691,37 +701,41 @@ function GameCard({
             </View>
 
             <View style={styles.cardActions}>
-              <TouchableOpacity
-                onPress={() =>
-                  router.push(`/(app)/${game.team.slug}/(tabs)/chat` as never)
-                }
-                style={styles.messageBtn}
-                hitSlop={8}
-              >
-                <Ionicons name="chatbubble-outline" size={14} color={PULSE_COLORS.ui.muted} />
-              </TouchableOpacity>
+              {game.team.slug && (
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push(`/(app)/${game.team.slug}/(tabs)/chat` as never)
+                  }
+                  style={styles.messageBtn}
+                  hitSlop={8}
+                >
+                  <Ionicons name="chatbubble-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                </TouchableOpacity>
+              )}
 
-              <TouchableOpacity
-                onPress={() =>
-                  router.push(`/(app)/${game.team.slug}/admin/events/${game.id}/lineup` as never)
-                }
-                style={[
-                  styles.lineupChip,
-                  game.hasLineup
-                    ? { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.3)' }
-                    : { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.25)' },
-                ]}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name={game.hasLineup ? 'checkmark-circle' : 'grid-outline'}
-                  size={12}
-                  color={game.hasLineup ? '#22C55E' : '#EF4444'}
-                />
-                <Text style={[styles.lineupChipText, { color: game.hasLineup ? '#22C55E' : '#EF4444' }]}>
-                  {game.hasLineup ? 'Lineup set' : 'No lineup'}
-                </Text>
-              </TouchableOpacity>
+              {isCoach && game.team.slug && (
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push(`/(app)/${game.team.slug}/admin/events/${game.id}/lineup` as never)
+                  }
+                  style={[
+                    styles.lineupChip,
+                    game.hasLineup
+                      ? { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.3)' }
+                      : { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.25)' },
+                  ]}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={game.hasLineup ? 'checkmark-circle' : 'grid-outline'}
+                    size={12}
+                    color={game.hasLineup ? '#22C55E' : '#EF4444'}
+                  />
+                  <Text style={[styles.lineupChipText, { color: game.hasLineup ? '#22C55E' : '#EF4444' }]}>
+                    {game.hasLineup ? 'Lineup set' : 'No lineup'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>

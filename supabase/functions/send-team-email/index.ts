@@ -159,7 +159,7 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
   const year        = new Date().getFullYear();
 
   // ── Extract invite link so we can render it as a CTA button ─────────────────
-  const inviteMatch = body.match(/https:\/\/pulsefc\.app\/join\?token=([A-Za-z0-9_-]+)/);
+  const inviteMatch = body.match(/https:\/\/pulse-fc\.app\/join\?token=([A-Za-z0-9_-]+)/);
   const inviteLink  = inviteMatch?.[0] ?? null;
   const inviteToken = inviteMatch?.[1] ?? null;
 
@@ -168,7 +168,9 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
   if (inviteLink) {
     cleanBody = cleanBody
       .replace(/Accept your invite:\s*\n[^\n]*/g, '')
-      .replace(/Or enter your invite code:[^\n]*/g, '')
+      .replace(/Already have the app\?[^\n]*/g, '')
+      .replace(/Use this link to join your team:\s*\n?/g, '')
+      .replace(/Or enter invite code:[^\n]*/g, '')
       .replace(/Invite code:[^\n]*/g, '')
       .replace(inviteLink, '')
       .replace(/\n{3,}/g, '\n\n')

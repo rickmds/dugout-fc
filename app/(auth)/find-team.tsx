@@ -106,7 +106,7 @@ export default function FindTeamScreen() {
 
     setJoinLoading(true);
     await supabase.from('team_members').insert({ team_id: selectedTeamId, profile_id: user.id, role: 'parent' });
-    await supabase.from('profiles').update({ club_id: foundClub.id }).eq('id', user.id);
+    await supabase.from('profiles').update({ club_id: foundClub.id, role: 'player' }).eq('id', user.id);
     setJoinLoading(false);
 
     await refreshProfile();

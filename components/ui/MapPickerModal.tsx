@@ -42,12 +42,10 @@ export function MapPickerModal({ visible, onConfirm, onDismiss }: Props) {
       <Pressable style={styles.overlay} onPress={onDismiss}>
         <Pressable style={styles.sheet} onPress={() => {}}>
 
-          {/* Handle bar */}
           <View style={styles.handle} />
 
           <Text style={styles.title}>Open with...</Text>
 
-          {/* App options */}
           <View style={styles.options}>
             {MAP_OPTIONS.map((opt) => {
               const isSelected = selected === opt.app;
@@ -70,7 +68,6 @@ export function MapPickerModal({ visible, onConfirm, onDismiss }: Props) {
             })}
           </View>
 
-          {/* Remember toggle */}
           <View style={styles.rememberRow}>
             <View style={styles.rememberText}>
               <Text style={styles.rememberLabel}>Remember my choice</Text>
@@ -84,7 +81,6 @@ export function MapPickerModal({ visible, onConfirm, onDismiss }: Props) {
             />
           </View>
 
-          {/* Actions */}
           <TouchableOpacity style={styles.openBtn} onPress={handleOpen}>
             <Ionicons name="navigate" size={16} color="#000" />
             <Text style={styles.openBtnText}>Open</Text>
@@ -122,7 +118,6 @@ const styles = StyleSheet.create({
     fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text,
     marginBottom: 16,
   },
-
   options: {
     gap: 8, marginBottom: 20,
   },
@@ -153,7 +148,6 @@ const styles = StyleSheet.create({
     width: 10, height: 10, borderRadius: 5,
     backgroundColor: PULSE_COLORS.brand.green,
   },
-
   rememberRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,
@@ -163,14 +157,12 @@ const styles = StyleSheet.create({
   rememberText: { flex: 1, gap: 2 },
   rememberLabel: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
   rememberSub: { fontSize: 12, color: PULSE_COLORS.ui.muted },
-
   openBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, backgroundColor: PULSE_COLORS.brand.green,
     borderRadius: 14, paddingVertical: 15, marginBottom: 10,
   },
   openBtnText: { fontSize: 16, fontWeight: '700', color: '#000' },
-
   cancelBtn: {
     alignItems: 'center', paddingVertical: 13,
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,

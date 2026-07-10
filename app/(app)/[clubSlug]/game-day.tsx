@@ -17,6 +17,8 @@ import { useClub } from '../../../hooks/useClub';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import { useGameDay, useUpcomingGameDates, localDateStr, type GameDayEvent } from '../../../hooks/useGameDay';
 import { getDrivingMinutes } from '../../../lib/routes';
+import { useMapApp } from '../../../hooks/useMapApp';
+import { MapPickerModal } from '../../../components/ui/MapPickerModal';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -72,6 +74,7 @@ export default function GameDayScreen() {
   const { primaryColor, rgba } = useClub();
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const mapApp = useMapApp();
 
   const { dates, loading: datesLoading } = useUpcomingGameDates(21);
   const [selectedDate, setSelectedDate] = useState(localDateStr(0));
@@ -309,12 +312,20 @@ export default function GameDayScreen() {
 
                     {/* Location */}
                     {(ev.location || ev.address) && (
-                      <View style={styles.locationRow}>
+                      <TouchableOpacity
+                        style={styles.locationRow}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          mapApp.open({ query: ev.address ?? ev.location ?? '', lat: ev.lat, lng: ev.lng });
+                        }}
+                        activeOpacity={0.6}
+                      >
                         <Ionicons name="location-outline" size={12} color={PULSE_COLORS.ui.muted} />
                         <Text style={styles.locationText} numberOfLines={1}>
                           {ev.location ?? ev.address}
                         </Text>
-                      </View>
+                        <Ionicons name="chevron-forward" size={10} color={PULSE_COLORS.ui.muted} />
+                      </TouchableOpacity>
                     )}
 
                     {/* RSVP + chevron */}
@@ -341,6 +352,12 @@ export default function GameDayScreen() {
           <View style={{ height: 60 }} />
         </ScrollView>
       )}
+
+      <MapPickerModal
+        visible={mapApp.showPicker}
+        onConfirm={mapApp.confirm}
+        onDismiss={mapApp.dismiss}
+      />
     </View>
   );
 }
