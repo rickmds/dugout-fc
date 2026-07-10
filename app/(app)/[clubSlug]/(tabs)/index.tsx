@@ -906,7 +906,7 @@ export default function HomeScreen() {
 
         {/* MY SEASON — players with coach-marked attendance */}
         {!isCoach && myPlayer && seasonTotalMarked > 0 && (() => {
-          const superStreak = combinedStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+          const superStreak = combinedStreak >= 10 && (gamesTotal === 0 || gamesAttended === gamesTotal);
           // Flame tier — WHOOP-style color progression
           const flameTier = combinedAtRisk
             ? { color: '#60A5FA', glow: '#60A5FA', label: '⚡ At risk' }
@@ -953,7 +953,7 @@ export default function HomeScreen() {
                         textShadowOffset: { width: 0, height: 0 },
                         textShadowRadius: 10,
                       } : {}]}>{gPerfect ? '🥇' : '⚽'}</Text>
-                      <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.muted, fontSize: 28, lineHeight: 38 }]}>
+                      <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.muted, fontSize: 28, paddingTop: 6 }]}>
                         {gamesAttended}/{gamesTotal}
                       </Text>
                       <Text style={styles.seasonStatLabel}>{gPerfect ? 'Perfect!' : 'Games'}</Text>
@@ -1259,7 +1259,10 @@ export default function HomeScreen() {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
             {/* Streak hero */}
             {(() => {
-              const superStreak = combinedStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+              const superStreak = combinedStreak >= 10 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+              const trainingsTotal = attendanceHistory.filter(e => e.type !== 'game').length;
+              const trainingsAttended = attendanceHistory.filter(e => e.type !== 'game' && e.status === 'present').length;
+              const tPerfect = trainingsTotal > 0 && trainingsAttended === trainingsTotal;
               const tier = combinedAtRisk
                 ? { color: '#60A5FA', glow: '#60A5FA', label: 'At risk' }
                 : combinedStreak >= 10
@@ -1307,6 +1310,21 @@ export default function HomeScreen() {
                         </Text>
                         {gPerfect && (
                           <Text style={styles.attSheetGameSub}>Perfect game attendance</Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Training attendance */}
+                  {trainingsTotal > 0 && (
+                    <View style={styles.attSheetGameRow}>
+                      <Text style={styles.attSheetGameEmoji}>⚡</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.attSheetGameNum, { color: tPerfect ? primaryColor : PULSE_COLORS.ui.textSecondary }]}>
+                          {trainingsAttended}/{trainingsTotal} training sessions
+                        </Text>
+                        {tPerfect && (
+                          <Text style={styles.attSheetGameSub}>Perfect training attendance</Text>
                         )}
                       </View>
                     </View>
@@ -1820,7 +1838,7 @@ const styles = StyleSheet.create({
   },
   seasonStat: { flex: 1, alignItems: 'center', gap: 4 },
   seasonFlameEmoji: { fontSize: 34, padding: 12 },
-  seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, lineHeight: 72 },
+  seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, paddingTop: 10, paddingHorizontal: 4 },
   seasonStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
   seasonDivider: { width: 1, height: 100, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 8 },
   seasonTapHint: { width: 24, alignItems: 'center' },
@@ -1848,7 +1866,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', paddingTop: 36, paddingBottom: 24, paddingHorizontal: 20,
   },
   attSheetHeroEmoji: { fontSize: 52, padding: 16 },
-  attSheetHeroNum: { fontSize: 80, fontWeight: '900', letterSpacing: -4, lineHeight: 96, marginTop: 4 },
+  attSheetHeroNum: { fontSize: 80, fontWeight: '900', letterSpacing: -4, paddingTop: 14, paddingHorizontal: 8, marginTop: 0 },
   attSheetHeroLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 4 },
   attSheetHeroSub: { fontSize: 13, color: '#60A5FA', fontWeight: '600', marginTop: 8, textAlign: 'center' },
   attSheetSuperChip: {
