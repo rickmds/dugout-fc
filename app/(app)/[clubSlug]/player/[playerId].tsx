@@ -67,6 +67,7 @@ type GuardianProfile = {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
+  address: string | null;
 };
 
 type Invite = {
@@ -326,7 +327,7 @@ export default function PlayerProfileScreen() {
       player.profile_id
         ? supabase
             .from('profiles')
-            .select('id, full_name, avatar_url')
+            .select('id, full_name, avatar_url, address')
             .eq('id', player.profile_id)
             .single()
         : Promise.resolve({ data: null, error: null }),
@@ -1210,6 +1211,7 @@ function PlayerTab({
   const { primaryColor, rgba } = useClub();
   const primaryInvite = invites[0] ?? null;
   const guardianName = primaryInvite?.guardian_name ?? guardianProfile?.full_name ?? null;
+  const guardianAddress = guardianProfile?.address ?? primaryInvite?.address ?? null;
   const gameTimes     = matchTimes.filter((m) => m.event_type === 'game');
   const gamesPlayed   = gameTimes.length;
   const totalMins     = gameTimes.reduce((s, m) => s + m.minutes, 0);
@@ -1434,17 +1436,17 @@ function PlayerTab({
                   </TouchableOpacity>
                 </>
               )}
-              {primaryInvite.address && (
+              {guardianAddress && (
                 <>
                   <View style={st.tableRowBorder} />
                   <TouchableOpacity
                     style={st.tableRow}
-                    onPress={() => Linking.openURL(`maps://?q=${encodeURIComponent(primaryInvite.address!)}`)}
+                    onPress={() => Linking.openURL(`maps://?q=${encodeURIComponent(guardianAddress)}`)}
                     activeOpacity={0.65}
                   >
                     <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
                     <Ionicons name="home-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
-                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.address}</Text>
+                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{guardianAddress}</Text>
                     <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 </>

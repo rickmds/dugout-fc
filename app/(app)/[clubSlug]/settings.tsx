@@ -118,6 +118,10 @@ export default function SettingsScreen() {
   const [phone, setPhone]               = useState((profile as any)?.phone ?? '');
   const [savingPhone, setSavingPhone]   = useState(false);
 
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [address, setAddress]               = useState((profile as any)?.address ?? '');
+  const [savingAddress, setSavingAddress]   = useState(false);
+
   const isOrgAdmin = profile?.role === 'org_admin';
   const [tagline, setTagline]                 = useState(clubTagline ?? '');
   const [editingTagline, setEditingTagline]   = useState(false);
@@ -224,6 +228,15 @@ export default function SettingsScreen() {
     await refreshProfile();
     setSavingPhone(false);
     setEditingPhone(false);
+  }
+
+  async function handleSaveAddress() {
+    if (!profile) return;
+    setSavingAddress(true);
+    await (supabase as any).from('profiles').update({ address: address.trim() || null }).eq('id', profile.id);
+    await refreshProfile();
+    setSavingAddress(false);
+    setEditingAddress(false);
   }
 
   async function handleSaveTagline() {
@@ -931,6 +944,45 @@ export default function SettingsScreen() {
           {editingPhone ? (
             <TouchableOpacity onPress={handleSavePhone} disabled={savingPhone} style={{ paddingLeft: 10 }}>
               {savingPhone
+                ? <ActivityIndicator size="small" color={primaryColor} />
+                : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+          )}
+        </View>
+
+        <View style={st.divider} />
+
+        {/* Address row — inline edit */}
+        <View style={st.row}>
+          <IconCell name="home-outline" color="#fff" bg="#6B7280" />
+          <Text style={st.rowLabel}>Address</Text>
+          {editingAddress ? (
+            <TextInput
+              style={[st.nameInput, { borderBottomColor: primaryColor }]}
+              value={address}
+              onChangeText={setAddress}
+              autoFocus
+              returnKeyType="done"
+              placeholder="123 Main St, Anytown"
+              placeholderTextColor={PULSE_COLORS.ui.muted}
+              autoCapitalize="words"
+              onSubmitEditing={handleSaveAddress}
+            />
+          ) : (
+            <TouchableOpacity
+              onPress={() => { setAddress((profile as any)?.address ?? ''); setEditingAddress(true); }}
+              style={{ flex: 1, alignItems: 'flex-end' }}
+            >
+              <Text style={[st.rowValue, !((profile as any)?.address) && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>
+                {(profile as any)?.address ?? 'Add address'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {editingAddress ? (
+            <TouchableOpacity onPress={handleSaveAddress} disabled={savingAddress} style={{ paddingLeft: 10 }}>
+              {savingAddress
                 ? <ActivityIndicator size="small" color={primaryColor} />
                 : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
             </TouchableOpacity>
