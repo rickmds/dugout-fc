@@ -1250,7 +1250,7 @@ export default function HomeScreen() {
         <View style={styles.attSheet}>
           {/* Header */}
           <View style={styles.attSheetHeader}>
-            <Text style={styles.attSheetTitle}>My Attendance</Text>
+            <Text style={styles.attSheetTitle}>{profile?.full_name?.split(' ')[0]}'s Season</Text>
             <TouchableOpacity onPress={() => setShowAttendanceSheet(false)} style={styles.attSheetClose}>
               <Ionicons name="close" size={20} color={PULSE_COLORS.ui.textSecondary} />
             </TouchableOpacity>
