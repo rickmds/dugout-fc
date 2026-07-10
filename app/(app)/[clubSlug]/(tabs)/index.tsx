@@ -540,7 +540,8 @@ export default function HomeScreen() {
 
     return (
       <View key={label}>
-        <View style={[styles.sectionTitleRow, { borderLeftColor: accentColor, marginTop: topMargin }]}>
+        <View style={[styles.sectionTitleRow, { marginTop: topMargin }]}>
+          <View style={[styles.sectionTitleDot, { backgroundColor: accentColor }]} />
           <Text style={styles.sectionTitle}>{label}</Text>
         </View>
         {event && cfg ? (
@@ -553,7 +554,15 @@ export default function HomeScreen() {
             <View style={styles.nextCardHeader}>
               <View style={styles.nextCardTitleBlock}>
                 {uniformLabel ? (
-                  <Text style={[styles.nextCardUniformPrefix, { color: kitColor ?? accentColor }]}>{uniformLabel}</Text>
+                  <View style={[styles.nextCardUniformBadge,
+                    event.home_away === 'home'
+                      ? { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.3)' }
+                      : { backgroundColor: 'rgba(96,165,250,0.12)', borderColor: 'rgba(96,165,250,0.3)' },
+                  ]}>
+                    <Text style={[styles.nextCardUniformBadgeText,
+                      { color: event.home_away === 'home' ? '#22C55E' : '#60A5FA' },
+                    ]}>{uniformLabel}</Text>
+                  </View>
                 ) : null}
                 <Text style={styles.nextCardTitle} numberOfLines={1}>{event.title}</Text>
               </View>
@@ -654,48 +663,44 @@ export default function HomeScreen() {
             {/* RSVP — parents with a linked player */}
             {!isCoach && myPlayer ? (
               <View style={styles.nextEventRsvpRow}>
-                {rsvpStatus === null ? (
-                  <>
-                    <TouchableOpacity
-                      style={[styles.rsvpBtn, { backgroundColor: rgba(0.12), borderColor: rgba(0.3) }]}
-                      onPress={() => onRsvp('attending')}
-                      disabled={rsvpLoading}
-                      activeOpacity={0.75}
-                    >
-                      <Ionicons name="checkmark" size={14} color={primaryColor} />
-                      <Text style={[styles.rsvpBtnText, { color: primaryColor }]}>Going</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.rsvpBtn, styles.rsvpBtnNo]}
-                      onPress={() => onRsvp('not_attending')}
-                      disabled={rsvpLoading}
-                      activeOpacity={0.75}
-                    >
-                      <Ionicons name="close" size={14} color={PULSE_COLORS.rsvp.not_attending} />
-                      <Text style={[styles.rsvpBtnText, { color: PULSE_COLORS.rsvp.not_attending }]}>Can't go</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <View style={[
-                    styles.rsvpConfirmed,
+                <TouchableOpacity
+                  style={[styles.rsvpBtn,
                     rsvpStatus === 'attending'
-                      ? { backgroundColor: rgba(0.1), borderColor: rgba(0.25) }
-                      : { backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)' },
-                  ]}>
-                    <Ionicons
-                      name={rsvpStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
-                      size={14}
-                      color={rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.rsvp.not_attending}
-                    />
-                    <Text style={[
-                      styles.rsvpConfirmedText,
-                      { color: rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.rsvp.not_attending },
-                    ]}>
-                      {rsvpStatus === 'attending' ? 'Going' : "Can't go"}
-                    </Text>
-                    <Text style={styles.rsvpTapToChange}>  ·  tap card to change</Text>
-                  </View>
-                )}
+                      ? { backgroundColor: rgba(0.14), borderColor: rgba(0.35) }
+                      : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
+                  ]}
+                  onPress={() => onRsvp('attending')}
+                  disabled={rsvpLoading}
+                  activeOpacity={rsvpStatus === 'attending' ? 1 : 0.75}
+                >
+                  <Ionicons
+                    name={rsvpStatus === 'attending' ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                    size={15}
+                    color={rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted}
+                  />
+                  <Text style={[styles.rsvpBtnText,
+                    { color: rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted },
+                  ]}>Going</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.rsvpBtn,
+                    rsvpStatus === 'not_attending'
+                      ? { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)' }
+                      : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
+                  ]}
+                  onPress={() => onRsvp('not_attending')}
+                  disabled={rsvpLoading}
+                  activeOpacity={rsvpStatus === 'not_attending' ? 1 : 0.75}
+                >
+                  <Ionicons
+                    name={rsvpStatus === 'not_attending' ? 'close-circle' : 'close-circle-outline'}
+                    size={15}
+                    color={rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted}
+                  />
+                  <Text style={[styles.rsvpBtnText,
+                    { color: rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted },
+                  ]}>Can't go</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
           </TouchableOpacity>
@@ -792,7 +797,8 @@ export default function HomeScreen() {
         {/* Team Pulse — coaches only */}
         {isCoach && (
           <>
-            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor, marginTop: 20 }]}>
+            <View style={[styles.sectionTitleRow, { marginTop: 20 }]}>
+              <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
               <Text style={styles.sectionTitle}>TEAM PULSE</Text>
             </View>
             <View style={[styles.pulseCard, { borderLeftWidth: 3, borderLeftColor: primaryColor }]}>
@@ -851,7 +857,8 @@ export default function HomeScreen() {
         {/* MY SEASON — players with coach-marked attendance */}
         {!isCoach && myPlayer && seasonTotalMarked > 0 && (
           <>
-            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+            <View style={[styles.sectionTitleRow, { marginTop: 24 }]}>
+              <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
               <Text style={styles.sectionTitle}>MY SEASON</Text>
             </View>
             <View style={[styles.seasonCard, { borderLeftWidth: 3, borderLeftColor: primaryColor }]}>
@@ -938,7 +945,8 @@ export default function HomeScreen() {
           };
           return (
             <>
-              <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
                 <Text style={styles.sectionTitle}>OUTSTANDING FEES</Text>
               </View>
               <TouchableOpacity
@@ -985,7 +993,8 @@ export default function HomeScreen() {
         {/* My Player — parents only */}
         {!isCoach && myPlayer && (
           <>
-            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
               <Text style={styles.sectionTitle}>MY PLAYER</Text>
             </View>
             <TouchableOpacity
@@ -1029,7 +1038,8 @@ export default function HomeScreen() {
         {/* Latest announcement */}
         {latestAnnouncement && (
           <>
-            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
               <Text style={styles.sectionTitle}>FROM THE COACH</Text>
             </View>
             <TouchableOpacity
@@ -1334,7 +1344,7 @@ const styles = StyleSheet.create({
   heroBanner: {
     marginHorizontal: -20,
     paddingHorizontal: 20,
-    paddingBottom: 32,
+    paddingBottom: 44,
     marginBottom: 0,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
@@ -1374,8 +1384,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: PULSE_COLORS.ui.background,
   },
 
-  // Section title with left accent
-  sectionTitleRow: { borderLeftWidth: 3, paddingLeft: 8, marginBottom: 10 },
+  // Section title with dot accent
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionTitleDot: { width: 6, height: 6, borderRadius: 3 },
 
   // Stats (parents only)
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 28 },
@@ -1425,7 +1436,7 @@ const styles = StyleSheet.create({
   pulseChaseText: { fontSize: 11, fontWeight: '700' },
 
   // Section title
-  sectionTitle: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1.5 },
+  sectionTitle: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 1.5 },
 
   // Next Event card
   nextEventCard: {
@@ -1438,7 +1449,13 @@ const styles = StyleSheet.create({
   nextCardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
   nextCardTitleBlock: { flex: 1, gap: 4 },
   nextCardUniformPrefix: { fontSize: 10, fontWeight: '800', letterSpacing: 2 },
-  nextCardTitle: { fontSize: 22, fontWeight: '900', color: PULSE_COLORS.ui.text, letterSpacing: -0.6, lineHeight: 26 },
+  nextCardUniformBadge: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 6, borderWidth: 1, marginBottom: 5,
+  },
+  nextCardUniformBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
+  nextCardTitle: { fontSize: 20, fontWeight: '900', color: PULSE_COLORS.ui.text, letterSpacing: -0.5, lineHeight: 24 },
   nextCardTopRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
   nextCardBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   nextCardBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: '#fff' },
