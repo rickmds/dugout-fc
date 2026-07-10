@@ -1843,7 +1843,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingTop: 14, paddingBottom: 16, marginBottom: 20,
   },
   seasonStat: { flex: 1, alignItems: 'center', gap: 2 },
-  seasonFlameEmoji: { fontSize: 34, paddingTop: 8, paddingHorizontal: 8, paddingBottom: 2 },
+  seasonFlameEmoji: { fontSize: 34, paddingTop: 8, paddingHorizontal: 8, paddingBottom: 8 },
   seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, paddingTop: 8, paddingHorizontal: 4 },
   seasonStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
   seasonDivider: { width: 1, height: 68, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 8 },
