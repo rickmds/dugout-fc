@@ -767,6 +767,7 @@ export default function PlayerProfileScreen() {
           rsvpHistory={rsvpHistory}
           matchTimes={matchTimes}
           isCoach={isCoach}
+          isMyPlayer={isMyPlayer}
           canSeeDetails={canSeeDetails}
           onDelete={confirmDelete}
           deleting={deleting}
@@ -1170,6 +1171,7 @@ function PlayerTab({
   rsvpHistory,
   matchTimes,
   isCoach,
+  isMyPlayer,
   canSeeDetails,
   onDelete,
   deleting,
@@ -1178,6 +1180,7 @@ function PlayerTab({
   rsvpHistory: EventRsvp[];
   matchTimes: MatchTime[];
   isCoach: boolean;
+  isMyPlayer: boolean;
   canSeeDetails: boolean;
   onDelete: () => void;
   deleting: boolean;
