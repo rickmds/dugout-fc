@@ -60,9 +60,8 @@ serve(async (req) => {
   }
 
   const fromEmail   = (payload as any).from_email ?? 'info@pulse-fc.app';
-  const fromAddress = from_name && team_name
-    ? `${from_name} · ${team_name} <${fromEmail}>`
-    : `Pulse FC <${fromEmail}>`;
+  const senderName  = club_name || (from_name && team_name ? `${from_name} · ${team_name}` : from_name) || 'Pulse FC';
+  const fromAddress = `${senderName} <${fromEmail}>`;
 
   const toAddresses  = to.map((r) => r.email);
   const ccAddresses  = cc?.map((r) => r.email) ?? [];
@@ -201,13 +200,14 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
       <div style="padding:8px 28px 28px;text-align:center;">
         <a href="${inviteLink}"
            style="display:inline-block;background:${accent};color:${btnTextCol};text-decoration:none;
-                  font-size:16px;font-weight:800;padding:15px 40px;border-radius:12px;
-                  letter-spacing:0.2px;line-height:1;">
-          Accept Invite &rarr;
+                  font-size:16px;font-weight:800;padding:16px 44px;border-radius:12px;
+                  letter-spacing:-0.1px;line-height:1;">
+          Set up your account &rarr;
         </a>
         ${inviteToken
-          ? `<p style="margin:18px 0 0;font-size:12px;color:#6b7280;">
-               Or enter your invite code: <strong style="color:#9ca3af;font-family:monospace,monospace;letter-spacing:1px;">${escapeHtml(inviteToken)}</strong>
+          ? `<p style="margin:18px 0 0;font-size:12px;color:#6b7280;line-height:1.6;">
+               Or open the app and enter invite code<br>
+               <strong style="color:#9ca3af;font-family:'Courier New',Courier,monospace;letter-spacing:2px;font-size:13px;">${escapeHtml(inviteToken)}</strong>
              </p>`
           : ''}
       </div>` : '';

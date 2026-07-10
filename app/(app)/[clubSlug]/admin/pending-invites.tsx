@@ -91,11 +91,11 @@ export default function PendingInvitesScreen() {
     const deepLink = `https://pulse-fc.app/join?token=${invite.token}`;
     const isCoach = invite.role === 'coach';
     const subject = isCoach
-      ? `Reminder: You've been invited to join ${team.name} as a coach on Pulse FC`
-      : `Reminder: ${invite.playerName ?? 'Your child'} has been added to ${team.name} on Pulse FC`;
+      ? `Action required — your coaching invite to ${team.name} · ${clubName}`
+      : `${invite.playerName ? `${invite.playerName}'s invite` : 'Your invite'} to ${team.name} is still pending · ${clubName}`;
     const body = isCoach
-      ? `Hi,\n\nJust a reminder — you've been invited to join ${team.name} as coaching staff on Pulse FC.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}\n\n— ${profile.full_name ?? 'Your Club Admin'}`
-      : `Hi,\n\nJust a reminder — ${invite.playerName ?? 'your child'} has been added to ${team.name} on Pulse FC.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}\n\n— ${profile.full_name ?? 'Your Coach'}`;
+      ? `Hi,\n\nA quick follow-up — your invite to join ${team.name} as a member of the coaching staff is still waiting.\n\nThe squad is active. Use the link below to set up your account in under a minute.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}`
+      : `Hi,\n\nA quick follow-up — ${invite.playerName ? `${invite.playerName}'s invite` : 'your invite'} to ${team.name} at ${clubName} is still pending.\n\nThe season schedule is live. Use the link below to create your account and stay connected all season.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}`;
 
     await supabase.functions.invoke('send-team-email', {
       body: {

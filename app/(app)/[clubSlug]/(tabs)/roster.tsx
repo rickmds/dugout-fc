@@ -399,18 +399,20 @@ export default function RosterScreen() {
         const token       = (inviteData as any).token as string;
         const appStoreUrl = 'https://apps.apple.com/app/pulse-fc/id6740793498';
         const deepLink    = `${process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app'}/join?token=${token}`;
-        const greeting    = parentName.trim() ? `Hi ${parentName.trim()},` : 'Hi there,';
+        const greeting    = parentName.trim() ? `Hi ${parentName.trim()},` : 'Hi,';
         const body =
-          `${greeting}\n\n${name.trim()} has been added to ${team.name} on ${clubName}.\n\n` +
-          `Download the app to see the schedule, RSVP to events, and message the coach:\n${appStoreUrl}\n\n` +
-          `Already have the app? Use this link to join your team:\n${deepLink}\n\n` +
+          `${greeting}\n\n` +
+          `${name.trim()} has been added to the ${team.name} squad at ${clubName}.\n\n` +
+          `${clubName} manages schedules, game day RSVPs, and team communications through Pulse FC. ` +
+          `Create your account below to stay connected throughout the season.\n\n` +
+          `Accept your invite:\n${deepLink}\n\n` +
           `Or enter invite code: ${token}`;
 
         await supabase.functions.invoke('send-team-email', {
           body: {
             to: [{ email: parentEmail.trim(), name: parentName.trim() || '' }],
             cc: [],
-            subject: `You're invited to join ${team.name} on ${clubName}`,
+            subject: `${name.trim()} has been added to ${team.name} · ${clubName}`,
             body,
             from_name: profile.full_name ?? 'Your Coach',
             team_name: team.name,
