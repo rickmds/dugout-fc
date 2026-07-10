@@ -922,7 +922,7 @@ export default function HomeScreen() {
           const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
           return (
             <>
-              <View style={[styles.sectionTitleRow, { marginTop: 24 }]}>
+              <View style={[styles.sectionTitleRow, { marginTop: 16 }]}>
                 <View style={[styles.sectionTitleDot, { backgroundColor: superStreak ? '#F59E0B' : primaryColor }]} />
                 <Text style={styles.sectionTitle}>MY SEASON</Text>
                 {superStreak && <Text style={styles.superStreakChip}>⭐ SUPER STREAK</Text>}
@@ -1834,13 +1834,13 @@ const styles = StyleSheet.create({
     backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16,
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingTop: 22, paddingBottom: 26, marginBottom: 28,
+    paddingHorizontal: 12, paddingTop: 14, paddingBottom: 16, marginBottom: 20,
   },
-  seasonStat: { flex: 1, alignItems: 'center', gap: 4 },
-  seasonFlameEmoji: { fontSize: 34, padding: 12 },
-  seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, paddingTop: 10, paddingHorizontal: 4 },
+  seasonStat: { flex: 1, alignItems: 'center', gap: 2 },
+  seasonFlameEmoji: { fontSize: 34, paddingTop: 8, paddingHorizontal: 8, paddingBottom: 2 },
+  seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, paddingTop: 8, paddingHorizontal: 4 },
   seasonStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
-  seasonDivider: { width: 1, height: 100, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 8 },
+  seasonDivider: { width: 1, height: 68, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 8 },
   seasonTapHint: { width: 24, alignItems: 'center' },
   superStreakChip: {
     fontSize: 9, fontWeight: '900', letterSpacing: 1,
