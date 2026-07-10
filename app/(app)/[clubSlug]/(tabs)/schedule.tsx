@@ -49,6 +49,7 @@ type Event = {
   score_home: number | null;
   score_away: number | null;
   rsvp_lock_at: string | null;
+  video_url: string | null;
 };
 
 const TEAM_PALETTE = ['#3B82F6', '#22c55e', '#F59E0B', '#8B5CF6', '#EF4444', '#06B6D4'];
@@ -167,7 +168,7 @@ export default function ScheduleScreen() {
 
     const [eventsRes, playersRes, countRes] = await Promise.all([
       supabase.from('events')
-        .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at')
+        .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at, video_url')
         .in('team_id', teamIds).order('event_date').order('event_time'),
       profile?.id
         ? supabase.from('players').select('id, team_id').in('team_id', teamIds).eq('profile_id', profile.id)
@@ -370,6 +371,12 @@ export default function ScheduleScreen() {
                   <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
                 </View>
               )}
+              {item.video_url ? (
+                <View style={styles.videoBadge}>
+                  <Ionicons name="play-circle" size={11} color="#A855F7" />
+                  <Text style={styles.videoBadgeText}>Highlights</Text>
+                </View>
+              ) : null}
               {showKitBadge && !isPast && (() => {
                 const kitColor = item.uniform === 'home' ? homeKitColor
                   : item.uniform === 'away' ? awayKitColor
@@ -984,6 +991,8 @@ const styles = StyleSheet.create({
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   kitBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   typeText: { fontSize: 11, fontWeight: '700' },
+  videoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: 'rgba(168,85,247,0.10)' },
+  videoBadgeText: { fontSize: 11, fontWeight: '700', color: '#A855F7' },
   cancelledBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,

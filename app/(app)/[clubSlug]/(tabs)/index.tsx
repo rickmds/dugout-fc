@@ -225,7 +225,7 @@ export default function HomeScreen() {
   const [gamesAttended, setGamesAttended]           = useState(0);
   const [gamesTotal, setGamesTotal]                 = useState(0);
   const [seasonTotalMarked, setSeasonTotalMarked]   = useState(0);
-  const [attendanceHistory, setAttendanceHistory]   = useState<{ id: string; type: string; date: string; status: string | null }[]>([]);
+  const [attendanceHistory, setAttendanceHistory]   = useState<{ id: string; type: string; date: string; status: string | null; title: string | null }[]>([]);
   const [showAttendanceSheet, setShowAttendanceSheet] = useState(false);
 
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
@@ -388,13 +388,13 @@ export default function HomeScreen() {
       if (!isCoach) {
         const { data: pastEvtsData } = await supabase
           .from('events')
-          .select('id, type, event_date')
+          .select('id, type, event_date, title')
           .eq('team_id', team.id)
           .lt('event_date', today)
           .is('cancelled_at', null)
           .order('event_date', { ascending: false })
           .limit(40);
-        const pastEvts = (pastEvtsData ?? []) as { id: string; type: string; event_date: string }[];
+        const pastEvts = (pastEvtsData ?? []) as { id: string; type: string; event_date: string; title: string | null }[];
         const pastIds = pastEvts.map((e) => e.id);
         if (pastIds.length > 0) {
           const { data: attRows } = await supabase
@@ -406,7 +406,7 @@ export default function HomeScreen() {
           // Only coach-marked sessions, most-recent-first
           const history = pastEvts
             .filter((e) => attMap.has(e.id))
-            .map((e) => ({ id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null }));
+            .map((e) => ({ id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null }));
           setAttendanceHistory(history);
           setSeasonTotalMarked(history.length);
           // WHOOP-style streak: one grace period allowed, but grace must be re-earned
@@ -1367,7 +1367,12 @@ export default function HomeScreen() {
                             { color: isGame ? '#F97316' : primaryColor },
                           ]}>{isGame ? 'GAME' : 'TRAINING'}</Text>
                         </View>
-                        <Text style={styles.attSheetRowDate}>{dateStr}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.attSheetRowDate}>{dateStr}</Text>
+                          {isGame && entry.title ? (
+                            <Text style={styles.attSheetRowTitle} numberOfLines={1}>{entry.title}</Text>
+                          ) : null}
+                        </View>
                         <View style={[styles.attSheetStatusDot, {
                           backgroundColor: present ? '#22C55E' : '#EF4444',
                         }]}>
@@ -1903,7 +1908,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1,
   },
   attSheetTypeBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  attSheetRowDate: { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  attSheetRowDate: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  attSheetRowTitle: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500', marginTop: 1 },
   attSheetStatusDot: {
     width: 22, height: 22, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
