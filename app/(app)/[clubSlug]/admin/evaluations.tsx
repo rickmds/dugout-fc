@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -221,7 +223,12 @@ export default function EvaluationsScreen() {
           {/* Player list */}
           {players.length > 0 && (
             <View style={st.playerList}>
-              <Text style={st.sectionLabel}>PLAYERS</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={st.sectionLabel}>PLAYERS</Text>
+                {batch && (
+                  <Text style={{ fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' }}>Tap to write evaluation</Text>
+                )}
+              </View>
               {players.map((p, i) => (
                 <TouchableOpacity
                   key={p.id}
@@ -258,6 +265,10 @@ export default function EvaluationsScreen() {
 
       {/* New batch modal */}
       <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
         <View style={st.modalOverlay}>
           <View style={st.modalSheet}>
             <Text style={st.modalTitle}>New Evaluation Batch</Text>
@@ -296,6 +307,7 @@ export default function EvaluationsScreen() {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -327,7 +339,7 @@ const st = StyleSheet.create({
   newBatchText:  { fontSize: 15, fontWeight: '700' },
 
   sectionLabel:  { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 2 },
-  playerList:    { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 16, gap: 0 },
+  playerList:    { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 16 },
   playerRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   playerRowDivider: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   playerAvatar:  { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -339,7 +351,7 @@ const st = StyleSheet.create({
   statusText:    { fontSize: 11, fontWeight: '700' },
 
   modalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet:    { backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 4 },
+  modalSheet:    { backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 4, paddingBottom: 32 },
   modalTitle:    { fontSize: 20, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
   modalSub:      { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 12 },
   inputLabel:    { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 8, marginBottom: 4 },
