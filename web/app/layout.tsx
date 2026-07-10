@@ -10,7 +10,7 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'Dugout FC — Soccer club management for coaches',
+  title: 'Pulse FC — Soccer club management for coaches',
   description: 'Schedules, RSVPs, lineups, and parent communication — one app for soccer coaches. Free for founding clubs.',
 };
 

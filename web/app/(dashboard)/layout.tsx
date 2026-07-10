@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { DashboardProvider, useDashboard } from '@/components/dashboard/DashboardContext';
 import Sidebar from '@/components/dashboard/Sidebar';
+import { FlipBoard } from '@/components/FlipBoard';
 import { Menu, X } from 'lucide-react';
 
 function Shell({ children }: { children: React.ReactNode }) {
@@ -16,10 +17,16 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: '36px', height: '36px', border: '3px solid #22C55E', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
+      <FlipBoard
+        fullPage
+        title="Loading your club…"
+        rows={[
+          { label: 'Teams',   pad: 2 },
+          { label: 'Players', pad: 3 },
+          { label: 'Events',  pad: 3 },
+          { label: 'Coaches', pad: 2 },
+        ]}
+      />
     );
   }
 
@@ -64,7 +71,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         >
           {sidebarOpen ? <X size={20} color="#374151" /> : <Menu size={20} color="#374151" />}
         </button>
-        <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '26px', width: 'auto', objectFit: 'contain' }} />
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '40px', width: 'auto' }} />
       </div>
 
       {/* ── Mobile backdrop ── always in DOM; invisible + non-interactive on desktop */}

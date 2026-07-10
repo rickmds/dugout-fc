@@ -1,4 +1,4 @@
-export const DUGOUT_COLORS = {
+export const PULSE_COLORS = {
   brand: {
     green: '#22C55E',
     greenDark: '#16A34A',

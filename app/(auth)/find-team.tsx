@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
@@ -177,7 +177,7 @@ export default function FindTeamScreen() {
         </View>
 
         <TouchableOpacity
-          onPress={() => Linking.openURL('https://dugoutfc.app/onboarding')}
+          onPress={() => Linking.openURL('https://pulse-fc.app/onboarding')}
           style={styles.coachLink}
         >
           <Text style={styles.coachLinkText}>I&apos;m a coach setting up a new club</Text>
@@ -198,7 +198,7 @@ export default function FindTeamScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
   container: {
     padding: 16,
@@ -207,24 +207,24 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 28,
     fontWeight: '800',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
   },
   subheading: {
     fontSize: 14,
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     marginTop: 6,
     marginBottom: 24,
   },
   card: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     padding: 16,
     marginBottom: 16,
   },
   cardTitle: {
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     fontSize: 16,
     fontWeight: '700',
     marginBottom: 12,
@@ -232,38 +232,38 @@ const styles = StyleSheet.create({
   clubResult: {
     marginTop: 16,
     borderTopWidth: 1,
-    borderTopColor: DUGOUT_COLORS.ui.border,
+    borderTopColor: PULSE_COLORS.ui.border,
     paddingTop: 16,
   },
   clubName: {
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     fontSize: 16,
     fontWeight: '700',
   },
   noTeams: {
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     fontSize: 13,
     marginTop: 8,
   },
   teamPrompt: {
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     fontSize: 13,
     marginTop: 12,
     marginBottom: 8,
   },
   teamOption: {
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
   },
   teamOptionSelected: {
-    borderColor: DUGOUT_COLORS.brand.green,
+    borderColor: PULSE_COLORS.brand.green,
     backgroundColor: 'rgba(34, 197, 94, 0.08)',
   },
   teamOptionText: {
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     fontSize: 14,
   },
   joinButton: {
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   coachLinkText: {
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   skipText: {
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontSize: 13,
   },
   signOutLink: {
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   signOutText: {
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontSize: 13,
   },
 });

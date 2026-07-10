@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Users, CalendarDays, DollarSign, CheckCircle, AlertCircle, Clock, MapPin, ChevronRight, TrendingUp, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { FlipBoard } from '@/components/FlipBoard';
 
 type Event = {
   id: string; title: string; type: string;
@@ -104,15 +105,12 @@ export default function TeamSummaryPage() {
   useEffect(() => { load(); }, [load]);
 
   if (loading) return (
-    <>
-      <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '14px', marginBottom: '24px' }}>
-        {[1,2,3,4].map(i => <div key={i} style={{ height: '100px', borderRadius: '14px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-        {[1,2].map(i => <div key={i} style={{ height: '220px', borderRadius: '14px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
-      </div>
-    </>
+    <FlipBoard title="Loading team…" rows={[
+      { label: 'Players', pad: 2 },
+      { label: 'Events',  pad: 2 },
+      { label: 'Parents', pad: 2 },
+      { label: 'Matches', pad: 2 },
+    ]} />
   );
 
   return (

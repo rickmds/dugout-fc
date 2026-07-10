@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
+import { FlipBoard } from '@/components/FlipBoard';
 import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
 import { Users, Target, CheckCircle, XCircle, Clock, AlertTriangle, ArrowRight } from 'lucide-react';
 
@@ -119,10 +120,12 @@ export default function TryoutOverviewPage() {
   );
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94A3B8', fontSize: '14px', gap: '10px' }}>
-      <div style={{ width: '18px', height: '18px', border: '2px solid #E2E8F0', borderTopColor: '#22C55E', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-      Loading…
-    </div>
+    <FlipBoard title="Loading tryout overview…" rows={[
+      { label: 'Prospects', pad: 3 },
+      { label: 'Teams',     pad: 2 },
+      { label: 'Games',     pad: 2 },
+      { label: 'Coaches',   pad: 2 },
+    ]} />
   );
 
   return (

@@ -414,7 +414,7 @@ export default function TryoutFormConfigPage() {
   const ta: React.CSSProperties = { ...inp, resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.5' };
   const lbl = (t: string) => <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>{t}</label>;
 
-  const publicUrl = club ? `${typeof window !== 'undefined' ? window.location.origin : 'https://dugoutfc.app'}/tryout-registration?club=${(club as { slug?: string }).slug ?? ''}` : '';
+  const publicUrl = club ? `${typeof window !== 'undefined' ? window.location.origin : 'https://pulse-fc.app'}/tryout-registration?club=${(club as { slug?: string }).slug ?? ''}` : '';
 
   const TABS = [
     { key: 'general', label: 'General & Info' },

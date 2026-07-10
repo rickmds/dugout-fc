@@ -28,7 +28,7 @@ const TIERS = [
       'Team, group & 1:1 chat',
       'Manual lineup builder',
       '1 team, up to 12 players',
-      'Dugout FC branding',
+      'Pulse FC branding',
     ],
   },
   {
@@ -51,7 +51,7 @@ const TIERS = [
       'AI schedule import',
       'AI roster import',
       'AI lineup suggester',
-      'AI substitution planner',
+      'Match tracker & equal play time',
       'Fee collection & tracking',
     ],
   },
@@ -107,7 +107,7 @@ const TIERS = [
     playerLimit: 'Unlimited players',
     highlight: false,
     cta: 'Contact us',
-    ctaHref: 'mailto:info@dugoutfc.app?subject=Academy Plan',
+    ctaHref: 'mailto:info@pulse-fc.app?subject=Academy Plan',
     features: [
       'Everything in Club',
       'Unlimited teams',
@@ -129,7 +129,7 @@ const FAQS = [
   },
   {
     q: "What's included in AI features?",
-    a: 'AI schedule import (upload any PDF or image), AI roster import (map any spreadsheet), AI lineup suggester based on confirmed RSVPs, and an AI substitution rotation planner for equal play time.',
+    a: 'AI schedule import (upload any PDF or image), AI roster import (map any spreadsheet), and AI lineup suggester based on confirmed RSVPs. Equal playing time calculator is built-in — instant maths, no AI needed.',
   },
   {
     q: 'Do parents pay anything?',
@@ -411,9 +411,8 @@ export default function PricingPage() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f', padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-        <div style={{ background: '#fff', borderRadius: '8px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
-        </div>
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
           {[
             { href: '/compare', label: 'Compare' },

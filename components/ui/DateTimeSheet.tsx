@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 const ITEM_H    = 54;
 const SIDE      = 2;
@@ -207,6 +207,6 @@ const s = StyleSheet.create({
   side:     { minWidth: 64 },
   title:    { fontSize: 15, fontWeight: '700', color: '#FFF' },
   cancel:   { fontSize: 15, color: '#555' },
-  done:     { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.brand.green, textAlign: 'right' },
+  done:     { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green, textAlign: 'right' },
   wheelRow: { flexDirection: 'row', paddingHorizontal: 24, paddingTop: 8, paddingBottom: 16 },
 });

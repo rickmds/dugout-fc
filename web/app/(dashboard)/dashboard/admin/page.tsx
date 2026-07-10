@@ -46,12 +46,14 @@ export default function ClubAdminPage() {
   async function saveProfile() {
     if (!club) return;
     setSaving(true);
-    await supabase.from('clubs').update({
+    const { error } = await supabase.from('clubs').update({
       name: profileForm.name, slug: profileForm.slug,
       website: profileForm.website, contact_email: profileForm.contact_email,
       tagline: profileForm.tagline, currency: profileForm.currency,
     }).eq('id', club.id);
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+    setSaving(false);
+    if (error) { alert(`Save failed: ${error.message}`); return; }
+    setSaved(true); setTimeout(() => setSaved(false), 2000);
     reload();
   }
 
@@ -320,7 +322,7 @@ export default function ClubAdminPage() {
                   <span style={{ fontSize: '13px', fontWeight: '700', color: '#166534' }}>Free plan — Beta access</span>
                 </div>
                 <div style={{ fontSize: '14px', color: '#374151', lineHeight: 1.7, marginBottom: '20px' }}>
-                  Dugout FC is currently free while we validate with our first clubs. Pricing will be introduced later — you'll have plenty of notice before any charges apply.
+                  Pulse FC is currently free while we validate with our first clubs. Pricing will be introduced later — you'll have plenty of notice before any charges apply.
                 </div>
                 <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '16px', border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: '12px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>What's included</div>

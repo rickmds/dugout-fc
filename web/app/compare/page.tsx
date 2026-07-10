@@ -4,8 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 import NavBar from '@/components/NavBar';
 
 export const metadata: Metadata = {
-  title: 'Dugout FC vs TeamSnap vs SportsEngine — The Honest Comparison',
-  description: 'Side-by-side comparison of Dugout FC, TeamSnap, and SportsEngine for soccer club directors. AI features, pricing, and everything that matters.',
+  title: 'Pulse FC vs TeamSnap vs SportsEngine — The Honest Comparison',
+  description: 'Side-by-side comparison of Pulse FC, TeamSnap, and SportsEngine for soccer club directors. AI features, pricing, and everything that matters.',
 };
 
 export const revalidate = 3600;
@@ -17,8 +17,8 @@ type RowStatus = boolean | 'partial';
 type ComparisonRow = {
   category: string;
   feature: string;
-  dugout: RowStatus;
-  dugoutNote: string;
+  pulse: RowStatus;
+  pulseNote: string;
   teamsnap: RowStatus;
   teamsnapNote: string;
   sportsengine: RowStatus;
@@ -29,8 +29,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Purpose',
     feature: 'Built for soccer',
-    dugout: true,
-    dugoutNote: 'Purpose-built for DOCs and soccer clubs',
+    pulse: true,
+    pulseNote: 'Purpose-built for DOCs and soccer clubs',
     teamsnap: false,
     teamsnapNote: 'Any sport',
     sportsengine: false,
@@ -39,8 +39,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Purpose',
     feature: 'Built by a coach',
-    dugout: true,
-    dugoutNote: 'Founded by a U14 head coach. Used in real matches every weekend.',
+    pulse: true,
+    pulseNote: 'Founded by a U14 head coach. Used in real matches every weekend.',
     teamsnap: false,
     teamsnapNote: 'VC-backed',
     sportsengine: false,
@@ -49,8 +49,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'AI features',
     feature: 'AI schedule import',
-    dugout: true,
-    dugoutNote: 'Upload any PDF, image, or spreadsheet — whole season imported in seconds',
+    pulse: true,
+    pulseNote: 'Upload any PDF, image, or spreadsheet — whole season imported in seconds',
     teamsnap: false,
     teamsnapNote: 'Manual entry only',
     sportsengine: false,
@@ -59,8 +59,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'AI features',
     feature: 'AI roster import',
-    dugout: true,
-    dugoutNote: 'Upload any spreadsheet — AI maps columns and imports automatically',
+    pulse: true,
+    pulseNote: 'Upload any spreadsheet — AI maps columns and imports automatically',
     teamsnap: false,
     teamsnapNote: 'Fixed CSV format only',
     sportsengine: false,
@@ -69,8 +69,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'AI features',
     feature: 'AI lineup builder',
-    dugout: true,
-    dugoutNote: 'Drag and drop with AI-suggested starting lineup based on confirmed RSVPs',
+    pulse: true,
+    pulseNote: 'Drag and drop with AI-suggested starting lineup based on confirmed RSVPs',
     teamsnap: 'partial',
     teamsnapNote: 'Basic (no AI, no formations)',
     sportsengine: false,
@@ -79,8 +79,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'AI features',
     feature: 'AI substitution planner',
-    dugout: true,
-    dugoutNote: 'Automated rotation plan for equal play time, formatted for the sideline',
+    pulse: true,
+    pulseNote: 'Automated rotation plan for equal play time, formatted for the sideline',
     teamsnap: false,
     teamsnapNote: 'Not available',
     sportsengine: false,
@@ -89,8 +89,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Club management',
     feature: 'Multi-team dashboard',
-    dugout: true,
-    dugoutNote: 'All teams, schedules, and RSVPs in one org-level view',
+    pulse: true,
+    pulseNote: 'All teams, schedules, and RSVPs in one org-level view',
     teamsnap: false,
     teamsnapNote: 'Separate login per team',
     sportsengine: 'partial',
@@ -99,8 +99,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Club management',
     feature: 'Tryout management',
-    dugout: true,
-    dugoutNote: 'Registration forms, player ranking, team builder, offer letters, acceptance tracking',
+    pulse: true,
+    pulseNote: 'Registration forms, player ranking, team builder, offer letters, acceptance tracking',
     teamsnap: 'partial',
     teamsnapNote: 'Basic registration only',
     sportsengine: false,
@@ -109,8 +109,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Club management',
     feature: 'White-label branding',
-    dugout: true,
-    dugoutNote: 'Your club logo and brand colors throughout the app',
+    pulse: true,
+    pulseNote: 'Your club logo and brand colors throughout the app',
     teamsnap: false,
     teamsnapNote: 'TeamSnap branding always visible',
     sportsengine: false,
@@ -119,8 +119,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Communication',
     feature: 'RSVP system',
-    dugout: true,
-    dugoutNote: 'Attending or Not Attending only — no maybes. Auto-locks before kick-off.',
+    pulse: true,
+    pulseNote: 'Attending or Not Attending only — no maybes. Auto-locks before kick-off.',
     teamsnap: true,
     teamsnapNote: 'Yes / No / Maybe',
     sportsengine: 'partial',
@@ -129,8 +129,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Communication',
     feature: 'Real-time team chat',
-    dugout: true,
-    dugoutNote: 'Group chat, coach-only announcements, and 1:1 direct messages',
+    pulse: true,
+    pulseNote: 'Group chat, coach-only announcements, and 1:1 direct messages',
     teamsnap: true,
     teamsnapNote: 'Available',
     sportsengine: true,
@@ -139,8 +139,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Communication',
     feature: 'Push notifications',
-    dugout: true,
-    dugoutNote: 'RSVP reminders, schedule changes, new messages, announcements',
+    pulse: true,
+    pulseNote: 'RSVP reminders, schedule changes, new messages, announcements',
     teamsnap: true,
     teamsnapNote: 'Available',
     sportsengine: true,
@@ -149,8 +149,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Operations',
     feature: 'Fee collection',
-    dugout: true,
-    dugoutNote: 'Invoices, payment tracking, who owes what',
+    pulse: true,
+    pulseNote: 'Invoices, payment tracking, who owes what',
     teamsnap: true,
     teamsnapNote: 'Available',
     sportsengine: true,
@@ -159,8 +159,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Operations',
     feature: 'Attendance tracking',
-    dugout: true,
-    dugoutNote: 'Per-player history and percentage per event',
+    pulse: true,
+    pulseNote: 'Per-player history and percentage per event',
     teamsnap: true,
     teamsnapNote: 'Available',
     sportsengine: true,
@@ -169,8 +169,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Operations',
     feature: 'Parent mobile app',
-    dugout: true,
-    dugoutNote: 'iOS — clean, no ads, no clutter',
+    pulse: true,
+    pulseNote: 'iOS — clean, no ads, no clutter',
     teamsnap: true,
     teamsnapNote: 'iOS + Android',
     sportsengine: 'partial',
@@ -179,8 +179,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Pricing',
     feature: 'Free plan',
-    dugout: true,
-    dugoutNote: 'Free forever — 1 team, up to 12 players. No credit card.',
+    pulse: true,
+    pulseNote: 'Free forever — 1 team, up to 12 players. No credit card.',
     teamsnap: 'partial',
     teamsnapNote: 'Free tier up to 15 members, no RSVP',
     sportsengine: false,
@@ -189,8 +189,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Pricing',
     feature: 'Paid plan starting price',
-    dugout: true,
-    dugoutNote: '$9.99/mo — unlimited players, all AI features',
+    pulse: true,
+    pulseNote: '$9.99/mo — unlimited players, all AI features',
     teamsnap: false,
     teamsnapNote: '$15.99/mo — no AI, per-team only',
     sportsengine: false,
@@ -199,8 +199,8 @@ const rows: ComparisonRow[] = [
   {
     category: 'Pricing',
     feature: 'Setup time',
-    dugout: true,
-    dugoutNote: 'Full club live in ~20 minutes. AI handles schedule and roster.',
+    pulse: true,
+    pulseNote: 'Full club live in ~20 minutes. AI handles schedule and roster.',
     teamsnap: false,
     teamsnapNote: 'Manual entry; hours per team',
     sportsengine: false,
@@ -260,14 +260,14 @@ export default async function ComparePage() {
           We put ourselves up against<br />the two biggest names.
         </h1>
         <p style={{ fontSize: 18, color: '#888', lineHeight: 1.7, maxWidth: 540, margin: '0 auto 16px' }}>
-          TeamSnap and SportsEngine handle the basics. Dugout FC handles the basics and the parts that eat your evenings — with AI, tryout management, and branding that actually looks like your club.
+          TeamSnap and SportsEngine handle the basics. Pulse FC handles the basics and the parts that eat your evenings — with AI, tryout management, and branding that actually looks like your club.
         </p>
         <p style={{ fontSize: 14, color: '#555', marginBottom: 48 }}>Make your own call.</p>
 
         {/* Price shock */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, maxWidth: 700, margin: '0 auto' }}>
           {[
-            { name: 'Dugout FC', price: 'Free', sub: 'to start · $9.99/mo for AI features', color: GREEN, bg: '#0a1a0a', border: `2px solid ${GREEN}`, badge: 'Best value' },
+            { name: 'Pulse FC', price: 'Free', sub: 'to start · $9.99/mo for AI features', color: GREEN, bg: '#0a1a0a', border: `2px solid ${GREEN}`, badge: 'Best value' },
             { name: 'TeamSnap', price: '$15.99', sub: '/mo · no AI · per-team only', color: '#888', bg: '#0d0d0d', border: '1px solid #1e1e1e', badge: null },
             { name: 'SportsEngine', price: '$79', sub: '/mo · no AI · complex setup', color: '#555', bg: '#0d0d0d', border: '1px solid #1e1e1e', badge: null },
           ].map(({ name, price, sub, color, bg, border, badge }) => (
@@ -295,7 +295,7 @@ export default async function ComparePage() {
         <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 160px 160px', gap: 8, marginBottom: 6, minWidth: 680 }}>
           <div />
           <div style={{ background: '#0a1a0a', border: `1px solid ${GREEN}30`, borderRadius: '10px 10px 0 0', padding: '10px 16px', textAlign: 'center', fontSize: 13, fontWeight: 800, color: GREEN }}>
-            Dugout FC
+            Pulse FC
           </div>
           <div style={{ background: '#0d0d0d', border: '1px solid #1a1a1a', borderRadius: '10px 10px 0 0', padding: '10px 16px', textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#555' }}>
             TeamSnap
@@ -318,10 +318,10 @@ export default async function ComparePage() {
                 <div style={{ display: 'flex', alignItems: 'center', padding: '12px 8px 12px 4px' }}>
                   <p style={{ fontSize: 13, fontWeight: 600, color: '#aaa', margin: 0, lineHeight: 1.3 }}>{row.feature}</p>
                 </div>
-                {/* Dugout */}
+                {/* Pulse */}
                 <div style={{ background: '#0a1a0a', border: `1px solid ${GREEN}18`, borderRadius: 10, padding: '12px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <Dot value={row.dugout} />
-                  <p style={{ fontSize: 12, color: '#777', lineHeight: 1.5, margin: 0 }}>{row.dugoutNote}</p>
+                  <Dot value={row.pulse} />
+                  <p style={{ fontSize: 12, color: '#777', lineHeight: 1.5, margin: 0 }}>{row.pulseNote}</p>
                 </div>
                 {/* TeamSnap */}
                 <div style={{ background: '#0c0c0c', border: '1px solid #161616', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
@@ -362,7 +362,7 @@ export default async function ComparePage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, textAlign: 'left', marginTop: 36 }}>
             {[
               {
-                name: 'Dugout FC',
+                name: 'Pulse FC',
                 color: GREEN,
                 border: `1px solid ${GREEN}25`,
                 bg: '#0a1a0a',
@@ -445,9 +445,8 @@ export default async function ComparePage() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #111', padding: '24px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ background: '#fff', borderRadius: 8, padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
-        </div>
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <Link href="/pricing" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Pricing</Link>
           <Link href="/privacy" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Privacy</Link>

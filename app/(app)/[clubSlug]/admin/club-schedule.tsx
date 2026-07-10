@@ -18,7 +18,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import ClubHeader from '../../../../components/ui/ClubHeader';
+import { PULSE_COLORS } from '../../../../constants/colors';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -393,14 +394,7 @@ export default function ClubScheduleScreen() {
 
   return (
     <View style={st.root}>
-      {/* Header */}
-      <View style={st.header}>
-        <TouchableOpacity onPress={() => router.back()} style={st.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={st.headerTitle}>Club Schedule Import</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ClubHeader title="Club Schedule Import" onBack={() => router.back()} />
 
       {/* ── Idle ── */}
       {phase === 'idle' && (
@@ -511,12 +505,12 @@ export default function ClubScheduleScreen() {
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       style={{ marginRight: 10 }}
                     >
-                      <Ionicons name="trash-outline" size={16} color={DUGOUT_COLORS.ui.muted} />
+                      <Ionicons name="trash-outline" size={16} color={PULSE_COLORS.ui.muted} />
                     </TouchableOpacity>
                     <Ionicons
                       name={isExpanded ? 'chevron-up' : 'chevron-down'}
                       size={16}
-                      color={DUGOUT_COLORS.ui.muted}
+                      color={PULSE_COLORS.ui.muted}
                     />
                   </TouchableOpacity>
 
@@ -625,16 +619,16 @@ export default function ClubScheduleScreen() {
             </View>
           ) : (
             <TouchableOpacity
-              style={[st.btn, { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, marginTop: 20 }]}
+              style={[st.btn, { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, marginTop: 20 }]}
               onPress={handleNotifyAll}
               disabled={notifyState === 'notifying'}
               activeOpacity={0.8}
             >
               {notifyState === 'notifying'
-                ? <ActivityIndicator size="small" color={DUGOUT_COLORS.ui.text} />
+                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.text} />
                 : <>
-                    <Ionicons name="megaphone-outline" size={16} color={DUGOUT_COLORS.ui.text} />
-                    <Text style={[st.btnText, { color: DUGOUT_COLORS.ui.text }]}>Notify all teams</Text>
+                    <Ionicons name="megaphone-outline" size={16} color={PULSE_COLORS.ui.text} />
+                    <Text style={[st.btnText, { color: PULSE_COLORS.ui.text }]}>Notify all teams</Text>
                   </>
               }
             </TouchableOpacity>
@@ -671,7 +665,7 @@ function BulkCard({ bulk, bulkOpen, setBulk, setBulkOpen, primaryColor, rgba }: 
           <Text style={bk.cardTitle}>BULK SETTINGS — applied to all events</Text>
           {!bulkOpen && <Text style={bk.summary}>{summary}</Text>}
         </View>
-        <Ionicons name={bulkOpen ? 'chevron-up' : 'chevron-down'} size={16} color={DUGOUT_COLORS.ui.muted} />
+        <Ionicons name={bulkOpen ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
       </TouchableOpacity>
 
       {bulkOpen && (
@@ -727,15 +721,15 @@ function BulkCard({ bulk, bulkOpen, setBulk, setBulkOpen, primaryColor, rgba }: 
 }
 
 const bk = StyleSheet.create({
-  card:      { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, borderRadius: 14, padding: 14, marginBottom: 12 },
+  card:      { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 14, padding: 14, marginBottom: 12 },
   header:    { flexDirection: 'row', alignItems: 'center' },
-  cardTitle: { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 0.5, marginBottom: 2 },
-  summary:   { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
-  fieldLabel:{ fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 6 },
+  cardTitle: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5, marginBottom: 2 },
+  summary:   { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  fieldLabel:{ fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 6 },
   chipRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip:      { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.background },
-  chipActive:{ borderColor: DUGOUT_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
-  chipText:  { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary, fontWeight: '500' },
+  chip:      { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.background },
+  chipActive:{ borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
+  chipText:  { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
 });
 
 // ─── Event row ────────────────────────────────────────────────────────────────
@@ -778,11 +772,11 @@ function EventRow({ ev, onToggle, onReassign, showAssignBtn }: {
       {showAssignBtn ? (
         <TouchableOpacity style={erSt.assignBtn} onPress={onReassign} activeOpacity={0.75}>
           <Text style={erSt.assignBtnText}>Assign</Text>
-          <Ionicons name="chevron-down" size={12} color={DUGOUT_COLORS.ui.muted} />
+          <Ionicons name="chevron-down" size={12} color={PULSE_COLORS.ui.muted} />
         </TouchableOpacity>
       ) : (
         <TouchableOpacity onPress={onReassign} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="swap-horizontal-outline" size={16} color={DUGOUT_COLORS.ui.muted} />
+          <Ionicons name="swap-horizontal-outline" size={16} color={PULSE_COLORS.ui.muted} />
         </TouchableOpacity>
       )}
     </View>
@@ -790,20 +784,20 @@ function EventRow({ ev, onToggle, onReassign, showAssignBtn }: {
 }
 
 const erSt = StyleSheet.create({
-  row:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  row:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   rowUncertain: { backgroundColor: 'rgba(245,158,11,0.04)' },
   rowOff:     { opacity: 0.4 },
   checkWrap:  { paddingTop: 1 },
-  check:      { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: DUGOUT_COLORS.ui.border, alignItems: 'center', justifyContent: 'center' },
+  check:      { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center' },
   titleRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  title:      { fontSize: 13, fontWeight: '700', color: DUGOUT_COLORS.ui.text, flex: 1 },
+  title:      { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.text, flex: 1 },
   badges:     { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
   pill:       { borderRadius: 6, borderWidth: 1, paddingHorizontal: 5, paddingVertical: 2 },
   pillText:   { fontSize: 10, fontWeight: '700' },
-  meta:       { fontSize: 11, color: DUGOUT_COLORS.ui.muted },
+  meta:       { fontSize: 11, color: PULSE_COLORS.ui.muted },
   reason:     { fontSize: 11, color: '#F59E0B', marginTop: 2, fontStyle: 'italic' },
-  assignBtn:  { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
-  assignBtnText: { fontSize: 12, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  assignBtn:  { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
+  assignBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text },
 });
 
 // ─── Team picker modal ────────────────────────────────────────────────────────
@@ -826,9 +820,9 @@ function TeamPickerModal({ visible, teams, onSelect, onRemove, onClose }: {
             keyExtractor={(t) => t.id}
             renderItem={({ item }) => (
               <TouchableOpacity style={pm.teamRow} onPress={() => onSelect(item)} activeOpacity={0.75}>
-                <Ionicons name="football-outline" size={16} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="football-outline" size={16} color={PULSE_COLORS.ui.muted} />
                 <Text style={pm.teamName}>{item.name}</Text>
-                <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
               </TouchableOpacity>
             )}
             style={{ maxHeight: 320 }}
@@ -845,11 +839,11 @@ function TeamPickerModal({ visible, teams, onSelect, onRemove, onClose }: {
 
 const pm = StyleSheet.create({
   overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:      { backgroundColor: DUGOUT_COLORS.ui.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, paddingBottom: 40 },
-  handle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: DUGOUT_COLORS.ui.border, alignSelf: 'center', marginTop: 10, marginBottom: 16 },
-  title:      { fontSize: 16, fontWeight: '800', color: DUGOUT_COLORS.ui.text, paddingHorizontal: 20, marginBottom: 8 },
-  teamRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
-  teamName:   { flex: 1, fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
+  sheet:      { backgroundColor: PULSE_COLORS.ui.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingBottom: 40 },
+  handle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginTop: 10, marginBottom: 16 },
+  title:      { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text, paddingHorizontal: 20, marginBottom: 8 },
+  teamRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  teamName:   { flex: 1, fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
   removeBtn:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 16, marginTop: 4 },
   removeBtnText: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
 });
@@ -868,27 +862,27 @@ function SummaryChip({ icon, value, label, color }: { icon: any; value: number; 
 const sc = StyleSheet.create({
   root:  { flex: 1, alignItems: 'center', gap: 2, padding: 10, borderRadius: 12, borderWidth: 1 },
   value: { fontSize: 20, fontWeight: '800' },
-  label: { fontSize: 10, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  label: { fontSize: 10, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 });
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 60, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 60, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
 
   center:   { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, paddingBottom: 48 },
   heroIcon: { width: 80, height: 80, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  heroTitle:{ fontSize: 24, fontWeight: '800', color: DUGOUT_COLORS.ui.text, textAlign: 'center', marginBottom: 10, letterSpacing: -0.4 },
-  heroSub:  { fontSize: 15, color: DUGOUT_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  heroTitle:{ fontSize: 24, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center', marginBottom: 10, letterSpacing: -0.4 },
+  heroSub:  { fontSize: 15, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
 
-  formatBox:   { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, borderRadius: 16, padding: 16, width: '100%', gap: 10, marginBottom: 20 },
-  formatTitle: { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1, marginBottom: 4 },
+  formatBox:   { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, padding: 16, width: '100%', gap: 10, marginBottom: 20 },
+  formatTitle: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 4 },
   formatRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  formatLabel: { fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary },
-  hint:        { fontSize: 12, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginTop: 8, lineHeight: 17 },
+  formatLabel: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
+  hint:        { fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginTop: 8, lineHeight: 17 },
 
   btn:        { flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 22, width: '100%', marginBottom: 10 },
   btnOutline: { backgroundColor: 'transparent', borderWidth: 1.5 },
@@ -904,28 +898,28 @@ const st = StyleSheet.create({
   warningDot:        { fontSize: 12, color: '#F59E0B' },
   warningText:       { fontSize: 12, color: '#F59E0B', flex: 1, lineHeight: 17 },
 
-  teamSection:        { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, borderRadius: 16, marginBottom: 10, overflow: 'hidden' },
+  teamSection:        { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, marginBottom: 10, overflow: 'hidden' },
   teamHeader:         { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
-  teamHeaderExpanded: { borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  teamHeaderExpanded: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   teamDot:        { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  teamName:       { fontSize: 15, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
-  teamMeta:       { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 2 },
+  teamName:       { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  teamMeta:       { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
 
-  footer:        { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 36, borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.background },
-  cancelBtn:     { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border },
-  cancelBtnText: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  footer:        { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 36, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.background },
+  cancelBtn:     { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  cancelBtnText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
   importBtn:     { flex: 2, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14 },
   importBtnText: { fontSize: 15, fontWeight: '800', color: '#000' },
 
-  progressTrack: { width: '100%', height: 6, backgroundColor: DUGOUT_COLORS.ui.border, borderRadius: 3, overflow: 'hidden', marginTop: 24, marginBottom: 10 },
+  progressTrack: { width: '100%', height: 6, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 3, overflow: 'hidden', marginTop: 24, marginBottom: 10 },
   progressFill:  { height: '100%', borderRadius: 3 },
-  progressLabel: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  progressLabel: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
   doneList:    { width: '100%', gap: 10, marginBottom: 8 },
   doneRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
   doneDot:     { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  doneText:    { fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary },
-  doneBold:    { fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  doneText:    { fontSize: 14, color: PULSE_COLORS.ui.textSecondary },
+  doneBold:    { fontWeight: '700', color: PULSE_COLORS.ui.text },
   notifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
   notifiedText:{ fontSize: 14, color: '#22C55E', fontWeight: '600' },
 });

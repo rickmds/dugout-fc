@@ -14,7 +14,8 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
+import ClubHeader from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,20 +88,20 @@ export default function PendingInvitesScreen() {
 
   async function sendOne(invite: PendingInvite) {
     if (!profile || !team) return;
-    const deepLink = `https://dugoutfc.app/join?token=${invite.token}`;
+    const deepLink = `https://pulse-fc.app/join?token=${invite.token}`;
     const isCoach = invite.role === 'coach';
     const subject = isCoach
-      ? `Reminder: You've been invited to join ${team.name} as a coach on Dugout FC`
-      : `Reminder: ${invite.playerName ?? 'Your child'} has been added to ${team.name} on Dugout FC`;
+      ? `Reminder: You've been invited to join ${team.name} as a coach on Pulse FC`
+      : `Reminder: ${invite.playerName ?? 'Your child'} has been added to ${team.name} on Pulse FC`;
     const body = isCoach
-      ? `Hi,\n\nJust a reminder — you've been invited to join ${team.name} as coaching staff on Dugout FC.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}\n\n— ${profile.full_name ?? 'Your Club Admin'}`
-      : `Hi,\n\nJust a reminder — ${invite.playerName ?? 'your child'} has been added to ${team.name} on Dugout FC.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}\n\n— ${profile.full_name ?? 'Your Coach'}`;
+      ? `Hi,\n\nJust a reminder — you've been invited to join ${team.name} as coaching staff on Pulse FC.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}\n\n— ${profile.full_name ?? 'Your Club Admin'}`
+      : `Hi,\n\nJust a reminder — ${invite.playerName ?? 'your child'} has been added to ${team.name} on Pulse FC.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}\n\n— ${profile.full_name ?? 'Your Coach'}`;
 
     await supabase.functions.invoke('send-team-email', {
       body: {
         to: [{ email: invite.email, name: '' }],
         cc: [], subject, body, reply_to: null,
-        from_name: profile.full_name ?? 'Dugout FC',
+        from_name: profile.full_name ?? 'Pulse FC',
         team_name: team.name,
         attachments: [],
         club_logo_url: logoUrl,
@@ -159,14 +160,7 @@ export default function PendingInvitesScreen() {
   return (
     <View style={st.root}>
 
-      {/* ── Header ── */}
-      <View style={st.header}>
-        <TouchableOpacity style={st.iconBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={st.headerTitle}>Pending Invites</Text>
-        <View style={st.iconBtn} />
-      </View>
+      <ClubHeader title="Pending Invites" onBack={() => router.back()} />
 
       {loading ? (
         <View style={st.center}>
@@ -174,7 +168,7 @@ export default function PendingInvitesScreen() {
         </View>
       ) : invites.length === 0 ? (
         <View style={st.empty}>
-          <Ionicons name="checkmark-circle-outline" size={52} color={DUGOUT_COLORS.brand.green} />
+          <Ionicons name="checkmark-circle-outline" size={52} color={PULSE_COLORS.brand.green} />
           <Text style={st.emptyTitle}>All caught up</Text>
           <Text style={st.emptyBody}>Everyone has accepted their invite.</Text>
         </View>
@@ -281,22 +275,22 @@ function InviteRow({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 12, paddingTop: 58, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
   scroll: { padding: 16 },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  emptyBody:  { fontSize: 14, color: DUGOUT_COLORS.ui.muted, textAlign: 'center' },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  emptyBody:  { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center' },
 
   resendAllBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -306,18 +300,18 @@ const st = StyleSheet.create({
   resendAllText: { fontSize: 16, fontWeight: '700' },
 
   sectionLabel: {
-    fontSize: 10, fontWeight: '800', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
     letterSpacing: 2, marginBottom: 10,
   },
 
   card: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
 
   row:       { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 13 },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
 
   avatar: {
     width: 40, height: 40, borderRadius: 20,
@@ -328,8 +322,8 @@ const st = StyleSheet.create({
   avatarText: { fontSize: 16, fontWeight: '900' },
 
   rowMeta:  { flex: 1 },
-  rowEmail: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.text, marginBottom: 2 },
-  rowSub:   { fontSize: 12, color: DUGOUT_COLORS.ui.muted },
+  rowEmail: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 2 },
+  rowSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted },
 
   resendBtn: {
     width: 36, height: 36, borderRadius: 18,

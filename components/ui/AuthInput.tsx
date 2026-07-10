@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, TextInput, TextInputProps, TouchableOpacity, View } from 'react-native';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 interface AuthInputProps extends TextInputProps {
   label: string;
@@ -24,12 +24,12 @@ export default function AuthInput({ label, secureToggle, secureTextEntry, ...res
 
   const borderColor = focusAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [DUGOUT_COLORS.ui.border, 'rgba(34,197,94,0.6)'],
+    outputRange: [PULSE_COLORS.ui.border, 'rgba(34,197,94,0.6)'],
   });
 
   const backgroundColor = focusAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [DUGOUT_COLORS.ui.surface, 'rgba(34,197,94,0.04)'],
+    outputRange: [PULSE_COLORS.ui.surface, 'rgba(34,197,94,0.04)'],
   });
 
   return (
@@ -38,7 +38,7 @@ export default function AuthInput({ label, secureToggle, secureTextEntry, ...res
       <Animated.View style={[styles.inputRow, { borderColor, backgroundColor }]}>
         <TextInput
           style={styles.input}
-          placeholderTextColor={DUGOUT_COLORS.ui.muted}
+          placeholderTextColor={PULSE_COLORS.ui.muted}
           secureTextEntry={isSecure}
           autoCapitalize="none"
           autoCorrect={false}
@@ -59,7 +59,7 @@ export default function AuthInput({ label, secureToggle, secureTextEntry, ...res
 const styles = StyleSheet.create({
   container: { marginBottom: 16 },
   label: {
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     fontSize: 13,
     marginBottom: 6,
     fontWeight: '500',
@@ -72,14 +72,14 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
   toggle: { paddingHorizontal: 14 },
   toggleText: {
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
     fontSize: 13,
     fontWeight: '600',
   },

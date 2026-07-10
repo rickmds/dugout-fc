@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { signInWithApple, signInWithGoogle } from '../../lib/auth';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import SocialButton from '../../components/ui/SocialButton';
@@ -122,7 +122,7 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.brandMark}>
           <Image source={require('../../assets/icon.png')} style={styles.brandLogo} />
-          <Text style={styles.brandName}>Dugout<Text style={{ color: '#22C55E' }}>FC</Text></Text>
+          <Text style={styles.brandName}>Pulse<Text style={{ color: '#22C55E' }}>FC</Text></Text>
         </View>
         <Text style={styles.heading}>Create account</Text>
 
@@ -170,7 +170,7 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
   container: {
     padding: 24,
@@ -190,13 +190,13 @@ const styles = StyleSheet.create({
   brandName: {
     fontSize: 20,
     fontWeight: '900',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     letterSpacing: -0.5,
   },
   heading: {
     fontSize: 28,
     fontWeight: '800',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     marginBottom: 24,
   },
   createButton: {
@@ -210,10 +210,10 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.border,
   },
   dividerText: {
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     marginHorizontal: 12,
     fontSize: 13,
   },
@@ -222,15 +222,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchText: {
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     fontSize: 14,
   },
   switchTextBold: {
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
     fontWeight: '700',
   },
   terms: {
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 24,

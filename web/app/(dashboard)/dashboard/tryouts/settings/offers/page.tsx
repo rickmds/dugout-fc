@@ -77,7 +77,7 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 <ul>
   <li>{{club_name}} is your player's primary team during fall and spring seasons</li>
   <li>Consistent 85% attendance at practices and games is required</li>
-  <li>Attendance will be tracked in the Dugout FC app — please mark your availability for all games and training sessions so coaches can plan accordingly.</li>
+  <li>Attendance will be tracked in the Pulse FC app — please mark your availability for all games and training sessions so coaches can plan accordingly.</li>
 </ul>
 
 <h2>Program Cost</h2>
@@ -117,10 +117,10 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 <h2>Next Steps</h2>
 <ol>
   <li><strong>Accept your offer below</strong> by {{offer_deadline}}</li>
-  <li>Download the Dugout FC app — connect with your team, RSVP to events, and stay up to date</li>
+  <li>Download the Pulse FC app — connect with your team, RSVP to events, and stay up to date</li>
   <li>Upload any required documents to your club administrator</li>
   <li>Review the Player &amp; Parent Agreement</li>
-  <li>Watch for your Dugout FC app invite and uniform email (if applicable)</li>
+  <li>Watch for your Pulse FC app invite and uniform email (if applicable)</li>
 </ol>
 
 <p>If you can't accept or need more time, please let us know right away — your decision affects other placements.</p>

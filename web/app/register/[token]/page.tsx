@@ -627,7 +627,7 @@ function FormCard({ children, primary, form }: { children: React.ReactNode; prim
       {/* Footer */}
       <div style={{ padding: '14px 28px', borderTop: '1px solid #F1F5F9', background: '#F8FAFC' }}>
         <p style={{ margin: 0, fontSize: '11px', color: '#94A3B8', textAlign: 'center' }}>
-          Powered by <a href="https://dugoutfc.app" style={{ color: primary, textDecoration: 'none', fontWeight: '600' }}>Dugout FC</a> · Your data is stored securely
+          Powered by <a href="https://pulse-fc.app" style={{ color: primary, textDecoration: 'none', fontWeight: '600' }}>Pulse FC</a> · Your data is stored securely
         </p>
       </div>
     </div>

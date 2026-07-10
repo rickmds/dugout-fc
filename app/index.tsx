@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
-import { DUGOUT_COLORS } from '../constants/colors';
+import { PULSE_COLORS } from '../constants/colors';
 
 export default function Index() {
   const { session, club, loading } = useAuth();
@@ -9,7 +9,7 @@ export default function Index() {
   if (loading) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color={DUGOUT_COLORS.brand.green} size="large" />
+        <ActivityIndicator color={PULSE_COLORS.brand.green} size="large" />
       </View>
     );
   }
@@ -28,7 +28,7 @@ export default function Index() {
 const styles = StyleSheet.create({
   loading: {
     flex: 1,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
     justifyContent: 'center',
     alignItems: 'center',
   },

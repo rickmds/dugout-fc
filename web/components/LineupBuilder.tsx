@@ -1,219 +1,173 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 
-const STARTERS = [
-  { n: 1,  surname: 'Chen',   pos: 'GK', x: 50, y: 84, mins: 90 },
-  { n: 2,  surname: 'Walsh',  pos: 'RB', x: 80, y: 68, mins: 60 },
-  { n: 5,  surname: 'Obi',    pos: 'CB', x: 63, y: 68, mins: 90 },
-  { n: 4,  surname: 'Park',   pos: 'CB', x: 37, y: 68, mins: 90 },
-  { n: 3,  surname: 'Mills',  pos: 'LB', x: 20, y: 68, mins: 75 },
-  { n: 8,  surname: 'Evans',  pos: 'CM', x: 65, y: 49, mins: 90 },
-  { n: 6,  surname: 'Patel',  pos: 'CM', x: 50, y: 46, mins: 45 },
-  { n: 7,  surname: 'Kim',    pos: 'CM', x: 35, y: 49, mins: 90 },
-  { n: 11, surname: 'James',  pos: 'RW', x: 82, y: 24, mins: 90 },
-  { n: 9,  surname: 'Brown',  pos: 'ST', x: 50, y: 15, mins: 70 },
-  { n: 10, surname: 'Lopez',  pos: 'LW', x: 18, y: 24, mins: 90 },
-];
+const PRIMARY = '#E879A0';
 
-const SUBPLAN = [
-  { time: 45, off: 'Patel #6',  on: 'Wright #12', offMins: 45 },
-  { time: 60, off: 'Walsh #2',  on: 'Harris #13', offMins: 60 },
-  { time: 70, off: 'Brown #9',  on: 'Torres #14', offMins: 70 },
-  { time: 75, off: 'Mills #3',  on: 'Smith  #15', offMins: 75 },
-];
-
-// Show a mix of subbed + full-game players for the time bars
-const TIMEBARS = [
-  { name: 'Patel',  mins: 45,  full: false },
-  { name: 'Walsh',  mins: 60,  full: false },
-  { name: 'Brown',  mins: 70,  full: false },
-  { name: 'Mills',  mins: 75,  full: false },
-  { name: 'Evans',  mins: 90,  full: true  },
-  { name: 'James',  mins: 90,  full: true  },
+// 4-3-3 on a portrait pitch (x=0→100 left/right, y=0→100 top/bottom, attacking upward)
+const PLAYERS = [
+  { n: 1,  name: 'Chen',  x: 50,  y: 86 },
+  { n: 3,  name: 'Mills', x: 16,  y: 70 },
+  { n: 4,  name: 'Park',  x: 37,  y: 70 },
+  { n: 5,  name: 'Obi',   x: 63,  y: 70 },
+  { n: 2,  name: 'Walsh', x: 84,  y: 70 },
+  { n: 7,  name: 'Kim',   x: 20,  y: 50 },
+  { n: 6,  name: 'Patel', x: 50,  y: 48 },
+  { n: 8,  name: 'Evans', x: 80,  y: 50 },
+  { n: 10, name: 'Lopez', x: 18,  y: 26 },
+  { n: 9,  name: 'Brown', x: 50,  y: 18 },
+  { n: 11, name: 'James', x: 82,  y: 26 },
 ];
 
 export default function LineupBuilder() {
-  const ref    = useRef<HTMLDivElement>(null);
-  const [phase, setPhase] = useState(0);
-  // 0 = hidden, 1 = pitch visible, 2 = players dropping in, 3 = sub plan revealed
+  const ref = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setPhase(1);
-          setTimeout(() => setPhase(2), 400);
-          setTimeout(() => setPhase(3), 400 + STARTERS.length * 90 + 600);
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.25 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setTimeout(() => setActive(true), 300); obs.disconnect(); }
+    }, { threshold: 0.2 });
+    obs.observe(el);
+    return () => obs.disconnect();
   }, []);
 
   return (
-    <div ref={ref} className="rounded-2xl overflow-hidden" style={{ background: '#090f09', border: '1px solid #182018' }}>
+    <div ref={ref} className="flex justify-center lg:justify-start">
+      <div style={{
+        width: 255,
+        background: '#0a0a0a',
+        borderRadius: 44,
+        overflow: 'hidden',
+        boxShadow: '0 0 0 1px #2a2a2a, 0 0 0 7px #111, inset 0 0 0 1px #1e1e1e, 0 50px 100px rgba(0,0,0,0.9)',
+        display: 'flex', flexDirection: 'column',
+      }}>
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: '1px solid #141e14' }}>
-        <div className="flex items-center gap-3">
-          <span className="text-white font-extrabold text-[13px]">4-3-3</span>
-          <span className="text-[#3a5a3a] text-[11px]">U14 Boys · vs Maroons SC</span>
+        {/* Dynamic island */}
+        <div style={{ position: 'relative', height: 52, flexShrink: 0 }}>
+          <div style={{
+            position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+            width: 88, height: 26, background: '#000', borderRadius: 20, zIndex: 20,
+          }} />
+          <div style={{
+            height: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
+            padding: '0 20px 8px', fontSize: 10, fontWeight: 600, color: '#fff',
+          }}>
+            <span>9:41</span>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <svg width="13" height="9" viewBox="0 0 13 9" fill="white">
+                <rect x="0" y="5" width="2.5" height="4" rx="0.5" opacity="0.4" />
+                <rect x="3.5" y="3" width="2.5" height="6" rx="0.5" opacity="0.6" />
+                <rect x="7" y="1" width="2.5" height="8" rx="0.5" opacity="0.8" />
+                <rect x="10.5" y="0" width="2.5" height="9" rx="0.5" />
+              </svg>
+              <div style={{ border: '1px solid rgba(255,255,255,0.35)', borderRadius: 3, padding: '1px 2px', display: 'flex', alignItems: 'center' }}>
+                <div style={{ width: 18, height: 8, position: 'relative' }}>
+                  <div style={{ position: 'absolute', inset: 0, background: '#4ade80', borderRadius: 1, width: '75%' }} />
+                </div>
+                <div style={{ width: 2, height: 5, background: 'rgba(255,255,255,0.4)', borderRadius: 1, marginLeft: 1 }} />
+              </div>
+            </div>
+          </div>
         </div>
-        <span className="text-[11px] font-bold text-[#22c55e] flex items-center gap-1.5"
-          style={{ background: '#22c55e0f', border: '1px solid #22c55e20', padding: '2px 10px', borderRadius: 99 }}>
-          <span style={{ fontSize: 9 }}>✦</span> AI suggested
-        </span>
-      </div>
 
-      {/* Pitch */}
-      <div
-        className="relative select-none"
-        style={{
-          aspectRatio: '1.3 / 1',
-          background: 'linear-gradient(180deg, #071207 0%, #0a180a 100%)',
-          opacity: phase >= 1 ? 1 : 0,
-          transition: 'opacity 0.6s ease',
-        }}
-      >
-        {/* SVG pitch markings */}
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ opacity: 0.18 }}
-        >
-          {/* Outer border */}
-          <rect x="3.5" y="2.5" width="93" height="95" fill="none" stroke="#4ade80" strokeWidth="0.6" rx="0.5" />
-          {/* Center line */}
-          <line x1="3.5" y1="50" x2="96.5" y2="50" stroke="#4ade80" strokeWidth="0.4" />
-          {/* Center circle */}
-          <circle cx="50" cy="50" r="13" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          {/* Center spot */}
-          <circle cx="50" cy="50" r="0.9" fill="#4ade80" />
-          {/* Top penalty box */}
-          <rect x="22" y="2.5" width="56" height="21" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          {/* Top 6-yard box */}
-          <rect x="35" y="2.5" width="30" height="8" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          {/* Top penalty spot */}
-          <circle cx="50" cy="15" r="0.7" fill="#4ade80" />
-          {/* Bottom penalty box */}
-          <rect x="22" y="76.5" width="56" height="21" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          {/* Bottom 6-yard box */}
-          <rect x="35" y="89.5" width="30" height="8" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          {/* Bottom penalty spot */}
-          <circle cx="50" cy="85" r="0.7" fill="#4ade80" />
-          {/* Corner arcs */}
-          <path d="M3.5 8 A5 5 0 0 1 8 2.5" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          <path d="M92 2.5 A5 5 0 0 1 96.5 8" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          <path d="M3.5 92 A5 5 0 0 0 8 97.5" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-          <path d="M92 97.5 A5 5 0 0 0 96.5 92" fill="none" stroke="#4ade80" strokeWidth="0.4" />
-        </svg>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 14px 8px', borderBottom: '1px solid #1a1a1a',
+        }}>
+          <span style={{ fontSize: 14, color: '#555' }}>‹</span>
+          <div style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 12, fontWeight: 800, color: '#fff', margin: 0 }}>Lineup Builder</p>
+            <p style={{ fontSize: 9, color: '#555', margin: 0, marginTop: 1 }}>@ Maroons SC</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 3, padding: '3px 7px', borderRadius: 8,
+              background: `${PRIMARY}15`, border: `1px solid ${PRIMARY}30`,
+            }}>
+              <span style={{ fontSize: 9 }}>✦</span>
+              <span style={{ fontSize: 9, fontWeight: 800, color: PRIMARY }}>AI</span>
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', padding: '3px 8px', borderRadius: 8,
+              background: '#161616', border: '1px solid #2a2a2a',
+            }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: PRIMARY }}>Save</span>
+            </div>
+          </div>
+        </div>
 
-        {/* Player tokens */}
-        {STARTERS.map((p, i) => {
-          const isSubbed = p.mins < 90;
-          const color    = isSubbed ? '#f59e0b' : '#22c55e';
-          const glow     = isSubbed ? '#f59e0b40' : '#22c55e40';
-          const active   = phase >= 2;
-          return (
-            <div
-              key={p.n}
-              className="absolute flex flex-col items-center"
-              style={{
-                left: `${p.x}%`,
-                top: `${p.y}%`,
-                opacity: active ? 1 : 0,
-                transform: active
-                  ? 'translate(-50%, -50%) scale(1)'
-                  : 'translate(-50%, calc(-50% + 18px)) scale(0.7)',
-                transition: `opacity 0.4s ease ${i * 90}ms, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 90}ms`,
-                zIndex: 2,
-              }}
-            >
-              {/* Jersey */}
-              <div
-                className="flex items-center justify-center rounded-full font-extrabold"
-                style={{
-                  width: 26, height: 26,
-                  background: color,
-                  color: '#000',
-                  fontSize: 9.5,
-                  boxShadow: `0 0 12px ${glow}, 0 2px 4px rgba(0,0,0,0.5)`,
-                }}
-              >
+        {/* Pitch */}
+        <div style={{ position: 'relative', aspectRatio: '0.68', background: 'linear-gradient(180deg, #071407 0%, #0c1c0c 100%)', flexShrink: 0 }}>
+          <svg viewBox="0 0 100 147" preserveAspectRatio="none"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.2 }}>
+            <rect x="4" y="3" width="92" height="141" fill="none" stroke="#4ade80" strokeWidth="0.8" rx="0.5" />
+            <line x1="4" y1="73" x2="96" y2="73" stroke="#4ade80" strokeWidth="0.5" />
+            <circle cx="50" cy="73" r="13" fill="none" stroke="#4ade80" strokeWidth="0.5" />
+            <circle cx="50" cy="73" r="1" fill="#4ade80" />
+            <rect x="24" y="3" width="52" height="22" fill="none" stroke="#4ade80" strokeWidth="0.5" />
+            <rect x="37" y="3" width="26" height="8" fill="none" stroke="#4ade80" strokeWidth="0.5" />
+            <circle cx="50" cy="16" r="0.7" fill="#4ade80" />
+            <rect x="24" y="122" width="52" height="22" fill="none" stroke="#4ade80" strokeWidth="0.5" />
+            <rect x="37" y="136" width="26" height="8" fill="none" stroke="#4ade80" strokeWidth="0.5" />
+            <circle cx="50" cy="129" r="0.7" fill="#4ade80" />
+          </svg>
+
+          {PLAYERS.map((p, i) => (
+            <div key={p.n} style={{
+              position: 'absolute',
+              left: `${p.x}%`, top: `${p.y}%`,
+              transform: 'translate(-50%, -50%)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              opacity: active ? 1 : 0,
+              transition: `opacity 0.35s ease ${i * 55}ms`,
+              zIndex: 2,
+            }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%',
+                background: PRIMARY, color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 9, fontWeight: 800,
+                boxShadow: `0 0 10px ${PRIMARY}70, 0 2px 6px rgba(0,0,0,0.7)`,
+              }}>
                 {p.n}
               </div>
-              {/* Name */}
-              <span className="font-bold text-white whitespace-nowrap" style={{ fontSize: 7, marginTop: 2, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
-                {p.surname}
-              </span>
-              {/* Minutes */}
-              <span style={{ fontSize: 6.5, color, fontWeight: 800, marginTop: 1, textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
-                {p.mins}'
+              <span style={{ fontSize: 6.5, fontWeight: 700, color: '#ddd', marginTop: 2, textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap' }}>
+                {p.name}
               </span>
             </div>
-          );
-        })}
-      </div>
-
-      {/* Sub rotation + play time */}
-      <div
-        style={{
-          borderTop: '1px solid #141e14',
-          opacity: phase >= 3 ? 1 : 0,
-          transform: phase >= 3 ? 'translateY(0)' : 'translateY(6px)',
-          transition: 'opacity 0.55s ease, transform 0.55s ease',
-        }}
-      >
-        <div className="px-5 pt-4 pb-5">
-          <p className="text-[#3a5a3a] text-[10px] font-bold uppercase tracking-widest mb-3.5">
-            Sub rotation · equal play time
-          </p>
-
-          {/* Sub plan list */}
-          <div className="flex flex-col gap-2 mb-4">
-            {SUBPLAN.map((s, i) => (
-              <div key={i} className="flex items-center gap-2 text-[11px]">
-                <span className="text-[#22c55e] font-extrabold w-8 flex-shrink-0">{s.time}'</span>
-                <span className="text-[#666] line-through decoration-[#333]">{s.off}</span>
-                <span className="text-[#2a2a2a] text-[10px]">→</span>
-                <span className="text-[#888]">{s.on}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Play time bars */}
-          <div className="flex flex-col gap-2 pt-3.5" style={{ borderTop: '1px solid #141414' }}>
-            {TIMEBARS.map((b, i) => (
-              <div key={b.name} className="flex items-center gap-2.5">
-                <span className="text-[#444] text-[9px] font-bold w-9 flex-shrink-0">{b.name}</span>
-                <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: '#141414' }}>
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: phase >= 3 ? `${(b.mins / 90) * 100}%` : '0%',
-                      background: b.full ? '#22c55e' : '#f59e0b',
-                      transition: `width 0.7s cubic-bezier(0.22, 1, 0.36, 1) ${i * 80}ms`,
-                    }}
-                  />
-                </div>
-                <span className="font-extrabold text-[9px] w-6 text-right flex-shrink-0"
-                  style={{ color: b.full ? '#22c55e' : '#f59e0b' }}>
-                  {b.mins}'
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-[#2a2a2a] text-[10px] mt-3.5 text-center">
-            AI calculates subs for equal play time across the squad
-          </p>
+          ))}
         </div>
+
+        {/* Bottom tabs */}
+        <div style={{ borderTop: '1px solid #1a1a1a', background: '#0d0d0d', padding: '10px 12px 8px' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              padding: '7px 0', borderRadius: 10,
+              background: `${PRIMARY}12`, border: `1px solid ${PRIMARY}30`,
+              borderBottom: `2px solid ${PRIMARY}`,
+            }}>
+              <span style={{ fontSize: 9, color: PRIMARY }}>▦</span>
+              <span style={{ fontSize: 9, fontWeight: 800, color: PRIMARY }}>4-3-3</span>
+            </div>
+            <div style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              padding: '7px 0', borderRadius: 10,
+              background: '#141414', border: '1px solid #222',
+            }}>
+              <span style={{ fontSize: 9, color: '#444' }}>👤</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#444' }}>Players 11/15</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Home indicator */}
+        <div style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
+          <div style={{ width: 90, height: 4, background: '#222', borderRadius: 10 }} />
+        </div>
+
       </div>
     </div>
   );

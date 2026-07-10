@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { Users, CalendarDays, CalendarCheck, ArrowRight, MapPin, Clock, Plus, Mail, LayoutGrid, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import SetupWizard from '@/components/dashboard/SetupWizard';
+import SetupProgressCard from '@/components/dashboard/SetupProgressCard';
 
 type TeamStat = {
   id: string;
@@ -199,9 +201,14 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [coachCounts, setCoachCounts] = useState<Record<string, number>>({});
 
+  const [wizardOpen, setWizardOpen]     = useState(false);
+  const [wizardStep, setWizardStep]     = useState(0);
+
   const primary  = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const today    = new Date().toISOString().split('T')[0];
   const firstName = profile?.full_name?.split(' ')[0] ?? 'Coach';
+
+  function openWizard(step: number) { setWizardStep(step); setWizardOpen(true); }
 
   useEffect(() => {
     if (!teams.length) { setLoading(false); return; }
@@ -297,6 +304,11 @@ export default function OverviewPage() {
 
       {/* ── Scrollable content ── */}
       <div className="ovw-content" style={{ padding: '24px 32px' }}>
+
+      {/* ── Setup progress card (org_admin only, disappears when complete) ── */}
+      {!loading && (profile?.role === 'org_admin' || profile?.role === 'app_admin') && (
+        <SetupProgressCard onOpen={openWizard} />
+      )}
 
       {/* ── Stat cards ── */}
       <div className="ovw-stat-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
@@ -405,6 +417,8 @@ export default function OverviewPage() {
         </div>
       )}
       </div> {/* end scrollable content */}
+
+      {wizardOpen && <SetupWizard initialStep={wizardStep} onClose={() => { setWizardOpen(false); loadStats(); }} />}
     </div>
   );
 }

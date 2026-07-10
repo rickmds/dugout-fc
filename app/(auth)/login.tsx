@@ -16,7 +16,7 @@ import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { signInWithApple, signInWithGoogle } from '../../lib/auth';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import SocialButton from '../../components/ui/SocialButton';
@@ -77,7 +77,7 @@ export default function LoginScreen() {
     }
 
     if (profile.role === 'org_admin') {
-      setInfo('Your club setup is not finished yet. Please visit dugoutfc.app/onboarding to finish setting up your club.');
+      setInfo('Your club setup is not finished yet. Please visit pulse-fc.app/onboarding to finish setting up your club.');
       return;
     }
 
@@ -169,7 +169,7 @@ export default function LoginScreen() {
               </View>
             </View>
             <Text style={st.wordmark}>
-              Dugout<Text style={st.wordmarkAccent}>FC</Text>
+              Pulse<Text style={st.wordmarkAccent}>FC</Text>
             </Text>
             <Text style={st.tagline}>Soccer club management</Text>
           </View>
@@ -249,7 +249,7 @@ export default function LoginScreen() {
 }
 
 const st = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root:  { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   flex:  { flex: 1 },
   scroll: { paddingHorizontal: 24, paddingBottom: 40 },
 
@@ -269,7 +269,7 @@ const st = StyleSheet.create({
   logoRing: {
     width: 76, height: 76,
     borderRadius: 20,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderWidth: 1,
     borderColor: 'rgba(34,197,94,0.25)',
     alignItems: 'center', justifyContent: 'center',
@@ -279,14 +279,14 @@ const st = StyleSheet.create({
   wordmark: {
     fontSize: 28,
     fontWeight: '900',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     letterSpacing: -0.5,
     marginBottom: 6,
   },
-  wordmarkAccent: { color: DUGOUT_COLORS.brand.green },
+  wordmarkAccent: { color: PULSE_COLORS.brand.green },
   tagline: {
     fontSize: 14,
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontWeight: '500',
     letterSpacing: 0.2,
   },
@@ -300,13 +300,13 @@ const st = StyleSheet.create({
   },
   inviteDot: {
     width: 8, height: 8, borderRadius: 4,
-    backgroundColor: DUGOUT_COLORS.brand.green, flexShrink: 0,
+    backgroundColor: PULSE_COLORS.brand.green, flexShrink: 0,
   },
-  inviteText: { color: DUGOUT_COLORS.brand.green, fontSize: 14, lineHeight: 20, flex: 1 },
+  inviteText: { color: PULSE_COLORS.brand.green, fontSize: 14, lineHeight: 20, flex: 1 },
 
   // Heading
-  heading:    { fontSize: 26, fontWeight: '800', color: DUGOUT_COLORS.ui.text, marginBottom: 4 },
-  subheading: { fontSize: 14, color: DUGOUT_COLORS.ui.muted, marginBottom: 24 },
+  heading:    { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
+  subheading: { fontSize: 14, color: PULSE_COLORS.ui.muted, marginBottom: 24 },
 
   // Info
   infoBanner: {
@@ -314,7 +314,7 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
     borderRadius: 12, padding: 14, marginBottom: 16,
   },
-  infoText: { color: DUGOUT_COLORS.brand.green, fontSize: 14, lineHeight: 20 },
+  infoText: { color: PULSE_COLORS.brand.green, fontSize: 14, lineHeight: 20 },
 
   // Form
   form: { gap: 4, marginBottom: 4 },
@@ -322,16 +322,16 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', marginBottom: 6,
   },
-  passwordLabel: { fontSize: 13, fontWeight: '500', color: DUGOUT_COLORS.ui.textSecondary },
-  forgotText:    { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.brand.green },
+  passwordLabel: { fontSize: 13, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary },
+  forgotText:    { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
 
   // Divider
   divider:     { flexDirection: 'row', alignItems: 'center', marginVertical: 24, gap: 10 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: DUGOUT_COLORS.ui.border },
-  dividerText: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  dividerText: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   // Register
   registerLink: { marginTop: 32, alignItems: 'center' },
-  registerText: { fontSize: 14, color: DUGOUT_COLORS.ui.muted },
-  registerBold: { color: DUGOUT_COLORS.brand.green, fontWeight: '700' },
+  registerText: { fontSize: 14, color: PULSE_COLORS.ui.muted },
+  registerBold: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
 });

@@ -16,7 +16,8 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import ClubHeader from '../../../../components/ui/ClubHeader';
+import { PULSE_COLORS } from '../../../../constants/colors';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -188,13 +189,13 @@ export default function RosterImportScreen() {
 
   async function sendInviteEmail(email: string, token: string, playerName: string) {
     if (!profile?.full_name || !team) return;
-    const deepLink = `https://dugoutfc.app/join?token=${token}`;
+    const deepLink = `https://pulse-fc.app/join?token=${token}`;
     await supabase.functions.invoke('send-team-email', {
       body: {
         to: [{ email, name: '' }],
         cc: [],
-        subject: `Your child has been added to ${team.name} on Dugout FC`,
-        body: `Hi,\n\n${playerName} has been added to ${team.name} on Dugout FC — the app the team uses for schedules, lineups, and team chat.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${token}\n\n— ${profile.full_name}`,
+        subject: `Your child has been added to ${team.name} on Pulse FC`,
+        body: `Hi,\n\n${playerName} has been added to ${team.name} on Pulse FC — the app the team uses for schedules, lineups, and team chat.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${token}\n\n— ${profile.full_name}`,
         reply_to: null,
         from_name: profile.full_name,
         team_name: team.name,
@@ -232,14 +233,7 @@ export default function RosterImportScreen() {
 
   return (
     <View style={st.root}>
-      {/* Header */}
-      <View style={st.header}>
-        <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={st.headerTitle}>AI Roster Import</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <ClubHeader title="AI Roster Import" onBack={() => router.back()} />
 
       <ScrollView contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
 
@@ -469,11 +463,11 @@ export default function RosterImportScreen() {
 
             {doneStats.noEmail > 0 && (
               <TouchableOpacity
-                style={[st.primaryBtn, { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, marginTop: 10 }]}
+                style={[st.primaryBtn, { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, marginTop: 10 }]}
                 onPress={() => router.push(`/(app)/${clubSlug ?? ''}/(tabs)/roster` as never)}
                 activeOpacity={0.85}
               >
-                <Text style={[st.primaryBtnText, { color: DUGOUT_COLORS.ui.text }]}>Go to Roster</Text>
+                <Text style={[st.primaryBtnText, { color: PULSE_COLORS.ui.text }]}>Go to Roster</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -487,14 +481,14 @@ export default function RosterImportScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 60, paddingHorizontal: 16, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
   content: { padding: 20, paddingBottom: 60 },
 
   centerWrap: { alignItems: 'center', paddingTop: 40 },
@@ -502,9 +496,9 @@ const st = StyleSheet.create({
     width: 80, height: 80, borderRadius: 24, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
-  title: { fontSize: 22, fontWeight: '800', color: DUGOUT_COLORS.ui.text, marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 },
-  sub: { fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 28, paddingHorizontal: 16 },
-  hint: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginTop: 4 },
+  title: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 8, textAlign: 'center', letterSpacing: -0.3 },
+  sub: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 28, paddingHorizontal: 16 },
+  hint: { fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginTop: 4 },
 
   primaryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
@@ -512,12 +506,12 @@ const st = StyleSheet.create({
   },
   primaryBtnText: { fontSize: 15, fontWeight: '800', color: '#000' },
   ghostBtn: { alignItems: 'center', padding: 14, marginTop: 4 },
-  ghostBtnText: { fontSize: 14, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  ghostBtnText: { fontSize: 14, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   reviewHeader: {
     flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16,
   },
-  reviewSub: { fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary, marginTop: 3 },
+  reviewSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginTop: 3 },
   toggleAllBtn: { fontSize: 14, fontWeight: '600', paddingBottom: 2 },
 
   warningBanner: {
@@ -544,24 +538,24 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     paddingVertical: 12, paddingHorizontal: 14,
     borderRadius: 12, marginBottom: 6,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
   playerRowDim: { opacity: 0.5 },
   checkBox: {
     width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 2,
-    borderWidth: 1.5, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
   playerInfo: { flex: 1, gap: 3 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  playerName: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  dimText: { color: DUGOUT_COLORS.ui.muted },
-  playerMeta: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary },
+  playerName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  dimText: { color: PULSE_COLORS.ui.muted },
+  playerMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
 
   emailRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   emailText: { fontSize: 12, color: '#60A5FA', fontWeight: '500' },
-  noEmailText: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontStyle: 'italic' },
+  noEmailText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
 
   dupBadge: {
     backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 5,
@@ -578,6 +572,6 @@ const st = StyleSheet.create({
   statsList: { width: '100%', gap: 12, marginTop: 8 },
   statRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   statDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5, flexShrink: 0 },
-  statText: { flex: 1, fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary, lineHeight: 20 },
-  statBold: { fontWeight: '800', color: DUGOUT_COLORS.ui.text },
+  statText: { flex: 1, fontSize: 14, color: PULSE_COLORS.ui.textSecondary, lineHeight: 20 },
+  statBold: { fontWeight: '800', color: PULSE_COLORS.ui.text },
 });

@@ -1,20 +1,20 @@
 {
   "expo": {
-    "name": "Dugout FC",
-    "slug": "dugout-fc",
+    "name": "Pulse FC",
+    "slug": "pulse-fc",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "scheme": "dugoutfc",
+    "scheme": "pulsefc",
     "splash": {
       "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.dugoutfc.mobile",
+      "bundleIdentifier": "app.pulsefc.mobile",
       "associatedDomains": [
-        "applinks:dugoutfc.app"
+        "applinks:pulse-fc.app"
       ],
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Used to upload your profile photo and club logo.",

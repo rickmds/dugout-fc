@@ -152,7 +152,7 @@ Write a short, professional, friendly cancellation email to the parents.
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: `${clubName} <noreply@dugoutfc.app>`,
+        from: `${clubName} <info@pulse-fc.app>`,
         to: emailList.map((r) => r.email),
         subject: email_subject,
         html,
@@ -195,7 +195,7 @@ Write a short, professional, friendly cancellation email to the parents.
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: `${clubName} <noreply@dugoutfc.app>`,
+          from: `${clubName} <info@pulse-fc.app>`,
           to: emailList.map((r) => r.email),
           subject: email_subject,
           html,
@@ -361,7 +361,7 @@ function buildEventEmail({ subject, body, teamName, coachName, clubName, logoUrl
                   <td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
                     <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
                       Sent by <strong style="color:#9ca3af;">${esc(coachName)}</strong> via
-                      <a href="https://dugoutfc.app" style="color:${accent};text-decoration:none;font-weight:600;">Dugout FC</a>
+                      <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
                       &nbsp;&middot;&nbsp; &copy; ${year} ${esc(clubName)}
                     </p>
                   </td>

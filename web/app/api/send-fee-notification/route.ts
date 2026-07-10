@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
                   <td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
                     <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
                       ${esc(clubName)} uses
-                      <a href="https://dugoutfc.app" style="color:${accent};text-decoration:none;font-weight:600;">Dugout FC</a>
+                      <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
                       for club management. &nbsp;&middot;&nbsp; &copy; ${year} ${esc(clubName)}
                     </p>
                   </td>
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
 </html>`;
 
   const { error } = await resend.emails.send({
-    from: `${clubName} <noreply@dugoutfc.app>`,
+    from: `${clubName} <info@pulse-fc.app>`,
     to: invite.email,
     subject: `Fee notice: ${fee.description} — ${fmtAmount}${fmtDue ? ` due ${fmtDue}` : ''}`,
     html,

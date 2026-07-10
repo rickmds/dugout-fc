@@ -12,7 +12,7 @@ import NavBar from '@/components/NavBar';
 
 const testimonials = [
   {
-    quote: "We had 11 teams on three different WhatsApp groups and a Google Drive nobody kept updated. First week on Dugout FC, a field got changed at 7pm — every parent was notified automatically. Nobody called me. That's never happened in eight years of running this club.",
+    quote: "We had 11 teams on three different WhatsApp groups and a Google Drive nobody kept updated. First week on Pulse FC, a field got changed at 7pm — every parent was notified automatically. Nobody called me. That's never happened in eight years of running this club.",
     initials: 'MD',
     role: 'Director of Coaching',
     detail: '12-team club',
@@ -32,13 +32,15 @@ const testimonials = [
 ];
 
 const valueStack = [
-  { label: 'Multi-team club dashboard', desc: 'Every team, schedule, RSVP, and attendance in one view', value: 197 },
+  { label: 'Multi-team club dashboard', desc: 'Every team, schedule, RSVP, and attendance in one place', value: 197 },
   { label: 'Mobile app for every parent', desc: 'iOS — no tech skills required, no training needed', value: 97 },
-  { label: 'AI schedule importer', desc: 'Upload any PDF, image, or spreadsheet — whole season in 60 seconds', value: 47 },
-  { label: 'AI lineup builder + sub planner', desc: 'Confirmed RSVPs in. Optimal lineup out. Sideline rotation plan included.', value: 47 },
-  { label: 'Real-time team chat + announcements', desc: 'Replace the group chat. Coaches announce, parents read.', value: 27 },
+  { label: 'AI schedule importer', desc: 'Upload any PDF, image, or spreadsheet — whole season imported in seconds', value: 47 },
+  { label: 'Live RSVP + attendance tracking', desc: 'Parents tap one button. Coaches see a live headcount. Auto-locks before game time.', value: 27 },
+  { label: 'AI lineup builder', desc: 'Drag confirmed players onto the pitch. AI suggests the starting lineup by position.', value: 47 },
+  { label: 'Match tracker + equal playing time', desc: 'Live match timer, sub tracking, and instant equal-time calculator for the sideline.', value: 47 },
+  { label: 'Team chat + announcements', desc: 'Real-time group chat, coach-only announcements, and direct messages — in one tab.', value: 27 },
   { label: 'Fee collection + payment tracking', desc: 'Send invoices, record payments, know who owes what', value: 47 },
-  { label: 'Tryout management system', desc: 'Registration forms, ranking, team builder, offer letters, acceptance tracking', value: 197 },
+  { label: 'Tryout management system', desc: 'Registration forms, player ranking, team builder, offer letters, acceptance tracking', value: 197 },
 ];
 
 const features = [
@@ -70,21 +72,21 @@ const features = [
             Confirmed
           </span>
         </div>
-        <div className="grid px-4 py-2" style={{ gridTemplateColumns: '90px 48px 1fr 56px 44px', gap: '0 8px', borderBottom: '1px solid #111' }}>
-          {['Date', 'Time', 'Opponent / Venue', 'Surface', 'Kit'].map(h => (
+        <div className="grid px-4 py-2" style={{ gridTemplateColumns: '90px 48px 1fr 60px', gap: '0 8px', borderBottom: '1px solid #111' }}>
+          {['Date', 'Time', 'Opponent / Venue', 'Type'].map(h => (
             <span key={h} className="text-[9px] font-bold uppercase tracking-widest text-[#888]">{h}</span>
           ))}
         </div>
         <div className="flex flex-col divide-y divide-[#111]">
           {[
-            { date: 'Sat 5 Jul',  time: '10:00', opp: 'Riverside Utd',  venue: 'Riverside Park',    surface: 'Grass', kit: 'Home' },
-            { date: 'Sat 12 Jul', time: '11:30', opp: 'Northgate FC',   venue: 'Northgate Sports',  surface: 'Turf',  kit: 'Away' },
-            { date: 'Sat 19 Jul', time: '09:00', opp: 'Valley Eagles',  venue: 'Valley Rec. Ctr',   surface: 'Grass', kit: 'Home' },
-            { date: 'Sat 26 Jul', time: '14:00', opp: 'Westfield SC',   venue: 'Main Street Field', surface: 'Turf',  kit: 'Home' },
-            { date: 'Sat 2 Aug',  time: '10:30', opp: 'Lakeview FC',    venue: 'Lakeview Complex',  surface: 'Grass', kit: 'Away' },
+            { date: 'Sat 5 Jul',  time: '10:00', opp: 'Riverside Utd',  venue: 'Riverside Park',    type: 'Game'     },
+            { date: 'Sat 12 Jul', time: '11:30', opp: 'Northgate FC',   venue: 'Northgate Sports',  type: 'Game'     },
+            { date: 'Sat 19 Jul', time: '09:00', opp: 'Valley Eagles',  venue: 'Valley Rec. Ctr',   type: 'Game'     },
+            { date: 'Sat 23 Jul', time: '17:00', opp: 'Training',       venue: 'Home Field',         type: 'Training' },
+            { date: 'Sat 26 Jul', time: '14:00', opp: 'Westfield SC',   venue: 'Main Street Field', type: 'Game'     },
           ].map((g, i) => (
             <div key={i} className="grid items-center px-4 py-2.5"
-              style={{ gridTemplateColumns: '90px 48px 1fr 56px 44px', gap: '0 8px' }}>
+              style={{ gridTemplateColumns: '90px 48px 1fr 60px', gap: '0 8px' }}>
               <span className="text-white text-[11px] font-semibold">{g.date}</span>
               <span className="text-[#888] text-[11px] font-mono">{g.time}</span>
               <div className="min-w-0">
@@ -92,16 +94,10 @@ const features = [
                 <p className="text-[#888] text-[9.5px] truncate">{g.venue}</p>
               </div>
               <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-md text-center"
-                style={g.surface === 'Grass'
-                  ? { background: '#0d1f10', color: '#4ade80', border: '1px solid #22c55e18' }
-                  : { background: '#141020', color: '#a78bfa', border: '1px solid #8b5cf618' }}>
-                {g.surface}
-              </span>
-              <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-md text-center"
-                style={g.kit === 'Home'
+                style={g.type === 'Game'
                   ? { background: '#0e1a0e', color: '#22c55e', border: '1px solid #22c55e18' }
                   : { background: '#1a1209', color: '#f59e0b', border: '1px solid #f59e0b18' }}>
-                {g.kit}
+                {g.type}
               </span>
             </div>
           ))}
@@ -118,7 +114,8 @@ const features = [
     body: 'Parents get a push notification. They tap one button. You see a live headcount update in real time. Set a lock time and RSVPs close automatically — no chasing, no surprises on game day.',
     checks: ['Attending or Not Attending only — no maybes', 'Auto-locks before game time', 'Full attendance history per player'],
     visual: (
-      <div className="flex justify-center lg:justify-start">
+      <div className="flex flex-col items-center sm:flex-row sm:items-start gap-5">
+        <div className="flex-shrink-0">
         <PhoneFrame>
           {/* App header */}
           <div className="px-4 py-3" style={{ borderBottom: '1px solid #161616', background: '#0a0a0a' }}>
@@ -198,15 +195,144 @@ const features = [
             ))}
           </div>
         </PhoneFrame>
+        </div>
+        <div className="flex flex-col gap-3 sm:pt-6 w-full sm:flex-1 sm:min-w-0">
+          {/* Live headcount */}
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Live headcount</p>
+            <div className="flex items-baseline gap-1.5 mb-2">
+              <span className="text-white font-extrabold text-[28px] leading-none">11</span>
+              <span className="text-[#555] text-[16px] font-medium">/14</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#1a1a1a' }}>
+              <div className="h-full rounded-full" style={{ width: '79%', background: '#22c55e' }} />
+            </div>
+            <p className="text-[#888] text-[10px]">10 going · 1 out · 3 no reply</p>
+          </div>
+          {/* Auto-lock */}
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest">Auto-lock</p>
+              <span className="text-[10px] font-bold text-[#22c55e]" style={{ background: '#22c55e10', border: '1px solid #22c55e20', padding: '1px 7px', borderRadius: 99 }}>Active</span>
+            </div>
+            <p className="text-white font-bold text-[13px] mb-0.5">Closes in 14h 23m</p>
+            <p className="text-[#888] text-[11px]">Sat 5 Jul · 8:00am — 2hrs before kickoff</p>
+          </div>
+          {/* Push notification preview */}
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Push notification sent</p>
+            <div className="flex items-start gap-2.5">
+              <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#22c55e', fontSize: 12 }}>⚽</div>
+              <div>
+                <p className="text-white text-[11px] font-bold mb-0.5">Are you coming Saturday?</p>
+                <p className="text-[#888] text-[10px] leading-relaxed">vs Maroons SC · 10:00am · Riverside Park</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     ),
   },
   {
     n: '03',
     title: 'Build your lineup in seconds, not 45 minutes.',
-    body: 'Drag your confirmed players onto a pitch. AI suggests a starting eleven based on who\'s coming and their positions. Set the sub rotation for equal play time. Hand the board over at kickoff.',
-    checks: ['All major formations supported', 'Only shows confirmed players', 'AI sub rotation for equal play time'],
-    visual: <LineupBuilder />,
+    body: 'Drag your confirmed players onto a pitch. AI suggests a starting lineup based on positions and who\'s confirmed. Tap Equal Time and it instantly tells you the target minutes per player and how often to rotate. Hand the board over at kickoff.',
+    checks: ['4v4, 7v7, 9v9, and 11v11 formations', 'Only shows confirmed RSVPs', 'Equal playing time — instant, no AI needed'],
+    visual: (
+      <div className="flex flex-col items-center sm:flex-row sm:items-start gap-5">
+        <LineupBuilder />
+        <div className="flex flex-col gap-3 sm:pt-6 w-full sm:flex-1 sm:min-w-0">
+          {/* AI suggest card */}
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="text-[11px] font-bold" style={{ color: '#E879A0' }}>✦ AI Suggested</span>
+            </div>
+            <p className="text-white font-bold text-[13px] mb-1">4-3-3 Classic</p>
+            <p className="text-[#888] text-[11px] leading-relaxed">11 players placed by position from 13 confirmed RSVPs.</p>
+          </div>
+          {/* Equal time card */}
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="text-[11px] font-bold text-[#888]">⏱ Equal Time</span>
+            </div>
+            <div className="flex items-baseline gap-1.5 mb-1">
+              <span className="text-white font-extrabold text-[26px] leading-none" style={{ color: '#E879A0' }}>18'</span>
+              <span className="text-[#888] text-[11px]">per player</span>
+            </div>
+            <p className="text-[#888] text-[11px]">Sub every 9 min · 13 players · 80 min game</p>
+          </div>
+          {/* Confirmed count */}
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Availability</p>
+            <div className="flex items-baseline gap-1 mb-2">
+              <span className="text-white font-extrabold text-[22px] leading-none">13</span>
+              <span className="text-[#555] text-[14px] font-medium">/15</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1a1a1a' }}>
+              <div className="h-full rounded-full" style={{ width: '87%', background: '#22c55e' }} />
+            </div>
+            <p className="text-[#888] text-[10px] mt-1.5">confirmed · 2 no reply</p>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    n: '04',
+    title: 'One channel for everything. Zero noise.',
+    body: 'Team chat for real-time conversation. Announcements for anything that matters — coaches post, parents read, and an email goes out automatically. Direct messages for 1:1 with any parent. No more screenshot-forwarding between WhatsApp groups.',
+    checks: ['Team chat, announcements, and direct messages', 'Email blast from inside the app', 'Coaches control what parents can see'],
+    visual: (
+      <div className="rounded-2xl overflow-hidden" style={{ background: '#0c0c0c', border: '1px solid #181818' }}>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid #161616', background: '#0a0a0a' }}>
+          <div className="flex gap-3 mb-0">
+            {['Team Chat', 'Announcements', 'Direct'].map((tab, i) => (
+              <span key={tab} className="text-[10px] font-bold pb-2"
+                style={{ color: i === 1 ? '#22c55e' : '#444', borderBottom: i === 1 ? '2px solid #22c55e' : '2px solid transparent' }}>
+                {tab}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col divide-y divide-[#111]">
+          {[
+            { title: 'Saturday game — field change', body: 'Game moved to Riverside South. Same time. Arrive by 9:15.', time: '7:42 PM', pinned: true },
+            { title: 'Home kit this week', body: 'Green tops, black shorts. Coaches will have spare bibs if needed.', time: 'Yesterday', pinned: false },
+            { title: 'Tournament permission slips', body: 'Digital form sent to all parents. Deadline Friday 5pm.', time: 'Mon', pinned: false },
+          ].map((a, i) => (
+            <div key={i} className="px-4 py-3.5 flex items-start gap-3">
+              <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center mt-0.5"
+                style={{ background: '#0e2016', border: '1px solid #22c55e20' }}>
+                <span style={{ fontSize: 10 }}>📢</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <p className="text-white text-[11px] font-bold truncate">{a.title}</p>
+                  <span className="text-[#444] text-[9px] flex-shrink-0">{a.time}</span>
+                </div>
+                <p className="text-[#666] text-[10px] leading-relaxed line-clamp-2">{a.body}</p>
+              </div>
+              {a.pinned && (
+                <span className="text-[8px] font-bold text-[#22c55e] flex-shrink-0 mt-1"
+                  style={{ background: '#22c55e10', border: '1px solid #22c55e20', padding: '1px 6px', borderRadius: 99 }}>
+                  PINNED
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-4 py-3 flex items-center gap-2" style={{ borderTop: '1px solid #111', background: '#090909' }}>
+          <div className="flex-1 rounded-xl px-3 py-2 text-[10px] text-[#444]"
+            style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+            Post an announcement…
+          </div>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: '#22c55e10', border: '1px solid #22c55e20' }}>
+            <span style={{ fontSize: 10 }}>✉️</span>
+          </div>
+        </div>
+      </div>
+    ),
   },
 ];
 
@@ -247,7 +373,7 @@ export default async function Home() {
             </h1>
 
             <p className="text-[#aaa] text-[18px] leading-[1.75] font-medium mb-4 max-w-lg">
-              Dugout FC gives Directors of Coaching a professional platform for every team, every schedule, every parent, and every communication — set up in 20 minutes.
+              Pulse FC gives Directors of Coaching a professional platform for every team, every schedule, every parent, and every communication — set up in 20 minutes.
             </p>
             <p className="text-[#888] text-[15px] leading-relaxed mb-10 max-w-md">
               No more WhatsApp chaos. No more schedule spreadsheets. No more chasing RSVPs the night before a game.
@@ -355,7 +481,7 @@ export default async function Home() {
             <AnimatedChat />
           </Reveal>
           <Reveal delay={150} className="lg:pt-10">
-            <p className="text-[#888] text-[11px] font-bold uppercase tracking-[0.15em] mb-5">With Dugout FC</p>
+            <p className="text-[#888] text-[11px] font-bold uppercase tracking-[0.15em] mb-5">With Pulse FC</p>
             <div className="flex flex-col gap-3">
               <div className="rounded-2xl p-5" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
                 <div className="flex items-start justify-between mb-4">
@@ -504,7 +630,7 @@ export default async function Home() {
                 <p className="text-[#888] text-[18px] font-extrabold line-through">${totalValue}/mo</p>
               </div>
               <div className="flex items-center justify-between">
-                <p className="text-white font-extrabold text-[16px]">You pay with Dugout FC</p>
+                <p className="text-white font-extrabold text-[16px]">You pay with Pulse FC</p>
                 <div className="text-right">
                   <p className="text-[#22c55e] font-extrabold text-[26px] leading-none">From $49<span className="text-[16px]">/mo</span></p>
                   <p className="text-[#22c55e] text-[11px] opacity-60">or free for 1 team</p>
@@ -541,7 +667,7 @@ export default async function Home() {
               Set up your club tonight. Run it for 30 days.
             </p>
             <p className="text-[#999] text-[17px] leading-[1.75] mb-6">
-              If Dugout FC doesn't save you at least <span className="text-white font-semibold">3 hours a week on admin</span> — or if you don't love it for any reason at all — email us and we'll refund every cent.
+              If Pulse FC doesn't save you at least <span className="text-white font-semibold">3 hours a week on admin</span> — or if you don't love it for any reason at all — email us and we'll refund every cent.
             </p>
             <p className="text-[#999] text-[17px] leading-[1.75]">
               No forms. No arguing. No questions. One email and it's done.
@@ -552,7 +678,7 @@ export default async function Home() {
               {[
                 { title: 'Zero risk setup', body: 'Free plan for 1 team, up to 12 players. No credit card needed to get started.' },
                 { title: 'Cancel any time', body: 'Month to month. No contracts. Leave whenever you want, keep your data.' },
-                { title: '30-day full refund', body: 'Not saving time in the first 30 days? Email info@dugoutfc.com. Refunded immediately.' },
+                { title: '30-day full refund', body: 'Not saving time in the first 30 days? Email info@pulse-fc.app. Refunded immediately.' },
                 { title: '20-minute setup', body: 'From signup to your whole club live in one evening. We\'ve timed it.' },
               ].map(({ title, body }) => (
                 <div key={title} className="flex items-start gap-4 p-5 rounded-2xl"
@@ -593,7 +719,7 @@ export default async function Home() {
               <div className="w-11 h-11 rounded-full bg-[#22c55e] flex items-center justify-center text-black font-extrabold text-sm flex-shrink-0">RC</div>
               <div>
                 <p className="text-white font-bold text-[14px] leading-none mb-1">Rick Breheny</p>
-                <p className="text-[#888] text-[12px]">Founder, Dugout FC · U14 Head Coach, MDS Academy</p>
+                <p className="text-[#888] text-[12px]">Founder, Pulse FC · U14 Head Coach, MDS Academy</p>
               </div>
             </div>
           </Reveal>
@@ -641,9 +767,8 @@ export default async function Home() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f' }} className="px-6 sm:px-10 py-8 flex items-center justify-between max-w-7xl mx-auto">
-        <div style={{ background: '#fff', borderRadius: '8px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
-        </div>
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        
         <div className="flex items-center gap-6">
           <Link href="/pricing" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Pricing</Link>
           <Link href="/compare" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Compare</Link>

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { MapApp } from '../../hooks/useMapApp';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 const MAP_OPTIONS: { app: MapApp; label: string; icon: string; color: string }[] = [
   { app: 'apple',  label: 'Apple Maps',  icon: 'map-outline',       color: '#007AFF' },
@@ -79,7 +79,7 @@ export function MapPickerModal({ visible, onConfirm, onDismiss }: Props) {
             <Switch
               value={remember}
               onValueChange={setRemember}
-              trackColor={{ false: DUGOUT_COLORS.ui.border, true: DUGOUT_COLORS.brand.green }}
+              trackColor={{ false: PULSE_COLORS.ui.border, true: PULSE_COLORS.brand.green }}
               thumbColor="#fff"
             />
           </View>
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
@@ -115,11 +115,11 @@ const styles = StyleSheet.create({
   },
   handle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.border,
     alignSelf: 'center', marginBottom: 20,
   },
   title: {
-    fontSize: 18, fontWeight: '700', color: DUGOUT_COLORS.ui.text,
+    fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text,
     marginBottom: 16,
   },
 
@@ -128,12 +128,12 @@ const styles = StyleSheet.create({
   },
   optionRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, padding: 14,
   },
   optionRowSelected: {
-    borderColor: DUGOUT_COLORS.brand.green,
+    borderColor: PULSE_COLORS.brand.green,
     backgroundColor: 'rgba(34,197,94,0.06)',
   },
   optionIcon: {
@@ -141,41 +141,41 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   optionLabel: {
-    flex: 1, fontSize: 16, fontWeight: '600', color: DUGOUT_COLORS.ui.text,
+    flex: 1, fontSize: 16, fontWeight: '600', color: PULSE_COLORS.ui.text,
   },
   radio: {
     width: 22, height: 22, borderRadius: 11,
-    borderWidth: 2, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 2, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  radioSelected: { borderColor: DUGOUT_COLORS.brand.green },
+  radioSelected: { borderColor: PULSE_COLORS.brand.green },
   radioDot: {
     width: 10, height: 10, borderRadius: 5,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
   },
 
   rememberRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, padding: 14, marginBottom: 20,
   },
   rememberText: { flex: 1, gap: 2 },
-  rememberLabel: { fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
-  rememberSub: { fontSize: 12, color: DUGOUT_COLORS.ui.muted },
+  rememberLabel: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  rememberSub: { fontSize: 12, color: PULSE_COLORS.ui.muted },
 
   openBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: DUGOUT_COLORS.brand.green,
+    gap: 8, backgroundColor: PULSE_COLORS.brand.green,
     borderRadius: 14, paddingVertical: 15, marginBottom: 10,
   },
   openBtnText: { fontSize: 16, fontWeight: '700', color: '#000' },
 
   cancelBtn: {
     alignItems: 'center', paddingVertical: 13,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14,
   },
-  cancelBtnText: { fontSize: 16, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  cancelBtnText: { fontSize: 16, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 });

@@ -126,7 +126,9 @@ export default function Sidebar() {
       {/* Brand */}
       <div style={{ padding: '18px 14px 12px', borderBottom: '1px solid #F1F5F9' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
+          <div style={{ background: '#080808', borderRadius: '10px', padding: '6px 10px', display: 'inline-flex' }}>
+            <img src="/logo.png" alt="Pulse FC" style={{ height: '28px', width: 'auto' }} />
+          </div>
         </div>
         {club && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '9px', background: '#F8FAFC', borderRadius: '10px', padding: '9px 11px', border: '1px solid #E2E8F0' }}>

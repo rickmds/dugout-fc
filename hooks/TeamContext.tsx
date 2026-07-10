@@ -14,7 +14,7 @@ interface TeamContextValue {
   refetch: () => Promise<void>;
 }
 
-const STORAGE_KEY = 'dugout_selected_team_id';
+const STORAGE_KEY = 'pulse_selected_team_id';
 
 const TeamContext = createContext<TeamContextValue | null>(null);
 

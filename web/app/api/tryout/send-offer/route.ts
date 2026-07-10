@@ -7,7 +7,7 @@ const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dugoutfc.app';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
 export async function POST(req: NextRequest) {
   const { player_id, club_id } = await req.json();
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     decline_link:      declineLink,
   });
 
-  const from = `${settings.from_name ?? club?.name ?? 'Dugout FC'} <noreply@dugoutfc.app>`;
+  const from = `${settings.from_name ?? club?.name ?? 'Pulse FC'} <info@pulse-fc.app>`;
 
   await resend.emails.send({
     from,

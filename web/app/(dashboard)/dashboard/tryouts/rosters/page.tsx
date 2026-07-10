@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
+import { FlipBoard } from '@/components/FlipBoard';
 import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
 import { CheckCircle, XCircle, Clock, Lock, Send, ChevronDown, ChevronUp, Users } from 'lucide-react';
 
@@ -108,9 +109,12 @@ export default function TryoutRostersPage() {
   }
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94A3B8', fontSize: '14px', gap: '10px' }}>
-      <div style={{ width: '18px', height: '18px', border: '2px solid #E2E8F0', borderTopColor: '#22C55E', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Loading…
-    </div>
+    <FlipBoard title="Loading rosters…" rows={[
+      { label: 'Prospects', pad: 3 },
+      { label: 'Teams',     pad: 2 },
+      { label: 'Offers',    pad: 2 },
+      { label: 'Accepted',  pad: 2 },
+    ]} />
   );
 
   const filteredAgs = filterAg === 'All' ? activeAgs : activeAgs.filter(ag => ag === filterAg);

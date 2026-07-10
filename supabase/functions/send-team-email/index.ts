@@ -59,10 +59,10 @@ serve(async (req) => {
     });
   }
 
-  const fromEmail   = (payload as any).from_email ?? 'noreply@dugoutfc.app';
+  const fromEmail   = (payload as any).from_email ?? 'info@pulse-fc.app';
   const fromAddress = from_name && team_name
     ? `${from_name} · ${team_name} <${fromEmail}>`
-    : `Dugout FC <${fromEmail}>`;
+    : `Pulse FC <${fromEmail}>`;
 
   const toAddresses  = to.map((r) => r.email);
   const ccAddresses  = cc?.map((r) => r.email) ?? [];
@@ -155,11 +155,11 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
 
   const accent      = resolveAccent(primary_color);
   const btnTextCol  = contrastText(accent);
-  const displayClub = club_name || 'Dugout FC';
+  const displayClub = club_name || 'Pulse FC';
   const year        = new Date().getFullYear();
 
   // ── Extract invite link so we can render it as a CTA button ─────────────────
-  const inviteMatch = body.match(/https:\/\/dugoutfc\.app\/join\?token=([A-Za-z0-9_-]+)/);
+  const inviteMatch = body.match(/https:\/\/pulsefc\.app\/join\?token=([A-Za-z0-9_-]+)/);
   const inviteLink  = inviteMatch?.[0] ?? null;
   const inviteToken = inviteMatch?.[1] ?? null;
 
@@ -279,9 +279,9 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
               <div style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
                 <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
                   Sent by <strong style="color:#9ca3af;">${escapeHtml(from_name)}</strong> via
-                  <a href="https://dugoutfc.app" style="color:${accent};text-decoration:none;font-weight:600;">Dugout FC</a>
+                  <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
                   &nbsp;&middot;&nbsp;
-                  <span style="color:#374151;">&copy; ${year} Dugout FC</span>
+                  <span style="color:#374151;">&copy; ${year} Pulse FC</span>
                 </p>
               </div>
 

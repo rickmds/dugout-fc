@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -15,25 +16,29 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Location from 'expo-location';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import ClubHeader from '../../../../components/ui/ClubHeader';
 import { useMapApp } from '../../../../hooks/useMapApp';
 import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
 import { MatchTrackerContent } from '../admin/events/[eventId]/match-tracker';
+import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
+import { fetchDriveTime } from '../../../../lib/drivetime';
+import { sendProfilesPush } from '../../../../lib/push';
 
 const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 function LocationMap({
-  lat, lng, address, onPress,
+  lat, lng, address, onPress, onDriveTime,
 }: {
   lat: number | null;
   lng: number | null;
   address: string | null;
   onPress: () => void;
+  onDriveTime?: (t: string) => void;
 }) {
   const { primaryColor } = useClub();
   const [drivingTime, setDrivingTime] = useState<string | null>(null);
@@ -42,31 +47,16 @@ function LocationMap({
 
   useEffect(() => {
     if (!PLACES_KEY) return;
-    fetchDrivingTime();
+    const dest = lat != null && lng != null ? `${lat},${lng}` : (address ?? '');
+    fetchDriveTime(dest).then(t => {
+      if (t) { setDrivingTime(t); onDriveTime?.(t); }
+    });
   }, []);
-
-  async function fetchDrivingTime() {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const origin = `${pos.coords.latitude},${pos.coords.longitude}`;
-      const dest = lat != null && lng != null
-        ? `${lat},${lng}`
-        : encodeURIComponent(address ?? '');
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${dest}&mode=driving&key=${PLACES_KEY}`
-      );
-      const json = await res.json();
-      const text = json.rows?.[0]?.elements?.[0]?.duration?.text;
-      if (text) setDrivingTime(text);
-    } catch { /* silently fail */ }
-  }
 
   if (!PLACES_KEY || imgError) {
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={mapStyles.fallback}>
-        <Ionicons name="map-outline" size={22} color={DUGOUT_COLORS.ui.muted} />
+        <Ionicons name="map-outline" size={22} color={PULSE_COLORS.ui.muted} />
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[mapStyles.fallbackAddress, { color: primaryColor }]} numberOfLines={2}>{address ?? 'View on map'}</Text>
           <Text style={mapStyles.fallbackHint}>Tap to get directions</Text>
@@ -86,7 +76,7 @@ function LocationMap({
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={mapStyles.wrapper}>
       {!imgLoaded && (
         <View style={mapStyles.skeleton}>
-          <ActivityIndicator color={DUGOUT_COLORS.ui.muted} />
+          <ActivityIndicator color={PULSE_COLORS.ui.muted} />
         </View>
       )}
       <Image
@@ -118,13 +108,13 @@ const mapStyles = StyleSheet.create({
   wrapper: {
     height: 190,
     overflow: 'hidden',
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
   skeleton: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
   image: { width: '100%', height: '100%' },
   directionsHint: {
@@ -159,10 +149,10 @@ const mapStyles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
   },
-  fallbackAddress: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.brand.green },
-  fallbackHint: { fontSize: 12, color: DUGOUT_COLORS.ui.muted },
+  fallbackAddress: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.brand.green },
+  fallbackHint: { fontSize: 12, color: PULSE_COLORS.ui.muted },
 });
 
 type EventType = 'game' | 'training' | 'other';
@@ -185,6 +175,7 @@ type EventDetail = {
   uniform: string | null;
   notes: string | null;
   coach_notes: string | null;
+  video_url: string | null;
   rsvp_lock_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
@@ -195,11 +186,41 @@ type Player = {
   full_name: string;
   jersey_number: number | null;
   position: string | null;
+  profile_id: string | null;
 };
 
 type RsvpRow = { player_id: string; status: RsvpStatus };
 
 type MatchStatRow = Player & { seconds: number };
+
+type GuestEntry = {
+  id: string;
+  player_id: string | null;
+  profile_id: string | null;
+  full_name: string;
+  role: 'player' | 'coach';
+  status: 'pending' | 'confirmed' | 'declined';
+  linked_profile_id: string | null;
+  team_name: string | null;
+};
+
+type GuestPlayerResult = {
+  id: string;
+  full_name: string;
+  jersey_number: number | null;
+  position: string | null;
+  profile_id: string | null;
+  team_id: string;
+  team_name: string;
+};
+
+type CoachResult = { id: string; full_name: string | null };
+
+function guestStatusColor(status: GuestEntry['status']): string {
+  if (status === 'confirmed') return '#22c55e';
+  if (status === 'declined') return '#ef4444';
+  return '#F59E0B';
+}
 
 const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string }> = {
   game:     { label: 'Game',     color: '#F59E0B', bg: 'rgba(245,158,11,0.15)' },
@@ -259,8 +280,8 @@ function rsvpDeadlineLabel(lockAt: string): string {
 }
 
 export default function EventDetailScreen() {
-  const { primaryColor, rgba } = useClub();
-  const { eventId, clubSlug } = useLocalSearchParams<{ eventId: string; clubSlug: string }>();
+  const { primaryColor, rgba, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const { eventId, clubSlug, section } = useLocalSearchParams<{ eventId: string; clubSlug: string; section?: string }>();
   const { team, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
@@ -272,11 +293,23 @@ export default function EventDetailScreen() {
   const [myStatus, setMyStatus] = useState<RsvpStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [rsvpSaving, setRsvpSaving] = useState(false);
-  const [activeMainTab, setActiveMainTab] = useState<'details' | 'availability'>('details');
+  const [nudging, setNudging] = useState(false);
+  const [guests, setGuests] = useState<GuestEntry[]>([]);
+  const [guestSheet, setGuestSheet] = useState<'player' | 'coach' | null>(null);
+  const [guestQuery, setGuestQuery] = useState('');
+  const [guestPlayerResults, setGuestPlayerResults] = useState<GuestPlayerResult[]>([]);
+  const [guestCoachResults, setGuestCoachResults] = useState<CoachResult[]>([]);
+  const [guestSearching, setGuestSearching] = useState(false);
+  const [addingGuest, setAddingGuest] = useState<string | null>(null);
+  const [activeMainTab, setActiveMainTab] = useState<'details' | 'availability' | 'attendance'>(section === 'attendance' ? 'attendance' : 'details');
+  const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late'>>(new Map());
+  const [savingAttendance, setSavingAttendance] = useState<string | null>(null);
   const [activeRsvpTab, setActiveRsvpTab] = useState<'attending' | 'not_attending' | 'none'>('attending');
   const [deleting, setDeleting] = useState(false);
   const [matchStats, setMatchStats] = useState<MatchStatRow[] | null>(null);
   const [matchTrackerOpen, setMatchTrackerOpen] = useState(false);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [driveTime, setDriveTime] = useState<string | null>(null);
 
   // Cancellation modal state
   type CancelStep = 'reason' | 'preview';
@@ -301,17 +334,19 @@ export default function EventDetailScreen() {
   async function load() {
     if (!team || !profile || !eventId) return;
 
-    const [eventRes, playersRes, rsvpsRes, playerRes, sessionRes] = await Promise.all([
+    const [eventRes, playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
       supabase.from('events')
-        .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,rsvp_lock_at,cancelled_at,cancellation_reason')
+        .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason')
         .eq('id', eventId).single(),
-      supabase.from('players').select('id,full_name,jersey_number,position')
+      supabase.from('players').select('id,full_name,jersey_number,position,profile_id')
         .eq('team_id', team.id).order('jersey_number'),
       supabase.from('event_rsvps').select('player_id,status').eq('event_id', eventId),
       supabase.from('players').select('id').eq('team_id', team.id)
         .eq('profile_id', profile.id).maybeSingle(),
       supabase.from('game_sessions').select('id')
         .eq('event_id', eventId).eq('status', 'full_time').maybeSingle(),
+      supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId),
+      supabase.from('event_attendance').select('player_id,status').eq('event_id', eventId),
     ]);
 
     setEvent(eventRes.data as unknown as EventDetail);
@@ -353,6 +388,27 @@ export default function EventDetailScreen() {
         .sort((a, b) => b.seconds - a.seconds);
 
       if (stats.length > 0) setMatchStats(stats);
+    }
+
+    // Process guests — resolve player profile_id and team name
+    await resolveAndSetGuests((guestsRes.data ?? []) as any[]);
+
+    // Attendance records
+    const attMap = new Map(
+      (attendanceRes.data ?? []).map((r: any) => [r.player_id as string, r.status as 'present' | 'absent' | 'late'])
+    );
+    setAttendanceMap(attMap);
+
+    // Fetch weather — pass lat/lng or address; WeatherAPI handles both
+    const ev = eventRes.data as unknown as EventDetail;
+    if (ev?.event_date && isWeatherForecastable(ev.event_date)) {
+      const location = (ev.lat != null && ev.lng != null)
+        ? `${ev.lat},${ev.lng}`
+        : (ev.address ?? ev.location ?? '');
+      if (location) {
+        fetchEventWeather(location, ev.event_date, ev.event_time ?? null)
+          .then(w => { if (w) setWeather(w); });
+      }
     }
 
     setLoading(false);
@@ -540,6 +596,185 @@ export default function EventDetailScreen() {
     });
   }
 
+  async function resolveAndSetGuests(raw: any[]) {
+    const playerGuestIds = raw.filter(g => g.role === 'player' && g.player_id).map(g => g.player_id as string);
+    const playerInfoMap = new Map<string, { profile_id: string | null; team_name: string | null }>();
+    if (playerGuestIds.length > 0) {
+      const { data: pData } = await (supabase as any)
+        .from('players').select('id,profile_id,teams(name)').in('id', playerGuestIds);
+      for (const p of pData ?? []) {
+        playerInfoMap.set(p.id, { profile_id: p.profile_id ?? null, team_name: p.teams?.name ?? null });
+      }
+    }
+    setGuests(raw.map(g => {
+      const pInfo = g.player_id ? playerInfoMap.get(g.player_id) : null;
+      return {
+        id: g.id, player_id: g.player_id, profile_id: g.profile_id,
+        full_name: g.full_name, role: g.role, status: g.status,
+        linked_profile_id: g.role === 'player' ? (pInfo?.profile_id ?? null) : g.profile_id,
+        team_name: pInfo?.team_name ?? null,
+      } as GuestEntry;
+    }));
+  }
+
+  async function searchGuests(query: string) {
+    if (!profile?.club_id || !team?.id || query.length < 2) {
+      setGuestPlayerResults([]); setGuestCoachResults([]); return;
+    }
+    setGuestSearching(true);
+    if (guestSheet === 'player') {
+      const { data: teams } = await supabase.from('teams').select('id,name')
+        .eq('club_id', profile.club_id).neq('id', team.id);
+      const otherIds = (teams ?? []).map(t => t.id);
+      if (!otherIds.length) { setGuestPlayerResults([]); setGuestSearching(false); return; }
+      const nameMap = new Map((teams ?? []).map(t => [t.id, t.name]));
+      const { data: pData } = await supabase.from('players')
+        .select('id,full_name,jersey_number,position,profile_id,team_id')
+        .in('team_id', otherIds).ilike('full_name', `%${query}%`).limit(20);
+      setGuestPlayerResults((pData ?? []).map(p => ({ ...(p as any), team_name: nameMap.get((p as any).team_id) ?? 'Other Team' })));
+    } else {
+      const { data: cData } = await supabase.from('profiles')
+        .select('id,full_name').eq('club_id', profile.club_id)
+        .eq('role', 'coach').ilike('full_name', `%${query}%`)
+        .neq('id', profile.id).limit(20);
+      setGuestCoachResults((cData ?? []) as CoachResult[]);
+    }
+    setGuestSearching(false);
+  }
+
+  async function handleAddGuestPlayer(p: GuestPlayerResult) {
+    if (!eventId || !profile || !team || !event) return;
+    if (guests.some(g => g.player_id === p.id)) {
+      Alert.alert('Already invited', `${p.full_name} has already been invited.`); return;
+    }
+    setAddingGuest(p.id);
+    const { error } = await supabase.from('event_guests').insert({
+      event_id: eventId, player_id: p.id, full_name: p.full_name,
+      role: 'player', status: 'pending', added_by: profile.id,
+    });
+    if (error) { Alert.alert('Error', 'Could not add guest player.'); setAddingGuest(null); return; }
+    if (p.profile_id) {
+      await sendProfilesPush({
+        profileIds: [p.profile_id],
+        title: 'Guest invitation',
+        body: `${profile.full_name ?? 'Coach'} invited ${p.full_name} to guest play for ${team.name} — ${event.title}.`,
+        data: { type: 'guest_invite', event_id: eventId },
+      });
+    }
+    const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
+    await resolveAndSetGuests((fresh ?? []) as any[]);
+    setAddingGuest(null);
+    setGuestSheet(null);
+  }
+
+  async function handleAddGuestCoach(c: CoachResult) {
+    if (!eventId || !profile || !team || !event) return;
+    if (guests.some(g => g.profile_id === c.id)) {
+      Alert.alert('Already invited', `${c.full_name} has already been invited.`); return;
+    }
+    setAddingGuest(c.id);
+    const { error } = await supabase.from('event_guests').insert({
+      event_id: eventId, profile_id: c.id, full_name: c.full_name ?? 'Coach',
+      role: 'coach', status: 'pending', added_by: profile.id,
+    });
+    if (error) { Alert.alert('Error', 'Could not add guest coach.'); setAddingGuest(null); return; }
+    if (c.id) {
+      await sendProfilesPush({
+        profileIds: [c.id],
+        title: 'Guest coaching invitation',
+        body: `You've been invited to guest coach ${team.name} — ${event.title}.`,
+        data: { type: 'guest_coach_invite', event_id: eventId },
+      });
+    }
+    const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
+    await resolveAndSetGuests((fresh ?? []) as any[]);
+    setAddingGuest(null);
+    setGuestSheet(null);
+  }
+
+  async function handleGuestRespond(guestId: string, newStatus: 'confirmed' | 'declined') {
+    const { error } = await supabase.from('event_guests')
+      .update({ status: newStatus, responded_at: new Date().toISOString() }).eq('id', guestId);
+    if (error) { Alert.alert('Error', 'Could not update your response.'); return; }
+    if (newStatus === 'confirmed') {
+      const g = guests.find(x => x.id === guestId);
+      if (g?.player_id) {
+        await supabase.from('event_rsvps').upsert(
+          { event_id: eventId, player_id: g.player_id, responded_by: profile?.id, status: 'attending' },
+          { onConflict: 'event_id,player_id' }
+        );
+      }
+    }
+    setGuests(prev => prev.map(g => g.id === guestId ? { ...g, status: newStatus } : g));
+  }
+
+  function handleRemoveGuest(guestId: string, name: string) {
+    Alert.alert('Remove Guest', `Remove ${name} from this event?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        await supabase.from('event_guests').delete().eq('id', guestId);
+        setGuests(prev => prev.filter(g => g.id !== guestId));
+      }},
+    ]);
+  }
+
+  async function markAttendance(playerId: string, newStatus: 'present' | 'absent' | 'late') {
+    if (!eventId) return;
+    setSavingAttendance(playerId);
+    const current = attendanceMap.get(playerId);
+    if (current === newStatus) {
+      await supabase.from('event_attendance').delete()
+        .eq('event_id', eventId).eq('player_id', playerId);
+      setAttendanceMap(prev => { const next = new Map(prev); next.delete(playerId); return next; });
+    } else {
+      await supabase.from('event_attendance').upsert(
+        { event_id: eventId, player_id: playerId, status: newStatus, marked_by: profile?.id },
+        { onConflict: 'event_id,player_id' }
+      );
+      setAttendanceMap(prev => new Map([...prev, [playerId, newStatus]]));
+      if (newStatus === 'absent') {
+        const p = players.find((pl) => pl.id === playerId);
+        if (p?.profile_id) {
+          Alert.alert('Notify parent?', `Let ${p.full_name}'s parent know they didn't show up?`, [
+            { text: 'Skip', style: 'cancel' },
+            { text: 'Send notification', onPress: async () => {
+              await sendProfilesPush({
+                profileIds: [p.profile_id!],
+                title: 'Absence noted',
+                body: `${p.full_name} was marked absent at ${event?.title ?? 'today\'s event'}.`,
+                data: { type: 'attendance_absent', event_id: eventId },
+              });
+            }},
+          ]);
+        }
+      }
+    }
+    setSavingAttendance(null);
+  }
+
+  async function handleNudge() {
+    if (!event || !team) return;
+    const nonResponders = players.filter((p) => !rsvpMap.has(p.id));
+    if (!nonResponders.length) {
+      Alert.alert('All caught up', 'Everyone has already responded.');
+      return;
+    }
+    const profileIds = nonResponders.map((p) => p.profile_id).filter(Boolean) as string[];
+    if (!profileIds.length) {
+      Alert.alert('No linked accounts', `${nonResponders.length} player${nonResponders.length !== 1 ? 's' : ''} haven't responded, but their parents haven't linked accounts yet. Reach out directly.`);
+      return;
+    }
+    setNudging(true);
+    await sendProfilesPush({
+      profileIds,
+      title: 'RSVP needed',
+      body: `Please respond to ${event.title} — your coach needs a headcount.`,
+      data: { type: 'rsvp_reminder', event_id: event.id },
+    });
+    setNudging(false);
+    Alert.alert('Nudge sent', `Reminded ${profileIds.length} parent${profileIds.length !== 1 ? 's' : ''} to RSVP.`);
+  }
+
   if (teamLoading || loading) {
     return (
       <View style={styles.center}>
@@ -569,6 +804,10 @@ export default function EventDetailScreen() {
 
   const confirmedPct = players.length > 0 ? attending.length / players.length : 0;
   const maxStatSeconds = matchStats ? Math.max(...matchStats.map((p) => p.seconds)) : 0;
+
+  const guestPlayers = guests.filter(g => g.role === 'player');
+  const guestCoaches = guests.filter(g => g.role === 'coach');
+  const myGuestInvite = guests.find(g => g.linked_profile_id === profile?.id);
   const hasLocation = !!(event.location || event.address);
   const hasMap = !!(event.lat || event.address);
   const hasFieldInfo = !!event.field_notes;
@@ -583,20 +822,19 @@ export default function EventDetailScreen() {
   return (
     <View style={styles.container}>
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Event Details</Text>
-        {isCoach ? (
-          <TouchableOpacity style={styles.backBtn} onPress={openEdit} disabled={deleting}>
-            <Ionicons name="pencil-outline" size={20} color={primaryColor} />
+      <ClubHeader
+        title="Event Details"
+        onBack={() => router.back()}
+        right={isCoach ? (
+          <TouchableOpacity
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' }}
+            onPress={openEdit}
+            disabled={deleting}
+          >
+            <Ionicons name="pencil-outline" size={20} color="#fff" />
           </TouchableOpacity>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
-      </View>
+        ) : undefined}
+      />
 
       {/* Main tab bar — coaches only */}
       {isCoach && (
@@ -630,6 +868,27 @@ export default function EventDetailScreen() {
               </View>
             )}
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.mainTab, activeMainTab === 'attendance' && [styles.mainTabActive, { borderBottomColor: primaryColor }]]}
+            onPress={() => setActiveMainTab('attendance')}
+          >
+            <Text style={[styles.mainTabText, activeMainTab === 'attendance' && [styles.mainTabTextActive, { color: primaryColor }]]}>
+              Attendance
+            </Text>
+            {attendanceMap.size > 0 && (
+              <View style={[
+                styles.mainTabBadge,
+                activeMainTab === 'attendance' && [styles.mainTabBadgeActive, { backgroundColor: rgba(0.15) }],
+              ]}>
+                <Text style={[
+                  styles.mainTabBadgeText,
+                  activeMainTab === 'attendance' && [styles.mainTabBadgeTextActive, { color: primaryColor }],
+                ]}>
+                  {attendanceMap.size}/{players.length}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       )}
 
@@ -652,6 +911,44 @@ export default function EventDetailScreen() {
             </View>
           )}
 
+          {/* Guest invite banner — shown to the invited person */}
+          {myGuestInvite && (
+            <View style={[styles.guestInviteBanner, { borderColor: guestStatusColor(myGuestInvite.status) + '40' }]}>
+              <View style={styles.guestInviteBannerTop}>
+                <View style={[styles.guestInviteIcon, { backgroundColor: guestStatusColor(myGuestInvite.status) + '18' }]}>
+                  <Ionicons name="person-outline" size={16} color={guestStatusColor(myGuestInvite.status)} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.guestInviteTitle}>
+                    Guest {myGuestInvite.role === 'player' ? 'player' : 'coach'} invitation
+                  </Text>
+                  <Text style={styles.guestInviteSub}>
+                    {myGuestInvite.status === 'pending'
+                      ? `You've been invited to guest ${myGuestInvite.role === 'player' ? 'play' : 'coach'} at this event.`
+                      : myGuestInvite.status === 'confirmed' ? "You've confirmed this invitation." : "You declined this invitation."}
+                  </Text>
+                </View>
+              </View>
+              {myGuestInvite.status === 'pending' && (
+                <View style={styles.guestInviteActions}>
+                  <TouchableOpacity
+                    style={styles.guestAcceptBtn}
+                    onPress={() => handleGuestRespond(myGuestInvite.id, 'confirmed')}
+                  >
+                    <Ionicons name="checkmark-circle" size={14} color="#fff" />
+                    <Text style={styles.guestAcceptText}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.guestDeclineBtn}
+                    onPress={() => handleGuestRespond(myGuestInvite.id, 'declined')}
+                  >
+                    <Text style={styles.guestDeclineText}>Decline</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Type badge + title */}
           <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
             <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
@@ -664,7 +961,7 @@ export default function EventDetailScreen() {
             {/* Date + time */}
             <View style={styles.metaRow}>
               <View style={styles.metaIconWrap}>
-                <Ionicons name="calendar-outline" size={17} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="calendar-outline" size={17} color={PULSE_COLORS.ui.muted} />
               </View>
               <View style={styles.metaTextBlock}>
                 <Text style={styles.metaPrimary}>{formatDay(event.event_date)}</Text>
@@ -685,7 +982,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="walk-outline" size={17} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="walk-outline" size={17} color={PULSE_COLORS.ui.muted} />
                   </View>
                   <View style={styles.metaTextBlock}>
                     <Text style={styles.metaLabel}>Arrive by</Text>
@@ -703,7 +1000,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <TouchableOpacity style={styles.metaRow} onPress={openMaps} activeOpacity={0.7}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="location-outline" size={17} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="location-outline" size={17} color={PULSE_COLORS.ui.muted} />
                   </View>
                   <View style={[styles.metaTextBlock, { flex: 1 }]}>
                     <Text style={[styles.metaPrimary, { color: primaryColor }]} numberOfLines={2}>
@@ -725,7 +1022,54 @@ export default function EventDetailScreen() {
                 lng={event.lng}
                 address={event.address ?? event.location}
                 onPress={openMaps}
+                onDriveTime={setDriveTime}
               />
+            )}
+
+            {/* Weather + drive time panel — below map */}
+            {(weather || driveTime) && (
+              <>
+                <View style={styles.metaDivider} />
+                <View style={styles.weatherDriveBlock}>
+                  {/* Weather */}
+                  {weather && (
+                    <View style={styles.weatherPanel}>
+                      <Text style={styles.weatherPanelEmoji}>{weather.icon}</Text>
+                      <View style={styles.weatherPanelCenter}>
+                        <Text style={styles.weatherPanelTemp}>{weather.temp_f}°<Text style={styles.weatherPanelTempUnit}>F</Text></Text>
+                        <Text style={styles.weatherPanelTempAlt}>{weather.temp_c}°C</Text>
+                      </View>
+                      <View style={styles.weatherPanelRight}>
+                        <Text style={styles.weatherPanelCond}>{weather.condition}</Text>
+                        <View style={styles.weatherPanelStats}>
+                          {weather.precip_chance >= 20 && (
+                            <View style={styles.weatherStatPill}>
+                              <Text style={styles.weatherStatPillText}>💧 {weather.precip_chance}%</Text>
+                            </View>
+                          )}
+                          <View style={[styles.weatherStatPill, { backgroundColor: 'rgba(100,116,139,0.12)' }]}>
+                            <Text style={[styles.weatherStatPillText, { color: PULSE_COLORS.ui.textSecondary }]}>💨 {weather.wind_mph}mph</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Drive time */}
+                  {driveTime && (
+                    <>
+                      {weather && <View style={styles.weatherDriveDivider} />}
+                      <View style={styles.driveRow}>
+                        <View style={styles.driveIconWrap}>
+                          <Ionicons name="car-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                        </View>
+                        <Text style={styles.driveText}>{driveTime}</Text>
+                        <Text style={styles.driveLabel}>from your location</Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </>
             )}
 
             {/* Field info */}
@@ -734,7 +1078,7 @@ export default function EventDetailScreen() {
                 {!hasMap && <View style={styles.metaDivider} />}
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="layers-outline" size={17} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="layers-outline" size={17} color={PULSE_COLORS.ui.muted} />
                   </View>
                   <Text style={styles.metaPrimary}>{event.field_notes}</Text>
                 </View>
@@ -747,13 +1091,22 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="shirt-outline" size={17} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="shirt-outline" size={17} color={PULSE_COLORS.ui.muted} />
                   </View>
-                  <View style={[styles.uniformChip, { backgroundColor: rgba(0.12), borderColor: rgba(0.25) }]}>
-                    <Text style={[styles.uniformChipText, { color: primaryColor }]}>
-                      {event.uniform.charAt(0).toUpperCase() + event.uniform.slice(1)} kit
-                    </Text>
-                  </View>
+                  {(() => {
+                    const kitColor = event.uniform === 'home' ? homeKitColor
+                      : event.uniform === 'away' ? awayKitColor
+                      : trainingKitColor;
+                    const kitLabel = event.uniform === 'home' ? 'Home Kit'
+                      : event.uniform === 'away' ? 'Away Kit'
+                      : 'Training Kit';
+                    return (
+                      <View style={[styles.uniformChip, { backgroundColor: `${kitColor}18`, borderColor: `${kitColor}30` }]}>
+                        <Ionicons name="shirt" size={13} color={kitColor} />
+                        <Text style={[styles.uniformChipText, { color: kitColor }]}>{kitLabel}</Text>
+                      </View>
+                    );
+                  })()}
                 </View>
               </>
             )}
@@ -764,7 +1117,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="football-outline" size={17} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="football-outline" size={17} color={PULSE_COLORS.ui.muted} />
                   </View>
                   <View style={[styles.uniformChip, {
                     backgroundColor: event.field_type === 'turf' ? 'rgba(59,130,246,0.12)' : rgba(0.10),
@@ -779,6 +1132,26 @@ export default function EventDetailScreen() {
               </>
             )}
           </View>
+
+          {/* Recording */}
+          {event.video_url && (
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.recordingBtn}
+                onPress={() => Linking.openURL(event.video_url!)}
+                activeOpacity={0.75}
+              >
+                <View style={styles.recordingIconWrap}>
+                  <Ionicons name="play-circle" size={22} color={primaryColor} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.recordingLabel, { color: primaryColor }]}>Watch Recording</Text>
+                  <Text style={styles.recordingUrl} numberOfLines={1}>{event.video_url}</Text>
+                </View>
+                <Ionicons name="open-outline" size={16} color={primaryColor} />
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Team message */}
           {event.notes && (
@@ -796,7 +1169,7 @@ export default function EventDetailScreen() {
               <Text style={styles.sectionTitle}>Coach Notes</Text>
               <View style={[styles.notesBox, styles.coachNotesBox]}>
                 <View style={styles.coachNotesHeader}>
-                  <Ionicons name="lock-closed-outline" size={13} color={DUGOUT_COLORS.ui.muted} />
+                  <Ionicons name="lock-closed-outline" size={13} color={PULSE_COLORS.ui.muted} />
                   <Text style={styles.coachOnlyTag}>Coach only</Text>
                 </View>
                 <Text style={styles.notesText}>{event.coach_notes}</Text>
@@ -823,11 +1196,11 @@ export default function EventDetailScreen() {
                   <Ionicons
                     name={myStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
                     size={16}
-                    color={myStatus === 'attending' ? DUGOUT_COLORS.rsvp.attending : DUGOUT_COLORS.rsvp.not_attending}
+                    color={myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
                   />
                   <Text style={[
                     styles.statusChipText,
-                    { color: myStatus === 'attending' ? DUGOUT_COLORS.rsvp.attending : DUGOUT_COLORS.rsvp.not_attending }
+                    { color: myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
                   ]}>
                     {myStatus === 'attending' ? "You're going" : "You can't make it"}
                   </Text>
@@ -843,7 +1216,7 @@ export default function EventDetailScreen() {
                     <Ionicons
                       name="checkmark-circle-outline"
                       size={16}
-                      color={myStatus === 'attending' ? '#000' : DUGOUT_COLORS.ui.muted}
+                      color={myStatus === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
                     />
                     {rsvpSaving && myStatus !== 'attending'
                       ? <ActivityIndicator size="small" color="#000" />
@@ -858,7 +1231,7 @@ export default function EventDetailScreen() {
                     <Ionicons
                       name="close-circle-outline"
                       size={16}
-                      color={myStatus === 'not_attending' ? '#fff' : DUGOUT_COLORS.ui.muted}
+                      color={myStatus === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
                     />
                     {rsvpSaving && myStatus !== 'not_attending'
                       ? <ActivityIndicator size="small" color="#fff" />
@@ -895,15 +1268,15 @@ export default function EventDetailScreen() {
 
               <View style={styles.summaryRow}>
                 <TouchableOpacity style={styles.summaryPill} onPress={() => switchToAvailability('attending')} activeOpacity={0.7}>
-                  <Text style={[styles.summaryNum, { color: DUGOUT_COLORS.rsvp.attending }]}>{attending.length}</Text>
+                  <Text style={[styles.summaryNum, { color: PULSE_COLORS.rsvp.attending }]}>{attending.length}</Text>
                   <Text style={styles.summaryLabel}>Going</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.summaryPill} onPress={() => switchToAvailability('not_attending')} activeOpacity={0.7}>
-                  <Text style={[styles.summaryNum, { color: DUGOUT_COLORS.rsvp.not_attending }]}>{notAttending.length}</Text>
+                  <Text style={[styles.summaryNum, { color: PULSE_COLORS.rsvp.not_attending }]}>{notAttending.length}</Text>
                   <Text style={styles.summaryLabel}>Can't go</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.summaryPill} onPress={() => switchToAvailability('none')} activeOpacity={0.7}>
-                  <Text style={[styles.summaryNum, { color: DUGOUT_COLORS.ui.muted }]}>{noResponse.length}</Text>
+                  <Text style={[styles.summaryNum, { color: PULSE_COLORS.ui.muted }]}>{noResponse.length}</Text>
                   <Text style={styles.summaryLabel}>No reply</Text>
                 </TouchableOpacity>
               </View>
@@ -924,7 +1297,7 @@ export default function EventDetailScreen() {
                   <Ionicons name="grid-outline" size={17} color={primaryColor} />
                 </View>
                 <Text style={styles.actionBtnText}>Lineup Builder</Text>
-                <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />
+                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
               </TouchableOpacity>
               {event.type === 'game' && (
                 <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openMatchTracker} activeOpacity={0.7}>
@@ -932,7 +1305,7 @@ export default function EventDetailScreen() {
                     <Ionicons name="timer-outline" size={17} color={primaryColor} />
                   </View>
                   <Text style={styles.actionBtnText}>Match Tracker</Text>
-                  <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />
+                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
                 </TouchableOpacity>
               )}
             </View>
@@ -944,7 +1317,7 @@ export default function EventDetailScreen() {
               <View style={styles.statsSectionHeader}>
                 <Text style={styles.sectionTitle}>Match Stats</Text>
                 <View style={styles.coachOnlyChip}>
-                  <Ionicons name="lock-closed-outline" size={11} color={DUGOUT_COLORS.ui.muted} />
+                  <Ionicons name="lock-closed-outline" size={11} color={PULSE_COLORS.ui.muted} />
                   <Text style={styles.coachOnlyTag}>Coach only</Text>
                 </View>
               </View>
@@ -989,7 +1362,7 @@ export default function EventDetailScreen() {
                     <Text style={[styles.dangerCardTitle, { color: '#22c55e' }]}>Reinstate Event</Text>
                     <Text style={styles.dangerCardSub}>AI writes an "event is back on" email to parents</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />
+                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
                 </TouchableOpacity>
               )}
               {!event.cancelled_at && (
@@ -1001,7 +1374,7 @@ export default function EventDetailScreen() {
                     <Text style={styles.dangerCardTitle}>Cancel Event</Text>
                     <Text style={styles.dangerCardSub}>AI writes a cancellation email to all parents</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />
+                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
                 </TouchableOpacity>
               )}
               <TouchableOpacity
@@ -1011,14 +1384,14 @@ export default function EventDetailScreen() {
                 activeOpacity={0.7}
               >
                 {deleting ? (
-                  <ActivityIndicator size="small" color={DUGOUT_COLORS.status.error} style={{ marginRight: 12 }} />
+                  <ActivityIndicator size="small" color={PULSE_COLORS.status.error} style={{ marginRight: 12 }} />
                 ) : (
                   <View style={[styles.dangerCardIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
-                    <Ionicons name="trash-outline" size={20} color={DUGOUT_COLORS.status.error} />
+                    <Ionicons name="trash-outline" size={20} color={PULSE_COLORS.status.error} />
                   </View>
                 )}
                 <View style={styles.dangerCardText}>
-                  <Text style={[styles.dangerCardTitle, { color: DUGOUT_COLORS.status.error }]}>Delete Event</Text>
+                  <Text style={[styles.dangerCardTitle, { color: PULSE_COLORS.status.error }]}>Delete Event</Text>
                   <Text style={styles.dangerCardSub}>Permanently removes this event</Text>
                 </View>
               </TouchableOpacity>
@@ -1045,7 +1418,7 @@ export default function EventDetailScreen() {
               <View style={styles.modalHeader}>
                 {cancelStep === 'preview' ? (
                   <TouchableOpacity onPress={() => setCancelStep('reason')} style={styles.modalBackBtn}>
-                    <Ionicons name="chevron-back" size={20} color={DUGOUT_COLORS.ui.textSecondary} />
+                    <Ionicons name="chevron-back" size={20} color={PULSE_COLORS.ui.textSecondary} />
                     <Text style={styles.modalBackText}>Back</Text>
                   </TouchableOpacity>
                 ) : <View style={{ width: 60 }} />}
@@ -1055,7 +1428,7 @@ export default function EventDetailScreen() {
                     : (cancelStep === 'reason' ? 'Cancel Event' : 'Review Email')}
                 </Text>
                 <TouchableOpacity onPress={() => setCancelVisible(false)} style={styles.modalCloseBtn}>
-                  <Ionicons name="close" size={20} color={DUGOUT_COLORS.ui.textSecondary} />
+                  <Ionicons name="close" size={20} color={PULSE_COLORS.ui.textSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -1072,7 +1445,7 @@ export default function EventDetailScreen() {
                     value={cancelReason}
                     onChangeText={setCancelReason}
                     placeholder="e.g. Field is waterlogged due to heavy rain overnight"
-                    placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
                     multiline
                     textAlignVertical="top"
                     autoFocus
@@ -1107,7 +1480,7 @@ export default function EventDetailScreen() {
                           style={styles.emailSubjectInput}
                           value={cancelSubject}
                           onChangeText={setCancelSubject}
-                          placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                          placeholderTextColor={PULSE_COLORS.ui.muted}
                         />
                         <TextInput
                           style={styles.emailBodyInput}
@@ -1115,7 +1488,7 @@ export default function EventDetailScreen() {
                           onChangeText={setCancelBody}
                           multiline
                           textAlignVertical="top"
-                          placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                          placeholderTextColor={PULSE_COLORS.ui.muted}
                         />
                       </>
                     ) : (
@@ -1143,27 +1516,110 @@ export default function EventDetailScreen() {
         </View>
       </Modal>
 
+      {/* ── Attendance tab (coaches only) ── */}
+      {activeMainTab === 'attendance' && isCoach && (
+        <ScrollView contentContainerStyle={styles.availScroll} showsVerticalScrollIndicator={false}>
+          <View style={styles.attendanceHeader}>
+            <Text style={styles.attendanceHint}>
+              Mark who actually showed up. Tap a status to set, tap again to clear.
+            </Text>
+            <View style={styles.attendanceLegend}>
+              {[['#22c55e', 'Present'], ['#F59E0B', 'Late'], ['#ef4444', 'Absent']].map(([color, label]) => (
+                <View key={label} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: color }]} />
+                  <Text style={styles.legendLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+          {players.length === 0 ? (
+            <View style={styles.emptyAvailability}>
+              <Text style={styles.emptyTitle}>No players on roster</Text>
+            </View>
+          ) : (
+            <View style={styles.playerCard}>
+              {players.map((p, i) => {
+                const attStatus = attendanceMap.get(p.id);
+                const isSaving = savingAttendance === p.id;
+                return (
+                  <View key={p.id}>
+                    {i > 0 && <View style={styles.playerDivider} />}
+                    <View style={styles.playerRow}>
+                      <View style={[
+                        styles.jerseyBadge,
+                        attStatus === 'present' && { backgroundColor: 'rgba(34,197,94,0.12)',  borderColor: 'rgba(34,197,94,0.3)' },
+                        attStatus === 'late'    && { backgroundColor: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.3)' },
+                        attStatus === 'absent'  && { backgroundColor: 'rgba(239,68,68,0.12)',  borderColor: 'rgba(239,68,68,0.3)' },
+                      ]}>
+                        <Text style={[
+                          styles.jerseyNum,
+                          attStatus === 'present' && { color: '#22c55e' },
+                          attStatus === 'late'    && { color: '#F59E0B' },
+                          attStatus === 'absent'  && { color: '#ef4444' },
+                        ]}>
+                          {p.jersey_number ?? '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.playerInfo}>
+                        <Text style={styles.playerName}>{p.full_name}</Text>
+                        {p.position && <Text style={styles.playerPosition}>{p.position}</Text>}
+                      </View>
+                      <View style={styles.attendanceBtns}>
+                        {isSaving ? (
+                          <ActivityIndicator size="small" color={primaryColor} />
+                        ) : (
+                          <>
+                            {(['present', 'late', 'absent'] as const).map((s) => {
+                              const clr = s === 'present' ? '#22c55e' : s === 'late' ? '#F59E0B' : '#ef4444';
+                              const icon: React.ComponentProps<typeof Ionicons>['name'] = s === 'present' ? 'checkmark' : s === 'late' ? 'time-outline' : 'close';
+                              return (
+                                <TouchableOpacity
+                                  key={s}
+                                  style={[styles.attBtn, attStatus === s && { backgroundColor: `${clr}18`, borderColor: clr }]}
+                                  onPress={() => markAttendance(p.id, s)}
+                                  hitSlop={4}
+                                >
+                                  <Ionicons name={icon} size={14} color={attStatus === s ? clr : PULSE_COLORS.ui.muted} />
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
+
       {/* ── Availability tab (coaches only) ── */}
       {activeMainTab === 'availability' && isCoach && (
         <View style={{ flex: 1 }}>
 
-          {/* Stats header */}
+          {/* Stats header — tap a card to filter */}
           <View style={styles.availHeader}>
             <View style={styles.availStats}>
-              <View style={styles.availStat}>
-                <Text style={[styles.availStatNum, { color: DUGOUT_COLORS.rsvp.attending }]}>{attending.length}</Text>
-                <Text style={styles.availStatLabel}>Going</Text>
-              </View>
+              <TouchableOpacity style={styles.availStat} onPress={() => setActiveRsvpTab('attending')} activeOpacity={0.7}>
+                <Text style={[styles.availStatNum, { color: PULSE_COLORS.rsvp.attending }]}>{attending.length}</Text>
+                <Text style={[styles.availStatLabel, activeRsvpTab === 'attending' && { color: PULSE_COLORS.rsvp.attending, fontWeight: '700' }]}>Going</Text>
+                <View style={[styles.availStatIndicator, activeRsvpTab === 'attending' && { backgroundColor: PULSE_COLORS.rsvp.attending }]} />
+              </TouchableOpacity>
               <View style={styles.availStatDivider} />
-              <View style={styles.availStat}>
-                <Text style={[styles.availStatNum, { color: DUGOUT_COLORS.rsvp.not_attending }]}>{notAttending.length}</Text>
-                <Text style={styles.availStatLabel}>Can't go</Text>
-              </View>
+              <TouchableOpacity style={styles.availStat} onPress={() => setActiveRsvpTab('not_attending')} activeOpacity={0.7}>
+                <Text style={[styles.availStatNum, { color: PULSE_COLORS.rsvp.not_attending }]}>{notAttending.length}</Text>
+                <Text style={[styles.availStatLabel, activeRsvpTab === 'not_attending' && { color: PULSE_COLORS.rsvp.not_attending, fontWeight: '700' }]}>Can't go</Text>
+                <View style={[styles.availStatIndicator, activeRsvpTab === 'not_attending' && { backgroundColor: PULSE_COLORS.rsvp.not_attending }]} />
+              </TouchableOpacity>
               <View style={styles.availStatDivider} />
-              <View style={styles.availStat}>
-                <Text style={[styles.availStatNum, { color: DUGOUT_COLORS.ui.muted }]}>{noResponse.length}</Text>
-                <Text style={styles.availStatLabel}>Pending</Text>
-              </View>
+              <TouchableOpacity style={styles.availStat} onPress={() => setActiveRsvpTab('none')} activeOpacity={0.7}>
+                <Text style={[styles.availStatNum, { color: PULSE_COLORS.ui.muted }]}>{noResponse.length}</Text>
+                <Text style={[styles.availStatLabel, activeRsvpTab === 'none' && { color: PULSE_COLORS.ui.text, fontWeight: '700' }]}>Pending</Text>
+                <View style={[styles.availStatIndicator, activeRsvpTab === 'none' && { backgroundColor: PULSE_COLORS.ui.muted }]} />
+              </TouchableOpacity>
             </View>
             {players.length > 0 && (
               <View style={styles.availProgressTrack}>
@@ -1172,33 +1628,25 @@ export default function EventDetailScreen() {
             )}
           </View>
 
-          {/* Segmented filter */}
-          <View style={styles.segmentedWrap}>
-            <View style={styles.segmented}>
-              {([
-                { key: 'attending',     label: 'Going' },
-                { key: 'not_attending', label: "Can't go" },
-                { key: 'none',          label: 'Pending' },
-              ] as const).map((tab, i) => (
-                <TouchableOpacity
-                  key={tab.key}
-                  style={[
-                    styles.segment,
-                    activeRsvpTab === tab.key && [styles.segmentActive, { backgroundColor: primaryColor }],
-                    i === 2 && styles.segmentLast,
-                  ]}
-                  onPress={() => setActiveRsvpTab(tab.key)}
-                >
-                  <Text style={[styles.segmentText, activeRsvpTab === tab.key && styles.segmentTextActive]}>
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          {/* Nudge non-responders */}
+          {upcoming && !event.cancelled_at && noResponse.length > 0 && (
+            <View style={styles.nudgeRow}>
+              <TouchableOpacity
+                style={styles.nudgeBtn}
+                onPress={handleNudge}
+                disabled={nudging}
+                activeOpacity={0.75}
+              >
+                {nudging
+                  ? <ActivityIndicator size="small" color={primaryColor} />
+                  : <Ionicons name="notifications-outline" size={15} color={primaryColor} />
+                }
+                <Text style={[styles.nudgeBtnText, { color: primaryColor }]}>
+                  Nudge {noResponse.length} non-responder{noResponse.length !== 1 ? 's' : ''}
+                </Text>
+              </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Coach override hint */}
-          <Text style={styles.overrideHint}>Tap the icon next to any player to override their RSVP</Text>
+          )}
 
           {/* Player list */}
           <ScrollView contentContainerStyle={styles.availScroll} showsVerticalScrollIndicator={false}>
@@ -1211,7 +1659,7 @@ export default function EventDetailScreen() {
                       activeRsvpTab === 'not_attending' ? 'close-circle-outline' : 'time-outline'
                     }
                     size={26}
-                    color={DUGOUT_COLORS.ui.muted}
+                    color={PULSE_COLORS.ui.muted}
                   />
                 </View>
                 <Text style={styles.emptyTitle}>
@@ -1238,8 +1686,8 @@ export default function EventDetailScreen() {
                       ]}>
                         <Text style={[
                           styles.jerseyNum,
-                          activeRsvpTab === 'attending' && { color: DUGOUT_COLORS.rsvp.attending },
-                          activeRsvpTab === 'not_attending' && { color: DUGOUT_COLORS.rsvp.not_attending },
+                          activeRsvpTab === 'attending' && { color: PULSE_COLORS.rsvp.attending },
+                          activeRsvpTab === 'not_attending' && { color: PULSE_COLORS.rsvp.not_attending },
                         ]}>
                           {p.jersey_number ?? '—'}
                         </Text>
@@ -1256,13 +1704,13 @@ export default function EventDetailScreen() {
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         {activeRsvpTab === 'attending' && (
-                          <Ionicons name="checkmark-circle" size={20} color={DUGOUT_COLORS.rsvp.attending} />
+                          <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
                         )}
                         {activeRsvpTab === 'not_attending' && (
-                          <Ionicons name="close-circle" size={20} color={DUGOUT_COLORS.rsvp.not_attending} />
+                          <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />
                         )}
                         {activeRsvpTab === 'none' && (
-                          <Ionicons name="ellipse-outline" size={20} color={DUGOUT_COLORS.ui.muted} />
+                          <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />
                         )}
                       </TouchableOpacity>
                     </View>
@@ -1270,10 +1718,170 @@ export default function EventDetailScreen() {
                 ))}
               </View>
             )}
+            {/* Guest Players section */}
+            {isCoach && (
+              <View style={styles.guestSection}>
+                <View style={styles.guestSectionRow}>
+                  <Text style={styles.guestSectionTitle}>GUEST PLAYERS</Text>
+                  <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: rgba(0.1) }]} onPress={() => { setGuestQuery(''); setGuestPlayerResults([]); setGuestSheet('player'); }}>
+                    <Ionicons name="person-add-outline" size={13} color={primaryColor} />
+                    <Text style={[styles.addGuestBtnText, { color: primaryColor }]}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+                {guestPlayers.length > 0 ? (
+                  <View style={styles.playerCard}>
+                    {guestPlayers.map((g, i) => (
+                      <View key={g.id}>
+                        {i > 0 && <View style={styles.playerDivider} />}
+                        <View style={styles.playerRow}>
+                          <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.15)' }]}>
+                            <Text style={[styles.jerseyNum, { color: '#f97316' }]}>G</Text>
+                          </View>
+                          <View style={styles.playerInfo}>
+                            <Text style={styles.playerName}>{g.full_name}</Text>
+                            {g.team_name && <Text style={styles.playerPosition}>{g.team_name}</Text>}
+                          </View>
+                          <View style={[styles.guestStatusChip, { backgroundColor: guestStatusColor(g.status) + '18' }]}>
+                            <Text style={[styles.guestStatusText, { color: guestStatusColor(g.status) }]}>
+                              {g.status.charAt(0).toUpperCase() + g.status.slice(1)}
+                            </Text>
+                          </View>
+                          <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
+                            <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.guestEmpty}>No guest players invited yet.</Text>
+                )}
+              </View>
+            )}
+
+            {/* Guest Coaches section — all coaches */}
+            {isCoach && (
+              <View style={styles.guestSection}>
+                <View style={styles.guestSectionRow}>
+                  <Text style={styles.guestSectionTitle}>GUEST COACHES</Text>
+                  <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: rgba(0.1) }]} onPress={() => { setGuestQuery(''); setGuestCoachResults([]); setGuestSheet('coach'); }}>
+                    <Ionicons name="person-add-outline" size={13} color={primaryColor} />
+                    <Text style={[styles.addGuestBtnText, { color: primaryColor }]}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+                {guestCoaches.length > 0 ? (
+                  <View style={styles.playerCard}>
+                    {guestCoaches.map((g, i) => (
+                      <View key={g.id}>
+                        {i > 0 && <View style={styles.playerDivider} />}
+                        <View style={styles.playerRow}>
+                          <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.15)' }]}>
+                            <Ionicons name="people-outline" size={14} color="#3B82F6" />
+                          </View>
+                          <View style={styles.playerInfo}>
+                            <Text style={styles.playerName}>{g.full_name}</Text>
+                          </View>
+                          <View style={[styles.guestStatusChip, { backgroundColor: guestStatusColor(g.status) + '18' }]}>
+                            <Text style={[styles.guestStatusText, { color: guestStatusColor(g.status) }]}>
+                              {g.status.charAt(0).toUpperCase() + g.status.slice(1)}
+                            </Text>
+                          </View>
+                          <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
+                            <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.guestEmpty}>No guest coaches invited yet.</Text>
+                )}
+              </View>
+            )}
+
             <View style={{ height: 40 }} />
           </ScrollView>
         </View>
       )}
+
+      {/* Guest search sheet */}
+      <Modal
+        visible={guestSheet !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setGuestSheet(null)}
+      >
+        <KeyboardAvoidingView style={styles.guestSheetKAV} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={styles.guestSheetOverlay} activeOpacity={1} onPress={() => setGuestSheet(null)} />
+          <View style={styles.guestSheetPanel}>
+            <View style={styles.guestSheetHandle} />
+            <Text style={styles.guestSheetTitle}>
+              {guestSheet === 'player' ? 'Add Guest Player' : 'Add Guest Coach'}
+            </Text>
+            <Text style={styles.guestSheetSub}>
+              {guestSheet === 'player'
+                ? 'Search for a player from another team in your club.'
+                : 'Search for a coach in your club.'}
+            </Text>
+            <View style={styles.guestSearchRow}>
+              <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+              <TextInput
+                style={styles.guestSearchInput}
+                placeholder="Search by name…"
+                placeholderTextColor={PULSE_COLORS.ui.muted}
+                value={guestQuery}
+                onChangeText={q => { setGuestQuery(q); searchGuests(q); }}
+                autoFocus
+                returnKeyType="search"
+              />
+              {guestSearching && <ActivityIndicator size="small" color={primaryColor} />}
+            </View>
+            <ScrollView style={styles.guestResultsList} keyboardShouldPersistTaps="handled">
+              {guestSheet === 'player' && guestPlayerResults.map(p => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.guestResultRow}
+                  onPress={() => handleAddGuestPlayer(p)}
+                  disabled={!!addingGuest}
+                >
+                  <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
+                    <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.guestResultName}>{p.full_name}</Text>
+                    <Text style={styles.guestResultSub}>{p.team_name}{p.position ? ` · ${p.position}` : ''}</Text>
+                  </View>
+                  {addingGuest === p.id
+                    ? <ActivityIndicator size="small" color={primaryColor} />
+                    : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
+                </TouchableOpacity>
+              ))}
+              {guestSheet === 'coach' && guestCoachResults.map(c => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={styles.guestResultRow}
+                  onPress={() => handleAddGuestCoach(c)}
+                  disabled={!!addingGuest}
+                >
+                  <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.12)', marginRight: 12 }]}>
+                    <Ionicons name="people-outline" size={14} color="#3B82F6" />
+                  </View>
+                  <Text style={[styles.guestResultName, { flex: 1 }]}>{c.full_name}</Text>
+                  {addingGuest === c.id
+                    ? <ActivityIndicator size="small" color={primaryColor} />
+                    : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
+                </TouchableOpacity>
+              ))}
+              {guestQuery.length >= 2 && !guestSearching && guestPlayerResults.length === 0 && guestCoachResults.length === 0 && (
+                <Text style={styles.guestNoResults}>No results for "{guestQuery}"</Text>
+              )}
+              {guestQuery.length < 2 && (
+                <Text style={styles.guestNoResults}>Type at least 2 characters to search.</Text>
+              )}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Match Tracker — rendered as a Modal so there is no navigation swipe gesture */}
       <Modal
@@ -1295,38 +1903,38 @@ export default function EventDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.background },
-  errorText: { color: DUGOUT_COLORS.ui.textSecondary, fontSize: 16 },
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+  errorText: { color: PULSE_COLORS.ui.textSecondary, fontSize: 16 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
 
   mainTabBar: {
     flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
   mainTab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 7, paddingVertical: 13,
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
-  mainTabActive: { borderBottomColor: DUGOUT_COLORS.brand.green },
-  mainTabText: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
-  mainTabTextActive: { color: DUGOUT_COLORS.brand.green },
+  mainTabActive: { borderBottomColor: PULSE_COLORS.brand.green },
+  mainTabText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  mainTabTextActive: { color: PULSE_COLORS.brand.green },
   mainTabBadge: {
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10,
   },
   mainTabBadgeActive: { backgroundColor: 'rgba(34,197,94,0.15)' },
-  mainTabBadgeText: { fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
-  mainTabBadgeTextActive: { color: DUGOUT_COLORS.brand.green },
+  mainTabBadgeText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  mainTabBadgeTextActive: { color: PULSE_COLORS.brand.green },
 
   scroll: { padding: 20 },
 
@@ -1336,12 +1944,12 @@ const styles = StyleSheet.create({
   },
   typeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
 
-  title: { fontSize: 26, fontWeight: '800', color: DUGOUT_COLORS.ui.text, lineHeight: 32, marginBottom: 18 },
+  title: { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text, lineHeight: 32, marginBottom: 18 },
 
   // Meta card
   metaCard: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16, overflow: 'hidden', marginBottom: 24,
   },
   metaRow: {
@@ -1350,42 +1958,92 @@ const styles = StyleSheet.create({
   },
   metaIconWrap: { width: 22, alignItems: 'center', paddingTop: 1 },
   metaTextBlock: { gap: 3 },
-  metaPrimary: { fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
-  metaSecondary: { fontSize: 13, color: DUGOUT_COLORS.ui.muted },
+  metaPrimary: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  metaSecondary: { fontSize: 13, color: PULSE_COLORS.ui.muted },
   metaLabel: {
-    fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 1,
   },
-  metaDivider: { height: 1, backgroundColor: DUGOUT_COLORS.ui.border, marginHorizontal: 16 },
+  metaDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 16 },
+
+  weatherPill: {
+    borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
+  },
+
+  // Premium weather + drive block
+  weatherDriveBlock: {
+    paddingHorizontal: 16, paddingVertical: 14, gap: 0,
+  },
+  weatherPanel: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+  },
+  weatherPanelEmoji: { fontSize: 34 },
+  weatherPanelCenter: { alignItems: 'flex-end', marginRight: 4 },
+  weatherPanelTemp: { fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, lineHeight: 30 },
+  weatherPanelTempUnit: { fontSize: 16, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  weatherPanelTempAlt: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  weatherPanelRight: { flex: 1, gap: 6 },
+  weatherPanelCond: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  weatherPanelStats: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  weatherStatPill: {
+    backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 4,
+  },
+  weatherStatPillText: { fontSize: 12, fontWeight: '600', color: '#60A5FA' },
+  weatherDriveDivider: {
+    height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 12,
+  },
+  driveRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  driveIconWrap: {
+    width: 30, height: 30, borderRadius: 8,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  driveText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  driveLabel: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   uniformChip: {
-    backgroundColor: 'rgba(34,197,94,0.12)',
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
-    paddingHorizontal: 11, paddingVertical: 4, borderRadius: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1,
+    paddingHorizontal: 11, paddingVertical: 5, borderRadius: 20,
     alignSelf: 'flex-start',
   },
-  uniformChipText: { fontSize: 13, fontWeight: '700', color: DUGOUT_COLORS.brand.green },
+  uniformChipText: { fontSize: 13, fontWeight: '700' },
 
-  divider: { height: 1, backgroundColor: DUGOUT_COLORS.ui.border, marginVertical: 20 },
+  divider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 20 },
 
   section: { marginBottom: 24 },
   sectionTitle: {
-    fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12,
   },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  deadlineLabel: { fontSize: 12, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
-  deadlineLabelClosed: { color: DUGOUT_COLORS.status.error },
+  deadlineLabel: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  deadlineLabelClosed: { color: PULSE_COLORS.status.error },
 
   notesBox: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 12, padding: 14,
   },
   coachNotesBox: { borderColor: 'rgba(156,163,175,0.25)', backgroundColor: 'rgba(156,163,175,0.05)' },
   coachNotesHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
-  coachOnlyTag: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '600', fontStyle: 'italic' },
-  notesText: { fontSize: 14, color: DUGOUT_COLORS.ui.text, lineHeight: 21 },
+  coachOnlyTag: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', fontStyle: 'italic' },
+  notesText: { fontSize: 14, color: PULSE_COLORS.ui.text, lineHeight: 21 },
+
+  recordingBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 12, padding: 14,
+  },
+  recordingIconWrap: {
+    width: 38, height: 38, borderRadius: 10,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  recordingLabel: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  recordingUrl: { fontSize: 12, color: PULSE_COLORS.ui.muted },
 
   statusChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -1398,40 +2056,40 @@ const styles = StyleSheet.create({
   rsvpBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 7, paddingVertical: 13, borderRadius: 12,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
   },
-  rsvpBtnGoing: { backgroundColor: DUGOUT_COLORS.rsvp.attending, borderColor: DUGOUT_COLORS.rsvp.attending },
-  rsvpBtnNotGoing: { backgroundColor: DUGOUT_COLORS.rsvp.not_attending, borderColor: DUGOUT_COLORS.rsvp.not_attending },
-  rsvpBtnText: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
+  rsvpBtnGoing: { backgroundColor: PULSE_COLORS.rsvp.attending, borderColor: PULSE_COLORS.rsvp.attending },
+  rsvpBtnNotGoing: { backgroundColor: PULSE_COLORS.rsvp.not_attending, borderColor: PULSE_COLORS.rsvp.not_attending },
+  rsvpBtnText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
 
-  noPlayerText: { color: DUGOUT_COLORS.ui.muted, fontSize: 14 },
+  noPlayerText: { color: PULSE_COLORS.ui.muted, fontSize: 14 },
 
   // Attendance summary
   progressWrap: { marginBottom: 14 },
   progressTrack: {
-    height: 4, backgroundColor: DUGOUT_COLORS.ui.border, borderRadius: 2, overflow: 'hidden', marginBottom: 6,
+    height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, overflow: 'hidden', marginBottom: 6,
   },
-  progressFill: { height: '100%', backgroundColor: DUGOUT_COLORS.brand.green, borderRadius: 2 },
-  progressLabel: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  progressFill: { height: '100%', backgroundColor: PULSE_COLORS.brand.green, borderRadius: 2 },
+  progressLabel: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   summaryPill: {
-    flex: 1, backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 12, paddingVertical: 14, alignItems: 'center',
   },
   summaryNum: { fontSize: 24, fontWeight: '800' },
-  summaryLabel: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 3 },
+  summaryLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 3 },
 
   viewBreakdownBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end' },
-  viewBreakdownText: { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.brand.green },
+  viewBreakdownText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
 
   // Actions
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 12, padding: 14,
   },
   actionBtnBorderTop: { marginTop: 8 },
@@ -1440,7 +2098,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34,197,94,0.1)',
     alignItems: 'center', justifyContent: 'center',
   },
-  actionBtnText: { flex: 1, fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
+  actionBtnText: { flex: 1, fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
 
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1448,38 +2106,50 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
     backgroundColor: 'rgba(239,68,68,0.07)',
   },
-  deleteBtnText: { color: DUGOUT_COLORS.status.error, fontWeight: '700', fontSize: 15 },
+  deleteBtnText: { color: PULSE_COLORS.status.error, fontWeight: '700', fontSize: 15 },
 
   // Availability tab
   availHeader: {
     paddingHorizontal: 20, paddingTop: 18, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
   },
   availStats: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   availStat: { flex: 1, alignItems: 'center', gap: 3 },
   availStatNum: { fontSize: 28, fontWeight: '800' },
-  availStatLabel: { fontSize: 12, color: DUGOUT_COLORS.ui.muted },
-  availStatDivider: { width: 1, height: 36, backgroundColor: DUGOUT_COLORS.ui.border },
+  availStatLabel: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  availStatIndicator: { height: 3, width: 28, borderRadius: 2, marginTop: 6, backgroundColor: 'transparent' },
+  availStatDivider: { width: 1, height: 36, backgroundColor: PULSE_COLORS.ui.border },
   availProgressTrack: {
-    height: 4, backgroundColor: DUGOUT_COLORS.ui.border, borderRadius: 2, overflow: 'hidden',
+    height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, overflow: 'hidden',
   },
-  availProgressFill: { height: '100%', backgroundColor: DUGOUT_COLORS.brand.green, borderRadius: 2 },
+  availProgressFill: { height: '100%', backgroundColor: PULSE_COLORS.brand.green, borderRadius: 2 },
+
+  nudgeRow: { paddingHorizontal: 20, paddingBottom: 4 },
+  nudgeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 10, borderWidth: 1,
+    borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    alignSelf: 'flex-start',
+  },
+  nudgeBtnText: { fontSize: 13, fontWeight: '700' },
 
   segmentedWrap: { paddingHorizontal: 20, paddingVertical: 14 },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 10, overflow: 'hidden',
   },
   segment: {
     flex: 1, paddingVertical: 9, alignItems: 'center',
-    borderRightWidth: 1, borderRightColor: DUGOUT_COLORS.ui.border,
+    borderRightWidth: 1, borderRightColor: PULSE_COLORS.ui.border,
   },
   segmentLast: { borderRightWidth: 0 },
-  segmentActive: { backgroundColor: DUGOUT_COLORS.brand.green },
-  segmentText: { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
+  segmentActive: { backgroundColor: PULSE_COLORS.brand.green },
+  segmentText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
   segmentTextActive: { color: '#000' },
 
   availScroll: { paddingHorizontal: 20, paddingTop: 4 },
@@ -1487,37 +2157,37 @@ const styles = StyleSheet.create({
   emptyAvailability: { alignItems: 'center', paddingVertical: 52, gap: 10 },
   emptyIconWrap: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
-  emptySubtitle: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', maxWidth: 260, lineHeight: 19 },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  emptySubtitle: { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', maxWidth: 260, lineHeight: 19 },
 
   playerCard: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, overflow: 'hidden',
   },
-  playerDivider: { height: 1, backgroundColor: DUGOUT_COLORS.ui.border },
+  playerDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
   playerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 12, paddingHorizontal: 14,
   },
   jerseyBadge: {
     width: 36, height: 36, borderRadius: 9,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
   jerseyBadgeGoing: { backgroundColor: 'rgba(34,197,94,0.12)' },
   jerseyBadgeNotGoing: { backgroundColor: 'rgba(239,68,68,0.12)' },
-  jerseyNum: { fontSize: 12, fontWeight: '800', color: DUGOUT_COLORS.ui.muted },
+  jerseyNum: { fontSize: 12, fontWeight: '800', color: PULSE_COLORS.ui.muted },
   playerInfo: { flex: 1, gap: 2 },
-  playerName: { fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
-  playerPosition: { fontSize: 12, color: DUGOUT_COLORS.ui.muted },
+  playerName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  playerPosition: { fontSize: 12, color: PULSE_COLORS.ui.muted },
   overrideBtn: { padding: 2 },
-  overrideHint: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', paddingHorizontal: 16, paddingBottom: 8 },
+  overrideHint: { fontSize: 11, color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingHorizontal: 16, paddingBottom: 8 },
 
   // Match stats
   statsSectionHeader: {
@@ -1530,9 +2200,9 @@ const styles = StyleSheet.create({
   },
   statInfo: { flex: 1, gap: 6 },
   statNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  statMins: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  statMins: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
   statBarTrack: {
-    height: 4, backgroundColor: DUGOUT_COLORS.ui.border, borderRadius: 2, overflow: 'hidden',
+    height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, overflow: 'hidden',
   },
   statBarFill: { height: '100%', borderRadius: 2 },
 
@@ -1548,29 +2218,29 @@ const styles = StyleSheet.create({
   // Danger zone section
   dangerSection: {
     marginTop: 32, marginHorizontal: 16, marginBottom: 8,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16, overflow: 'hidden',
   },
   dangerCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
   },
-  dangerCardBorderTop: { borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border },
+  dangerCardBorderTop: { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
   dangerCardIcon: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: 'rgba(249,115,22,0.1)',
     alignItems: 'center', justifyContent: 'center',
   },
   dangerCardText: { flex: 1 },
-  dangerCardTitle: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  dangerCardSub: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginTop: 1 },
+  dangerCardTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  dangerCardSub: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
 
   // Cancellation modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
   modalKAV: { justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40,
   },
@@ -1578,14 +2248,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 16, marginBottom: 4,
   },
-  modalTitle: { fontSize: 17, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
+  modalTitle: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text },
   modalBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, width: 60 },
-  modalBackText: { fontSize: 15, color: DUGOUT_COLORS.ui.textSecondary },
+  modalBackText: { fontSize: 15, color: PULSE_COLORS.ui.textSecondary },
   modalCloseBtn: { width: 60, alignItems: 'flex-end' },
-  modalHint: { fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary, marginBottom: 16, lineHeight: 20 },
+  modalHint: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, marginBottom: 16, lineHeight: 20 },
   modalTextArea: {
-    backgroundColor: DUGOUT_COLORS.ui.background, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    borderRadius: 14, padding: 14, color: DUGOUT_COLORS.ui.text, fontSize: 15,
+    backgroundColor: PULSE_COLORS.ui.background, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 14, padding: 14, color: PULSE_COLORS.ui.text, fontSize: 15,
     minHeight: 110, marginBottom: 16, textAlignVertical: 'top',
   },
   modalPrimaryBtn: {
@@ -1596,21 +2266,97 @@ const styles = StyleSheet.create({
 
   // Email preview card
   emailPreviewCard: {
-    backgroundColor: DUGOUT_COLORS.ui.background, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.background, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, padding: 16, marginBottom: 16,
   },
   emailPreviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  emailPreviewTo: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  emailPreviewTo: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
   emailEditLink: { fontSize: 13, color: '#f97316', fontWeight: '700' },
-  emailSubjectPreview: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 10 },
-  emailBodyPreview: { fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary, lineHeight: 20 },
+  emailSubjectPreview: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 10 },
+  emailBodyPreview: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, lineHeight: 20 },
   emailSubjectInput: {
-    fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
     paddingVertical: 8, marginBottom: 10,
   },
   emailBodyInput: {
-    fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary, lineHeight: 20,
+    fontSize: 14, color: PULSE_COLORS.ui.textSecondary, lineHeight: 20,
     minHeight: 100, textAlignVertical: 'top',
+  },
+
+  // Guest invite banner (shown to the invited person in Details tab)
+  guestInviteBanner: {
+    marginHorizontal: 16, marginTop: 12, marginBottom: 4,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderRadius: 14, padding: 14, gap: 12,
+  },
+  guestInviteBannerTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  guestInviteIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  guestInviteTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  guestInviteSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, lineHeight: 18 },
+  guestInviteActions: { flexDirection: 'row', gap: 10 },
+  guestAcceptBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#22c55e', borderRadius: 10, paddingVertical: 10,
+  },
+  guestAcceptText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  guestDeclineBtn: {
+    paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  guestDeclineText: { color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', fontSize: 14 },
+
+  // Guest sections in Availability tab
+  guestSection: { marginHorizontal: 16, marginTop: 20 },
+  guestSectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  guestSectionTitle: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1.2 },
+  addGuestBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  addGuestBtnText: { fontSize: 12, fontWeight: '700' },
+  guestStatusChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  guestStatusText: { fontSize: 11, fontWeight: '700' },
+  guestEmpty: { fontSize: 13, color: PULSE_COLORS.ui.muted, marginTop: 4 },
+
+  // Guest search sheet
+  guestSheetKAV: { flex: 1, justifyContent: 'flex-end' },
+  guestSheetOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
+  guestSheetPanel: {
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 12, paddingHorizontal: 16, paddingBottom: 32,
+    maxHeight: '80%',
+  },
+  guestSheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginBottom: 16 },
+  guestSheetTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 4 },
+  guestSheetSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 14, lineHeight: 18 },
+  guestSearchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 4,
+  },
+  guestSearchInput: { flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text },
+  guestResultsList: { marginTop: 8 },
+  guestResultRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
+  guestResultName: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  guestResultSub: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  guestNoResults: { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingVertical: 24 },
+
+  // Attendance tab
+  attendanceHeader: { padding: 16, paddingBottom: 8 },
+  attendanceHint: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 12, lineHeight: 18 },
+  attendanceLegend: { flexDirection: 'row', gap: 16 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600' },
+  attendanceBtns: { flexDirection: 'row', gap: 6 },
+  attBtn: {
+    width: 30, height: 30, borderRadius: 8,
+    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
+    alignItems: 'center', justifyContent: 'center',
   },
 });

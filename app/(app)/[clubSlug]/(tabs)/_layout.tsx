@@ -1,14 +1,27 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Tabs } from 'expo-router';
-import { BlurView } from 'expo-blur';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useAuth } from '../../../../hooks/useAuth';
 import { supabase } from '../../../../lib/supabase';
 
 const INACTIVE = '#555';
+
+function TabIcon({ focused, primary, children }: { focused: boolean; primary: string; children: React.ReactNode }) {
+  return (
+    <View style={{ alignItems: 'center', paddingTop: 2 }}>
+      {focused && (
+        <View style={{
+          position: 'absolute', top: -6, width: 28, height: 3,
+          borderRadius: 2, backgroundColor: primary,
+        }} />
+      )}
+      {children}
+    </View>
+  );
+}
 
 export default function TabsLayout() {
   const { primaryColor } = useClub();
@@ -56,7 +69,10 @@ export default function TabsLayout() {
           paddingTop: 6,
         },
         tabBarBackground: () => (
-          <BlurView tint="dark" intensity={90} style={StyleSheet.absoluteFill} />
+          <View style={StyleSheet.absoluteFill}>
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111111' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: primaryColor, opacity: 0.08 }]} />
+          </View>
         ),
         tabBarActiveTintColor: primaryColor,
         tabBarInactiveTintColor: INACTIVE,
@@ -67,7 +83,9 @@ export default function TabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            <TabIcon focused={focused} primary={primaryColor}>
+              <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            </TabIcon>
           ),
         }}
       />
@@ -76,7 +94,9 @@ export default function TabsLayout() {
         options={{
           title: 'Schedule',
           tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            <TabIcon focused={focused} primary={primaryColor}>
+              <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            </TabIcon>
           ),
         }}
       />
@@ -85,7 +105,9 @@ export default function TabsLayout() {
         options={{
           title: 'Roster',
           tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'people' : 'people-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            <TabIcon focused={focused} primary={primaryColor}>
+              <Ionicons name={focused ? 'people' : 'people-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            </TabIcon>
           ),
         }}
       />
@@ -96,7 +118,9 @@ export default function TabsLayout() {
           tabBarBadge: chatUnread > 0 ? (chatUnread > 99 ? '99+' : chatUnread) : undefined,
           tabBarBadgeStyle: { backgroundColor: '#EF4444', fontSize: 10, minWidth: 18, height: 18 },
           tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'chatbubble' : 'chatbubble-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            <TabIcon focused={focused} primary={primaryColor}>
+              <Ionicons name={focused ? 'chatbubble' : 'chatbubble-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+            </TabIcon>
           ),
         }}
       />

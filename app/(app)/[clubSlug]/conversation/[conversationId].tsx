@@ -17,8 +17,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import ClubHeader from '../../../../components/ui/ClubHeader';
 import { sendTeamPush } from '../../../../lib/push';
 
 type Message = {
@@ -269,21 +270,11 @@ export default function ConversationScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
-      {/* Header */}
-      <View style={st.header}>
-        <TouchableOpacity onPress={() => router.back()} style={st.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <View style={st.headerCenter}>
-          <View style={[st.headerAvatar, { backgroundColor: rgba(0.1), borderColor: rgba(0.2) }]}>
-            <Ionicons name={convType === 'team_group' ? 'people' : 'person'} size={16} color={primaryColor} />
-          </View>
-          <Text style={st.headerTitle} numberOfLines={1}>
-            {convType === 'team_group' ? (team?.name ?? title) : title}
-          </Text>
-        </View>
-        <View style={{ width: 36 }} />
-      </View>
+      <ClubHeader
+        title={convType === 'team_group' ? (team?.name ?? title) : title}
+        subtitle={convType === 'team_group' ? 'Team Chat' : 'Direct Message'}
+        onBack={() => router.back()}
+      />
 
       {loading ? (
         <View style={st.center}><ActivityIndicator color={primaryColor} /></View>
@@ -296,7 +287,7 @@ export default function ConversationScreen() {
           ListEmptyComponent={
             <View style={st.empty}>
               <View style={st.emptyIcon}>
-                <Ionicons name="chatbubble-outline" size={28} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="chatbubble-outline" size={28} color={PULSE_COLORS.ui.muted} />
               </View>
               <Text style={st.emptyTitle}>Start the conversation</Text>
               <Text style={st.emptySub}>Send your first message below.</Text>
@@ -365,7 +356,7 @@ export default function ConversationScreen() {
           value={text}
           onChangeText={setText}
           placeholder="Message..."
-          placeholderTextColor={DUGOUT_COLORS.ui.muted}
+          placeholderTextColor={PULSE_COLORS.ui.muted}
           multiline
           returnKeyType="send"
           onSubmitEditing={handleSend}
@@ -387,13 +378,13 @@ export default function ConversationScreen() {
 }
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn: { width: 36, alignItems: 'flex-start' },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
@@ -403,71 +394,71 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text, flexShrink: 1 },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, flexShrink: 1 },
 
   list: { padding: 16, paddingBottom: 8, flexGrow: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: {
     width: 56, height: 56, borderRadius: 18,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  emptySub: { fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  emptySub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
 
   msgWrap: { flexDirection: 'row', marginBottom: 4, alignItems: 'flex-end', gap: 8 },
   msgWrapMe: { justifyContent: 'flex-end' },
   msgWrapThem: { justifyContent: 'flex-start' },
   avatar: {
     width: 28, height: 28, borderRadius: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  avatarText: { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.brand.green },
+  avatarText: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.brand.green },
   msgCol: { maxWidth: '75%' },
-  senderName: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginBottom: 3, marginLeft: 4 },
+  senderName: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginBottom: 3, marginLeft: 4 },
   bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
-  bubbleMe: { backgroundColor: DUGOUT_COLORS.brand.green, borderBottomRightRadius: 4 },
+  bubbleMe: { backgroundColor: PULSE_COLORS.brand.green, borderBottomRightRadius: 4 },
   bubbleThem: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderBottomLeftRadius: 4,
   },
-  bubbleText: { fontSize: 15, color: DUGOUT_COLORS.ui.text, lineHeight: 20 },
+  bubbleText: { fontSize: 15, color: PULSE_COLORS.ui.text, lineHeight: 20 },
   bubbleTextMe: { color: '#000' },
   timestampRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, marginHorizontal: 4 },
-  timestamp: { fontSize: 10, color: DUGOUT_COLORS.ui.muted },
-  editedLabel: { fontSize: 10, color: DUGOUT_COLORS.ui.muted, fontStyle: 'italic' },
+  timestamp: { fontSize: 10, color: PULSE_COLORS.ui.muted },
+  editedLabel: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
 
   // Inline edit
-  editWrap: { borderRadius: 14, borderWidth: 1.5, borderColor: DUGOUT_COLORS.brand.green, overflow: 'hidden' },
+  editWrap: { borderRadius: 14, borderWidth: 1.5, borderColor: PULSE_COLORS.brand.green, overflow: 'hidden' },
   editInput: {
     paddingHorizontal: 14, paddingVertical: 10,
-    color: DUGOUT_COLORS.ui.text, fontSize: 15, lineHeight: 20,
-    backgroundColor: DUGOUT_COLORS.ui.surface, minHeight: 40,
+    color: PULSE_COLORS.ui.text, fontSize: 15, lineHeight: 20,
+    backgroundColor: PULSE_COLORS.ui.surface, minHeight: 40,
   },
-  editActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border },
-  editCancel: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRightWidth: 0.5, borderRightColor: DUGOUT_COLORS.ui.border },
-  editCancelText: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  editActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
+  editCancel: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRightWidth: 0.5, borderRightColor: PULSE_COLORS.ui.border },
+  editCancelText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
   editSave: { flex: 1, alignItems: 'center', paddingVertical: 8 },
-  editSaveText: { fontSize: 13, color: DUGOUT_COLORS.brand.green, fontWeight: '700' },
+  editSaveText: { fontSize: 13, color: PULSE_COLORS.brand.green, fontWeight: '700' },
 
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
   input: {
-    flex: 1, backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
-    color: DUGOUT_COLORS.ui.text, fontSize: 15, maxHeight: 100,
+    color: PULSE_COLORS.ui.text, fontSize: 15, maxHeight: 100,
   },
   sendBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     alignItems: 'center', justifyContent: 'center',
   },
   sendBtnOff: { opacity: 0.4 },

@@ -96,7 +96,7 @@ export default function LoginPage() {
         .single();
 
       if ((profile as Profile | null)?.role === 'player') {
-        setError('This dashboard is for coaches and admins only. Please use the Dugout FC mobile app.');
+        setError('This dashboard is for coaches and admins only. Please use the Pulse FC mobile app.');
         await supabase.auth.signOut();
         setLoading(false);
         return;
@@ -140,9 +140,8 @@ export default function LoginPage() {
         {/* Logo lockup */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '36px' }}>
           <a href="/" style={{ textDecoration: 'none' }}>
-            <div style={{ background: '#fff', borderRadius: '10px', padding: '8px 16px', display: 'inline-flex', alignItems: 'center' }}>
-              <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '32px', width: 'auto' }} />
-            </div>
+            <img src="/logo.png" alt="Pulse FC" style={{ height: '48px', width: 'auto' }} />
+            
           </a>
         </div>
 
@@ -289,7 +288,7 @@ export default function LoginPage() {
         <p style={{ textAlign: 'center', fontSize: '12px', color: '#444', marginTop: '8px' }}>
           For parents &amp; players — download the{' '}
           <a href="/" style={{ color: '#555', textDecoration: 'none', fontWeight: '500' }}>
-            Dugout FC app
+            Pulse FC app
           </a>
         </p>
       </div>

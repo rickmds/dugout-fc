@@ -21,10 +21,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { POSITION_COLORS, POSITION_DEFAULT } from '../../../../constants/positions';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
+import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,10 +94,13 @@ function PlayerCard({
   const [first, last] = splitName(item.full_name);
 
   return (
-    <TouchableOpacity style={st.card} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity style={[st.card, { borderColor: `${primaryColor}22` }]} onPress={onPress} activeOpacity={0.75}>
+
+      {/* ── Thin top brand stripe ── */}
+      <View style={{ height: 3, backgroundColor: primaryColor }} />
 
       {/* ── Photo zone ── */}
-      <View style={st.photoZone}>
+      <View style={[st.photoZone, { backgroundColor: `${primaryColor}14` }]}>
 
         {hasImg ? (
           /* Real photo ─ fill, cover, fade bottom, position badge */
@@ -109,8 +113,8 @@ function PlayerCard({
         ) : (
           /* No photo ─ initials as hero */
           <View style={st.placeholder}>
-            <View style={[st.bgRing, { width: CARD_W * 0.90, height: CARD_W * 0.90, borderRadius: CARD_W * 0.45 }]} />
-            <View style={[st.bgRing, { width: CARD_W * 0.62, height: CARD_W * 0.62, borderRadius: CARD_W * 0.31, opacity: 0.7 }]} />
+            <View style={[st.bgRing, { width: CARD_W * 0.90, height: CARD_W * 0.90, borderRadius: CARD_W * 0.45, borderColor: `${primaryColor}18`, backgroundColor: `${primaryColor}08` }]} />
+            <View style={[st.bgRing, { width: CARD_W * 0.62, height: CARD_W * 0.62, borderRadius: CARD_W * 0.31, opacity: 0.7, borderColor: `${primaryColor}25`, backgroundColor: `${primaryColor}10` }]} />
             <Text
               style={[st.placeholderInitials, { color: pc.primary, opacity: 0.38 }]}
               adjustsFontSizeToFit
@@ -130,20 +134,20 @@ function PlayerCard({
         {/* Lock icon for private players (other parents only) */}
         {item.is_private && !isCoach && !isMyPlayer && (
           <View style={st.privateLockBadge}>
-            <Ionicons name="lock-closed" size={10} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="lock-closed" size={10} color={PULSE_COLORS.ui.muted} />
           </View>
         )}
 
       </View>
 
       {/* ── Name strip ── */}
-      <View style={st.strip}>
+      <View style={[st.strip, { backgroundColor: `${primaryColor}08`, borderTopColor: `${primaryColor}20` }]}>
         {item.jersey_number != null ? (
           <>
             <View style={st.stripNumCol}>
               <Text style={[st.stripNum, { color: primaryColor }]}>{item.jersey_number}</Text>
             </View>
-            <View style={st.stripDivider} />
+            <View style={[st.stripDivider, { backgroundColor: `${primaryColor}25` }]} />
           </>
         ) : null}
 
@@ -208,7 +212,7 @@ function ListHeader({
                     <Ionicons name="shield-checkmark" size={10} color={primaryColor} />
                     <Text style={[st.coachTagText, { color: primaryColor }]}>STAFF</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+                  <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
               );
             })}
@@ -223,7 +227,7 @@ function ListHeader({
                   <Ionicons name="mail-outline" size={10} color="#EAB308" />
                   <Text style={[st.coachTagText, { color: '#EAB308' }]}>INVITED</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+                <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
               </TouchableOpacity>
             ))}
           </View>
@@ -241,7 +245,7 @@ function ListHeader({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function RosterScreen() {
-  const { primaryColor, rgba, clubName, logoUrl, secondaryColor } = useClub();
+  const { primaryColor, rgba, clubName, logoUrl, secondaryColor, onSecondary } = useClub();
   const { team, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
@@ -380,11 +384,11 @@ export default function RosterScreen() {
 
       if (inviteData?.token) {
         const token       = (inviteData as any).token as string;
-        const appStoreUrl = 'https://apps.apple.com/app/dugout-fc';
-        const deepLink    = `https://dugoutfc.app/join?token=${token}`;
+        const appStoreUrl = 'https://apps.apple.com/app/pulse-fc';
+        const deepLink    = `https://pulse-fc.app/join?token=${token}`;
         const greeting    = parentName.trim() ? `Hi ${parentName.trim()},` : 'Hi there,';
         const body =
-          `${greeting}\n\n${name.trim()} has been added to ${team.name} on Dugout FC.\n\n` +
+          `${greeting}\n\n${name.trim()} has been added to ${team.name} on Pulse FC.\n\n` +
           `Download the app to see the schedule, RSVP to events, and message the coach:\n${appStoreUrl}\n\n` +
           `Already have the app? Use this link to join your team:\n${deepLink}\n\n` +
           `Or enter invite code: ${token}`;
@@ -393,11 +397,11 @@ export default function RosterScreen() {
           body: {
             to: [{ email: parentEmail.trim(), name: parentName.trim() || '' }],
             cc: [],
-            subject: `You're invited to join ${team.name} on Dugout FC`,
+            subject: `You're invited to join ${team.name} on Pulse FC`,
             body,
             from_name: profile.full_name ?? 'Your Coach',
             team_name: team.name,
-            from_email: 'noreply@dugoutfc.app',
+            from_email: 'info@pulse-fc.app',
             reply_to: null,
             attachments: [],
             club_logo_url: logoUrl,
@@ -437,13 +441,13 @@ export default function RosterScreen() {
 
     if (inviteData?.token) {
       const token      = (inviteData as any).token as string;
-      const deepLink   = `https://dugoutfc.app/join?token=${token}`;
+      const deepLink   = `https://pulse-fc.app/join?token=${token}`;
       const roleLabel  = coachRole || 'Coach';
       const greeting   = `Hi ${coachName.trim()},`;
       const body =
-        `${greeting}\n\nYou've been added as ${roleLabel} for ${team.name} on Dugout FC.\n\n` +
+        `${greeting}\n\nYou've been added as ${roleLabel} for ${team.name} on Pulse FC.\n\n` +
         `Download the app to manage the squad, build lineups, and communicate with parents:\n` +
-        `https://apps.apple.com/app/dugout-fc\n\n` +
+        `https://apps.apple.com/app/pulse-fc\n\n` +
         `Already have the app? Use this link to join your team:\n${deepLink}\n\n` +
         `Or enter invite code: ${token}`;
 
@@ -453,9 +457,9 @@ export default function RosterScreen() {
           cc: [],
           subject: `You've been added as ${roleLabel} for ${team.name}`,
           body,
-          from_name: profile.full_name ?? 'Dugout FC',
+          from_name: profile.full_name ?? 'Pulse FC',
           team_name: team.name,
-          from_email: 'noreply@dugoutfc.app',
+          from_email: 'info@pulse-fc.app',
           reply_to: null,
           attachments: [],
           club_logo_url: logoUrl,
@@ -482,9 +486,9 @@ export default function RosterScreen() {
   if (!team) {
     return (
       <View style={st.center}>
-        <Ionicons name="people-outline" size={48} color={DUGOUT_COLORS.ui.muted} />
-        <Text style={{ color: DUGOUT_COLORS.ui.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
-        <Text style={{ color: DUGOUT_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>Import your club or create a team to get started.</Text>
+        <Ionicons name="people-outline" size={48} color={PULSE_COLORS.ui.muted} />
+        <Text style={{ color: PULSE_COLORS.ui.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
+        <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>Import your club or create a team to get started.</Text>
       </View>
     );
   }
@@ -492,34 +496,35 @@ export default function RosterScreen() {
   return (
     <View style={st.container}>
 
-      {/* ── Header ── */}
-      <View style={st.header}>
-        <View style={st.headerLeft}>
-          <ClubBadge size={38} />
-          <View>
-            <Text style={st.title}>Roster</Text>
-            {team && <Text style={st.teamName}>{team.name}</Text>}
-          </View>
-        </View>
-        <View style={st.headerRight}>
-          {isCoach && (
-            <TouchableOpacity style={[st.addBtn, { backgroundColor: primaryColor }]} onPress={openAddModal}>
-              <Ionicons name="add" size={15} color="#000" />
-              <Text style={st.addBtnText}>Add</Text>
+      <ClubHeader
+        title="Roster"
+        subtitle={team?.name}
+        right={isCoach ? (
+          <>
+            <TouchableOpacity
+              onPress={() => router.push(`/(app)/${clubSlug}/admin/roster-import` as any)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#7C3AED', shadowColor: '#A855F7', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 10, elevation: 6 }}
+            >
+              <Ionicons name="sparkles" size={13} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>AI</Text>
             </TouchableOpacity>
-          )}
-        </View>
-      </View>
+            <TouchableOpacity style={[headerBtnStyle, { backgroundColor: secondaryColor }]} onPress={openAddModal}>
+              <Ionicons name="add" size={16} color={onSecondary} />
+              <Text style={[headerBtnTextStyle, { color: onSecondary }]}>Add</Text>
+            </TouchableOpacity>
+          </>
+        ) : undefined}
+      />
 
       {/* ── Search bar ── */}
       <View style={st.searchRow}>
-        <Ionicons name="search-outline" size={16} color={DUGOUT_COLORS.ui.muted} style={st.searchIcon} />
+        <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} style={st.searchIcon} />
         <TextInput
           style={st.searchInput}
           value={search}
           onChangeText={setSearch}
           placeholder="Search players…"
-          placeholderTextColor={DUGOUT_COLORS.ui.muted}
+          placeholderTextColor={PULSE_COLORS.ui.muted}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
@@ -527,7 +532,7 @@ export default function RosterScreen() {
         />
         {search.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close-circle" size={16} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
         )}
       </View>
@@ -553,8 +558,9 @@ export default function RosterScreen() {
         }
         ListEmptyComponent={
           <View style={st.empty}>
+            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} resizeMode="contain" /> : null}
             <View style={st.emptyIcon}>
-              <Ionicons name="people-outline" size={30} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="people-outline" size={30} color={PULSE_COLORS.ui.muted} />
             </View>
             <Text style={st.emptyTitle}>No players yet</Text>
             <Text style={st.emptySub}>
@@ -591,14 +597,14 @@ export default function RosterScreen() {
               <View style={st.successBox}>
                 <View style={[st.successIconWrap, {
                   borderColor: successInfo.type === 'coach'
-                    ? 'rgba(96,165,250,0.4)' : `${DUGOUT_COLORS.brand.green}55`,
+                    ? 'rgba(96,165,250,0.4)' : `${PULSE_COLORS.brand.green}55`,
                   shadowColor: successInfo.type === 'coach'
-                    ? '#60A5FA' : DUGOUT_COLORS.brand.green,
+                    ? '#60A5FA' : PULSE_COLORS.brand.green,
                 }]}>
                   <Ionicons
                     name={successInfo.type === 'coach' ? 'shield-checkmark' : 'checkmark'}
                     size={36}
-                    color={successInfo.type === 'coach' ? '#60A5FA' : DUGOUT_COLORS.brand.green}
+                    color={successInfo.type === 'coach' ? '#60A5FA' : PULSE_COLORS.brand.green}
                   />
                 </View>
                 <Text style={st.successTitle}>
@@ -613,14 +619,14 @@ export default function RosterScreen() {
                 </Text>
                 {(successInfo.type === 'player' || successInfo.type === 'coach') && (
                   <View style={[st.successEmailPill, successInfo.type === 'coach' && { borderColor: 'rgba(96,165,250,0.22)', backgroundColor: 'rgba(96,165,250,0.08)' }]}>
-                    <Ionicons name="mail-outline" size={13} color={successInfo.type === 'coach' ? '#60A5FA' : DUGOUT_COLORS.brand.green} />
+                    <Ionicons name="mail-outline" size={13} color={successInfo.type === 'coach' ? '#60A5FA' : PULSE_COLORS.brand.green} />
                     <Text style={[st.successEmailText, successInfo.type === 'coach' && { color: '#60A5FA' }]} numberOfLines={1}>
                       {successInfo.email}
                     </Text>
                   </View>
                 )}
                 {successInfo.type === 'player_no_email' && (
-                  <Text style={{ fontSize: 12, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginTop: 8, marginBottom: 24, paddingHorizontal: 8, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginTop: 8, marginBottom: 24, paddingHorizontal: 8, lineHeight: 18 }}>
                     You can add a parent email from the roster later.
                   </Text>
                 )}
@@ -639,7 +645,7 @@ export default function RosterScreen() {
                 <View style={st.sheetHeaderRow}>
                   <Text style={st.sheetTitle}>Add to Roster</Text>
                   <TouchableOpacity onPress={() => setAddStep(null)} style={st.sheetClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={20} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="close" size={20} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 </View>
 
@@ -651,7 +657,7 @@ export default function RosterScreen() {
                     <Text style={st.pickerTitle}>Player</Text>
                     <Text style={st.pickerSub}>Add to the squad, optionally invite parent</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={DUGOUT_COLORS.ui.border} />
+                  <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.border} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[st.pickerCard, { marginTop: 10 }]} onPress={() => setAddStep('coach')} activeOpacity={0.78}>
@@ -662,7 +668,7 @@ export default function RosterScreen() {
                     <Text style={st.pickerTitle}>Coach / Staff</Text>
                     <Text style={st.pickerSub}>Sends an invite to join as coaching staff</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={DUGOUT_COLORS.ui.border} />
+                  <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.border} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[st.cancelBtn, { marginTop: 20, alignItems: 'center' }]} onPress={() => setAddStep(null)}>
@@ -676,14 +682,14 @@ export default function RosterScreen() {
               <>
                 <View style={st.sheetHeaderRow}>
                   <TouchableOpacity onPress={() => setAddStep('picker')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                   <View style={{ flex: 1, marginLeft: 8 }}>
                     <Text style={st.sheetTitle}>Add Player</Text>
                     <Text style={st.sheetSub}>Add a parent email to send an instant invite.</Text>
                   </View>
                   <TouchableOpacity onPress={() => setAddStep(null)} style={st.sheetClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={20} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="close" size={20} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 </View>
 
@@ -691,12 +697,12 @@ export default function RosterScreen() {
                   <Text style={st.sectionDivLabel}>PLAYER</Text>
 
                   <Text style={st.inputLabel}>Full name *</Text>
-                  <TextInput style={st.input} value={name} onChangeText={setName} placeholder="Jane Smith" placeholderTextColor={DUGOUT_COLORS.ui.muted} autoFocus />
+                  <TextInput style={st.input} value={name} onChangeText={setName} placeholder="Jane Smith" placeholderTextColor={PULSE_COLORS.ui.muted} autoFocus />
 
                   <View style={st.rowInputs}>
                     <View style={{ flex: 1 }}>
                       <Text style={st.inputLabel}>Jersey</Text>
-                      <TextInput style={st.input} value={jersey} onChangeText={setJersey} placeholder="#10" placeholderTextColor={DUGOUT_COLORS.ui.muted} keyboardType="number-pad" />
+                      <TextInput style={st.input} value={jersey} onChangeText={setJersey} placeholder="#10" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="number-pad" />
                     </View>
                     <View style={{ flex: 2 }}>
                       <Text style={st.inputLabel}>Position</Text>
@@ -721,13 +727,13 @@ export default function RosterScreen() {
                   </View>
 
                   <Text style={st.inputLabel}>Parent name</Text>
-                  <TextInput style={st.input} value={parentName} onChangeText={setParentName} placeholder="Sarah Smith" placeholderTextColor={DUGOUT_COLORS.ui.muted} autoCapitalize="words" />
+                  <TextInput style={st.input} value={parentName} onChangeText={setParentName} placeholder="Sarah Smith" placeholderTextColor={PULSE_COLORS.ui.muted} autoCapitalize="words" />
 
                   <Text style={st.inputLabel}>Parent email</Text>
-                  <TextInput style={st.input} value={parentEmail} onChangeText={setParentEmail} placeholder="sarah@example.com" placeholderTextColor={DUGOUT_COLORS.ui.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+                  <TextInput style={st.input} value={parentEmail} onChangeText={setParentEmail} placeholder="sarah@example.com" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
                   {parentEmail.trim().length > 0 && (
                     <View style={st.inviteHint}>
-                      <Ionicons name="mail-outline" size={13} color={DUGOUT_COLORS.brand.green} />
+                      <Ionicons name="mail-outline" size={13} color={PULSE_COLORS.brand.green} />
                       <Text style={st.inviteHintText}>Invite email will be sent automatically</Text>
                     </View>
                   )}
@@ -749,26 +755,26 @@ export default function RosterScreen() {
               <>
                 <View style={st.sheetHeaderRow}>
                   <TouchableOpacity onPress={() => setAddStep('picker')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                   <View style={{ flex: 1, marginLeft: 8 }}>
                     <Text style={st.sheetTitle}>Add Coach</Text>
                     <Text style={st.sheetSub}>They'll receive an invite to join as coaching staff.</Text>
                   </View>
                   <TouchableOpacity onPress={() => setAddStep(null)} style={st.sheetClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={20} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="close" size={20} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 </View>
 
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
                   <Text style={st.inputLabel}>Full name *</Text>
-                  <TextInput style={st.input} value={coachName} onChangeText={setCoachName} placeholder="Mike Johnson" placeholderTextColor={DUGOUT_COLORS.ui.muted} autoCapitalize="words" autoFocus />
+                  <TextInput style={st.input} value={coachName} onChangeText={setCoachName} placeholder="Mike Johnson" placeholderTextColor={PULSE_COLORS.ui.muted} autoCapitalize="words" autoFocus />
 
                   <Text style={st.inputLabel}>Email address *</Text>
-                  <TextInput style={st.input} value={coachEmail} onChangeText={setCoachEmail} placeholder="coach@example.com" placeholderTextColor={DUGOUT_COLORS.ui.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+                  <TextInput style={st.input} value={coachEmail} onChangeText={setCoachEmail} placeholder="coach@example.com" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
 
                   <Text style={st.inputLabel}>Phone number</Text>
-                  <TextInput style={st.input} value={coachPhone} onChangeText={setCoachPhone} placeholder="+1 (555) 000-0000" placeholderTextColor={DUGOUT_COLORS.ui.muted} keyboardType="phone-pad" />
+                  <TextInput style={st.input} value={coachPhone} onChangeText={setCoachPhone} placeholder="+1 (555) 000-0000" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="phone-pad" />
 
                   <Text style={st.inputLabel}>Role</Text>
                   <View style={st.posRow}>
@@ -812,29 +818,29 @@ export default function RosterScreen() {
 const COACH_SZ = 46;
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.background },
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
 
   // ── Header
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  title:    { fontSize: 28, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.5 },
-  teamName: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginTop: 2 },
+  title:    { fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.5 },
+  teamName: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
   },
   addBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
   iconBtn: {
     width: 34, height: 34, borderRadius: 17,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -842,13 +848,13 @@ const st = StyleSheet.create({
   searchRow: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 14, marginTop: 10, marginBottom: 4,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 14, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     paddingHorizontal: 12, paddingVertical: 10, gap: 8,
   },
   searchIcon: { flexShrink: 0 },
   searchInput: {
-    flex: 1, fontSize: 15, color: DUGOUT_COLORS.ui.text,
+    flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text,
   },
 
   // ── Grid
@@ -858,23 +864,23 @@ const st = StyleSheet.create({
   // ── List header
   listHeader: { marginBottom: 6 },
   sectionLabel: {
-    fontSize: 11, fontWeight: '800', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted,
     letterSpacing: 2, marginBottom: 12, marginTop: 24,
   },
   squadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  squadCount: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  squadCount: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
   // ── Coach card
   coachCard: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
   coachRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 13, gap: 12,
   },
-  coachDivider: { borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  coachDivider: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   coachImg: { width: COACH_SZ, height: COACH_SZ, borderRadius: COACH_SZ / 2 },
   coachImgFallback: {
     width: COACH_SZ, height: COACH_SZ, borderRadius: COACH_SZ / 2,
@@ -882,24 +888,24 @@ const st = StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(34,197,94,0.22)',
     alignItems: 'center', justifyContent: 'center',
   },
-  coachInitials: { fontSize: 16, fontWeight: '900', color: DUGOUT_COLORS.brand.green },
+  coachInitials: { fontSize: 16, fontWeight: '900', color: PULSE_COLORS.brand.green },
   coachMeta: { flex: 1 },
-  coachName: { fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
-  coachRole: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginTop: 1 },
+  coachName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  coachRole: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
   coachTag: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(34,197,94,0.08)',
     borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.18)',
   },
-  coachTagText: { fontSize: 9, fontWeight: '800', color: DUGOUT_COLORS.brand.green, letterSpacing: 1 },
+  coachTagText: { fontSize: 9, fontWeight: '800', color: PULSE_COLORS.brand.green, letterSpacing: 1 },
 
   // ── Player card
   card: {
     width: CARD_W,
     borderRadius: 16,
-    backgroundColor: DUGOUT_COLORS.ui.background,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.background,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
 
@@ -951,9 +957,9 @@ const st = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 11,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderTopWidth: 1,
-    borderTopColor: DUGOUT_COLORS.ui.border,
+    borderTopColor: PULSE_COLORS.ui.border,
     gap: 0,
   },
   stripNumCol: {
@@ -964,7 +970,7 @@ const st = StyleSheet.create({
   stripNum: {
     fontSize: 18,
     fontWeight: '900',
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
     letterSpacing: -0.5,
     lineHeight: 20,
     textAlign: 'center',
@@ -972,21 +978,21 @@ const st = StyleSheet.create({
   stripDivider: {
     width: 1,
     height: 28,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     marginHorizontal: 10,
   },
   stripNames: { flex: 1, justifyContent: 'center' },
   stripFirst: {
     fontSize: 13,
     fontWeight: '700',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     letterSpacing: -0.1,
     lineHeight: 16,
   },
   stripLast: {
     fontSize: 11,
     fontWeight: '500',
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     letterSpacing: -0.1,
     lineHeight: 15,
     marginTop: 2,
@@ -996,26 +1002,26 @@ const st = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 48 },
   emptyIcon: {
     width: 72, height: 72, borderRadius: 20,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 6 },
-  emptySub:   { fontSize: 13, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginBottom: 24 },
-  emptyBtn:   { backgroundColor: DUGOUT_COLORS.brand.green, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 6 },
+  emptySub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 24 },
+  emptyBtn:   { backgroundColor: PULSE_COLORS.brand.green, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
   emptyBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
 
   // ── Modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.72)' },
   sheet: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 24, paddingTop: 16, paddingBottom: 46,
     maxHeight: '88%',
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, borderBottomWidth: 0,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderBottomWidth: 0,
   },
   sheetHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: DUGOUT_COLORS.ui.border,
+    width: 36, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border,
     alignSelf: 'center', marginBottom: 20,
   },
   sheetHeaderRow: {
@@ -1023,38 +1029,38 @@ const st = StyleSheet.create({
   },
   sheetClose: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center', marginTop: 2,
   },
-  sheetTitle: { fontSize: 22, fontWeight: '800', color: DUGOUT_COLORS.ui.text, marginBottom: 4 },
-  sheetSub:   { fontSize: 13, color: DUGOUT_COLORS.ui.muted, lineHeight: 18 },
+  sheetTitle: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
+  sheetSub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
   sectionDivLabel: {
-    fontSize: 10, fontWeight: '800', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1.5, marginTop: 4, marginBottom: 0,
   },
   inputLabel: {
-    fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 0.8, marginBottom: 8, marginTop: 16,
   },
   rowInputs: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   input: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13,
-    color: DUGOUT_COLORS.ui.text, fontSize: 16,
+    color: PULSE_COLORS.ui.text, fontSize: 16,
   },
   posRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 0 },
   posChip: {
     paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface,
   },
-  posChipText: { color: DUGOUT_COLORS.ui.muted, fontWeight: '800', fontSize: 12 },
+  posChipText: { color: PULSE_COLORS.ui.muted, fontWeight: '800', fontSize: 12 },
   parentDivider: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 24, marginBottom: 0,
   },
-  parentDividerLine: { flex: 1, height: 1, backgroundColor: DUGOUT_COLORS.ui.surfaceAlt },
+  parentDividerLine: { flex: 1, height: 1, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
   parentDividerLabel: {
-    fontSize: 10, fontWeight: '800', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1.5,
   },
   inviteHint: {
@@ -1063,7 +1069,7 @@ const st = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.18)',
   },
-  inviteHintText: { fontSize: 12, color: DUGOUT_COLORS.brand.green, fontWeight: '600' },
+  inviteHintText: { fontSize: 12, color: PULSE_COLORS.brand.green, fontWeight: '600' },
   successBox: { alignItems: 'center', paddingTop: 28, paddingBottom: 8 },
   successIconWrap: {
     width: 80, height: 80, borderRadius: 40,
@@ -1073,11 +1079,11 @@ const st = StyleSheet.create({
     shadowOpacity: 0.22, shadowRadius: 24, shadowOffset: { width: 0, height: 0 },
   },
   successTitle: {
-    fontSize: 26, fontWeight: '800', color: DUGOUT_COLORS.ui.text,
+    fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text,
     letterSpacing: -0.5, marginBottom: 8,
   },
   successSub: {
-    fontSize: 13, color: DUGOUT_COLORS.ui.muted, textAlign: 'center',
+    fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center',
   },
   successEmailPill: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
@@ -1088,7 +1094,7 @@ const st = StyleSheet.create({
     maxWidth: '100%',
   },
   successEmailText: {
-    fontSize: 13, color: DUGOUT_COLORS.brand.green,
+    fontSize: 13, color: PULSE_COLORS.brand.green,
     fontWeight: '600', flexShrink: 1,
   },
   successDoneBtn: {
@@ -1098,8 +1104,8 @@ const st = StyleSheet.create({
   // ── Picker cards
   pickerCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     padding: 16,
   },
   pickerIconWrap: {
@@ -1108,17 +1114,17 @@ const st = StyleSheet.create({
     borderWidth: 1,
   },
   pickerMeta: { flex: 1 },
-  pickerTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 3 },
-  pickerSub:   { fontSize: 13, color: DUGOUT_COLORS.ui.muted, lineHeight: 18 },
+  pickerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 3 },
+  pickerSub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
   modalBtns: { flexDirection: 'row', gap: 10 },
   cancelBtn: {
     flex: 1, padding: 15, borderRadius: 16,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, alignItems: 'center',
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center',
   },
-  cancelText: { color: DUGOUT_COLORS.ui.muted, fontWeight: '600', fontSize: 15 },
+  cancelText: { color: PULSE_COLORS.ui.muted, fontWeight: '600', fontSize: 15 },
   saveBtn: {
     flex: 2, padding: 15, borderRadius: 16,
-    backgroundColor: DUGOUT_COLORS.brand.green, alignItems: 'center',
+    backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center',
   },
   saveText: { color: '#000', fontWeight: '800', fontSize: 15 },
 });

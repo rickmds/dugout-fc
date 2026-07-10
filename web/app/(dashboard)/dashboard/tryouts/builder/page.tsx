@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
+import { FlipBoard } from '@/components/FlipBoard';
 import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
 import { Lock, Unlock, Plus, X, Edit2, Trash2, Mail, Search, Send, CheckCircle2, HelpCircle, Copy, Check, MoreHorizontal, Download, Columns } from 'lucide-react';
 
@@ -409,7 +410,12 @@ export default function TeamBuilderPage() {
   }).length;
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94A3B8', fontSize: '14px' }}>Loading…</div>
+    <FlipBoard title="Loading team builder…" rows={[
+      { label: 'Players',  pad: 3 },
+      { label: 'Teams',    pad: 2 },
+      { label: 'Pool',     pad: 2 },
+      { label: 'Assigned', pad: 2 },
+    ]} />
   );
 
   return (
@@ -1019,7 +1025,7 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 <h2>Next Steps</h2>
 <ol>
   <li><strong>Accept your offer below</strong> by {{offer_deadline}}</li>
-  <li>Download the Dugout FC app — connect with your team, RSVP to events, and stay up to date</li>
+  <li>Download the Pulse FC app — connect with your team, RSVP to events, and stay up to date</li>
   <li>Watch for your welcome email from your coach with further details</li>
 </ol>
 <p>If you can't accept or need more time, please let us know right away — your decision affects other placements.</p>

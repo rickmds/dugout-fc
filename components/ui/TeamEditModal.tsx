@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 type TeamSnap = { id: string; name: string; age_group: string | null; season: string | null };
 
@@ -76,7 +76,7 @@ export default function TeamEditModal({
       <View style={st.root}>
         <View style={st.header}>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close" size={22} color={DUGOUT_COLORS.ui.text} />
+            <Ionicons name="close" size={22} color={PULSE_COLORS.ui.text} />
           </TouchableOpacity>
           <Text style={st.title}>Edit Team</Text>
           <TouchableOpacity
@@ -99,7 +99,7 @@ export default function TeamEditModal({
             value={name}
             onChangeText={(v) => { setName(v); setError(''); }}
             placeholder="e.g. MDS U14 Girls"
-            placeholderTextColor={DUGOUT_COLORS.ui.muted}
+            placeholderTextColor={PULSE_COLORS.ui.muted}
             returnKeyType="next"
             autoFocus
           />
@@ -110,7 +110,7 @@ export default function TeamEditModal({
             value={ageGroup}
             onChangeText={setAgeGroup}
             placeholder="e.g. U14"
-            placeholderTextColor={DUGOUT_COLORS.ui.muted}
+            placeholderTextColor={PULSE_COLORS.ui.muted}
             returnKeyType="next"
           />
 
@@ -120,7 +120,7 @@ export default function TeamEditModal({
             value={season}
             onChangeText={setSeason}
             placeholder="e.g. Spring 2026"
-            placeholderTextColor={DUGOUT_COLORS.ui.muted}
+            placeholderTextColor={PULSE_COLORS.ui.muted}
             returnKeyType="done"
             onSubmitEditing={handleSave}
           />
@@ -131,21 +131,21 @@ export default function TeamEditModal({
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
-  title:  { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  title:  { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
   save:   { fontSize: 16, fontWeight: '600' },
-  error:  { color: DUGOUT_COLORS.status.error, fontSize: 13, marginHorizontal: 20, marginTop: 12 },
+  error:  { color: PULSE_COLORS.status.error, fontSize: 13, marginHorizontal: 20, marginTop: 12 },
   form:   { padding: 20 },
-  label:  { fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
+  label:  { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
   input:  {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 16, color: DUGOUT_COLORS.ui.text,
+    fontSize: 16, color: PULSE_COLORS.ui.text,
   },
 });

@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
   const btnText   = contrastText(accent);
   const year      = new Date().getFullYear();
   const initials  = clubName.split(' ').slice(0, 2).map((w: string) => (w[0] ?? '').toUpperCase()).join('');
-  const deepLink  = `https://dugoutfc.app/join?token=${invite.token}`;
-  const appStoreUrl = 'https://apps.apple.com/app/dugout-fc';
+  const deepLink  = `https://pulse-fc.app/join?token=${invite.token}`;
+  const appStoreUrl = 'https://apps.apple.com/app/pulse-fc';
 
   const logoHtml = logoUrl
     ? `<img src="${esc(logoUrl)}" width="60" height="60" alt="${esc(clubName)}"
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
                                text-transform:uppercase;letter-spacing:1.5px;">You're invited</p>
                     <h1 style="margin:0;font-size:24px;font-weight:800;color:#f9fafb;line-height:1.25;
                                 letter-spacing:-0.5px;">
-                      Join ${esc(teamName)}<br>on Dugout FC
+                      Join ${esc(teamName)}<br>on Pulse FC
                     </h1>
                   </td>
                 </tr>
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
                         : `You've been added to <strong style="color:${accent};">${esc(clubName)}</strong>.`}
                     </p>
                     <p style="margin:0;font-size:15px;color:#d1d5db;line-height:1.7;">
-                      Download the <strong style="color:#f9fafb;">Dugout FC</strong> app to view the team schedule,
+                      Download the <strong style="color:#f9fafb;">Pulse FC</strong> app to view the team schedule,
                       RSVP to games and training sessions, and stay connected with the coaching staff.
                     </p>
                   </td>
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
                        style="display:inline-block;background:${accent};color:${btnText};
                               text-decoration:none;font-size:16px;font-weight:800;
                               padding:16px 40px;border-radius:12px;letter-spacing:0.2px;line-height:1;margin-bottom:12px;">
-                      📱 Download Dugout FC
+                      📱 Download Pulse FC
                     </a>
                     <p style="margin:0;font-size:13px;color:#6b7280;">
                       Already have the app?
@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
                     </p>
                     <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
                       ${esc(clubName)} uses
-                      <a href="https://dugoutfc.app" style="color:${accent};text-decoration:none;font-weight:600;">Dugout FC</a>
+                      <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
                       for club management.
                       &nbsp;&middot;&nbsp;
                       If you weren't expecting this, you can safely ignore it.
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
 </html>`;
 
   const { error } = await resend.emails.send({
-    from: `${clubName} <noreply@dugoutfc.app>`,
+    from: `${clubName} <info@pulse-fc.app>`,
     to: invite.email,
     subject: `You've been invited to join ${teamName} — ${clubName}`,
     html,

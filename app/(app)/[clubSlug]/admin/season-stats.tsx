@@ -11,8 +11,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import ClubHeader from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -138,17 +139,7 @@ export default function SeasonStatsScreen() {
   return (
     <View style={st.root}>
 
-      {/* Header */}
-      <View style={st.header}>
-        <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <View style={st.headerCenter}>
-          <Text style={st.headerTitle}>Season Stats</Text>
-          {team?.name ? <Text style={st.headerSub}>{team.name}</Text> : null}
-        </View>
-        <View style={{ width: 36 }} />
-      </View>
+      <ClubHeader title="Season Stats" subtitle={team?.name ?? undefined} onBack={() => router.back()} />
 
       {loading ? (
         <View style={st.center}>
@@ -158,7 +149,7 @@ export default function SeasonStatsScreen() {
       ) : stats.length === 0 ? (
         <View style={st.center}>
           <View style={st.emptyIcon}>
-            <Ionicons name="bar-chart-outline" size={30} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="bar-chart-outline" size={30} color={PULSE_COLORS.ui.muted} />
           </View>
           <Text style={st.emptyTitle}>No game data yet</Text>
           <Text style={st.emptySub}>
@@ -213,7 +204,7 @@ export default function SeasonStatsScreen() {
                     <View style={st.info}>
                       <View style={st.nameRow}>
                         <Text style={st.name} numberOfLines={1}>{p.full_name}</Text>
-                        <Text style={[st.pctText, { color: p.pct > 0 ? DUGOUT_COLORS.ui.text : DUGOUT_COLORS.ui.muted }]}>
+                        <Text style={[st.pctText, { color: p.pct > 0 ? PULSE_COLORS.ui.text : PULSE_COLORS.ui.muted }]}>
                           {p.pct}%
                         </Text>
                       </View>
@@ -251,78 +242,78 @@ export default function SeasonStatsScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn:      { width: 36, alignItems: 'flex-start' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle:  { fontSize: 17, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.3 },
-  headerSub:    { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginTop: 1 },
+  headerTitle:  { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
+  headerSub:    { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
 
   scroll: { padding: 20 },
 
   summaryRow: {
     flexDirection: 'row',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden', marginBottom: 28,
   },
   summaryCell:    { flex: 1, alignItems: 'center', paddingVertical: 16, gap: 3 },
-  summaryDivider: { width: 1, backgroundColor: DUGOUT_COLORS.ui.border, alignSelf: 'stretch' },
+  summaryDivider: { width: 1, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'stretch' },
   summaryNum:     { fontSize: 22, fontWeight: '800' },
-  summaryLabel:   { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  summaryLabel:   { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12,
   },
 
   tableCard: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
-  rowDivider: { height: 1, backgroundColor: DUGOUT_COLORS.ui.border },
+  rowDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
 
   playerRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, paddingHorizontal: 14, gap: 10,
   },
-  rank: { width: 26, fontSize: 12, fontWeight: '800', color: DUGOUT_COLORS.ui.muted, textAlign: 'center' },
+  rank: { width: 26, fontSize: 12, fontWeight: '800', color: PULSE_COLORS.ui.muted, textAlign: 'center' },
 
   jersey: {
     width: 34, height: 34, borderRadius: 8,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  jerseyNum: { fontSize: 11, fontWeight: '800', color: DUGOUT_COLORS.ui.muted },
+  jerseyNum: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted },
 
   info:    { flex: 1, gap: 5 },
   nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  name:    { flex: 1, fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginRight: 6 },
+  name:    { flex: 1, fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginRight: 6 },
   pctText: { fontSize: 15, fontWeight: '800', minWidth: 38, textAlign: 'right' },
 
-  barTrack: { height: 5, backgroundColor: DUGOUT_COLORS.ui.border, borderRadius: 3, overflow: 'hidden' },
+  barTrack: { height: 5, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 3, overflow: 'hidden' },
   barFill:  { height: '100%', borderRadius: 3 },
 
-  meta: { fontSize: 11, color: DUGOUT_COLORS.ui.muted },
+  meta: { fontSize: 11, color: PULSE_COLORS.ui.muted },
 
   emptyIcon: {
     width: 64, height: 64, borderRadius: 32,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text, textAlign: 'center' },
-  emptySub:   { fontSize: 13, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, textAlign: 'center' },
+  emptySub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
 
   footnote: {
-    fontSize: 11, color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, color: PULSE_COLORS.ui.muted,
     textAlign: 'center', marginTop: 16, lineHeight: 17,
   },
 });

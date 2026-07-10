@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 type RoleKey = 'org_admin' | 'coach' | 'player';
 
@@ -68,7 +68,7 @@ export default function RoleSelectScreen() {
         <View style={styles.brandRing}>
           <Text style={styles.brandLetter}>D</Text>
         </View>
-        <Text style={styles.brandName}>Dugout<Text style={{ color: DUGOUT_COLORS.brand.green }}>FC</Text></Text>
+        <Text style={styles.brandName}>Pulse<Text style={{ color: PULSE_COLORS.brand.green }}>FC</Text></Text>
       </View>
 
       <Text style={styles.heading}>What's your role?</Text>
@@ -84,16 +84,16 @@ export default function RoleSelectScreen() {
             disabled={loading !== null}
           >
             <View style={styles.cardIcon}>
-              <Ionicons name={role.icon} size={22} color={DUGOUT_COLORS.brand.green} />
+              <Ionicons name={role.icon} size={22} color={PULSE_COLORS.brand.green} />
             </View>
             <View style={styles.cardText}>
               <Text style={styles.cardTitle}>{role.title}</Text>
               <Text style={styles.cardSubtitle}>{role.subtitle}</Text>
             </View>
             {loading === role.key ? (
-              <ActivityIndicator color={DUGOUT_COLORS.brand.green} size="small" />
+              <ActivityIndicator color={PULSE_COLORS.brand.green} size="small" />
             ) : (
-              <Ionicons name="chevron-forward" size={18} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
             )}
           </TouchableOpacity>
         ))}
@@ -109,7 +109,7 @@ export default function RoleSelectScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
     paddingHorizontal: 24,
   },
   brandMark: {
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -134,18 +134,18 @@ const styles = StyleSheet.create({
   brandName: {
     fontSize: 20,
     fontWeight: '900',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     letterSpacing: -0.5,
   },
   heading: {
     fontSize: 28,
     fontWeight: '800',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     marginBottom: 6,
   },
   subheading: {
     fontSize: 15,
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     marginBottom: 32,
   },
   cards: {
@@ -154,9 +154,9 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16,
     padding: 18,
     gap: 14,
@@ -178,12 +178,12 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     marginBottom: 3,
   },
   cardSubtitle: {
     fontSize: 13,
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     lineHeight: 18,
   },
   signOutLink: {
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   signOutText: {
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontSize: 13,
   },
 });

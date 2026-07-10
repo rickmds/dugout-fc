@@ -15,7 +15,8 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import ClubHeader from '../../../../components/ui/ClubHeader';
+import { PULSE_COLORS } from '../../../../constants/colors';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -226,14 +227,14 @@ export default function ClubImportScreen() {
     email: string; role: 'coach' | 'parent'; token: string; teamName: string;
   }) {
     if (!profile?.full_name) return;
-    const deepLink = `https://dugoutfc.app/join?token=${opts.token}`;
+    const deepLink = `https://pulse-fc.app/join?token=${opts.token}`;
     const isCoach = opts.role === 'coach';
     const subject = isCoach
-      ? `You've been invited to join ${opts.teamName} as a coach on Dugout FC`
-      : `Your child has been added to ${opts.teamName} on Dugout FC`;
+      ? `You've been invited to join ${opts.teamName} as a coach on Pulse FC`
+      : `Your child has been added to ${opts.teamName} on Pulse FC`;
     const body = isCoach
-      ? `Hi,\n\nYou've been invited to join ${opts.teamName} as coaching staff on Dugout FC.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${opts.token}\n\n— ${profile.full_name}`
-      : `Hi,\n\nYour child has been added to ${opts.teamName} on Dugout FC — the app the team uses for schedules, lineups, and team chat.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${opts.token}\n\n— ${profile.full_name}`;
+      ? `Hi,\n\nYou've been invited to join ${opts.teamName} as coaching staff on Pulse FC.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${opts.token}\n\n— ${profile.full_name}`
+      : `Hi,\n\nYour child has been added to ${opts.teamName} on Pulse FC — the app the team uses for schedules, lineups, and team chat.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${opts.token}\n\n— ${profile.full_name}`;
     await supabase.functions.invoke('send-team-email', {
       body: { to: [{ email: opts.email, name: '' }], cc: [], subject, body, reply_to: null, from_name: profile.full_name, team_name: opts.teamName, attachments: [], club_logo_url: logoUrl, club_name: clubName, primary_color: primaryColor },
     });
@@ -328,14 +329,7 @@ export default function ClubImportScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Import Club</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ClubHeader title="Import Club" onBack={() => router.back()} />
 
       {/* ── Idle ── */}
       {phase === 'idle' && (
@@ -466,7 +460,7 @@ export default function ClubImportScreen() {
                       <Text style={styles.uncertainIssue}>{row.issue}</Text>
                     </View>
                     <TouchableOpacity onPress={() => removeUncertain(i)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close-circle" size={18} color={DUGOUT_COLORS.ui.muted} />
+                      <Ionicons name="close-circle" size={18} color={PULSE_COLORS.ui.muted} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -557,7 +551,7 @@ function SummaryChip({ icon, value, label, color }: { icon: any; value: number; 
 const chipStyles = StyleSheet.create({
   root:  { flex: 1, alignItems: 'center', gap: 2, padding: 12, borderRadius: 12, borderWidth: 1 },
   value: { fontSize: 22, fontWeight: '800' },
-  label: { fontSize: 11, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  label: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 });
 
 function DoneStat({ value, label, color }: { value: number; label: string; color: string }) {
@@ -571,7 +565,7 @@ function DoneStat({ value, label, color }: { value: number; label: string; color
 const doneStyles = StyleSheet.create({
   root:  { flex: 1, alignItems: 'center', gap: 4 },
   value: { fontSize: 28, fontWeight: '800' },
-  label: { fontSize: 11, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary, textAlign: 'center' },
+  label: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, textAlign: 'center' },
 });
 
 function TeamSection({ team, primaryColor, expanded, onToggle, onRemoveTeam, onRemoveCoach, onRemovePlayer }: {
@@ -599,9 +593,9 @@ function TeamSection({ team, primaryColor, expanded, onToggle, onRemoveTeam, onR
           <Text style={styles.teamMeta}>{[meta, counts].filter(Boolean).join('  ·  ')}</Text>
         </View>
         <TouchableOpacity onPress={onRemoveTeam} hitSlop={{ top: 8, bottom: 8, left: 12, right: 4 }} style={styles.removeTeamBtn}>
-          <Ionicons name="trash-outline" size={15} color={DUGOUT_COLORS.ui.muted} />
+          <Ionicons name="trash-outline" size={15} color={PULSE_COLORS.ui.muted} />
         </TouchableOpacity>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
       </TouchableOpacity>
 
       {expanded && (
@@ -662,22 +656,22 @@ function ReviewPersonRow({ name, detail, email, iconName, iconColor, uncertain, 
         {uncertain && reason ? <Text style={rpStyles.reason}>{reason}</Text> : null}
       </View>
       <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Ionicons name="close" size={15} color={DUGOUT_COLORS.ui.muted} />
+        <Ionicons name="close" size={15} color={PULSE_COLORS.ui.muted} />
       </TouchableOpacity>
     </View>
   );
 }
 
 const rpStyles = StyleSheet.create({
-  row:         { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  row:         { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   rowUncertain:{ backgroundColor: 'rgba(245,158,11,0.04)' },
   icon:        { width: 26, height: 26, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   body:        { flex: 1, gap: 1 },
   nameRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  name:        { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
+  name:        { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
   badge:       { backgroundColor: 'rgba(245,158,11,0.2)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   badgeText:   { fontSize: 10, fontWeight: '800', color: '#F59E0B' },
-  detail:      { fontSize: 12, color: DUGOUT_COLORS.ui.muted },
+  detail:      { fontSize: 12, color: PULSE_COLORS.ui.muted },
   emailRow:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
   email:       { fontSize: 11, color: '#60A5FA' },
   reason:      { fontSize: 11, color: '#F59E0B', marginTop: 1 },
@@ -686,33 +680,33 @@ const rpStyles = StyleSheet.create({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn:     { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
 
   centerContent: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, paddingBottom: 48 },
   heroIcon:      { width: 80, height: 80, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  heroTitle:     { fontSize: 24, fontWeight: '800', color: DUGOUT_COLORS.ui.text, textAlign: 'center', marginBottom: 10, letterSpacing: -0.4 },
-  heroSub:       { fontSize: 15, color: DUGOUT_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  heroTitle:     { fontSize: 24, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center', marginBottom: 10, letterSpacing: -0.4 },
+  heroSub:       { fontSize: 15, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
 
-  formatBox:   { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, borderRadius: 16, padding: 16, width: '100%', gap: 10, marginBottom: 16 },
-  formatTitle: { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1, marginBottom: 4 },
+  formatBox:   { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, padding: 16, width: '100%', gap: 10, marginBottom: 16 },
+  formatTitle: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 4 },
   formatRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  formatLabel: { fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary },
-  formatHint:  { fontSize: 12, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginBottom: 24, lineHeight: 18 },
+  formatLabel: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
+  formatHint:  { fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 24, lineHeight: 18 },
 
   uploadBtn:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 14, width: '100%', justifyContent: 'center' },
   uploadBtnText: { fontSize: 16, fontWeight: '800', color: '#000' },
 
   reviewContent: { padding: 16, paddingBottom: 40 },
   summaryBar:    { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  sectionLabel:  { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
+  sectionLabel:  { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
 
   infoBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
@@ -734,35 +728,35 @@ const styles = StyleSheet.create({
   warningDot:   { fontSize: 12, color: '#F59E0B', lineHeight: 17, flexShrink: 0 },
   warningItemText: { flex: 1, fontSize: 12, color: '#F59E0B', lineHeight: 17 },
 
-  teamSection:    { backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, borderRadius: 14, marginBottom: 8, overflow: 'hidden' },
+  teamSection:    { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 14, marginBottom: 8, overflow: 'hidden' },
   teamHeader:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
   teamDot:        { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
   teamHeaderBody: { flex: 1 },
-  teamName:       { fontSize: 15, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.2 },
-  teamMeta:       { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 1 },
+  teamName:       { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.2 },
+  teamMeta:       { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
   removeTeamBtn:  { padding: 4 },
 
   dupBadge:     { backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, marginLeft: 8 },
   dupBadgeText: { fontSize: 10, fontWeight: '700', color: '#60A5FA' },
 
-  personGroup: { paddingHorizontal: 14, paddingBottom: 8, borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border },
-  groupLabel:  { fontSize: 9, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 0.8, marginTop: 10, marginBottom: 2 },
+  personGroup: { paddingHorizontal: 14, paddingBottom: 8, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
+  groupLabel:  { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginTop: 10, marginBottom: 2 },
 
-  uncertainCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', borderRadius: 10, padding: 10, marginBottom: 6 },
+  uncertainCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', borderRadius: 10, padding: 10, marginBottom: 6 },
   uncertainBody:  { flex: 1 },
-  uncertainRaw:   { fontSize: 12, color: DUGOUT_COLORS.ui.text, fontFamily: 'monospace', marginBottom: 3 },
+  uncertainRaw:   { fontSize: 12, color: PULSE_COLORS.ui.text, fontFamily: 'monospace', marginBottom: 3 },
   uncertainIssue: { fontSize: 11, color: '#F59E0B' },
-  uncertainSub:   { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginBottom: 8, lineHeight: 17 },
+  uncertainSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted, marginBottom: 8, lineHeight: 17 },
 
-  reviewFooter: { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 36, borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.background },
-  cancelBtn:    { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border },
-  cancelBtnText:{ fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  reviewFooter: { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 36, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.background },
+  cancelBtn:    { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  cancelBtnText:{ fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
   importBtn:    { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14 },
   importBtnText:{ fontSize: 15, fontWeight: '800', color: '#000' },
 
-  progressTrack: { width: '100%', height: 6, backgroundColor: DUGOUT_COLORS.ui.border, borderRadius: 3, overflow: 'hidden', marginTop: 24, marginBottom: 10 },
+  progressTrack: { width: '100%', height: 6, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 3, overflow: 'hidden', marginTop: 24, marginBottom: 10 },
   progressFill:  { height: '100%', borderRadius: 3 },
-  progressLabel: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  progressLabel: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
   doneStats:      { flexDirection: 'row', gap: 16, marginBottom: 16, width: '100%' },
   invitesSentRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },

@@ -1,0 +1,161 @@
+# MDS Academy — Full Club Test Data
+# Format: Type 1 (multi-team roster + schedule)
+# Address column = 15th column (away venues only)
+
+Type,Team,Age Group,Gender,First Name,Last Name,Jersey #,Role / Position,Email,Event Date,Day,Event Time,Opponent / Note,Location,Address
+
+# ── U10 Boys ────────────────────────────────────────────────────────────────
+Player,Eagles,U10,Boys,Liam,Anderson,1,GK,parent.anderson@email.com,,,,,,
+Player,Eagles,U10,Boys,Noah,Martinez,2,DEF,parent.martinez@email.com,,,,,,
+Player,Eagles,U10,Boys,Oliver,Thompson,3,DEF,parent.thompson@email.com,,,,,,
+Player,Eagles,U10,Boys,Elijah,Garcia,4,DEF,parent.garcia@email.com,,,,,,
+Player,Eagles,U10,Boys,William,Rodriguez,5,MID,parent.rodriguez@email.com,,,,,,
+Player,Eagles,U10,Boys,James,Wilson,6,MID,parent.wilson@email.com,,,,,,
+Player,Eagles,U10,Boys,Benjamin,Lee,7,MID,parent.lee@email.com,,,,,,
+Player,Eagles,U10,Boys,Lucas,Taylor,8,FWD,parent.taylor@email.com,,,,,,
+Player,Eagles,U10,Boys,Henry,Brown,9,FWD,parent.brown@email.com,,,,,,
+Player,Eagles,U10,Boys,Alexander,Jones,10,FWD,parent.jones@email.com,,,,,,
+Player,Eagles,U10,Boys,Mason,Davis,11,MID,parent.davis@email.com,,,,,,
+Player,Eagles,U10,Boys,Ethan,Miller,12,DEF,parent.miller@email.com,,,,,,
+Coach,Eagles,U10,Boys,Coach,Kevin,,,kevin.coach@mdssoccer.com,,,,,,
+Training,Eagles,U10,Boys,,,,,,2026-08-04,Tue,17:30,,MDS Academy Field — Pitch A,
+Training,Eagles,U10,Boys,,,,,,2026-08-06,Thu,17:30,,MDS Academy Field — Pitch A,
+Training,Eagles,U10,Boys,,,,,,2026-08-11,Tue,17:30,,MDS Academy Field — Pitch A,
+Training,Eagles,U10,Boys,,,,,,2026-08-13,Thu,17:30,,MDS Academy Field — Pitch A,
+Game,Eagles,U10,Boys,,,,Home,,,2026-08-09,Sun,09:00,vs Tri-County SC,MDS Academy Field — Main Pitch,
+Game,Eagles,U10,Boys,,,,Away,,,2026-08-16,Sun,10:00,@ Tri-County SC Field,Away @ Tri-County SC Field,11551 Dorsett Rd, Maryland Heights, MO 63043
+Game,Eagles,U10,Boys,,,,Home,,,2026-08-23,Sun,09:00,vs Sounders FC,MDS Academy Field — Main Pitch,
+Game,Eagles,U10,Boys,,,,Away,,,2026-08-30,Sun,10:30,@ Sounders FC Field,Away @ Sounders FC Field,12000 NE 8th St, Bellevue, WA 98005
+Game,Eagles,U10,Boys,,,,Home,,,2026-09-06,Sun,09:00,vs Revolution SC,MDS Academy Field — Main Pitch,
+Game,Eagles,U10,Boys,,,,Away,,,2026-09-13,Sun,11:00,@ Revolution SC Field,Away @ Revolution SC Field,1 Patriots Place, Foxborough, MA 02035
+
+# ── U12 Boys ────────────────────────────────────────────────────────────────
+Player,Storm,U12,Boys,Aiden,White,1,GK,parent.white@email.com,,,,,,
+Player,Storm,U12,Boys,Carter,Harris,2,DEF,parent.harris@email.com,,,,,,
+Player,Storm,U12,Boys,Jayden,Clark,3,DEF,parent.clark@email.com,,,,,,
+Player,Storm,U12,Boys,Owen,Lewis,4,DEF,parent.lewis@email.com,,,,,,
+Player,Storm,U12,Boys,Samuel,Robinson,5,DEF,parent.robinson@email.com,,,,,,
+Player,Storm,U12,Boys,Jackson,Walker,6,MID,parent.walker@email.com,,,,,,
+Player,Storm,U12,Boys,Sebastian,Hall,7,MID,parent.hall@email.com,,,,,,
+Player,Storm,U12,Boys,Mateo,Allen,8,MID,parent.allen@email.com,,,,,,
+Player,Storm,U12,Boys,Jack,Young,9,FWD,parent.young@email.com,,,,,,
+Player,Storm,U12,Boys,Logan,King,10,FWD,parent.king@email.com,,,,,,
+Player,Storm,U12,Boys,Luke,Wright,11,FWD,parent.wright@email.com,,,,,,
+Player,Storm,U12,Boys,Gabriel,Scott,12,MID,parent.scott@email.com,,,,,,
+Player,Storm,U12,Boys,Anthony,Green,13,DEF,parent.green@email.com,,,,,,
+Player,Storm,U12,Boys,Isaac,Adams,14,GK,parent.adams@email.com,,,,,,
+Coach,Storm,U12,Boys,Coach,Sarah,,,sarah.coach@mdssoccer.com,,,,,,
+Training,Storm,U12,Boys,,,,,,2026-08-03,Mon,18:00,,MDS Academy Field — Pitch B,
+Training,Storm,U12,Boys,,,,,,2026-08-05,Wed,18:00,,MDS Academy Field — Pitch B,
+Training,Storm,U12,Boys,,,,,,2026-08-10,Mon,18:00,,MDS Academy Field — Pitch B,
+Training,Storm,U12,Boys,,,,,,2026-08-12,Wed,18:00,,MDS Academy Field — Pitch B,
+Training,Storm,U12,Boys,,,,,,2026-08-17,Mon,18:00,,MDS Academy Field — Pitch B,
+Training,Storm,U12,Boys,,,,,,2026-08-19,Wed,18:00,,MDS Academy Field — Pitch B,
+Game,Storm,U12,Boys,,,,Home,,,2026-08-08,Sat,10:00,vs Lakewood United,MDS Academy Field — Main Pitch,
+Game,Storm,U12,Boys,,,,Away,,,2026-08-15,Sat,11:00,@ Lakewood United Field,Away @ Lakewood United Field,9800 W Jewel Ave, Lakewood, CO 80232
+Game,Storm,U12,Boys,,,,Home,,,2026-08-22,Sat,10:00,vs Sporting KC,MDS Academy Field — Main Pitch,
+Game,Storm,U12,Boys,,,,Away,,,2026-08-29,Sat,09:00,@ Sporting KC Field,Away @ Sporting KC Field,1 Sporting Way, Kansas City, KS 66111
+Game,Storm,U12,Boys,,,,Away,,,2026-09-05,Sat,10:30,@ Michigan Hawks Field,Away @ Michigan Hawks Field,4200 Wilder Rd, Bay City, MI 48706
+Game,Storm,U12,Boys,,,,Home,,,2026-09-12,Sat,10:00,vs Red Bulls Academy,MDS Academy Field — Main Pitch,
+Game,Storm,U12,Boys,,,,Away,,,2026-09-19,Sat,11:00,@ Red Bulls Academy Field,Away @ Red Bulls Academy Field,600 Cape May St, Harrison, NJ 07029
+
+# ── U14 Boys ────────────────────────────────────────────────────────────────
+Player,Falcons,U14,Boys,Caleb,Nelson,1,GK,parent.nelson@email.com,,,,,,
+Player,Falcons,U14,Boys,Ryan,Carter,2,DEF,parent.carter@email.com,,,,,,
+Player,Falcons,U14,Boys,Nathan,Mitchell,3,DEF,parent.mitchell@email.com,,,,,,
+Player,Falcons,U14,Boys,Dylan,Perez,4,DEF,parent.perez@email.com,,,,,,
+Player,Falcons,U14,Boys,Tyler,Roberts,5,DEF,parent.roberts@email.com,,,,,,
+Player,Falcons,U14,Boys,Connor,Turner,6,MID,parent.turner@email.com,,,,,,
+Player,Falcons,U14,Boys,Evan,Phillips,7,MID,parent.phillips@email.com,,,,,,
+Player,Falcons,U14,Boys,Zachary,Campbell,8,MID,parent.campbell@email.com,,,,,,
+Player,Falcons,U14,Boys,Hunter,Parker,9,FWD,parent.parker@email.com,,,,,,
+Player,Falcons,U14,Boys,Justin,Evans,10,FWD,parent.evans@email.com,,,,,,
+Player,Falcons,U14,Boys,Austin,Edwards,11,FWD,parent.edwards@email.com,,,,,,
+Player,Falcons,U14,Boys,Brandon,Collins,12,MID,parent.collins@email.com,,,,,,
+Player,Falcons,U14,Boys,Kyle,Stewart,13,DEF,parent.stewart@email.com,,,,,,
+Player,Falcons,U14,Boys,Derek,Sanchez,14,MID,parent.sanchez@email.com,,,,,,
+Player,Falcons,U14,Boys,Trevor,Morris,15,GK,parent.morris@email.com,,,,,,
+Coach,Falcons,U14,Boys,Coach,Marcus,,,marcus.coach@mdssoccer.com,,,,,,
+Training,Falcons,U14,Boys,,,,,,2026-08-04,Tue,19:00,,MDS Academy Field — Pitch C,
+Training,Falcons,U14,Boys,,,,,,2026-08-06,Thu,19:00,,MDS Academy Field — Pitch C,
+Training,Falcons,U14,Boys,,,,,,2026-08-11,Tue,19:00,,MDS Academy Field — Pitch C,
+Training,Falcons,U14,Boys,,,,,,2026-08-13,Thu,19:00,,MDS Academy Field — Pitch C,
+Training,Falcons,U14,Boys,,,,,,2026-08-18,Tue,19:00,,MDS Academy Field — Pitch C,
+Training,Falcons,U14,Boys,,,,,,2026-08-20,Thu,19:00,,MDS Academy Field — Pitch C,
+Game,Falcons,U14,Boys,,,,Away,,,2026-08-09,Sun,13:00,@ Galaxy SC Field,Away @ Galaxy SC Field,18400 Avalon Blvd, Carson, CA 90746
+Game,Falcons,U14,Boys,,,,Home,,,2026-08-16,Sun,13:00,vs Fire Academy,MDS Academy Field — Main Pitch,
+Game,Falcons,U14,Boys,,,,Away,,,2026-08-23,Sun,12:00,@ Fire Academy Field,Away @ Fire Academy Field,7000 S Harlem Ave, Bridgeview, IL 60455
+Game,Falcons,U14,Boys,,,,Away,,,2026-08-30,Sun,13:00,@ FC United Field,Away @ FC United Field,6800 Stadium Dr, Kansas City, MO 64129
+Game,Falcons,U14,Boys,,,,Home,,,2026-09-06,Sun,13:00,vs Virginia Rush,MDS Academy Field — Main Pitch,
+Game,Falcons,U14,Boys,,,,Away,,,2026-09-13,Sun,11:00,@ Virginia Rush Field,Away @ Virginia Rush Field,3000 Sportsplex Dr, Midlothian, VA 23112
+Game,Falcons,U14,Boys,,,,Home,,,2026-09-20,Sun,13:00,vs Rapids Youth,MDS Academy Field — Main Pitch,
+Game,Falcons,U14,Boys,,,,Away,,,2026-09-27,Sun,12:00,@ Rapids Youth Field,Away @ Rapids Youth Field,900 W 44th Ave, Denver, CO 80211
+
+# ── U16 Girls ────────────────────────────────────────────────────────────────
+Player,Phoenix,U16,Girls,Emma,Johnson,1,GK,parent.ejohnson@email.com,,,,,,
+Player,Phoenix,U16,Girls,Sophia,Williams,2,DEF,parent.swilliams@email.com,,,,,,
+Player,Phoenix,U16,Girls,Isabella,Brown,3,DEF,parent.ibrown@email.com,,,,,,
+Player,Phoenix,U16,Girls,Mia,Jones,4,DEF,parent.mjones@email.com,,,,,,
+Player,Phoenix,U16,Girls,Charlotte,Garcia,5,DEF,parent.cgarcia@email.com,,,,,,
+Player,Phoenix,U16,Girls,Amelia,Miller,6,MID,parent.amiller@email.com,,,,,,
+Player,Phoenix,U16,Girls,Harper,Davis,7,MID,parent.hdavis@email.com,,,,,,
+Player,Phoenix,U16,Girls,Evelyn,Wilson,8,MID,parent.ewilson@email.com,,,,,,
+Player,Phoenix,U16,Girls,Abigail,Moore,9,FWD,parent.amoore@email.com,,,,,,
+Player,Phoenix,U16,Girls,Emily,Taylor,10,FWD,parent.etaylor@email.com,,,,,,
+Player,Phoenix,U16,Girls,Elizabeth,Anderson,11,FWD,parent.eanderson@email.com,,,,,,
+Player,Phoenix,U16,Girls,Sofia,Thomas,12,MID,parent.sthomas@email.com,,,,,,
+Player,Phoenix,U16,Girls,Avery,Jackson,13,DEF,parent.ajackson@email.com,,,,,,
+Player,Phoenix,U16,Girls,Ella,White,14,MID,parent.ewhite@email.com,,,,,,
+Player,Phoenix,U16,Girls,Grace,Harris,15,GK,parent.gharris@email.com,,,,,,
+Coach,Phoenix,U16,Girls,Coach,Lisa,,,lisa.coach@mdssoccer.com,,,,,,
+Training,Phoenix,U16,Girls,,,,,,2026-08-03,Mon,19:30,,MDS Academy Field — Pitch D,
+Training,Phoenix,U16,Girls,,,,,,2026-08-05,Wed,19:30,,MDS Academy Field — Pitch D,
+Training,Phoenix,U16,Girls,,,,,,2026-08-10,Mon,19:30,,MDS Academy Field — Pitch D,
+Training,Phoenix,U16,Girls,,,,,,2026-08-12,Wed,19:30,,MDS Academy Field — Pitch D,
+Training,Phoenix,U16,Girls,,,,,,2026-08-17,Mon,19:30,,MDS Academy Field — Pitch D,
+Training,Phoenix,U16,Girls,,,,,,2026-08-19,Wed,19:30,,MDS Academy Field — Pitch D,
+Game,Phoenix,U16,Girls,,,,Home,,,2026-08-08,Sat,13:00,vs Whitecaps FC,MDS Academy Field — Main Pitch,
+Game,Phoenix,U16,Girls,,,,Away,,,2026-08-15,Sat,12:00,@ Whitecaps FC Field,Away @ Whitecaps FC Field,13450 102 Ave, Surrey, BC V3T 1P7
+Game,Phoenix,U16,Girls,,,,Away,,,2026-08-22,Sat,13:00,@ Ohio Premier Field,Away @ Ohio Premier Field,9000 Green Meadows Dr N, Lewis Center, OH 43035
+Game,Phoenix,U16,Girls,,,,Home,,,2026-08-29,Sat,13:00,vs Real Salt Lake Acad.,MDS Academy Field — Main Pitch,
+Game,Phoenix,U16,Girls,,,,Away,,,2026-09-05,Sat,11:00,@ Real Salt Lake Acad. Field,Away @ Real Salt Lake Acad. Field,9256 S State St, Sandy, UT 84070
+Game,Phoenix,U16,Girls,,,,Home,,,2026-09-12,Sat,13:00,vs Strikers FC,MDS Academy Field — Main Pitch,
+Game,Phoenix,U16,Girls,,,,Away,,,2026-09-19,Sat,12:00,@ Strikers FC Field,Away @ Strikers FC Field,4300 W Victoria St, Compton, CA 90220
+Game,Phoenix,U16,Girls,,,,Away,,,2026-09-26,Sat,13:00,@ Jersey Tigers Field,Away @ Jersey Tigers Field,10 Stadium Way, Montclair, NJ 07043
+
+# ── U18 Boys ────────────────────────────────────────────────────────────────
+Player,Wolves,U18,Boys,Eli,Jackson,1,GK,parent.ejackson@email.com,,,,,,
+Player,Wolves,U18,Boys,Miles,Martin,2,DEF,parent.mmartin@email.com,,,,,,
+Player,Wolves,U18,Boys,Julian,Lee,3,DEF,parent.jlee@email.com,,,,,,
+Player,Wolves,U18,Boys,Micah,Thompson,4,DEF,parent.mthompson@email.com,,,,,,
+Player,Wolves,U18,Boys,Adrian,Garcia,5,DEF,parent.agarcia@email.com,,,,,,
+Player,Wolves,U18,Boys,Cameron,Martinez,6,MID,parent.cmartinez@email.com,,,,,,
+Player,Wolves,U18,Boys,Jordan,Robinson,7,MID,parent.jrobinson@email.com,,,,,,
+Player,Wolves,U18,Boys,Xavier,Clark,8,MID,parent.xclark@email.com,,,,,,
+Player,Wolves,U18,Boys,Isaiah,Rodriguez,9,FWD,parent.irodriguez@email.com,,,,,,
+Player,Wolves,U18,Boys,Elias,Lewis,10,FWD,parent.elewis@email.com,,,,,,
+Player,Wolves,U18,Boys,Dominic,Walker,11,FWD,parent.dwalker@email.com,,,,,,
+Player,Wolves,U18,Boys,Levi,Hall,12,MID,parent.lhall@email.com,,,,,,
+Player,Wolves,U18,Boys,Kai,Allen,13,DEF,parent.kallen@email.com,,,,,,
+Player,Wolves,U18,Boys,Axel,Young,14,MID,parent.ayoung@email.com,,,,,,
+Player,Wolves,U18,Boys,Finn,King,15,GK,parent.fking@email.com,,,,,,
+Player,Wolves,U18,Boys,Cole,Wright,16,DEF,parent.cwright@email.com,,,,,,
+Coach,Wolves,U18,Boys,Coach,David,,,david.coach@mdssoccer.com,,,,,,
+Training,Wolves,U18,Boys,,,,,,2026-08-04,Tue,20:00,,MDS Academy Field — Pitch A,
+Training,Wolves,U18,Boys,,,,,,2026-08-06,Thu,20:00,,MDS Academy Field — Pitch A,
+Training,Wolves,U18,Boys,,,,,,2026-08-11,Tue,20:00,,MDS Academy Field — Pitch A,
+Training,Wolves,U18,Boys,,,,,,2026-08-13,Thu,20:00,,MDS Academy Field — Pitch A,
+Training,Wolves,U18,Boys,,,,,,2026-08-18,Tue,20:00,,MDS Academy Field — Pitch A,
+Training,Wolves,U18,Boys,,,,,,2026-08-20,Thu,20:00,,MDS Academy Field — Pitch A,
+Game,Wolves,U18,Boys,,,,Away,,,2026-08-08,Sat,16:00,@ Colorado Rush Field,Away @ Colorado Rush Field,4001 Vasquez Blvd E, Denver, CO 80216
+Game,Wolves,U18,Boys,,,,Home,,,2026-08-15,Sat,16:00,vs Impact SC,MDS Academy Field — Main Pitch,
+Game,Wolves,U18,Boys,,,,Away,,,2026-08-22,Sat,15:00,@ Impact SC Field,Away @ Impact SC Field,8400 Edgewater Dr, Oakland, CA 94621
+Game,Wolves,U18,Boys,,,,Away,,,2026-08-29,Sat,16:00,@ Timbers Academy Field,Away @ Timbers Academy Field,14370 NW Science Park Dr, Portland, OR 97229
+Game,Wolves,U18,Boys,,,,Home,,,2026-09-05,Sat,16:00,vs Dynamo SC,MDS Academy Field — Main Pitch,
+Game,Wolves,U18,Boys,,,,Away,,,2026-09-12,Sat,14:00,@ Dynamo SC Field,Away @ Dynamo SC Field,2200 Texas Ave S, Houston, TX 77003
+Game,Wolves,U18,Boys,,,,Home,,,2026-09-19,Sat,16:00,vs North Shore FC,MDS Academy Field — Main Pitch,
+Game,Wolves,U18,Boys,,,,Away,,,2026-09-26,Sat,15:00,@ North Shore FC Field,Away @ North Shore FC Field,35 Village Rd, Middleton, MA 01949
+Game,Wolves,U18,Boys,,,,Away,,,2026-10-03,Sat,16:00,@ Indiana Fire Field,Away @ Indiana Fire Field,2820 W 96th St, Indianapolis, IN 46268
+Game,Wolves,U18,Boys,,,,Home,,,2026-10-10,Sat,16:00,vs Eastside Eagles,MDS Academy Field — Main Pitch,
+Game,Wolves,U18,Boys,,,,Away,,,2026-10-17,Sat,13:00,@ Eastside Eagles Field,Away @ Eastside Eagles Field,800 Olympic Dr, Kirkland, WA 98033
+Game,Wolves,U18,Boys,,,,Away,,,2026-10-24,Sat,15:00,@ Crew SC Field,Away @ Crew SC Field,1 Black & Gold Blvd, Columbus, OH 43211

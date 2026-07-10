@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
+import { FlipBoard } from '@/components/FlipBoard';
 import { seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
 import { Plus, X, Edit2, Trash2, Settings } from 'lucide-react';
 
@@ -65,7 +66,14 @@ export default function PracticeSchedulePage() {
 
   const ageGroupsUsed = [...new Set(slots.map(s => s.age_group).filter(Boolean))].sort((a, b) => AGE_GROUPS.indexOf(a!) - AGE_GROUPS.indexOf(b!)) as string[];
 
-  if (loading) return <div style={{ padding: '40px', color: '#94A3B8' }}>Loading…</div>;
+  if (loading) return (
+    <FlipBoard title="Loading practice schedule…" rows={[
+      { label: 'Slots',   pad: 2 },
+      { label: 'Teams',   pad: 2 },
+      { label: 'Coaches', pad: 2 },
+      { label: 'Fields',  pad: 2 },
+    ]} />
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>

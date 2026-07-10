@@ -18,8 +18,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { sendTeamPush } from '../../../../lib/push';
 import { DateTimeSheet } from '../../../../components/ui/DateTimeSheet';
 
@@ -29,7 +30,7 @@ const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 type EventType = 'game' | 'training' | 'other';
 type UniformOption = 'home' | 'away' | 'training';
-type FieldOption = 'turf' | 'grass';
+type FieldOption = 'turf' | 'grass' | 'indoor';
 
 const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string }> = {
   game:     { label: 'Game',     color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
@@ -147,25 +148,25 @@ function PickerSheet({
 const ps = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40,
   },
   handle: {
-    width: 40, height: 4, backgroundColor: DUGOUT_COLORS.ui.border,
+    width: 40, height: 4, backgroundColor: PULSE_COLORS.ui.border,
     borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4,
   },
   title: {
-    fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text,
-    padding: 16, borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text,
+    padding: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   row: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, height: 52,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   rowSelected: { backgroundColor: 'rgba(34,197,94,0.08)' },
-  rowText: { fontSize: 15, color: DUGOUT_COLORS.ui.text },
-  rowTextSelected: { color: DUGOUT_COLORS.brand.green, fontWeight: '700' },
+  rowText: { fontSize: 15, color: PULSE_COLORS.ui.text },
+  rowTextSelected: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
 });
 
 // ─── Smart Location Input ─────────────────────────────────────────────────────
@@ -199,7 +200,7 @@ function SmartLocationInput({
     setFetching(true);
     try {
       const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(val)}&key=${PLACES_KEY}&types=geocode`
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(val)}&key=${PLACES_KEY}&components=country:us`
       );
       const json = await res.json();
       setSuggestions((json.predictions ?? []).slice(0, 5));
@@ -234,20 +235,20 @@ function SmartLocationInput({
         <Ionicons
           name={pinned ? 'location' : 'location-outline'}
           size={16}
-          color={pinned ? primaryColor : DUGOUT_COLORS.ui.muted}
+          color={pinned ? primaryColor : PULSE_COLORS.ui.muted}
         />
         <TextInput
           style={styles.inlineInput}
           value={text}
           onChangeText={handleChange}
           placeholder="Location name or address…"
-          placeholderTextColor={DUGOUT_COLORS.ui.muted}
+          placeholderTextColor={PULSE_COLORS.ui.muted}
           returnKeyType="search"
         />
-        {fetching && <ActivityIndicator size="small" color={DUGOUT_COLORS.ui.muted} />}
+        {fetching && <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />}
         {text.length > 0 && !fetching && (
           <TouchableOpacity onPress={clear}>
-            <Ionicons name="close-circle" size={16} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
         )}
       </View>
@@ -259,7 +260,7 @@ function SmartLocationInput({
               style={[styles.suggestionRow, i < suggestions.length - 1 && styles.suggestionBorder]}
               onPress={() => pick(s)}
             >
-              <Ionicons name="location-outline" size={14} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="location-outline" size={14} color={PULSE_COLORS.ui.muted} />
               <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
             </TouchableOpacity>
           ))}
@@ -294,7 +295,7 @@ function FieldRow({
   const inner = (
     <View style={styles.fieldRow}>
       <View style={styles.fieldRowLeft}>
-        <Ionicons name={icon} size={17} color={DUGOUT_COLORS.ui.muted} style={styles.fieldIcon} />
+        <Ionicons name={icon} size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
         <Text style={styles.fieldLabel}>{label}</Text>
       </View>
       <View style={styles.fieldRowRight}>{children}</View>
@@ -311,7 +312,7 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function EditEventScreen() {
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, secondaryColor, onSecondary, rgba } = useClub();
   const router = useRouter();
   const { clubSlug, eventId } = useLocalSearchParams<{ clubSlug: string; eventId: string }>();
   const { profile } = useAuth();
@@ -319,7 +320,10 @@ export default function EditEventScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [isCancelled, setIsCancelled] = useState(false);
   const [eventTeamId, setEventTeamId] = useState<string | null>(null);
+  const originalRef = useRef<{ date: string; time: string | null; location: string; videoUrl: string | null } | null>(null);
 
   // Event basics
   const [eventType, setEventType] = useState<EventType>('training');
@@ -349,6 +353,7 @@ export default function EditEventScreen() {
   const [uniform, setUniform] = useState<UniformOption | null>(null);
   const [playerNotes, setPlayerNotes] = useState('');
   const [coachNotes, setCoachNotes] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
   const [requireRsvp, setRequireRsvp] = useState(true);
   const [rsvpLockHours, setRsvpLockHours] = useState(24);
 
@@ -362,7 +367,7 @@ export default function EditEventScreen() {
   async function loadEvent() {
     const { data } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,require_rsvp,rsvp_lock_at,team_id')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at')
       .eq('id', eventId)
       .single();
     if (data) setEventTeamId((data as any).team_id ?? null);
@@ -373,7 +378,7 @@ export default function EditEventScreen() {
 
     if (data.type === 'game') {
       const { homeAway: ha, opponent } = parseGameTitle(data.title);
-      setHomeAway(ha);
+      setHomeAway((data.home_away as 'home' | 'away') ?? ha);
       setTitle(opponent);
     } else {
       setTitle(data.title);
@@ -400,8 +405,17 @@ export default function EditEventScreen() {
     setUniform((data.uniform as UniformOption) ?? null);
     setPlayerNotes(data.notes ?? '');
     setCoachNotes(data.coach_notes ?? '');
+    setVideoUrl((data as any).video_url ?? '');
     setRequireRsvp(data.require_rsvp ?? true);
     setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time));
+    setIsCancelled(!!(data as any).cancelled_at);
+
+    originalRef.current = {
+      date: data.event_date,
+      time: data.event_time ?? null,
+      location: data.location ?? '',
+      videoUrl: (data as any).video_url ?? null,
+    };
 
     setLocationKey(k => k + 1);
     setLoading(false);
@@ -439,20 +453,46 @@ export default function EditEventScreen() {
       field_type: fieldType ?? null,
       field_notes: fieldNotes.trim() || null,
       uniform: uniform ?? null,
+      home_away: eventType === 'game' ? homeAway : null,
       notes: playerNotes.trim() || null,
       coach_notes: coachNotes.trim() || null,
+      video_url: videoUrl.trim() || null,
       require_rsvp: requireRsvp,
       rsvp_lock_at: computeLockAt(),
     }).eq('id', eventId);
 
     if (eventTeamId) {
+      const orig = originalRef.current;
+      let pushBody = `${savedTitle} has been updated`;
+      if (orig) {
+        const newDateStr = eventDate;
+        const newTimeStr = eventTime;
+        const newLocStr = locationName.trim();
+        if (newDateStr !== orig.date) {
+          pushBody = `${savedTitle} moved to ${fmtDate(date)}`;
+        } else if (newTimeStr !== orig.time) {
+          pushBody = `${savedTitle} time changed to ${hasTime ? fmtTime(startTime) : 'TBD'}`;
+        } else if (newLocStr !== orig.location) {
+          pushBody = `${savedTitle} location updated`;
+        }
+      }
       sendTeamPush({
         teamId: eventTeamId,
         title: 'Schedule updated',
-        body: `${savedTitle} has been updated`,
+        body: pushBody,
         excludeProfileId: profile?.id,
         data: { type: 'schedule_change', event_id: eventId },
       });
+      // Extra push when a recording is newly added
+      if (videoUrl.trim() && orig && !orig.videoUrl) {
+        sendTeamPush({
+          teamId: eventTeamId,
+          title: 'Recording available',
+          body: `Watch the recording for ${savedTitle}`,
+          excludeProfileId: profile?.id,
+          data: { type: 'video_added', event_id: eventId },
+        });
+      }
     }
     setSaving(false);
     router.back();
@@ -472,6 +512,63 @@ export default function EditEventScreen() {
     router.back(); // pop both edit and detail
   }
 
+  function confirmCancel() {
+    Alert.prompt(
+      'Cancel Event',
+      'Add a reason for parents (optional):',
+      [
+        { text: 'Keep Event', style: 'cancel' },
+        { text: 'Cancel Event', style: 'destructive', onPress: (reason: string | undefined) => handleCancelEvent(reason ?? '') },
+      ],
+      'plain-text',
+      '',
+    );
+  }
+
+  async function handleCancelEvent(reason: string) {
+    if (!eventId) return;
+    setCancelling(true);
+    const { error } = await supabase.from('events').update({
+      cancelled_at: new Date().toISOString(),
+      cancellation_reason: reason.trim() || null,
+    } as any).eq('id', eventId);
+    setCancelling(false);
+    if (error) {
+      Alert.alert('Error', 'Could not cancel the event. Please try again.');
+      return;
+    }
+    if (eventTeamId) {
+      const titleLabel = eventType === 'game'
+        ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
+        : title.trim();
+      sendTeamPush({
+        teamId: eventTeamId,
+        title: 'Event cancelled',
+        body: reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`,
+        excludeProfileId: profile?.id,
+        data: { type: 'event_cancelled', event_id: eventId },
+      });
+    }
+    setIsCancelled(true);
+    Alert.alert('Event cancelled', 'Parents have been notified by push notification.');
+  }
+
+  async function handleUncancelEvent() {
+    if (!eventId) return;
+    setCancelling(true);
+    const { error } = await supabase.from('events').update({
+      cancelled_at: null,
+      cancellation_reason: null,
+    } as any).eq('id', eventId);
+    setCancelling(false);
+    if (error) {
+      Alert.alert('Error', 'Could not restore the event. Please try again.');
+      return;
+    }
+    setIsCancelled(false);
+    Alert.alert('Event restored', 'This event is back on. Parents will see it as active.');
+  }
+
   const canSave = title.trim().length > 0 && !saving;
 
   if (loading) {
@@ -484,23 +581,22 @@ export default function EditEventScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Event</Text>
-        <TouchableOpacity
-          style={[styles.headerSaveBtn, { backgroundColor: primaryColor }, !canSave && { opacity: 0.4 }]}
-          onPress={handleSave}
-          disabled={!canSave}
-        >
-          {saving
-            ? <ActivityIndicator size="small" color="#000" />
-            : <Text style={styles.headerSaveBtnText}>Save</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      <ClubHeader
+        title="Edit Event"
+        onBack={() => router.back()}
+        right={
+          <TouchableOpacity
+            style={[headerBtnStyle as object, { backgroundColor: secondaryColor, opacity: canSave ? 1 : 0.4 }]}
+            onPress={handleSave}
+            disabled={!canSave}
+          >
+            {saving
+              ? <ActivityIndicator size="small" color={onSecondary} />
+              : <Text style={{ color: onSecondary, fontWeight: '800', fontSize: 12 }}>Save</Text>
+            }
+          </TouchableOpacity>
+        }
+      />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -561,7 +657,7 @@ export default function EditEventScreen() {
                 value={title}
                 onChangeText={setTitle}
                 placeholder={eventType === 'game' ? 'Opponent…' : 'Event title…'}
-                placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                placeholderTextColor={PULSE_COLORS.ui.muted}
                 returnKeyType="done"
               />
             </View>
@@ -584,7 +680,7 @@ export default function EditEventScreen() {
                 <ValueText v={hasTime ? fmtTime(startTime) : 'No time'} color={primaryColor} />
                 {hasTime && (
                   <TouchableOpacity onPress={() => setHasTime(false)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -598,7 +694,7 @@ export default function EditEventScreen() {
                 </Text>
                 {duration !== null && (
                   <TouchableOpacity onPress={() => setDuration(null)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -612,7 +708,7 @@ export default function EditEventScreen() {
                 </Text>
                 {arrival !== null && (
                   <TouchableOpacity onPress={() => setArrival(null)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -623,13 +719,13 @@ export default function EditEventScreen() {
           <SectionHeader title="Location" />
           <Card>
             <View style={styles.locationNameRow}>
-              <Ionicons name="business-outline" size={17} color={DUGOUT_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
               <TextInput
                 style={styles.inlineInput}
                 value={locationName}
                 onChangeText={setLocationName}
                 placeholder="Venue name (e.g. City Park)"
-                placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                placeholderTextColor={PULSE_COLORS.ui.muted}
                 returnKeyType="next"
               />
             </View>
@@ -648,27 +744,27 @@ export default function EditEventScreen() {
             </View>
             <RowDivider />
             <View style={styles.locationNameRow}>
-              <Ionicons name="create-outline" size={17} color={DUGOUT_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="create-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
               <TextInput
                 style={styles.inlineInput}
                 value={fieldNotes}
                 onChangeText={setFieldNotes}
                 placeholder="Field details (e.g. Field 1, Pitch B)"
-                placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                placeholderTextColor={PULSE_COLORS.ui.muted}
                 returnKeyType="next"
               />
             </View>
             <RowDivider />
             <FieldRow icon="layers-outline" label="Surface">
               <View style={styles.chipRow}>
-                {(['turf', 'grass'] as FieldOption[]).map((f) => (
+                {(['grass', 'turf', 'indoor'] as FieldOption[]).map((f) => (
                   <TouchableOpacity
                     key={f}
                     style={[styles.chip, fieldType === f && [styles.chipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
                     onPress={() => setFieldType(fieldType === f ? null : f)}
                   >
                     <Text style={[styles.chipText, fieldType === f && [styles.chipTextActive, { color: primaryColor }]]}>
-                      {f === 'turf' ? 'Turf' : 'Grass'}
+                      {f === 'grass' ? 'Grass' : f === 'turf' ? 'Turf' : 'Indoor'}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -697,7 +793,7 @@ export default function EditEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="chatbubble-ellipses-outline" size={17} color={DUGOUT_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="chatbubble-ellipses-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Team message</Text>
                 <TextInput
@@ -705,7 +801,7 @@ export default function EditEventScreen() {
                   value={playerNotes}
                   onChangeText={setPlayerNotes}
                   placeholder="Visible to all players and parents…"
-                  placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
                   multiline
                   numberOfLines={3}
                 />
@@ -714,7 +810,7 @@ export default function EditEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="lock-closed-outline" size={17} color={DUGOUT_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="lock-closed-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Coach notes <Text style={styles.coachOnlyTag}>(coach only)</Text></Text>
                 <TextInput
@@ -722,9 +818,27 @@ export default function EditEventScreen() {
                   value={coachNotes}
                   onChangeText={setCoachNotes}
                   placeholder="Notes for coaching staff…"
-                  placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
                   multiline
                   numberOfLines={3}
+                />
+              </View>
+            </View>
+
+            <RowDivider />
+            <View style={styles.notesRow}>
+              <Ionicons name="videocam-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>Video link</Text>
+                <TextInput
+                  style={[styles.notesInput, { minHeight: 0 }]}
+                  value={videoUrl}
+                  onChangeText={setVideoUrl}
+                  placeholder="Veo, YouTube, Hudl URL…"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                  returnKeyType="done"
                 />
               </View>
             </View>
@@ -734,7 +848,7 @@ export default function EditEventScreen() {
               <Switch
                 value={requireRsvp}
                 onValueChange={setRequireRsvp}
-                trackColor={{ false: DUGOUT_COLORS.ui.border, true: primaryColor }}
+                trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
                 thumbColor="#fff"
               />
             </FieldRow>
@@ -760,6 +874,37 @@ export default function EditEventScreen() {
               </>
             )}
           </Card>
+
+          {/* ── Cancel / Uncancel ───────────────────────── */}
+          {isCancelled ? (
+            <TouchableOpacity
+              style={styles.uncancelBtn}
+              onPress={handleUncancelEvent}
+              disabled={cancelling}
+            >
+              {cancelling
+                ? <ActivityIndicator size="small" color="#22c55e" />
+                : <>
+                    <Ionicons name="refresh-circle-outline" size={16} color="#22c55e" />
+                    <Text style={styles.uncancelBtnText}>Restore Event</Text>
+                  </>
+              }
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.cancelEventBtn}
+              onPress={confirmCancel}
+              disabled={cancelling}
+            >
+              {cancelling
+                ? <ActivityIndicator size="small" color="#F59E0B" />
+                : <>
+                    <Ionicons name="close-circle-outline" size={16} color="#F59E0B" />
+                    <Text style={styles.cancelEventBtnText}>Cancel Event</Text>
+                  </>
+              }
+            </TouchableOpacity>
+          )}
 
           {/* ── Delete ──────────────────────────────────── */}
           <TouchableOpacity style={styles.deleteBtn} onPress={confirmDelete} disabled={deleting}>
@@ -818,19 +963,19 @@ export default function EditEventScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.background },
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
   headerSaveBtn: {
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20,
   },
   headerSaveBtnText: { color: '#000', fontWeight: '800', fontSize: 14 },
@@ -838,42 +983,42 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: 16, paddingTop: 20 },
 
   sectionHeader: {
-    fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1, marginBottom: 8, marginTop: 4,
   },
 
   card: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16, marginBottom: 20, overflow: 'hidden',
   },
 
-  rowDivider: { height: 1, backgroundColor: DUGOUT_COLORS.ui.border },
+  rowDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
 
   typeRow: { flexDirection: 'row', padding: 12, gap: 8, flexWrap: 'wrap' },
   typeChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
-  typeChipText: { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  typeChipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4 },
-  titlePrefix: { fontSize: 18, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, marginRight: 6 },
+  titlePrefix: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.muted, marginRight: 6 },
   titleInput: {
-    flex: 1, fontSize: 18, fontWeight: '700', color: DUGOUT_COLORS.ui.text,
+    flex: 1, fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text,
     paddingVertical: 12,
   },
 
   homeAwayRow: { flexDirection: 'row', gap: 10, padding: 12 },
   homeAwayTile: {
     flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 12,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
-  homeAwayTileActive: { borderColor: DUGOUT_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.1)' },
-  homeAwayLabel: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.muted },
-  homeAwayLabelActive: { color: DUGOUT_COLORS.brand.green },
+  homeAwayTileActive: { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.1)' },
+  homeAwayLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  homeAwayLabelActive: { color: PULSE_COLORS.brand.green },
 
   fieldRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -883,9 +1028,9 @@ const styles = StyleSheet.create({
   fieldRowRight: { flex: 1, alignItems: 'flex-end' },
   fieldRowActions: { flexDirection: 'row', alignItems: 'center' },
   fieldIcon: { width: 24 },
-  fieldLabel: { fontSize: 14, color: DUGOUT_COLORS.ui.text, fontWeight: '500' },
-  fieldValue: { fontSize: 14, color: DUGOUT_COLORS.brand.green, fontWeight: '600' },
-  fieldValueMuted: { fontSize: 14, color: DUGOUT_COLORS.ui.muted, fontWeight: '400' },
+  fieldLabel: { fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '500' },
+  fieldValue: { fontSize: 14, color: PULSE_COLORS.brand.green, fontWeight: '600' },
+  fieldValueMuted: { fontSize: 14, color: PULSE_COLORS.ui.muted, fontWeight: '400' },
 
   locationNameRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -894,40 +1039,54 @@ const styles = StyleSheet.create({
   locationInputRow: { paddingHorizontal: 16, paddingVertical: 12 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
-  inlineInput: { flex: 1, color: DUGOUT_COLORS.ui.text, fontSize: 14 },
+  inlineInput: { flex: 1, color: PULSE_COLORS.ui.text, fontSize: 14 },
   suggestionBox: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 10, marginTop: 4, overflow: 'hidden',
   },
   suggestionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12 },
-  suggestionBorder: { borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
-  suggestionText: { flex: 1, fontSize: 13, color: DUGOUT_COLORS.ui.text, lineHeight: 18 },
+  suggestionBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  suggestionText: { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.text, lineHeight: 18 },
 
   chipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
   chip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
-  chipActive: { borderColor: DUGOUT_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
-  chipText: { fontSize: 12, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
-  chipTextActive: { color: DUGOUT_COLORS.brand.green },
+  chipActive: { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
+  chipText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  chipTextActive: { color: PULSE_COLORS.brand.green },
 
   notesRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   notesInput: {
-    color: DUGOUT_COLORS.ui.text, fontSize: 14, marginTop: 6,
+    color: PULSE_COLORS.ui.text, fontSize: 14, marginTop: 6,
     minHeight: 70, textAlignVertical: 'top',
   },
-  coachOnlyTag: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontStyle: 'italic' },
+  coachOnlyTag: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
 
-  deleteBtn: {
+  cancelEventBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingVertical: 14, borderRadius: 12, marginTop: 4,
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: 'rgba(245,158,11,0.08)',
+  },
+  cancelEventBtnText: { color: '#F59E0B', fontWeight: '700', fontSize: 15 },
+  uncancelBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14, borderRadius: 12, marginTop: 4,
+    borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
+    backgroundColor: 'rgba(34,197,94,0.08)',
+  },
+  uncancelBtnText: { color: '#22c55e', fontWeight: '700', fontSize: 15 },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14, borderRadius: 12, marginTop: 8,
     borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
     backgroundColor: 'rgba(239,68,68,0.08)',
   },

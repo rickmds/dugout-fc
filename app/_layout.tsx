@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Image, StyleSheet } from 'react-native';
+import { Animated, Dimensions, StyleSheet } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
@@ -58,9 +59,39 @@ function AppShell() {
   return <Stack screenOptions={{ headerShown: false }} />;
 }
 
+function SplashVideo({ onFinished }: { onFinished: () => void }) {
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const player = useVideoPlayer(require('../assets/Splash.mp4'), (p) => {
+    p.loop = false;
+    p.muted = true;
+    p.play();
+  });
+
+  useEffect(() => {
+    const sub = player.addListener('playToEnd', () => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => onFinished());
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, styles.overlay, { opacity: fadeAnim }]}>
+      <VideoView
+        player={player}
+        style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }]}
+        contentFit="fill"
+        nativeControls={false}
+      />
+    </Animated.View>
+  );
+}
+
 export default function RootLayout() {
   const [splashDone, setSplashDone] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Linking.getInitialURL().then((url) => {
@@ -70,30 +101,10 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
-  useEffect(() => {
-    // Adjust this to match the length of your GIF in milliseconds
-    const timer = setTimeout(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => setSplashDone(true));
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
   return (
     <AuthProvider>
       <AppShell />
-      {!splashDone && (
-        <Animated.View style={[StyleSheet.absoluteFill, styles.overlay, { opacity: fadeAnim }]}>
-          <Image
-            source={require('../assets/splash.gif')}
-            style={{ width: Dimensions.get('window').width, height: Dimensions.get('window').height }}
-            resizeMode="stretch"
-          />
-        </Animated.View>
-      )}
+      {!splashDone && <SplashVideo onFinished={() => setSplashDone(true)} />}
     </AuthProvider>
   );
 }

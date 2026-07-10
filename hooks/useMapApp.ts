@@ -10,7 +10,7 @@ export type MapTarget = {
   lng?: number | null;
 };
 
-const STORAGE_KEY = 'dugout_preferred_map_app';
+const STORAGE_KEY = 'pulse_preferred_map_app';
 
 function buildUrl(app: MapApp, target: MapTarget): string {
   const hasCoords = target.lat != null && target.lng != null;

@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
@@ -50,7 +50,7 @@ export default function ResetPasswordScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.doneWrap}>
           <View style={styles.doneIcon}>
-            <Ionicons name="checkmark-circle" size={56} color={DUGOUT_COLORS.brand.green} />
+            <Ionicons name="checkmark-circle" size={56} color={PULSE_COLORS.brand.green} />
           </View>
           <Text style={styles.doneTitle}>Password updated</Text>
           <Text style={styles.doneSub}>You can now log in with your new password.</Text>
@@ -75,7 +75,7 @@ export default function ResetPasswordScreen() {
           showsVerticalScrollIndicator={false}
         >
           <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/(auth)/login')}>
-            <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.text} />
+            <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.text} />
           </TouchableOpacity>
 
           <Text style={styles.title}>Set new password</Text>
@@ -119,35 +119,35 @@ export default function ResetPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   scroll: { padding: 24, paddingTop: 16, paddingBottom: 60 },
   backBtn: {
     width: 38, height: 38, borderRadius: 19,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 32,
   },
   title: {
-    fontSize: 30, fontWeight: '800', color: DUGOUT_COLORS.ui.text,
+    fontSize: 30, fontWeight: '800', color: PULSE_COLORS.ui.text,
     letterSpacing: -0.5, marginBottom: 8,
   },
   sub: {
-    fontSize: 15, color: DUGOUT_COLORS.ui.textSecondary,
+    fontSize: 15, color: PULSE_COLORS.ui.textSecondary,
     lineHeight: 22, marginBottom: 32,
   },
   backLinkBtn: { alignItems: 'center', marginTop: 20 },
-  backLinkText: { color: DUGOUT_COLORS.ui.muted, fontSize: 14, fontWeight: '500' },
+  backLinkText: { color: PULSE_COLORS.ui.muted, fontSize: 14, fontWeight: '500' },
   doneWrap: {
     flex: 1, justifyContent: 'center',
     padding: 32, gap: 12,
   },
   doneIcon: { marginBottom: 8 },
   doneTitle: {
-    fontSize: 28, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.5,
+    fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.5,
   },
   doneSub: {
-    fontSize: 15, color: DUGOUT_COLORS.ui.textSecondary,
+    fontSize: 15, color: PULSE_COLORS.ui.textSecondary,
     lineHeight: 22, marginBottom: 12,
   },
 });

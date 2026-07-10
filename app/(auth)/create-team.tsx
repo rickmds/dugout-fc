@@ -11,7 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
@@ -141,16 +141,16 @@ export default function CreateTeamScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex:        { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  flex:        { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   container:   { padding: 24, paddingTop: 70, paddingBottom: 40 },
   back:        { marginBottom: 24 },
-  backText:    { color: DUGOUT_COLORS.brand.green, fontSize: 16, fontWeight: '600' },
-  heading:     { fontSize: 28, fontWeight: '800', color: DUGOUT_COLORS.ui.text, marginBottom: 8 },
-  subheading:  { fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary, marginBottom: 28 },
+  backText:    { color: PULSE_COLORS.brand.green, fontSize: 16, fontWeight: '600' },
+  heading:     { fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 8 },
+  subheading:  { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, marginBottom: 28 },
   button:      { marginTop: 24 },
 
   fieldBlock:  { marginBottom: 20 },
-  fieldLabel:  { fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
+  fieldLabel:  { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
 
   pillRow: { flexDirection: 'row', gap: 8 },
   pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -160,19 +160,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
   },
   pillActive: {
-    borderColor: DUGOUT_COLORS.brand.green,
-    backgroundColor: `${DUGOUT_COLORS.brand.green}18`,
+    borderColor: PULSE_COLORS.brand.green,
+    backgroundColor: `${PULSE_COLORS.brand.green}18`,
   },
   pillText: {
     fontSize: 13,
     fontWeight: '700',
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
   },
   pillTextActive: {
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
   },
 });

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   GameFormat,
@@ -10,13 +10,26 @@ import {
   getFormationById,
 } from '../constants/formations';
 
-const FAV_STORAGE_KEY = 'dugout_favourite_formations';
+const FAV_STORAGE_KEY = 'pulse_favourite_formations';
 
 export function useLineup(teamAgeGroup?: string | null) {
   const [format, setFormat] = useState<GameFormat>(() => detectFormat(teamAgeGroup));
   const [selectedFormationId, setSelectedFormationId] = useState<string>(
     () => DEFAULT_FORMATION_PER_FORMAT[detectFormat(teamAgeGroup)]
   );
+
+  // Re-detect format when teamAgeGroup first loads (it starts undefined, then resolves async)
+  useEffect(() => {
+    if (!teamAgeGroup) return;
+    const detected = detectFormat(teamAgeGroup);
+    setFormat(detected);
+    // Only reset selected formation if it belongs to the wrong format
+    setSelectedFormationId(prev => {
+      const current = getFormationById(prev);
+      if (current && current.format === detected) return prev;
+      return DEFAULT_FORMATION_PER_FORMAT[detected];
+    });
+  }, [teamAgeGroup]);
   const [favourites, setFavourites] = useState<string[]>(DEFAULT_FAVOURITES);
   const [favsLoaded, setFavsLoaded] = useState(false);
 

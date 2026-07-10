@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -18,11 +19,13 @@ import { useNavigation, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../../lib/supabase';
 import { useAuth } from '../../../../../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../../../constants/colors';
 import { useClub } from '../../../../../../hooks/useClub';
+import ClubHeader from '../../../../../../components/ui/ClubHeader';
 import {
   Formation,
   FORMATIONS_BY_FORMAT,
+  DEFAULT_FORMATION_PER_FORMAT,
   detectFormat,
   getFormationById,
 } from '../../../../../../constants/formations';
@@ -65,12 +68,12 @@ type Player = {
   full_name: string;
   jersey_number: number | null;
   position: string | null;
+  isGuest?: boolean;
 };
 
 type PitchLayout = { pageX: number; pageY: number; width: number; height: number };
 type DragState   = { playerId: string; pageX: number; pageY: number } | null;
-type SubEntry    = { minute: number; player_off: string; player_on: string; note: string };
-type SubPlan     = { summary: string; target_minutes: number; subs: SubEntry[]; playing_time: { name: string; minutes: number }[] };
+type EqRotation  = { minute: number; playerOn: string; playerOff: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -92,8 +95,37 @@ function secondsPlayed(periods: Period[], pid: string, now: Date): number {
   }, 0);
 }
 
+function totalElapsedForSession(s: GameSession, ref: Date): number {
+  const halfLen = s.half_length_seconds;
+  let total = 0;
+  if (s.half1_started_at) {
+    const end = s.half1_ended_at ? new Date(s.half1_ended_at).getTime() : ref.getTime();
+    total += Math.min(halfLen, Math.max(0, (end - new Date(s.half1_started_at).getTime()) / 1000));
+  }
+  if (s.half2_started_at) {
+    const end = s.half2_ended_at ? new Date(s.half2_ended_at).getTime() : ref.getTime();
+    total += Math.min(halfLen, Math.max(0, (end - new Date(s.half2_started_at).getTime()) / 1000));
+  }
+  return total;
+}
+
+function getEqColor(playerSecs: number, targetSecs: number, remainingSecs: number): string | null {
+  const deficit = targetSecs - playerSecs;
+  if (deficit <= 30) return null;
+  return deficit > remainingSecs ? '#EF4444' : '#F97316';
+}
+
 function initials(name: string): string {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function getContrastColor(hex: string): '#000000' | '#ffffff' {
+  const c = hex.replace('#', '');
+  if (c.length < 6) return '#ffffff';
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55 ? '#000000' : '#ffffff';
 }
 
 function firstName(name: string): string {
@@ -217,11 +249,13 @@ type MatchTrackerContentProps = { eventId: string; clubSlug: string; onClose: ()
 
 export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTrackerContentProps) {
   const { primaryColor, rgba } = useClub();
-  const { profile } = useAuth();
+  const { profile, club } = useAuth();
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [loading,         setLoading]         = useState(true);
   const [eventTitle,      setEventTitle]      = useState('');
+  const [scoreHome,       setScoreHome]       = useState(0);
+  const [scoreAway,       setScoreAway]       = useState(0);
   const [session,         setSession]         = useState<GameSession | null>(null);
   const [periods,         setPeriods]         = useState<Period[]>([]);
   const [allPlayers,      setAllPlayers]      = useState<Player[]>([]);
@@ -240,13 +274,10 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   const [overlay,         setOverlay]         = useState<'half_time' | 'full_time' | null>(null);
   const [fmPicker,        setFmPicker]        = useState(false);
   const [baseAssignments, setBaseAssignments] = useState<(string | null)[] | null>(null);
-  const [subPlan,         setSubPlan]         = useState<SubPlan | null>(null);
-  const [subPlanning,     setSubPlanning]     = useState(false);
-  const [subPlanVisible,  setSubPlanVisible]  = useState(false);
-  const [subGameLength,   setSubGameLength]   = useState('60');
-  const [subHalves,       setSubHalves]       = useState('2');
+  const [eqTimeVisible,   setEqTimeVisible]   = useState(false);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
+  const pendingCloseRef   = useRef(false);
   const timerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
   const pitchViewRef      = useRef<View>(null);
   const pitchLayoutRef    = useRef<PitchLayout | null>(null);
@@ -261,14 +292,15 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   const baseAssignmentsRef = useRef<(string | null)[] | null>(null);
   const benchViewRefs     = useRef<Map<string, View | null>>(new Map());
   const benchMeasure      = useRef<Map<string, { cx: number; cy: number; r: number }>>(new Map());
+  const benchRef          = useRef<Player[]>([]);
 
-  useEffect(() => { assignmentsRef.current  = pitchAssignments; }, [pitchAssignments]);
-  useEffect(() => { formationRef.current    = formation; },       [formation]);
-  useEffect(() => { periodsRef.current      = periods; },         [periods]);
-  useEffect(() => { sessionRef.current      = session; },         [session]);
-  useEffect(() => { teamIdRef.current       = teamId; },          [teamId]);
-  useEffect(() => { lineupIdRef.current      = lineupId; },         [lineupId]);
-  useEffect(() => { baseAssignmentsRef.current = baseAssignments; }, [baseAssignments]);
+  useEffect(() => { assignmentsRef.current     = pitchAssignments; }, [pitchAssignments]);
+  useEffect(() => { formationRef.current       = formation; },        [formation]);
+  useEffect(() => { periodsRef.current         = periods; },          [periods]);
+  useEffect(() => { sessionRef.current         = session; },          [session]);
+  useEffect(() => { teamIdRef.current          = teamId; },           [teamId]);
+  useEffect(() => { lineupIdRef.current        = lineupId; },         [lineupId]);
+  useEffect(() => { baseAssignmentsRef.current = baseAssignments; },  [baseAssignments]);
 
   // ── Confirm before leaving a live game ───────────────────────────────────
   function handleClose() {
@@ -291,6 +323,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
     const on = new Set(pitchAssignments.filter(Boolean) as string[]);
     return allPlayers.filter(p => !on.has(p.id));
   }, [pitchAssignments, allPlayers]);
+  useEffect(() => { benchRef.current = bench; }, [bench]);
 
   const pendingIncoming = useMemo<Set<string>>(() => {
     if (!baseAssignments) return new Set();
@@ -327,13 +360,17 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   const load = useCallback(async () => {
     if (!eventId) return;
 
-    const { data: ev } = await supabase.from('events').select('title, team_id').eq('id', eventId).single();
+    let loadedAgeGroup: string | null = null;
+    const { data: ev } = await supabase.from('events').select('title, team_id, score_home, score_away').eq('id', eventId).single();
     if (ev) {
       setEventTitle((ev as any).title ?? '');
+      setScoreHome((ev as any).score_home ?? 0);
+      setScoreAway((ev as any).score_away ?? 0);
       const tid = (ev as any).team_id as string;
       setTeamId(tid);
       const { data: td } = await supabase.from('teams').select('age_group').eq('id', tid).single();
-      setTeamAgeGroup((td as any)?.age_group ?? null);
+      loadedAgeGroup = (td as any)?.age_group ?? null;
+      setTeamAgeGroup(loadedAgeGroup);
     }
 
     const { data: sess } = await (supabase as any)
@@ -348,13 +385,18 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
       setPeriods((pds ?? []) as Period[]);
     }
 
-    const { data: rsvps } = await supabase
-      .from('event_rsvps').select('player_id').eq('event_id', eventId).eq('status', 'attending');
-    if (rsvps && rsvps.length > 0) {
-      const ids = (rsvps as any[]).map(r => r.player_id);
+    const [rsvpsRes, guestsRes] = await Promise.all([
+      supabase.from('event_rsvps').select('player_id').eq('event_id', eventId).eq('status', 'attending'),
+      (supabase as any).from('event_guests').select('player_id,status').eq('event_id', eventId).eq('role', 'player').eq('status', 'confirmed'),
+    ]);
+    const regularIds = ((rsvpsRes.data ?? []) as any[]).map(r => r.player_id as string);
+    const guestPlayerIds = ((guestsRes.data ?? []) as any[]).filter(g => g.player_id).map(g => g.player_id as string);
+    const allIds = [...new Set([...regularIds, ...guestPlayerIds])];
+    if (allIds.length > 0) {
       const { data: pls } = await supabase
-        .from('players').select('id, full_name, jersey_number, position').in('id', ids).order('jersey_number');
-      setAllPlayers((pls ?? []) as Player[]);
+        .from('players').select('id, full_name, jersey_number, position').in('id', allIds).order('jersey_number');
+      const guestSet = new Set(guestPlayerIds);
+      setAllPlayers(((pls ?? []) as Player[]).map(p => ({ ...p, isGuest: guestSet.has(p.id) })));
     }
 
     const { data: lineup } = await supabase
@@ -368,14 +410,19 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
     if (lineup) {
       const lid = (lineup as any).id as string;
       setLineupId(lid);
-      const fm = getFormationById((lineup as any).formation);
+      let fm = getFormationById((lineup as any).formation);
+      // Only fall back if the saved formation ID is completely unrecognized
+      if (!fm) {
+        const expectedFormat = detectFormat(loadedAgeGroup);
+        fm = getFormationById(DEFAULT_FORMATION_PER_FORMAT[expectedFormat]);
+      }
       if (fm) {
         setFormation(fm);
         const lps: Array<{ player_id: string; x: number; y: number }> = (lineup as any).lineup_positions ?? [];
         const assignments: (string | null)[] = new Array(fm.positions.length).fill(null);
         lps.forEach(lp => {
           let best = -1, bestD = Infinity;
-          fm.positions.forEach((pos, i) => {
+          fm!.positions.forEach((pos, i) => {
             const d = Math.sqrt((lp.x - pos.x) ** 2 + (lp.y - pos.y) ** 2);
             if (d < bestD) { bestD = d; best = i; }
           });
@@ -393,6 +440,11 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   // ── Bench measurements ────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Remove stale entries for players no longer on bench
+    const currentBenchIds = new Set(bench.map(p => p.id));
+    for (const pid of benchMeasure.current.keys()) {
+      if (!currentBenchIds.has(pid)) benchMeasure.current.delete(pid);
+    }
     const t = setTimeout(() => {
       bench.forEach(p => {
         const el = benchViewRefs.current.get(p.id);
@@ -406,18 +458,29 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
 
   // ── Auto-stop ─────────────────────────────────────────────────────────────
 
+  // Fires every tick while game is live
   useEffect(() => {
     const s = sessionRef.current;
     if (!s || (s.status !== 'half1' && s.status !== 'half2')) return;
     if (halfElapsed(s) >= s.half_length_seconds) autoStop();
   }, [tick]);
 
+  // Also fires when session first loads — catches phone-lock/resume where ticker may have been paused
+  useEffect(() => {
+    if (!session || (session.status !== 'half1' && session.status !== 'half2')) return;
+    if (halfElapsed(session) >= session.half_length_seconds) autoStop();
+  }, [session]);
+
   async function autoStop() {
     const s = sessionRef.current;
-    if (!s) return;
+    if (!s || s.status === 'half_time' || s.status === 'full_time' || s.status === 'not_started') return;
     stopTicker();
     const isH1 = s.status === 'half1';
-    const endedAt = new Date().toISOString();
+    // Use the exact theoretical end time — not Date.now() which may be late if phone was locked
+    const startedAt = isH1 ? s.half1_started_at : s.half2_started_at;
+    const endedAt = startedAt
+      ? new Date(new Date(startedAt).getTime() + s.half_length_seconds * 1000).toISOString()
+      : new Date().toISOString();
     await (supabase as any).from('game_sessions').update({
       status:         isH1 ? 'half_time' : 'full_time',
       half1_ended_at: isH1 ? endedAt : s.half1_ended_at,
@@ -433,6 +496,17 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
       half2_ended_at: isH1 ? null : endedAt });
     setOverlay(isH1 ? 'half_time' : 'full_time');
   }
+
+  // ── Score ─────────────────────────────────────────────────────────────────
+
+  async function saveScore(home: number, away: number) {
+    await supabase.from('events').update({ score_home: home, score_away: away }).eq('id', eventId);
+  }
+
+  function incHome() { const n = scoreHome + 1; setScoreHome(n); saveScore(n, scoreAway); }
+  function decHome() { const n = Math.max(0, scoreHome - 1); setScoreHome(n); saveScore(n, scoreAway); }
+  function incAway() { const n = scoreAway + 1; setScoreAway(n); saveScore(scoreHome, n); }
+  function decAway() { const n = Math.max(0, scoreAway - 1); setScoreAway(n); saveScore(scoreHome, n); }
 
   // ── Start game ────────────────────────────────────────────────────────────
 
@@ -553,41 +627,21 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
 
   // ── Sub rotation plan ─────────────────────────────────────────────────────
 
-  function handleOpenSubPlan() {
-    if (session) {
-      setSubGameLength(String(Math.round(session.half_length_seconds * 2 / 60)));
-      setSubHalves('2');
-    }
-    setSubPlanVisible(true);
-  }
-
-  async function handlePlanSubs() {
-    const onPitch   = new Set(assignmentsRef.current.filter(Boolean) as string[]);
-    const starters  = allPlayers.filter(p => onPitch.has(p.id));
-    const subs      = allPlayers.filter(p => !onPitch.has(p.id));
-    if (starters.length === 0) {
-      Alert.alert('No lineup', 'Set your lineup before generating a sub plan.');
-      return;
-    }
-    if (subs.length === 0) {
-      Alert.alert('No substitutes', 'All players are on the pitch — no subs to plan.');
-      return;
-    }
-    setSubPlanning(true);
-    const { data, error } = await supabase.functions.invoke('plan-subs', {
-      body: {
-        starters: starters.map(p => ({ id: p.id, full_name: p.full_name, position: p.position })),
-        subs:     subs.map(p     => ({ id: p.id, full_name: p.full_name, position: p.position })),
-        game_length: parseInt(subGameLength, 10) || 60,
-        halves:      parseInt(subHalves, 10) || 2,
-      },
-    });
-    setSubPlanning(false);
-    if (error || !data?.subs) {
-      Alert.alert('AI unavailable', 'Could not generate sub plan. Try again.');
-      return;
-    }
-    setSubPlan(data as SubPlan);
+  function calcEqTime(): { targetMins: number; gameMinutes: number; rotations: EqRotation[] } | null {
+    if (!session || allPlayers.length === 0) return null;
+    const gameMinutes   = Math.round(session.half_length_seconds * 2 / 60);
+    const onPitchIds    = new Set(pitchAssignments.filter(Boolean) as string[]);
+    const starters      = allPlayers.filter(p => onPitchIds.has(p.id));
+    const benchPlayers  = allPlayers.filter(p => !onPitchIds.has(p.id));
+    if (starters.length === 0 || benchPlayers.length === 0) return null;
+    const targetMins  = Math.round((gameMinutes * starters.length) / allPlayers.length);
+    const baseMinute  = gameMinutes - targetMins;
+    const rotations: EqRotation[] = benchPlayers.map((bp, i) => ({
+      minute:    Math.max(1, Math.min(gameMinutes - 1, baseMinute + i * 3)),
+      playerOn:  bp.full_name,
+      playerOff: starters[i % starters.length].full_name,
+    }));
+    return { targetMins, gameMinutes, rotations };
   }
 
   // ── Formation change ──────────────────────────────────────────────────────
@@ -624,7 +678,9 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   // ── PanResponder ──────────────────────────────────────────────────────────
 
   function benchPlayerAt(px: number, py: number): string | null {
+    const currentBenchIds = new Set(benchRef.current.map(p => p.id));
     for (const [pid, m] of benchMeasure.current.entries()) {
+      if (!currentBenchIds.has(pid)) continue;
       if (Math.sqrt((px - m.cx) ** 2 + (py - m.cy) ** 2) <= m.r) return pid;
     }
     return null;
@@ -681,6 +737,9 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
 
   // ── Render values ─────────────────────────────────────────────────────────
 
+  const tokenTextColor = getContrastColor(primaryColor);
+  const opponentName   = eventTitle.replace(/^vs\.?\s+/i, '').trim() || 'Them';
+
   const isLive    = session?.status === 'half1' || session?.status === 'half2';
   const elapsed   = session ? halfElapsed(session) : 0;
   // Freeze player times at the exact moment the clock stopped — never count past half/full time
@@ -688,18 +747,38 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
     if (!session) return new Date();
     if (session.status === 'half_time' && session.half1_ended_at) return new Date(session.half1_ended_at);
     if (session.status === 'full_time' && session.half2_ended_at) return new Date(session.half2_ended_at);
+    // Cap at theoretical half end time even if autoStop hasn't fired yet (e.g. phone was locked)
+    if (session.status === 'half1' || session.status === 'half2') {
+      const startedAt = session.status === 'half1' ? session.half1_started_at : session.half2_started_at;
+      if (startedAt) {
+        const theoreticalEnd = new Date(new Date(startedAt).getTime() + session.half_length_seconds * 1000);
+        if (new Date() > theoreticalEnd) return theoreticalEnd;
+      }
+    }
     return new Date();
   })();
-  const halfLen   = session?.half_length_seconds ?? 0;
-  const progress  = halfLen > 0 ? Math.min(1, elapsed / halfLen) : 0;
+  const halfLen       = session?.half_length_seconds ?? 0;
+  const progress      = halfLen > 0 ? Math.min(1, elapsed / halfLen) : 0;
+  const totalGameSecs = halfLen * 2;
+  const totalElapsed  = session ? totalElapsedForSession(session, referenceTime) : 0;
+  const remainingSecs = Math.max(0, totalGameSecs - totalElapsed);
+  const pitchSlots    = formation?.positions.length ?? 0;
+  const eqTargetSecs  = (allPlayers.length > 0 && pitchSlots > 0 && totalGameSecs > 0 && bench.length > 0)
+    ? (totalGameSecs * pitchSlots) / allPlayers.length
+    : 0;
+  const showEqColors  = eqTargetSecs > 0
+    && !!session
+    && session.status !== 'not_started'
+    && session.status !== 'full_time'
+    && totalElapsed >= 300;
 
   const statusConfig: Record<GameStatus | 'none', { label: string; color: string }> = {
-    none:      { label: 'Pre-match',  color: DUGOUT_COLORS.ui.muted },
-    not_started:{ label: 'Pre-match', color: DUGOUT_COLORS.ui.muted },
+    none:      { label: 'Pre-match',  color: PULSE_COLORS.ui.muted },
+    not_started:{ label: 'Pre-match', color: PULSE_COLORS.ui.muted },
     half1:     { label: '1st Half',   color: primaryColor },
     half_time: { label: 'Half Time',  color: '#F59E0B' },
     half2:     { label: '2nd Half',   color: primaryColor },
-    full_time: { label: 'Full Time',  color: DUGOUT_COLORS.ui.muted },
+    full_time: { label: 'Full Time',  color: PULSE_COLORS.ui.muted },
   };
   const sc = statusConfig[session?.status ?? 'none'];
 
@@ -721,20 +800,20 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   return (
     <View style={st.root}>
 
-      {/* ── Header ── */}
-      <View style={st.header}>
-        <TouchableOpacity onPress={handleClose} style={st.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <View style={st.headerCenter}>
-          <Text style={st.headerTitle}>Match Tracker</Text>
-          <Text style={st.headerSub} numberOfLines={1}>{eventTitle}</Text>
-        </View>
-        <TouchableOpacity style={[st.fmChip, { backgroundColor: rgba(0.1), borderColor: rgba(0.25) }]} onPress={() => setFmPicker(true)}>
-          <Ionicons name="swap-horizontal-outline" size={13} color={primaryColor} />
-          <Text style={[st.fmChipText, { color: primaryColor }]}>{formation?.name ?? 'Formation'}</Text>
-        </TouchableOpacity>
-      </View>
+      <ClubHeader
+        title="Match Tracker"
+        subtitle={eventTitle}
+        onBack={handleClose}
+        right={
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}
+            onPress={() => setFmPicker(true)}
+          >
+            <Ionicons name="swap-horizontal-outline" size={13} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>{formation?.name ?? 'Formation'}</Text>
+          </TouchableOpacity>
+        }
+      />
 
       {/* ── Match bar ── */}
       <View style={st.matchBar}>
@@ -780,6 +859,41 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
         </View>
       )}
 
+      {/* ── Live score strip ── */}
+      <View style={st.scoreStrip}>
+        {/* Home (us) side */}
+        <View style={st.scoreSide}>
+          {club?.logo_url ? (
+            <Image source={{ uri: club.logo_url }} style={st.scoreLogo} />
+          ) : (
+            <View style={[st.scoreLogoFallback, { backgroundColor: primaryColor + '33' }]}>
+              <Text style={[st.scoreLogoFallbackText, { color: primaryColor }]}>
+                {(club?.name ?? 'US').slice(0, 2).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <TouchableOpacity onPress={incHome} hitSlop={8}>
+            <Text style={[st.scoreDigit, { color: primaryColor }]}>{scoreHome}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={decHome} hitSlop={10}>
+            <Ionicons name="remove-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={st.scoreSep}>—</Text>
+
+        {/* Away (them) side */}
+        <View style={[st.scoreSide, { flexDirection: 'row-reverse' }]}>
+          <Text style={st.scoreOppName} numberOfLines={1}>{opponentName}</Text>
+          <TouchableOpacity onPress={incAway} hitSlop={8}>
+            <Text style={[st.scoreDigit, { color: PULSE_COLORS.ui.textSecondary }]}>{scoreAway}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={decAway} hitSlop={10}>
+            <Ionicons name="remove-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* ── Pitch + Bench ── */}
       <View style={st.pitchBench} {...pan.panHandlers}>
 
@@ -809,6 +923,10 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
             const hovered   = hoveredSlot === i;
             const isPending = player ? pendingIncoming.has(player.id) : false;
             const secs      = player && isLive && !isPending ? secondsPlayed(periodsRef.current, player.id, referenceTime) : 0;
+            // Pitch players accumulate every second — only flag red if they genuinely can't reach target even by playing the whole remaining game
+            const eqCol = showEqColors && player && !isPending && (secs + remainingSecs < eqTargetSecs - 30)
+              ? '#EF4444'
+              : null;
 
             const cx = (pos.x / 100) * pitchLayout.width;
             const cy = (pos.y / 100) * pitchLayout.height;
@@ -822,12 +940,14 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                   isPending && st.tokenPending,
                   hovered && st.tokenHover,
                   !player && st.tokenEmpty,
+                  eqCol && { borderWidth: 2.5, borderColor: eqCol, shadowColor: eqCol, shadowOpacity: 0.85, shadowRadius: 16, shadowOffset: { width: 0, height: 4 }, elevation: 14 },
                 ]}
               >
                 {player ? (
                   <>
-                    <Text style={st.tokenNum}>{player.jersey_number ?? initials(player.full_name)}</Text>
-                    <Text style={st.tokenName} numberOfLines={1}>{firstName(player.full_name)}</Text>
+                    {player.isGuest && <View style={[st.guestDot, { position: 'absolute', top: 2, right: 2 }]}><Text style={st.guestDotText}>G</Text></View>}
+                    <Text style={[st.tokenNum, { color: tokenTextColor }]}>{player.jersey_number ?? initials(player.full_name)}</Text>
+                    <Text style={[st.tokenName, { color: tokenTextColor + 'cc' }]} numberOfLines={1}>{firstName(player.full_name)}</Text>
                     {isLive && secs > 0 && (
                       <View style={st.tokenTimeBadge}>
                         <Text style={st.tokenTimeText}>{fmtMins(secs)}</Text>
@@ -880,11 +1000,11 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                 {session && (
                   <TouchableOpacity
                     style={[st.subPlanChip, { backgroundColor: rgba(0.08), borderColor: rgba(0.22) }]}
-                    onPress={handleOpenSubPlan}
+                    onPress={() => setEqTimeVisible(true)}
                   >
-                    <Ionicons name="sparkles-outline" size={11} color={primaryColor} />
+                    <Ionicons name="timer-outline" size={11} color={primaryColor} />
                     <Text style={[st.subPlanChipText, { color: primaryColor }]}>
-                      {subPlan ? 'View Plan' : 'Sub Plan'}
+                      Equal Time
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -896,18 +1016,34 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
               const secs     = secondsPlayed(periodsRef.current, player.id, referenceTime);
               const wasSub   = secs > 0;
               const dragging = drag?.playerId === player.id;
+              const eqCol    = showEqColors ? getEqColor(secs, eqTargetSecs, remainingSecs) : null;
               return (
                 <View
                   key={player.id}
                   ref={el => { benchViewRefs.current.set(player.id, el); }}
-                  style={[st.benchToken, dragging && st.benchDragging, wasSub && [st.benchTokenUsed, { borderColor: rgba(0.35), backgroundColor: rgba(0.06) }]]}
+                  style={[
+                    st.benchToken,
+                    dragging && st.benchDragging,
+                    wasSub && [st.benchTokenUsed, { borderColor: rgba(0.35), backgroundColor: rgba(0.06) }],
+                    eqCol && {
+                      borderColor: eqCol,
+                      backgroundColor: eqCol + '22',
+                      shadowColor: eqCol,
+                      shadowOpacity: 0.9,
+                      shadowRadius: 18,
+                      shadowOffset: { width: 0, height: 6 },
+                      elevation: 14,
+                    },
+                  ]}
                 >
-                  {wasSub && <View style={[st.usedDot, { backgroundColor: primaryColor }]} />}
-                  <Text style={[st.benchNum, wasSub && [st.benchNumUsed, { color: primaryColor }]]}>
+                  {(wasSub && !eqCol) && <View style={[st.usedDot, { backgroundColor: primaryColor }]} />}
+                  {eqCol && <View style={[st.usedDot, { backgroundColor: eqCol }]} />}
+                  {player.isGuest && <View style={st.guestDot}><Text style={st.guestDotText}>G</Text></View>}
+                  <Text style={[st.benchNum, { color: eqCol ?? (wasSub ? primaryColor : PULSE_COLORS.ui.text) }]}>
                     {player.jersey_number ?? initials(player.full_name)}
                   </Text>
-                  <Text style={st.benchName} numberOfLines={1}>{firstName(player.full_name)}</Text>
-                  {wasSub && <Text style={[st.benchTime, { color: primaryColor }]}>{fmtMins(secs)}</Text>}
+                  <Text style={[st.benchName, eqCol && { color: eqCol + 'cc' }]} numberOfLines={1}>{firstName(player.full_name)}</Text>
+                  {wasSub && <Text style={[st.benchTime, { color: eqCol ?? primaryColor }]}>{fmtMins(secs)}</Text>}
                 </View>
               );
             })}
@@ -936,7 +1072,12 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
       })()}
 
       {/* ── Half-time / Full-time overlay ── */}
-      <Modal visible={overlay !== null} transparent animationType="fade">
+      <Modal
+        visible={overlay !== null}
+        transparent
+        animationType="fade"
+        onDismiss={() => { if (pendingCloseRef.current) { pendingCloseRef.current = false; onClose(); } }}
+      >
         <View style={st.overlayBg}>
           <View style={st.overlayCard}>
             <Text style={[st.overlayTitle, { color: overlay === 'half_time' ? '#F59E0B' : primaryColor }]}>
@@ -945,6 +1086,64 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
             <Text style={st.overlaySub}>
               {overlay === 'half_time' ? `${halfLen / 60} minutes played` : 'Match complete'}
             </Text>
+
+            {/* Score entry — prominent at full time */}
+            {overlay === 'full_time' && (
+              <View style={st.scoreEntry}>
+                <Text style={st.scoreEntryLabel}>FINAL SCORE</Text>
+                <View style={st.scoreEntryRow}>
+
+                  {/* Home */}
+                  <View style={st.scoreEntryTeam}>
+                    <View style={st.scoreEntryId}>
+                      {club?.logo_url ? (
+                        <Image source={{ uri: club.logo_url }} style={st.scoreEntryLogo} />
+                      ) : (
+                        <View style={[st.scoreEntryLogoFb, { backgroundColor: primaryColor + '33' }]}>
+                          <Text style={[st.scoreEntryLogoFbText, { color: primaryColor }]}>
+                            {(club?.name ?? 'US').slice(0, 2).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={[st.scoreEntryName, { color: primaryColor }]} numberOfLines={1}>
+                        {(club?.name ?? 'Us').split(' ')[0]}
+                      </Text>
+                    </View>
+                    <Text style={[st.scoreEntryNum, { color: primaryColor }]}>{scoreHome}</Text>
+                    <View style={st.scoreEntryBtns}>
+                      <TouchableOpacity onPress={decHome} style={st.scoreEntryBtn} hitSlop={8}>
+                        <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={incHome} style={[st.scoreEntryBtn, { borderColor: primaryColor + '55', backgroundColor: primaryColor + '18' }]} hitSlop={8}>
+                        <Ionicons name="add" size={20} color={primaryColor} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <Text style={st.scoreEntrySep}>—</Text>
+
+                  {/* Away */}
+                  <View style={st.scoreEntryTeam}>
+                    <View style={st.scoreEntryId}>
+                      <View style={st.scoreEntryOppBadge}>
+                        <Ionicons name="shield-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                      </View>
+                      <Text style={st.scoreEntryName} numberOfLines={1}>{opponentName}</Text>
+                    </View>
+                    <Text style={[st.scoreEntryNum, { color: PULSE_COLORS.ui.textSecondary }]}>{scoreAway}</Text>
+                    <View style={st.scoreEntryBtns}>
+                      <TouchableOpacity onPress={decAway} style={st.scoreEntryBtn} hitSlop={8}>
+                        <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={incAway} style={[st.scoreEntryBtn, { borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.08)' }]} hitSlop={8}>
+                        <Ionicons name="add" size={20} color={PULSE_COLORS.ui.textSecondary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                </View>
+              </View>
+            )}
 
             <View style={st.overlaySummary}>
               <View style={st.overlaySummaryHeader}>
@@ -966,7 +1165,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                           )}
                           <Text style={st.summaryName} numberOfLines={1}>{player.full_name}</Text>
                         </View>
-                        <Text style={[st.summaryTime, { color: secs > 0 ? primaryColor : DUGOUT_COLORS.ui.muted }]}>
+                        <Text style={[st.summaryTime, { color: secs > 0 ? primaryColor : PULSE_COLORS.ui.muted }]}>
                           {secs > 0 ? fmtMSS(secs) : '—'}
                         </Text>
                       </View>
@@ -978,11 +1177,11 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
             {overlay === 'half_time'
               ? <TouchableOpacity style={[st.overlayBtn, { backgroundColor: primaryColor }]} onPress={startHalf2} disabled={saving}>
                   {saving
-                    ? <ActivityIndicator size="small" color="#000" />
-                    : <Text style={st.overlayBtnText}>Start 2nd Half</Text>}
+                    ? <ActivityIndicator size="small" color={tokenTextColor} />
+                    : <Text style={[st.overlayBtnText, { color: tokenTextColor }]}>Start 2nd Half</Text>}
                 </TouchableOpacity>
-              : <TouchableOpacity style={[st.overlayBtn, { backgroundColor: primaryColor }]} onPress={() => { setOverlay(null); onClose(); }}>
-                  <Text style={st.overlayBtnText}>Done</Text>
+              : <TouchableOpacity style={[st.overlayBtn, { backgroundColor: primaryColor }]} onPress={async () => { await saveScore(scoreHome, scoreAway); pendingCloseRef.current = true; setOverlay(null); }}>
+                  <Text style={[st.overlayBtnText, { color: tokenTextColor }]}>Save Result & Close</Text>
                 </TouchableOpacity>}
           </View>
         </View>
@@ -1020,7 +1219,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                   keyboardType="number-pad"
                   maxLength={2}
                   placeholder="Custom"
-                  placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
                   selectTextOnFocus
                   onSubmitEditing={Keyboard.dismiss}
                 />
@@ -1041,123 +1240,46 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Sub rotation plan sheet ── */}
-      <Modal visible={subPlanVisible} transparent animationType="slide" onRequestClose={() => setSubPlanVisible(false)}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={st.sheetBg}>
-            <View style={st.sheet}>
-              <View style={st.sheetHandle} />
-              <Text style={st.sheetTitle}>Sub Rotation Plan</Text>
-
-              {!subPlan ? (
-                <>
+      {/* ── Equal playing time sheet ── */}
+      <Modal visible={eqTimeVisible} transparent animationType="slide" onRequestClose={() => setEqTimeVisible(false)}>
+        <View style={st.sheetBg}>
+          <View style={st.sheet}>
+            <View style={st.sheetHandle} />
+            <Text style={st.sheetTitle}>Equal Playing Time</Text>
+            {(() => {
+              const eq = calcEqTime();
+              if (!eq) {
+                return (
                   <Text style={st.sheetBody}>
-                    {session
-                      ? `AI builds a sub schedule for equal playing time.\n${Math.round(session.half_length_seconds / 60)} min halves · ${subHalves} halves total`
-                      : 'AI builds a sub schedule for equal playing time.'}
+                    {allPlayers.length === 0
+                      ? 'No confirmed players yet.'
+                      : 'All players are already on the pitch — no subs needed.'}
                   </Text>
-
-                  {!session && (
-                    <>
-                      <Text style={st.subPlanLabel}>Game length (minutes)</Text>
-                      <TextInput
-                        style={st.subPlanInput}
-                        value={subGameLength}
-                        onChangeText={setSubGameLength}
-                        keyboardType="number-pad"
-                        placeholder="60"
-                        placeholderTextColor={DUGOUT_COLORS.ui.muted}
-                        selectTextOnFocus
-                      />
-                      <Text style={[st.subPlanLabel, { marginTop: 14 }]}>Number of halves</Text>
-                      <View style={st.subHalvesRow}>
-                        {['1', '2'].map(h => (
-                          <TouchableOpacity
-                            key={h}
-                            style={[st.subHalvesBtn, subHalves === h && [st.subHalvesBtnActive, { backgroundColor: rgba(0.12), borderColor: primaryColor }]]}
-                            onPress={() => setSubHalves(h)}
-                          >
-                            <Text style={[st.subHalvesBtnText, subHalves === h && { color: primaryColor }]}>
-                              {h} half{h === '2' ? 'ves' : ''}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </>
-                  )}
-
-                  <TouchableOpacity
-                    style={[st.subPlanGenerateBtn, { backgroundColor: primaryColor }, subPlanning && { opacity: 0.5 }]}
-                    onPress={handlePlanSubs}
-                    disabled={subPlanning}
-                  >
-                    {subPlanning
-                      ? <><ActivityIndicator size="small" color="#000" /><Text style={st.subPlanGenerateText}>Planning…</Text></>
-                      : <><Ionicons name="sparkles-outline" size={16} color="#000" /><Text style={st.subPlanGenerateText}>Generate Sub Plan</Text></>}
-                  </TouchableOpacity>
-                </>
-              ) : (
+                );
+              }
+              const subEvery = eq.rotations.length > 0
+                ? Math.round(eq.gameMinutes / (eq.rotations.length + 1))
+                : null;
+              return (
                 <>
-                  <View style={st.subPlanSummaryCard}>
-                    <Ionicons name="information-circle-outline" size={14} color={primaryColor} />
-                    <Text style={[st.subPlanSummaryText, { color: DUGOUT_COLORS.ui.textSecondary }]}>{subPlan.summary}</Text>
+                  <View style={st.eqTargetCard}>
+                    <Text style={[st.eqTargetNum, { color: primaryColor }]}>{eq.targetMins}'</Text>
+                    <Text style={st.eqTargetLabel}>target per player</Text>
+                    <Text style={st.eqTargetSub}>{allPlayers.length} players · {eq.gameMinutes} min game</Text>
                   </View>
-
-                  <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }}>
-                    <Text style={st.subPlanSection}>SUBSTITUTIONS</Text>
-                    <View style={{ gap: 8, marginBottom: 4 }}>
-                      {subPlan.subs.map((s, i) => (
-                        <View key={i} style={st.subPlanCard}>
-                          <View style={[st.subPlanMinutePill, { backgroundColor: rgba(0.1), borderColor: rgba(0.28) }]}>
-                            <Text style={[st.subPlanMinuteNum, { color: primaryColor }]}>{s.minute}</Text>
-                            <Text style={[st.subPlanMinuteApos, { color: primaryColor }]}>'</Text>
-                          </View>
-                          <View style={{ flex: 1, gap: 4 }}>
-                            <View style={st.subPlanChangeRow}>
-                              <View style={st.spOutBadge}><Text style={st.spOutText}>OUT</Text></View>
-                              <Text style={st.subPlanPlayer} numberOfLines={1}>{s.player_off}</Text>
-                            </View>
-                            <View style={{ height: 1, backgroundColor: '#2E2E2E' }} />
-                            <View style={st.subPlanChangeRow}>
-                              <View style={st.spInBadge}><Text style={st.spInText}>IN</Text></View>
-                              <Text style={st.subPlanPlayer} numberOfLines={1}>{s.player_on}</Text>
-                            </View>
-                            {s.note ? <Text style={st.subPlanNote}>{s.note}</Text> : null}
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-
-                    <Text style={[st.subPlanSection, { marginTop: 14 }]}>PLAYING TIME</Text>
-                    <View style={{ gap: 8, marginBottom: 12 }}>
-                      {subPlan.playing_time.map((pt, i) => {
-                        const pct = Math.min(1, pt.minutes / (parseInt(subGameLength, 10) || 60));
-                        return (
-                          <View key={i} style={st.subPlanPtRow}>
-                            <Text style={st.subPlanPtName} numberOfLines={1}>{pt.name}</Text>
-                            <View style={st.subPlanPtBarWrap}>
-                              <View style={[st.subPlanPtBar, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: primaryColor }]} />
-                            </View>
-                            <Text style={[st.subPlanPtMins, { color: primaryColor }]}>{pt.minutes}'</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </ScrollView>
-
-                  <TouchableOpacity style={st.subPlanRegenBtn} onPress={() => setSubPlan(null)}>
-                    <Ionicons name="refresh-outline" size={13} color={DUGOUT_COLORS.ui.muted} />
-                    <Text style={st.subPlanRegenText}>Regenerate</Text>
-                  </TouchableOpacity>
+                  {subEvery !== null && (
+                    <Text style={st.eqHint}>
+                      Make a sub roughly every {subEvery} minutes — you choose who.
+                    </Text>
+                  )}
                 </>
-              )}
-
-              <TouchableOpacity style={st.sheetCancel} onPress={() => setSubPlanVisible(false)}>
-                <Text style={st.sheetCancelText}>{subPlan ? 'Done' : 'Cancel'}</Text>
-              </TouchableOpacity>
-            </View>
+              );
+            })()}
+            <TouchableOpacity style={st.sheetCancel} onPress={() => setEqTimeVisible(false)}>
+              <Text style={st.sheetCancelText}>Done</Text>
+            </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* ── Formation picker ── */}
@@ -1187,7 +1309,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                     </View>
                     {active
                       ? <Ionicons name="checkmark-circle" size={20} color={primaryColor} />
-                      : <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.border} />}
+                      : <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />}
                   </TouchableOpacity>
                 );
               })}
@@ -1208,7 +1330,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
 const st = StyleSheet.create({
   root:  { flex: 1, backgroundColor: '#0F0F0F' },
   center:{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: DUGOUT_COLORS.ui.muted },
+  loadingText: { fontSize: 14, color: PULSE_COLORS.ui.muted },
 
   // Header
   header: {
@@ -1218,15 +1340,15 @@ const st = StyleSheet.create({
   },
   backBtn:      { width: 40, height: 36, justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle:  { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  headerSub:    { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 1 },
+  headerTitle:  { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerSub:    { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
   fmChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(34,197,94,0.1)',
     borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
   },
-  fmChipText: { fontSize: 11, fontWeight: '800', color: DUGOUT_COLORS.brand.green },
+  fmChipText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.brand.green },
 
   // Match bar
   matchBar: {
@@ -1246,12 +1368,12 @@ const st = StyleSheet.create({
   liveDot:       { width: 6, height: 6, borderRadius: 3 },
   statusPillText:{ fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   clock: {
-    fontSize: 44, fontWeight: '900', color: DUGOUT_COLORS.ui.text,
+    fontSize: 44, fontWeight: '900', color: PULSE_COLORS.ui.text,
     fontVariant: ['tabular-nums'], letterSpacing: -1,
   },
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9,
   },
   actionBtnText: { fontSize: 13, fontWeight: '800', color: '#000' },
@@ -1259,6 +1381,57 @@ const st = StyleSheet.create({
   // Progress bar
   progressTrack: { height: 3, backgroundColor: '#222' },
   progressFill:  { height: 3, borderRadius: 1.5 },
+
+  // Live score strip
+  scoreStrip: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 16, paddingVertical: 8,
+    backgroundColor: '#161616', borderBottomWidth: 1, borderBottomColor: '#222',
+    gap: 12,
+  },
+  scoreSide: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scoreLogo: { width: 22, height: 22, borderRadius: 11 },
+  scoreLogoFallback: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scoreLogoFallbackText: { fontSize: 7, fontWeight: '900' },
+  scoreOppName: {
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    flexShrink: 1, letterSpacing: 0.3,
+  },
+  scoreDigit: { fontSize: 28, fontWeight: '900', fontVariant: ['tabular-nums'], minWidth: 22, textAlign: 'center' },
+  scoreSep: { fontSize: 20, fontWeight: '700', color: '#444' },
+
+  // Full-time score entry
+  scoreEntry: {
+    backgroundColor: '#1A1A1A', borderRadius: 16, padding: 18, marginBottom: 16,
+    borderWidth: 1, borderColor: '#2A2A2A',
+  },
+  scoreEntryLabel: { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1.5, textAlign: 'center', marginBottom: 16 },
+  scoreEntryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scoreEntryTeam: { flex: 1, alignItems: 'center', gap: 6 },
+  scoreEntryId: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%' },
+  scoreEntryLogo: { width: 18, height: 18, borderRadius: 9 },
+  scoreEntryLogoFb: {
+    width: 18, height: 18, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scoreEntryLogoFbText: { fontSize: 6, fontWeight: '900' },
+  scoreEntryOppBadge: {
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scoreEntryName: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, flexShrink: 1 },
+  scoreEntryNum: { fontSize: 48, fontWeight: '900', fontVariant: ['tabular-nums'], textAlign: 'center', lineHeight: 52 },
+  scoreEntryBtns: { flexDirection: 'row', gap: 8 },
+  scoreEntryBtn: {
+    width: 36, height: 36, borderRadius: 10, borderWidth: 1,
+    borderColor: '#333', backgroundColor: '#252525',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scoreEntrySep: { fontSize: 24, fontWeight: '700', color: '#333', paddingTop: 20 },
 
   // Pitch wrapper
   pitchBench:   { flex: 1 },
@@ -1281,7 +1454,7 @@ const st = StyleSheet.create({
     position: 'absolute',
     width: TOKEN_W, height: TOKEN_H,
     borderRadius: 10,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: 3,
     shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 5, shadowOffset: { width: 0, height: 2 },
@@ -1304,8 +1477,8 @@ const st = StyleSheet.create({
     shadowOpacity: 0,
     elevation: 0,
   },
-  tokenNum:       { fontSize: 13, fontWeight: '900', color: '#003300', lineHeight: 16 },
-  tokenName:      { fontSize: 8,  fontWeight: '700', color: '#003300', maxWidth: TOKEN_W - 4, lineHeight: 10 },
+  tokenNum:       { fontSize: 13, fontWeight: '900', lineHeight: 16 },
+  tokenName:      { fontSize: 8,  fontWeight: '700', maxWidth: TOKEN_W - 4, lineHeight: 10 },
   tokenTimeBadge: {
     backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4,
     paddingHorizontal: 4, paddingVertical: 1, marginTop: 2,
@@ -1328,11 +1501,11 @@ const st = StyleSheet.create({
     paddingHorizontal: 14, paddingTop: 10, paddingBottom: 16,
   },
   benchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  benchLabel:  { fontSize: 10, fontWeight: '800', color: DUGOUT_COLORS.ui.muted, letterSpacing: 2 },
-  benchHint:   { fontSize: 10, color: DUGOUT_COLORS.ui.muted, fontStyle: 'italic' },
+  benchLabel:  { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 2 },
+  benchHint:   { fontSize: 10, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
   subConfirmRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cancelSubsBtn:  { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#333' },
-  cancelSubsText: { fontSize: 12, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
+  cancelSubsText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
   confirmSubsBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
   confirmSubsText:{ fontSize: 12, fontWeight: '800', color: '#000' },
   benchRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -1352,13 +1525,13 @@ const st = StyleSheet.create({
   usedDot: {
     position: 'absolute', top: 2, right: 2,
     width: 7, height: 7, borderRadius: 3.5,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
   },
-  benchNum:     { fontSize: 14, fontWeight: '900', color: DUGOUT_COLORS.ui.text },
-  benchNumUsed: { color: DUGOUT_COLORS.brand.green },
-  benchName:    { fontSize: 7, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, maxWidth: BENCH_SZ - 6 },
-  benchTime:    { fontSize: 7, color: DUGOUT_COLORS.brand.green, fontVariant: ['tabular-nums'], fontWeight: '700' },
-  benchEmpty:   { fontSize: 12, color: DUGOUT_COLORS.ui.muted, paddingVertical: 4 },
+  benchNum:     { fontSize: 14, fontWeight: '900', color: PULSE_COLORS.ui.text },
+  benchNumUsed: { color: PULSE_COLORS.brand.green },
+  benchName:    { fontSize: 7, fontWeight: '700', color: PULSE_COLORS.ui.muted, maxWidth: BENCH_SZ - 6 },
+  benchTime:    { fontSize: 7, color: PULSE_COLORS.brand.green, fontVariant: ['tabular-nums'], fontWeight: '700' },
+  benchEmpty:   { fontSize: 12, color: PULSE_COLORS.ui.muted, paddingVertical: 4 },
 
   // Ghost
   ghost: {
@@ -1387,7 +1560,7 @@ const st = StyleSheet.create({
     fontSize: 36, fontWeight: '900', textAlign: 'center',
     letterSpacing: 3, marginBottom: 4,
   },
-  overlaySub:   { fontSize: 13, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginBottom: 20 },
+  overlaySub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 20 },
   overlaySummary: {
     backgroundColor: '#1E1E1E', borderRadius: 16,
     borderWidth: 1, borderColor: '#2E2E2E', overflow: 'hidden', marginBottom: 16,
@@ -1398,7 +1571,7 @@ const st = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#2E2E2E',
     backgroundColor: '#252525',
   },
-  overlaySummaryHdr: { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1 },
+  overlaySummaryHdr: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1 },
   summaryRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 14, paddingVertical: 10,
@@ -1411,11 +1584,11 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
     alignItems: 'center', justifyContent: 'center',
   },
-  summaryJerseyNum: { fontSize: 10, fontWeight: '900', color: DUGOUT_COLORS.brand.green },
-  summaryName:      { fontSize: 14, color: DUGOUT_COLORS.ui.text, fontWeight: '500', flex: 1 },
+  summaryJerseyNum: { fontSize: 10, fontWeight: '900', color: PULSE_COLORS.brand.green },
+  summaryName:      { fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '500', flex: 1 },
   summaryTime:      { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
   overlayBtn: {
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     borderRadius: 16, paddingVertical: 15, alignItems: 'center',
   },
   overlayBtnText: { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
@@ -1432,8 +1605,8 @@ const st = StyleSheet.create({
     width: 40, height: 4, borderRadius: 2, backgroundColor: '#3E3E3E',
     alignSelf: 'center', marginBottom: 20,
   },
-  sheetTitle: { fontSize: 22, fontWeight: '800', color: DUGOUT_COLORS.ui.text, marginBottom: 6 },
-  sheetBody:  { fontSize: 13, color: DUGOUT_COLORS.ui.muted, marginBottom: 20 },
+  sheetTitle: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 },
+  sheetBody:  { fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 20 },
 
   // Half input
   halfInputRow:   { flexDirection: 'row', gap: 8, marginBottom: 16 },
@@ -1442,16 +1615,16 @@ const st = StyleSheet.create({
     backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2E2E2E',
     alignItems: 'center',
   },
-  halfChipActive: { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: DUGOUT_COLORS.brand.green },
-  halfChipText:     { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.muted },
-  halfChipTextActive: { color: DUGOUT_COLORS.brand.green },
+  halfChipActive: { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: PULSE_COLORS.brand.green },
+  halfChipText:     { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  halfChipTextActive: { color: PULSE_COLORS.brand.green },
   halfCustomRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
   halfCustomInput: {
     flex: 1,
     backgroundColor: '#1E1E1E', borderRadius: 14,
     borderWidth: 1, borderColor: '#2E2E2E',
     paddingHorizontal: 16, paddingVertical: 13,
-    fontSize: 16, color: DUGOUT_COLORS.ui.text,
+    fontSize: 16, color: PULSE_COLORS.ui.text,
     textAlign: 'center',
   },
   halfDoneBtn: {
@@ -1459,14 +1632,14 @@ const st = StyleSheet.create({
     borderRadius: 14, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
     paddingHorizontal: 16, paddingVertical: 13,
   },
-  halfDoneText: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.brand.green },
+  halfDoneText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
   kickOffBtn: {
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     borderRadius: 16, paddingVertical: 15, alignItems: 'center',
   },
   kickOffText:  { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
   sheetCancel:  { alignItems: 'center', paddingVertical: 14 },
-  sheetCancelText: { fontSize: 15, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  sheetCancelText: { fontSize: 15, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
   // Bench right-side area
   benchRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1477,62 +1650,16 @@ const st = StyleSheet.create({
   },
   subPlanChipText: { fontSize: 11, fontWeight: '700' },
 
-  // Sub plan sheet content
-  subPlanLabel: { fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 0.5, marginBottom: 8 },
-  subPlanInput: {
-    backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2E2E2E',
-    borderRadius: 12, padding: 12, color: DUGOUT_COLORS.ui.text, fontSize: 15, marginBottom: 4,
+  // Equal time sheet content
+  eqTargetCard: {
+    alignItems: 'center', paddingVertical: 20, marginBottom: 18,
+    borderRadius: 16, backgroundColor: '#1A1A1A',
+    borderWidth: 1, borderColor: '#2E2E2E',
   },
-  subHalvesRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  subHalvesBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: 12,
-    backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2E2E2E', alignItems: 'center',
-  },
-  subHalvesBtnActive: { borderColor: 'transparent' },
-  subHalvesBtnText: { fontSize: 13, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
-  subPlanGenerateBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, borderRadius: 16, paddingVertical: 14, marginBottom: 4,
-  },
-  subPlanGenerateText: { fontSize: 15, fontWeight: '800', color: '#000' },
-
-  subPlanSummaryCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2E2E2E',
-    borderRadius: 10, padding: 10, marginBottom: 14,
-  },
-  subPlanSummaryText: { flex: 1, fontSize: 12, lineHeight: 17 },
-  subPlanSection: { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
-  subPlanCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2E2E2E',
-    borderRadius: 10, padding: 10,
-  },
-  subPlanMinutePill: {
-    flexDirection: 'row', alignItems: 'baseline',
-    borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 4,
-    minWidth: 36, justifyContent: 'center', flexShrink: 0,
-  },
-  subPlanMinuteNum:  { fontSize: 14, fontWeight: '800' },
-  subPlanMinuteApos: { fontSize: 10, fontWeight: '700' },
-  subPlanChangeRow:  { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  spOutBadge: { backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
-  spOutText:  { fontSize: 9, fontWeight: '800', color: DUGOUT_COLORS.rsvp.not_attending, letterSpacing: 0.5 },
-  spInBadge:  { backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
-  spInText:   { fontSize: 9, fontWeight: '800', color: DUGOUT_COLORS.rsvp.attending, letterSpacing: 0.5 },
-  subPlanPlayer: { flex: 1, fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
-  subPlanNote:   { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontStyle: 'italic', marginTop: 2 },
-  subPlanPtRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  subPlanPtName: { width: 90, fontSize: 12, color: DUGOUT_COLORS.ui.text, fontWeight: '600' },
-  subPlanPtBarWrap: { flex: 1, height: 8, backgroundColor: '#1E1E1E', borderRadius: 4, overflow: 'hidden' },
-  subPlanPtBar:  { height: 8, borderRadius: 4 },
-  subPlanPtMins: { width: 28, fontSize: 12, textAlign: 'right', fontWeight: '700' },
-  subPlanRegenBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    marginTop: 10, paddingVertical: 8,
-    borderWidth: 1, borderColor: '#2E2E2E', borderRadius: 8,
-  },
-  subPlanRegenText: { fontSize: 12, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
+  eqTargetNum:   { fontSize: 48, fontWeight: '800', lineHeight: 52 },
+  eqTargetLabel: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, marginTop: 2 },
+  eqTargetSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 4 },
+  eqHint: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 19, marginTop: 4 },
 
   // Formation picker
   fmOption: {
@@ -1548,9 +1675,16 @@ const st = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 5,
   },
   fmOptionBadgeActive: { backgroundColor: 'rgba(34,197,94,0.15)' },
-  fmOptionBadgeText:   { fontSize: 14, fontWeight: '800', color: DUGOUT_COLORS.ui.muted },
-  fmOptionBadgeTextActive: { color: DUGOUT_COLORS.brand.green },
-  fmOptionNick: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  fmOptionBadgeText:   { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.ui.muted },
+  fmOptionBadgeTextActive: { color: PULSE_COLORS.brand.green },
+  fmOptionNick: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+
+  guestDot: {
+    backgroundColor: 'rgba(249,115,22,0.9)',
+    borderRadius: 3, paddingHorizontal: 3, paddingVertical: 1,
+    alignSelf: 'flex-start',
+  },
+  guestDotText: { fontSize: 7, fontWeight: '900', color: '#fff', letterSpacing: 0.3 },
 });
 
 // ─── Route wrapper (thin — keep for any direct navigation) ───────────────────

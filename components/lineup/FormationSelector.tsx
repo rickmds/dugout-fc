@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Formation, GameFormat, FORMATIONS_BY_FORMAT } from '../../constants/formations';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 const FORMATS: GameFormat[] = ['4v4', '7v7', '9v9', '11v11'];
 
@@ -63,7 +63,7 @@ export function FormationSelector({
           <Ionicons
             name={isFav ? 'star' : 'star-outline'}
             size={14}
-            color={isFav ? '#FBBF24' : DUGOUT_COLORS.ui.muted}
+            color={isFav ? '#FBBF24' : PULSE_COLORS.ui.muted}
           />
         </TouchableOpacity>
       </TouchableOpacity>
@@ -143,19 +143,19 @@ export function FormationSelector({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
 
   // ── Format toggle ─────────────────────────────────────────────────────────
   formatBar: {
     flexDirection: 'row',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 12,
     padding: 4,
     marginHorizontal: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
   },
   formatBtn: {
     flex: 1,
@@ -164,12 +164,12 @@ const styles = StyleSheet.create({
     borderRadius: 9,
   },
   formatBtnActive: {
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
   },
   formatBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
   },
   formatBtnTextActive: {
     color: '#000',
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     letterSpacing: 0.8,
     marginHorizontal: 16,
     marginBottom: 8,
@@ -213,9 +213,9 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     borderRadius: 12,
     paddingVertical: 10,
     paddingLeft: 12,
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     minWidth: 140,
   },
   pillSelected: {
-    borderColor: DUGOUT_COLORS.brand.green,
+    borderColor: PULSE_COLORS.brand.green,
     backgroundColor: 'rgba(34,197,94,0.08)',
   },
   pillBody: {
@@ -234,14 +234,14 @@ const styles = StyleSheet.create({
   pillName: {
     fontSize: 14,
     fontWeight: '700',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
   },
   pillNameSelected: {
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
   },
   pillNickname: {
     fontSize: 11,
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
   },
   starBtn: {
     paddingLeft: 8,
@@ -258,11 +258,11 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   tooltipCard: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 18,
     padding: 20,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     width: '100%',
   },
   tooltipHeader: {
@@ -274,30 +274,30 @@ const styles = StyleSheet.create({
   tooltipName: {
     fontSize: 20,
     fontWeight: '800',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
   },
   tooltipBadge: {
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
   },
   tooltipNickname: {
     fontSize: 12,
     fontWeight: '600',
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
   },
   tooltipDesc: {
     fontSize: 15,
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     lineHeight: 22,
     marginBottom: 16,
   },
   tooltipHint: {
     fontSize: 12,
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     textAlign: 'center',
   },
 });

@@ -14,7 +14,7 @@ function JoinContent() {
     // Try to open the app via custom scheme. On iOS this silently fails
     // if the app isn't installed — the App Store link below acts as fallback.
     const timer = setTimeout(() => setTried(true), 800);
-    window.location.href = `dugoutfc://join?token=${token}`;
+    window.location.href = `pulsefc://join?token=${token}`;
     return () => clearTimeout(timer);
   }, [token]);
 
@@ -33,7 +33,7 @@ function JoinContent() {
 
         <h1 style={styles.title}>You've been invited!</h1>
         <p style={styles.sub}>
-          Your coach has added you to a team on Dugout&nbsp;FC.<br />
+          Your coach has added you to a team on Pulse&nbsp;FC.<br />
           Open the app to accept your invite.
         </p>
 
@@ -46,16 +46,16 @@ function JoinContent() {
         )}
 
         <a
-          href={`dugoutfc://join?token=${token}`}
+          href={`pulsefc://join?token=${token}`}
           style={styles.primaryBtn}
         >
-          Open in Dugout FC
+          Open in Pulse FC
         </a>
 
         <p style={styles.orText}>Don't have the app yet?</p>
 
         <a
-          href="https://apps.apple.com/app/dugout-fc/id6740793498"
+          href="https://apps.apple.com/app/pulse-fc/id6740793498"
           style={styles.secondaryBtn}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={{ marginRight: 8, flexShrink: 0 }}>
@@ -65,7 +65,7 @@ function JoinContent() {
         </a>
 
         <p style={styles.footer}>
-          <a href="https://dugoutfc.app" style={styles.footerLink}>dugoutfc.app</a>
+          <a href="https://pulse-fc.app" style={styles.footerLink}>pulse-fc.app</a>
         </p>
       </div>
     </main>

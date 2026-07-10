@@ -7,7 +7,7 @@ import NavBar from '@/components/NavBar';
 
 const testimonials = [
   {
-    quote: "We lost 11 families last season. When I did exit interviews, three of them said they felt 'out of the loop' on schedules and communications. That's $16,000 in registration fees. Dugout FC paid for itself in the first month.",
+    quote: "We lost 11 families last season. When I did exit interviews, three of them said they felt 'out of the loop' on schedules and communications. That's $16,000 in registration fees. Pulse FC paid for itself in the first month.",
     initials: 'J.O.',
     role: 'Club President',
     detail: '18-team club',
@@ -19,7 +19,7 @@ const testimonials = [
     detail: '14-team club',
   },
   {
-    quote: "We compete for families with three other clubs in a 10-mile radius. The club that looks most professional wins the registration. Dugout FC made us look like a professional academy overnight — at a fraction of the cost.",
+    quote: "We compete for families with three other clubs in a 10-mile radius. The club that looks most professional wins the registration. Pulse FC made us look like a professional academy overnight — at a fraction of the cost.",
     initials: 'M.S.',
     role: 'Board Chair',
     detail: '22-team club',
@@ -75,7 +75,7 @@ export default function ForClubsPage() {
             Poor communication, missed schedules, and disorganized game days cost the average soccer club 4–6 families per season. That's $6,000–$10,000 in lost registration fees — and a reputation that takes years to rebuild.
           </p>
           <p className="text-[#999] text-[16px] mb-12 max-w-xl mx-auto">
-            Dugout FC fixes the things that make families leave.
+            Pulse FC fixes the things that make families leave.
           </p>
 
           <div className="flex flex-wrap gap-3 justify-center mb-6">
@@ -124,7 +124,7 @@ export default function ForClubsPage() {
           <div className="mt-8 p-6 rounded-2xl" style={{ background: '#0a1a0a', border: '1px solid #22c55e20' }}>
             <p className="text-[#22c55e] font-bold text-[15px] mb-1">The math is simple.</p>
             <p className="text-[#999] text-[14px] leading-relaxed">
-              Dugout FC Club plan costs $99/month — $1,188/year. If it keeps just one family from leaving, you're up $412. If it keeps three, you're up $3,612. The software pays for itself before the season is halfway done.
+              Pulse FC Club plan costs $99/month — $1,188/year. If it keeps just one family from leaving, you're up $412. If it keeps three, you're up $3,612. The software pays for itself before the season is halfway done.
             </p>
           </div>
         </div>
@@ -201,7 +201,7 @@ export default function ForClubsPage() {
               You approve the tool.<br />Your coaches actually use it.
             </h2>
             <p className="text-[#999] text-[16px] leading-[1.75] mb-8">
-              Most club software gets approved by the board and ignored by the coaching staff. Dugout FC is built from the ground up for the people on the pitch — so adoption is never a battle you have to fight.
+              Most club software gets approved by the board and ignored by the coaching staff. Pulse FC is built from the ground up for the people on the pitch — so adoption is never a battle you have to fight.
             </p>
             <Link href="/"
               className="inline-flex items-center gap-2 text-[#22c55e] text-[14px] font-semibold hover:underline">
@@ -251,10 +251,10 @@ export default function ForClubsPage() {
               30-day full refund.<br />No forms. No questions.
             </h2>
             <p className="text-[#999] text-[17px] leading-[1.75] mb-4">
-              Run Dugout FC for 30 days. If it doesn't make your club run more smoothly, retain more families, or free up your coaching staff — email us and we'll refund every cent immediately.
+              Run Pulse FC for 30 days. If it doesn't make your club run more smoothly, retain more families, or free up your coaching staff — email us and we'll refund every cent immediately.
             </p>
             <p className="text-[#999] text-[17px] leading-[1.75]">
-              One email to <span className="text-white">info@dugoutfc.com</span> and it's done.
+              One email to <span className="text-white">info@pulse-fc.app</span> and it's done.
             </p>
           </Reveal>
         </div>
@@ -277,7 +277,7 @@ export default function ForClubsPage() {
           </Link>
           <p className="text-[#888] text-[12px] mt-6">
             Running a large club?{' '}
-            <a href="mailto:info@dugoutfc.com?subject=Club enquiry" className="text-[#777] hover:text-[#aaa] transition-colors underline underline-offset-2">
+            <a href="mailto:info@pulse-fc.app?subject=Club enquiry" className="text-[#777] hover:text-[#aaa] transition-colors underline underline-offset-2">
               Email us directly →
             </a>
           </p>
@@ -302,9 +302,8 @@ export default function ForClubsPage() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f' }} className="px-6 sm:px-10 py-8 flex items-center justify-between max-w-7xl mx-auto">
-        <div style={{ background: '#fff', borderRadius: '8px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
-        </div>
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        
         <div className="flex items-center gap-6">
           <Link href="/compare" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Compare</Link>
           <Link href="/pricing" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Pricing</Link>

@@ -307,11 +307,14 @@ export type Database = {
           recurrence_id: string | null
           require_rsvp: boolean
           rsvp_lock_at: string | null
+          score_away: number | null
+          score_home: number | null
           surface: string | null
           team_id: string
           title: string
           type: string | null
           uniform: string | null
+          video_url: string | null
         }
         Insert: {
           address?: string | null
@@ -337,11 +340,14 @@ export type Database = {
           recurrence_id?: string | null
           require_rsvp?: boolean
           rsvp_lock_at?: string | null
+          score_away?: number | null
+          score_home?: number | null
           surface?: string | null
           team_id: string
           title: string
           type?: string | null
           uniform?: string | null
+          video_url?: string | null
         }
         Update: {
           address?: string | null
@@ -367,11 +373,14 @@ export type Database = {
           recurrence_id?: string | null
           require_rsvp?: boolean
           rsvp_lock_at?: string | null
+          score_away?: number | null
+          score_home?: number | null
           surface?: string | null
           team_id?: string
           title?: string
           type?: string | null
           uniform?: string | null
+          video_url?: string | null
         }
         Relationships: [
           {
@@ -996,6 +1005,7 @@ export type Database = {
           date_of_birth: string | null
           full_name: string
           id: string
+          is_injured: boolean
           is_private: boolean
           jersey_number: number | null
           notes: string | null
@@ -1011,6 +1021,7 @@ export type Database = {
           date_of_birth?: string | null
           full_name: string
           id?: string
+          is_injured?: boolean
           is_private?: boolean
           jersey_number?: number | null
           notes?: string | null
@@ -1026,6 +1037,7 @@ export type Database = {
           date_of_birth?: string | null
           full_name?: string
           id?: string
+          is_injured?: boolean
           is_private?: boolean
           jersey_number?: number | null
           notes?: string | null
@@ -1059,6 +1071,7 @@ export type Database = {
           club_id: string | null
           created_at: string | null
           full_name: string | null
+          home_address: string | null
           id: string
           notification_prefs: Json
           preferred_language: string | null
@@ -1069,6 +1082,7 @@ export type Database = {
           club_id?: string | null
           created_at?: string | null
           full_name?: string | null
+          home_address?: string | null
           id: string
           notification_prefs?: Json
           preferred_language?: string | null
@@ -1079,6 +1093,7 @@ export type Database = {
           club_id?: string | null
           created_at?: string | null
           full_name?: string | null
+          home_address?: string | null
           id?: string
           notification_prefs?: Json
           preferred_language?: string | null
@@ -2323,6 +2338,84 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      event_attendance: {
+        Row: {
+          created_at: string
+          event_id: string
+          id: string
+          marked_by: string | null
+          player_id: string
+          status: 'present' | 'absent' | 'late'
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          id?: string
+          marked_by?: string | null
+          player_id: string
+          status: 'present' | 'absent' | 'late'
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          id?: string
+          marked_by?: string | null
+          player_id?: string
+          status?: 'present' | 'absent' | 'late'
+          updated_at?: string
+        }
+        Relationships: [
+          { foreignKeyName: "event_attendance_event_id_fkey"; columns: ["event_id"]; isOneToOne: false; referencedRelation: "events"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_attendance_player_id_fkey"; columns: ["player_id"]; isOneToOne: false; referencedRelation: "players"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_attendance_marked_by_fkey"; columns: ["marked_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
+      event_guests: {
+        Row: {
+          created_at: string
+          event_id: string
+          full_name: string
+          id: string
+          player_id: string | null
+          profile_id: string | null
+          responded_at: string | null
+          role: 'player' | 'coach'
+          status: 'pending' | 'confirmed' | 'declined'
+          added_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          full_name: string
+          id?: string
+          player_id?: string | null
+          profile_id?: string | null
+          responded_at?: string | null
+          role: 'player' | 'coach'
+          status?: 'pending' | 'confirmed' | 'declined'
+          added_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          full_name?: string
+          id?: string
+          player_id?: string | null
+          profile_id?: string | null
+          responded_at?: string | null
+          role?: 'player' | 'coach'
+          status?: 'pending' | 'confirmed' | 'declined'
+          added_by?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "event_guests_event_id_fkey"; columns: ["event_id"]; isOneToOne: false; referencedRelation: "events"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_guests_player_id_fkey"; columns: ["player_id"]; isOneToOne: false; referencedRelation: "players"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_guests_profile_id_fkey"; columns: ["profile_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "event_guests_added_by_fkey"; columns: ["added_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
         ]
       }
     }

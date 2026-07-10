@@ -9,7 +9,7 @@ export async function POST(req: Request) {
 
   const accent    = resolveAccent(primary_color);
   const btnText   = contrastText(accent);
-  const clubLabel = club_name ?? 'Dugout FC';
+  const clubLabel = club_name ?? 'Pulse FC';
   const initials  = clubLabel.split(' ').slice(0, 2).map((w: string) => (w[0] ?? '').toUpperCase()).join('');
   const year      = new Date().getFullYear();
 
@@ -105,13 +105,13 @@ export async function POST(req: Request) {
                 <tr>
                   <td style="padding:0 28px 32px;text-align:center;border-top:1px solid #1e1e1e;padding-top:24px;">
                     <p style="margin:0 0 16px;font-size:14px;color:#9ca3af;">
-                      Download the Dugout FC app to stay connected with your team
+                      Download the Pulse FC app to stay connected with your team
                     </p>
-                    <a href="https://apps.apple.com/app/dugout-fc"
+                    <a href="https://apps.apple.com/app/pulse-fc"
                        style="display:inline-block;background:${accent};color:${btnText};
                               text-decoration:none;font-size:15px;font-weight:800;
                               padding:14px 36px;border-radius:12px;letter-spacing:0.2px;line-height:1;">
-                      📱 Download Dugout FC
+                      📱 Download Pulse FC
                     </a>
                   </td>
                 </tr>
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
                   <td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
                     <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
                       ${esc(clubLabel)} uses
-                      <a href="https://dugoutfc.app" style="color:${accent};text-decoration:none;font-weight:600;">Dugout FC</a>
+                      <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
                       for club management.
                       &nbsp;&middot;&nbsp; &copy; ${year} ${esc(clubLabel)}
                     </p>
@@ -143,7 +143,7 @@ export async function POST(req: Request) {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      from: `${clubLabel} <noreply@dugoutfc.app>`,
+      from: `${clubLabel} <info@pulse-fc.app>`,
       to: [to],
       subject: `Registration confirmed — ${form_title}`,
       html,

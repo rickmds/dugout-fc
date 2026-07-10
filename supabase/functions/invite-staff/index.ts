@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   const RESEND_KEY = Deno.env.get('RESEND_API_KEY');
-  const APP_URL    = Deno.env.get('APP_URL') ?? 'https://dugoutfc.app';
+  const APP_URL    = Deno.env.get('APP_URL') ?? 'https://pulse-fc.app';
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -108,12 +108,12 @@ Deno.serve(async (req) => {
       method:  'POST',
       headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from:    `${clubName} <noreply@dugoutfc.app>`,
+        from:    `${clubName} <info@pulse-fc.app>`,
         to:      [email],
         subject: `You've been invited to join ${clubName}`,
         html,
         text: [
-          `You've been invited to join ${clubName} on Dugout FC as ${roleLabel === 'Club Admin' ? 'a Club Admin' : 'a Coach'}.`,
+          `You've been invited to join ${clubName} on Pulse FC as ${roleLabel === 'Club Admin' ? 'a Club Admin' : 'a Coach'}.`,
           teamList ? `Teams: ${teamList}` : null,
           `Accept your invite (expires in 24 hours): ${inviteLink}`,
         ].filter(Boolean).join('\n\n'),
@@ -247,7 +247,7 @@ function buildInviteHtml({ clubName, roleLabel, teamList, inviteLink, logoUrl, p
                   <td style="padding:24px 28px 20px;">
                     <p style="margin:0 0 14px;font-size:15px;color:#d1d5db;line-height:1.7;">
                       You've been invited to manage <strong style="color:#f9fafb;">${esc(clubName)}</strong>
-                      on <strong style="color:${accent};">Dugout FC</strong> — the all-in-one platform
+                      on <strong style="color:${accent};">Pulse FC</strong> — the all-in-one platform
                       for soccer club management.
                     </p>
                     <p style="margin:0;font-size:15px;color:#d1d5db;line-height:1.7;">
@@ -283,7 +283,7 @@ function buildInviteHtml({ clubName, roleLabel, teamList, inviteLink, logoUrl, p
                   <td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
                     <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
                       ${esc(clubName)} uses
-                      <a href="https://dugoutfc.app" style="color:${accent};text-decoration:none;font-weight:600;">Dugout FC</a>
+                      <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
                       for club management.
                       &nbsp;&middot;&nbsp;
                       If you weren't expecting this, you can safely ignore it.

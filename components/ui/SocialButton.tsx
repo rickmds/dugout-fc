@@ -1,6 +1,6 @@
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 interface SocialButtonProps {
   provider: 'google' | 'apple';
@@ -18,23 +18,22 @@ export default function SocialButton({ provider, onPress, loading = false, disab
       onPress={onPress}
       disabled={isDisabled}
       activeOpacity={0.8}
-      style={[styles.button, isApple ? styles.appleButton : styles.googleButton, isDisabled && styles.disabled]}
+      style={[styles.button, isDisabled && styles.disabled]}
     >
       {loading ? (
-        <ActivityIndicator color={isApple ? '#000000' : '#3c4043'} size="small" />
+        <ActivityIndicator color="#F9FAFB" size="small" />
       ) : (
         <>
           <View style={styles.iconWrap}>
             <FontAwesome
               name={isApple ? 'apple' : 'google'}
               size={20}
-              color={isApple ? '#000000' : '#4285F4'}
+              color={isApple ? '#F9FAFB' : '#4285F4'}
             />
           </View>
-          <Text style={[styles.label, isApple ? styles.appleLabel : styles.googleLabel]}>
+          <Text style={styles.label}>
             {isApple ? 'Continue with Apple' : 'Continue with Google'}
           </Text>
-          {/* Spacer to keep label visually centred */}
           <View style={styles.iconWrap} />
         </>
       )}
@@ -50,18 +49,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     marginBottom: 12,
-  },
-  appleButton: {
-    backgroundColor: '#FFFFFF',
-  },
-  googleButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#1A1A1A',
     borderWidth: 1,
-    borderColor: '#dadce0',
+    borderColor: '#2E2E2E',
   },
   disabled: { opacity: 0.55 },
   iconWrap: { width: 28, alignItems: 'center' },
-  label:       { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '600' },
-  appleLabel:  { color: '#000000' },
-  googleLabel: { color: '#3c4043' },
+  label: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#F9FAFB' },
 });

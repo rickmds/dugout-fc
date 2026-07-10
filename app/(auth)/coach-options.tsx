@@ -2,7 +2,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 const OPTIONS = [
   {
@@ -64,26 +64,26 @@ export default function CoachOptionsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
     paddingHorizontal: 24,
   },
   back: {
     marginBottom: 24,
   },
   backText: {
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
     fontSize: 16,
     fontWeight: '600',
   },
   heading: {
     fontSize: 26,
     fontWeight: '800',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     marginBottom: 8,
   },
   subheading: {
     fontSize: 14,
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     marginBottom: 36,
   },
   cards: {
@@ -92,9 +92,9 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16,
     padding: 20,
     gap: 16,
@@ -108,16 +108,16 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     marginBottom: 3,
   },
   cardSubtitle: {
     fontSize: 13,
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
   },
   chevron: {
     fontSize: 24,
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontWeight: '300',
   },
   signOutLink: {
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     marginTop: 36,
   },
   signOutText: {
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontSize: 13,
   },
 });

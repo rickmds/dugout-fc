@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -18,10 +19,12 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { positionColor } from '../../../../constants/positions';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import GameDayWidget from '../../../../components/home/GameDayWidget';
+import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
+import { fetchDriveTime } from '../../../../lib/drivetime';
 
 type NextEvent = {
   id: string;
@@ -30,8 +33,15 @@ type NextEvent = {
   event_date: string;
   event_time: string | null;
   location: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
   uniform: string | null;
+  home_away: 'home' | 'away' | null;
+  field_type: string | null;
 };
+
+type Headcount = { going: number; notGoing: number; tbd: number };
 
 type MyPlayer = {
   id: string;
@@ -120,17 +130,6 @@ function timeAgo(dateStr: string): string {
 }
 
 
-function QuickAction({ icon, label, onPress }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void }) {
-  const { primaryColor, rgba } = useClub();
-  return (
-    <TouchableOpacity style={styles.actionTile} onPress={onPress} activeOpacity={0.75}>
-      <View style={[styles.actionIconWrap, { backgroundColor: rgba(0.1), borderColor: rgba(0.2) }]}>
-        <Ionicons name={icon} size={22} color={primaryColor} />
-      </View>
-      <Text style={styles.actionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
 
 function HomeSkeleton() {
   const pulse = useRef(new Animated.Value(0.5)).current;
@@ -142,9 +141,9 @@ function HomeSkeleton() {
       ])
     ).start();
   }, []);
-  const SKEL = DUGOUT_COLORS.ui.surface;
+  const SKEL = PULSE_COLORS.ui.surface;
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: DUGOUT_COLORS.ui.background }} contentContainerStyle={{ padding: 20, paddingTop: 68, paddingBottom: 48 }} scrollEnabled={false}>
+    <ScrollView style={{ flex: 1, backgroundColor: PULSE_COLORS.ui.background }} contentContainerStyle={{ padding: 20, paddingTop: 120, paddingBottom: 48 }} scrollEnabled={false}>
       <Animated.View style={{ opacity: pulse }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -183,24 +182,42 @@ function HomeSkeleton() {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile, club, refreshProfile, signOut } = useAuth();
   const { team, allTeams, loading: teamLoading, selectTeam } = useTeam();
-  const { primaryColor, rgba, clubName } = useClub();
+  const { primaryColor, rgba, clubName, logoUrl, secondaryColor, secondaryRgba, headerPattern, homeKitColor, awayKitColor, trainingKitColor } = useClub();
 
   const [playerCount, setPlayerCount]       = useState(0);
   const [upcomingCount, setUpcomingCount]   = useState(0);
-  const [nextEvent, setNextEvent]           = useState<NextEvent | null>(null);
+  const [nextGame, setNextGame]             = useState<NextEvent | null>(null);
+  const [nextTraining, setNextTraining]     = useState<NextEvent | null>(null);
+  const [nextGameWeather, setNextGameWeather]           = useState<WeatherData | null>(null);
+  const [nextTrainingWeather, setNextTrainingWeather]   = useState<WeatherData | null>(null);
+  const [nextGameDriveTime, setNextGameDriveTime]       = useState<string | null>(null);
+  const [nextTrainingDriveTime, setNextTrainingDriveTime] = useState<string | null>(null);
   const [myPlayer, setMyPlayer]             = useState<MyPlayer | null>(null);
-  const [myRsvpStatus, setMyRsvpStatus]     = useState<string | null>(null);
+  const [myGameRsvpStatus, setMyGameRsvpStatus]         = useState<string | null>(null);
+  const [myTrainingRsvpStatus, setMyTrainingRsvpStatus] = useState<string | null>(null);
   const [myRsvpCount, setMyRsvpCount]       = useState(0);
   const [latestAnnouncement, setLatestAnnouncement] = useState<Announcement | null>(null);
-  const [rsvpLoading, setRsvpLoading]       = useState(false);
+  const [gameRsvpLoading, setGameRsvpLoading]       = useState(false);
+  const [trainingRsvpLoading, setTrainingRsvpLoading] = useState(false);
+  const [gameHeadcount, setGameHeadcount]             = useState<Headcount | null>(null);
+  const [trainingHeadcount, setTrainingHeadcount]     = useState<Headcount | null>(null);
+  const [pulseGamePct, setPulseGamePct]               = useState<number | null>(null);
+  const [pulseTrainingPct, setPulseTrainingPct]       = useState<number | null>(null);
+  const [pulseGameEvents, setPulseGameEvents]         = useState(0);
+  const [pulseTrainingEvents, setPulseTrainingEvents] = useState(0);
   const [loading, setLoading]               = useState(true);
   const [refreshing, setRefreshing]         = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [outstandingFees, setOutstandingFees] = useState<OutstandingFee[]>([]);
   const [showFeeModal, setShowFeeModal]     = useState(false);
+  const [attendanceStreak, setAttendanceStreak]         = useState(0);
+  const [seasonAttendancePct, setSeasonAttendancePct]   = useState<number | null>(null);
+  const [seasonAttendedCount, setSeasonAttendedCount]   = useState(0);
+  const [seasonTotalMarked, setSeasonTotalMarked]       = useState(0);
 
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
   const slug = clubSlug ?? club?.slug ?? '';
@@ -268,7 +285,8 @@ export default function HomeScreen() {
     const [
       { count: pc },
       { count: ec },
-      { data: events },
+      { data: gameEvents },
+      { data: trainingEvents },
       playerRes,
       announcementRes,
       { count: unreadNotifs },
@@ -276,7 +294,8 @@ export default function HomeScreen() {
     ] = await Promise.all([
       supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', team.id),
       supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
-      supabase.from('events').select('id, title, type, event_date, event_time, location, uniform').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
       supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).eq('read', false),
@@ -288,8 +307,29 @@ export default function HomeScreen() {
     setPlayerCount(pc ?? 0);
     setUpcomingCount(ec ?? 0);
     setUnreadNotifCount(unreadNotifs ?? 0);
-    const next = (events as NextEvent[])?.[0] ?? null;
-    setNextEvent(next);
+
+    const nextG = (gameEvents as NextEvent[])?.[0] ?? null;
+    const nextT = (trainingEvents as NextEvent[])?.[0] ?? null;
+    setNextGame(nextG);
+    setNextTraining(nextT);
+    setNextGameWeather(null);
+    setNextTrainingWeather(null);
+    setNextGameDriveTime(null);
+    setNextTrainingDriveTime(null);
+
+    function fetchWeatherAndDrive(event: NextEvent | null, setWeather: (w: WeatherData) => void, setDrive: (t: string) => void) {
+      if (!event) return;
+      const loc = (event.lat != null && event.lng != null)
+        ? `${event.lat},${event.lng}`
+        : (event.address ?? event.location ?? '');
+      if (!loc) return;
+      fetchDriveTime(loc).then(t => { if (t) setDrive(t); });
+      if (isWeatherForecastable(event.event_date)) {
+        fetchEventWeather(loc, event.event_date, event.event_time ?? null).then(w => { if (w) setWeather(w); });
+      }
+    }
+    fetchWeatherAndDrive(nextG, setNextGameWeather, setNextGameDriveTime);
+    fetchWeatherAndDrive(nextT, setNextTrainingWeather, setNextTrainingDriveTime);
 
     const player = (playerRes as any).data as MyPlayer | null;
     setMyPlayer(player);
@@ -307,22 +347,122 @@ export default function HomeScreen() {
       setOutstandingFees([]);
     }
 
-    if (player && next) {
-      if (upcomingEventIds.length === 0) {
-        const { data: rsvpData } = await supabase.from('event_rsvps').select('status').eq('event_id', next.id).eq('player_id', player.id).maybeSingle();
-        setMyRsvpStatus((rsvpData as any)?.status ?? null);
-        setMyRsvpCount(0);
+    if (player) {
+      const rsvpFetches: PromiseLike<void>[] = [];
+      if (nextG) {
+        rsvpFetches.push(
+          supabase.from('event_rsvps').select('status').eq('event_id', nextG.id).eq('player_id', player.id).maybeSingle()
+            .then(({ data }) => { setMyGameRsvpStatus((data as any)?.status ?? null); })
+        );
       } else {
-        const [rsvpRes, { count: rc }] = await Promise.all([
-          supabase.from('event_rsvps').select('status').eq('event_id', next.id).eq('player_id', player.id).maybeSingle(),
-          supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('player_id', player.id).eq('status', 'attending').in('event_id', upcomingEventIds),
-        ]);
-        setMyRsvpStatus((rsvpRes as any).data?.status ?? null);
-        setMyRsvpCount(rc ?? 0);
+        setMyGameRsvpStatus(null);
+      }
+      if (nextT) {
+        rsvpFetches.push(
+          supabase.from('event_rsvps').select('status').eq('event_id', nextT.id).eq('player_id', player.id).maybeSingle()
+            .then(({ data }) => { setMyTrainingRsvpStatus((data as any)?.status ?? null); })
+        );
+      } else {
+        setMyTrainingRsvpStatus(null);
+      }
+      if (upcomingEventIds.length > 0) {
+        rsvpFetches.push(
+          supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('player_id', player.id).eq('status', 'attending').in('event_id', upcomingEventIds)
+            .then(({ count: rc }) => { setMyRsvpCount(rc ?? 0); })
+        );
+      } else {
+        setMyRsvpCount(0);
+      }
+      await Promise.all(rsvpFetches);
+
+      // Attendance streak + season stats — players only
+      if (!isCoach) {
+        const { data: pastEvtsData } = await supabase
+          .from('events')
+          .select('id')
+          .eq('team_id', team.id)
+          .lt('event_date', today)
+          .is('cancelled_at', null)
+          .order('event_date', { ascending: false })
+          .limit(30);
+        const pastIds = (pastEvtsData ?? []).map((e: { id: string }) => e.id);
+        if (pastIds.length > 0) {
+          const { data: attRows } = await supabase
+            .from('event_attendance')
+            .select('event_id, status')
+            .eq('player_id', player.id)
+            .in('event_id', pastIds);
+          const attMap = new Map((attRows ?? []).map((r: any) => [r.event_id as string, r.status as string]));
+          const markedInOrder = pastIds.filter((id) => attMap.has(id));
+          let streak = 0;
+          for (const id of markedInOrder) {
+            if (attMap.get(id) === 'present') streak++;
+            else break;
+          }
+          const presentCount = markedInOrder.filter((id) => attMap.get(id) === 'present').length;
+          setAttendanceStreak(streak);
+          setSeasonAttendedCount(presentCount);
+          setSeasonTotalMarked(markedInOrder.length);
+          setSeasonAttendancePct(markedInOrder.length > 0 ? Math.round(presentCount / markedInOrder.length * 100) : null);
+        }
       }
     } else {
-      setMyRsvpStatus(null);
+      setMyGameRsvpStatus(null);
+      setMyTrainingRsvpStatus(null);
       setMyRsvpCount(0);
+    }
+
+    if (isCoach) {
+      const [gameRsvps, trainingRsvps] = await Promise.all([
+        nextG ? supabase.from('event_rsvps').select('status').eq('event_id', nextG.id) : Promise.resolve({ data: null as null }),
+        nextT ? supabase.from('event_rsvps').select('status').eq('event_id', nextT.id) : Promise.resolve({ data: null as null }),
+      ]);
+      if (nextG && gameRsvps.data) {
+        const going = gameRsvps.data.filter((r: any) => r.status === 'attending').length;
+        const notGoing = gameRsvps.data.filter((r: any) => r.status === 'not_attending').length;
+        setGameHeadcount({ going, notGoing, tbd: Math.max(0, (pc ?? 0) - going - notGoing) });
+      } else {
+        setGameHeadcount(null);
+      }
+      if (nextT && trainingRsvps.data) {
+        const going = trainingRsvps.data.filter((r: any) => r.status === 'attending').length;
+        const notGoing = trainingRsvps.data.filter((r: any) => r.status === 'not_attending').length;
+        setTrainingHeadcount({ going, notGoing, tbd: Math.max(0, (pc ?? 0) - going - notGoing) });
+      } else {
+        setTrainingHeadcount(null);
+      }
+    } else {
+      setGameHeadcount(null);
+      setTrainingHeadcount(null);
+    }
+
+    // Team Pulse — game vs training attendance this month (coaches only)
+    if (isCoach && (pc ?? 0) > 0) {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const startStr = startOfMonth.toISOString().split('T')[0];
+      const [{ data: gameEvts }, { data: trainingEvts }] = await Promise.all([
+        supabase.from('events').select('id').eq('team_id', team.id)
+          .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).is('cancelled_at', null),
+        supabase.from('events').select('id').eq('team_id', team.id)
+          .in('type', ['training', 'other']).gte('event_date', startStr).lte('event_date', today).is('cancelled_at', null),
+      ]);
+      const gameIds = (gameEvts ?? []).map((e: { id: string }) => e.id);
+      const trainingIds = (trainingEvts ?? []).map((e: { id: string }) => e.id);
+      const [gameAtt, trainingAtt] = await Promise.all([
+        gameIds.length > 0
+          ? supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).in('event_id', gameIds).eq('status', 'attending')
+          : Promise.resolve({ count: null }),
+        trainingIds.length > 0
+          ? supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).in('event_id', trainingIds).eq('status', 'attending')
+          : Promise.resolve({ count: null }),
+      ]);
+      const playerN = pc ?? 0;
+      setPulseGameEvents(gameIds.length);
+      setPulseGamePct(gameIds.length > 0 && playerN > 0 ? Math.round(((gameAtt.count ?? 0) / (gameIds.length * playerN)) * 100) : null);
+      setPulseTrainingEvents(trainingIds.length);
+      setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round(((trainingAtt.count ?? 0) / (trainingIds.length * playerN)) * 100) : null);
     }
 
     setLoading(false);
@@ -334,25 +474,30 @@ export default function HomeScreen() {
     setRefreshing(false);
   }
 
-  async function handleInlineRsvp(status: 'attending' | 'not_attending') {
-    if (!nextEvent || !myPlayer || rsvpLoading) return;
+  async function handleRsvp(
+    event: NextEvent,
+    status: 'attending' | 'not_attending',
+    currentStatus: string | null,
+    setStatus: (s: string | null) => void,
+    setLoading: (b: boolean) => void,
+  ) {
+    if (!myPlayer) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setRsvpLoading(true);
-    const isSame = myRsvpStatus === status;
-    if (isSame) {
-      await supabase.from('event_rsvps').delete().eq('event_id', nextEvent.id).eq('player_id', myPlayer.id);
-      setMyRsvpStatus(null);
+    setLoading(true);
+    if (currentStatus === status) {
+      await supabase.from('event_rsvps').delete().eq('event_id', event.id).eq('player_id', myPlayer.id);
+      setStatus(null);
       if (status === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
     } else {
       await supabase.from('event_rsvps').upsert(
-        { event_id: nextEvent.id, player_id: myPlayer.id, responded_by: profile?.id, status },
+        { event_id: event.id, player_id: myPlayer.id, responded_by: profile?.id, status },
         { onConflict: 'event_id,player_id' }
       );
       if (status === 'attending') setMyRsvpCount((c) => c + 1);
-      else if (myRsvpStatus === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
-      setMyRsvpStatus(status);
+      else if (currentStatus === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
+      setStatus(status);
     }
-    setRsvpLoading(false);
+    setLoading(false);
   }
 
   if (teamLoading || loading) {
@@ -360,128 +505,153 @@ export default function HomeScreen() {
   }
 
   const teamName = team?.name ?? club?.name ?? 'Your Team';
-  const eventCfg = nextEvent ? (TYPE_CONFIG[nextEvent.type] ?? TYPE_CONFIG.other) : null;
   const playerColor = positionColor(myPlayer?.position ?? null);
   const playerInitials = myPlayer?.full_name
     ? myPlayer.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : '?';
   const playerAvatarUrl = myPlayer?.photo_url ?? null;
 
-  return (
-    <>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
-      >
+  function renderNextCard(
+    label: string,
+    event: NextEvent | null,
+    weather: WeatherData | null,
+    driveTime: string | null,
+    headcount: Headcount | null,
+    rsvpStatus: string | null,
+    rsvpLoading: boolean,
+    onRsvp: (s: 'attending' | 'not_attending') => void,
+  ) {
+    const cfg = event ? (TYPE_CONFIG[event.type] ?? TYPE_CONFIG.other) : null;
+    const accentColor = cfg?.color ?? primaryColor;
+    const kitColor = event?.uniform === 'home' ? homeKitColor
+      : event?.uniform === 'away' ? awayKitColor
+      : event?.uniform === 'training' ? trainingKitColor
+      : null;
+    const uniformLabel = event?.type === 'game'
+      ? (event?.home_away === 'away' ? 'AWAY' : 'HOME')
+      : null;
 
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.greeting} onPress={handleGreetingTap}>{greeting(profile?.full_name)}</Text>
-            <TouchableOpacity
-              style={styles.teamRow}
-              onPress={() => hasMultipleTeams && setTeamPickerOpen(true)}
-              activeOpacity={hasMultipleTeams ? 0.7 : 1}
-            >
-              <ClubBadge size={60} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.clubName}>{clubName}</Text>
-                <View style={styles.teamNameRow}>
-                  <Text style={styles.teamName}>{teamName}</Text>
-                  {hasMultipleTeams && (
-                    <Ionicons name="chevron-down" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginTop: 2 }} />
-                  )}
-                </View>
-              </View>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push(`/(app)/${slug}/notifications` as never)}>
-              <View>
-                <Ionicons name="notifications-outline" size={20} color={unreadNotifCount > 0 ? DUGOUT_COLORS.ui.text : DUGOUT_COLORS.ui.muted} />
-                {unreadNotifCount > 0 && <View style={styles.notifBadge} />}
-              </View>
-            </TouchableOpacity>
-            {isCoach && (
-              <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push(`/(app)/${slug}/admin` as never)}>
-                <Ionicons name="grid-outline" size={20} color={DUGOUT_COLORS.ui.muted} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.push(`/(app)/${slug}/settings` as never)}>
-              <Ionicons name="settings-outline" size={20} color={DUGOUT_COLORS.ui.muted} />
-            </TouchableOpacity>
-          </View>
+    return (
+      <View key={label}>
+        <View style={[styles.sectionTitleRow, { borderLeftColor: accentColor }]}>
+          <Text style={styles.sectionTitle}>{label}</Text>
         </View>
-
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <TouchableOpacity style={styles.statCard} onPress={() => router.push(`/(app)/${slug}/(tabs)/roster` as never)} activeOpacity={0.8}>
-            <View style={[styles.statIcon, { backgroundColor: rgba(0.1) }]}>
-              <Ionicons name={isCoach ? 'people-outline' : 'checkmark-circle-outline'} size={18} color={primaryColor} />
-            </View>
-            <Text style={[styles.statNumber, { color: primaryColor }]}>{isCoach ? playerCount : myRsvpCount}</Text>
-            <Text style={styles.statLabel}>{isCoach ? 'Players' : 'Going'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.statCard} onPress={() => router.push(`/(app)/${slug}/(tabs)/schedule` as never)} activeOpacity={0.8}>
-            <View style={[styles.statIcon, { backgroundColor: rgba(0.1) }]}>
-              <Ionicons name="calendar-outline" size={18} color={primaryColor} />
-            </View>
-            <Text style={[styles.statNumber, { color: primaryColor }]}>{upcomingCount}</Text>
-            <Text style={styles.statLabel}>Upcoming</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Game Day Outlook — coaches only */}
-        {isCoach && (
-          <GameDayWidget onPress={() => router.push(`/(app)/${slug}/game-day` as any)} />
-        )}
-
-        {/* Next Event */}
-        <Text style={styles.sectionTitle}>NEXT EVENT</Text>
-        {nextEvent && eventCfg ? (
+        {event && cfg ? (
           <TouchableOpacity
-            style={styles.nextEventCard}
-            onPress={() => router.push(`/(app)/${slug}/event/${nextEvent.id}` as never)}
+            style={[styles.nextEventCard, { marginBottom: 28, borderLeftWidth: 3, borderLeftColor: accentColor }]}
+            onPress={() => router.push(`/(app)/${slug}/event/${event.id}` as never)}
             activeOpacity={0.85}
           >
-            {/* Top row: icon + details + chevron */}
-            <View style={styles.nextEventTop}>
-              <View style={[styles.eventTypeIcon, { backgroundColor: `${eventCfg.color}18` }]}>
-                <Ionicons name={eventCfg.icon} size={26} color={eventCfg.color} />
+            {/* Title block left · solid badge + drive time right */}
+            <View style={styles.nextCardHeader}>
+              <View style={styles.nextCardTitleBlock}>
+                {uniformLabel ? (
+                  <Text style={[styles.nextCardUniformPrefix, { color: kitColor ?? accentColor }]}>{uniformLabel}</Text>
+                ) : null}
+                <Text style={styles.nextCardTitle} numberOfLines={1}>{event.title}</Text>
               </View>
-              <View style={styles.nextEventBody}>
-                <Text style={styles.nextEventTitle}>{nextEvent.title}</Text>
-                <Text style={[styles.nextEventDate, { color: primaryColor }]}>
-                  {formatCountdown(nextEvent.event_date, nextEvent.event_time)}
-                  {nextEvent.event_time ? `  ·  ${formatTime(nextEvent.event_time)}` : ''}
-                </Text>
-                {nextEvent.location ? (
-                  <View style={styles.locationRow}>
-                    <Ionicons name="location-outline" size={12} color={DUGOUT_COLORS.ui.muted} />
-                    <Text style={styles.nextEventLocation}>{nextEvent.location}</Text>
+              <View style={styles.nextCardTopRight}>
+                <View style={[styles.nextCardBadge, { backgroundColor: accentColor }]}>
+                  <Text style={styles.nextCardBadgeText}>
+                    {formatDate(event.event_date).toUpperCase()}
+                  </Text>
+                </View>
+                {driveTime ? (
+                  <View style={styles.nextCardDrivePill}>
+                    <Ionicons name="car-outline" size={11} color={PULSE_COLORS.ui.muted} />
+                    <Text style={styles.nextCardDrivePillText}>{driveTime}</Text>
                   </View>
                 ) : null}
-                {nextEvent.uniform && (
-                  <View style={[styles.uniformChip, { backgroundColor: rgba(0.1), borderColor: rgba(0.25) }]}>
-                    <Text style={[styles.uniformChipText, { color: primaryColor }]}>
-                      {nextEvent.uniform.charAt(0).toUpperCase() + nextEvent.uniform.slice(1)} kit
-                    </Text>
-                  </View>
-                )}
               </View>
-              <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} style={{ marginTop: 2 }} />
             </View>
 
-            {/* RSVP row — parents only */}
-            {!isCoach && myPlayer && (
+            {/* Date/time + location */}
+            <View style={styles.nextCardMeta}>
+              <View style={styles.nextCardMetaRow}>
+                <Ionicons name="time-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                <Text style={styles.nextCardMetaText}>
+                  {new Date(event.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {event.event_time ? `  ·  ${formatTime(event.event_time)}` : ''}
+                </Text>
+              </View>
+              {event.location ? (
+                <View style={styles.nextCardMetaRow}>
+                  <Ionicons name="location-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                  <Text style={styles.nextCardMetaText} numberOfLines={1}>{event.location}</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Context chips: weather + surface + kit — unified row */}
+            {(weather || event.field_type || kitColor) ? (
+              <View style={styles.nextCardChipRow}>
+                {weather ? (
+                  <View style={[styles.nextCardChip, styles.nextCardChipWeather]}>
+                    <Text style={styles.nextCardChipEmoji}>{weather.icon}</Text>
+                    <Text style={[styles.nextCardChipText, { color: PULSE_COLORS.ui.textSecondary }]}>
+                      {weather.temp_f}°F{weather.precip_chance >= 20 ? `  💧${weather.precip_chance}%` : ''}
+                    </Text>
+                  </View>
+                ) : null}
+                {event.field_type === 'grass' ? (
+                  <View style={[styles.nextCardChip, { borderColor: 'rgba(34,197,94,0.25)', backgroundColor: 'rgba(34,197,94,0.08)' }]}>
+                    <Text style={[styles.nextCardChipText, { color: '#22C55E' }]}>Grass</Text>
+                  </View>
+                ) : event.field_type === 'turf' ? (
+                  <View style={[styles.nextCardChip, { borderColor: 'rgba(59,130,246,0.25)', backgroundColor: 'rgba(59,130,246,0.08)' }]}>
+                    <Text style={[styles.nextCardChipText, { color: '#3B82F6' }]}>Turf</Text>
+                  </View>
+                ) : event.field_type === 'indoor' ? (
+                  <View style={[styles.nextCardChip, { borderColor: 'rgba(156,163,175,0.25)', backgroundColor: 'rgba(156,163,175,0.08)' }]}>
+                    <Ionicons name="business-outline" size={11} color="#9CA3AF" />
+                    <Text style={[styles.nextCardChipText, { color: '#9CA3AF' }]}>Indoor</Text>
+                  </View>
+                ) : null}
+                {kitColor ? (
+                  <View style={[styles.nextCardChip, { borderColor: `${kitColor}35`, backgroundColor: `${kitColor}12` }]}>
+                    <Ionicons name="shirt" size={11} color={kitColor} />
+                    <Text style={[styles.nextCardChipText, { color: kitColor, fontWeight: '700' }]}>
+                      {event.uniform === 'home' ? 'Home' : event.uniform === 'away' ? 'Away' : 'Training'} Kit
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Headcount — coaches only, taps through to attendance tab */}
+            {isCoach && headcount ? (
+              <TouchableOpacity
+                style={styles.headcountRow}
+                onPress={() => router.push({ pathname: `/(app)/${slug}/event/${event.id}`, params: { section: 'attendance' } } as never)}
+                activeOpacity={0.7}
+              >
+                {[
+                  { count: headcount.going,    color: '#22C55E', label: 'Going' },
+                  { count: headcount.tbd,      color: '#F59E0B', label: 'TBD'   },
+                  { count: headcount.notGoing, color: '#EF4444', label: 'Out'   },
+                ].map(({ count, color, label: lbl }) => (
+                  <View key={lbl} style={styles.headcountItem}>
+                    <View style={[styles.headcountCircle, { backgroundColor: color }]}>
+                      <Text style={styles.headcountCircleNum}>{count}</Text>
+                    </View>
+                    <Text style={styles.headcountLabel}>{lbl}</Text>
+                  </View>
+                ))}
+                <View style={styles.headcountChevron}>
+                  <Text style={styles.headcountChevronText}>View breakdown</Text>
+                  <Ionicons name="chevron-forward" size={12} color={PULSE_COLORS.ui.muted} />
+                </View>
+              </TouchableOpacity>
+            ) : null}
+
+            {/* RSVP — parents with a linked player */}
+            {!isCoach && myPlayer ? (
               <View style={styles.nextEventRsvpRow}>
-                {myRsvpStatus === null ? (
+                {rsvpStatus === null ? (
                   <>
                     <TouchableOpacity
                       style={[styles.rsvpBtn, { backgroundColor: rgba(0.12), borderColor: rgba(0.3) }]}
-                      onPress={() => handleInlineRsvp('attending')}
+                      onPress={() => onRsvp('attending')}
                       disabled={rsvpLoading}
                       activeOpacity={0.75}
                     >
@@ -490,54 +660,294 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.rsvpBtn, styles.rsvpBtnNo]}
-                      onPress={() => handleInlineRsvp('not_attending')}
+                      onPress={() => onRsvp('not_attending')}
                       disabled={rsvpLoading}
                       activeOpacity={0.75}
                     >
-                      <Ionicons name="close" size={14} color={DUGOUT_COLORS.rsvp.not_attending} />
-                      <Text style={[styles.rsvpBtnText, { color: DUGOUT_COLORS.rsvp.not_attending }]}>Can't go</Text>
+                      <Ionicons name="close" size={14} color={PULSE_COLORS.rsvp.not_attending} />
+                      <Text style={[styles.rsvpBtnText, { color: PULSE_COLORS.rsvp.not_attending }]}>Can't go</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
                   <View style={[
                     styles.rsvpConfirmed,
-                    myRsvpStatus === 'attending'
+                    rsvpStatus === 'attending'
                       ? { backgroundColor: rgba(0.1), borderColor: rgba(0.25) }
                       : { backgroundColor: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.2)' },
                   ]}>
                     <Ionicons
-                      name={myRsvpStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
+                      name={rsvpStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
                       size={14}
-                      color={myRsvpStatus === 'attending' ? primaryColor : DUGOUT_COLORS.rsvp.not_attending}
+                      color={rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.rsvp.not_attending}
                     />
                     <Text style={[
                       styles.rsvpConfirmedText,
-                      { color: myRsvpStatus === 'attending' ? primaryColor : DUGOUT_COLORS.rsvp.not_attending },
+                      { color: rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.rsvp.not_attending },
                     ]}>
-                      {myRsvpStatus === 'attending' ? 'Going' : "Can't go"}
+                      {rsvpStatus === 'attending' ? 'Going' : "Can't go"}
                     </Text>
                     <Text style={styles.rsvpTapToChange}>  ·  tap card to change</Text>
                   </View>
                 )}
               </View>
-            )}
+            ) : null}
           </TouchableOpacity>
         ) : (
-          <View style={styles.noEvent}>
-            <View style={[styles.noEventIconWrap, { backgroundColor: rgba(0.1) }]}>
-              <Ionicons name="calendar-outline" size={28} color={primaryColor} />
-            </View>
-            <Text style={styles.noEventText}>No upcoming events</Text>
+          <TouchableOpacity
+            style={[styles.noEvent, { marginBottom: 28 }]}
+            onPress={isCoach ? () => router.push(`/(app)/${slug}/create-event` as never) : undefined}
+            activeOpacity={isCoach ? 0.75 : 1}
+          >
+            <Text style={styles.noEventText}>
+              {label === 'NEXT GAME' ? 'No upcoming games' : 'No upcoming training'}
+            </Text>
+            {isCoach ? (
+              <Text style={[styles.noEventText, { color: primaryColor, fontSize: 12, marginTop: 4 }]}>
+                Tap to create one →
+              </Text>
+            ) : null}
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[styles.content, { paddingTop: 0 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
+      >
+
+        {/* ── Club Hero Banner ── */}
+        <View style={[styles.heroBanner, { paddingTop: insets.top + 12, backgroundColor: primaryColor }]}>
+          <HeroBannerOverlay pattern={headerPattern} patternColor={secondaryRgba} />
+          {/* Dark tint so white text is always readable over any pattern */}
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.18)' }]} pointerEvents="none" />
+          {/* Icon buttons top-right */}
+          <View style={styles.heroActions}>
+            <TouchableOpacity style={styles.heroIconBtn} onPress={() => router.push(`/(app)/${slug}/notifications` as never)}>
+              <View>
+                <Ionicons name="notifications-outline" size={20} color="rgba(255,255,255,0.9)" />
+                {unreadNotifCount > 0 && <View style={styles.notifBadge} />}
+              </View>
+            </TouchableOpacity>
             {isCoach && (
-              <Text style={styles.noEventSub}>Create your first event in the Admin Panel</Text>
+              <TouchableOpacity style={styles.heroIconBtn} onPress={() => router.push(`/(app)/${slug}/admin` as never)}>
+                <Ionicons name="grid-outline" size={20} color="rgba(255,255,255,0.9)" />
+              </TouchableOpacity>
             )}
+            <TouchableOpacity style={styles.heroIconBtn} onPress={() => router.push(`/(app)/${slug}/settings` as never)}>
+              <Ionicons name="settings-outline" size={20} color="rgba(255,255,255,0.9)" />
+            </TouchableOpacity>
           </View>
+
+          {/* Logo + club name centred */}
+          <TouchableOpacity
+            style={styles.heroBrand}
+            onPress={() => hasMultipleTeams && setTeamPickerOpen(true)}
+            activeOpacity={hasMultipleTeams ? 0.75 : 1}
+            onLongPress={handleGreetingTap}
+          >
+            {/* Badge */}
+            <View style={styles.heroBadgeGlow}>
+              {logoUrl ? (
+                <Image source={{ uri: logoUrl }} style={{ width: 88, height: 88 }} resizeMode="contain" />
+              ) : (
+                <View style={[styles.heroBadgeRing, { borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.22)' }]}>
+                  <Text style={[styles.heroBadgeLetters, { color: secondaryColor || '#fff' }]}>
+                    {clubName.split(' ').slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || 'FC'}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.heroClubName}>{clubName}</Text>
+            <View style={styles.heroTeamRow}>
+              <Text style={styles.heroTeamName}>{teamName}</Text>
+              {hasMultipleTeams && (
+                <Ionicons name="chevron-down" size={13} color="rgba(255,255,255,0.6)" style={{ marginTop: 1 }} />
+              )}
+            </View>
+          </TouchableOpacity>
+
+          {/* Greeting */}
+          <Text style={styles.heroGreeting}>{greeting(profile?.full_name)}</Text>
+        </View>
+
+        {/* Stats — parents only (Going / Upcoming) */}
+        {!isCoach && (
+          <View style={[styles.statsRow, { marginTop: 20 }]}>
+            <TouchableOpacity
+              style={[styles.statCard, { borderTopColor: primaryColor, borderTopWidth: 2 }]}
+              onPress={() => router.push(`/(app)/${slug}/(tabs)/schedule` as never)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.statIcon, { backgroundColor: rgba(0.1) }]}>
+                <Ionicons name="checkmark-circle-outline" size={18} color={primaryColor} />
+              </View>
+              <Text style={[styles.statNumber, { color: primaryColor }]}>{myRsvpCount}</Text>
+              <Text style={styles.statLabel}>Going</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.statCard, { borderTopColor: primaryColor, borderTopWidth: 2 }]}
+              onPress={() => router.push(`/(app)/${slug}/(tabs)/schedule` as never)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.statIcon, { backgroundColor: rgba(0.1) }]}>
+                <Ionicons name="calendar-outline" size={18} color={primaryColor} />
+              </View>
+              <Text style={[styles.statNumber, { color: primaryColor }]}>{upcomingCount}</Text>
+              <Text style={styles.statLabel}>Upcoming</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Game Day Outlook — coaches only */}
+        {isCoach && (
+          <GameDayWidget onPress={() => router.push(`/(app)/${slug}/game-day` as any)} />
+        )}
+
+        {/* Team Pulse — coaches only */}
+        {isCoach && (
+          <>
+            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor, marginTop: 20 }]}>
+              <Text style={styles.sectionTitle}>TEAM PULSE</Text>
+            </View>
+            <View style={[styles.pulseCard, { borderLeftWidth: 3, borderLeftColor: primaryColor }]}>
+              <Text style={styles.pulseCardHeader}>RSVP ATTENDANCE · THIS MONTH</Text>
+              <View style={styles.pulseMetricRow}>
+                {/* Game attendance % this month */}
+                {(() => {
+                  const pct = pulseGamePct;
+                  const color = pct == null ? PULSE_COLORS.ui.muted
+                    : pct >= 75 ? '#22C55E' : pct >= 50 ? '#F59E0B' : '#EF4444';
+                  return (
+                    <View style={styles.pulseMetric}>
+                      <Text style={[styles.pulseMetricNum, { color }]}>
+                        {pct != null ? `${pct}%` : '—'}
+                      </Text>
+                      <Text style={styles.pulseMetricLabel}>
+                        {`Games\n${pulseGameEvents > 0 ? `${pulseGameEvents} played` : 'none yet'}`}
+                      </Text>
+                      {pct != null && (
+                        <View style={styles.pulseBar}>
+                          <View style={[styles.pulseBarFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
+
+                <View style={styles.pulseDivider} />
+
+                {/* Training attendance % this month */}
+                {(() => {
+                  const pct = pulseTrainingPct;
+                  const color = pct == null ? PULSE_COLORS.ui.muted
+                    : pct >= 75 ? '#22C55E' : pct >= 50 ? '#F59E0B' : '#EF4444';
+                  return (
+                    <View style={styles.pulseMetric}>
+                      <Text style={[styles.pulseMetricNum, { color }]}>
+                        {pct != null ? `${pct}%` : '—'}
+                      </Text>
+                      <Text style={styles.pulseMetricLabel}>
+                        {`Training\n${pulseTrainingEvents > 0 ? `${pulseTrainingEvents} session${pulseTrainingEvents !== 1 ? 's' : ''} held` : 'none yet'}`}
+                      </Text>
+                      {pct != null && (
+                        <View style={styles.pulseBar}>
+                          <View style={[styles.pulseBarFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* MY SEASON — players with coach-marked attendance */}
+        {!isCoach && myPlayer && seasonTotalMarked > 0 && (
+          <>
+            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+              <Text style={styles.sectionTitle}>MY SEASON</Text>
+            </View>
+            <View style={[styles.seasonCard, { borderLeftWidth: 3, borderLeftColor: primaryColor }]}>
+              <View style={styles.seasonMetric}>
+                <View style={[styles.seasonMetricIcon, { backgroundColor: attendanceStreak >= 3 ? 'rgba(245,158,11,0.12)' : rgba(0.08) }]}>
+                  <Text style={{ fontSize: 20 }}>{attendanceStreak >= 5 ? '🔥' : attendanceStreak >= 3 ? '⚡' : '📅'}</Text>
+                </View>
+                <View style={styles.seasonMetricBody}>
+                  <Text style={[styles.seasonMetricNum, { color: attendanceStreak >= 3 ? '#F59E0B' : primaryColor }]}>
+                    {attendanceStreak}
+                  </Text>
+                  <Text style={styles.seasonMetricLabel}>
+                    {`Session streak${attendanceStreak >= 5 ? '\n🔥 On fire!' : attendanceStreak >= 3 ? '\n⚡ Building!' : ''}`}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.seasonDivider} />
+              {(() => {
+                const pct = seasonAttendancePct;
+                const medal = pct == null ? null
+                  : pct >= 90 ? { icon: '🥇', color: '#F59E0B' }
+                  : pct >= 70 ? { icon: '🥈', color: '#9CA3AF' }
+                  : pct >= 50 ? { icon: '🥉', color: '#CD7F32' }
+                  : null;
+                const color = medal?.color ?? PULSE_COLORS.ui.muted;
+                return (
+                  <View style={styles.seasonMetric}>
+                    <View style={[styles.seasonMetricIcon, { backgroundColor: medal ? `${color}18` : rgba(0.08) }]}>
+                      <Text style={{ fontSize: 20 }}>{medal?.icon ?? '📊'}</Text>
+                    </View>
+                    <View style={styles.seasonMetricBody}>
+                      <Text style={[styles.seasonMetricNum, { color: pct != null ? color : PULSE_COLORS.ui.muted }]}>
+                        {pct != null ? `${pct}%` : '—'}
+                      </Text>
+                      <Text style={styles.seasonMetricLabel}>
+                        {`Attendance rate\n${seasonAttendedCount}/${seasonTotalMarked} sessions`}
+                      </Text>
+                      {pct != null && (
+                        <View style={[styles.seasonBar, { backgroundColor: PULSE_COLORS.ui.surface }]}>
+                          <View style={[styles.seasonBarFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                );
+              })()}
+            </View>
+          </>
+        )}
+
+        {/* Next Game + Next Training */}
+        {renderNextCard(
+          'NEXT GAME',
+          nextGame,
+          nextGameWeather,
+          nextGameDriveTime,
+          gameHeadcount,
+          myGameRsvpStatus,
+          gameRsvpLoading,
+          (s) => nextGame && handleRsvp(nextGame, s, myGameRsvpStatus, setMyGameRsvpStatus, setGameRsvpLoading),
+        )}
+        {renderNextCard(
+          'NEXT TRAINING',
+          nextTraining,
+          nextTrainingWeather,
+          nextTrainingDriveTime,
+          trainingHeadcount,
+          myTrainingRsvpStatus,
+          trainingRsvpLoading,
+          (s) => nextTraining && handleRsvp(nextTraining, s, myTrainingRsvpStatus, setMyTrainingRsvpStatus, setTrainingRsvpLoading),
         )}
 
         {/* Outstanding fees — parents only */}
         {!isCoach && outstandingFees.length > 0 && (() => {
           const hasOverdue = outstandingFees.some(f => f.status === 'overdue' || (f.due_date && new Date(f.due_date) < new Date()));
-          const accentColor = hasOverdue ? DUGOUT_COLORS.status.error : DUGOUT_COLORS.status.warning;
+          const accentColor = hasOverdue ? PULSE_COLORS.status.error : PULSE_COLORS.status.warning;
           const totalOwed = outstandingFees.reduce((s, f) => s + Math.max(0, f.amount_due - (f.discount ?? 0)), 0);
           const single = outstandingFees.length === 1 ? outstandingFees[0] : null;
           const fmtDue = (due: string | null) => {
@@ -547,7 +957,9 @@ export default function HomeScreen() {
           };
           return (
             <>
-              <Text style={styles.sectionTitle}>OUTSTANDING FEES</Text>
+              <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+                <Text style={styles.sectionTitle}>OUTSTANDING FEES</Text>
+              </View>
               <TouchableOpacity
                 style={[styles.feeCard, { borderColor: `${accentColor}40` }]}
                 onPress={() => setShowFeeModal(true)}
@@ -575,11 +987,11 @@ export default function HomeScreen() {
                         </>
                       )}
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
                   </View>
                   {hasOverdue && (
                     <View style={styles.feeOverdueBadge}>
-                      <Ionicons name="alert-circle-outline" size={12} color={DUGOUT_COLORS.status.error} />
+                      <Ionicons name="alert-circle-outline" size={12} color={PULSE_COLORS.status.error} />
                       <Text style={styles.feeOverdueText}>Payment overdue — contact your coach</Text>
                     </View>
                   )}
@@ -592,7 +1004,9 @@ export default function HomeScreen() {
         {/* My Player — parents only */}
         {!isCoach && myPlayer && (
           <>
-            <Text style={styles.sectionTitle}>MY PLAYER</Text>
+            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+              <Text style={styles.sectionTitle}>MY PLAYER</Text>
+            </View>
             <TouchableOpacity
               style={styles.myPlayerCard}
               onPress={() => router.push(`/(app)/${slug}/player/${myPlayer.id}` as never)}
@@ -626,7 +1040,7 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
             </TouchableOpacity>
           </>
         )}
@@ -634,9 +1048,11 @@ export default function HomeScreen() {
         {/* Latest announcement */}
         {latestAnnouncement && (
           <>
-            <Text style={styles.sectionTitle}>FROM THE COACH</Text>
+            <View style={[styles.sectionTitleRow, { borderLeftColor: primaryColor }]}>
+              <Text style={styles.sectionTitle}>FROM THE COACH</Text>
+            </View>
             <TouchableOpacity
-              style={styles.announcementCard}
+              style={[styles.announcementCard, { borderLeftWidth: 3, borderLeftColor: rgba(0.4) }]}
               onPress={() => router.push(`/(app)/${slug}/(tabs)/chat` as never)}
               activeOpacity={0.8}
             >
@@ -648,30 +1064,29 @@ export default function HomeScreen() {
                 <Text style={styles.announcementPreview} numberOfLines={2}>{latestAnnouncement.body}</Text>
                 <Text style={styles.announcementTime}>{timeAgo(latestAnnouncement.created_at)}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
             </TouchableOpacity>
           </>
         )}
 
-        {/* Quick Actions */}
-        <Text style={styles.sectionTitle}>QUICK ACTIONS</Text>
-        <View style={styles.actionsGrid}>
-          {isCoach ? (
-            <>
-              <QuickAction icon="person-add-outline" label="Add Player" onPress={() => router.push(`/(app)/${slug}/(tabs)/roster` as never)} />
-              <QuickAction icon="calendar-outline" label="Add Event" onPress={() => router.push(`/(app)/${slug}/(tabs)/schedule` as never)} />
-              <QuickAction icon="link-outline" label="Invite" onPress={() => router.push(`/(app)/${slug}/(tabs)/roster` as never)} />
-              <QuickAction icon="chatbubble-outline" label="Team Chat" onPress={() => router.push(`/(app)/${slug}/(tabs)/chat` as never)} />
-            </>
-          ) : (
-            <>
-              <QuickAction icon="calendar-outline" label="Schedule" onPress={() => router.push(`/(app)/${slug}/(tabs)/schedule` as never)} />
-              <QuickAction icon="people-outline" label="Roster" onPress={() => router.push(`/(app)/${slug}/(tabs)/roster` as never)} />
-              <QuickAction icon="chatbubble-outline" label="Team Chat" onPress={() => router.push(`/(app)/${slug}/(tabs)/chat` as never)} />
-              <QuickAction icon="settings-outline" label="Settings" onPress={() => router.push(`/(app)/${slug}/settings` as never)} />
-            </>
-          )}
-        </View>
+        {/* Weekend Outlook entry — coaches only */}
+        {isCoach && (
+          <TouchableOpacity
+            style={[styles.weekendOutlookBtn, { borderColor: rgba(0.3), backgroundColor: rgba(0.06) }]}
+            onPress={() => router.push(`/(app)/${slug}/weekend-outlook` as never)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.weekendOutlookIcon, { backgroundColor: rgba(0.15) }]}>
+              <Ionicons name="calendar-outline" size={20} color={primaryColor} />
+            </View>
+            <View style={styles.weekendOutlookText}>
+              <Text style={[styles.weekendOutlookTitle, { color: primaryColor }]}>Weekend Outlook</Text>
+              <Text style={styles.weekendOutlookSub}>All your weekend games, travel times & lineup status</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={rgba(0.6)} />
+          </TouchableOpacity>
+        )}
+
         <View style={{ height: 32 }} />
 
       </ScrollView>
@@ -683,28 +1098,30 @@ export default function HomeScreen() {
           <View style={styles.devHandle} />
           <Text style={styles.devTitle}>Switch Team</Text>
           <Text style={styles.devSub}>Select which team to view</Text>
-          {allTeams.map((t) => {
-            const isActive = t.id === team?.id;
-            return (
-              <TouchableOpacity
-                key={t.id}
-                style={[styles.teamPickerRow, isActive && styles.teamPickerRowActive]}
-                onPress={() => handleSelectTeam(t.id)}
-                activeOpacity={0.75}
-              >
-                <View style={[styles.teamPickerIcon, { backgroundColor: rgba(isActive ? 0.18 : 0.08), borderColor: rgba(isActive ? 0.35 : 0.15) }]}>
-                  <Ionicons name="football-outline" size={18} color={primaryColor} />
-                </View>
-                <View style={styles.teamPickerBody}>
-                  <Text style={[styles.teamPickerName, isActive && { color: primaryColor }]}>{t.name}</Text>
-                  {(t.age_group || t.season) ? (
-                    <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
-                  ) : null}
-                </View>
-                {isActive && <Ionicons name="checkmark-circle" size={20} color={primaryColor} />}
-              </TouchableOpacity>
-            );
-          })}
+          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false} bounces={false}>
+            {allTeams.map((t) => {
+              const isActive = t.id === team?.id;
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[styles.teamPickerRow, isActive && styles.teamPickerRowActive]}
+                  onPress={() => handleSelectTeam(t.id)}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.teamPickerIcon, { backgroundColor: rgba(isActive ? 0.18 : 0.08), borderColor: rgba(isActive ? 0.35 : 0.15) }]}>
+                    <Ionicons name="football-outline" size={18} color={primaryColor} />
+                  </View>
+                  <View style={styles.teamPickerBody}>
+                    <Text style={[styles.teamPickerName, isActive && { color: primaryColor }]}>{t.name}</Text>
+                    {(t.age_group || t.season) ? (
+                      <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
+                    ) : null}
+                  </View>
+                  {isActive && <Ionicons name="checkmark-circle" size={20} color={primaryColor} />}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
       </Modal>
 
@@ -718,7 +1135,7 @@ export default function HomeScreen() {
           {outstandingFees.map((fee) => {
             const net = Math.max(0, fee.amount_due - (fee.discount ?? 0));
             const isOverdue = fee.status === 'overdue' || (fee.due_date ? new Date(fee.due_date) < new Date() : false);
-            const statusColor = isOverdue ? DUGOUT_COLORS.status.error : fee.status === 'partial' ? DUGOUT_COLORS.status.info : DUGOUT_COLORS.status.warning;
+            const statusColor = isOverdue ? PULSE_COLORS.status.error : fee.status === 'partial' ? PULSE_COLORS.status.info : PULSE_COLORS.status.warning;
             const statusLabel = isOverdue ? 'Overdue' : fee.status === 'partial' ? 'Partial' : 'Outstanding';
             const fmtDue = fee.due_date
               ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -767,7 +1184,7 @@ export default function HomeScreen() {
               </View>
               {devLoading === a.email
                 ? <ActivityIndicator size="small" color={primaryColor} />
-                : <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+                : <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
               }
             </TouchableOpacity>
           ))}
@@ -780,71 +1197,311 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  content: { padding: 20, paddingTop: 68, paddingBottom: 48 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.background },
+function HeroBannerOverlay({ pattern, patternColor }: { pattern: string; patternColor: (a: number) => string }) {
+  if (pattern === 'solid') return null;
 
-  // Header
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
-  headerLeft: { flex: 1 },
-  greeting: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, fontWeight: '500', marginBottom: 12 },
-  teamRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  clubName: { fontSize: 20, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.5, marginBottom: 2 },
-  teamNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  teamName: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
-  headerIconBtn: {
+  // Diagonal stripes — classic jersey
+  if (pattern === 'stripes') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: 20 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute',
+          top: -60 + i * 26, left: -100, right: -100, height: 13,
+          transform: [{ rotate: '-20deg' }],
+          backgroundColor: patternColor(0.6),
+        }} />
+      ))}
+    </View>
+  );
+
+  // Pinstripes
+  if (pattern === 'pinstripes') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: 40 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute',
+          top: -30 + i * 11, left: -100, right: -100, height: 5,
+          transform: [{ rotate: '-20deg' }],
+          backgroundColor: patternColor(0.55),
+        }} />
+      ))}
+    </View>
+  );
+
+  // Dots — retro print
+  if (pattern === 'dots') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: 18 }).flatMap((_, row) =>
+        Array.from({ length: 22 }).map((_, col) => (
+          <View key={`${row}-${col}`} style={{
+            position: 'absolute',
+            width: 5, height: 5, borderRadius: 2.5,
+            backgroundColor: patternColor(0.55),
+            left: col * 22 - 4,
+            top: row * 22 - 4 + (col % 2 === 0 ? 0 : 11),
+          }} />
+        ))
+      )}
+    </View>
+  );
+
+  // Grid — carbon feel
+  if (pattern === 'grid') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: 18 }).map((_, i) => (
+        <View key={`h${i}`} style={{
+          position: 'absolute', left: 0, right: 0,
+          top: i * 22, height: 1,
+          backgroundColor: patternColor(0.55),
+        }} />
+      ))}
+      {Array.from({ length: 24 }).map((_, i) => (
+        <View key={`v${i}`} style={{
+          position: 'absolute', top: 0, bottom: 0,
+          left: i * 20, width: 1,
+          backgroundColor: patternColor(0.55),
+        }} />
+      ))}
+    </View>
+  );
+
+  // Hoops — Celtic · QPR · Stoke
+  if (pattern === 'hoops') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: 14 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', left: 0, right: 0,
+          top: i * 28, height: 12,
+          backgroundColor: patternColor(0.6),
+        }} />
+      ))}
+    </View>
+  );
+
+  // Vertical stripes — Inter Milan · Newcastle · West Brom
+  if (pattern === 'vstripes') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: 16 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', top: 0, bottom: 0,
+          left: -17 + i * 34, width: 16,
+          backgroundColor: patternColor(0.6),
+        }} />
+      ))}
+    </View>
+  );
+
+  // Sash — River Plate · Paraguay
+  if (pattern === 'sash') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <View style={{
+        position: 'absolute',
+        top: '20%', left: -80, right: -80, height: 60,
+        transform: [{ rotate: '-22deg' }],
+        backgroundColor: patternColor(0.65),
+      }} />
+    </View>
+  );
+
+  // Halves — Juventus
+  if (pattern === 'halves') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <View style={{
+        position: 'absolute', top: 0, bottom: 0, left: 0, right: '50%',
+        backgroundColor: patternColor(0.55),
+      }} />
+      <View style={{
+        position: 'absolute', top: 0, bottom: 0, left: '50%', width: 2,
+        backgroundColor: patternColor(0.9),
+      }} />
+    </View>
+  );
+
+  // Diamond lattice — Argyle · retro Adidas
+  if (pattern === 'diamond') return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {Array.from({ length: 26 }).map((_, i) => (
+        <View key={`a${i}`} style={{
+          position: 'absolute',
+          top: -200, left: i * 26 - 13,
+          width: 1, height: 700,
+          transform: [{ rotate: '45deg' }],
+          backgroundColor: patternColor(0.55),
+        }} />
+      ))}
+      {Array.from({ length: 26 }).map((_, i) => (
+        <View key={`b${i}`} style={{
+          position: 'absolute',
+          top: -200, left: i * 26 - 13,
+          width: 1, height: 700,
+          transform: [{ rotate: '-45deg' }],
+          backgroundColor: patternColor(0.55),
+        }} />
+      ))}
+    </View>
+  );
+
+  return null;
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  content: { padding: 20, paddingTop: 0, paddingBottom: 48 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+
+  // Hero banner
+  heroBanner: {
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    marginBottom: 0,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: 'hidden',
+  },
+  heroActions: {
+    flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginBottom: 16,
+  },
+  heroIconBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: 'rgba(0,0,0,0.2)',
     alignItems: 'center', justifyContent: 'center',
   },
+  heroBrand: { alignItems: 'center', gap: 8, paddingBottom: 4 },
+  heroBadgeGlow: {
+    shadowColor: '#fff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.65,
+    shadowRadius: 18,
+    elevation: 12,
+    borderRadius: 20,
+  },
+  heroBadgeRing: {
+    width: 80, height: 80, borderRadius: 20, borderWidth: 3,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  heroBadgeLetters: { fontSize: 28, fontWeight: '900' },
+  heroClubName: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 8 },
+  heroTeamRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  heroTeamName: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.85)', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
+  heroGreeting: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '500', textAlign: 'center', marginTop: 10, textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+
   notifBadge: {
     position: 'absolute', top: -1, right: -1,
     width: 8, height: 8, borderRadius: 4,
     backgroundColor: '#EF4444',
-    borderWidth: 1.5, borderColor: DUGOUT_COLORS.ui.background,
+    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.background,
   },
 
-  // Stats
+  // Section title with left accent
+  sectionTitleRow: { borderLeftWidth: 3, paddingLeft: 8, marginBottom: 10 },
+
+  // Stats (parents only)
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 28 },
   statCard: {
-    flex: 1, backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16, padding: 16, alignItems: 'center', gap: 4,
   },
-  statIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  statNumber: { fontSize: 32, fontWeight: '800', lineHeight: 36 },
-  statLabel: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary, fontWeight: '600' },
+  statIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  statNumber: { fontSize: 36, fontWeight: '900', lineHeight: 40, letterSpacing: -1 },
+  statLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', letterSpacing: 0.3 },
+
+  // Weekend Outlook button
+  weekendOutlookBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, borderWidth: 1,
+    padding: 14, marginBottom: 8, marginTop: 8,
+  },
+  weekendOutlookIcon: {
+    width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center',
+  },
+  weekendOutlookText: { flex: 1, gap: 2 },
+  weekendOutlookTitle: { fontSize: 15, fontWeight: '700' },
+  weekendOutlookSub: { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
+
+  // Team Pulse
+  pulseCard: {
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 16, padding: 20, marginBottom: 28,
+  },
+  pulseCardHeader: {
+    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 14,
+  },
+  pulseMetricRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  pulseMetric: { flex: 1, alignItems: 'center', gap: 4 },
+  pulseMetricNum: { fontSize: 32, fontWeight: '900', lineHeight: 36, letterSpacing: -1 },
+  pulseMetricLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', textAlign: 'center', lineHeight: 15 },
+  pulseBar: {
+    height: 4, width: '80%', borderRadius: 2,
+    backgroundColor: PULSE_COLORS.ui.border, marginTop: 6, overflow: 'hidden',
+  },
+  pulseBarFill: { height: '100%', borderRadius: 2 },
+  pulseDivider: { width: 1, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'stretch', marginHorizontal: 4 },
+  pulseChase: { marginTop: 6 },
+  pulseChaseText: { fontSize: 11, fontWeight: '700' },
 
   // Section title
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1, marginBottom: 10 },
+  sectionTitle: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1.5 },
 
-  // Next Event
+  // Next Event card
   nextEventCard: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    borderRadius: 16, padding: 16, marginBottom: 28,
-    gap: 14,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 16, padding: 18,
   },
-  nextEventTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
-  eventTypeIcon: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  nextEventBody: { flex: 1, gap: 4 },
-  nextEventTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  nextEventDate: { fontSize: 13, fontWeight: '600' },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  nextEventLocation: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary },
-  uniformChip: {
-    alignSelf: 'flex-start', marginTop: 2,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1,
+
+  // Header: title block left, badge+drive right
+  nextCardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
+  nextCardTitleBlock: { flex: 1, gap: 4 },
+  nextCardUniformPrefix: { fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+  nextCardTitle: { fontSize: 22, fontWeight: '900', color: PULSE_COLORS.ui.text, letterSpacing: -0.6, lineHeight: 26 },
+  nextCardTopRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
+  nextCardBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  nextCardBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: '#fff' },
+  nextCardDrivePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 20, borderWidth: 1,
+    borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
-  uniformChipText: { fontSize: 11, fontWeight: '700' },
+  nextCardDrivePillText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+
+  // Meta rows (time + location)
+  nextCardMeta: { gap: 5, marginBottom: 12 },
+  nextCardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  nextCardMetaText: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, fontWeight: '500', flex: 1 },
+
+  // Unified context chip row (weather + surface + kit)
+  nextCardChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 4 },
+  nextCardChipWeather: { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+  nextCardChipEmoji: { fontSize: 12 },
+  nextCardChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 9, paddingVertical: 4,
+    borderRadius: 20, borderWidth: 1,
+  },
+  nextCardChipText: { fontSize: 11, fontWeight: '700' },
+
+  // Coach headcount circles
+  headcountRow: {
+    flexDirection: 'row', gap: 12, marginTop: 6,
+    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14,
+  },
+  headcountItem: { alignItems: 'center', gap: 5 },
+  headcountCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  headcountCircleNum: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  headcountLabel: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontWeight: '600', letterSpacing: 0.5 },
+  headcountChevron: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'center' },
+  headcountChevronText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   // Inline RSVP
   nextEventRsvpRow: {
     flexDirection: 'row', gap: 10,
-    borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border,
-    paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    paddingTop: 12, marginTop: 10,
   },
   rsvpBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -860,24 +1517,19 @@ const styles = StyleSheet.create({
     gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
   },
   rsvpConfirmedText: { fontSize: 13, fontWeight: '700' },
-  rsvpTapToChange: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  rsvpTapToChange: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   noEvent: {
-    flexDirection: 'column', alignItems: 'center', gap: 10,
-    backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    borderRadius: 16, padding: 28, marginBottom: 28,
+    alignItems: 'center',
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 16, paddingVertical: 24,
   },
-  noEventIconWrap: {
-    width: 60, height: 60, borderRadius: 18,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 2,
-  },
-  noEventText: { color: DUGOUT_COLORS.ui.muted, fontSize: 14, fontWeight: '600' },
-  noEventSub: { color: DUGOUT_COLORS.ui.muted, fontSize: 12, fontWeight: '400', opacity: 0.7, textAlign: 'center' },
+  noEventText: { color: PULSE_COLORS.ui.muted, fontSize: 14, fontWeight: '600' },
 
   // My Player card
   myPlayerCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16, padding: 16, marginBottom: 28,
   },
   playerAvatarRing: {
@@ -888,7 +1540,7 @@ const styles = StyleSheet.create({
   playerAvatarFill: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   playerAvatarText: { fontSize: 18, fontWeight: '800' },
   myPlayerBody: { flex: 1, gap: 6 },
-  myPlayerName: { fontSize: 16, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
+  myPlayerName: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text },
   myPlayerBadges: { flexDirection: 'row', gap: 8 },
   jerseyBadge: {
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1,
@@ -902,7 +1554,7 @@ const styles = StyleSheet.create({
   // Announcement card
   announcementCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: DUGOUT_COLORS.ui.surface, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 16, padding: 16, marginBottom: 28,
   },
   announcementIcon: {
@@ -910,35 +1562,26 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   announcementBody: { flex: 1, gap: 3 },
-  announcementTitle: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  announcementPreview: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary, lineHeight: 17 },
-  announcementTime: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '500', marginTop: 2 },
+  announcementTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  announcementPreview: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, lineHeight: 17 },
+  announcementTime: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500', marginTop: 2 },
 
-  // Quick Actions
-  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  actionTile: {
-    width: '47.5%', backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    borderRadius: 16, padding: 16, gap: 10,
-  },
-  actionIconWrap: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  actionLabel: { fontSize: 13, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
 
   // Team picker
   teamPickerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: DUGOUT_COLORS.ui.background, borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 14, padding: 14, marginBottom: 10,
   },
-  teamPickerRowActive: { backgroundColor: DUGOUT_COLORS.ui.surfaceAlt },
+  teamPickerRowActive: { backgroundColor: PULSE_COLORS.ui.surfaceAlt },
   teamPickerIcon: { width: 38, height: 38, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   teamPickerBody: { flex: 1 },
-  teamPickerName: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  teamPickerMeta: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary, marginTop: 2 },
+  teamPickerName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  teamPickerMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
 
   // Fee card
   feeCard: {
     flexDirection: 'row',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderWidth: 1,
     borderRadius: 16,
     overflow: 'hidden',
@@ -948,25 +1591,25 @@ const styles = StyleSheet.create({
   feeBody: { flex: 1, padding: 16, gap: 10 },
   feeTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   feeIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  feeTitle: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 2 },
+  feeTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
   feeAmount: { fontSize: 13, fontWeight: '600' },
   feeOverdueBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 6,
   },
-  feeOverdueText: { fontSize: 11, fontWeight: '600', color: DUGOUT_COLORS.status.error },
+  feeOverdueText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.status.error },
 
   // Fee modal rows
   feeModalRow: {
     flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: DUGOUT_COLORS.ui.background, borderRadius: 14,
+    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 14,
     overflow: 'hidden', marginBottom: 10, padding: 0,
   },
   feeModalAccent: { width: 3, flexShrink: 0 },
-  feeModalTitle: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  feeModalTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
   feeModalAmount: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
-  feeModalDue: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  feeModalDue: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
   feeStatusChip: {
     paddingHorizontal: 8, paddingVertical: 3,
     borderRadius: 8, borderWidth: 1,
@@ -976,22 +1619,40 @@ const styles = StyleSheet.create({
   // Dev switcher / shared sheet styles
   devOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   devSheet: {
-    backgroundColor: DUGOUT_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 48,
   },
-  devHandle: { width: 40, height: 4, backgroundColor: DUGOUT_COLORS.ui.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  devTitle: { fontSize: 18, fontWeight: '800', color: DUGOUT_COLORS.ui.text, marginBottom: 4 },
-  devSub: { fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary, marginBottom: 20 },
+  devHandle: { width: 40, height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  devTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
+  devSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 20 },
   devRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: DUGOUT_COLORS.ui.background, borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 14, padding: 14, marginBottom: 10,
   },
   devRowLoading: { opacity: 0.6 },
   devAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   devAvatarText: { fontSize: 16, fontWeight: '800' },
   devRowBody: { flex: 1 },
-  devRowLabel: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  devRowEmail: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary, marginTop: 2 },
-  devSignOut: { marginTop: 8, padding: 14, alignItems: 'center', borderRadius: 14, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border },
-  devSignOutText: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.status.error },
+  devRowLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  devRowEmail: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  devSignOut: { marginTop: 8, padding: 14, alignItems: 'center', borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  devSignOutText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.status.error },
+
+  // MY SEASON card
+  seasonCard: {
+    backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flexDirection: 'row', padding: 16, gap: 12, marginBottom: 28,
+  },
+  seasonMetric: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  seasonMetricIcon: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  seasonMetricBody: { flex: 1 },
+  seasonMetricNum: { fontSize: 28, fontWeight: '900', letterSpacing: -1 },
+  seasonMetricLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, lineHeight: 16 },
+  seasonDivider: { width: 1, backgroundColor: PULSE_COLORS.ui.border },
+  seasonBar: { height: 4, borderRadius: 2, marginTop: 8, overflow: 'hidden' },
+  seasonBarFill: { height: '100%', borderRadius: 2 },
 });

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 
 interface PrimaryButtonProps {
   title: string;
@@ -54,7 +54,7 @@ export default function PrimaryButton({
         ]}
       >
         {loading ? (
-          <ActivityIndicator color={isOutline ? DUGOUT_COLORS.brand.green : DUGOUT_COLORS.brand.black} />
+          <ActivityIndicator color={isOutline ? PULSE_COLORS.brand.green : PULSE_COLORS.brand.black} />
         ) : (
           <Text style={[styles.text, isOutline ? styles.outlineText : styles.solidText]}>{title}</Text>
         )}
@@ -71,12 +71,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   solid: {
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
   },
   outline: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: DUGOUT_COLORS.brand.green,
+    borderColor: PULSE_COLORS.brand.green,
   },
   disabled: {
     opacity: 0.6,
@@ -86,9 +86,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   solidText: {
-    color: DUGOUT_COLORS.brand.black,
+    color: PULSE_COLORS.brand.black,
   },
   outlineText: {
-    color: DUGOUT_COLORS.brand.green,
+    color: PULSE_COLORS.brand.green,
   },
 });

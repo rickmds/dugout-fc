@@ -42,11 +42,11 @@ export async function GET(
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Dugout FC//EN',
+    'PRODID:-//Pulse FC//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${esc(calName)}`,
-    'X-WR-CALDESC:Team schedule powered by Dugout FC',
+    'X-WR-CALDESC:Team schedule powered by Pulse FC',
     'X-PUBLISHED-TTL:PT1H',
   ];
 
@@ -66,12 +66,12 @@ export async function GET(
     const typeLabel = ev.type === 'game' ? 'Game' : ev.type === 'training' ? 'Training' : 'Event';
 
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${ev.id}@dugoutfc.app`);
+    lines.push(`UID:${ev.id}@pulse-fc.app`);
     lines.push(hasTime ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`);
     lines.push(hasTime ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`);
     lines.push(`SUMMARY:${esc(ev.title)}`);
     if (loc) lines.push(`LOCATION:${esc(loc)}`);
-    lines.push(`DESCRIPTION:${esc(`${typeLabel} · Dugout FC`)}`);
+    lines.push(`DESCRIPTION:${esc(`${typeLabel} · Pulse FC`)}`);
     lines.push('END:VEVENT');
   }
 

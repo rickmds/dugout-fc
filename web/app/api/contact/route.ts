@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>New contact — Dugout FC</title>
+  <title>New contact — Pulse FC</title>
 </head>
 <body style="margin:0;padding:0;background:#0a0a0a;
              font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
                           border-radius:14px;background:#22c55e;vertical-align:middle;">
                 <span style="font-size:26px;font-weight:900;color:#000;">⚽</span>
               </div>
-              <p style="margin:12px 0 0;font-size:18px;font-weight:800;color:#f9fafb;">Dugout FC</p>
+              <p style="margin:12px 0 0;font-size:18px;font-weight:800;color:#f9fafb;">Pulse FC</p>
             </td>
           </tr>
 
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
                 <!-- Reply CTA -->
                 <tr>
                   <td style="padding:0 28px 32px;text-align:center;border-top:1px solid #1e1e1e;padding-top:24px;">
-                    <a href="mailto:${escapedEmail}?subject=Re: Dugout FC enquiry"
+                    <a href="mailto:${escapedEmail}?subject=Re: Pulse FC enquiry"
                        style="display:inline-block;background:#22c55e;color:#000;
                               text-decoration:none;font-size:15px;font-weight:800;
                               padding:14px 36px;border-radius:12px;line-height:1;">
@@ -111,8 +111,8 @@ export async function POST(req: NextRequest) {
                   <td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
                     <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
                       Sent via the contact form at
-                      <a href="https://dugoutfc.app" style="color:#22c55e;text-decoration:none;font-weight:600;">dugoutfc.app</a>
-                      &nbsp;&middot;&nbsp; &copy; ${year} Dugout FC
+                      <a href="https://pulse-fc.app" style="color:#22c55e;text-decoration:none;font-weight:600;">pulse-fc.app</a>
+                      &nbsp;&middot;&nbsp; &copy; ${year} Pulse FC
                     </p>
                   </td>
                 </tr>
@@ -129,10 +129,10 @@ export async function POST(req: NextRequest) {
 </html>`;
 
   const { error } = await resend.emails.send({
-    from: 'Dugout FC <noreply@dugoutfc.app>',
+    from: 'Pulse FC <info@pulse-fc.app>',
     to: 'rick@mdssoccer.com',
     replyTo: email,
-    subject: `New contact from ${name} — Dugout FC`,
+    subject: `New contact from ${name} — Pulse FC`,
     html,
     text: `From: ${name} <${email}>\n\n${message}`,
   });

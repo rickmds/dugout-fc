@@ -12,8 +12,9 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
-import { DUGOUT_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import ClubHeader from '../../../components/ui/ClubHeader';
 import { useGameDay, useUpcomingGameDates, localDateStr, type GameDayEvent } from '../../../hooks/useGameDay';
 import { getDrivingMinutes } from '../../../lib/routes';
 
@@ -170,24 +171,17 @@ export default function GameDayScreen() {
   return (
     <View style={styles.root}>
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Game Day</Text>
-          <Text style={styles.headerSub}>{fmtDate(selectedDate)}</Text>
-        </View>
-        {totalClashes > 0 ? (
+      <ClubHeader
+        title="Game Day"
+        subtitle={fmtDate(selectedDate)}
+        onBack={() => router.back()}
+        right={totalClashes > 0 ? (
           <View style={styles.clashBadge}>
             <Ionicons name="warning" size={11} color="#EF4444" />
             <Text style={styles.clashBadgeText}>{totalClashes}</Text>
           </View>
-        ) : (
-          <View style={{ width: 36 }} />
-        )}
-      </View>
+        ) : undefined}
+      />
 
       {/* Date tabs */}
       {dates.length > 1 && (
@@ -233,7 +227,7 @@ export default function GameDayScreen() {
             <Text style={[styles.originText, { color: primaryColor }]}>Starting from {locationLabel}</Text>
             {legsLoading && (
               <Animated.View style={[styles.syncIcon, { transform: [{ rotate: spin }] }]}>
-                <Ionicons name="sync-outline" size={12} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="sync-outline" size={12} color={PULSE_COLORS.ui.muted} />
               </Animated.View>
             )}
           </View>
@@ -260,8 +254,8 @@ export default function GameDayScreen() {
                     <View style={styles.travelLeg}>
                       <View style={styles.travelLegLeft}>
                         <View style={styles.travelLine} />
-                        <View style={[styles.travelCarWrap, { backgroundColor: DUGOUT_COLORS.ui.surface, borderColor: DUGOUT_COLORS.ui.border }]}>
-                          <Ionicons name="car-outline" size={14} color={DUGOUT_COLORS.ui.textSecondary} />
+                        <View style={[styles.travelCarWrap, { backgroundColor: PULSE_COLORS.ui.surface, borderColor: PULSE_COLORS.ui.border }]}>
+                          <Ionicons name="car-outline" size={14} color={PULSE_COLORS.ui.textSecondary} />
                         </View>
                         <View style={styles.travelLine} />
                       </View>
@@ -316,7 +310,7 @@ export default function GameDayScreen() {
                     {/* Location */}
                     {(ev.location || ev.address) && (
                       <View style={styles.locationRow}>
-                        <Ionicons name="location-outline" size={12} color={DUGOUT_COLORS.ui.muted} />
+                        <Ionicons name="location-outline" size={12} color={PULSE_COLORS.ui.muted} />
                         <Text style={styles.locationText} numberOfLines={1}>
                           {ev.location ?? ev.address}
                         </Text>
@@ -326,16 +320,16 @@ export default function GameDayScreen() {
                     {/* RSVP + chevron */}
                     <View style={styles.bottomRow}>
                       <View style={styles.rsvpChip}>
-                        <Ionicons name="checkmark-circle" size={14} color={DUGOUT_COLORS.rsvp.attending} />
-                        <Text style={[styles.rsvpNum, { color: DUGOUT_COLORS.rsvp.attending }]}>{ev.rsvp_attending} going</Text>
+                        <Ionicons name="checkmark-circle" size={14} color={PULSE_COLORS.rsvp.attending} />
+                        <Text style={[styles.rsvpNum, { color: PULSE_COLORS.rsvp.attending }]}>{ev.rsvp_attending} going</Text>
                       </View>
                       {ev.rsvp_not_attending > 0 && (
                         <View style={styles.rsvpChip}>
-                          <Ionicons name="close-circle" size={14} color={DUGOUT_COLORS.rsvp.not_attending} />
-                          <Text style={[styles.rsvpNum, { color: DUGOUT_COLORS.rsvp.not_attending }]}>{ev.rsvp_not_attending}</Text>
+                          <Ionicons name="close-circle" size={14} color={PULSE_COLORS.rsvp.not_attending} />
+                          <Text style={[styles.rsvpNum, { color: PULSE_COLORS.rsvp.not_attending }]}>{ev.rsvp_not_attending}</Text>
                         </View>
                       )}
-                      <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} style={styles.chevron} />
+                      <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={styles.chevron} />
                     </View>
 
                   </View>
@@ -354,18 +348,18 @@ export default function GameDayScreen() {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 56 : 20,
     paddingBottom: 14, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle:  { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  headerSub:    { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginTop: 2 },
+  headerTitle:  { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerSub:    { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
   clashBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: 'rgba(239,68,68,0.12)',
@@ -377,12 +371,12 @@ const styles = StyleSheet.create({
   dateTabs: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
   dateTab: {
     height: 36, paddingHorizontal: 16, borderRadius: 18,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
   dateTabActive:     { borderColor: 'transparent' },
-  dateTabText:       { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
+  dateTabText:       { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
   dateTabTextActive: { color: '#fff', fontWeight: '700' },
 
   timeline: { paddingHorizontal: 16, paddingTop: 16 },
@@ -399,14 +393,14 @@ const styles = StyleSheet.create({
   // Travel leg
   travelLeg: { flexDirection: 'row', gap: 12, marginVertical: 4, alignItems: 'stretch', paddingHorizontal: 2 },
   travelLegLeft: { alignItems: 'center', width: 30 },
-  travelLine: { flex: 1, width: 1.5, alignSelf: 'center', minHeight: 8, backgroundColor: DUGOUT_COLORS.ui.border },
+  travelLine: { flex: 1, width: 1.5, alignSelf: 'center', minHeight: 8, backgroundColor: PULSE_COLORS.ui.border },
   travelCarWrap: {
     width: 30, height: 30, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1,
   },
   travelLegRight: { flex: 1, justifyContent: 'center', paddingVertical: 6 },
-  travelMins: { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  travelMins: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   leaveByRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   leaveByText: { fontSize: 14, fontWeight: '800', color: '#F59E0B' },
 
@@ -422,9 +416,9 @@ const styles = StyleSheet.create({
   // Event card
   eventCard: {
     flexDirection: 'row',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 14, overflow: 'hidden',
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     marginBottom: 2,
   },
   teamStripe: { width: 5 },
@@ -435,11 +429,11 @@ const styles = StyleSheet.create({
   pillDot: { width: 6, height: 6, borderRadius: 3 },
   pillText: { fontSize: 11, fontWeight: '700' },
 
-  eventTitle: { fontSize: 16, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
+  eventTitle: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text },
   eventTime: { fontSize: 14, fontWeight: '700', marginTop: -2 },
 
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  locationText: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, flex: 1 },
+  locationText: { fontSize: 12, color: PULSE_COLORS.ui.muted, flex: 1 },
 
   bottomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 2 },
   rsvpChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -448,6 +442,6 @@ const styles = StyleSheet.create({
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 40 },
   emptyIconWrap: { width: 64, height: 64, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
-  emptyBody: { fontSize: 14, color: DUGOUT_COLORS.ui.muted, textAlign: 'center' },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  emptyBody: { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center' },
 });

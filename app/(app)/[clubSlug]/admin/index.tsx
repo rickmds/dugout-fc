@@ -15,9 +15,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
-import ClubBadge from '../../../../components/ui/ClubBadge';
+import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../../components/ui/TeamEditModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ function SectionRow({ label, linkLabel, onLink, primaryColor }: {
 }
 const secSt = StyleSheet.create({
   row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 28, marginBottom: 10 },
-  label: { fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1 },
+  label: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1 },
   link:  { fontSize: 13, fontWeight: '600' },
 });
 
@@ -100,7 +100,7 @@ function AttendanceBar({ attending, notAttending, total }: { attending: number; 
       <View style={abSt.track}>
         {goingPct > 0   && <View style={[abSt.seg, { flex: goingPct,   backgroundColor: '#22C55E' }]} />}
         {cantPct > 0    && <View style={[abSt.seg, { flex: cantPct,    backgroundColor: '#EF4444' }]} />}
-        {pendingPct > 0 && <View style={[abSt.seg, { flex: pendingPct, backgroundColor: DUGOUT_COLORS.ui.border }]} />}
+        {pendingPct > 0 && <View style={[abSt.seg, { flex: pendingPct, backgroundColor: PULSE_COLORS.ui.border }]} />}
       </View>
       <View style={abSt.legend}>
         <View style={abSt.legendItem}>
@@ -112,7 +112,7 @@ function AttendanceBar({ attending, notAttending, total }: { attending: number; 
           <Text style={abSt.legendText}>{notAttending} can't</Text>
         </View>
         <View style={abSt.legendItem}>
-          <View style={[abSt.dot, { backgroundColor: DUGOUT_COLORS.ui.border }]} />
+          <View style={[abSt.dot, { backgroundColor: PULSE_COLORS.ui.border }]} />
           <Text style={abSt.legendText}>{total - attending - notAttending} pending</Text>
         </View>
       </View>
@@ -121,12 +121,12 @@ function AttendanceBar({ attending, notAttending, total }: { attending: number; 
 }
 const abSt = StyleSheet.create({
   wrap:        { gap: 7, marginBottom: 16 },
-  track:       { height: 8, borderRadius: 4, overflow: 'hidden', flexDirection: 'row', backgroundColor: DUGOUT_COLORS.ui.border },
+  track:       { height: 8, borderRadius: 4, overflow: 'hidden', flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.border },
   seg:         { height: '100%' },
   legend:      { flexDirection: 'row', gap: 12 },
   legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dot:         { width: 6, height: 6, borderRadius: 3 },
-  legendText:  { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '500' },
+  legendText:  { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 });
 
 function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }: {
@@ -161,7 +161,7 @@ function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }
         {/* Location */}
         {ev.location ? (
           <View style={nuSt.locationRow}>
-            <Ionicons name="location-outline" size={13} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="location-outline" size={13} color={PULSE_COLORS.ui.muted} />
             <Text style={nuSt.locationText} numberOfLines={1}>{ev.location}</Text>
           </View>
         ) : (
@@ -186,7 +186,7 @@ function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }
             onPress={onEdit}
             activeOpacity={0.75}
           >
-            <Ionicons name="create-outline" size={15} color={DUGOUT_COLORS.ui.text} />
+            <Ionicons name="create-outline" size={15} color={PULSE_COLORS.ui.text} />
             <Text style={nuSt.secondaryBtnText}>Edit</Text>
           </TouchableOpacity>
         </View>
@@ -195,21 +195,21 @@ function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }
   );
 }
 const nuSt = StyleSheet.create({
-  card:          { flexDirection: 'row', backgroundColor: DUGOUT_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, marginHorizontal: 16, overflow: 'hidden' },
+  card:          { flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, marginHorizontal: 16, overflow: 'hidden' },
   stripe:        { width: 5, alignSelf: 'stretch' },
   body:          { flex: 1, padding: 16, gap: 0 },
   metaRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   typeBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
   typeText:      { fontSize: 10, fontWeight: '700' },
-  dateText:      { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary, fontWeight: '500', flex: 1 },
-  title:         { fontSize: 20, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.3, marginBottom: 6 },
+  dateText:      { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500', flex: 1 },
+  title:         { fontSize: 20, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3, marginBottom: 6 },
   locationRow:   { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 14 },
-  locationText:  { fontSize: 12, color: DUGOUT_COLORS.ui.muted, flex: 1 },
+  locationText:  { fontSize: 12, color: PULSE_COLORS.ui.muted, flex: 1 },
   actions:       { flexDirection: 'row', gap: 10 },
   primaryBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, paddingVertical: 11 },
   primaryBtnText:{ fontSize: 14, fontWeight: '800', color: '#000' },
-  secondaryBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16, backgroundColor: DUGOUT_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border },
-  secondaryBtnText: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  secondaryBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  secondaryBtnText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
 });
 
 // ─── Compact event card (upcoming list + past) ────────────────────────────────
@@ -247,7 +247,7 @@ function EventCard({ ev, total, isPast, onPress, onEdit }: {
           <View style={ecSt.barTrack}>
             {goingPct   > 0 && <View style={[ecSt.barSeg, { flex: goingPct,   backgroundColor: '#22C55E' }]} />}
             {cantPct    > 0 && <View style={[ecSt.barSeg, { flex: cantPct,    backgroundColor: '#EF4444' }]} />}
-            {pendingPct > 0 && <View style={[ecSt.barSeg, { flex: pendingPct, backgroundColor: DUGOUT_COLORS.ui.border }]} />}
+            {pendingPct > 0 && <View style={[ecSt.barSeg, { flex: pendingPct, backgroundColor: PULSE_COLORS.ui.border }]} />}
           </View>
         )}
       </View>
@@ -256,26 +256,26 @@ function EventCard({ ev, total, isPast, onPress, onEdit }: {
         <Text style={ecSt.rsvpOf}>/{total}</Text>
       </View>
       <TouchableOpacity style={ecSt.editBtn} onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Ionicons name="create-outline" size={17} color={DUGOUT_COLORS.ui.muted} />
+        <Ionicons name="create-outline" size={17} color={PULSE_COLORS.ui.muted} />
       </TouchableOpacity>
     </TouchableOpacity>
   );
 }
 const ecSt = StyleSheet.create({
-  card:      { flexDirection: 'row', alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.surface, borderRadius: 14, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, overflow: 'hidden' },
+  card:      { flexDirection: 'row', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, overflow: 'hidden' },
   cardPast:  { opacity: 0.5 },
   stripe:    { width: 4, alignSelf: 'stretch' },
   body:      { flex: 1, paddingVertical: 10, paddingLeft: 12, paddingRight: 8, gap: 2 },
   topRow:    { marginBottom: 2 },
   typeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, alignSelf: 'flex-start' },
   typeLabel: { fontSize: 9, fontWeight: '700' },
-  title:     { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  meta:      { fontSize: 11, color: DUGOUT_COLORS.ui.muted },
-  barTrack:  { height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row', marginTop: 6, backgroundColor: DUGOUT_COLORS.ui.border },
+  title:     { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  meta:      { fontSize: 11, color: PULSE_COLORS.ui.muted },
+  barTrack:  { height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row', marginTop: 6, backgroundColor: PULSE_COLORS.ui.border },
   barSeg:    { height: '100%' },
   rsvpBadge: { flexDirection: 'row', alignItems: 'baseline', paddingRight: 2 },
   rsvpGoing: { fontSize: 14, fontWeight: '800', color: '#22C55E' },
-  rsvpOf:    { fontSize: 10, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  rsvpOf:    { fontSize: 10, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
   editBtn:   { padding: 11 },
 });
 
@@ -294,9 +294,9 @@ function ManageCard({ icon, label, color, bg, onPress }: {
   );
 }
 const mcSt = StyleSheet.create({
-  card:  { flex: 1, alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.surface, borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, paddingVertical: 18, gap: 8 },
+  card:  { flex: 1, alignItems: 'center', backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingVertical: 18, gap: 8 },
   icon:  { width: 46, height: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 12, fontWeight: '700', color: DUGOUT_COLORS.ui.text, textAlign: 'center', paddingHorizontal: 4 },
+  label: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text, textAlign: 'center', paddingHorizontal: 4 },
 });
 
 // ─── AI tool row cards (grouped) ──────────────────────────────────────────────
@@ -316,7 +316,7 @@ function AiToolCard({ icon, color, bg, label, desc, onPress, showDivider }: {
           <Text style={atSt.label}>{label}</Text>
           <Text style={atSt.desc}>{desc}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+        <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
       </TouchableOpacity>
     </>
   );
@@ -324,15 +324,15 @@ function AiToolCard({ icon, color, bg, label, desc, onPress, showDivider }: {
 const atSt = StyleSheet.create({
   row:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14 },
   icon:    { width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  label:   { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 2 },
-  desc:    { fontSize: 12, color: DUGOUT_COLORS.ui.muted, lineHeight: 16 },
-  divider: { height: 1, backgroundColor: DUGOUT_COLORS.ui.border, marginHorizontal: 16 },
+  label:   { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
+  desc:    { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
+  divider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 16 },
 });
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function AdminPanel() {
-  const { primaryColor, rgba, secondaryColor } = useClub();
+  const { primaryColor, rgba, secondaryColor, onSecondary } = useClub();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { profile } = useAuth();
@@ -349,6 +349,8 @@ export default function AdminPanel() {
   const [attendancePlayers,  setAttendancePlayers]  = useState<AttendancePlayer[]>([]);
   const [pastEventCount,     setPastEventCount]     = useState(0);
   const [attendanceExpanded, setAttendanceExpanded] = useState(false);
+  const [eventsWithoutSurface, setEventsWithoutSurface] = useState(0);
+  const [surfaceNudgeDismissed, setSurfaceNudgeDismissed] = useState(false);
 
   const avgRsvp = useMemo(() => {
     if (!upcoming.length || !total) return '—';
@@ -438,13 +440,16 @@ export default function AdminPanel() {
       }));
     }
 
-    const [upEnriched, pastEnriched] = await Promise.all([
+    const [upEnriched, pastEnriched, surfaceRes] = await Promise.all([
       enrich(upRes.data ?? []),
       enrich(pastRes.data ?? []),
+      supabase.from('events').select('*', { count: 'exact', head: true })
+        .eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).is('field_type', null),
     ]);
 
     setUpcoming(upEnriched);
     setPast(pastEnriched);
+    setEventsWithoutSurface(surfaceRes.count ?? 0);
     setLoading(false);
   }, [team?.id]);
 
@@ -459,37 +464,21 @@ export default function AdminPanel() {
 
   return (
     <View style={st.root}>
-      {/* Header */}
-      <View style={st.header}>
-        <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <View style={st.headerCenter}>
-          <ClubBadge size={34} />
-          <View>
-            {(isOrgAdmin || allTeams.length > 1) ? (
-              <TouchableOpacity
-                style={st.teamSwitcher}
-                onPress={() => { setSearch(''); setPickerVisible(true); }}
-                activeOpacity={0.7}
-              >
-                <Text style={st.headerTitle} numberOfLines={1}>{team?.name ?? 'Select team'}</Text>
-                <Ionicons name="chevron-down" size={14} color={DUGOUT_COLORS.ui.muted} />
-              </TouchableOpacity>
-            ) : (
-              <Text style={st.headerTitle} numberOfLines={1}>{team?.name ?? 'Admin Panel'}</Text>
-            )}
-            <Text style={st.headerSub}>Admin Panel</Text>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={[st.createBtn, { backgroundColor: primaryColor }]}
-          onPress={() => router.push(`/(app)/${slug}/create-event` as any)}
-        >
-          <Ionicons name="add" size={16} color="#000" />
-          <Text style={st.createBtnText}>Event</Text>
-        </TouchableOpacity>
-      </View>
+      <ClubHeader
+        title={team?.name ?? 'Select Team'}
+        subtitle="Admin Panel"
+        onBack={() => router.back()}
+        onPressTitle={(isOrgAdmin || allTeams.length > 1) ? () => { setSearch(''); setPickerVisible(true); } : undefined}
+        right={
+          <TouchableOpacity
+            style={[headerBtnStyle as object, { backgroundColor: secondaryColor }]}
+            onPress={() => router.push(`/(app)/${slug}/create-event` as any)}
+          >
+            <Ionicons name="add" size={16} color={onSecondary} />
+            <Text style={{ color: onSecondary, fontWeight: '800', fontSize: 12 }}>Event</Text>
+          </TouchableOpacity>
+        }
+      />
 
       {/* Team edit modal */}
       <TeamEditModal
@@ -506,15 +495,15 @@ export default function AdminPanel() {
           <View style={tp.header}>
             <Text style={tp.title}>Switch team</Text>
             <TouchableOpacity onPress={() => setPickerVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close" size={22} color={DUGOUT_COLORS.ui.text} />
+              <Ionicons name="close" size={22} color={PULSE_COLORS.ui.text} />
             </TouchableOpacity>
           </View>
           <View style={tp.searchWrap}>
-            <Ionicons name="search-outline" size={16} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
             <TextInput
               style={tp.searchInput}
               placeholder="Search teams…"
-              placeholderTextColor={DUGOUT_COLORS.ui.muted}
+              placeholderTextColor={PULSE_COLORS.ui.muted}
               value={search}
               onChangeText={setSearch}
               autoFocus
@@ -522,7 +511,7 @@ export default function AdminPanel() {
             />
             {search.length > 0 && (
               <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close-circle" size={16} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
               </TouchableOpacity>
             )}
           </View>
@@ -539,7 +528,7 @@ export default function AdminPanel() {
                   onPress={() => { selectTeam(item.id); setPickerVisible(false); }}
                   activeOpacity={0.75}
                 >
-                  <View style={[tp.dot, { backgroundColor: active ? primaryColor : DUGOUT_COLORS.ui.border }]} />
+                  <View style={[tp.dot, { backgroundColor: active ? primaryColor : PULSE_COLORS.ui.border }]} />
                   <View style={{ flex: 1 }}>
                     <Text style={[tp.rowName, active && { color: primaryColor }]}>{item.name}</Text>
                     {item.age_group ? <Text style={tp.rowMeta}>{item.age_group}{item.season ? `  ·  ${item.season}` : ''}</Text> : null}
@@ -563,7 +552,7 @@ export default function AdminPanel() {
         </View>
       ) : !team ? (
         <ScrollView contentContainerStyle={st.noTeamScroll} showsVerticalScrollIndicator={false}>
-          <Ionicons name="shield-outline" size={52} color={DUGOUT_COLORS.ui.muted} />
+          <Ionicons name="shield-outline" size={52} color={PULSE_COLORS.ui.muted} />
           <Text style={st.noTeamTitle}>No teams yet</Text>
           <Text style={st.noTeamBody}>Get your club set up using one of the options below.</Text>
 
@@ -575,10 +564,10 @@ export default function AdminPanel() {
               <Text style={st.noTeamCardTitle}>Import Club with AI</Text>
               <Text style={st.noTeamCardSub}>Upload a spreadsheet — AI creates all your teams, players and coaches</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[st.noTeamCard, { borderColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.surface }]} onPress={() => router.push(`/(app)/${slug}/admin/club-schedule` as any)} activeOpacity={0.75}>
+          <TouchableOpacity style={[st.noTeamCard, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]} onPress={() => router.push(`/(app)/${slug}/admin/club-schedule` as any)} activeOpacity={0.75}>
             <View style={[st.noTeamCardIcon, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
               <Ionicons name="calendar" size={22} color="#3B82F6" />
             </View>
@@ -586,10 +575,10 @@ export default function AdminPanel() {
               <Text style={st.noTeamCardTitle}>Import Season Schedule</Text>
               <Text style={st.noTeamCardSub}>Upload a PDF or spreadsheet and AI adds all events automatically</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[st.noTeamCard, { borderColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.surface }]} onPress={() => router.push(`/(app)/${slug}/create-event` as any)} activeOpacity={0.75}>
+          <TouchableOpacity style={[st.noTeamCard, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]} onPress={() => router.push(`/(app)/${slug}/create-event` as any)} activeOpacity={0.75}>
             <View style={[st.noTeamCardIcon, { backgroundColor: 'rgba(249,115,22,0.12)' }]}>
               <Ionicons name="add-circle" size={22} color="#F97316" />
             </View>
@@ -597,7 +586,7 @@ export default function AdminPanel() {
               <Text style={st.noTeamCardTitle}>Create Event</Text>
               <Text style={st.noTeamCardSub}>Manually add a game, training session or other event</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -620,6 +609,26 @@ export default function AdminPanel() {
               <Text style={st.statLabel}>Avg RSVP</Text>
             </View>
           </View>
+
+          {/* Surface type nudge */}
+          {!surfaceNudgeDismissed && eventsWithoutSurface > 0 && (
+            <View style={st.nudgeBanner}>
+              <View style={st.nudgeIconWrap}>
+                <Ionicons name="layers-outline" size={18} color="#F59E0B" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={st.nudgeTitle}>
+                  {eventsWithoutSurface} upcoming {eventsWithoutSurface === 1 ? 'event' : 'events'} missing a surface type
+                </Text>
+                <Text style={st.nudgeSub}>
+                  Open Edit Event and add Grass, Turf or Indoor — it shows on players' home cards
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSurfaceNudgeDismissed(true)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <Ionicons name="close" size={18} color={PULSE_COLORS.ui.muted} />
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Featured next event */}
           {upcoming.length > 0 && (
@@ -662,7 +671,7 @@ export default function AdminPanel() {
             <>
               <SectionRow label="SCHEDULE" />
               <View style={st.emptyCard}>
-                <Ionicons name="calendar-outline" size={28} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="calendar-outline" size={28} color={PULSE_COLORS.ui.muted} />
                 <Text style={st.emptyTitle}>No upcoming events</Text>
                 <TouchableOpacity onPress={() => router.push(`/(app)/${slug}/create-event` as any)}>
                   <Text style={[st.emptyLink, { color: primaryColor }]}>Create your first event →</Text>
@@ -676,7 +685,7 @@ export default function AdminPanel() {
           <View style={st.aiGroup}>
             {pastEventCount === 0 ? (
               <View style={st.attendanceEmpty}>
-                <Ionicons name="bar-chart-outline" size={24} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="bar-chart-outline" size={24} color={PULSE_COLORS.ui.muted} />
                 <Text style={st.attendanceEmptyText}>No completed events yet — attendance will appear here.</Text>
               </View>
             ) : (
@@ -740,8 +749,24 @@ export default function AdminPanel() {
               onPress={() => router.push(`/(app)/${slug}/(tabs)/chat` as any)}
             />
           </View>
+          {isOrgAdmin && (
+            <TouchableOpacity
+              style={[st.pendingInvitesBtn, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface, marginBottom: 0 }]}
+              onPress={() => router.push(`/(app)/${slug}/admin/club-calendar` as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[st.pendingInvitesIcon, { backgroundColor: 'rgba(99,102,241,0.1)' }]}>
+                <Ionicons name="calendar-outline" size={18} color="#6366F1" />
+              </View>
+              <View style={st.pendingInvitesMeta}>
+                <Text style={st.pendingInvitesLabel}>Club Calendar</Text>
+                <Text style={st.pendingInvitesSub}>All teams' games and training, week by week</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            style={[st.pendingInvitesBtn, { borderColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.surface }]}
+            style={[st.pendingInvitesBtn, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]}
             onPress={() => router.push(`/(app)/${slug}/admin/pending-invites` as any)}
             activeOpacity={0.8}
           >
@@ -752,12 +777,12 @@ export default function AdminPanel() {
               <Text style={st.pendingInvitesLabel}>Pending Invites</Text>
               <Text style={st.pendingInvitesSub}>Resend reminders to coaches and parents</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+            <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
 
           {team && (
             <TouchableOpacity
-              style={[st.pendingInvitesBtn, { borderColor: DUGOUT_COLORS.ui.border, backgroundColor: DUGOUT_COLORS.ui.surface }]}
+              style={[st.pendingInvitesBtn, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]}
               onPress={() => setEditTeamOpen(true)}
               activeOpacity={0.8}
             >
@@ -768,26 +793,13 @@ export default function AdminPanel() {
                 <Text style={st.pendingInvitesLabel}>Team Settings</Text>
                 <Text style={st.pendingInvitesSub}>Edit team name, age group and season</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
             </TouchableOpacity>
           )}
 
           {/* AI tools */}
           <SectionRow label="AI TOOLS" />
           <View style={st.aiGroup}>
-            <AiToolCard
-              icon="sparkles-outline" color="#F59E0B" bg="rgba(245,158,11,0.12)"
-              label="AI Schedule"
-              desc="Import a game schedule from any PDF or CSV"
-              onPress={() => router.push(`/(app)/${slug}/admin/schedule-upload` as any)}
-            />
-            <AiToolCard
-              icon="person-add-outline" color="#14B8A6" bg="rgba(20,184,166,0.12)"
-              label="AI Roster"
-              desc="Import players from any spreadsheet format"
-              onPress={() => router.push(`/(app)/${slug}/admin/roster-import` as any)}
-              showDivider
-            />
             {isOrgAdmin && (
               <>
                 <AiToolCard
@@ -802,7 +814,6 @@ export default function AdminPanel() {
                   label="Club Schedule"
                   desc="Import the full season schedule from the league"
                   onPress={() => router.push(`/(app)/${slug}/admin/club-schedule` as any)}
-                  showDivider
                 />
               </>
             )}
@@ -816,6 +827,18 @@ export default function AdminPanel() {
               label="Season Stats"
               desc="Playing time ranking and percentage for every player"
               onPress={() => router.push(`/(app)/${slug}/admin/season-stats` as any)}
+            />
+            <AiToolCard
+              icon="videocam-outline" color="#8B5CF6" bg="rgba(139,92,246,0.12)"
+              label="Recordings"
+              desc="All game and training recordings linked to events"
+              onPress={() => router.push(`/(app)/${slug}/admin/recordings` as any)}
+            />
+            <AiToolCard
+              icon="people-outline" color="#F59E0B" bg="rgba(245,158,11,0.12)"
+              label="Guest Activity"
+              desc="All cross-team guest appearances for your club"
+              onPress={() => router.push(`/(app)/${slug}/admin/guest-activity` as any)}
             />
           </View>
 
@@ -845,28 +868,42 @@ export default function AdminPanel() {
 // ─── Screen styles ────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   noTeamScroll:    { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 48, gap: 12 },
-  noTeamTitle:     { fontSize: 20, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginTop: 16 },
-  noTeamBody:      { fontSize: 14, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', marginBottom: 8 },
+  noTeamTitle:     { fontSize: 20, fontWeight: '700', color: PULSE_COLORS.ui.text, marginTop: 16 },
+  noTeamBody:      { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 8 },
   noTeamCard:      { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16, borderWidth: 1 },
   noTeamCardIcon:  { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   noTeamCardText:  { flex: 1 },
-  noTeamCardTitle: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 2 },
-  noTeamCardSub:   { fontSize: 13, color: DUGOUT_COLORS.ui.muted, lineHeight: 18 },
+  noTeamCardTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
+  noTeamCardSub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
   scroll: { paddingTop: 4, paddingBottom: 24 },
+
+  // Surface type nudge
+  nudgeBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    marginHorizontal: 16, marginBottom: 16,
+    backgroundColor: 'rgba(245,158,11,0.08)', borderRadius: 14, borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.2)', padding: 14,
+  },
+  nudgeIconWrap: {
+    width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(245,158,11,0.15)',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1,
+  },
+  nudgeTitle:  { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 3 },
+  nudgeSub:    { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, lineHeight: 17 },
 
   // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn:      { width: 36, alignItems: 'flex-start' },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  headerTitle:  { fontSize: 17, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.3 },
-  headerSub:    { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginTop: 1, fontWeight: '500' },
+  headerTitle:  { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
+  headerSub:    { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1, fontWeight: '500' },
   teamSwitcher: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   createBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -877,15 +914,15 @@ const st = StyleSheet.create({
   // Stats
   statsRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     marginHorizontal: 16, marginTop: 16,
-    borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
   statCell:    { flex: 1, alignItems: 'center', paddingVertical: 16, gap: 3 },
-  statDivider: { width: 1, height: 40, backgroundColor: DUGOUT_COLORS.ui.border },
+  statDivider: { width: 1, height: 40, backgroundColor: PULSE_COLORS.ui.border },
   statNum:     { fontSize: 22, fontWeight: '800' },
-  statLabel:   { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '600' },
+  statLabel:   { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
   // Event list
   eventList: { marginHorizontal: 16, gap: 8 },
@@ -893,11 +930,11 @@ const st = StyleSheet.create({
   // Empty
   emptyCard: {
     alignItems: 'center', paddingVertical: 32,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     marginHorizontal: 16, borderRadius: 16,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, gap: 8,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, gap: 8,
   },
-  emptyTitle: { fontSize: 15, color: DUGOUT_COLORS.ui.textSecondary, fontWeight: '500' },
+  emptyTitle: { fontSize: 15, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
   emptyLink:  { fontSize: 14, fontWeight: '600', marginTop: 4 },
 
   // Manage 3-col grid
@@ -912,16 +949,16 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   pendingInvitesMeta: { flex: 1 },
-  pendingInvitesLabel: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 2 },
-  pendingInvitesSub:   { fontSize: 12, color: DUGOUT_COLORS.ui.muted },
+  pendingInvitesLabel: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
+  pendingInvitesSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted },
 
   // AI tools grouped card
   aiGroup: {
     marginHorizontal: 16,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
 
@@ -930,20 +967,20 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 20,
   },
-  attendanceEmptyText: { fontSize: 13, color: DUGOUT_COLORS.ui.muted, flex: 1, lineHeight: 18 },
+  attendanceEmptyText: { fontSize: 13, color: PULSE_COLORS.ui.muted, flex: 1, lineHeight: 18 },
 });
 
 // ─── Attendance row styles ────────────────────────────────────────────────────
 
 const atndSt = StyleSheet.create({
-  divider:    { height: 1, backgroundColor: DUGOUT_COLORS.ui.border, marginHorizontal: 16 },
+  divider:    { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 16 },
   row:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  jersey:     { width: 28, height: 28, borderRadius: 7, backgroundColor: DUGOUT_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  jerseyText: { fontSize: 11, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
-  name:       { flex: 1, fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
+  jersey:     { width: 28, height: 28, borderRadius: 7, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  jerseyText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  name:       { flex: 1, fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
   rightCol:   { alignItems: 'flex-end', gap: 4, minWidth: 90 },
   pct:        { fontSize: 11, fontWeight: '700' },
-  barTrack:   { height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row', width: 80, backgroundColor: DUGOUT_COLORS.ui.border },
+  barTrack:   { height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row', width: 80, backgroundColor: PULSE_COLORS.ui.border },
   barFill:    { height: '100%' },
   barEmpty:   { height: '100%' },
   viewAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 12 },
@@ -953,16 +990,16 @@ const atndSt = StyleSheet.create({
 // ─── Team picker modal styles ─────────────────────────────────────────────────
 
 const tp = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
-  title:       { fontSize: 20, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.3 },
-  searchWrap:  { flexDirection: 'row', alignItems: 'center', gap: 10, margin: 16, backgroundColor: DUGOUT_COLORS.ui.surface, borderRadius: 12, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, paddingHorizontal: 14, paddingVertical: 10 },
-  searchInput: { flex: 1, fontSize: 15, color: DUGOUT_COLORS.ui.text },
+  root:        { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  title:       { fontSize: 20, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
+  searchWrap:  { flexDirection: 'row', alignItems: 'center', gap: 10, margin: 16, backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingHorizontal: 14, paddingVertical: 10 },
+  searchInput: { flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text },
   list:        { paddingBottom: 40 },
-  row:         { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  row:         { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   dot:         { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  rowName:     { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  rowMeta:     { fontSize: 12, color: DUGOUT_COLORS.ui.muted, marginTop: 2 },
+  rowName:     { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  rowMeta:     { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
   empty:       { padding: 40, alignItems: 'center' },
-  emptyText:   { fontSize: 14, color: DUGOUT_COLORS.ui.muted },
+  emptyText:   { fontSize: 14, color: PULSE_COLORS.ui.muted },
 });

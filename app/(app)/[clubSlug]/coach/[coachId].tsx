@@ -15,7 +15,8 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
+import ClubHeader from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -133,14 +134,14 @@ export default function CoachProfileScreen() {
     setResending(true);
     try {
       const teamName = team?.name ?? 'your team';
-      const deepLink = `https://dugoutfc.app/join?token=${coach.inviteToken}`;
-      const subject = `Reminder: You've been invited to join ${teamName} as a coach on Dugout FC`;
-      const body = `Hi,\n\nJust a reminder — you've been invited to join ${teamName} as coaching staff on Dugout FC.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${coach.inviteToken}\n\n— ${profile.full_name ?? 'Your Club Admin'}`;
+      const deepLink = `https://pulse-fc.app/join?token=${coach.inviteToken}`;
+      const subject = `Reminder: You've been invited to join ${teamName} as a coach on Pulse FC`;
+      const body = `Hi,\n\nJust a reminder — you've been invited to join ${teamName} as coaching staff on Pulse FC.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${coach.inviteToken}\n\n— ${profile.full_name ?? 'Your Club Admin'}`;
       await supabase.functions.invoke('send-team-email', {
         body: {
           to: [{ email: coach.email, name: '' }],
           cc: [], subject, body, reply_to: null,
-          from_name: profile.full_name ?? 'Dugout FC',
+          from_name: profile.full_name ?? 'Pulse FC',
           team_name: teamName,
           attachments: [],
           club_logo_url: logoUrl,
@@ -204,16 +205,10 @@ export default function CoachProfileScreen() {
   return (
     <View style={st.root}>
 
-      {/* ── Header ── */}
-      <View style={st.header}>
-        <TouchableOpacity style={st.iconBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={st.headerTitle} numberOfLines={1}>
-          {coach.source === 'member' ? coach.name.split(' ')[0] : 'Invited Coach'}
-        </Text>
-        <View style={st.iconBtn} />
-      </View>
+      <ClubHeader
+        title={coach.source === 'member' ? coach.name.split(' ')[0] : 'Invited Coach'}
+        onBack={() => router.back()}
+      />
 
       <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
 
@@ -303,9 +298,9 @@ export default function CoachProfileScreen() {
         {isOrgAdmin && (
           <TouchableOpacity style={st.removeBtn} onPress={confirmRemove} disabled={removing}>
             {removing
-              ? <ActivityIndicator size="small" color={DUGOUT_COLORS.status.error} />
+              ? <ActivityIndicator size="small" color={PULSE_COLORS.status.error} />
               : <>
-                  <Ionicons name="person-remove-outline" size={16} color={DUGOUT_COLORS.status.error} />
+                  <Ionicons name="person-remove-outline" size={16} color={PULSE_COLORS.status.error} />
                   <Text style={st.removeBtnText}>Remove from Team</Text>
                 </>}
           </TouchableOpacity>
@@ -320,15 +315,15 @@ export default function CoachProfileScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: DUGOUT_COLORS.ui.background },
-  errorText: { color: DUGOUT_COLORS.ui.textSecondary, fontSize: 16 },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background },
+  errorText: { color: PULSE_COLORS.ui.textSecondary, fontSize: 16 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 12, paddingTop: 58, paddingBottom: 10,
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
   scroll: { padding: 16 },
@@ -344,7 +339,7 @@ const st = StyleSheet.create({
   },
   avatarText: { fontSize: 34, fontWeight: '900' },
   name: {
-    fontSize: 26, fontWeight: '800', color: DUGOUT_COLORS.ui.text,
+    fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text,
     letterSpacing: -0.5, marginBottom: 12,
   },
   badgeRow:  { flexDirection: 'row', gap: 8, marginBottom: 10 },
@@ -359,18 +354,18 @@ const st = StyleSheet.create({
   },
   statusDot:  { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 12, fontWeight: '600' },
-  dateLine:   { fontSize: 13, color: DUGOUT_COLORS.ui.muted, marginTop: 4 },
+  dateLine:   { fontSize: 13, color: PULSE_COLORS.ui.muted, marginTop: 4 },
 
   // ── Section
   sectionLabel: {
-    fontSize: 10, fontWeight: '800', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
     letterSpacing: 2, marginBottom: 10, marginTop: 4,
   },
 
   // ── Contact card
   card: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden', marginBottom: 24,
   },
   contactRow: {
@@ -382,12 +377,12 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   contactMeta: { flex: 1 },
-  contactLabel: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontWeight: '600', marginBottom: 2 },
-  contactValue: { fontSize: 15, color: DUGOUT_COLORS.ui.text, fontWeight: '500' },
+  contactLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', marginBottom: 2 },
+  contactValue: { fontSize: 15, color: PULSE_COLORS.ui.text, fontWeight: '500' },
   contactBtn: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
   contactBtnText: { fontSize: 13, fontWeight: '700' },
 
@@ -415,5 +410,5 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(239,68,68,0.28)',
     backgroundColor: 'rgba(239,68,68,0.07)',
   },
-  removeBtnText: { color: DUGOUT_COLORS.status.error, fontWeight: '700', fontSize: 15 },
+  removeBtnText: { color: PULSE_COLORS.status.error, fontWeight: '700', fontSize: 15 },
 });

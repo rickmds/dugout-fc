@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
+import { FlipBoard } from '@/components/FlipBoard';
 import { seasonOptions } from '@/lib/ageGroup';
 import { Plus, Trash2, X, TrendingUp, TrendingDown, DollarSign, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -80,7 +81,14 @@ export default function TryoutFinancesPage() {
     </div>
   );
 
-  if (loading) return <div style={{ padding: '40px', color: '#94A3B8' }}>Loading…</div>;
+  if (loading) return (
+    <FlipBoard title="Loading finances…" rows={[
+      { label: 'Expenses', pad: 2 },
+      { label: 'Teams',    pad: 2 },
+      { label: 'Coaches',  pad: 2 },
+      { label: 'Seasons',  pad: 2 },
+    ]} />
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>

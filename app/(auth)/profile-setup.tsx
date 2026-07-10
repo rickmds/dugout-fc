@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
@@ -93,7 +93,7 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
   container: {
     padding: 16,
@@ -103,12 +103,12 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 28,
     fontWeight: '800',
-    color: DUGOUT_COLORS.ui.text,
+    color: PULSE_COLORS.ui.text,
     textAlign: 'center',
   },
   subheading: {
     fontSize: 15,
-    color: DUGOUT_COLORS.ui.textSecondary,
+    color: PULSE_COLORS.ui.textSecondary,
     textAlign: 'center',
     marginTop: 6,
     marginBottom: 32,
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   skipText: {
-    color: DUGOUT_COLORS.ui.muted,
+    color: PULSE_COLORS.ui.muted,
     fontSize: 13,
   },
 });

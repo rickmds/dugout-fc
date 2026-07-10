@@ -2,8 +2,8 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — Dugout FC',
-  description: 'How Dugout FC collects, uses, and protects your personal data.',
+  title: 'Privacy Policy — Pulse FC',
+  description: 'How Pulse FC collects, uses, and protects your personal data.',
 };
 
 export default function PrivacyPage() {
@@ -12,9 +12,8 @@ export default function PrivacyPage() {
       {/* Nav */}
       <header className="px-6 sm:px-10 py-5 flex items-center justify-between border-b border-[#111] max-w-5xl mx-auto">
         <Link href="/">
-          <div style={{ background: '#fff', borderRadius: '10px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center' }}>
-            <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '28px', width: 'auto' }} />
-          </div>
+          <img src="/logo.png" alt="Pulse FC" style={{ height: '44px', width: 'auto' }} />
+          
         </Link>
         <Link href="/" className="text-[#555] text-[13px] hover:text-white transition-colors">← Back</Link>
       </header>
@@ -25,8 +24,8 @@ export default function PrivacyPage() {
         <p className="text-[#555] text-sm mb-12">Last updated: 23 June 2026</p>
 
         <Section title="1. Who we are">
-          <p>Dugout FC (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is a soccer club management platform. Our platform is available at dugoutfc.app and through our iOS mobile application.</p>
-          <p>You can contact us at <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>.</p>
+          <p>Pulse FC (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is a soccer club management platform. Our platform is available at pulse-fc.app and through our iOS mobile application.</p>
+          <p>You can contact us at <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>.</p>
         </Section>
 
         <Section title="2. What data we collect">
@@ -44,7 +43,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="3. How we use your data">
-          <p>We use your data solely to provide and improve the Dugout FC service:</p>
+          <p>We use your data solely to provide and improve the Pulse FC service:</p>
           <ul>
             <li>To create and manage your account and club.</li>
             <li>To display schedules, rosters, and availability to the correct team members.</li>
@@ -70,12 +69,12 @@ export default function PrivacyPage() {
 
         <Section title="5. Data retention">
           <p>We retain your personal data for as long as your account is active. If you delete your account, your personal data is deleted within 30 days. Club and team data may be retained in anonymised form for analytics purposes.</p>
-          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a> or using the Delete Account option in the app settings.</p>
+          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a> or using the Delete Account option in the app settings.</p>
         </Section>
 
         <Section title="6. Children's privacy">
           <p>Our platform is designed for use by coaches and parents. We do not knowingly collect personal data directly from children under 13. Player roster entries (name, jersey number, position) are entered by coaches or parents, not by the players themselves.</p>
-          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>.</p>
+          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>.</p>
         </Section>
 
         <Section title="7. Your rights">
@@ -87,7 +86,7 @@ export default function PrivacyPage() {
             <li>Export your data in a portable format.</li>
             <li>Withdraw consent at any time (this will not affect the lawfulness of prior processing).</li>
           </ul>
-          <p>To exercise any of these rights, email <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>. We will respond within 30 days.</p>
+          <p>To exercise any of these rights, email <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>. We will respond within 30 days.</p>
         </Section>
 
         <Section title="8. Security">
@@ -95,7 +94,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="9. Cookies and tracking">
-          <p>Our mobile app does not use cookies. Our website (dugoutfc.app) uses only essential cookies required for authentication and session management. We use PostHog for anonymised analytics, which may set a cookie to track sessions. You can opt out of analytics tracking by contacting us.</p>
+          <p>Our mobile app does not use cookies. Our website (pulse-fc.app) uses only essential cookies required for authentication and session management. We use PostHog for anonymised analytics, which may set a cookie to track sessions. You can opt out of analytics tracking by contacting us.</p>
         </Section>
 
         <Section title="10. Changes to this policy">
@@ -105,18 +104,17 @@ export default function PrivacyPage() {
         <Section title="11. Contact">
           <p>If you have any questions about this privacy policy or how we handle your data, please contact:</p>
           <p className="mt-2">
-            <strong>Dugout FC</strong><br />
-            <a href="mailto:info@dugoutfc.com" className="text-[#22c55e] hover:underline">info@dugoutfc.com</a>
+            <strong>Pulse FC</strong><br />
+            <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>
           </p>
         </Section>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[#111] px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between">
-        <div style={{ background: '#fff', borderRadius: '8px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
-        </div>
-        <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Dugout FC</p>
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        
+        <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Pulse FC</p>
       </footer>
     </div>
   );

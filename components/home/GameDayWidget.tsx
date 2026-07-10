@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { DUGOUT_COLORS } from '../../constants/colors';
+import { PULSE_COLORS } from '../../constants/colors';
 import { useGameDay, useUpcomingGameDates, localDateStr } from '../../hooks/useGameDay';
 import { useClub } from '../../hooks/useClub';
 
@@ -88,9 +88,9 @@ function WidgetContent({ date, onPress }: { date: string; onPress: () => void })
             <View key={ev.id}>
               {i > 0 && (
                 <View style={styles.connector}>
-                  <View style={[styles.connectorDash, { backgroundColor: DUGOUT_COLORS.ui.border }]} />
-                  <Ionicons name="car-outline" size={12} color={DUGOUT_COLORS.ui.muted} />
-                  <View style={[styles.connectorDash, { backgroundColor: DUGOUT_COLORS.ui.border }]} />
+                  <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
+                  <Ionicons name="car-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                  <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
                 </View>
               )}
               <View style={styles.eventRow}>
@@ -135,7 +135,7 @@ export default function GameDayWidget({ onPress }: { onPress: () => void }) {
 
 const styles = StyleSheet.create({
   sectionLabel: {
-    fontSize: 12, fontWeight: '700', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 0.8, marginBottom: 10,
   },
 
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20,
   },
   clashBadgeText: { fontSize: 10, fontWeight: '700', color: '#EF4444' },
-  cardSub: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 2 },
+  cardSub: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
 
   eventList: { paddingVertical: 4 },
 
@@ -174,11 +174,11 @@ const styles = StyleSheet.create({
   eventRow: { flexDirection: 'row', alignItems: 'stretch' },
   teamBar: { width: 3, marginVertical: 4, marginLeft: 14, borderRadius: 2 },
   eventContent: { flex: 1, paddingVertical: 10, paddingHorizontal: 12 },
-  eventTime: { fontSize: 14, fontWeight: '800', color: DUGOUT_COLORS.ui.text, marginBottom: 4 },
+  eventTime: { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
   eventBottom: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   teamBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
   teamBadgeText: { fontSize: 11, fontWeight: '700' },
-  eventGameTitle: { fontSize: 12, color: DUGOUT_COLORS.ui.muted, flex: 1 },
+  eventGameTitle: { fontSize: 12, color: PULSE_COLORS.ui.muted, flex: 1 },
 
   extraText: { fontSize: 12, fontWeight: '700', paddingHorizontal: 14, paddingVertical: 8 },
 

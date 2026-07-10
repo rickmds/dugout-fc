@@ -11,8 +11,9 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import ClubHeader from '../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,9 +32,9 @@ type Notif = {
 const TYPE_CFG: Record<string, { icon: React.ComponentProps<typeof Ionicons>['name']; color: string }> = {
   rsvp_reminder:    { icon: 'calendar-outline',     color: '#3B82F6' },
   new_announcement: { icon: 'megaphone-outline',    color: '#8B5CF6' },
-  new_dm:           { icon: 'chatbubble-outline',   color: DUGOUT_COLORS.brand.green },
+  new_dm:           { icon: 'chatbubble-outline',   color: PULSE_COLORS.brand.green },
   schedule_change:  { icon: 'alert-circle-outline', color: '#F59E0B' },
-  invite_accepted:  { icon: 'person-add-outline',   color: DUGOUT_COLORS.brand.green },
+  invite_accepted:  { icon: 'person-add-outline',   color: PULSE_COLORS.brand.green },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -148,25 +149,16 @@ export default function NotificationsScreen() {
   return (
     <View style={styles.root}>
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          {unreadCount > 0 && (
-            <Text style={[styles.headerSub, { color: primaryColor }]}>{unreadCount} unread</Text>
-          )}
-        </View>
-        {unreadCount > 0 ? (
+      <ClubHeader
+        title="Notifications"
+        subtitle={unreadCount > 0 ? `${unreadCount} unread` : undefined}
+        onBack={() => router.back()}
+        right={unreadCount > 0 ? (
           <TouchableOpacity onPress={markAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={[styles.markAllText, { color: primaryColor }]}>Mark all read</Text>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Mark all</Text>
           </TouchableOpacity>
-        ) : (
-          <View style={{ width: 80 }} />
-        )}
-      </View>
+        ) : undefined}
+      />
 
       {loading ? (
         <View style={styles.center}>
@@ -174,7 +166,7 @@ export default function NotificationsScreen() {
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="notifications-off-outline" size={48} color={DUGOUT_COLORS.ui.muted} />
+          <Ionicons name="notifications-off-outline" size={48} color={PULSE_COLORS.ui.muted} />
           <Text style={styles.emptyTitle}>No notifications yet</Text>
           <Text style={styles.emptyBody}>RSVP reminders, announcements, and messages will appear here.</Text>
         </View>
@@ -185,7 +177,7 @@ export default function NotificationsScreen() {
               <Text style={styles.dayLabel}>{group.label}</Text>
               <View style={styles.group}>
                 {group.items.map((n, idx) => {
-                  const cfg = TYPE_CFG[n.type] ?? { icon: 'notifications-outline' as const, color: DUGOUT_COLORS.ui.muted };
+                  const cfg = TYPE_CFG[n.type] ?? { icon: 'notifications-outline' as const, color: PULSE_COLORS.ui.muted };
                   const cfgColor = (n.type === 'new_dm' || n.type === 'invite_accepted') ? primaryColor : cfg.color;
                   const isLast = idx === group.items.length - 1;
                   return (
@@ -211,7 +203,7 @@ export default function NotificationsScreen() {
                         {n.body ? <Text style={styles.notifBody} numberOfLines={2}>{n.body}</Text> : null}
                         <Text style={styles.notifTime}>{relativeTime(n.created_at ?? '')}</Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} />
+                      <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
                     </TouchableOpacity>
                   );
                 })}
@@ -228,31 +220,31 @@ export default function NotificationsScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: 24 },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn:      { width: 36 },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle:  { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  headerSub:    { fontSize: 12, color: DUGOUT_COLORS.brand.green, marginTop: 1, fontWeight: '600' },
+  headerTitle:  { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerSub:    { fontSize: 12, color: PULSE_COLORS.brand.green, marginTop: 1, fontWeight: '600' },
   markAllText:  { fontSize: 13, fontWeight: '600', width: 80, textAlign: 'right' },
 
   dayLabel: {
-    fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 0.8,
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8,
     marginHorizontal: 20, marginTop: 20, marginBottom: 8,
   },
   group: {
     marginHorizontal: 16,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: DUGOUT_COLORS.ui.border,
+    borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
   notifRow: {
@@ -260,10 +252,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14, paddingHorizontal: 14, gap: 10,
   },
   notifRowBorder: {
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   dotCol: { width: 8, alignItems: 'center' },
-  dot:    { width: 7, height: 7, borderRadius: 3.5, backgroundColor: DUGOUT_COLORS.brand.green },
+  dot:    { width: 7, height: 7, borderRadius: 3.5, backgroundColor: PULSE_COLORS.brand.green },
 
   iconCircle: {
     width: 38, height: 38, borderRadius: 12,
@@ -271,14 +263,14 @@ const styles = StyleSheet.create({
   },
 
   notifContent:     { flex: 1, gap: 2 },
-  notifTitle:       { fontSize: 14, fontWeight: '500', color: DUGOUT_COLORS.ui.textSecondary },
-  notifTitleUnread: { fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  notifBody:        { fontSize: 13, color: DUGOUT_COLORS.ui.muted, lineHeight: 18 },
-  notifTime:        { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 2 },
+  notifTitle:       { fontSize: 14, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary },
+  notifTitleUnread: { fontWeight: '700', color: PULSE_COLORS.ui.text },
+  notifBody:        { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
+  notifTime:        { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
 
   empty: {
     flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 10,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
-  emptyBody:  { fontSize: 14, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  emptyBody:  { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 20 },
 });

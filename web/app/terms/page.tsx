@@ -2,8 +2,8 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service — Dugout FC',
-  description: 'Terms and conditions for using the Dugout FC platform.',
+  title: 'Terms of Service — Pulse FC',
+  description: 'Terms and conditions for using the Pulse FC platform.',
 };
 
 export default function TermsPage() {
@@ -12,9 +12,8 @@ export default function TermsPage() {
       {/* Nav */}
       <header className="px-6 sm:px-10 py-5 flex items-center justify-between border-b border-[#111] max-w-5xl mx-auto">
         <Link href="/">
-          <div style={{ background: '#fff', borderRadius: '10px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center' }}>
-            <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '28px', width: 'auto' }} />
-          </div>
+          <img src="/logo.png" alt="Pulse FC" style={{ height: '44px', width: 'auto' }} />
+          
         </Link>
         <Link href="/" className="text-[#555] text-[13px] hover:text-white transition-colors">← Back</Link>
       </header>
@@ -25,17 +24,17 @@ export default function TermsPage() {
         <p className="text-[#555] text-sm mb-12">Last updated: 23 June 2026</p>
 
         <Section title="1. Acceptance of terms">
-          <p>By creating an account or using the Dugout FC platform (the &ldquo;Service&rdquo;), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
-          <p>You can contact us at <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a>.</p>
+          <p>By creating an account or using the Pulse FC platform (the &ldquo;Service&rdquo;), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
+          <p>You can contact us at <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a>.</p>
         </Section>
 
-        <Section title="2. Who can use Dugout FC">
+        <Section title="2. Who can use Pulse FC">
           <p>You must be at least 18 years old to create an account. By registering, you confirm that you are 18 or older. The Service is intended for use by coaches, club administrators, and parents or guardians of youth soccer players.</p>
           <p>You may not use the Service on behalf of a child under 13 in a way that would collect their personal data directly from them. Player roster data (name, jersey number, position) must be entered by an adult coach or parent.</p>
         </Section>
 
         <Section title="3. Your account">
-          <p>You are responsible for maintaining the security of your account credentials. You must notify us immediately at <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a> if you suspect unauthorised access to your account.</p>
+          <p>You are responsible for maintaining the security of your account credentials. You must notify us immediately at <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a> if you suspect unauthorised access to your account.</p>
           <p>You are responsible for all activity that occurs under your account. We are not liable for any loss or damage arising from your failure to keep your credentials secure.</p>
           <p>One account per person. You may not create multiple accounts or share your account with others.</p>
         </Section>
@@ -74,12 +73,12 @@ export default function TermsPage() {
         </Section>
 
         <Section title="9. Termination">
-          <p>You may close your account at any time via Settings → Delete Account in the app or by emailing <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a>.</p>
+          <p>You may close your account at any time via Settings → Delete Account in the app or by emailing <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a>.</p>
           <p>We may suspend or terminate your account if you breach these terms, with or without notice depending on the severity of the breach. Upon termination, your right to use the Service ends immediately.</p>
         </Section>
 
         <Section title="10. Limitation of liability">
-          <p>To the maximum extent permitted by law, Dugout FC and its operators are not liable for any indirect, incidental, special, or consequential damages arising from your use of the Service, including but not limited to loss of data, loss of revenue, or personal injury.</p>
+          <p>To the maximum extent permitted by law, Pulse FC and its operators are not liable for any indirect, incidental, special, or consequential damages arising from your use of the Service, including but not limited to loss of data, loss of revenue, or personal injury.</p>
           <p>Our total liability to you for any claim arising from your use of the Service shall not exceed the amount you paid us in the 12 months preceding the claim (which may be zero during the free period).</p>
           <p>The Service is provided &ldquo;as is&rdquo; without warranties of any kind, express or implied.</p>
         </Section>
@@ -95,20 +94,19 @@ export default function TermsPage() {
         <Section title="13. Contact">
           <p>Questions about these terms? Contact us at:</p>
           <p className="mt-2">
-            <strong>Dugout FC</strong><br />
-            <a href="mailto:info@dugoutfc.com">info@dugoutfc.com</a>
+            <strong>Pulse FC</strong><br />
+            <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a>
           </p>
         </Section>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[#111] px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between">
-        <div style={{ background: '#fff', borderRadius: '8px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center' }}>
-          <img src="/Signature.jpg" alt="Dugout FC" style={{ height: '22px', width: 'auto' }} />
-        </div>
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        
         <div className="flex items-center gap-6">
           <Link href="/privacy" className="text-[#555] text-[12px] hover:text-[#bbb] transition-colors">Privacy Policy</Link>
-          <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Dugout FC</p>
+          <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Pulse FC</p>
         </div>
       </footer>
     </div>

@@ -195,7 +195,7 @@ export default function ParentPortal() {
           <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: club?.logo_url ? 'transparent' : primary, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontSize: '13px', fontWeight: '800', color: '#fff' }}>
             {club?.logo_url ? <img src={club.logo_url} alt={club.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
           </div>
-          <span style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>{club?.name ?? 'Dugout FC'}</span>
+          <span style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>{club?.name ?? 'Pulse FC'}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ fontSize: '13px', color: '#64748B' }}>{profile?.full_name}</span>

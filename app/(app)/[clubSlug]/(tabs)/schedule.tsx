@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   RefreshControl,
   ScrollView,
@@ -18,9 +19,12 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { DUGOUT_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
+import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../components/ui/ClubHeader';
+import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
+import { fetchDriveTimes } from '../../../../lib/drivetime';
 
 type EventType = 'game' | 'training' | 'other';
 type Tab = 'upcoming' | 'past' | 'calendar';
@@ -29,15 +33,24 @@ type Event = {
   id: string;
   title: string;
   type: EventType;
+  team_id: string;
   event_date: string;
   event_time: string | null;
   location: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
   duration_minutes: number | null;
   arrival_buffer_minutes: number | null;
   uniform: string | null;
   field_type: 'turf' | 'grass' | null;
   cancelled_at: string | null;
+  home_away: string | null;
+  score_home: number | null;
+  score_away: number | null;
 };
+
+const TEAM_PALETTE = ['#3B82F6', '#22c55e', '#F59E0B', '#8B5CF6', '#EF4444', '#06B6D4'];
 
 type RsvpCounts = { attending: number; not_attending: number };
 type MyRsvp = 'attending' | 'not_attending' | null;
@@ -97,9 +110,20 @@ function buildCalendarDays(year: number, month: number): (number | null)[] {
   return days;
 }
 
+const RESULT_COLORS = { W: '#22c55e', L: '#ef4444', D: '#9ca3af' } as const;
+
+function getGameResult(event: Event): { label: 'W' | 'L' | 'D'; ourScore: number; oppScore: number } | null {
+  if (event.type !== 'game' || event.score_home == null || event.score_away == null) return null;
+  // Match tracker always writes score_home = our score, score_away = opponent score
+  const ourScore = event.score_home;
+  const oppScore = event.score_away;
+  const label = ourScore > oppScore ? 'W' : ourScore < oppScore ? 'L' : 'D';
+  return { label, ourScore, oppScore };
+}
+
 export default function ScheduleScreen() {
-  const { primaryColor, rgba, secondaryColor } = useClub();
-  const { team, loading: teamLoading } = useTeam();
+  const { primaryColor, rgba, secondaryColor, onSecondary, logoUrl, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const { team, allTeams, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
@@ -108,9 +132,12 @@ export default function ScheduleScreen() {
   const [rsvpCounts, setRsvpCounts] = useState<Record<string, RsvpCounts>>({});
   const [myRsvps, setMyRsvps] = useState<Record<string, MyRsvp>>({});
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
+  const [playerIdMap, setPlayerIdMap] = useState<Map<string, string>>(new Map()); // team_id -> player_id
   const [playerCount, setPlayerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [weatherMap, setWeatherMap] = useState<Record<string, WeatherData>>({});
+  const [driveTimeMap, setDriveTimeMap] = useState<Record<string, string>>({});
 
   const [activeTab, setActiveTab] = useState<Tab>('upcoming');
 
@@ -133,13 +160,17 @@ export default function ScheduleScreen() {
     if (!team) return;
     setLoading(true);
 
-    const [eventsRes, playerRes, countRes] = await Promise.all([
+    // Multi-team: non-coaches with >1 team see merged schedule
+    const isMultiTeam = !isCoach && allTeams.length > 1;
+    const teamIds = isMultiTeam ? allTeams.map((t) => t.id) : [team.id];
+
+    const [eventsRes, playersRes, countRes] = await Promise.all([
       supabase.from('events')
-        .select('id, title, type, event_date, event_time, location, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at')
-        .eq('team_id', team.id).order('event_date').order('event_time'),
+        .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away')
+        .in('team_id', teamIds).order('event_date').order('event_time'),
       profile?.id
-        ? supabase.from('players').select('id').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle()
-        : Promise.resolve({ data: null }),
+        ? supabase.from('players').select('id, team_id').in('team_id', teamIds).eq('profile_id', profile.id)
+        : Promise.resolve({ data: [] }),
       supabase.from('players').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
     ]);
 
@@ -147,13 +178,55 @@ export default function ScheduleScreen() {
     setEvents(evs);
     setPlayerCount(countRes.count ?? 0);
 
-    const pid = (playerRes as any).data?.id ?? null;
+    const pRows = (playersRes as any).data ?? [];
+    const pidMap = new Map<string, string>(pRows.map((p: any) => [p.team_id, p.id]));
+    const pid = pidMap.get(team.id) ?? null;
+    setPlayerIdMap(pidMap);
     setMyPlayerId(pid);
 
     if (evs.length > 0) {
-      await fetchRsvpData(evs.map((e) => e.id), pid);
+      await fetchRsvpData(evs, pidMap);
     }
     setLoading(false);
+
+    fetchContextData(evs.filter(e => isUpcoming(e.event_date) && !e.cancelled_at));
+  }
+
+  async function fetchContextData(upcomingEvs: Event[]) {
+    // Weather: only events within the 3-day WeatherAPI window
+    const weatherEvs = upcomingEvs.filter(e => isWeatherForecastable(e.event_date));
+    if (weatherEvs.length > 0) {
+      const results = await Promise.all(
+        weatherEvs.map(async e => {
+          const loc = (e.lat != null && e.lng != null)
+            ? `${e.lat},${e.lng}`
+            : (e.address ?? e.location ?? '');
+          if (!loc) return null;
+          const w = await fetchEventWeather(loc, e.event_date, e.event_time ?? null);
+          return w ? { id: e.id, w } : null;
+        })
+      );
+      const wMap: Record<string, WeatherData> = {};
+      for (const r of results) { if (r) wMap[r.id] = r.w; }
+      setWeatherMap(wMap);
+    }
+
+    // Drive time: bulk call for upcoming events within 14 days that have a location
+    const today = new Date();
+    const cutoff = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const driveEvs = upcomingEvs.filter(e =>
+      e.event_date <= cutoff && (e.lat != null || e.address || e.location)
+    );
+    if (driveEvs.length > 0) {
+      const items = driveEvs.map(e => ({
+        id: e.id,
+        location: (e.lat != null && e.lng != null)
+          ? `${e.lat},${e.lng}`
+          : (e.address ?? e.location ?? ''),
+      }));
+      const dtMap = await fetchDriveTimes(items);
+      setDriveTimeMap(dtMap);
+    }
   }
 
   async function handleRefresh() {
@@ -162,11 +235,14 @@ export default function ScheduleScreen() {
     setRefreshing(false);
   }
 
-  async function fetchRsvpData(eventIds: string[], pid: string | null) {
+  async function fetchRsvpData(evs: Event[], pidMap: Map<string, string>) {
+    const eventIds = evs.map((e) => e.id);
+    const playerIds = [...pidMap.values()];
+
     const [countsRes, myRes] = await Promise.all([
       supabase.from('event_rsvps').select('event_id, status').in('event_id', eventIds),
-      pid
-        ? supabase.from('event_rsvps').select('event_id, status').in('event_id', eventIds).eq('player_id', pid)
+      playerIds.length > 0
+        ? supabase.from('event_rsvps').select('event_id, player_id, status').in('event_id', eventIds).in('player_id', playerIds)
         : Promise.resolve({ data: [] }),
     ]);
 
@@ -178,26 +254,32 @@ export default function ScheduleScreen() {
     }
     setRsvpCounts(counts);
 
+    const evTeamMap = new Map(evs.map((e) => [e.id, e.team_id]));
     const mine: Record<string, MyRsvp> = {};
-    for (const row of (myRes.data ?? []) as { event_id: string; status: string }[]) {
-      mine[row.event_id] = row.status as MyRsvp;
+    for (const row of (myRes.data ?? []) as { event_id: string; player_id: string; status: string }[]) {
+      const teamId = evTeamMap.get(row.event_id);
+      if (teamId && pidMap.get(teamId) === row.player_id) {
+        mine[row.event_id] = row.status as MyRsvp;
+      }
     }
     setMyRsvps(mine);
   }
 
   async function handleRsvp(eventId: string, status: 'attending' | 'not_attending') {
-    if (!myPlayerId) return;
+    const ev = events.find((e) => e.id === eventId);
+    const pid = ev ? (playerIdMap.get(ev.team_id) ?? myPlayerId) : myPlayerId;
+    if (!pid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const current = myRsvps[eventId];
     if (current === status) {
-      await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', myPlayerId);
+      await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', pid);
     } else {
       await supabase.from('event_rsvps').upsert(
-        { event_id: eventId, player_id: myPlayerId, responded_by: profile?.id, status },
+        { event_id: eventId, player_id: pid, responded_by: profile?.id, status },
         { onConflict: 'event_id,player_id' }
       );
     }
-    await fetchRsvpData(events.map((e) => e.id), myPlayerId);
+    await fetchRsvpData(events, playerIdMap);
   }
 
   function openCreateEvent() {
@@ -229,7 +311,9 @@ export default function ScheduleScreen() {
       ? Math.max(0, playerCount - counts.attending - counts.not_attending)
       : null;
 
-    const showHomeAway = item.type === 'game' && (item.uniform === 'home' || item.uniform === 'away');
+    const showKitBadge = item.uniform === 'home' || item.uniform === 'away' || item.uniform === 'training';
+    const result = isPast ? getGameResult(item) : null;
+    const resultColor = result ? RESULT_COLORS[result.label] : null;
 
     return (
       <TouchableOpacity
@@ -240,7 +324,11 @@ export default function ScheduleScreen() {
       >
         <View style={[styles.typeStripe, { backgroundColor: isCancelled ? '#ef4444' : cfg.color }]} />
 
-        <View style={styles.dateCol}>
+        <View style={[
+          styles.dateCol,
+          item.type === 'game' && item.uniform === 'home' && { backgroundColor: `${homeKitColor}18` },
+          item.type === 'game' && item.uniform === 'away' && { backgroundColor: `${awayKitColor}18` },
+        ]}>
           <Text style={[styles.dateWday, today && [styles.todayText, { color: primaryColor }]]}>
             {d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
           </Text>
@@ -250,65 +338,103 @@ export default function ScheduleScreen() {
           <Text style={[styles.dateMon, today && [styles.todayText, { color: primaryColor }]]}>
             {today ? 'TODAY' : d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
           </Text>
+          {item.type === 'game' && item.uniform === 'home' && (
+            <View style={styles.homeAwayTag}>
+              <Text style={[styles.homeAwayTagText, { color: homeKitColor }]}>HOME</Text>
+            </View>
+          )}
+          {item.type === 'game' && item.uniform === 'away' && (
+            <View style={styles.homeAwayTag}>
+              <Text style={[styles.homeAwayTagText, { color: awayKitColor }]}>AWAY</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.eventBody}>
 
-          {/* Badge row — left-aligned, wrapping */}
-          <View style={styles.badgeRow}>
-            {isCancelled ? (
-              <View style={styles.cancelledBadge}>
-                <Ionicons name="close-circle" size={11} color="#ef4444" />
-                <Text style={styles.cancelledBadgeText}>CANCELLED</Text>
-              </View>
-            ) : (
-              <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
-                <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
-              </View>
-            )}
-            {showHomeAway && (
-              <View style={[styles.typeBadge, {
-                backgroundColor: item.uniform === 'home' ? rgba(0.10) : 'rgba(139,92,246,0.10)',
-              }]}>
-                <Text style={[styles.typeText, { color: item.uniform === 'home' ? primaryColor : '#8B5CF6' }]}>
-                  {item.uniform === 'home' ? 'Home' : 'Away'}
-                </Text>
-              </View>
-            )}
-            {item.field_type && (
-              <View style={[styles.typeBadge, {
-                backgroundColor: item.field_type === 'turf' ? 'rgba(59,130,246,0.10)' : rgba(0.07),
-              }]}>
-                <Text style={[styles.typeText, { color: item.field_type === 'turf' ? '#3B82F6' : '#6EE7B7' }]}>
-                  {item.field_type === 'turf' ? 'Turf' : 'Grass'}
-                </Text>
-              </View>
-            )}
-            {/* My RSVP status — only for parents */}
-            {!isCoach && myPlayerId && !isPast && myStatus && (
-              <View style={[
-                styles.myStatusChip,
-                { backgroundColor: myStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
-              ]}>
-                <Ionicons
-                  name={myStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
-                  size={11}
-                  color={myStatus === 'attending' ? DUGOUT_COLORS.rsvp.attending : DUGOUT_COLORS.rsvp.not_attending}
-                />
-                <Text style={[
-                  styles.myStatusChipText,
-                  { color: myStatus === 'attending' ? DUGOUT_COLORS.rsvp.attending : DUGOUT_COLORS.rsvp.not_attending }
+          {/* Top row: badges (left) + drive time pill (right) */}
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.badgeRow}>
+              {isCancelled ? (
+                <View style={styles.cancelledBadge}>
+                  <Ionicons name="close-circle" size={11} color="#ef4444" />
+                  <Text style={styles.cancelledBadgeText}>CANCELLED</Text>
+                </View>
+              ) : (
+                <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
+                  <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
+                </View>
+              )}
+              {showKitBadge && !isPast && (() => {
+                const kitColor = item.uniform === 'home' ? homeKitColor
+                  : item.uniform === 'away' ? awayKitColor
+                  : trainingKitColor;
+                const kitLabel = item.uniform === 'home' ? 'Home Kit'
+                  : item.uniform === 'away' ? 'Away Kit'
+                  : 'Training Kit';
+                return (
+                  <View style={[styles.kitBadge, { backgroundColor: `${kitColor}22` }]}>
+                    <Ionicons name="shirt" size={11} color={kitColor} />
+                    <Text style={[styles.typeText, { color: kitColor }]}>{kitLabel}</Text>
+                  </View>
+                );
+              })()}
+              {item.field_type && !isPast && (
+                <View style={[styles.typeBadge, {
+                  backgroundColor: item.field_type === 'turf' ? 'rgba(59,130,246,0.10)' : rgba(0.07),
+                }]}>
+                  <Text style={[styles.typeText, { color: item.field_type === 'turf' ? '#3B82F6' : '#6EE7B7' }]}>
+                    {item.field_type === 'turf' ? 'Turf' : 'Grass'}
+                  </Text>
+                </View>
+              )}
+              {/* My RSVP status — only for parents */}
+              {!isCoach && (playerIdMap.get(item.team_id) ?? myPlayerId) && !isPast && myStatus && (
+                <View style={[
+                  styles.myStatusChip,
+                  { backgroundColor: myStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
                 ]}>
-                  {myStatus === 'attending' ? 'Going' : "Can't go"}
-                </Text>
+                  <Ionicons
+                    name={myStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
+                    size={11}
+                    color={myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
+                  />
+                  <Text style={[
+                    styles.myStatusChipText,
+                    { color: myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
+                  ]}>
+                    {myStatus === 'attending' ? 'Going' : "Can't go"}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Drive time pill — top right */}
+            {!isPast && !isCancelled && driveTimeMap[item.id] && (
+              <View style={styles.driveTimePill}>
+                <Ionicons name="car-outline" size={10} color={PULSE_COLORS.ui.textSecondary} />
+                <Text style={styles.driveTimePillText}>{driveTimeMap[item.id]}</Text>
               </View>
             )}
           </View>
 
-          <Text style={[styles.eventTitle, isPast && { color: DUGOUT_COLORS.ui.muted }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.eventTitle, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>{item.title}</Text>
+
+          {/* Team indicator for multi-team parents */}
+          {!isCoach && allTeams.length > 1 && (() => {
+            const tIdx = allTeams.findIndex((t) => t.id === item.team_id);
+            if (tIdx < 0) return null;
+            const tColor = TEAM_PALETTE[tIdx % TEAM_PALETTE.length];
+            return (
+              <View style={styles.teamDotRow}>
+                <View style={[styles.teamDot, { backgroundColor: tColor }]} />
+                <Text style={[styles.teamDotLabel, { color: tColor }]}>{allTeams[tIdx].name}</Text>
+              </View>
+            );
+          })()}
 
           {(item.event_time || item.location) && (
-            <Text style={[styles.eventMeta, isPast && { color: DUGOUT_COLORS.ui.muted }]} numberOfLines={1}>
+            <Text style={[styles.eventMeta, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>
               {[
                 item.event_time
                   ? (item.duration_minutes
@@ -320,32 +446,48 @@ export default function ScheduleScreen() {
             </Text>
           )}
 
+          {/* Weather */}
+          {!isPast && !isCancelled && weatherMap[item.id] && (
+            <View style={styles.contextBlock}>
+              <View style={styles.contextWeatherRow}>
+                <Text style={styles.contextWeatherEmoji}>{weatherMap[item.id].icon}</Text>
+                <Text style={styles.contextWeatherTemp}>{weatherMap[item.id].temp_f}°F</Text>
+                <Text style={styles.contextWeatherCond} numberOfLines={1}>{weatherMap[item.id].condition}</Text>
+                {weatherMap[item.id].precip_chance >= 20 && (
+                  <View style={styles.contextRainPill}>
+                    <Text style={styles.contextRainPillText}>💧 {weatherMap[item.id].precip_chance}%</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
           {/* Coach RSVP summary */}
           {isCoach && !isPast && !isCancelled && (
             <View style={styles.rsvpSummaryRow}>
               <View style={styles.rsvpStat}>
-                <Ionicons name="checkmark-circle" size={13} color={DUGOUT_COLORS.rsvp.attending} />
-                <Text style={[styles.rsvpStatText, { color: DUGOUT_COLORS.rsvp.attending }]}>
+                <Ionicons name="checkmark-circle" size={13} color={PULSE_COLORS.rsvp.attending} />
+                <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.attending }]}>
                   {counts?.attending ?? 0}
                 </Text>
               </View>
               <View style={styles.rsvpStat}>
-                <Ionicons name="close-circle" size={13} color={DUGOUT_COLORS.rsvp.not_attending} />
-                <Text style={[styles.rsvpStatText, { color: DUGOUT_COLORS.rsvp.not_attending }]}>
+                <Ionicons name="close-circle" size={13} color={PULSE_COLORS.rsvp.not_attending} />
+                <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.not_attending }]}>
                   {counts?.not_attending ?? 0}
                 </Text>
               </View>
               {pending != null && pending > 0 && (
                 <View style={styles.rsvpStat}>
-                  <Ionicons name="ellipse-outline" size={13} color={DUGOUT_COLORS.ui.muted} />
-                  <Text style={[styles.rsvpStatText, { color: DUGOUT_COLORS.ui.muted }]}>{pending}</Text>
+                  <Ionicons name="ellipse-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.ui.muted }]}>{pending}</Text>
                 </View>
               )}
             </View>
           )}
 
           {/* Parent RSVP buttons */}
-          {!isCoach && myPlayerId && !isPast && !isCancelled && (
+          {!isCoach && (playerIdMap.get(item.team_id) ?? myPlayerId) && !isPast && !isCancelled && (
             <View style={styles.rsvpRow}>
               <TouchableOpacity
                 style={[styles.rsvpBtn, myStatus === 'attending' && styles.rsvpBtnGoing]}
@@ -354,7 +496,7 @@ export default function ScheduleScreen() {
                 <Ionicons
                   name="checkmark-circle-outline"
                   size={13}
-                  color={myStatus === 'attending' ? '#000' : DUGOUT_COLORS.ui.muted}
+                  color={myStatus === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
                 />
                 <Text style={[styles.rsvpBtnText, myStatus === 'attending' && { color: '#000' }]}>Going</Text>
               </TouchableOpacity>
@@ -365,13 +507,23 @@ export default function ScheduleScreen() {
                 <Ionicons
                   name="close-circle-outline"
                   size={13}
-                  color={myStatus === 'not_attending' ? '#fff' : DUGOUT_COLORS.ui.muted}
+                  color={myStatus === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
                 />
                 <Text style={[styles.rsvpBtnText, myStatus === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
+
+        {/* Right result column — past games with a score */}
+        {isPast && item.type === 'game' && result && resultColor && (
+          <View style={[styles.resultCol, { backgroundColor: `${resultColor}12`, borderLeftColor: `${resultColor}30` }]}>
+            <Text style={[styles.resultColLabel, { color: resultColor }]}>{result.label}</Text>
+            <Text style={[styles.resultColScore, { color: resultColor }]}>
+              {result.ourScore}–{result.oppScore}
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   }
@@ -381,6 +533,18 @@ export default function ScheduleScreen() {
   const pastEvents = events.filter((e) => !isUpcoming(e.event_date)).reverse();
   const upcomingSections = groupByMonth(upcomingEvents);
   const pastSections = groupByMonth(pastEvents);
+
+  // Season W/L/D record
+  let seasonWins = 0, seasonLosses = 0, seasonDraws = 0;
+  for (const g of pastEvents) {
+    if (g.cancelled_at) continue;
+    const r = getGameResult(g);
+    if (!r) continue;
+    if (r.label === 'W') seasonWins++;
+    else if (r.label === 'L') seasonLosses++;
+    else seasonDraws++;
+  }
+  const hasSeasonRecord = seasonWins + seasonLosses + seasonDraws > 0;
 
   // Calendar data
   const eventsByDate = new Map<string, Event[]>();
@@ -417,7 +581,7 @@ export default function ScheduleScreen() {
 
   function handleSyncCalendar() {
     if (!team) return;
-    const base = `https://dugoutfc.app/api/calendar/${team.id}`;
+    const base = `https://pulse-fc.app/api/calendar/${team.id}`;
     const webcal = base.replace('https://', 'webcal://');
     const google = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
     Alert.alert(
@@ -443,9 +607,9 @@ export default function ScheduleScreen() {
   if (!team) {
     return (
       <View style={styles.center}>
-        <Ionicons name="calendar-outline" size={48} color={DUGOUT_COLORS.ui.muted} />
-        <Text style={{ color: DUGOUT_COLORS.ui.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
-        <Text style={{ color: DUGOUT_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
+        <Ionicons name="calendar-outline" size={48} color={PULSE_COLORS.ui.muted} />
+        <Text style={{ color: PULSE_COLORS.ui.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
+        <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
           {isCoach ? 'Import your club or create a team to get started.' : "Ask your coach for an invite to join a team."}
         </Text>
       </View>
@@ -455,37 +619,27 @@ export default function ScheduleScreen() {
   return (
     <View style={styles.container}>
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <ClubBadge size={38} />
-          <View>
-            <Text style={styles.title}>Schedule</Text>
-            <Text style={styles.subtitle}>
-              {upcomingEvents.length > 0
-                ? `${upcomingEvents.length} upcoming event${upcomingEvents.length !== 1 ? 's' : ''}`
-                : 'No upcoming events'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.headerRight}>
-          {isCoach && (
+      <ClubHeader
+        title="Schedule"
+        subtitle={upcomingEvents.length > 0
+          ? `${upcomingEvents.length} upcoming event${upcomingEvents.length !== 1 ? 's' : ''}`
+          : 'No upcoming events'}
+        right={isCoach ? (
+          <>
             <TouchableOpacity
-              style={[styles.addBtn, { backgroundColor: 'rgba(245,158,11,0.12)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)' }]}
               onPress={() => router.push(`/(app)/${clubSlug}/admin/schedule-upload` as any)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#7C3AED', shadowColor: '#A855F7', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 10, elevation: 6 }}
             >
-              <Ionicons name="sparkles-outline" size={15} color="#F59E0B" />
-              <Text style={[styles.addBtnText, { color: '#F59E0B' }]}>AI Import</Text>
+              <Ionicons name="sparkles" size={13} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>AI</Text>
             </TouchableOpacity>
-          )}
-          {isCoach && (
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: primaryColor }]} onPress={openCreateEvent}>
-              <Ionicons name="add" size={16} color="#000" />
-              <Text style={styles.addBtnText}>Add Event</Text>
+            <TouchableOpacity style={[headerBtnStyle, { backgroundColor: secondaryColor }]} onPress={openCreateEvent}>
+              <Ionicons name="add" size={16} color={onSecondary} />
+              <Text style={[headerBtnTextStyle, { color: onSecondary }]}>Add</Text>
             </TouchableOpacity>
-          )}
-        </View>
-      </View>
+          </>
+        ) : undefined}
+      />
 
       {/* Tab bar */}
       <View style={styles.tabBar}>
@@ -502,7 +656,7 @@ export default function ScheduleScreen() {
             <Ionicons
               name={tab.icon as any}
               size={14}
-              color={activeTab === tab.key ? primaryColor : DUGOUT_COLORS.ui.muted}
+              color={activeTab === tab.key ? primaryColor : PULSE_COLORS.ui.muted}
             />
             <Text style={[styles.tabBtnText, activeTab === tab.key && [styles.tabBtnTextActive, { color: primaryColor }]]}>
               {tab.label}
@@ -515,8 +669,9 @@ export default function ScheduleScreen() {
       {activeTab === 'upcoming' && (
         upcomingEvents.length === 0 ? (
           <View style={styles.empty}>
+            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} resizeMode="contain" /> : null}
             <View style={[styles.emptyIconWrap, { backgroundColor: rgba(0.1) }]}>
-              <Ionicons name="calendar-outline" size={26} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="calendar-outline" size={26} color={PULSE_COLORS.ui.muted} />
             </View>
             <Text style={styles.emptyTitle}>No upcoming events</Text>
             <Text style={styles.emptySubtitle}>
@@ -547,10 +702,10 @@ export default function ScheduleScreen() {
                 <View style={styles.syncBannerText}>
                   <Text style={[styles.syncBannerTitle, { color: primaryColor }]}>Sync schedule to calendar</Text>
                   <View style={styles.syncPlatforms}>
-                    <Ionicons name="logo-apple" size={11} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="logo-apple" size={11} color={PULSE_COLORS.ui.muted} />
                     <Text style={styles.syncPlatformText}>Apple</Text>
                     <Text style={styles.syncDot}>·</Text>
-                    <Ionicons name="logo-google" size={11} color={DUGOUT_COLORS.ui.muted} />
+                    <Ionicons name="logo-google" size={11} color={PULSE_COLORS.ui.muted} />
                     <Text style={styles.syncPlatformText}>Google</Text>
                     <Text style={styles.syncDot}>· Copy link</Text>
                   </View>
@@ -571,7 +726,7 @@ export default function ScheduleScreen() {
         pastEvents.length === 0 ? (
           <View style={styles.empty}>
             <View style={[styles.emptyIconWrap, { backgroundColor: rgba(0.1) }]}>
-              <Ionicons name="time-outline" size={26} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="time-outline" size={26} color={PULSE_COLORS.ui.muted} />
             </View>
             <Text style={styles.emptyTitle}>No past events</Text>
             <Text style={styles.emptySubtitle}>Completed events will appear here.</Text>
@@ -583,6 +738,27 @@ export default function ScheduleScreen() {
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
+            ListHeaderComponent={hasSeasonRecord ? (
+              <View style={styles.seasonRecord}>
+                <Text style={styles.seasonRecordTitle}>SEASON RECORD</Text>
+                <View style={styles.seasonRecordRow}>
+                  <View style={styles.seasonStat}>
+                    <Text style={[styles.seasonStatNum, { color: '#22c55e' }]}>{seasonWins}</Text>
+                    <Text style={styles.seasonStatLabel}>W</Text>
+                  </View>
+                  <View style={styles.seasonStatSep} />
+                  <View style={styles.seasonStat}>
+                    <Text style={[styles.seasonStatNum, { color: '#ef4444' }]}>{seasonLosses}</Text>
+                    <Text style={styles.seasonStatLabel}>L</Text>
+                  </View>
+                  <View style={styles.seasonStatSep} />
+                  <View style={styles.seasonStat}>
+                    <Text style={[styles.seasonStatNum, { color: PULSE_COLORS.ui.muted }]}>{seasonDraws}</Text>
+                    <Text style={styles.seasonStatLabel}>D</Text>
+                  </View>
+                </View>
+              </View>
+            ) : null}
             renderSectionHeader={({ section }) => renderSectionHeader(section.title, section.data.length)}
             renderItem={({ item }) => renderCard(item)}
           />
@@ -600,11 +776,11 @@ export default function ScheduleScreen() {
           {/* Month navigator */}
           <View style={styles.calNav}>
             <TouchableOpacity style={styles.calNavBtn} onPress={prevCalMonth} disabled={loading} activeOpacity={loading ? 1 : 0.7}>
-              <Ionicons name="chevron-back" size={20} color={DUGOUT_COLORS.ui.text} />
+              <Ionicons name="chevron-back" size={20} color={PULSE_COLORS.ui.text} />
             </TouchableOpacity>
             <Text style={styles.calNavTitle}>{calMonthLabel}</Text>
             <TouchableOpacity style={styles.calNavBtn} onPress={nextCalMonth} disabled={loading} activeOpacity={loading ? 1 : 0.7}>
-              <Ionicons name="chevron-forward" size={20} color={DUGOUT_COLORS.ui.text} />
+              <Ionicons name="chevron-forward" size={20} color={PULSE_COLORS.ui.text} />
             </TouchableOpacity>
           </View>
 
@@ -676,7 +852,7 @@ export default function ScheduleScreen() {
           {/* Events for selected day / month */}
           {calDisplayEvents.length === 0 ? (
             <View style={styles.calEmpty}>
-              <Ionicons name="calendar-outline" size={24} color={DUGOUT_COLORS.ui.border} />
+              <Ionicons name="calendar-outline" size={24} color={PULSE_COLORS.ui.border} />
               <Text style={styles.calEmptyText}>
                 {selectedDate ? 'No events on this day' : 'No events this month'}
               </Text>
@@ -695,24 +871,24 @@ export default function ScheduleScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: DUGOUT_COLORS.ui.background },
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 64, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerIconBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: 26, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
-  subtitle: { fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary },
+  title: { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  subtitle: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
   syncBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14,
@@ -723,12 +899,12 @@ const styles = StyleSheet.create({
   syncBannerText: { flex: 1 },
   syncBannerTitle: { fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
   syncPlatforms: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  syncPlatformText: { fontSize: 11, color: DUGOUT_COLORS.ui.muted },
-  syncDot: { fontSize: 11, color: DUGOUT_COLORS.ui.muted },
+  syncPlatformText: { fontSize: 11, color: PULSE_COLORS.ui.muted },
+  syncDot: { fontSize: 11, color: PULSE_COLORS.ui.muted },
   syncChevron: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
   },
   addBtnText: { color: '#000', fontWeight: '700', fontSize: 13 },
@@ -736,28 +912,28 @@ const styles = StyleSheet.create({
   // Tab bar
   tabBar: {
     flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.background,
   },
   tabBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 5, paddingVertical: 12,
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
-  tabBtnActive: { borderBottomColor: DUGOUT_COLORS.brand.green },
-  tabBtnText: { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
-  tabBtnTextActive: { color: DUGOUT_COLORS.brand.green },
+  tabBtnActive: { borderBottomColor: PULSE_COLORS.brand.green },
+  tabBtnText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  tabBtnTextActive: { color: PULSE_COLORS.brand.green },
 
   // List
   list: { paddingVertical: 12, paddingHorizontal: 16 },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 8 },
-  sectionHeader: { fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 1.2 },
+  sectionHeader: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1.2 },
   sectionCountBadge: {
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
-  sectionCount: { fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted },
+  sectionCount: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted },
 
   // Empty states
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
@@ -765,31 +941,43 @@ const styles = StyleSheet.create({
     width: 56, height: 56, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary, textAlign: 'center', marginBottom: 24, maxWidth: 260, lineHeight: 20 },
-  emptyBtn: { backgroundColor: DUGOUT_COLORS.brand.green, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', marginBottom: 24, maxWidth: 260, lineHeight: 20 },
+  emptyBtn: { backgroundColor: PULSE_COLORS.brand.green, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 20 },
   emptyBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
 
   // Event card
   eventCard: {
-    flexDirection: 'row', backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, marginBottom: 10, overflow: 'hidden',
   },
   eventCardPast: {},
   typeStripe: { width: 3 },
   dateCol: {
-    width: 58, backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    width: 58, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: 14, gap: 1,
   },
-  dateWday: { fontSize: 10, fontWeight: '700', color: DUGOUT_COLORS.ui.muted, letterSpacing: 0.5 },
-  dateDay: { fontSize: 22, fontWeight: '800', color: DUGOUT_COLORS.ui.text, lineHeight: 26 },
-  dateMon: { fontSize: 10, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary, letterSpacing: 0.5 },
-  todayText: { color: DUGOUT_COLORS.brand.green },
+  homeAwayTag: { marginTop: 4 },
+  homeAwayTagText: { fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  dateWday: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5 },
+  dateDay: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, lineHeight: 26 },
+  dateMon: { fontSize: 10, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 0.5 },
+  todayText: { color: PULSE_COLORS.brand.green },
   eventBody: { flex: 1, paddingHorizontal: 12, paddingVertical: 11, gap: 5 },
-  badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5 },
+  cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, flex: 1 },
+  driveTimePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
+    flexShrink: 0,
+  },
+  driveTimePillText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  kitBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   typeText: { fontSize: 11, fontWeight: '700' },
   cancelledBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -797,13 +985,47 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.12)',
   },
   cancelledBadgeText: { fontSize: 11, fontWeight: '800', color: '#ef4444', letterSpacing: 0.3 },
+  resultCol: {
+    width: 56, alignItems: 'center', justifyContent: 'center',
+    borderLeftWidth: 1, gap: 3,
+  },
+  resultColLabel: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  resultColScore: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  // Season record header on Past tab
+  seasonRecord: {
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 14, paddingVertical: 14, paddingHorizontal: 18,
+    marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  seasonRecordTitle: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1.2 },
+  seasonRecordRow: { flexDirection: 'row', alignItems: 'center', gap: 0 },
+  seasonStat: { alignItems: 'center', paddingHorizontal: 16 },
+  seasonStatNum: { fontSize: 22, fontWeight: '800', lineHeight: 26 },
+  seasonStatLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5 },
+  seasonStatSep: { width: 1, height: 32, backgroundColor: PULSE_COLORS.ui.border },
   myStatusChip: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10,
   },
   myStatusChipText: { fontSize: 11, fontWeight: '700' },
-  eventTitle: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  eventMeta: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary },
+  eventTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  eventMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
+
+  // Weather + drive time
+  contextBlock: { gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, marginTop: 2 },
+  contextWeatherRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  contextWeatherEmoji: { fontSize: 13 },
+  contextWeatherTemp: { fontSize: 13, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  contextWeatherCond: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, flex: 1 },
+  contextRainPill: {
+    backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  contextRainPillText: { fontSize: 11, fontWeight: '700', color: '#60A5FA' },
+  contextDriveRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  contextDriveText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  contextDriveLabel: { fontSize: 12, color: PULSE_COLORS.ui.muted },
   rsvpSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2 },
   rsvpStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rsvpStatText: { fontSize: 13, fontWeight: '700' },
@@ -811,12 +1033,12 @@ const styles = StyleSheet.create({
   rsvpBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 12, paddingVertical: 12, borderRadius: 20,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
-  rsvpBtnGoing: { backgroundColor: DUGOUT_COLORS.rsvp.attending, borderColor: DUGOUT_COLORS.rsvp.attending },
-  rsvpBtnNotGoing: { backgroundColor: DUGOUT_COLORS.rsvp.not_attending, borderColor: DUGOUT_COLORS.rsvp.not_attending },
-  rsvpBtnText: { fontSize: 12, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
+  rsvpBtnGoing: { backgroundColor: PULSE_COLORS.rsvp.attending, borderColor: PULSE_COLORS.rsvp.attending },
+  rsvpBtnNotGoing: { backgroundColor: PULSE_COLORS.rsvp.not_attending, borderColor: PULSE_COLORS.rsvp.not_attending },
+  rsvpBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
 
   // Calendar
   calScroll: { paddingHorizontal: 16 },
@@ -826,21 +1048,21 @@ const styles = StyleSheet.create({
   },
   calNavBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  calNavTitle: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  calNavTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
 
   calWeekLabels: {
     flexDirection: 'row',
     paddingBottom: 8,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
     marginBottom: 4,
   },
   calWeekLabel: {
     flex: 1, textAlign: 'center',
-    fontSize: 11, fontWeight: '600', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.muted,
   },
 
   calGrid: { gap: 2 },
@@ -852,29 +1074,33 @@ const styles = StyleSheet.create({
     width: 38, height: 38, borderRadius: 19,
     alignItems: 'center', justifyContent: 'center',
   },
-  calDayCircleSelected: { backgroundColor: DUGOUT_COLORS.brand.green },
+  calDayCircleSelected: { backgroundColor: PULSE_COLORS.brand.green },
   calDayCircleToday: {
-    borderWidth: 1.5, borderColor: DUGOUT_COLORS.brand.green,
+    borderWidth: 1.5, borderColor: PULSE_COLORS.brand.green,
   },
-  calDayText: { fontSize: 14, fontWeight: '500', color: DUGOUT_COLORS.ui.text },
-  calDayTextPast: { color: DUGOUT_COLORS.ui.muted },
-  calDayTextToday: { color: DUGOUT_COLORS.brand.green, fontWeight: '700' },
+  calDayText: { fontSize: 14, fontWeight: '500', color: PULSE_COLORS.ui.text },
+  calDayTextPast: { color: PULSE_COLORS.ui.muted },
+  calDayTextToday: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
   calDayTextSelected: { color: '#000', fontWeight: '700' },
   calDot: {
     width: 6, height: 6, borderRadius: 3,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
   },
   calDotSelected: { backgroundColor: '#000' },
 
-  calDivider: { height: 1, backgroundColor: DUGOUT_COLORS.ui.border, marginVertical: 16 },
+  calDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 16 },
   calEventHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 12,
   },
-  calEventHeaderText: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  calClearBtn: { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.brand.green },
+  calEventHeaderText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calClearBtn: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
 
   calEmpty: { alignItems: 'center', gap: 10, paddingVertical: 32 },
-  calEmptyText: { fontSize: 14, color: DUGOUT_COLORS.ui.muted },
+  calEmptyText: { fontSize: 14, color: PULSE_COLORS.ui.muted },
   calEventList: { gap: 0 },
+
+  teamDotRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -2 },
+  teamDot: { width: 6, height: 6, borderRadius: 3 },
+  teamDotLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 });

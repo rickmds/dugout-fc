@@ -12,32 +12,30 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../../lib/supabase';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { useLineup } from '../../../../../../hooks/useLineup';
 import { FormationSelector } from '../../../../../../components/lineup/FormationSelector';
-import { DUGOUT_COLORS } from '../../../../../../constants/colors';
+import { PULSE_COLORS } from '../../../../../../constants/colors';
 import { useClub } from '../../../../../../hooks/useClub';
+import ClubHeader from '../../../../../../components/ui/ClubHeader';
 import type { PositionSlot } from '../../../../../../constants/formations';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EventInfo = { id: string; title: string; event_date: string; team_id: string };
 type TeamInfo  = { id: string; age_group: string | null };
-type Player    = { id: string; full_name: string; jersey_number: number | null; position: string | null };
+type Player    = { id: string; full_name: string; jersey_number: number | null; position: string | null; isGuest?: boolean; isInjured?: boolean };
 type BottomTab = 'formation' | 'players';
 type DragState = { fromIdx: number; pageX: number; pageY: number } | null;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const HEADER_H     = 100;
-const HINT_H       = 40;
-const BOTTOM_H     = 290;
-const PITCH_AREA_H = SCREEN_H - HEADER_H - HINT_H - BOTTOM_H;
-const PITCH_W      = Math.min(SCREEN_W - 24, PITCH_AREA_H / 1.48);
-const PITCH_H      = PITCH_W * 1.48;
+const HINT_H   = 40;
+const BOTTOM_H = 290;
 const TOKEN        = 40;
 const DRAG_TOKEN   = TOKEN * 1.25;          // ghost is bigger
 const DRAG_THRESH  = 6;                     // px before drag starts
@@ -126,6 +124,13 @@ export default function LineupScreen() {
   const { clubSlug, eventId } = useLocalSearchParams<{ clubSlug: string; eventId: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const insets = useSafeAreaInsets();
+
+  // Pitch dimensions — computed from actual header height so nothing overflows
+  const HEADER_H     = insets.top + 74; // ClubHeader: paddingTop(top+10)+marginTop(8)+row(40)+paddingBottom(16)
+  const PITCH_AREA_H = SCREEN_H - HEADER_H - HINT_H - BOTTOM_H;
+  const PITCH_W      = Math.min(SCREEN_W - 24, PITCH_AREA_H / 1.48);
+  const PITCH_H      = PITCH_W * 1.48;
 
   const [event,   setEvent]   = useState<EventInfo | null>(null);
   const [team,    setTeam]    = useState<TeamInfo | null>(null);
@@ -138,9 +143,6 @@ export default function LineupScreen() {
   const [activeTab,       setActiveTab]       = useState<BottomTab>('formation');
   const [drag,            setDrag]            = useState<DragState>(null);
   const [aiSuggesting,    setAiSuggesting]    = useState(false);
-  const [subPlanLoading,  setSubPlanLoading]  = useState(false);
-  const [subPlan,         setSubPlan]         = useState<any>(null);
-  const [subPlanOpen,     setSubPlanOpen]     = useState(false);
 
   const lineup = useLineup(team?.age_group);
 
@@ -152,9 +154,12 @@ export default function LineupScreen() {
   const playersRef      = useRef(players);
   const dragFromRef     = useRef<number | null>(null);
   const pitchViewRef    = useRef<View>(null);
+  const pitchWRef       = useRef(PITCH_W);
+  const pitchHRef       = useRef(PITCH_H);
 
   useEffect(() => { assignmentsRef.current = assignments; }, [assignments]);
   useEffect(() => { playersRef.current = players; }, [players]);
+  useEffect(() => { pitchWRef.current = PITCH_W; pitchHRef.current = PITCH_H; }, [PITCH_W, PITCH_H]);
 
   // ── Pitch PanResponder ────────────────────────────────────────────────────
 
@@ -167,8 +172,8 @@ export default function LineupScreen() {
       onPanResponderGrant: (evt) => {
         const { pageX, pageY } = evt.nativeEvent;
         const layout = pitchLayoutRef.current;
-        const relX = (pageX - layout.x) / PITCH_W * 100;
-        const relY = (pageY - layout.y) / PITCH_H * 100;
+        const relX = (pageX - layout.x) / pitchWRef.current * 100;
+        const relY = (pageY - layout.y) / pitchHRef.current * 100;
         const pos  = positionsRef.current;
         const asn  = assignmentsRef.current;
 
@@ -176,8 +181,8 @@ export default function LineupScreen() {
         dragFromRef.current = null;
         for (let i = 0; i < pos.length; i++) {
           if (!asn[i]) continue;
-          const dx = (pos[i].x - relX) / 100 * PITCH_W;
-          const dy = (pos[i].y - relY) / 100 * PITCH_H;
+          const dx = (pos[i].x - relX) / 100 * pitchWRef.current;
+          const dy = (pos[i].y - relY) / 100 * pitchHRef.current;
           if (Math.sqrt(dx * dx + dy * dy) < TOKEN * 0.9) {
             dragFromRef.current = i;
             break;
@@ -197,8 +202,8 @@ export default function LineupScreen() {
         const moved    = Math.sqrt(gs.dx * gs.dx + gs.dy * gs.dy);
         const wasDrag  = moved >= DRAG_THRESH && dragFromRef.current !== null;
         const layout   = pitchLayoutRef.current;
-        const relX     = (pageX - layout.x) / PITCH_W * 100;
-        const relY     = (pageY - layout.y) / PITCH_H * 100;
+        const relX     = (pageX - layout.x) / pitchWRef.current * 100;
+        const relY     = (pageY - layout.y) / pitchHRef.current * 100;
         const pos      = positionsRef.current;
 
         if (wasDrag) {
@@ -206,8 +211,8 @@ export default function LineupScreen() {
           let nearestIdx = -1; let nearestDist = SNAP_THRESH;
           pos.forEach((p, i) => {
             if (i === dragFromRef.current) return;
-            const dx = (p.x - relX) / 100 * PITCH_W;
-            const dy = (p.y - relY) / 100 * PITCH_H;
+            const dx = (p.x - relX) / 100 * pitchWRef.current;
+            const dy = (p.y - relY) / 100 * pitchHRef.current;
             const d  = Math.sqrt(dx * dx + dy * dy);
             if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
           });
@@ -229,8 +234,8 @@ export default function LineupScreen() {
           const asn = assignmentsRef.current;
           let nearestIdx = -1; let nearestDist = TOKEN * 1.2;
           pos.forEach((p, i) => {
-            const dx = (p.x - relX) / 100 * PITCH_W;
-            const dy = (p.y - relY) / 100 * PITCH_H;
+            const dx = (p.x - relX) / 100 * pitchWRef.current;
+            const dy = (p.y - relY) / 100 * pitchHRef.current;
             const d  = Math.sqrt(dx * dx + dy * dy);
             if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
           });
@@ -286,13 +291,19 @@ export default function LineupScreen() {
       .from('teams').select('id, age_group').eq('id', ev.team_id).single();
     if (tm) setTeam(tm as TeamInfo);
 
-    const { data: rsvps } = await supabase
-      .from('event_rsvps').select('player_id').eq('event_id', eventId).eq('status', 'attending');
-    if (rsvps && rsvps.length > 0) {
-      const ids = rsvps.map((r) => r.player_id);
+    const [rsvpsRes, guestsRes] = await Promise.all([
+      supabase.from('event_rsvps').select('player_id').eq('event_id', eventId).eq('status', 'attending'),
+      (supabase as any).from('event_guests').select('player_id, full_name, status').eq('event_id', eventId).eq('role', 'player').neq('status', 'declined'),
+    ]);
+    const regularIds = (rsvpsRes.data ?? []).map((r: any) => r.player_id as string);
+    const guestRows: any[] = guestsRes.data ?? [];
+    const guestPlayerIds = guestRows.filter((g: any) => g.player_id).map((g: any) => g.player_id as string);
+    const allIds = [...new Set([...regularIds, ...guestPlayerIds])];
+    if (allIds.length > 0) {
       const { data: pls } = await supabase
-        .from('players').select('id, full_name, jersey_number, position').in('id', ids).order('jersey_number');
-      setPlayers((pls ?? []) as Player[]);
+        .from('players').select('id, full_name, jersey_number, position, is_injured').in('id', allIds).order('jersey_number');
+      const guestIdSet = new Set(guestPlayerIds);
+      setPlayers(((pls ?? []) as any[]).map(p => ({ ...p, isGuest: guestIdSet.has(p.id), isInjured: p.is_injured ?? false })));
     }
 
     const { data: existing } = await supabase
@@ -421,39 +432,6 @@ export default function LineupScreen() {
     }
   }
 
-  async function handleSubPlan() {
-    if (!eventId) return;
-    setSubPlanLoading(true);
-    try {
-      const { data: existing } = await supabase
-        .from('lineups').select('id').eq('event_id', eventId).maybeSingle();
-      const { data, error } = await supabase.functions.invoke('plan-subs', {
-        body: {
-          event_id: eventId,
-          lineup_id: existing?.id ?? null,
-          squad: players.map((p) => ({
-            id: p.id,
-            full_name: p.full_name,
-            position: p.position,
-            jersey_number: p.jersey_number,
-          })),
-          game_length: 80,
-          halves: 2,
-        },
-      });
-      if (error) {
-        Alert.alert('Sub Plan failed', error.message ?? 'Could not generate plan. Try again.');
-        return;
-      }
-      setSubPlan(data);
-      setSubPlanOpen(true);
-    } catch (e) {
-      Alert.alert('Error', String(e));
-    } finally {
-      setSubPlanLoading(false);
-    }
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -490,46 +468,36 @@ export default function LineupScreen() {
   return (
     <View style={styles.root}>
 
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle} numberOfLines={1}>Lineup Builder</Text>
-          {event && <Text style={styles.headerSub} numberOfLines={1}>{event.title}</Text>}
-        </View>
-
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            onPress={handleAiSuggest}
-            disabled={aiSuggesting || saving}
-            style={[styles.aiBtn, { borderColor: rgba(0.35), backgroundColor: rgba(0.08) }]}
-          >
-            {aiSuggesting
-              ? <ActivityIndicator size="small" color={primaryColor} />
-              : <><Ionicons name="sparkles-outline" size={14} color={primaryColor} /><Text style={[styles.aiBtnText, { color: primaryColor }]}>AI</Text></>}
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleSubPlan}
-            disabled={subPlanLoading || saving}
-            style={[styles.aiBtn, { borderColor: 'rgba(96,165,250,0.4)', backgroundColor: 'rgba(96,165,250,0.08)' }]}
-          >
-            {subPlanLoading
-              ? <ActivityIndicator size="small" color="#60A5FA" />
-              : <><Ionicons name="swap-horizontal-outline" size={14} color="#60A5FA" /><Text style={[styles.aiBtnText, { color: '#60A5FA' }]}>Subs</Text></>}
-          </TouchableOpacity>
-          <View style={styles.countPill}>
-            <Text style={styles.countPillText}>{assignedCount}/{totalSlots}</Text>
+      <ClubHeader
+        title="Lineup Builder"
+        subtitle={event?.title}
+        onBack={() => router.back()}
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              onPress={handleAiSuggest}
+              disabled={aiSuggesting || saving}
+              style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', backgroundColor: 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              {aiSuggesting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <><Ionicons name="sparkles-outline" size={14} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>AI</Text></>}
+            </TouchableOpacity>
+            <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.2)' }}>
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>{assignedCount}/{totalSlots}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={saving}
+              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.2)' }}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>Save</Text>}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.saveBtn}>
-            {saving
-              ? <ActivityIndicator size="small" color={primaryColor} />
-              : <Text style={[styles.saveBtnText, { color: primaryColor }]}>Save</Text>}
-          </TouchableOpacity>
-        </View>
-      </View>
+        }
+      />
 
       {/* ── Pitch ── */}
       <View style={styles.pitchWrapper}>
@@ -589,7 +557,7 @@ export default function LineupScreen() {
               Tap a player below to fill <Text style={styles.hintLabel}>{selectedLabel}</Text>
             </Text>
             <TouchableOpacity onPress={() => setSelectedSlot(null)}>
-              <Ionicons name="close-circle" size={18} color={DUGOUT_COLORS.ui.muted} />
+              <Ionicons name="close-circle" size={18} color={PULSE_COLORS.ui.muted} />
             </TouchableOpacity>
           </>
         ) : (
@@ -618,7 +586,7 @@ export default function LineupScreen() {
                 style={[styles.tab, active && [styles.tabActive, { borderBottomColor: primaryColor }]]}
                 onPress={() => setActiveTab(tab)}
               >
-                <Ionicons name={icon} size={14} color={active ? primaryColor : DUGOUT_COLORS.ui.muted} />
+                <Ionicons name={icon} size={14} color={active ? primaryColor : PULSE_COLORS.ui.muted} />
                 <Text style={[styles.tabText, active && [styles.tabTextActive, { color: primaryColor }]]}>
                   {label}
                 </Text>
@@ -642,14 +610,14 @@ export default function LineupScreen() {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.playersList}>
             {players.length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={32} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="people-outline" size={32} color={PULSE_COLORS.ui.muted} />
                 <Text style={styles.emptyTitle}>No confirmed RSVPs yet</Text>
                 <Text style={styles.emptyBody}>Players who RSVP attending will appear here</Text>
               </View>
             ) : (
               players.map((player) => {
                 const isAssigned = assignedIds.has(player.id);
-                const isTarget   = selectedSlot !== null && !isAssigned;
+                const isTarget   = selectedSlot !== null && !isAssigned && !player.isInjured;
                 return (
                   <TouchableOpacity
                     key={player.id}
@@ -657,8 +625,13 @@ export default function LineupScreen() {
                       styles.playerRow,
                       isAssigned && styles.playerRowDone,
                       isTarget   && [styles.playerRowTarget, { backgroundColor: rgba(0.05) }],
+                      player.isInjured && styles.playerRowInjured,
                     ]}
                     onPress={() => {
+                      if (player.isInjured) {
+                        Alert.alert('Player injured', `${player.full_name} is flagged as injured and cannot be added to the lineup.`);
+                        return;
+                      }
                       if (isAssigned || selectedSlot === null) return;
                       const newMap = { ...assignments };
                       Object.keys(newMap).forEach((k) => {
@@ -668,24 +641,47 @@ export default function LineupScreen() {
                       setAssignments(newMap);
                       setSelectedSlot(null);
                     }}
-                    activeOpacity={isAssigned ? 1 : 0.75}
+                    activeOpacity={(isAssigned || player.isInjured) ? 1 : 0.75}
                   >
-                    <View style={[styles.jersey, isAssigned && [styles.jerseyDone, { backgroundColor: rgba(0.12), borderColor: primaryColor }]]}>
-                      <Text style={[styles.jerseyNum, isAssigned && [styles.jerseyNumDone, { color: primaryColor }]]}>
+                    <View style={[
+                      styles.jersey,
+                      isAssigned && [styles.jerseyDone, { backgroundColor: rgba(0.12), borderColor: primaryColor }],
+                      player.isInjured && { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)' },
+                    ]}>
+                      <Text style={[
+                        styles.jerseyNum,
+                        isAssigned && [styles.jerseyNumDone, { color: primaryColor }],
+                        player.isInjured && { color: '#ef4444' },
+                      ]}>
                         {player.jersey_number ?? '—'}
                       </Text>
                     </View>
 
                     <View style={styles.playerInfo}>
-                      <Text style={[styles.playerName, isAssigned && styles.playerNameDone]}>
-                        {player.full_name}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.playerName, isAssigned && styles.playerNameDone, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>
+                          {player.full_name}
+                        </Text>
+                        {player.isGuest && (
+                          <View style={styles.guestBadge}>
+                            <Text style={styles.guestBadgeText}>G</Text>
+                          </View>
+                        )}
+                        {player.isInjured && (
+                          <View style={styles.injuredBadge}>
+                            <Ionicons name="bandage-outline" size={10} color="#ef4444" />
+                            <Text style={styles.injuredBadgeText}>Injured</Text>
+                          </View>
+                        )}
+                      </View>
                       {player.position && (
-                        <Text style={styles.playerPos}>{player.position}</Text>
+                        <Text style={[styles.playerPos, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>{player.position}</Text>
                       )}
                     </View>
 
-                    {isAssigned ? (
+                    {player.isInjured ? (
+                      <Ionicons name="bandage-outline" size={18} color="rgba(239,68,68,0.4)" />
+                    ) : isAssigned ? (
                       <View style={styles.statusBadge}>
                         <Ionicons name="checkmark-circle" size={13} color={primaryColor} />
                         <Text style={[styles.statusText, { color: primaryColor }]}>On pitch</Text>
@@ -695,7 +691,7 @@ export default function LineupScreen() {
                         <Text style={styles.assignText}>Assign</Text>
                       </View>
                     ) : (
-                      <Ionicons name="ellipse-outline" size={18} color={DUGOUT_COLORS.ui.border} />
+                      <Ionicons name="ellipse-outline" size={18} color={PULSE_COLORS.ui.border} />
                     )}
                   </TouchableOpacity>
                 );
@@ -705,55 +701,6 @@ export default function LineupScreen() {
         )}
 
       </View>
-
-      {/* ── Sub Plan Modal ── */}
-      <Modal
-        visible={subPlanOpen}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setSubPlanOpen(false)}
-      >
-        <View style={styles.subPlanOverlay}>
-          <View style={styles.subPlanSheet}>
-            <View style={styles.subPlanHandle} />
-            <View style={styles.subPlanHeader}>
-              <Text style={styles.subPlanTitle}>Substitution Plan</Text>
-              <TouchableOpacity onPress={() => setSubPlanOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close" size={22} color={DUGOUT_COLORS.ui.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.subPlanScroll} contentContainerStyle={styles.subPlanContent}>
-              {(() => {
-                if (!subPlan) return null;
-                const plan = subPlan.plan;
-                if (Array.isArray(plan) && plan.length > 0 && typeof plan[0].minute === 'number') {
-                  return (plan as Array<{ minute: number; off: string; on: string }>).map((item, i) => (
-                    <View key={i} style={styles.subRow}>
-                      <View style={styles.subMinuteBadge}>
-                        <Text style={styles.subMinuteText}>{item.minute}'</Text>
-                      </View>
-                      <Text style={styles.subOff}>{item.off}</Text>
-                      <Ionicons name="arrow-forward" size={14} color="#60A5FA" />
-                      <Text style={styles.subOn}>{item.on}</Text>
-                    </View>
-                  ));
-                }
-                return (
-                  <Text style={styles.subPlanJson}>
-                    {JSON.stringify(plan ?? subPlan, null, 2)}
-                  </Text>
-                );
-              })()}
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.subPlanCloseBtn, { backgroundColor: primaryColor }]}
-              onPress={() => setSubPlanOpen(false)}
-            >
-              <Text style={styles.subPlanCloseBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* ── Drag ghost (renders above everything) ── */}
       {drag && (
@@ -794,28 +741,28 @@ export default function LineupScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: DUGOUT_COLORS.ui.background },
+  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background },
 
   // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 54, paddingBottom: 10, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   backBtn:       { width: 32 },
   headerCenter:  { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
-  headerTitle:   { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  headerSub:     { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 1 },
+  headerTitle:   { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerSub:     { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
   headerRight:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
   countPill: {
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
-  countPillText: { fontSize: 12, fontWeight: '700', color: DUGOUT_COLORS.ui.textSecondary },
+  countPillText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
   saveBtn:       { paddingLeft: 4 },
-  saveBtnText:   { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.brand.green },
+  saveBtnText:   { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
   aiBtn:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
   aiBtnText:     { fontSize: 13, fontWeight: '700' },
 
@@ -838,7 +785,7 @@ const styles = StyleSheet.create({
     borderWidth: 2, paddingTop: 1,
   },
   tokenEmpty:    { backgroundColor: 'rgba(0,0,0,0.5)', borderColor: 'rgba(255,255,255,0.55)' },
-  tokenAssigned: { backgroundColor: DUGOUT_COLORS.brand.green, borderColor: '#fff' },
+  tokenAssigned: { backgroundColor: PULSE_COLORS.brand.green, borderColor: '#fff' },
   tokenSelected: {
     borderColor: '#FBBF24', borderWidth: 2.5,
     shadowColor: '#FBBF24', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 8,
@@ -858,125 +805,86 @@ const styles = StyleSheet.create({
   hintStrip: {
     height: HINT_H, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 16, gap: 8,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   hintStripActive: { backgroundColor: 'rgba(251,191,36,0.06)' },
   hintDot:     { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FBBF24' },
-  hintText:    { flex: 1, fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary },
+  hintText:    { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
   hintLabel:   { color: '#FBBF24', fontWeight: '700' },
-  hintIdleText:{ fontSize: 12, color: DUGOUT_COLORS.ui.muted },
+  hintIdleText:{ fontSize: 12, color: PULSE_COLORS.ui.muted },
 
   // Bottom panel
   bottomPanel: {
-    height: BOTTOM_H, backgroundColor: DUGOUT_COLORS.ui.background,
-    borderTopWidth: 1, borderTopColor: DUGOUT_COLORS.ui.border,
+    height: BOTTOM_H, backgroundColor: PULSE_COLORS.ui.background,
+    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
   },
-  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border },
+  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   tab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 11, gap: 6,
   },
-  tabActive:     { borderBottomWidth: 2, borderBottomColor: DUGOUT_COLORS.brand.green, marginBottom: -1 },
-  tabText:       { fontSize: 12, fontWeight: '600', color: DUGOUT_COLORS.ui.muted },
-  tabTextActive: { color: DUGOUT_COLORS.brand.green },
+  tabActive:     { borderBottomWidth: 2, borderBottomColor: PULSE_COLORS.brand.green, marginBottom: -1 },
+  tabText:       { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  tabTextActive: { color: PULSE_COLORS.brand.green },
 
   // Players list
   playersList: { paddingVertical: 4 },
   playerRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 10, gap: 12,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
   playerRowDone:   { opacity: 0.55 },
   playerRowTarget: { backgroundColor: 'rgba(34,197,94,0.05)' },
 
   jersey: {
     width: 32, height: 32, borderRadius: 8,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  jerseyDone:    { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: DUGOUT_COLORS.brand.green },
-  jerseyNum:     { fontSize: 12, fontWeight: '800', color: DUGOUT_COLORS.ui.text },
-  jerseyNumDone: { color: DUGOUT_COLORS.brand.green },
+  jerseyDone:    { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: PULSE_COLORS.brand.green },
+  jerseyNum:     { fontSize: 12, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  jerseyNumDone: { color: PULSE_COLORS.brand.green },
 
   playerInfo:     { flex: 1 },
-  playerName:     { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.text },
-  playerNameDone: { color: DUGOUT_COLORS.ui.textSecondary },
-  playerPos:      { fontSize: 11, color: DUGOUT_COLORS.ui.muted, marginTop: 1 },
+  playerName:     { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  playerNameDone: { color: PULSE_COLORS.ui.textSecondary },
+  playerPos:      { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
 
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statusText:  { fontSize: 11, fontWeight: '600', color: DUGOUT_COLORS.brand.green },
+  statusText:  { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.brand.green },
   assignBadge: {
-    backgroundColor: DUGOUT_COLORS.brand.green, borderRadius: 8,
+    backgroundColor: PULSE_COLORS.brand.green, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 4,
   },
   assignText: { fontSize: 12, fontWeight: '700', color: '#000' },
 
   // Empty state
   emptyState: { alignItems: 'center', paddingTop: 28, gap: 6 },
-  emptyTitle: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
-  emptyBody:  { fontSize: 12, color: DUGOUT_COLORS.ui.muted, textAlign: 'center', paddingHorizontal: 32 },
-
-  // Sub plan modal
-  subPlanOverlay: {
-    flex: 1, justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  subPlanSheet: {
-    backgroundColor: DUGOUT_COLORS.ui.background,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingBottom: 32, maxHeight: SCREEN_H * 0.75,
-  },
-  subPlanHandle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: DUGOUT_COLORS.ui.border,
-    alignSelf: 'center', marginTop: 10, marginBottom: 4,
-  },
-  subPlanHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.ui.border,
-  },
-  subPlanTitle: { fontSize: 17, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.3 },
-  subPlanScroll: { maxHeight: SCREEN_H * 0.5 },
-  subPlanContent: { paddingHorizontal: 20, paddingVertical: 12, gap: 10 },
-  subRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderRadius: 10, padding: 12,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-  },
-  subMinuteBadge: {
-    backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 6,
-    paddingHorizontal: 8, paddingVertical: 3, minWidth: 38, alignItems: 'center',
-  },
-  subMinuteText: { fontSize: 12, fontWeight: '800', color: '#60A5FA' },
-  subOff: { flex: 1, fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
-  subOn:  { flex: 1, fontSize: 13, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
-  subPlanJson: { fontSize: 11, color: DUGOUT_COLORS.ui.muted, fontFamily: 'monospace', lineHeight: 18 },
-  subPlanCloseBtn: {
-    marginHorizontal: 20, marginTop: 16,
-    borderRadius: 14, paddingVertical: 14,
-    alignItems: 'center',
-  },
-  subPlanCloseBtnText: { fontSize: 15, fontWeight: '800', color: '#000' },
+  emptyTitle: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  emptyBody:  { fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingHorizontal: 32 },
 
   // Ghost overlay
   ghostLayer: { zIndex: 999 },
   ghost: {
     position: 'absolute',
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     borderWidth: 2.5, borderColor: '#fff',
     alignItems: 'center', justifyContent: 'center', paddingTop: 1,
     opacity: 0.92,
-    shadowColor: DUGOUT_COLORS.brand.green,
+    shadowColor: PULSE_COLORS.brand.green,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.7, shadowRadius: 12, elevation: 12,
   },
   ghostLabel: { fontSize: 12, fontWeight: '800', color: '#000', lineHeight: 14 },
   ghostName:  { fontSize: 7.5, color: 'rgba(0,0,0,0.7)', fontWeight: '700', lineHeight: 9, maxWidth: DRAG_TOKEN - 6 },
 
+  guestBadge: { backgroundColor: 'rgba(249,115,22,0.18)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  guestBadgeText: { fontSize: 10, fontWeight: '900', color: '#f97316', letterSpacing: 0.3 },
+  playerRowInjured: { opacity: 0.55 },
+  injuredBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(239,68,68,0.12)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  injuredBadgeText: { fontSize: 10, fontWeight: '700', color: '#ef4444' },
 });

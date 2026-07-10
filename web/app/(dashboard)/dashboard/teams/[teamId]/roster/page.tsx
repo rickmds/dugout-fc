@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 
 type Player = PlayerForPanel & { parent_email: string | null };
 type Invite  = { player_id: string; email: string; accepted_at: string | null };
+type Coach   = { profile_id: string; full_name: string | null; avatar_url: string | null };
 
 export default function TeamRosterPage() {
   const { teamId } = useParams<{ teamId: string }>();
@@ -21,15 +22,17 @@ export default function TeamRosterPage() {
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
   const [loading, setLoading] = useState(true);
   const [panel,   setPanel]   = useState<Player | null>(null);
 
   const load = useCallback(async () => {
     if (!teamId) return;
     setLoading(true);
-    const [playersRes, invitesRes] = await Promise.all([
+    const [playersRes, invitesRes, coachesRes] = await Promise.all([
       supabase.from('players').select('id,full_name,jersey_number,position').eq('team_id', teamId).order('jersey_number', { ascending: true, nullsFirst: false }).order('full_name'),
       supabase.from('invites').select('player_id,email,accepted_at').eq('team_id', teamId),
+      supabase.from('team_members').select('profile_id, profiles(full_name, avatar_url)').eq('team_id', teamId).eq('role', 'coach'),
     ]);
 
     const inviteMap = Object.fromEntries((invitesRes.data ?? []).map((i: any) => [i.player_id, i]));
@@ -37,6 +40,11 @@ export default function TeamRosterPage() {
       ...p, team_id: teamId, parent_email: inviteMap[p.id]?.email ?? null,
     })));
     setInvites(invitesRes.data ?? []);
+    setCoaches((coachesRes.data ?? []).map((m: any) => ({
+      profile_id: m.profile_id,
+      full_name:  m.profiles?.full_name ?? null,
+      avatar_url: m.profiles?.avatar_url ?? null,
+    })));
     setLoading(false);
   }, [teamId]);
 
@@ -60,6 +68,26 @@ export default function TeamRosterPage() {
           <Plus size={14} /> Add Player
         </button>
       </div>
+
+      {/* Coaching staff */}
+      {!loading && coaches.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Coaching Staff</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {coaches.map(c => (
+              <div key={c.profile_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px' }}>
+                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '800', color: primary, flexShrink: 0 }}>
+                  {c.full_name ? c.full_name[0].toUpperCase() : '?'}
+                </div>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{c.full_name ?? 'Unknown'}</div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '500' }}>Coach</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <>

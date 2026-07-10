@@ -6,16 +6,23 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_PLACES_KEY": "AIzaSyC28P4XyCRANEHrfpbadxDqF0TdUitVL2U"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GOOGLE_PLACES_KEY": "AIzaSyC28P4XyCRANEHrfpbadxDqF0TdUitVL2U"
+      }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://nandbuwogaxmrzsstttd.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hbmRidXdvZ2F4bXJ6c3N0dHRkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NzAyNDMsImV4cCI6MjA5NzE0NjI0M30.4R8yJweSXg4jUW-bf7W2nrrcXyf8R0IcdNiufWDRTh0",
+        "EXPO_PUBLIC_GOOGLE_PLACES_KEY": "AIzaSyC28P4XyCRANEHrfpbadxDqF0TdUitVL2U",
         "EXPO_PUBLIC_APP_ENV": "production"
       }
     }

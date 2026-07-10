@@ -45,7 +45,7 @@ export default function FoundingGrid({ total, taken, spotsLeft }: Props) {
       <div className="flex flex-col gap-3 mb-8">
         {[
           'Every feature, free forever — locked in',
-          'Your club on the Dugout FC founding wall',
+          'Your club on the Pulse FC founding wall',
           'Direct line to Rick for feature requests',
           'Priority support',
         ].map((b, i) => (

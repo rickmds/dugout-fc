@@ -1,13 +1,13 @@
-# CLAUDE.md — Dugout FC
+# CLAUDE.md — Pulse FC
 
 > **Expo note:** Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before writing any Expo/RN code.
 
 ---
 
-## Project: Dugout FC
+## Project: Pulse FC
 
 ### What it is
-A fully self-serve, white-label soccer club management platform. Any DOC or coach can go to dugoutfc.app, create their club, set up their teams, import their roster, invite parents, and be live — with zero involvement from the app owner (Rick).
+A fully self-serve, white-label soccer club management platform. Any DOC or coach can go to pulsefc.app, create their club, set up their teams, import their roster, invite parents, and be live — with zero involvement from the app owner (Rick).
 
 First two clubs: MDS Academy and Maroons SC (both run by Rick, used for testing and proving the product). All other clubs self-onboard.
 
@@ -21,7 +21,7 @@ Solo developer using Claude Code. Always choose the simpler of two approaches. P
 
 ## Three Products
 
-### 1. Marketing site (dugoutfc.app)
+### 1. Marketing site (pulsefc.app)
 - Single Next.js page
 - Hero section with headline, subheadline, app mockup
 - Feature highlights (AI schedule import, lineup builder, parent comms, real-time chat)
@@ -31,7 +31,7 @@ Solo developer using Claude Code. Always choose the simpler of two approaches. P
 - Clean, modern design — dark background, green accent (soccer feel)
 
 ### 2. Club setup wizard (web — after signup)
-The flow a new DOC or coach goes through after creating their account on dugoutfc.app:
+The flow a new DOC or coach goes through after creating their account on pulsefc.app:
 
 Step 1 — Club details
 - Club name
@@ -71,7 +71,7 @@ Everything that happens after a user downloads the app.
 ## User Journeys
 
 ### Journey 1 — New DOC / Coach (self-serve)
-dugoutfc.app → clicks "Add your club" → creates account (email/password, Google, or Apple) → role set to org_admin automatically → enters club setup wizard (steps 1–6 above) → club is live → downloads app → logs in → lands on Home as Org Admin
+pulsefc.app → clicks "Add your club" → creates account (email/password, Google, or Apple) → role set to org_admin automatically → enters club setup wizard (steps 1–6 above) → club is live → downloads app → logs in → lands on Home as Org Admin
 
 ### Journey 2 — Parent invited by coach
 Coach adds player to roster → enters parent email → app sends invite email via Resend (includes App Store link + invite token) → parent downloads app → opens app → sees "You've been invited to join [Team Name]" → signs up → automatically joined to team → lands on Home
@@ -100,7 +100,7 @@ Logs into /super-admin on web dashboard → sees all clubs, team counts, active 
 - Google OAuth via Supabase Auth
 - Apple Sign-In via Supabase Auth (required for App Store)
 - All three on the login and signup screens
-- New org_admin signups via dugoutfc.app automatically get role = org_admin
+- New org_admin signups via pulsefc.app automatically get role = org_admin
 - New parent signups via invite link automatically get role = player and are joined to the correct team
 
 ---
@@ -109,7 +109,7 @@ Logs into /super-admin on web dashboard → sees all clubs, team counts, active 
 
 What a brand new user sees before reaching the Home tab:
 
-1. Welcome screen — Dugout FC logo, tagline, Sign Up / Log In buttons
+1. Welcome screen — Pulse FC logo, tagline, Sign Up / Log In buttons
 2. Auth screen — email/password, Google, Apple
 3. Find your team — enter invite token (pre-filled if opened from invite email) or search by club slug
 4. Profile setup — full name, profile photo (optional)
@@ -179,7 +179,7 @@ Three sections:
 - Select formation: 4-3-3, 4-4-2, 3-5-2, 4-2-3-1, 3-4-3, 5-3-2
 - Only confirmed RSVPs shown as available players
 - AI suggests starting lineup based on confirmed RSVPs and player positions
-- AI generates substitution rotation plan for equal play time
+- Equal playing time calculator — instant maths, no AI needed
 
 ### Settings
 - Profile photo upload (Supabase Storage)
@@ -222,11 +222,11 @@ All calls routed through a single /api/ai endpoint. Model: claude-sonnet-4-6. Ne
 - Output: suggested starting lineup with players placed on pitch
 - Coach accepts, adjusts, or ignores
 
-### 4. Substitution rotation planner
-- Triggered from Lineup Builder after lineup is set
-- Input: squad size, game length, halves, available players
-- Output: substitution timeline for equal play time
-- Formatted for sideline reference
+### 4. Equal playing time calculator (match tracker)
+- Triggered from match tracker bench area
+- Input: squad on pitch vs bench, game length from session
+- Output: target minutes per player + suggested rotation timeline
+- Pure maths — no AI call, instant, works offline
 
 ---
 
@@ -453,7 +453,7 @@ subscriptions (
 ## Folder Structure
 
 ```
-/dugout-fc
+/pulse-fc
   CLAUDE.md
   .env.example
   /app                          (Expo Router — mobile screens)
@@ -523,7 +523,7 @@ ANTHROPIC_API_KEY=
 RESEND_API_KEY=
 NEXT_PUBLIC_POSTHOG_KEY=
 EXPO_PUBLIC_APP_ENV=development
-NEXT_PUBLIC_APP_URL=https://dugoutfc.app
+NEXT_PUBLIC_APP_URL=https://pulsefc.app
 ```
 
 ---

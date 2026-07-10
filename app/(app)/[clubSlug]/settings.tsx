@@ -22,9 +22,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { useActiveTeam } from '../../../hooks/TeamContext';
-import { DUGOUT_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import ClubHeader from '../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../components/ui/TeamEditModal';
+import ImageEditor from '../../../components/ui/ImageEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,11 +87,11 @@ function SettingsRow({
   const content = (
     <View style={st.row}>
       <IconCell name={icon} color={iconColor} bg={iconBg} />
-      <Text style={[st.rowLabel, danger && { color: DUGOUT_COLORS.status.error }]}>{label}</Text>
+      <Text style={[st.rowLabel, danger && { color: PULSE_COLORS.status.error }]}>{label}</Text>
       {value ? <Text style={st.rowValue} numberOfLines={1}>{value}</Text> : null}
       {children}
       {onPress && !children ? (
-        <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} />
+        <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
       ) : null}
     </View>
   );
@@ -101,7 +103,7 @@ function SettingsRow({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
-  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook, secondaryColor } = useClub();
+  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook, secondaryColor, homeKitColor, awayKitColor, trainingKitColor, headerPattern } = useClub();
   const router = useRouter();
   const { profile, club, user, signOut, refreshProfile } = useAuth();
   const { allTeams, refetch: refetchTeams } = useActiveTeam();
@@ -119,9 +121,15 @@ export default function SettingsScreen() {
   const [clubNameDraft, setClubNameDraft]     = useState('');
   const [savingClubName, setSavingClubName]   = useState(false);
   const [logoUploading, setLogoUploading]     = useState(false);
-  const [colorTarget, setColorTarget]         = useState<'primary' | 'secondary' | null>(null);
+  const [logoEditorUri, setLogoEditorUri]     = useState('');
+  const [logoEditorVisible, setLogoEditorVisible] = useState(false);
+  const [avatarEditorUri, setAvatarEditorUri] = useState('');
+  const [avatarEditorVisible, setAvatarEditorVisible] = useState(false);
+  const [colorTarget, setColorTarget]         = useState<'primary' | 'secondary' | 'home_kit' | 'away_kit' | 'training_kit' | null>(null);
   const [colorDraft, setColorDraft]           = useState('');
   const [savingColor, setSavingColor]         = useState(false);
+  const [patternPickerOpen, setPatternPickerOpen] = useState(false);
+  const [savingPattern, setSavingPattern]     = useState(false);
 
   const [showPwForm, setShowPwForm] = useState(false);
   const [newPw, setNewPw]           = useState('');
@@ -222,26 +230,24 @@ export default function SettingsScreen() {
   }
 
   async function handleLogoUpload() {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-      base64: true,
-    });
-    if (result.canceled || !club) return;
-    const asset = result.assets[0];
-    const b64 = asset?.base64;
-    if (!b64) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
+    if (result.canceled || !result.assets[0]) return;
+    setLogoEditorUri(result.assets[0].uri);
+    setLogoEditorVisible(true);
+  }
+
+  async function handleLogoEditorSave(uri: string) {
+    setLogoEditorVisible(false);
+    if (!club) return;
     setLogoUploading(true);
     try {
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const ext = asset.mimeType?.includes('png') ? 'png' : 'jpg';
-      const path = `${club.slug}-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
+      const response = await fetch(uri);
+      const buffer = await response.arrayBuffer();
+      const path = `${club.slug}-${Date.now()}.png`;
+      const { error } = await supabase.storage
         .from('club-logos')
-        .upload(path, bytes, { contentType: asset.mimeType ?? 'image/jpeg', upsert: true });
-      if (uploadError) { Alert.alert('Upload failed', uploadError.message); return; }
+        .upload(path, buffer, { contentType: 'image/png', upsert: true });
+      if (error) { Alert.alert('Upload failed', error.message); return; }
       const { data: { publicUrl } } = supabase.storage.from('club-logos').getPublicUrl(path);
       await (supabase as any).from('clubs').update({ logo_url: publicUrl }).eq('id', club.id);
       await refreshProfile();
@@ -254,25 +260,24 @@ export default function SettingsScreen() {
 
   async function handleAvatarUpload() {
     if (!profile) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-      base64: true,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    const b64 = asset?.base64;
-    if (!b64) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
+    if (result.canceled || !result.assets[0]) return;
+    setAvatarEditorUri(result.assets[0].uri);
+    setAvatarEditorVisible(true);
+  }
+
+  async function handleAvatarEditorSave(uri: string) {
+    setAvatarEditorVisible(false);
+    if (!profile) return;
     setAvatarUploading(true);
     try {
-      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      const path = `${profile.id}-${Date.now()}.jpg`;
-      const { error: uploadError } = await supabase.storage
+      const response = await fetch(uri);
+      const buffer = await response.arrayBuffer();
+      const path = `${profile.id}-${Date.now()}.png`;
+      const { error } = await supabase.storage
         .from('avatars')
-        .upload(path, bytes, { contentType: asset.mimeType ?? 'image/jpeg', upsert: true });
-      if (uploadError) { Alert.alert('Upload failed', uploadError.message); return; }
+        .upload(path, buffer, { contentType: 'image/png', upsert: true });
+      if (error) { Alert.alert('Upload failed', error.message); return; }
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
       await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', profile.id);
       await refreshProfile();
@@ -291,11 +296,24 @@ export default function SettingsScreen() {
       return;
     }
     setSavingColor(true);
-    const field = colorTarget === 'primary' ? 'primary_color' : 'secondary_color';
+    const field = colorTarget === 'primary' ? 'primary_color'
+      : colorTarget === 'secondary' ? 'secondary_color'
+      : colorTarget === 'home_kit' ? 'home_kit_color'
+      : colorTarget === 'away_kit' ? 'away_kit_color'
+      : 'training_kit_color';
     await (supabase as any).from('clubs').update({ [field]: raw }).eq('id', club.id);
     await refreshProfile();
     setSavingColor(false);
     setColorTarget(null);
+  }
+
+  async function handleSavePattern(pattern: string) {
+    if (!club) return;
+    setSavingPattern(true);
+    await (supabase as any).from('clubs').update({ header_pattern: pattern }).eq('id', club.id);
+    await refreshProfile();
+    setSavingPattern(false);
+    setPatternPickerOpen(false);
   }
 
   async function handleLeaveTeam(teamId: string, teamName: string) {
@@ -355,7 +373,7 @@ export default function SettingsScreen() {
   }
 
   function handleSyncCalendar(teamId: string, teamName: string) {
-    const base = `https://dugoutfc.app/api/calendar/${teamId}`;
+    const base = `https://pulse-fc.app/api/calendar/${teamId}`;
     const webcal = base.replace('https://', 'webcal://');
     const google = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
     Alert.alert(
@@ -403,7 +421,7 @@ export default function SettingsScreen() {
   async function confirmDelete() {
     Alert.alert(
       'Are you absolutely sure?',
-      'Your profile, data, and access will be permanently removed from Dugout FC.',
+      'Your profile, data, and access will be permanently removed from Pulse FC.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -428,16 +446,9 @@ export default function SettingsScreen() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
+    <View style={{ flex: 1, backgroundColor: PULSE_COLORS.ui.background }}>
+    <ClubHeader title="Settings" onBack={() => router.back()} />
     <ScrollView style={st.container} contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
-
-      {/* ── Header ── */}
-      <View style={st.header}>
-        <TouchableOpacity onPress={() => router.back()} style={st.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={22} color={DUGOUT_COLORS.ui.text} />
-        </TouchableOpacity>
-        <Text style={st.title}>Settings</Text>
-        <View style={{ width: 36 }} />
-      </View>
 
       {/* ── Identity block — coaches/admins only ── */}
       {!isParent && (
@@ -457,12 +468,12 @@ export default function SettingsScreen() {
         <Section label="MY PLAYERS">
           {!playersLoaded ? (
             <View style={[st.row, { justifyContent: 'center' }]}>
-              <ActivityIndicator size="small" color={DUGOUT_COLORS.ui.muted} />
+              <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
             </View>
           ) : myPlayers.length === 0 ? (
             <View style={st.emptyPlayers}>
               <View style={st.emptyIcon}>
-                <Ionicons name="people-outline" size={22} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="people-outline" size={22} color={PULSE_COLORS.ui.muted} />
               </View>
               <Text style={st.emptyTitle}>No players linked yet</Text>
               <Text style={st.emptySub}>
@@ -511,10 +522,10 @@ export default function SettingsScreen() {
                     disabled={leavingTeamId === p.team_id}
                     activeOpacity={0.65}
                   >
-                    <Ionicons name="exit-outline" size={15} color={DUGOUT_COLORS.status.error} />
+                    <Ionicons name="exit-outline" size={15} color={PULSE_COLORS.status.error} />
                     <Text style={st.leaveTeamText}>Leave {teamName}</Text>
                     {leavingTeamId === p.team_id && (
-                      <ActivityIndicator size="small" color={DUGOUT_COLORS.status.error} style={{ marginLeft: 6 }} />
+                      <ActivityIndicator size="small" color={PULSE_COLORS.status.error} style={{ marginLeft: 6 }} />
                     )}
                   </TouchableOpacity>
                 </View>
@@ -545,14 +556,14 @@ export default function SettingsScreen() {
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={{ marginRight: 14 }}
                 >
-                  <Ionicons name="pencil-outline" size={16} color={DUGOUT_COLORS.ui.muted} />
+                  <Ionicons name="pencil-outline" size={16} color={PULSE_COLORS.ui.muted} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleSyncCalendar(t.id, t.name)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={{ marginRight: 14 }}
                 >
-                  <Ionicons name="calendar-outline" size={16} color={DUGOUT_COLORS.ui.muted} />
+                  <Ionicons name="calendar-outline" size={16} color={PULSE_COLORS.ui.muted} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleLeaveTeam(t.id, t.name)}
@@ -560,7 +571,7 @@ export default function SettingsScreen() {
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   {leavingTeamId === t.id
-                    ? <ActivityIndicator size="small" color={DUGOUT_COLORS.status.error} />
+                    ? <ActivityIndicator size="small" color={PULSE_COLORS.status.error} />
                     : <Text style={st.leaveText}>Leave</Text>}
                 </TouchableOpacity>
               </View>
@@ -585,7 +596,7 @@ export default function SettingsScreen() {
               ) : logoUrl ? (
                 <Image source={{ uri: logoUrl }} style={st.logoImg} resizeMode="contain" />
               ) : (
-                <Ionicons name="image-outline" size={28} color={DUGOUT_COLORS.ui.muted} />
+                <Ionicons name="image-outline" size={28} color={PULSE_COLORS.ui.muted} />
               )}
             </TouchableOpacity>
             <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
@@ -625,7 +636,7 @@ export default function SettingsScreen() {
                   : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
               </TouchableOpacity>
             ) : (
-              <Ionicons name="pencil-outline" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+              <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
             )}
           </View>
 
@@ -645,7 +656,7 @@ export default function SettingsScreen() {
                 autoFocus
                 maxLength={80}
                 placeholder="Where great players are made"
-                placeholderTextColor={DUGOUT_COLORS.ui.muted}
+                placeholderTextColor={PULSE_COLORS.ui.muted}
                 returnKeyType="done"
                 onSubmitEditing={handleSaveTagline}
               />
@@ -654,7 +665,7 @@ export default function SettingsScreen() {
                 onPress={() => { setTagline(clubTagline ?? ''); setEditingTagline(true); }}
                 style={{ flex: 1, alignItems: 'flex-end' }}
               >
-                <Text style={[st.rowValue, !clubTagline && { color: DUGOUT_COLORS.ui.muted, fontStyle: 'italic' }]}>
+                <Text style={[st.rowValue, !clubTagline && { color: PULSE_COLORS.ui.muted, fontStyle: 'italic' }]}>
                   {clubTagline || 'Add tagline'}
                 </Text>
               </TouchableOpacity>
@@ -666,7 +677,7 @@ export default function SettingsScreen() {
                   : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
               </TouchableOpacity>
             ) : (
-              <Ionicons name="pencil-outline" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+              <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
             )}
           </View>
 
@@ -684,7 +695,7 @@ export default function SettingsScreen() {
             <Text style={[st.rowLabel, { flex: 1 }]}>Primary colour</Text>
             <View style={[st.colorSwatch, { backgroundColor: primaryColor }]} />
             <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{primaryColor}</Text>
-            <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
           </TouchableOpacity>
 
           <View style={st.divider} />
@@ -696,12 +707,82 @@ export default function SettingsScreen() {
             activeOpacity={0.65}
           >
             <View style={[st.iconCell, { backgroundColor: 'rgba(107,114,128,0.15)' }]}>
-              <Ionicons name="color-palette-outline" size={16} color={DUGOUT_COLORS.ui.textSecondary} />
+              <Ionicons name="color-palette-outline" size={16} color={PULSE_COLORS.ui.textSecondary} />
             </View>
             <Text style={[st.rowLabel, { flex: 1 }]}>Secondary colour</Text>
             <View style={[st.colorSwatch, { backgroundColor: secondaryColor, borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1 }]} />
             <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{secondaryColor}</Text>
-            <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+
+          <View style={st.divider} />
+
+          {/* Home kit colour */}
+          <TouchableOpacity
+            style={st.row}
+            onPress={() => { setColorDraft(homeKitColor); setColorTarget('home_kit'); }}
+            activeOpacity={0.65}
+          >
+            <View style={[st.iconCell, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+              <Ionicons name="shirt" size={16} color="#22C55E" />
+            </View>
+            <Text style={[st.rowLabel, { flex: 1 }]}>Home kit colour</Text>
+            <View style={[st.colorSwatch, { backgroundColor: homeKitColor }]} />
+            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{homeKitColor}</Text>
+            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+
+          <View style={st.divider} />
+
+          {/* Away kit colour */}
+          <TouchableOpacity
+            style={st.row}
+            onPress={() => { setColorDraft(awayKitColor); setColorTarget('away_kit'); }}
+            activeOpacity={0.65}
+          >
+            <View style={[st.iconCell, { backgroundColor: 'rgba(249,115,22,0.12)' }]}>
+              <Ionicons name="shirt" size={16} color="#F97316" />
+            </View>
+            <Text style={[st.rowLabel, { flex: 1 }]}>Away kit colour</Text>
+            <View style={[st.colorSwatch, { backgroundColor: awayKitColor, borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1 }]} />
+            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{awayKitColor}</Text>
+            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+
+          <View style={st.divider} />
+
+          {/* Training kit colour */}
+          <TouchableOpacity
+            style={st.row}
+            onPress={() => { setColorDraft(trainingKitColor); setColorTarget('training_kit'); }}
+            activeOpacity={0.65}
+          >
+            <View style={[st.iconCell, { backgroundColor: `${trainingKitColor}18` }]}>
+              <Ionicons name="shirt" size={16} color={trainingKitColor} />
+            </View>
+            <Text style={[st.rowLabel, { flex: 1 }]}>Training kit colour</Text>
+            <View style={[st.colorSwatch, { backgroundColor: trainingKitColor }]} />
+            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{trainingKitColor}</Text>
+            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+
+          <View style={st.divider} />
+
+          {/* Header style */}
+          <TouchableOpacity
+            style={st.row}
+            onPress={() => setPatternPickerOpen(true)}
+            activeOpacity={0.65}
+          >
+            <View style={[st.iconCell, { backgroundColor: rgba(0.15) }]}>
+              <Ionicons name="layers-outline" size={16} color={primaryColor} />
+            </View>
+            <Text style={[st.rowLabel, { flex: 1 }]}>Header style</Text>
+            <PatternMiniPreview pattern={headerPattern} primaryColor={primaryColor} secondaryColor={secondaryColor} />
+            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>
+              {PATTERN_LABELS[headerPattern] ?? headerPattern}
+            </Text>
+            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
           </TouchableOpacity>
         </Section>
       )}
@@ -711,7 +792,7 @@ export default function SettingsScreen() {
         <Section label="TEAMS">
           {allTeams.length === 0 ? (
             <View style={[st.row, { justifyContent: 'center' }]}>
-              <Text style={{ color: DUGOUT_COLORS.ui.muted, fontSize: 13 }}>No teams yet</Text>
+              <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13 }}>No teams yet</Text>
             </View>
           ) : (
             allTeams.map((t, i) => (
@@ -733,7 +814,7 @@ export default function SettingsScreen() {
                       </Text>
                     )}
                   </View>
-                  <Ionicons name="pencil-outline" size={14} color={DUGOUT_COLORS.ui.muted} />
+                  <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
                 </TouchableOpacity>
               </View>
             ))
@@ -741,10 +822,27 @@ export default function SettingsScreen() {
         </Section>
       )}
 
+      {/* ── Pattern picker modal ── */}
+      <PatternPickerModal
+        visible={patternPickerOpen}
+        current={headerPattern}
+        saving={savingPattern}
+        primaryColor={primaryColor}
+        secondaryColor={secondaryColor}
+        onSelect={handleSavePattern}
+        onCancel={() => setPatternPickerOpen(false)}
+      />
+
       {/* ── Color picker modal ── */}
       <ColorPickerModal
         visible={colorTarget !== null}
-        title={colorTarget === 'primary' ? 'Primary Colour' : 'Secondary Colour'}
+        title={
+          colorTarget === 'primary' ? 'Primary Colour'
+          : colorTarget === 'secondary' ? 'Secondary Colour'
+          : colorTarget === 'home_kit' ? 'Home Kit Colour'
+          : colorTarget === 'away_kit' ? 'Away Kit Colour'
+          : 'Training Kit Colour'
+        }
         value={colorDraft}
         saving={savingColor}
         primaryColor={primaryColor}
@@ -810,7 +908,7 @@ export default function SettingsScreen() {
                 : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
             </TouchableOpacity>
           ) : (
-            <Ionicons name="pencil-outline" size={14} color={DUGOUT_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+            <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
           )}
         </View>
 
@@ -829,7 +927,7 @@ export default function SettingsScreen() {
               name={authProvider === 'apple' ? 'logo-apple' : 'logo-google'}
               color="#fff" bg="#6B7280"
             />
-            <Text style={[st.rowLabel, { flex: 1, color: DUGOUT_COLORS.ui.textSecondary }]}>
+            <Text style={[st.rowLabel, { flex: 1, color: PULSE_COLORS.ui.textSecondary }]}>
               Password managed by {providerLabel}
             </Text>
           </View>
@@ -845,13 +943,13 @@ export default function SettingsScreen() {
             <TextInput
               style={st.pwInput} value={newPw} onChangeText={setNewPw}
               secureTextEntry placeholder="At least 8 characters"
-              placeholderTextColor={DUGOUT_COLORS.ui.muted} autoFocus
+              placeholderTextColor={PULSE_COLORS.ui.muted} autoFocus
             />
             <Text style={[st.pwLabel, { marginTop: 12 }]}>Confirm password</Text>
             <TextInput
               style={st.pwInput} value={confirmPw} onChangeText={setConfirmPw}
               secureTextEntry placeholder="Re-enter password"
-              placeholderTextColor={DUGOUT_COLORS.ui.muted}
+              placeholderTextColor={PULSE_COLORS.ui.muted}
             />
             <View style={st.pwBtns}>
               <TouchableOpacity
@@ -883,7 +981,7 @@ export default function SettingsScreen() {
           <Ionicons
             name={notifOpen ? 'chevron-up' : 'chevron-down'}
             size={14}
-            color={DUGOUT_COLORS.ui.muted}
+            color={PULSE_COLORS.ui.muted}
           />
         </TouchableOpacity>
 
@@ -895,13 +993,13 @@ export default function SettingsScreen() {
                 <View style={st.divider} />
                 <TouchableOpacity style={st.pushBanner} onPress={() => Linking.openSettings()} activeOpacity={0.75}>
                   <View style={[st.iconCell, { backgroundColor: 'rgba(245,158,11,0.15)' }]}>
-                    <Ionicons name="notifications-off-outline" size={16} color={DUGOUT_COLORS.status.warning} />
+                    <Ionicons name="notifications-off-outline" size={16} color={PULSE_COLORS.status.warning} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={st.pushTitle}>Notifications are off</Text>
                     <Text style={st.pushSub}>Tap to enable in iPhone Settings</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} />
+                  <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
                 </TouchableOpacity>
               </>
             ) : (
@@ -913,16 +1011,16 @@ export default function SettingsScreen() {
               ] as { key: keyof NotifPrefs; label: string; icon: string; bg: string }[]).map(({ key, label, icon, bg }) => (
                 <View key={key}>
                   <View style={st.divider} />
-                  <View style={[st.row, { backgroundColor: DUGOUT_COLORS.ui.surfaceAlt }]}>
+                  <View style={[st.row, { backgroundColor: PULSE_COLORS.ui.surfaceAlt }]}>
                     <IconCell name={icon} color="#fff" bg={bg} />
                     <Text style={[st.rowLabel, { flex: 1 }]}>{label}</Text>
                     <Switch
                       value={notifPrefs[key]}
                       onValueChange={() => toggleNotif(key)}
                       disabled={savingNotif}
-                      trackColor={{ false: DUGOUT_COLORS.ui.border, true: primaryColor }}
+                      trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
                       thumbColor="#fff"
-                      ios_backgroundColor={DUGOUT_COLORS.ui.border}
+                      ios_backgroundColor={PULSE_COLORS.ui.border}
                     />
                   </View>
                 </View>
@@ -943,13 +1041,13 @@ export default function SettingsScreen() {
         <SettingsRow
           icon="shield-checkmark-outline" iconColor="#fff" iconBg="#3B82F6"
           label="Privacy Policy"
-          onPress={() => Linking.openURL('https://dugoutfc.app/privacy')}
+          onPress={() => Linking.openURL('https://pulse-fc.app/privacy')}
         />
         <View style={st.divider} />
         <SettingsRow
           icon="document-text-outline" iconColor="#fff" iconBg="#6B7280"
           label="Terms of Service"
-          onPress={() => Linking.openURL('https://dugoutfc.app/terms')}
+          onPress={() => Linking.openURL('https://pulse-fc.app/terms')}
         />
       </Section>
 
@@ -962,15 +1060,15 @@ export default function SettingsScreen() {
         />
         <View style={st.divider} />
         <TouchableOpacity style={st.row} onPress={handleDeleteAccount} disabled={deletingAccount} activeOpacity={0.65}>
-          <IconCell name="trash-outline" color="#fff" bg={DUGOUT_COLORS.status.error} />
-          <Text style={[st.rowLabel, { flex: 1, color: DUGOUT_COLORS.status.error }]}>Delete account</Text>
+          <IconCell name="trash-outline" color="#fff" bg={PULSE_COLORS.status.error} />
+          <Text style={[st.rowLabel, { flex: 1, color: PULSE_COLORS.status.error }]}>Delete account</Text>
           {deletingAccount
-            ? <ActivityIndicator size="small" color={DUGOUT_COLORS.status.error} />
-            : <Ionicons name="chevron-forward" size={14} color={DUGOUT_COLORS.ui.muted} />}
+            ? <ActivityIndicator size="small" color={PULSE_COLORS.status.error} />
+            : <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />}
         </TouchableOpacity>
       </Section>
 
-      <Text style={st.version}>{`Dugout FC · v${Constants.expoConfig?.version ?? '1.0'}`}</Text>
+      <Text style={st.version}>{`Pulse FC · v${Constants.expoConfig?.version ?? '1.0'}`}</Text>
 
       <TeamEditModal
         visible={editingTeam !== null}
@@ -980,6 +1078,304 @@ export default function SettingsScreen() {
         onSaved={async () => { setEditingTeam(null); await refetchTeams(); }}
       />
     </ScrollView>
+
+    <ImageEditor
+      visible={logoEditorVisible}
+      uri={logoEditorUri}
+      primaryColor={primaryColor}
+      onSave={handleLogoEditorSave}
+      onCancel={() => setLogoEditorVisible(false)}
+    />
+    <ImageEditor
+      visible={avatarEditorVisible}
+      uri={avatarEditorUri}
+      primaryColor={primaryColor}
+      onSave={handleAvatarEditorSave}
+      onCancel={() => setAvatarEditorVisible(false)}
+    />
+    </View>
+  );
+}
+
+// ─── Header pattern picker ────────────────────────────────────────────────────
+
+const PATTERN_LABELS: Record<string, string> = {
+  solid:      'Clean',
+  stripes:    'Diagonal',
+  pinstripes: 'Pinstripes',
+  dots:       'Dots',
+  grid:       'Grid',
+  hoops:      'Hoops',
+  vstripes:   'Vertical',
+  sash:       'Sash',
+  halves:     'Halves',
+  diamond:    'Diamond',
+};
+
+const PATTERN_SUBS: Record<string, string> = {
+  solid:      'No pattern',
+  stripes:    'Classic jersey',
+  pinstripes: 'Fine stripes',
+  dots:       'Retro print',
+  grid:       'Carbon feel',
+  hoops:      'Celtic · QPR',
+  vstripes:   'Inter · Newcastle',
+  sash:       'River Plate',
+  halves:     'Juventus',
+  diamond:    'Argyle · Retro',
+};
+
+const ALL_PATTERNS = [
+  'solid', 'vstripes', 'hoops', 'stripes', 'pinstripes',
+  'sash', 'halves', 'diamond', 'dots', 'grid',
+] as const;
+
+function PatternMiniPreview({ pattern, primaryColor, secondaryColor }: { pattern: string; primaryColor: string; secondaryColor: string }) {
+  const c = secondaryColor + 'CC'; // ~80% opacity hex shorthand
+  return (
+    <View style={{ width: 44, height: 26, borderRadius: 6, backgroundColor: primaryColor, overflow: 'hidden' }}>
+      {pattern === 'stripes' && Array.from({ length: 6 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', top: -6 + i * 10, left: -6, right: -6, height: 6,
+          transform: [{ rotate: '-20deg' }], backgroundColor: c,
+          opacity: 0.35,
+        }} />
+      ))}
+      {pattern === 'pinstripes' && Array.from({ length: 10 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', top: -6 + i * 6, left: -6, right: -6, height: 3,
+          transform: [{ rotate: '-20deg' }], backgroundColor: secondaryColor,
+          opacity: 0.38,
+        }} />
+      ))}
+      {pattern === 'hoops' && Array.from({ length: 4 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', left: 0, right: 0, top: i * 9, height: 4,
+          backgroundColor: secondaryColor, opacity: 0.38,
+        }} />
+      ))}
+      {pattern === 'vstripes' && Array.from({ length: 5 }).map((_, i) => (
+        <View key={i} style={{
+          position: 'absolute', top: 0, bottom: 0, left: i * 11, width: 5,
+          backgroundColor: secondaryColor, opacity: 0.35,
+        }} />
+      ))}
+      {pattern === 'sash' && (
+        <View style={{
+          position: 'absolute', top: 7, left: -6, right: -6, height: 12,
+          transform: [{ rotate: '-22deg' }], backgroundColor: secondaryColor, opacity: 0.42,
+        }} />
+      )}
+      {pattern === 'halves' && (
+        <>
+          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: '50%', backgroundColor: secondaryColor, opacity: 0.32 }} />
+          <View style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1.5, backgroundColor: secondaryColor, opacity: 0.7 }} />
+        </>
+      )}
+      {pattern === 'diamond' && (
+        <>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <View key={`a${i}`} style={{
+              position: 'absolute', top: -20, left: i * 9 - 4, width: 1, height: 70,
+              transform: [{ rotate: '45deg' }], backgroundColor: secondaryColor, opacity: 0.42,
+            }} />
+          ))}
+          {Array.from({ length: 6 }).map((_, i) => (
+            <View key={`b${i}`} style={{
+              position: 'absolute', top: -20, left: i * 9 - 4, width: 1, height: 70,
+              transform: [{ rotate: '-45deg' }], backgroundColor: secondaryColor, opacity: 0.42,
+            }} />
+          ))}
+        </>
+      )}
+      {pattern === 'dots' && Array.from({ length: 3 }).flatMap((_, row) =>
+        Array.from({ length: 5 }).map((_, col) => (
+          <View key={`${row}-${col}`} style={{
+            position: 'absolute', width: 3, height: 3, borderRadius: 1.5,
+            backgroundColor: secondaryColor, opacity: 0.42,
+            left: col * 11 - 1, top: row * 11 - 1 + (col % 2 === 0 ? 0 : 5),
+          }} />
+        ))
+      )}
+      {pattern === 'grid' && (
+        <>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <View key={`h${i}`} style={{
+              position: 'absolute', left: 0, right: 0, top: i * 13, height: 1,
+              backgroundColor: secondaryColor, opacity: 0.42,
+            }} />
+          ))}
+          {Array.from({ length: 5 }).map((_, i) => (
+            <View key={`v${i}`} style={{
+              position: 'absolute', top: 0, bottom: 0, left: i * 11, width: 1,
+              backgroundColor: secondaryColor, opacity: 0.42,
+            }} />
+          ))}
+        </>
+      )}
+    </View>
+  );
+}
+
+function PatternPickerModal({
+  visible, current, saving, primaryColor, secondaryColor, onSelect, onCancel,
+}: {
+  visible: boolean;
+  current: string;
+  saving: boolean;
+  primaryColor: string;
+  secondaryColor: string;
+  onSelect: (p: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onCancel}>
+      <View style={cp.overlay}>
+        <View style={[cp.sheet, { maxHeight: '82%' }]}>
+          <View style={cp.handle} />
+          <Text style={cp.title}>Header Style</Text>
+          <Text style={{ textAlign: 'center', marginTop: -8, marginBottom: 20, fontSize: 13, color: PULSE_COLORS.ui.muted }}>
+            Jersey-inspired backgrounds for your home screen
+          </Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', paddingBottom: 8 }}>
+              {ALL_PATTERNS.map((p) => {
+                const selected = current === p;
+                return (
+                  <TouchableOpacity
+                    key={p}
+                    onPress={() => !saving && onSelect(p)}
+                    activeOpacity={0.75}
+                    style={{
+                      alignItems: 'center', gap: 6, width: 88,
+                      opacity: saving && current !== p ? 0.4 : 1,
+                    }}
+                  >
+                    <View style={{
+                      width: 88, height: 54, borderRadius: 12,
+                      backgroundColor: primaryColor, overflow: 'hidden',
+                      borderWidth: selected ? 3 : 1.5,
+                      borderColor: selected ? '#fff' : 'rgba(255,255,255,0.2)',
+                    }}>
+                      {/* Diagonal stripes */}
+                      {p === 'stripes' && Array.from({ length: 8 }).map((_, i) => (
+                        <View key={i} style={{
+                          position: 'absolute', top: -10 + i * 14, left: -10, right: -10, height: 8,
+                          transform: [{ rotate: '-20deg' }], backgroundColor: secondaryColor, opacity: 0.38,
+                        }} />
+                      ))}
+                      {/* Pinstripes */}
+                      {p === 'pinstripes' && Array.from({ length: 16 }).map((_, i) => (
+                        <View key={i} style={{
+                          position: 'absolute', top: -10 + i * 8, left: -10, right: -10, height: 4,
+                          transform: [{ rotate: '-20deg' }], backgroundColor: secondaryColor, opacity: 0.4,
+                        }} />
+                      ))}
+                      {/* Hoops — Celtic */}
+                      {p === 'hoops' && Array.from({ length: 5 }).map((_, i) => (
+                        <View key={i} style={{
+                          position: 'absolute', left: 0, right: 0, top: i * 14, height: 6,
+                          backgroundColor: secondaryColor, opacity: 0.38,
+                        }} />
+                      ))}
+                      {/* Vertical stripes — Newcastle */}
+                      {p === 'vstripes' && Array.from({ length: 8 }).map((_, i) => (
+                        <View key={i} style={{
+                          position: 'absolute', top: 0, bottom: 0, left: i * 13, width: 6,
+                          backgroundColor: secondaryColor, opacity: 0.36,
+                        }} />
+                      ))}
+                      {/* Sash — River Plate */}
+                      {p === 'sash' && (
+                        <View style={{
+                          position: 'absolute', top: 14, left: -10, right: -10, height: 22,
+                          transform: [{ rotate: '-22deg' }], backgroundColor: secondaryColor, opacity: 0.44,
+                        }} />
+                      )}
+                      {/* Halves — Juventus */}
+                      {p === 'halves' && (
+                        <>
+                          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: '50%', backgroundColor: secondaryColor, opacity: 0.32 }} />
+                          <View style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 2, backgroundColor: secondaryColor, opacity: 0.7 }} />
+                        </>
+                      )}
+                      {/* Diamond lattice — Argyle */}
+                      {p === 'diamond' && (
+                        <>
+                          {Array.from({ length: 10 }).map((_, i) => (
+                            <View key={`a${i}`} style={{
+                              position: 'absolute', top: -60, left: i * 10 - 5, width: 1, height: 160,
+                              transform: [{ rotate: '45deg' }], backgroundColor: secondaryColor, opacity: 0.44,
+                            }} />
+                          ))}
+                          {Array.from({ length: 10 }).map((_, i) => (
+                            <View key={`b${i}`} style={{
+                              position: 'absolute', top: -60, left: i * 10 - 5, width: 1, height: 160,
+                              transform: [{ rotate: '-45deg' }], backgroundColor: secondaryColor, opacity: 0.44,
+                            }} />
+                          ))}
+                        </>
+                      )}
+                      {/* Dots */}
+                      {p === 'dots' && Array.from({ length: 4 }).flatMap((_, row) =>
+                        Array.from({ length: 8 }).map((_, col) => (
+                          <View key={`${row}-${col}`} style={{
+                            position: 'absolute', width: 4, height: 4, borderRadius: 2,
+                            backgroundColor: secondaryColor, opacity: 0.44,
+                            left: col * 13 - 2, top: row * 13 - 2 + (col % 2 === 0 ? 0 : 6),
+                          }} />
+                        ))
+                      )}
+                      {/* Grid */}
+                      {p === 'grid' && (
+                        <>
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <View key={`h${i}`} style={{
+                              position: 'absolute', left: 0, right: 0, top: i * 14, height: 1,
+                              backgroundColor: secondaryColor, opacity: 0.44,
+                            }} />
+                          ))}
+                          {Array.from({ length: 8 }).map((_, i) => (
+                            <View key={`v${i}`} style={{
+                              position: 'absolute', top: 0, bottom: 0, left: i * 13, width: 1,
+                              backgroundColor: secondaryColor, opacity: 0.44,
+                            }} />
+                          ))}
+                        </>
+                      )}
+                      {selected && (
+                        <View style={{
+                          position: 'absolute', bottom: 5, right: 5,
+                          width: 18, height: 18, borderRadius: 9,
+                          backgroundColor: 'rgba(0,0,0,0.55)',
+                          alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {saving
+                            ? <ActivityIndicator size="small" color="#fff" />
+                            : <Ionicons name="checkmark" size={11} color="#fff" />}
+                        </View>
+                      )}
+                    </View>
+                    <Text style={{
+                      fontSize: 11, fontWeight: selected ? '700' : '600',
+                      color: selected ? PULSE_COLORS.ui.text : PULSE_COLORS.ui.textSecondary,
+                    }}>
+                      {PATTERN_LABELS[p]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          <View style={{ height: 16 }} />
+          <TouchableOpacity style={cp.cancelBtn} onPress={onCancel} disabled={saving}>
+            <Text style={cp.cancelText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1018,8 +1414,8 @@ function ColorPickerModal({
           <Text style={cp.title}>{title}</Text>
 
           {/* Preview */}
-          <View style={[cp.preview, { backgroundColor: isValid ? raw : DUGOUT_COLORS.ui.surface }]}>
-            <Text style={[cp.previewLabel, { color: isValid ? '#fff' : DUGOUT_COLORS.ui.muted }]}>
+          <View style={[cp.preview, { backgroundColor: isValid ? raw : PULSE_COLORS.ui.surface }]}>
+            <Text style={[cp.previewLabel, { color: isValid ? '#fff' : PULSE_COLORS.ui.muted }]}>
               {isValid ? raw : 'Enter a hex code'}
             </Text>
           </View>
@@ -1040,13 +1436,13 @@ function ColorPickerModal({
 
           {/* Hex input */}
           <View style={cp.hexRow}>
-            <View style={[cp.hexSwatch, { backgroundColor: isValid ? raw : DUGOUT_COLORS.ui.border }]} />
+            <View style={[cp.hexSwatch, { backgroundColor: isValid ? raw : PULSE_COLORS.ui.border }]} />
             <TextInput
               style={cp.hexInput}
               value={value}
               onChangeText={onChangeValue}
               placeholder="#22C55E"
-              placeholderTextColor={DUGOUT_COLORS.ui.muted}
+              placeholderTextColor={PULSE_COLORS.ui.muted}
               autoCapitalize="characters"
               maxLength={7}
             />
@@ -1077,19 +1473,19 @@ function ColorPickerModal({
 const cp = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: DUGOUT_COLORS.ui.surface,
+    backgroundColor: PULSE_COLORS.ui.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 48,
   },
   handle: {
     width: 40, height: 4, borderRadius: 2,
-    backgroundColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.border,
     alignSelf: 'center', marginBottom: 20,
   },
-  title: { fontSize: 18, fontWeight: '800', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.4, marginBottom: 16 },
+  title: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.4, marginBottom: 16 },
   preview: {
     height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-    marginBottom: 20, borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    marginBottom: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
   previewLabel: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
@@ -1100,21 +1496,21 @@ const cp = StyleSheet.create({
   swatchSelected: { borderWidth: 3, borderColor: '#fff' },
   hexRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: DUGOUT_COLORS.ui.background,
+    backgroundColor: PULSE_COLORS.ui.background,
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border, marginBottom: 24,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, marginBottom: 24,
   },
   hexSwatch: { width: 24, height: 24, borderRadius: 6 },
   hexInput: {
-    flex: 1, fontSize: 16, color: DUGOUT_COLORS.ui.text,
+    flex: 1, fontSize: 16, color: PULSE_COLORS.ui.text,
     fontWeight: '600', letterSpacing: 0.5,
   },
   btns: { flexDirection: 'row', gap: 12 },
   cancelBtn: {
     flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
-  cancelText: { fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  cancelText: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   applyBtn: {
     flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
   },
@@ -1135,7 +1531,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: DUGOUT_COLORS.ui.background },
+  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   content: { paddingBottom: 60 },
 
   // Header
@@ -1144,33 +1540,33 @@ const st = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 60, paddingBottom: 8,
   },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontWeight: '700', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.3 },
+  title: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
 
   // Identity block
   identityBlock: { alignItems: 'center', paddingVertical: 24, paddingHorizontal: 20, gap: 6 },
   avatarFallback: {
     width: 76, height: 76, borderRadius: 38,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     alignItems: 'center', justifyContent: 'center',
   },
   avatarInitials: { fontSize: 26, fontWeight: '800', color: '#000' },
-  identityName: { fontSize: 18, fontWeight: '700', color: DUGOUT_COLORS.ui.text, letterSpacing: -0.4 },
+  identityName: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text, letterSpacing: -0.4 },
   rolePill: {
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20,
     backgroundColor: 'rgba(34,197,94,0.12)',
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
   },
-  rolePillText: { fontSize: 12, fontWeight: '600', color: DUGOUT_COLORS.brand.green },
+  rolePillText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.brand.green },
   // Section
   section: { marginBottom: 4 },
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: DUGOUT_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 0.8, marginHorizontal: 20, marginBottom: 6, marginTop: 20,
   },
   card: {
     marginHorizontal: 16, borderRadius: 16,
-    backgroundColor: DUGOUT_COLORS.ui.surface,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     overflow: 'hidden',
   },
 
@@ -1180,18 +1576,18 @@ const st = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 12, gap: 12,
     minHeight: 52,
   },
-  rowLabel: { fontSize: 15, color: DUGOUT_COLORS.ui.text, fontWeight: '500' },
+  rowLabel: { fontSize: 15, color: PULSE_COLORS.ui.text, fontWeight: '500' },
   rowValue: {
-    flex: 1, fontSize: 14, color: DUGOUT_COLORS.ui.textSecondary,
+    flex: 1, fontSize: 14, color: PULSE_COLORS.ui.textSecondary,
     textAlign: 'right',
   },
   nameInput: {
-    flex: 1, fontSize: 14, color: DUGOUT_COLORS.ui.text, textAlign: 'right',
-    borderBottomWidth: 1, borderBottomColor: DUGOUT_COLORS.brand.green,
+    flex: 1, fontSize: 14, color: PULSE_COLORS.ui.text, textAlign: 'right',
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.brand.green,
     paddingBottom: 2,
   },
-  saveText: { fontSize: 14, fontWeight: '700', color: DUGOUT_COLORS.brand.green },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: DUGOUT_COLORS.ui.border, marginLeft: 58 },
+  saveText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.brand.green },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: PULSE_COLORS.ui.border, marginLeft: 58 },
 
   // Icon cell
   iconCell: {
@@ -1202,22 +1598,22 @@ const st = StyleSheet.create({
 
   // Password form
   pwForm: { padding: 16 },
-  pwLabel: { fontSize: 12, fontWeight: '600', color: DUGOUT_COLORS.ui.muted, marginBottom: 6, letterSpacing: 0.3 },
+  pwLabel: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted, marginBottom: 6, letterSpacing: 0.3 },
   pwInput: {
     height: 44, paddingHorizontal: 14, borderRadius: 10,
-    backgroundColor: DUGOUT_COLORS.ui.background,
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
-    fontSize: 15, color: DUGOUT_COLORS.ui.text,
+    backgroundColor: PULSE_COLORS.ui.background,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    fontSize: 15, color: PULSE_COLORS.ui.text,
   },
   pwBtns: { flexDirection: 'row', gap: 10, marginTop: 14 },
   pwCancel: {
     flex: 1, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: DUGOUT_COLORS.ui.border,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
-  pwCancelText: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.textSecondary },
+  pwCancelText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   pwSave: {
     flex: 1, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
   },
   pwSaveText: { fontSize: 14, fontWeight: '800', color: '#000' },
 
@@ -1226,20 +1622,20 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 14, paddingVertical: 14,
   },
-  pushTitle: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.ui.text, marginBottom: 1 },
-  pushSub: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary },
+  pushTitle: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 1 },
+  pushSub: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
 
   // My Players
   emptyPlayers: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 24, gap: 8 },
   emptyIcon: {
     width: 52, height: 52, borderRadius: 16,
-    backgroundColor: DUGOUT_COLORS.ui.surfaceAlt,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
   emptySub: {
-    fontSize: 13, color: DUGOUT_COLORS.ui.textSecondary,
+    fontSize: 13, color: PULSE_COLORS.ui.textSecondary,
     textAlign: 'center', lineHeight: 19,
   },
   playerRow: {
@@ -1249,35 +1645,35 @@ const st = StyleSheet.create({
   playerAvatar: { width: 44, height: 44, borderRadius: 22 },
   playerAvatarFallback: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: DUGOUT_COLORS.brand.green,
+    backgroundColor: PULSE_COLORS.brand.green,
     alignItems: 'center', justifyContent: 'center',
   },
   playerAvatarText: { fontSize: 15, fontWeight: '800', color: '#000' },
-  playerName: { fontSize: 15, fontWeight: '700', color: DUGOUT_COLORS.ui.text, marginBottom: 2 },
-  playerMeta: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary },
+  playerName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
+  playerMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
   editChip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
     backgroundColor: 'rgba(34,197,94,0.1)',
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
   },
-  editChipText: { fontSize: 12, fontWeight: '700', color: DUGOUT_COLORS.brand.green },
+  editChipText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.brand.green },
 
   // Leave team
   teamRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 12, gap: 12, minHeight: 52,
   },
-  teamName: { fontSize: 15, fontWeight: '600', color: DUGOUT_COLORS.ui.text, marginBottom: 1 },
-  teamMeta: { fontSize: 12, color: DUGOUT_COLORS.ui.textSecondary },
-  leaveText: { fontSize: 14, fontWeight: '600', color: DUGOUT_COLORS.status.error },
+  teamName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 1 },
+  teamMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
+  leaveText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.status.error },
   leaveTeamRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 14, paddingVertical: 10,
   },
-  leaveTeamText: { fontSize: 13, fontWeight: '600', color: DUGOUT_COLORS.status.error },
+  leaveTeamText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.status.error },
 
   version: {
-    textAlign: 'center', color: DUGOUT_COLORS.ui.muted,
+    textAlign: 'center', color: PULSE_COLORS.ui.muted,
     fontSize: 12, marginTop: 36, marginBottom: 8,
   },
 
