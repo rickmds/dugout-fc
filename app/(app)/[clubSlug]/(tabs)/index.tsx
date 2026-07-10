@@ -878,10 +878,8 @@ export default function HomeScreen() {
         {/* MY SEASON — players with coach-marked attendance */}
         {!isCoach && myPlayer && seasonTotalMarked > 0 && (() => {
           const superStreak = trainingStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
-          const tIcon = trainingAtRisk ? '⚡' : trainingStreak >= 5 ? '🔥' : trainingStreak >= 3 ? '⚡' : '📅';
-          const tColor = trainingAtRisk ? '#F59E0B' : trainingStreak >= 3 ? '#F59E0B' : primaryColor;
+          const tColor = trainingAtRisk ? '#60A5FA' : trainingStreak >= 3 ? '#F59E0B' : primaryColor;
           const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
-          const gIcon = gamesTotal === 0 ? '⚽' : gPerfect ? '🥇' : gameAtRisk ? '⚡' : '⚽';
           const gColor = gPerfect ? '#22C55E' : gameAtRisk ? '#F59E0B' : PULSE_COLORS.ui.muted;
           return (
             <>
@@ -895,39 +893,51 @@ export default function HomeScreen() {
                 onPress={() => setShowAttendanceSheet(true)}
                 activeOpacity={0.85}
               >
-                {/* Training streak */}
-                <View style={styles.seasonMetric}>
-                  <View style={[styles.seasonMetricIcon, { backgroundColor: trainingAtRisk ? 'rgba(245,158,11,0.12)' : trainingStreak >= 3 ? 'rgba(245,158,11,0.12)' : rgba(0.08) }]}>
-                    <Text style={{ fontSize: 20 }}>{tIcon}</Text>
+                {/* Training streak — centered, WHOOP-style */}
+                <View style={styles.seasonStat}>
+                  <View style={[
+                    styles.seasonFlameWrap,
+                    trainingAtRisk
+                      ? { backgroundColor: 'rgba(96,165,250,0.15)', shadowColor: '#60A5FA', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.55, shadowRadius: 12 }
+                      : trainingStreak >= 3
+                        ? { backgroundColor: 'rgba(245,158,11,0.15)', shadowColor: '#F59E0B', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 10 }
+                        : { backgroundColor: rgba(0.08) },
+                  ]}>
+                    <Text style={styles.seasonFlameEmoji}>🔥</Text>
+                    {/* Blue tint overlay when at risk */}
+                    {trainingAtRisk && (
+                      <View style={[StyleSheet.absoluteFill, { borderRadius: 18, backgroundColor: 'rgba(96,165,250,0.35)' }]} pointerEvents="none" />
+                    )}
                   </View>
-                  <View style={styles.seasonMetricBody}>
-                    <Text style={[styles.seasonMetricNum, { color: tColor }]}>{trainingStreak}</Text>
-                    <Text style={styles.seasonMetricLabel}>
-                      {trainingAtRisk
-                        ? 'Training\n⚠️ At risk!'
-                        : `Training${trainingStreak >= 5 ? '\n🔥 On fire!' : trainingStreak >= 3 ? '\n⚡ Building!' : ''}`}
-                    </Text>
-                  </View>
+                  <Text style={[styles.seasonStatNum, { color: tColor }]}>{trainingStreak}</Text>
+                  <Text style={styles.seasonStatLabel}>
+                    {trainingAtRisk ? 'At risk' : trainingStreak >= 5 ? 'On fire!' : 'Training'}
+                  </Text>
                 </View>
+
                 <View style={styles.seasonDivider} />
+
                 {/* Game attendance */}
-                <View style={styles.seasonMetric}>
-                  <View style={[styles.seasonMetricIcon, { backgroundColor: gPerfect ? 'rgba(34,197,94,0.12)' : gameAtRisk ? 'rgba(245,158,11,0.12)' : rgba(0.08) }]}>
-                    <Text style={{ fontSize: 20 }}>{gIcon}</Text>
-                  </View>
-                  <View style={styles.seasonMetricBody}>
-                    <Text style={[styles.seasonMetricNum, { color: gColor }]}>
-                      {gamesTotal > 0 ? `${gamesAttended}/${gamesTotal}` : '—'}
-                    </Text>
-                    <Text style={styles.seasonMetricLabel}>
-                      {gamesTotal === 0 ? 'Games\nnone yet'
-                        : gPerfect ? 'Games\n✅ Perfect!'
-                        : gameAtRisk ? 'Games\n⚠️ At risk'
-                        : `Games\n${gameStreak > 0 ? `${gameStreak} streak` : 'keep it up'}`}
+                <View style={styles.seasonStat}>
+                  <View style={[
+                    styles.seasonFlameWrap,
+                    gPerfect
+                      ? { backgroundColor: 'rgba(34,197,94,0.15)', shadowColor: '#22C55E', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 10 }
+                      : { backgroundColor: rgba(0.08) },
+                  ]}>
+                    <Text style={styles.seasonFlameEmoji}>
+                      {gamesTotal === 0 ? '⚽' : gPerfect ? '🥇' : gameAtRisk ? '⚡' : '⚽'}
                     </Text>
                   </View>
+                  <Text style={[styles.seasonStatNum, { color: gColor }]}>
+                    {gamesTotal > 0 ? `${gamesAttended}/${gamesTotal}` : '—'}
+                  </Text>
+                  <Text style={styles.seasonStatLabel}>
+                    {gPerfect ? '✅ Perfect!' : gameAtRisk ? '⚡ At risk' : 'Games'}
+                  </Text>
                 </View>
-                {/* Tap hint */}
+
+                {/* Chevron tap hint */}
                 <View style={styles.seasonTapHint}>
                   <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
                 </View>
@@ -1778,18 +1788,19 @@ const styles = StyleSheet.create({
   seasonCard: {
     backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16,
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, marginBottom: 28,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 20, marginBottom: 28,
   },
-  seasonMetric: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  seasonMetricIcon: {
-    width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  seasonStat: { flex: 1, alignItems: 'center', gap: 6 },
+  seasonFlameWrap: {
+    width: 56, height: 56, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  seasonMetricBody: { flex: 1 },
-  seasonMetricNum: { fontSize: 28, fontWeight: '900', letterSpacing: -1 },
-  seasonMetricLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, lineHeight: 16 },
-  seasonDivider: { width: 1, alignSelf: 'stretch', backgroundColor: PULSE_COLORS.ui.border },
-  seasonTapHint: { flexShrink: 0 },
+  seasonFlameEmoji: { fontSize: 28 },
+  seasonStatNum: { fontSize: 38, fontWeight: '900', letterSpacing: -2, lineHeight: 42 },
+  seasonStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', textAlign: 'center' },
+  seasonDivider: { width: 1, height: 72, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 8 },
+  seasonTapHint: { width: 24, alignItems: 'center' },
   superStreakChip: {
     fontSize: 9, fontWeight: '900', letterSpacing: 1,
     color: '#F59E0B', marginLeft: 6,
