@@ -929,7 +929,7 @@ export default function HomeScreen() {
             <>
               <View style={[styles.sectionTitleRow, { marginTop: 16 }]}>
                 <View style={[styles.sectionTitleDot, { backgroundColor: superStreak ? '#F59E0B' : primaryColor }]} />
-                <Text style={styles.sectionTitle}>MY SEASON</Text>
+                <Text style={styles.sectionTitle}>{(myPlayer?.full_name?.split(' ')[0] ?? 'MY').toUpperCase()}'S SEASON</Text>
                 {superStreak && <Text style={styles.superStreakChip}>⭐ SUPER STREAK</Text>}
               </View>
               <TouchableOpacity
