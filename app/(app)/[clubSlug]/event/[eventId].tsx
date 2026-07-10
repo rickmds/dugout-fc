@@ -179,6 +179,7 @@ type EventDetail = {
   rsvp_lock_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
+  home_away: 'home' | 'away' | null;
 };
 
 type Player = {
@@ -336,7 +337,7 @@ export default function EventDetailScreen() {
 
     const [eventRes, playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
       supabase.from('events')
-        .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason')
+        .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away')
         .eq('id', eventId).single(),
       supabase.from('players').select('id,full_name,jersey_number,position,profile_id')
         .eq('team_id', team.id).order('jersey_number'),
@@ -949,9 +950,26 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {/* Type badge + title */}
-          <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
-            <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
+          {/* Type badge + home/away + title */}
+          <View style={styles.typeBadgeRow}>
+            <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
+              <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
+            </View>
+            {event.type === 'game' && event.home_away && (
+              <View style={[
+                styles.homeAwayBadge,
+                event.home_away === 'home'
+                  ? { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.25)' }
+                  : { backgroundColor: 'rgba(96,165,250,0.12)', borderColor: 'rgba(96,165,250,0.25)' },
+              ]}>
+                <Text style={[
+                  styles.homeAwayText,
+                  { color: event.home_away === 'home' ? '#22C55E' : '#60A5FA' },
+                ]}>
+                  {event.home_away === 'home' ? 'Home' : 'Away'}
+                </Text>
+              </View>
+            )}
           </View>
           <Text style={[styles.title, event.cancelled_at ? styles.titleCancelled : null]}>{event.title}</Text>
 
@@ -1945,6 +1963,13 @@ const styles = StyleSheet.create({
   mainTabBadgeTextActive: { color: PULSE_COLORS.brand.green },
 
   scroll: { padding: 20 },
+
+  typeBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 0 },
+  homeAwayBadge: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
+    borderWidth: 1,
+  },
+  homeAwayText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
 
   typeBadge: {
     alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4,
