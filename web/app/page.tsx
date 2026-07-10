@@ -32,15 +32,20 @@ const testimonials = [
 ];
 
 const valueStack = [
-  { label: 'Multi-team club dashboard', desc: 'Every team, schedule, RSVP, and attendance in one place', value: 197 },
-  { label: 'Mobile app for every parent', desc: 'iOS — no tech skills required, no training needed', value: 97 },
-  { label: 'AI schedule importer', desc: 'Upload any PDF, image, or spreadsheet — whole season imported in seconds', value: 47 },
-  { label: 'Live RSVP + attendance tracking', desc: 'Parents tap one button. Coaches see a live headcount. Auto-locks before game time.', value: 27 },
-  { label: 'AI lineup builder', desc: 'Drag confirmed players onto the pitch. AI suggests the starting lineup by position.', value: 47 },
-  { label: 'Match tracker + equal playing time', desc: 'Live match timer, sub tracking, and instant equal-time calculator for the sideline.', value: 47 },
-  { label: 'Team chat + announcements', desc: 'Real-time group chat, coach-only announcements, and direct messages — in one tab.', value: 27 },
-  { label: 'Fee collection + payment tracking', desc: 'Send invoices, record payments, know who owes what', value: 47 },
-  { label: 'Tryout management system', desc: 'Registration forms, player ranking, team builder, offer letters, acceptance tracking', value: 197 },
+  { label: 'Multi-team club dashboard', desc: 'Every team, schedule, RSVP, and attendance across your whole club — one login, one screen', value: 197 },
+  { label: 'Mobile app for every parent', desc: 'iOS — clean, no ads, no clutter. Your branding. Every parent on your roster in one tap.', value: 97 },
+  { label: 'AI schedule importer', desc: 'Upload any PDF, image, or spreadsheet — AI reads it and builds your entire season in under a minute. No manual entry.', value: 47 },
+  { label: 'AI roster importer', desc: 'Upload any spreadsheet in any format — AI maps the columns and builds your roster in 30 seconds. Zero manual entry.', value: 47 },
+  { label: 'Live RSVP + attendance tracking', desc: 'Parents tap one button. Coach marks who showed. Parents notified instantly if their child is absent. Full history per player.', value: 27 },
+  { label: 'Automatic change alerts', desc: 'Field moved? Time changed? Game cancelled? Every parent gets an instant push with the exact change. Nobody shows at the wrong place.', value: 27 },
+  { label: 'AI lineup builder', desc: 'Drag confirmed RSVPs onto the pitch. AI suggests starting lineup by position. Equal time calculator is instant — no AI needed.', value: 47 },
+  { label: 'Match tracker + equal playing time', desc: 'Live match timer, sub rotation plan, and equal-time calculator on the sideline — ready before the whistle blows.', value: 47 },
+  { label: 'Game scores + season W/L/D record', desc: 'Log scores from the sideline. Season record builds automatically. Know exactly where you stand all season.', value: 17 },
+  { label: 'Team chat + announcements', desc: 'Real-time group chat, coach-only announcements, 1:1 direct messages — one tab. No more app-switching.', value: 27 },
+  { label: 'Video recordings library', desc: 'Add a recording link to any event. Parents get a push. Every session archived in one place — no more lost Google Drive links.', value: 17 },
+  { label: 'Guest player management', desc: 'Borrow players from other teams. Conflict detection built in. G-badge in lineup and match tracker. Org admin sees every guest appearance club-wide.', value: 27 },
+  { label: 'Fee collection + payment tracking', desc: 'Send invoices, track payments, see who owes what — without a spreadsheet.', value: 47 },
+  { label: 'Tryout management system', desc: 'Public registration form. Player ranking. Drag-and-drop team builder. Offer letters sent from the platform. Accept/decline tracked in real time. The whole season — one place.', value: 197 },
 ];
 
 const features = [
@@ -111,8 +116,8 @@ const features = [
   {
     n: '02',
     title: 'Know exactly who\'s coming. Before you even ask.',
-    body: 'Parents get a push notification. They tap one button. You see a live headcount update in real time. Set a lock time and RSVPs close automatically — no chasing, no surprises on game day.',
-    checks: ['Attending or Not Attending only — no maybes', 'Auto-locks before game time', 'Full attendance history per player'],
+    body: 'Parents get a push. They tap one button — Attending or Not Attending. No maybes. You see a live headcount update in real time. RSVP auto-locks before game time. Then after the game, mark who actually showed up. Parents get an instant notification the moment their child is marked absent — no calls, no awkward texts.',
+    checks: ['Attending or Not Attending — no maybes, no ambiguity', 'RSVP auto-locks before game time so you\'re never guessing', 'Coach marks attendance in the app — parents notified instantly if absent', 'Full attendance history and streak per player'],
     visual: (
       <div className="flex flex-col items-center sm:flex-row sm:items-start gap-5">
         <div className="flex-shrink-0">
@@ -280,8 +285,8 @@ const features = [
   {
     n: '04',
     title: 'One channel for everything. Zero noise.',
-    body: 'Team chat for real-time conversation. Announcements for anything that matters — coaches post, parents read, and an email goes out automatically. Direct messages for 1:1 with any parent. No more screenshot-forwarding between WhatsApp groups.',
-    checks: ['Team chat, announcements, and direct messages', 'Email blast from inside the app', 'Coaches control what parents can see'],
+    body: 'Team chat for real-time conversation. Announcements for anything that matters — coaches post, parents read, and an email goes out automatically. Direct messages for 1:1 with any parent. No more screenshot-forwarding between WhatsApp groups. No more "sorry I missed that" when it\'s pinned right there.',
+    checks: ['Team chat, announcements, and direct messages in one tab', 'Email blast from inside the app — no switching to Gmail', 'Coaches control what parents can see'],
     visual: (
       <div className="rounded-2xl overflow-hidden" style={{ background: '#0c0c0c', border: '1px solid #181818' }}>
         <div className="px-4 py-3" style={{ borderBottom: '1px solid #161616', background: '#0a0a0a' }}>
@@ -334,6 +339,155 @@ const features = [
       </div>
     ),
   },
+  {
+    n: '05',
+    title: 'The field moved at 7pm. Every parent knew by 7:01.',
+    body: 'Update a game time. Change a location. Cancel an event. Pulse FC pushes every parent on the team instantly — with the exact change called out in the notification. No group texts. No phone tree. No stragglers at the wrong field wondering where everyone is.',
+    checks: [
+      'Time change, location change, cancellation — instant push to all parents',
+      'The change is highlighted in the notification so it\'s impossible to miss',
+      'Cancelled events greyed on the schedule automatically — no confusion',
+    ],
+    visual: (
+      <div className="flex flex-col gap-3">
+        <div className="rounded-2xl overflow-hidden" style={{ background: '#0c0c0c', border: '1px solid #181818' }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #161616', background: '#0a0a0a' }}>
+            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest">Coach updated · 7:02pm</p>
+            <span className="text-[10px] font-bold text-[#f59e0b]" style={{ background: '#f59e0b10', border: '1px solid #f59e0b20', padding: '2px 8px', borderRadius: 99 }}>Location changed</span>
+          </div>
+          <div className="flex flex-col gap-3 px-4 py-4">
+            <div className="flex items-center gap-3">
+              <span className="text-[#555] text-[10px] font-medium w-16 flex-shrink-0">Opponent</span>
+              <span className="text-[#aaa] text-[11px] font-semibold">vs Maroons SC</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[#555] text-[10px] font-medium w-16 flex-shrink-0">Date</span>
+              <span className="text-[#aaa] text-[11px] font-semibold">Sat 5 Jul · 10:00am</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="text-[#555] text-[10px] font-medium w-16 flex-shrink-0 pt-0.5">Field</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-semibold line-through" style={{ color: '#3a3a3a' }}>Riverside Park</span>
+                <span className="text-[10px] text-[#444]">→</span>
+                <span className="text-[11px] font-bold text-[#22c55e]">Riverside South, Field 2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Sent to 14 parents · 7:02pm</p>
+          <div className="rounded-xl p-3 mb-3" style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+            <div className="flex items-start gap-2.5">
+              <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#22c55e', fontSize: 12 }}>⚽</div>
+              <div>
+                <p className="text-white text-[11px] font-bold mb-0.5">📍 Location update — vs Maroons SC</p>
+                <p className="text-[#888] text-[10px] leading-relaxed">Now at Riverside South, Field 2 · Sat 5 Jul · 10:00am</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex -space-x-1.5">
+              {['JK', 'SM', 'DP', 'EL', 'LT', 'MH'].map((init) => (
+                <div key={init} className="w-5 h-5 rounded-full flex items-center justify-center"
+                  style={{ fontSize: 6, fontWeight: 800, background: '#0e2016', border: '1.5px solid #22c55e30', color: '#22c55e' }}>{init}</div>
+              ))}
+              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[6px] font-bold"
+                style={{ background: '#161616', border: '1.5px solid #222', color: '#555' }}>+8</div>
+            </div>
+            <span className="text-[#22c55e] text-[10px] font-bold">14 / 14 delivered</span>
+          </div>
+        </div>
+        <div className="rounded-2xl p-4 grid grid-cols-3 gap-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="text-center">
+            <p className="text-white font-extrabold text-[24px] leading-none mb-1">0</p>
+            <p className="text-[#888] text-[10px] leading-tight">calls made<br/>to parents</p>
+          </div>
+          <div className="text-center" style={{ borderLeft: '1px solid #1e1e1e', borderRight: '1px solid #1e1e1e' }}>
+            <p className="text-white font-extrabold text-[24px] leading-none mb-1">0</p>
+            <p className="text-[#888] text-[10px] leading-tight">families at<br/>wrong field</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[#22c55e] font-extrabold text-[24px] leading-none mb-1">&lt;1s</p>
+            <p className="text-[#888] text-[10px] leading-tight">to notify<br/>everyone</p>
+          </div>
+        </div>
+      </div>
+    ),
+  },
+  {
+    n: '06',
+    title: 'Tryout season. Without the spreadsheets.',
+    body: 'Custom registration form live in 10 minutes. Every player who signs up lands in your dashboard automatically — no manual entry. Rank them. Drag them into teams. Send offer letters from inside the platform. Parents click Accept or Decline from their email and you see it the moment it happens. No spreadsheets. No lost emails. No chaos.',
+    checks: [
+      'Public registration form — parents register directly, zero manual entry for you',
+      'Rank players, build teams, send offer letters — all in one place',
+      'Accept/decline tracked in real time the moment a parent responds',
+    ],
+    visual: (
+      <div className="rounded-2xl overflow-hidden" style={{ background: '#0c0c0c', border: '1px solid #181818' }}>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #161616', background: '#0a0a0a' }}>
+          <div>
+            <p className="text-white text-[12px] font-extrabold">U14 Boys · 2026 Tryouts</p>
+            <p className="text-[#555] text-[9px] mt-0.5">47 registered · 3 teams building</p>
+          </div>
+          <div className="flex gap-1.5">
+            <span className="text-[9px] font-bold px-2 py-1 rounded-lg" style={{ background: '#22c55e10', border: '1px solid #22c55e20', color: '#22c55e' }}>14 Accepted</span>
+            <span className="text-[9px] font-bold px-2 py-1 rounded-lg" style={{ background: '#f59e0b10', border: '1px solid #f59e0b20', color: '#f59e0b' }}>8 Pending</span>
+          </div>
+        </div>
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid #111' }}>
+          {[
+            { label: 'Team A', color: '#22c55e', players: [
+              { name: 'James K.', status: 'Accepted', sc: '#22c55e' },
+              { name: 'Marco R.', status: 'Accepted', sc: '#22c55e' },
+              { name: 'Tyler W.', status: 'Offer Sent', sc: '#f59e0b' },
+              { name: 'Aiden M.', status: 'Offer Sent', sc: '#f59e0b' },
+            ]},
+            { label: 'Team B', color: '#60a5fa', players: [
+              { name: 'Lucas P.', status: 'Accepted', sc: '#22c55e' },
+              { name: 'Ethan S.', status: 'Accepted', sc: '#22c55e' },
+              { name: 'Noah H.', status: 'Offer Sent', sc: '#f59e0b' },
+              { name: 'Owen T.', status: 'Pending', sc: '#64748b' },
+            ]},
+            { label: 'Waitlist', color: '#f59e0b', players: [
+              { name: 'Ryan C.', status: 'Waitlist', sc: '#f59e0b' },
+              { name: 'Sam D.', status: 'Waitlist', sc: '#f59e0b' },
+              { name: 'Cole B.', status: 'Waitlist', sc: '#f59e0b' },
+            ]},
+          ].map((col, ci) => (
+            <div key={col.label} className="p-3" style={{ borderLeft: ci > 0 ? '1px solid #111' : 'none' }}>
+              <p className="text-[10px] font-extrabold mb-2.5 uppercase tracking-widest" style={{ color: col.color }}>{col.label}</p>
+              <div className="flex flex-col gap-1.5">
+                {col.players.map((p) => (
+                  <div key={p.name} className="rounded-lg px-2.5 py-2" style={{ background: '#111', border: '1px solid #1a1a1a' }}>
+                    <p className="text-[#ccc] text-[10px] font-semibold leading-none mb-1">{p.name}</p>
+                    <span className="text-[8.5px] font-bold" style={{ color: p.sc }}>{p.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ background: '#090909' }}>
+          <div className="flex gap-5">
+            {[
+              { num: '47', label: 'Registered', color: '#888' },
+              { num: '14', label: 'Accepted', color: '#22c55e' },
+              { num: '8', label: 'Awaiting', color: '#f59e0b' },
+              { num: '3', label: 'Waitlisted', color: '#64748b' },
+            ].map(({ num, label, color }) => (
+              <div key={label} className="text-center">
+                <p className="font-extrabold text-[15px] leading-none" style={{ color }}>{num}</p>
+                <p className="text-[#444] text-[8px] font-bold mt-0.5">{label}</p>
+              </div>
+            ))}
+          </div>
+          <span className="text-[9px] font-bold text-[#22c55e] px-2.5 py-1.5 rounded-lg cursor-pointer"
+            style={{ background: '#22c55e10', border: '1px solid #22c55e20' }}>Send offers →</span>
+        </div>
+      </div>
+    ),
+  },
 ];
 
 export const revalidate = 3600;
@@ -373,10 +527,10 @@ export default async function Home() {
             </h1>
 
             <p className="text-[#aaa] text-[18px] leading-[1.75] font-medium mb-4 max-w-lg">
-              Pulse FC gives Directors of Coaching a professional platform for every team, every schedule, every parent, and every communication — set up in 20 minutes.
+              Pulse FC replaces your WhatsApp groups, your schedule PDFs, your RSVP spreadsheet, and your tryout chaos — with one platform every parent actually opens. Set up in 20 minutes.
             </p>
             <p className="text-[#888] text-[15px] leading-relaxed mb-10 max-w-md">
-              No more WhatsApp chaos. No more schedule spreadsheets. No more chasing RSVPs the night before a game.
+              Season imported in 40 seconds. RSVPs auto-lock before game time. Field change? Every parent notified before you put your phone down.
             </p>
 
             <div className="flex flex-wrap gap-3 mb-8">
@@ -460,10 +614,10 @@ export default async function Home() {
           </h2>
           <div className="mt-8 flex flex-col gap-4">
             {[
-              { icon: '📱', pain: 'Thursday night. 31 unread messages. "What time?" "Which field?" "What kit?" Same questions. Every week.' },
-              { icon: '📍', pain: 'Game day: two families show at the wrong field. Your schedule PDF is three updates out of date.' },
-              { icon: '📋', pain: 'Tryout season: player info across four spreadsheets, three email chains, and a notebook you can\'t find.' },
-              { icon: '❓', pain: 'Lineup day: you\'re guessing who RSVP\'d because half texted you and half texted the assistant.' },
+              { icon: '📱', pain: 'Thursday night. 31 unread messages. "What time?" "Which field?" "What kit?" Same questions, every week. You answer them the same way every week. That time is gone and you\'re not getting it back.' },
+              { icon: '📍', pain: 'You changed the field at 7pm. You texted 14 parents. Three saw it. Two families drove to the wrong place. You found out from a text during warm-ups.' },
+              { icon: '📋', pain: 'Tryout season: four spreadsheets, three email chains, one offer sent to the wrong family. The waitlist emails are still sitting in your drafts. It\'s been two weeks.' },
+              { icon: '❓', pain: 'Lineup day: you\'re building it from screenshots of who replied to a text. One player you counted isn\'t coming. You find out five minutes before kickoff.' },
             ].map(({ icon, pain }) => (
               <div key={pain} className="flex items-start gap-4 p-4 rounded-xl"
                 style={{ background: '#111', border: '1px solid #232323' }}>
@@ -601,9 +755,9 @@ export default async function Home() {
             <p className="text-[#888] text-[11px] font-bold uppercase tracking-[0.18em] mb-4">Everything included</p>
             <h2 className="font-extrabold text-white leading-tight mb-4 tracking-tight"
               style={{ fontSize: 'clamp(26px, 3.5vw, 44px)' }}>
-              Here's what you get when<br />you add your club.
+              Everything you need.<br />Nothing held back.
             </h2>
-            <p className="text-[#888] text-[16px] mb-12">Every feature. No add-ons. No upsells for things that should be included.</p>
+            <p className="text-[#888] text-[16px] mb-12">Every feature, every team, every AI tool — for one flat price. No add-ons. No per-team fees. No paying extra for things that should be included.</p>
 
             <div className="flex flex-col gap-3 mb-10">
               {valueStack.map((item) => (
