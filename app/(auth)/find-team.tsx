@@ -187,7 +187,7 @@ export default function FindTeamScreen() {
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => supabase.auth.signOut()} style={styles.signOutLink}>
+        <TouchableOpacity onPress={async () => { await supabase.auth.signOut(); router.replace('/(auth)/welcome' as never); }} style={styles.signOutLink}>
           <Text style={styles.signOutText}>Sign out</Text>
         </TouchableOpacity>
       </ScrollView>

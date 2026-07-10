@@ -99,7 +99,7 @@ export default function RoleSelectScreen() {
         ))}
       </View>
 
-      <TouchableOpacity onPress={() => supabase.auth.signOut()} style={styles.signOutLink}>
+      <TouchableOpacity onPress={async () => { await supabase.auth.signOut(); router.replace('/(auth)/welcome' as never); }} style={styles.signOutLink}>
         <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
     </View>
