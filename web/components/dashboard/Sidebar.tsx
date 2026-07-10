@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut, ChevronRight,
   Layers, Shield, DollarSign, Target, LayoutGrid, Trophy,
-  FileText, Mail, Megaphone, FileLock2,
+  FileText, Mail, Megaphone, FileLock2, Award,
 } from 'lucide-react';
 import { useDashboard } from './DashboardContext';
 
@@ -37,6 +37,8 @@ const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard/waivers',     icon: FileLock2,     label: 'Waivers' },
   { href: '/dashboard/reports',     icon: BarChart2,     label: 'Reports' },
   { href: '/dashboard/admin',       icon: Shield,        label: 'Administration', adminOnly: true },
+  { section: 'Develop' },
+  { href: '/dashboard/evaluations', icon: Award,         label: 'Evaluations' },
 ];
 
 const TRYOUTS_NAV: NavEntry[] = [

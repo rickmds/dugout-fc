@@ -819,6 +819,17 @@ export default function AdminPanel() {
             )}
           </View>
 
+          {/* Develop */}
+          <SectionRow label="DEVELOP" />
+          <View style={st.aiGroup}>
+            <AiToolCard
+              icon="ribbon-outline" color="#A855F7" bg="rgba(168,85,247,0.12)"
+              label="Player Evaluations"
+              desc="Rate players and generate AI-powered report cards"
+              onPress={() => router.push(`/(app)/${slug}/admin/evaluations` as any)}
+            />
+          </View>
+
           {/* Reports */}
           <SectionRow label="REPORTS" />
           <View style={st.aiGroup}>

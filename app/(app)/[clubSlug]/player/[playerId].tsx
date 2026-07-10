@@ -1209,6 +1209,8 @@ function PlayerTab({
   deleting: boolean;
 }) {
   const { primaryColor, rgba } = useClub();
+  const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const router = useRouter();
   const primaryInvite = invites[0] ?? null;
   const guardianName = primaryInvite?.guardian_name ?? guardianProfile?.full_name ?? null;
   const guardianAddress = guardianProfile?.address ?? primaryInvite?.address ?? null;
@@ -1460,6 +1462,24 @@ function PlayerTab({
             </View>
           )}
         </>
+      )}
+
+      {/* ── Evaluations ── */}
+      {(isCoach || isMyPlayer) && (
+        <TouchableOpacity
+          style={[st.evalBtn, { borderColor: 'rgba(168,85,247,0.3)', backgroundColor: 'rgba(168,85,247,0.06)' }]}
+          onPress={() => router.push({ pathname: `/(app)/${clubSlug}/player/evaluations` as any, params: { playerId: player.id } })}
+          activeOpacity={0.8}
+        >
+          <View style={[st.evalIcon, { backgroundColor: 'rgba(168,85,247,0.12)' }]}>
+            <Ionicons name="ribbon-outline" size={18} color="#A855F7" />
+          </View>
+          <View style={st.evalMeta}>
+            <Text style={st.evalLabel}>Player Evaluations</Text>
+            <Text style={st.evalSub}>Seasonal reports from your coach</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+        </TouchableOpacity>
       )}
 
       {/* ── Remove player ── */}
@@ -1899,6 +1919,15 @@ const st = StyleSheet.create({
   emptyText: { color: PULSE_COLORS.ui.muted, fontSize: 14 },
 
   // ── Delete
+  evalBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, borderWidth: 1, padding: 14, marginTop: 20,
+  },
+  evalIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  evalMeta: { flex: 1 },
+  evalLabel: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  evalSub:   { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingVertical: 14, borderRadius: 14, marginTop: 28,

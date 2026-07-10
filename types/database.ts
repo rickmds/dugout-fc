@@ -399,6 +399,58 @@ export type Database = {
           },
         ]
       }
+      evaluation_batches: {
+        Row: {
+          id: string
+          club_id: string
+          team_id: string
+          coach_id: string
+          season_label: string
+          period_label: string
+          status: 'in_progress' | 'submitted' | 'approved'
+          total_players: number
+          completed_count: number
+          submitted_at: string | null
+          approved_by: string | null
+          approved_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          team_id: string
+          coach_id: string
+          season_label: string
+          period_label: string
+          status?: 'in_progress' | 'submitted' | 'approved'
+          total_players?: number
+          completed_count?: number
+          submitted_at?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          team_id?: string
+          coach_id?: string
+          season_label?: string
+          period_label?: string
+          status?: 'in_progress' | 'submitted' | 'approved'
+          total_players?: number
+          completed_count?: number
+          submitted_at?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "evaluation_batches_club_id_fkey"; columns: ["club_id"]; isOneToOne: false; referencedRelation: "clubs"; referencedColumns: ["id"] },
+          { foreignKeyName: "evaluation_batches_team_id_fkey"; columns: ["team_id"]; isOneToOne: false; referencedRelation: "teams"; referencedColumns: ["id"] },
+          { foreignKeyName: "evaluation_batches_coach_id_fkey"; columns: ["coach_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
       fee_categories: {
         Row: {
           amount: number
@@ -843,6 +895,90 @@ export type Database = {
             referencedRelation: "teams"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      player_evaluations: {
+        Row: {
+          id: string
+          batch_id: string
+          club_id: string
+          team_id: string
+          player_id: string
+          coach_id: string
+          season_label: string
+          period_label: string
+          rating_technical: number | null
+          rating_tactical: number | null
+          rating_physical: number | null
+          rating_mental: number | null
+          q1_improvement: string | null
+          q2_focus: string | null
+          q3_message: string | null
+          ai_draft: string | null
+          final_text: string | null
+          status: 'draft' | 'submitted' | 'approved' | 'published'
+          submitted_at: string | null
+          approved_by: string | null
+          approved_at: string | null
+          published_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          batch_id: string
+          club_id: string
+          team_id: string
+          player_id: string
+          coach_id: string
+          season_label: string
+          period_label: string
+          rating_technical?: number | null
+          rating_tactical?: number | null
+          rating_physical?: number | null
+          rating_mental?: number | null
+          q1_improvement?: string | null
+          q2_focus?: string | null
+          q3_message?: string | null
+          ai_draft?: string | null
+          final_text?: string | null
+          status?: 'draft' | 'submitted' | 'approved' | 'published'
+          submitted_at?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          published_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          batch_id?: string
+          club_id?: string
+          team_id?: string
+          player_id?: string
+          coach_id?: string
+          season_label?: string
+          period_label?: string
+          rating_technical?: number | null
+          rating_tactical?: number | null
+          rating_physical?: number | null
+          rating_mental?: number | null
+          q1_improvement?: string | null
+          q2_focus?: string | null
+          q3_message?: string | null
+          ai_draft?: string | null
+          final_text?: string | null
+          status?: 'draft' | 'submitted' | 'approved' | 'published'
+          submitted_at?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          published_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: "player_evaluations_batch_id_fkey"; columns: ["batch_id"]; isOneToOne: false; referencedRelation: "evaluation_batches"; referencedColumns: ["id"] },
+          { foreignKeyName: "player_evaluations_club_id_fkey"; columns: ["club_id"]; isOneToOne: false; referencedRelation: "clubs"; referencedColumns: ["id"] },
+          { foreignKeyName: "player_evaluations_team_id_fkey"; columns: ["team_id"]; isOneToOne: false; referencedRelation: "teams"; referencedColumns: ["id"] },
+          { foreignKeyName: "player_evaluations_player_id_fkey"; columns: ["player_id"]; isOneToOne: false; referencedRelation: "players"; referencedColumns: ["id"] },
+          { foreignKeyName: "player_evaluations_coach_id_fkey"; columns: ["coach_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
         ]
       }
       player_fees: {
