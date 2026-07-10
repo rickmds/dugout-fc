@@ -526,6 +526,7 @@ export default function HomeScreen() {
     rsvpStatus: string | null,
     rsvpLoading: boolean,
     onRsvp: (s: 'attending' | 'not_attending') => void,
+    topMargin = 0,
   ) {
     const cfg = event ? (TYPE_CONFIG[event.type] ?? TYPE_CONFIG.other) : null;
     const accentColor = cfg?.color ?? primaryColor;
@@ -539,7 +540,7 @@ export default function HomeScreen() {
 
     return (
       <View key={label}>
-        <View style={[styles.sectionTitleRow, { borderLeftColor: accentColor }]}>
+        <View style={[styles.sectionTitleRow, { borderLeftColor: accentColor, marginTop: topMargin }]}>
           <Text style={styles.sectionTitle}>{label}</Text>
         </View>
         {event && cfg ? (
@@ -911,6 +912,7 @@ export default function HomeScreen() {
           myGameRsvpStatus,
           gameRsvpLoading,
           (s) => nextGame && handleRsvp(nextGame, s, myGameRsvpStatus, setMyGameRsvpStatus, setGameRsvpLoading),
+          isCoach ? 20 : (myPlayer && seasonTotalMarked > 0 ? 20 : 28),
         )}
         {renderNextCard(
           'NEXT TRAINING',
