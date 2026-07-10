@@ -216,6 +216,8 @@ export default function HomeScreen() {
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [outstandingFees, setOutstandingFees] = useState<OutstandingFee[]>([]);
   const [showFeeModal, setShowFeeModal]     = useState(false);
+  const [combinedStreak, setCombinedStreak]         = useState(0);
+  const [combinedAtRisk, setCombinedAtRisk]         = useState(false);
   const [trainingStreak, setTrainingStreak]         = useState(0);
   const [trainingAtRisk, setTrainingAtRisk]         = useState(false);
   const [gameStreak, setGameStreak]                 = useState(0);
@@ -419,8 +421,11 @@ export default function HomeScreen() {
           }
           const trainingHistory = history.filter((e) => e.type !== 'game');
           const gameHistory     = history.filter((e) => e.type === 'game');
+          const cResult = whoopStreak(history);
           const tResult = whoopStreak(trainingHistory);
           const gResult = whoopStreak(gameHistory);
+          setCombinedStreak(cResult.streak);
+          setCombinedAtRisk(cResult.atRisk);
           setTrainingStreak(tResult.streak);
           setTrainingAtRisk(tResult.atRisk);
           setGameStreak(gResult.streak);
@@ -877,10 +882,20 @@ export default function HomeScreen() {
 
         {/* MY SEASON — players with coach-marked attendance */}
         {!isCoach && myPlayer && seasonTotalMarked > 0 && (() => {
-          const superStreak = trainingStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
-          const tColor = trainingAtRisk ? '#60A5FA' : trainingStreak >= 3 ? '#F59E0B' : primaryColor;
+          const superStreak = combinedStreak >= 5 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+          // Flame tier — WHOOP-style color progression
+          const flameTier = combinedAtRisk
+            ? { color: '#60A5FA', glow: '#60A5FA', bg: 'rgba(96,165,250,0.15)', overlay: 'rgba(96,165,250,0.38)', label: 'At risk' }
+            : combinedStreak >= 10
+              ? { color: '#A855F7', glow: '#A855F7', bg: 'rgba(168,85,247,0.15)', overlay: null, label: '⭐ Legendary' }
+              : combinedStreak >= 6
+                ? { color: '#EF4444', glow: '#EF4444', bg: 'rgba(239,68,68,0.15)', overlay: null, label: '🔥 On fire' }
+                : combinedStreak >= 3
+                  ? { color: '#F97316', glow: '#F97316', bg: 'rgba(249,115,22,0.15)', overlay: null, label: 'Building' }
+                  : combinedStreak >= 1
+                    ? { color: '#EAB308', glow: '#EAB308', bg: 'rgba(234,179,8,0.12)', overlay: null, label: 'Getting started' }
+                    : { color: PULSE_COLORS.ui.muted, glow: 'transparent', bg: rgba(0.08), overlay: null, label: 'No streak yet' };
           const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
-          const gColor = gPerfect ? '#22C55E' : gameAtRisk ? '#F59E0B' : PULSE_COLORS.ui.muted;
           return (
             <>
               <View style={[styles.sectionTitleRow, { marginTop: 24 }]}>
@@ -889,55 +904,51 @@ export default function HomeScreen() {
                 {superStreak && <Text style={styles.superStreakChip}>⭐ SUPER STREAK</Text>}
               </View>
               <TouchableOpacity
-                style={[styles.seasonCard, { borderLeftWidth: 3, borderLeftColor: superStreak ? '#F59E0B' : primaryColor }]}
+                style={[styles.seasonCard, { borderLeftWidth: 3, borderLeftColor: superStreak ? '#F59E0B' : flameTier.color }]}
                 onPress={() => setShowAttendanceSheet(true)}
                 activeOpacity={0.85}
               >
-                {/* Training streak — centered, WHOOP-style */}
+                {/* Streak — centered, WHOOP-style flame */}
                 <View style={styles.seasonStat}>
                   <View style={[
                     styles.seasonFlameWrap,
-                    trainingAtRisk
-                      ? { backgroundColor: 'rgba(96,165,250,0.15)', shadowColor: '#60A5FA', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.55, shadowRadius: 12 }
-                      : trainingStreak >= 3
-                        ? { backgroundColor: 'rgba(245,158,11,0.15)', shadowColor: '#F59E0B', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 10 }
-                        : { backgroundColor: rgba(0.08) },
+                    {
+                      backgroundColor: flameTier.bg,
+                      shadowColor: flameTier.glow,
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: combinedStreak >= 1 ? 0.5 : 0,
+                      shadowRadius: 14,
+                    },
                   ]}>
                     <Text style={styles.seasonFlameEmoji}>🔥</Text>
-                    {/* Blue tint overlay when at risk */}
-                    {trainingAtRisk && (
-                      <View style={[StyleSheet.absoluteFill, { borderRadius: 18, backgroundColor: 'rgba(96,165,250,0.35)' }]} pointerEvents="none" />
-                    )}
+                    {flameTier.overlay ? (
+                      <View style={[StyleSheet.absoluteFill, { borderRadius: 18, backgroundColor: flameTier.overlay }]} pointerEvents="none" />
+                    ) : null}
                   </View>
-                  <Text style={[styles.seasonStatNum, { color: tColor }]}>{trainingStreak}</Text>
-                  <Text style={styles.seasonStatLabel}>
-                    {trainingAtRisk ? 'At risk' : trainingStreak >= 5 ? 'On fire!' : 'Training'}
-                  </Text>
+                  <Text style={[styles.seasonStatNum, { color: flameTier.color }]}>{combinedStreak}</Text>
+                  <Text style={styles.seasonStatLabel}>{flameTier.label}</Text>
                 </View>
 
-                <View style={styles.seasonDivider} />
+                {/* Game sub-stat */}
+                {gamesTotal > 0 && (
+                  <>
+                    <View style={styles.seasonDivider} />
+                    <View style={[styles.seasonStat, { flex: 0.85 }]}>
+                      <View style={[styles.seasonFlameWrap,
+                        gPerfect
+                          ? { backgroundColor: 'rgba(34,197,94,0.15)', shadowColor: '#22C55E', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 10 }
+                          : { backgroundColor: rgba(0.08) },
+                      ]}>
+                        <Text style={styles.seasonFlameEmoji}>{gPerfect ? '🥇' : '⚽'}</Text>
+                      </View>
+                      <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.muted, fontSize: 28, lineHeight: 32 }]}>
+                        {gamesAttended}/{gamesTotal}
+                      </Text>
+                      <Text style={styles.seasonStatLabel}>{gPerfect ? '✅ Perfect!' : 'Games'}</Text>
+                    </View>
+                  </>
+                )}
 
-                {/* Game attendance */}
-                <View style={styles.seasonStat}>
-                  <View style={[
-                    styles.seasonFlameWrap,
-                    gPerfect
-                      ? { backgroundColor: 'rgba(34,197,94,0.15)', shadowColor: '#22C55E', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 10 }
-                      : { backgroundColor: rgba(0.08) },
-                  ]}>
-                    <Text style={styles.seasonFlameEmoji}>
-                      {gamesTotal === 0 ? '⚽' : gPerfect ? '🥇' : gameAtRisk ? '⚡' : '⚽'}
-                    </Text>
-                  </View>
-                  <Text style={[styles.seasonStatNum, { color: gColor }]}>
-                    {gamesTotal > 0 ? `${gamesAttended}/${gamesTotal}` : '—'}
-                  </Text>
-                  <Text style={styles.seasonStatLabel}>
-                    {gPerfect ? '✅ Perfect!' : gameAtRisk ? '⚡ At risk' : 'Games'}
-                  </Text>
-                </View>
-
-                {/* Chevron tap hint */}
                 <View style={styles.seasonTapHint}>
                   <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
                 </View>
