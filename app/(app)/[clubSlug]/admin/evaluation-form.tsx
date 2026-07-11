@@ -35,15 +35,17 @@ type ReportData = {
     position: string;
     birth_year: string;
     school: string;
-    graduation_class: string;
-    hometown: string;
   };
   stats: {
-    max_speed: string;
-    total_distance: string;
-    secondary_foot: string;
+    rsvp_pct: string;
+    practice_pct: string;
+    game_pct: string;
     games_played: string;
     minutes_played: string;
+    goals: string;
+    assists: string;
+    yellow_cards: string;
+    secondary_foot: string;
   };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
@@ -53,8 +55,8 @@ type ReportData = {
 };
 
 const EMPTY_REPORT: ReportData = {
-  bio:   { position: '', birth_year: '', school: '', graduation_class: '', hometown: '' },
-  stats: { max_speed: '', total_distance: '', secondary_foot: '', games_played: '', minutes_played: '' },
+  bio:   { position: '', birth_year: '', school: '' },
+  stats: { rsvp_pct: '', practice_pct: '', game_pct: '', games_played: '', minutes_played: '', goals: '', assists: '', yellow_cards: '', secondary_foot: '' },
   super_strengths:      ['', '', ''],
   areas_of_development: ['', '', ''],
   outcome_goals:        ['', ''],
@@ -212,10 +214,11 @@ export default function EvaluationFormScreen() {
     setLoading(true);
     const [pRes, bRes] = await Promise.all([
       supabase.from('players').select('full_name,position').eq('id', playerId).single(),
-      supabase.from('evaluation_batches').select('season_label,period_label').eq('id', batchId).single(),
+      supabase.from('evaluation_batches').select('season_label,period_label,team_id').eq('id', batchId).single(),
     ]);
 
     let prefillPosition = '';
+    let teamId = '';
     if (pRes.data) {
       setPlayerName(pRes.data.full_name);
       prefillPosition = pRes.data.position ?? '';
@@ -223,6 +226,7 @@ export default function EvaluationFormScreen() {
     if (bRes.data) {
       setSeasonLabel(bRes.data.season_label);
       setPeriodLabel(bRes.data.period_label);
+      teamId = (bRes.data as any).team_id ?? '';
     }
 
     if (evalId) {
@@ -247,14 +251,80 @@ export default function EvaluationFormScreen() {
         return;
       }
     }
-    // New eval — pre-fill position from player record
-    if (prefillPosition) {
-      setForm(prev => ({
-        ...prev,
-        report_data: { ...prev.report_data, bio: { ...prev.report_data.bio, position: prefillPosition } },
-      }));
-    }
+
+    // New eval — auto-fetch season stats for this player
+    const autoStats = await fetchSeasonStats(playerId, teamId);
+
+    setForm(prev => ({
+      ...prev,
+      report_data: {
+        ...prev.report_data,
+        bio: {
+          ...prev.report_data.bio,
+          position: prefillPosition,
+        },
+        stats: {
+          ...prev.report_data.stats,
+          ...autoStats,
+        },
+      },
+    }));
     setLoading(false);
+  }
+
+  async function fetchSeasonStats(pid: string, tid: string): Promise<Partial<ReportData['stats']>> {
+    if (!pid || !tid) return {};
+    try {
+      const [eventsRes, statsRes] = await Promise.all([
+        supabase.from('events').select('id,type').eq('team_id', tid),
+        (supabase as any).from('event_player_stats')
+          .select('goals,assists,yellow_cards,minutes_played')
+          .eq('player_id', pid)
+          .eq('team_id', tid),
+      ]);
+
+      const allEvents = (eventsRes.data ?? []) as { id: string; type: string }[];
+      const gameEventIds = new Set(allEvents.filter(e => e.type === 'game').map(e => e.id));
+      const trainEventIds = new Set(allEvents.filter(e => e.type === 'training').map(e => e.id));
+
+      const rsvpRes = await supabase
+        .from('event_rsvps')
+        .select('event_id,status')
+        .eq('player_id', pid)
+        .in('event_id', allEvents.map(e => e.id));
+
+      const rsvps = (rsvpRes.data ?? []) as { event_id: string; status: string }[];
+      const attended = new Set(rsvps.filter(r => r.status === 'attending').map(r => r.event_id));
+
+      const totalEvents   = allEvents.length;
+      const gameEvents    = gameEventIds.size;
+      const trainEvents   = trainEventIds.size;
+      const attendedTotal = rsvps.filter(r => r.status === 'attending').length;
+      const attendedGames = [...attended].filter(id => gameEventIds.has(id)).length;
+      const attendedTrain = [...attended].filter(id => trainEventIds.has(id)).length;
+
+      const gameStat = (statsRes.data ?? []) as { goals: number; assists: number; yellow_cards: number; minutes_played: number | null }[];
+      const totalGoals   = gameStat.reduce((s, r) => s + (r.goals ?? 0), 0);
+      const totalAssists = gameStat.reduce((s, r) => s + (r.assists ?? 0), 0);
+      const totalYellows = gameStat.reduce((s, r) => s + (r.yellow_cards ?? 0), 0);
+      const totalMins    = gameStat.reduce((s, r) => s + (r.minutes_played ?? 0), 0);
+      const gamesPlayed  = gameStat.length;
+
+      const pct = (n: number, d: number) => d > 0 ? `${Math.round((n / d) * 100)}%` : '';
+
+      return {
+        rsvp_pct:      pct(attendedTotal, totalEvents),
+        practice_pct:  pct(attendedTrain, trainEvents),
+        game_pct:      pct(attendedGames, gameEvents),
+        games_played:  gamesPlayed > 0 ? String(gamesPlayed) : '',
+        minutes_played:totalMins > 0 ? String(totalMins) : '',
+        goals:         totalGoals > 0 ? String(totalGoals) : '',
+        assists:       totalAssists > 0 ? String(totalAssists) : '',
+        yellow_cards:  totalYellows > 0 ? String(totalYellows) : '',
+      };
+    } catch {
+      return {};
+    }
   }
 
   // ─── Updaters ─────────────────────────────────────────────────────────────
@@ -449,33 +519,27 @@ Write the coach summary now.`,
           <SectionCard title="PLAYER PROFILE" color={primary} icon="person-outline">
             <GridInputs
               items={[
-                { k: 'position',         label: 'POSITION',    value: rd.bio.position,         placeholder: 'CM, ST, GK…' },
-                { k: 'birth_year',       label: 'BIRTH YEAR',  value: rd.bio.birth_year,       placeholder: '2009' },
-                { k: 'school',           label: 'SCHOOL',      value: rd.bio.school,           placeholder: 'School name' },
-                { k: 'graduation_class', label: 'GRAD CLASS',  value: rd.bio.graduation_class, placeholder: '2027' },
+                { k: 'position',   label: 'POSITION',   value: rd.bio.position,   placeholder: 'CM, ST, GK…' },
+                { k: 'birth_year', label: 'BIRTH YEAR', value: rd.bio.birth_year, placeholder: '2009' },
+                { k: 'school',     label: 'SCHOOL',     value: rd.bio.school,     placeholder: 'School name' },
               ]}
               onChange={(k, v) => setBio(k as keyof ReportData['bio'], v)}
             />
-            <View>
-              <Text style={grid.label}>HOMETOWN</Text>
-              <TextInput
-                style={grid.input}
-                value={rd.bio.hometown}
-                onChangeText={v => setBio('hometown', v)}
-                placeholder="City, State"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
-              />
-            </View>
           </SectionCard>
 
-          {/* ── PERFORMANCE METRICS ─────────────────── */}
-          <SectionCard title="PERFORMANCE METRICS" color="#3B82F6" icon="stats-chart-outline" note="From GPS / tracking data (optional)">
+          {/* ── SEASON STATISTICS ─────────────────── */}
+          <SectionCard title="SEASON STATISTICS" color="#3B82F6" icon="stats-chart-outline" note="Auto-filled from season data · edit if needed · leave blank to hide from report">
             <GridInputs
               items={[
-                { k: 'max_speed',       label: 'MAX SPEED',       value: rd.stats.max_speed,       placeholder: '19.2 mph' },
-                { k: 'total_distance',  label: 'TOTAL DISTANCE',  value: rd.stats.total_distance,  placeholder: '9.2 mi' },
-                { k: 'secondary_foot',  label: 'SECONDARY FOOT',  value: rd.stats.secondary_foot,  placeholder: '4/5' },
-                { k: 'games_played',    label: 'GAMES PLAYED',    value: rd.stats.games_played,    placeholder: '9' },
+                { k: 'rsvp_pct',      label: 'RSVP %',          value: rd.stats.rsvp_pct,      placeholder: '92%' },
+                { k: 'practice_pct',  label: 'PRACTICE ATTEND.', value: rd.stats.practice_pct,  placeholder: '88%' },
+                { k: 'game_pct',      label: 'GAME ATTEND.',     value: rd.stats.game_pct,       placeholder: '100%' },
+                { k: 'games_played',  label: 'GAMES PLAYED',     value: rd.stats.games_played,   placeholder: '13' },
+                { k: 'minutes_played',label: 'MINUTES PLAYED',   value: rd.stats.minutes_played, placeholder: '870' },
+                { k: 'goals',         label: 'GOALS',            value: rd.stats.goals,          placeholder: '7' },
+                { k: 'assists',       label: 'ASSISTS',          value: rd.stats.assists,        placeholder: '4' },
+                { k: 'yellow_cards',  label: 'YELLOW CARDS',     value: rd.stats.yellow_cards,   placeholder: '1' },
+                { k: 'secondary_foot',label: 'SECONDARY FOOT',   value: rd.stats.secondary_foot, placeholder: '4/5' },
               ]}
               onChange={(k, v) => setStats(k as keyof ReportData['stats'], v)}
             />

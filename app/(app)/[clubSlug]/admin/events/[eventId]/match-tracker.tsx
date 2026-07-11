@@ -74,6 +74,7 @@ type Player = {
 type PitchLayout = { pageX: number; pageY: number; width: number; height: number };
 type DragState   = { playerId: string; pageX: number; pageY: number } | null;
 type EqRotation  = { minute: number; playerOn: string; playerOff: string };
+type PlayerStatEntry = { goals: number; assists: number; yellow_cards: number };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -275,6 +276,10 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   const [fmPicker,        setFmPicker]        = useState(false);
   const [baseAssignments, setBaseAssignments] = useState<(string | null)[] | null>(null);
   const [eqTimeVisible,   setEqTimeVisible]   = useState(false);
+  const [statsVisible,    setStatsVisible]    = useState(false);
+  const [playerStats,     setPlayerStats]     = useState<Record<string, PlayerStatEntry>>({});
+  const [statsSaving,     setStatsSaving]     = useState(false);
+  const [clubId,          setClubId]          = useState<string | null>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const pendingCloseRef   = useRef(false);
@@ -368,9 +373,10 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
       setScoreAway((ev as any).score_away ?? 0);
       const tid = (ev as any).team_id as string;
       setTeamId(tid);
-      const { data: td } = await supabase.from('teams').select('age_group').eq('id', tid).single();
+      const { data: td } = await supabase.from('teams').select('age_group,club_id').eq('id', tid).single();
       loadedAgeGroup = (td as any)?.age_group ?? null;
       setTeamAgeGroup(loadedAgeGroup);
+      setClubId((td as any)?.club_id ?? null);
     }
 
     const { data: sess } = await (supabase as any)
@@ -507,6 +513,47 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   function decHome() { const n = Math.max(0, scoreHome - 1); setScoreHome(n); saveScore(n, scoreAway); }
   function incAway() { const n = scoreAway + 1; setScoreAway(n); saveScore(scoreHome, n); }
   function decAway() { const n = Math.max(0, scoreAway - 1); setScoreAway(n); saveScore(scoreHome, n); }
+
+  // ── Player stats ─────────────────────────────────────────────────────────
+
+  async function openStatsSheet() {
+    const { data } = await (supabase as any)
+      .from('event_player_stats')
+      .select('player_id,goals,assists,yellow_cards')
+      .eq('event_id', eventId);
+    const map: Record<string, PlayerStatEntry> = {};
+    // seed zeroes for all attending players so every row renders
+    for (const p of allPlayers) map[p.id] = { goals: 0, assists: 0, yellow_cards: 0 };
+    for (const row of (data ?? [])) map[row.player_id] = { goals: row.goals ?? 0, assists: row.assists ?? 0, yellow_cards: row.yellow_cards ?? 0 };
+    setPlayerStats(map);
+    setStatsVisible(true);
+  }
+
+  function adjStat(playerId: string, key: keyof PlayerStatEntry, delta: number) {
+    setPlayerStats(prev => {
+      const cur = prev[playerId] ?? { goals: 0, assists: 0, yellow_cards: 0 };
+      return { ...prev, [playerId]: { ...cur, [key]: Math.max(0, cur[key] + delta) } };
+    });
+  }
+
+  async function saveStats() {
+    if (!teamId || !clubId || !profile) return;
+    setStatsSaving(true);
+    const rows = Object.entries(playerStats)
+      .filter(([, s]) => s.goals > 0 || s.assists > 0 || s.yellow_cards > 0)
+      .map(([pid, s]) => ({
+        event_id: eventId, player_id: pid, team_id: teamId, club_id: clubId,
+        goals: s.goals, assists: s.assists, yellow_cards: s.yellow_cards,
+        created_by: profile.id,
+      }));
+    if (rows.length) {
+      await (supabase as any)
+        .from('event_player_stats')
+        .upsert(rows, { onConflict: 'event_id,player_id' });
+    }
+    setStatsSaving(false);
+    setStatsVisible(false);
+  }
 
   // ── Start game ────────────────────────────────────────────────────────────
 
@@ -1145,6 +1192,17 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
               </View>
             )}
 
+            {overlay === 'full_time' && (
+              <TouchableOpacity
+                style={[st.logStatsBtn, { borderColor: primaryColor + '50', backgroundColor: primaryColor + '12' }]}
+                onPress={openStatsSheet}
+              >
+                <Ionicons name="football-outline" size={14} color={primaryColor} />
+                <Text style={[st.logStatsBtnText, { color: primaryColor }]}>Log Goals & Assists</Text>
+                <Ionicons name="chevron-forward" size={14} color={primaryColor + '80'} />
+              </TouchableOpacity>
+            )}
+
             <View style={st.overlaySummary}>
               <View style={st.overlaySummaryHeader}>
                 <Text style={st.overlaySummaryHdr}>Player</Text>
@@ -1277,6 +1335,64 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
             })()}
             <TouchableOpacity style={st.sheetCancel} onPress={() => setEqTimeVisible(false)}>
               <Text style={st.sheetCancelText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Goals & Assists sheet ── */}
+      <Modal visible={statsVisible} transparent animationType="slide" onRequestClose={() => setStatsVisible(false)}>
+        <View style={st.sheetBg}>
+          <View style={[st.sheet, { maxHeight: '85%' }]}>
+            <View style={st.sheetHandle} />
+            <Text style={st.sheetTitle}>Goals & Assists</Text>
+            <Text style={st.sheetBody}>Tap + to log stats per player. Yellow card column tracks discipline.</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              {allPlayers.map(player => {
+                const s = playerStats[player.id] ?? { goals: 0, assists: 0, yellow_cards: 0 };
+                return (
+                  <View key={player.id} style={st.statsRow}>
+                    <View style={st.statsRowLeft}>
+                      <View style={[st.statsJersey, { backgroundColor: primaryColor + '22', borderColor: primaryColor + '40' }]}>
+                        <Text style={[st.statsJerseyNum, { color: primaryColor }]}>{player.jersey_number ?? '—'}</Text>
+                      </View>
+                      <Text style={st.statsPlayerName} numberOfLines={1}>{firstName(player.full_name)}</Text>
+                    </View>
+                    <View style={st.statsCounters}>
+                      {([
+                        { key: 'goals' as const,        label: 'G', color: primaryColor },
+                        { key: 'assists' as const,      label: 'A', color: '#3B82F6' },
+                        { key: 'yellow_cards' as const, label: 'Y', color: '#F59E0B' },
+                      ]).map(({ key, label, color }) => (
+                        <View key={key} style={st.counterGroup}>
+                          <Text style={[st.counterLabel, { color }]}>{label}</Text>
+                          <View style={st.counterRow}>
+                            <TouchableOpacity onPress={() => adjStat(player.id, key, -1)} hitSlop={8} style={st.counterBtn}>
+                              <Ionicons name="remove" size={14} color={PULSE_COLORS.ui.muted} />
+                            </TouchableOpacity>
+                            <Text style={[st.counterVal, s[key] > 0 && { color }]}>{s[key]}</Text>
+                            <TouchableOpacity onPress={() => adjStat(player.id, key, 1)} hitSlop={8} style={[st.counterBtn, { borderColor: color + '50', backgroundColor: color + '12' }]}>
+                              <Ionicons name="add" size={14} color={color} />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              style={[st.kickOffBtn, { backgroundColor: primaryColor }]}
+              onPress={saveStats}
+              disabled={statsSaving}
+            >
+              {statsSaving
+                ? <ActivityIndicator size="small" color={tokenTextColor} />
+                : <Text style={[st.kickOffText, { color: tokenTextColor }]}>Save Stats</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={st.sheetCancel} onPress={() => setStatsVisible(false)}>
+              <Text style={st.sheetCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1678,6 +1794,23 @@ const st = StyleSheet.create({
   fmOptionBadgeText:   { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.ui.muted },
   fmOptionBadgeTextActive: { color: PULSE_COLORS.brand.green },
   fmOptionNick: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+
+  // Log stats button
+  logStatsBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 14 },
+  logStatsBtnText: { flex: 1, fontSize: 14, fontWeight: '700' },
+
+  // Stats sheet
+  statsRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1E1E1E' },
+  statsRowLeft:   { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  statsJersey:    { width: 28, height: 28, borderRadius: 7, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  statsJerseyNum: { fontSize: 11, fontWeight: '900' },
+  statsPlayerName:{ fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, flex: 1 },
+  statsCounters:  { flexDirection: 'row', gap: 12 },
+  counterGroup:   { alignItems: 'center', gap: 4 },
+  counterLabel:   { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  counterRow:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  counterBtn:     { width: 24, height: 24, borderRadius: 7, borderWidth: 1, borderColor: '#333', backgroundColor: '#252525', alignItems: 'center', justifyContent: 'center' },
+  counterVal:     { fontSize: 15, fontWeight: '900', color: PULSE_COLORS.ui.muted, minWidth: 18, textAlign: 'center', fontVariant: ['tabular-nums'] },
 
   guestDot: {
     backgroundColor: 'rgba(249,115,22,0.9)',

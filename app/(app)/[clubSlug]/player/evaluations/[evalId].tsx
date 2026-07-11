@@ -25,8 +25,8 @@ type IdpRow = {
 };
 
 type ReportData = {
-  bio:   { position: string; birth_year: string; school: string; graduation_class: string; hometown: string };
-  stats: { max_speed: string; total_distance: string; secondary_foot: string; games_played: string; minutes_played: string };
+  bio:   { position: string; birth_year: string; school: string };
+  stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
   outcome_goals:        [string, string];
@@ -64,7 +64,7 @@ function SectionHead({ label, color }: { label: string; color: string }) {
 }
 const sh = StyleSheet.create({
   wrap: { borderLeftWidth: 3, paddingLeft: 10, marginBottom: 12 },
-  text: { fontSize: 9, fontWeight: '900', letterSpacing: 2 },
+  text: { fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
 });
 
 // ─── Numbered bullet row ──────────────────────────────────────────────────────
@@ -180,8 +180,12 @@ export default function EvalDetailScreen() {
   const hasOutcome    = rd?.outcome_goals?.some(Boolean);
   const hasPerf       = rd?.performance_goals?.some(Boolean);
   const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
-  const hasBioStats   = rd?.bio?.birth_year || rd?.bio?.school || rd?.bio?.graduation_class || rd?.bio?.hometown;
-  const hasPerfStats  = rd?.stats?.max_speed || rd?.stats?.total_distance || rd?.stats?.secondary_foot || rd?.stats?.games_played;
+  const hasBioStats   = rd?.bio?.birth_year || rd?.bio?.school;
+  const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
+  const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
+    || (rd?.stats?.goals         && rd.stats.goals        !== '0')
+    || (rd?.stats?.assists       && rd.stats.assists      !== '0')
+    || (rd?.stats?.yellow_cards  && rd.stats.yellow_cards !== '0');
 
   return (
     <View style={st.screen}>
@@ -239,21 +243,43 @@ export default function EvalDetailScreen() {
 
           {/* ── Bio stats strip ── */}
           {hasBioStats && (
-            <View style={[st.statsStrip, { borderColor: '#e2e8f0' }]}>
-              {rd!.bio.birth_year       ? <StatChip label="BIRTH YEAR" value={rd!.bio.birth_year}                             color="#0f172a" /> : null}
-              {rd!.bio.school           ? <StatChip label="SCHOOL"      value={rd!.bio.school}                                color="#0f172a" /> : null}
-              {rd!.bio.graduation_class ? <StatChip label="CLASS"       value={`'${rd!.bio.graduation_class.slice(-2)}`}      color="#0f172a" /> : null}
-              {rd!.bio.hometown         ? <StatChip label="HOMETOWN"     value={rd!.bio.hometown}                             color="#0f172a" /> : null}
+            <View style={st.statBlock}>
+              <Text style={st.statBlockLabel}>PROFILE</Text>
+              <View style={st.statRow}>
+                {rd!.bio.birth_year ? <StatChip label="BIRTH YEAR" value={rd!.bio.birth_year} color="#0f172a" /> : null}
+                {rd!.bio.school     ? <StatChip label="SCHOOL"     value={rd!.bio.school}     color="#0f172a" /> : null}
+              </View>
             </View>
           )}
 
-          {/* ── GPS/performance stats strip ── */}
+          {/* ── Attendance strip ── */}
+          {hasAttendance && (
+            <View style={st.statBlock}>
+              <Text style={st.statBlockLabel}>ATTENDANCE</Text>
+              <View style={st.statRow}>
+                {rd!.stats.rsvp_pct     ? <StatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
+                {rd!.stats.practice_pct ? <StatChip label="PRACTICE"  value={rd!.stats.practice_pct} color={primary} /> : null}
+                {rd!.stats.game_pct     ? <StatChip label="GAMES"     value={rd!.stats.game_pct}     color={primary} /> : null}
+              </View>
+            </View>
+          )}
+
+          {/* ── Season stats — explicit 2 rows of 3 ── */}
           {hasPerfStats && (
-            <View style={[st.statsStrip, { borderColor: '#e2e8f0' }]}>
-              {rd!.stats.max_speed       ? <StatChip label="MAX SPEED"  value={rd!.stats.max_speed}       color={primary} /> : null}
-              {rd!.stats.total_distance  ? <StatChip label="DISTANCE"   value={rd!.stats.total_distance}  color={primary} /> : null}
-              {rd!.stats.secondary_foot  ? <StatChip label="2ND FOOT"   value={rd!.stats.secondary_foot}  color={primary} /> : null}
-              {rd!.stats.games_played    ? <StatChip label="GAMES"       value={rd!.stats.games_played}    color={primary} /> : null}
+            <View style={st.statBlock}>
+              <Text style={st.statBlockLabel}>SEASON</Text>
+              <View style={st.statRow}>
+                {rd!.stats.games_played                                     ? <StatChip label="PLAYED"  value={rd!.stats.games_played}   color={primary} /> : null}
+                {rd!.stats.goals        && rd!.stats.goals    !== '0'       ? <StatChip label="GOALS"   value={rd!.stats.goals}          color={primary} /> : null}
+                {rd!.stats.assists      && rd!.stats.assists  !== '0'       ? <StatChip label="ASSISTS" value={rd!.stats.assists}        color={primary} /> : null}
+              </View>
+              {(rd!.stats.minutes_played || (rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0') || rd!.stats.secondary_foot) ? (
+                <View style={[st.statRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12 }]}>
+                  {rd!.stats.minutes_played                                   ? <StatChip label="MINUTES"  value={rd!.stats.minutes_played} color="#0f172a" /> : null}
+                  {rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0'  ? <StatChip label="YELLOWS"  value={rd!.stats.yellow_cards}   color="#D97706" /> : null}
+                  {rd!.stats.secondary_foot                                   ? <StatChip label="2ND FOOT" value={rd!.stats.secondary_foot} color="#0f172a" /> : null}
+                </View>
+              ) : null}
             </View>
           )}
 
@@ -276,7 +302,7 @@ export default function EvalDetailScreen() {
               {hasStrengths && hasDev && <View style={st.colDivider} />}
               {hasDev && (
                 <View style={{ flex: 1 }}>
-                  <SectionHead label="AREAS OF DEVELOPMENT" color={primary} />
+                  <SectionHead label="DEVELOPMENT" color={primary} />
                   {rd!.areas_of_development.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color={primary} />)}
                 </View>
               )}
@@ -297,7 +323,7 @@ export default function EvalDetailScreen() {
                 {hasOutcome && hasPerf && <View style={st.colDivider} />}
                 {hasPerf && (
                   <View style={{ flex: 1 }}>
-                    <SectionHead label="PERFORMANCE GOALS" color={primary} />
+                    <SectionHead label="PERF. GOALS" color={primary} />
                     {rd!.performance_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color={primary} />)}
                   </View>
                 )}
@@ -392,7 +418,10 @@ const st = StyleSheet.create({
   pillText:      { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 
   // Stats strips
-  statsStrip: { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 11, paddingHorizontal: 16, justifyContent: 'space-around' },
+  statsStrip:     { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 11, paddingHorizontal: 16, justifyContent: 'space-around' },
+  statBlock:      { borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: 8, paddingBottom: 14, paddingHorizontal: 16, gap: 12 },
+  statBlockLabel: { fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 1.5 },
+  statRow:        { flexDirection: 'row', justifyContent: 'space-around' },
 
   // Ratings row
   ratingsRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
