@@ -916,6 +916,7 @@ export type Database = {
           q3_message: string | null
           ai_draft: string | null
           final_text: string | null
+          report_data: Record<string, unknown> | null
           status: 'draft' | 'submitted' | 'approved' | 'published'
           submitted_at: string | null
           approved_by: string | null
@@ -941,6 +942,7 @@ export type Database = {
           q3_message?: string | null
           ai_draft?: string | null
           final_text?: string | null
+          report_data?: Record<string, unknown> | null
           status?: 'draft' | 'submitted' | 'approved' | 'published'
           submitted_at?: string | null
           approved_by?: string | null
@@ -966,6 +968,7 @@ export type Database = {
           q3_message?: string | null
           ai_draft?: string | null
           final_text?: string | null
+          report_data?: Record<string, unknown> | null
           status?: 'draft' | 'submitted' | 'approved' | 'published'
           submitted_at?: string | null
           approved_by?: string | null

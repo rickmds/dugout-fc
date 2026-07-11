@@ -7,9 +7,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../lib/supabase';
@@ -19,15 +19,32 @@ import ClubHeader from '../../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type IdpRow = {
+  goal: string;
+  measurables: string;
+  action_items: [string, string, string];
+};
+
+type ReportData = {
+  bio: { position: string; birth_year: string; school: string; graduation_class: string; hometown: string };
+  stats: { max_speed: string; total_distance: string; secondary_foot: string; games_played: string; minutes_played: string };
+  super_strengths: [string, string, string];
+  areas_of_development: [string, string, string];
+  outcome_goals: [string, string];
+  performance_goals: [string, string];
+  idp: IdpRow[];
+};
+
 type EvalDetail = {
   id: string;
   season_label: string;
   period_label: string;
   rating_technical: number | null;
-  rating_tactical: number | null;
-  rating_physical: number | null;
-  rating_mental: number | null;
-  final_text: string | null;
+  rating_tactical:  number | null;
+  rating_physical:  number | null;
+  rating_mental:    number | null;
+  report_data:  ReportData | null;
+  final_text:   string | null;
   published_at: string | null;
   players: { full_name: string; jersey_number: number | null } | null;
 };
@@ -37,67 +54,61 @@ type ClubInfo = { name: string; logo_url: string | null };
 const SCREEN_W = Dimensions.get('window').width;
 const CARD_W   = SCREEN_W - 32;
 
-// ─── Rating circle ────────────────────────────────────────────────────────────
+// ─── Section header ───────────────────────────────────────────────────────────
 
-function RatingCircle({
-  label, value, color,
-}: { label: string; value: number | null; color: string; anim: Animated.Value }) {
-  const size = (CARD_W - 64) / 4;
-
+function SectionHead({ label, color }: { label: string; color: string }) {
   return (
-    <View style={{ alignItems: 'center', gap: 6 }}>
-      {/* Animated ring using border trick */}
-      <View style={{
-        width: size, height: size, borderRadius: size / 2,
-        borderWidth: 3, borderColor: `${color}25`,
-        alignItems: 'center', justifyContent: 'center',
-        backgroundColor: `${color}10`,
-      }}>
-        <Text style={{ fontSize: size * 0.32, fontWeight: '900', color, letterSpacing: -0.5 }}>
-          {value ?? '—'}
-        </Text>
-        <Text style={{ fontSize: size * 0.16, fontWeight: '700', color: `${color}80`, marginTop: -2 }}>
-          /5
-        </Text>
+    <View style={[sh.wrap, { borderLeftColor: color }]}>
+      <Text style={[sh.text, { color }]}>{label}</Text>
+    </View>
+  );
+}
+const sh = StyleSheet.create({
+  wrap: { borderLeftWidth: 3, paddingLeft: 10, marginBottom: 12 },
+  text: { fontSize: 9, fontWeight: '900', letterSpacing: 2 },
+});
+
+// ─── Numbered list item ───────────────────────────────────────────────────────
+
+function BulletRow({ n, text, color }: { n: number; text: string; color: string }) {
+  if (!text?.trim()) return null;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${color}20`, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+        <Text style={{ fontSize: 10, fontWeight: '900', color }}>{n}</Text>
       </View>
-      <Text style={{ fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', letterSpacing: 0.3 }}>
-        {label.toUpperCase()}
-      </Text>
+      <Text style={{ flex: 1, fontSize: 13.5, color: '#1e293b', lineHeight: 20, fontWeight: '500' }}>{text}</Text>
     </View>
   );
 }
 
-// ─── Corner bracket ───────────────────────────────────────────────────────────
+// ─── Stat chip ────────────────────────────────────────────────────────────────
 
-function CornerBracket({ position, color }: {
-  position: 'tl' | 'tr' | 'bl' | 'br';
-  color: string;
-}) {
-  const size = 24;
-  const thickness = 2;
-  const tl = position === 'tl';
-  const tr = position === 'tr';
-  const bl = position === 'bl';
-  const br = position === 'br';
-
+function StatChip({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <View style={{
-      position: 'absolute',
-      top:    (tl || tr) ? 16 : undefined,
-      bottom: (bl || br) ? 16 : undefined,
-      left:   (tl || bl) ? 16 : undefined,
-      right:  (tr || br) ? 16 : undefined,
-      width: size, height: size,
-      borderTopWidth:    (tl || tr) ? thickness : 0,
-      borderBottomWidth: (bl || br) ? thickness : 0,
-      borderLeftWidth:   (tl || bl) ? thickness : 0,
-      borderRightWidth:  (tr || br) ? thickness : 0,
-      borderColor: `${color}60`,
-      borderTopLeftRadius:     tl ? 4 : 0,
-      borderTopRightRadius:    tr ? 4 : 0,
-      borderBottomLeftRadius:  bl ? 4 : 0,
-      borderBottomRightRadius: br ? 4 : 0,
-    }} />
+    <View style={{ alignItems: 'center', minWidth: 64 }}>
+      <Text style={{ fontSize: 16, fontWeight: '900', color, letterSpacing: -0.3 }}>{value}</Text>
+      <Text style={{ fontSize: 9, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5, marginTop: 2 }}>{label}</Text>
+    </View>
+  );
+}
+
+// ─── Rating box ───────────────────────────────────────────────────────────────
+
+function RatingBox({ label, value, color, anim }: {
+  label: string; value: number | null; color: string; anim: Animated.Value;
+}) {
+  return (
+    <Animated.View style={{ flex: 1, alignItems: 'center', opacity: anim }}>
+      <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 12 }}>
+        <Text style={{ fontSize: 28, fontWeight: '900', color, lineHeight: 32 }}>{value ?? '—'}</Text>
+        <Text style={{ fontSize: 9, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5, marginTop: 1 }}>/5</Text>
+      </View>
+      <View style={{ width: '80%', height: 2, backgroundColor: `${color}30`, borderRadius: 1 }}>
+        <View style={{ width: `${((value ?? 0) / 5) * 100}%`, height: '100%', backgroundColor: color, borderRadius: 1 }} />
+      </View>
+      <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', letterSpacing: 0.8, marginTop: 6 }}>{label.toUpperCase()}</Text>
+    </Animated.View>
   );
 }
 
@@ -113,7 +124,6 @@ export default function EvalDetailScreen() {
   const [club,    setClub]    = useState<ClubInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Animated values for rating circles
   const anims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
@@ -126,16 +136,10 @@ export default function EvalDetailScreen() {
         .single();
       if (data) {
         setEv(data as EvalDetail);
-        // Load club info
-        const { data: cData } = await supabase
-          .from('clubs')
-          .select('name,logo_url')
-          .eq('slug', clubSlug)
-          .single();
+        const { data: cData } = await supabase.from('clubs').select('name,logo_url').eq('slug', clubSlug).single();
         setClub(cData as ClubInfo | null);
-        // Animate rating circles in
-        Animated.stagger(80, anims.map(a =>
-          Animated.timing(a, { toValue: 1, duration: 500, useNativeDriver: true })
+        Animated.stagger(70, anims.map(a =>
+          Animated.timing(a, { toValue: 1, duration: 400, useNativeDriver: true })
         )).start();
       }
       setLoading(false);
@@ -143,132 +147,211 @@ export default function EvalDetailScreen() {
     load();
   }, [evalId]);
 
+  if (loading) {
+    return (
+      <View style={st.screen}>
+        <ClubHeader title="Player Report" onBack={() => router.back()} />
+        <View style={st.center}><ActivityIndicator color={primary} /></View>
+      </View>
+    );
+  }
+
+  if (!ev) {
+    return (
+      <View style={st.screen}>
+        <ClubHeader title="Player Report" onBack={() => router.back()} />
+        <View style={st.center}><Text style={{ color: PULSE_COLORS.ui.textSecondary }}>Report not found.</Text></View>
+      </View>
+    );
+  }
+
+  const rd = ev.report_data;
   const RATINGS = [
-    { key: 'rating_technical' as const, label: 'Technical', color: '#3B82F6' },
-    { key: 'rating_tactical'  as const, label: 'Tactical',  color: '#8B5CF6' },
-    { key: 'rating_physical'  as const, label: 'Physical',  color: '#F59E0B' },
-    { key: 'rating_mental'    as const, label: 'Mental',    color: '#22C55E' },
+    { label: 'Technical', value: ev.rating_technical, color: '#3B82F6' },
+    { label: 'Tactical',  value: ev.rating_tactical,  color: '#8B5CF6' },
+    { label: 'Physical',  value: ev.rating_physical,  color: '#F59E0B' },
+    { label: 'Mental',    value: ev.rating_mental,    color: '#22C55E' },
   ];
 
-  const avg = ev
-    ? RATINGS.reduce((s, r) => s + (ev[r.key] ?? 0), 0) / RATINGS.filter(r => ev[r.key] != null).length
-    : 0;
-
-  const publishDate = ev?.published_at
-    ? new Date(ev.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const publishDate = ev.published_at
+    ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : null;
+
+  const hasStrengths  = rd?.super_strengths?.some(Boolean);
+  const hasDev        = rd?.areas_of_development?.some(Boolean);
+  const hasOutcome    = rd?.outcome_goals?.some(Boolean);
+  const hasPerf       = rd?.performance_goals?.some(Boolean);
+  const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
+  const hasBioStats   = rd?.bio?.position || rd?.bio?.birth_year || rd?.bio?.school;
+  const hasPerfStats  = rd?.stats?.max_speed || rd?.stats?.total_distance || rd?.stats?.games_played;
 
   return (
     <View style={st.screen}>
       <ClubHeader title="Player Report" onBack={() => router.back()} />
+      <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
 
-      {loading ? (
-        <View style={st.center}><ActivityIndicator color={primary} /></View>
-      ) : !ev ? (
-        <View style={st.center}><Text style={st.emptyText}>Report not found.</Text></View>
-      ) : (
-        <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
+        {/* ── REPORT CARD (light background) ──────── */}
+        <View style={st.card}>
 
-          {/* ── Certificate card ── */}
-          <View style={[st.cert, { borderColor: `${primary}30` }]}>
-
-            {/* Corner brackets */}
-            <CornerBracket position="tl" color={primary} />
-            <CornerBracket position="tr" color={primary} />
-            <CornerBracket position="bl" color={primary} />
-            <CornerBracket position="br" color={primary} />
-
-            {/* Header gradient band */}
-            <LinearGradient
-              colors={[`${primary}22`, `${primary}06`] as [string, string]}
-              style={st.certHeader}
-            >
-              {/* Club logo + name */}
-              <View style={st.clubRow}>
-                {club?.logo_url ? (
-                  <Image source={{ uri: club.logo_url }} style={st.clubLogo} />
-                ) : (
-                  <View style={[st.clubLogoFallback, { backgroundColor: primary }]}>
-                    <Text style={st.clubLogoInitials}>
-                      {(club?.name ?? clubSlug).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
-                    </Text>
-                  </View>
-                )}
-                <Text style={st.clubName}>{club?.name ?? ''}</Text>
-              </View>
-
-              {/* Title */}
-              <Text style={[st.certTitle, { color: primary }]}>PLAYER EVALUATION</Text>
-
-              {/* Divider with diamond */}
-              <View style={st.dividerRow}>
-                <View style={[st.dividerLine, { backgroundColor: `${primary}30` }]} />
-                <View style={[st.diamond, { backgroundColor: primary }]} />
-                <View style={[st.dividerLine, { backgroundColor: `${primary}30` }]} />
-              </View>
-
-              {/* Player name */}
-              <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
-              {ev.players?.jersey_number != null && (
-                <Text style={[st.jerseyNum, { color: `${primary}90` }]}>#{ev.players.jersey_number}</Text>
-              )}
-
-              {/* Period + season */}
-              <View style={st.periodRow}>
-                <View style={[st.periodChip, { borderColor: `${primary}40`, backgroundColor: `${primary}10` }]}>
-                  <Text style={[st.periodChipText, { color: primary }]}>
-                    {ev.period_label}  ·  {ev.season_label}
+          {/* ─ Document header ─ */}
+          <View style={st.docHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              {club?.logo_url ? (
+                <Image source={{ uri: club.logo_url }} style={st.clubLogo} />
+              ) : (
+                <View style={[st.clubLogoBadge, { backgroundColor: primary }]}>
+                  <Text style={st.clubLogoText}>
+                    {(club?.name ?? clubSlug).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
                   </Text>
                 </View>
-              </View>
-            </LinearGradient>
-
-            {/* ── Rating grid ── */}
-            <View style={st.ratingsSection}>
-              <Text style={[st.sectionEyebrow, { color: `${primary}80` }]}>PERFORMANCE RATINGS</Text>
-              <View style={st.ratingGrid}>
-                {RATINGS.map((r, i) => (
-                  <Animated.View key={r.key} style={{ opacity: anims[i], transform: [{ translateY: Animated.multiply(Animated.subtract(1, anims[i]), 8) }] }}>
-                    <RatingCircle label={r.label} value={ev[r.key]} color={r.color} anim={anims[i]} />
-                  </Animated.View>
-                ))}
-              </View>
-
-              {/* Average score bar */}
-              <View style={st.avgRow}>
-                <Text style={st.avgLabel}>Overall</Text>
-                <View style={st.avgTrack}>
-                  <View style={[st.avgFill, { width: `${(avg / 5) * 100}%` as any, backgroundColor: primary }]} />
-                </View>
-                <Text style={[st.avgNum, { color: primary }]}>{avg.toFixed(1)}</Text>
-              </View>
+              )}
+              <Text style={st.clubNameText}>{club?.name ?? ''}</Text>
             </View>
-
-            {/* ── Inner divider ── */}
-            <View style={[st.innerDivider, { backgroundColor: `${primary}15` }]} />
-
-            {/* ── Coach's report ── */}
-            {ev.final_text && (
-              <View style={st.reportSection}>
-                <Text style={[st.sectionEyebrow, { color: `${primary}80` }]}>COACH'S REPORT</Text>
-                <Text style={st.reportQuote}>"</Text>
-                <Text style={st.reportText}>{ev.final_text}</Text>
-                <Text style={[st.reportQuoteClose, { color: `${primary}30` }]}>"</Text>
-              </View>
-            )}
-
-            {/* ── Footer ── */}
-            <View style={[st.certFooter, { borderTopColor: `${primary}15` }]}>
-              <Ionicons name="ribbon-outline" size={13} color={`${primary}60`} />
-              <Text style={[st.footerText, { color: `${primary}70` }]}>
-                {publishDate ? `Issued ${publishDate}` : 'Official Player Report'}
-              </Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              {publishDate && <Text style={st.dateText}>{publishDate.toUpperCase()}</Text>}
+              <Text style={[st.reportTypeText, { color: primary }]}>PLAYER PROFILE</Text>
             </View>
           </View>
 
-          <View style={{ height: 48 }} />
-        </ScrollView>
-      )}
+          {/* ─ Divider ─ */}
+          <View style={[st.divider, { backgroundColor: primary }]} />
+
+          {/* ─ Player hero ─ */}
+          <View style={st.heroSection}>
+            <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+              {rd?.bio?.position ? (
+                <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}40` }]}>
+                  <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
+                </View>
+              ) : null}
+              {ev.players?.jersey_number != null && (
+                <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                  <Text style={[st.pillText, { color: '#475569' }]}>#{ev.players.jersey_number}</Text>
+                </View>
+              )}
+              <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                <Text style={[st.pillText, { color: '#475569' }]}>{ev.period_label} · {ev.season_label}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ─ Bio stats strip ─ */}
+          {hasBioStats && (
+            <View style={[st.statsStrip, { borderColor: '#e2e8f0' }]}>
+              {rd!.bio.birth_year    ? <StatChip label="BIRTH YEAR"  value={rd!.bio.birth_year}        color="#1e293b" /> : null}
+              {rd!.bio.school        ? <StatChip label="SCHOOL"       value={rd!.bio.school}             color="#1e293b" /> : null}
+              {rd!.bio.graduation_class ? <StatChip label="CLASS"    value={`'${rd!.bio.graduation_class.slice(-2)}`} color="#1e293b" /> : null}
+              {rd!.bio.hometown      ? <StatChip label="HOMETOWN"     value={rd!.bio.hometown}           color="#1e293b" /> : null}
+            </View>
+          )}
+
+          {/* ─ Performance stats strip ─ */}
+          {hasPerfStats && (
+            <View style={[st.statsStrip, { borderColor: '#e2e8f0' }]}>
+              {rd!.stats.max_speed      ? <StatChip label="MAX SPEED"    value={rd!.stats.max_speed}      color={primary} /> : null}
+              {rd!.stats.total_distance ? <StatChip label="DISTANCE"     value={rd!.stats.total_distance} color={primary} /> : null}
+              {rd!.stats.secondary_foot ? <StatChip label="2ND FOOT"     value={rd!.stats.secondary_foot} color={primary} /> : null}
+              {rd!.stats.games_played   ? <StatChip label="GAMES"        value={rd!.stats.games_played}   color={primary} /> : null}
+            </View>
+          )}
+
+          {/* ─ Ratings grid ─ */}
+          <View style={st.ratingsRow}>
+            {RATINGS.map((r, i) => (
+              <RatingBox key={r.label} label={r.label} value={r.value} color={r.color} anim={anims[i]} />
+            ))}
+          </View>
+
+          {/* ─ Strengths & Development side by side ─ */}
+          {(hasStrengths || hasDev) && (
+            <View style={st.twoCol}>
+              {hasStrengths && (
+                <View style={{ flex: 1 }}>
+                  <SectionHead label="SUPER STRENGTHS" color="#22C55E" />
+                  {rd!.super_strengths.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#22C55E" />)}
+                </View>
+              )}
+              {hasStrengths && hasDev && <View style={st.colDivider} />}
+              {hasDev && (
+                <View style={{ flex: 1 }}>
+                  <SectionHead label="AREAS OF DEVELOPMENT" color="#F97316" />
+                  {rd!.areas_of_development.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#F97316" />)}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* ─ Goals side by side ─ */}
+          {(hasOutcome || hasPerf) && (
+            <>
+              <View style={st.sectionSep} />
+              <View style={st.twoCol}>
+                {hasOutcome && (
+                  <View style={{ flex: 1 }}>
+                    <SectionHead label="OUTCOME GOALS" color="#8B5CF6" />
+                    {rd!.outcome_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#8B5CF6" />)}
+                  </View>
+                )}
+                {hasOutcome && hasPerf && <View style={st.colDivider} />}
+                {hasPerf && (
+                  <View style={{ flex: 1 }}>
+                    <SectionHead label="PERFORMANCE GOALS" color="#3B82F6" />
+                    {rd!.performance_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#3B82F6" />)}
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
+          {/* ─ Individual Development Plan ─ */}
+          {hasIDP && (
+            <>
+              <View style={st.sectionSep} />
+              <SectionHead label="INDIVIDUAL DEVELOPMENT PLAN" color="#A855F7" />
+              {/* Table header */}
+              <View style={st.idpTableHead}>
+                <Text style={[st.idpHeadCell, { flex: 3 }]}>PERFORMANCE GOAL</Text>
+                <Text style={[st.idpHeadCell, { flex: 3 }]}>MEASURABLES</Text>
+                <Text style={[st.idpHeadCell, { flex: 4 }]}>ACTION PLAN</Text>
+              </View>
+              {rd!.idp.filter(r => r.goal?.trim()).map((row, i) => (
+                <View key={i} style={[st.idpRow, { backgroundColor: i % 2 === 0 ? '#f8faff' : '#ffffff' }]}>
+                  <Text style={[st.idpCell, { flex: 3 }]}>{row.goal}</Text>
+                  <Text style={[st.idpCell, { flex: 3 }]}>{row.measurables}</Text>
+                  <View style={{ flex: 4, gap: 4 }}>
+                    {row.action_items.filter(Boolean).map((item, j) => (
+                      <View key={j} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+                        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#A855F7', marginTop: 5 }} />
+                        <Text style={[st.idpCell, { flex: 1 }]}>{item}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+
+          {/* ─ Coach's summary ─ */}
+          {ev.final_text?.trim() && (
+            <>
+              <View style={st.sectionSep} />
+              <SectionHead label="COACH'S SUMMARY" color="#EC4899" />
+              <Text style={st.summaryText}>{ev.final_text}</Text>
+            </>
+          )}
+
+          {/* ─ Footer ─ */}
+          <View style={[st.footer, { borderTopColor: `${primary}20` }]}>
+            <Ionicons name="ribbon-outline" size={12} color={`${primary}80`} />
+            <Text style={[st.footerText, { color: `${primary}80` }]}>
+              {club?.name ?? ''}  ·  {ev.period_label}  ·  {ev.season_label}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
     </View>
   );
 }
@@ -276,73 +359,56 @@ export default function EvalDetailScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  screen:  { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll:  { padding: 16 },
-  emptyText: { fontSize: 15, color: PULSE_COLORS.ui.textSecondary },
+  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll: { padding: 16 },
 
-  // Certificate container
-  cert: {
-    width: CARD_W, backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 20, borderWidth: 1,
-    overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 8,
+  // White report card
+  card: {
+    width: CARD_W, backgroundColor: '#ffffff',
+    borderRadius: 16, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12, shadowRadius: 16, elevation: 6,
   },
 
-  // Header gradient section
-  certHeader: { alignItems: 'center', paddingTop: 32, paddingBottom: 28, paddingHorizontal: 24 },
+  // Document header
+  docHeader:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 },
+  clubLogo:      { width: 24, height: 24, borderRadius: 5, resizeMode: 'contain' },
+  clubLogoBadge: { width: 24, height: 24, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
+  clubLogoText:  { fontSize: 9, fontWeight: '900', color: '#fff' },
+  clubNameText:  { fontSize: 11, fontWeight: '700', color: '#64748b', letterSpacing: 0.3 },
+  dateText:      { fontSize: 9, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5 },
+  reportTypeText:{ fontSize: 9, fontWeight: '900', letterSpacing: 1.5, marginTop: 1 },
 
-  // Club branding
-  clubRow:          { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
-  clubLogo:         { width: 28, height: 28, borderRadius: 6, resizeMode: 'contain' },
-  clubLogoFallback: { width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  clubLogoInitials: { fontSize: 10, fontWeight: '900', color: '#fff' },
-  clubName:         { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 0.5 },
+  divider: { height: 2, marginHorizontal: 20 },
 
-  // Certificate title
-  certTitle: { fontSize: 10, fontWeight: '900', letterSpacing: 3, marginBottom: 16 },
+  // Player hero
+  heroSection: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
+  playerName:  { fontSize: 28, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5, lineHeight: 32 },
+  pill:        { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  pillText:    { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 
-  // Diamond divider
-  dividerRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, width: '100%', marginBottom: 20 },
-  dividerLine:  { flex: 1, height: 1 },
-  diamond:      { width: 6, height: 6, transform: [{ rotate: '45deg' }] },
+  // Stats strips
+  statsStrip: { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 12, paddingHorizontal: 20, gap: 4, justifyContent: 'space-around' },
 
-  // Player name
-  playerName: { fontSize: 30, fontWeight: '900', color: PULSE_COLORS.ui.text, textAlign: 'center', letterSpacing: -0.5, lineHeight: 34 },
-  jerseyNum:  { fontSize: 14, fontWeight: '700', textAlign: 'center', marginTop: 4, letterSpacing: 1 },
+  // Ratings row
+  ratingsRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
 
-  // Period chip
-  periodRow:     { marginTop: 16 },
-  periodChip:    { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
-  periodChipText:{ fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
+  // Two-column content
+  twoCol:     { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8, gap: 0 },
+  colDivider: { width: 1, backgroundColor: '#f1f5f9', marginHorizontal: 16, marginVertical: 4 },
+  sectionSep: { height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 20 },
 
-  // Ratings section
-  ratingsSection: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 8 },
-  sectionEyebrow: { fontSize: 9, fontWeight: '900', letterSpacing: 2, textAlign: 'center', marginBottom: 16 },
-  ratingGrid:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
+  // IDP table
+  idpTableHead: { flexDirection: 'row', backgroundColor: '#f8f9fb', paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  idpHeadCell:  { fontSize: 8, fontWeight: '900', color: '#64748b', letterSpacing: 1 },
+  idpRow:       { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', gap: 8 },
+  idpCell:      { fontSize: 11.5, color: '#334155', lineHeight: 16 },
 
-  // Average bar
-  avgRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
-  avgLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, width: 44 },
-  avgTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: PULSE_COLORS.ui.border, overflow: 'hidden' },
-  avgFill:  { height: '100%', borderRadius: 3 },
-  avgNum:   { fontSize: 13, fontWeight: '900', width: 28, textAlign: 'right' },
-
-  // Divider
-  innerDivider: { height: 1, marginHorizontal: 24, marginVertical: 4 },
-
-  // Report section
-  reportSection: { paddingHorizontal: 28, paddingTop: 20, paddingBottom: 8 },
-  reportQuote:   { fontSize: 48, color: PULSE_COLORS.ui.border, lineHeight: 40, fontWeight: '900', marginBottom: -8 },
-  reportText:    { fontSize: 14.5, color: PULSE_COLORS.ui.text, lineHeight: 24, fontStyle: 'italic', textAlign: 'left' },
-  reportQuoteClose: { fontSize: 48, fontWeight: '900', lineHeight: 40, textAlign: 'right', marginTop: -8 },
+  // Coach summary
+  summaryText: { fontSize: 13.5, color: '#334155', lineHeight: 22, fontStyle: 'italic', paddingHorizontal: 20, paddingBottom: 8 },
 
   // Footer
-  certFooter: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 16, marginTop: 16,
-    borderTopWidth: 1, marginHorizontal: 24,
-  },
-  footerText: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+  footer:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, marginHorizontal: 20, borderTopWidth: 1, marginTop: 12 },
+  footerText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
 });
