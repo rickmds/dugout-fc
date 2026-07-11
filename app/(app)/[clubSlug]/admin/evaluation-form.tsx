@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -21,7 +20,7 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
-const anthropic = new Anthropic({ apiKey: process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '' });
+const ANTHROPIC_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,7 +143,23 @@ export default function EvaluationFormScreen() {
     }
     setGenerating(true);
     try {
-      const prompt = `Player: ${playerName}
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 300,
+          system: `You are a youth soccer coach writing a personal player evaluation report for a parent and their child.
+Write in a warm, professional, encouraging tone — specific enough to feel genuine, never generic.
+Output ONLY the report text, no headers, no bullet points, no markdown. 150–180 words maximum.
+Focus on concrete observations: what the player did well, one clear area to develop, and an encouraging closing message.`,
+          messages: [{
+            role: 'user',
+            content: `Player: ${playerName}
 Season: ${seasonLabel} — ${periodLabel}
 Ratings — Technical: ${form.rating_technical}/5, Tactical: ${form.rating_tactical}/5, Physical: ${form.rating_physical}/5, Mental/attitude: ${form.rating_mental}/5
 
@@ -153,22 +168,17 @@ Coach notes:
 2. Main area to focus on next: ${form.q2_focus}
 3. Personal message to player and family: ${form.q3_message}
 
-Write the player evaluation report now.`;
-
-      const msg = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 300,
-        system: `You are a youth soccer coach writing a personal player evaluation report for a parent and their child.
-Write in a warm, professional, encouraging tone — specific enough to feel genuine, never generic.
-Output ONLY the report text, no headers, no bullet points, no markdown. 150–180 words maximum.
-Focus on concrete observations: what the player did well, one clear area to develop, and an encouraging closing message.`,
-        messages: [{ role: 'user', content: prompt }],
+Write the player evaluation report now.`,
+          }],
+        }),
       });
-
-      const text = msg.content.find(c => c.type === 'text')?.text ?? '';
+      const json = await res.json();
+      const text: string = json.content?.[0]?.text ?? '';
       if (text) {
         set('ai_draft', text);
         set('final_text', text);
+      } else {
+        Alert.alert('Error', json.error?.message ?? 'No response from AI. Try again.');
       }
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Could not generate report. Try again.');
