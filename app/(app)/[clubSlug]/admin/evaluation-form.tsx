@@ -13,12 +13,15 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
+
+const anthropic = new Anthropic({ apiKey: process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '' });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,32 +130,48 @@ export default function EvaluationFormScreen() {
   const canGenerate = ratingsComplete && questionsComplete;
 
   async function generateAI() {
-    if (!canGenerate) return;
+    if (!ratingsComplete) {
+      Alert.alert('Ratings needed', 'Please give a star rating for all 4 areas before generating.');
+      return;
+    }
+    if (!questionsComplete) {
+      Alert.alert('Notes needed', 'Please answer all 3 questions before generating.');
+      return;
+    }
+    if (!process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY) {
+      Alert.alert('Setup needed', 'Add EXPO_PUBLIC_ANTHROPIC_API_KEY to your .env file and rebuild.');
+      return;
+    }
     setGenerating(true);
     try {
-      const res = await fetch('/api/ai/generate-evaluation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          player_name: playerName,
-          season_label: seasonLabel,
-          period_label: periodLabel,
-          rating_technical: form.rating_technical,
-          rating_tactical: form.rating_tactical,
-          rating_physical: form.rating_physical,
-          rating_mental: form.rating_mental,
-          q1_improvement: form.q1_improvement,
-          q2_focus: form.q2_focus,
-          q3_message: form.q3_message,
-        }),
+      const prompt = `Player: ${playerName}
+Season: ${seasonLabel} — ${periodLabel}
+Ratings — Technical: ${form.rating_technical}/5, Tactical: ${form.rating_tactical}/5, Physical: ${form.rating_physical}/5, Mental/attitude: ${form.rating_mental}/5
+
+Coach notes:
+1. Biggest improvement this period: ${form.q1_improvement}
+2. Main area to focus on next: ${form.q2_focus}
+3. Personal message to player and family: ${form.q3_message}
+
+Write the player evaluation report now.`;
+
+      const msg = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 300,
+        system: `You are a youth soccer coach writing a personal player evaluation report for a parent and their child.
+Write in a warm, professional, encouraging tone — specific enough to feel genuine, never generic.
+Output ONLY the report text, no headers, no bullet points, no markdown. 150–180 words maximum.
+Focus on concrete observations: what the player did well, one clear area to develop, and an encouraging closing message.`,
+        messages: [{ role: 'user', content: prompt }],
       });
-      const json = await res.json();
-      if (json.text) {
-        set('ai_draft', json.text);
-        set('final_text', json.text);
+
+      const text = msg.content.find(c => c.type === 'text')?.text ?? '';
+      if (text) {
+        set('ai_draft', text);
+        set('final_text', text);
       }
-    } catch {
-      Alert.alert('Error', 'Could not generate report. Try again.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Could not generate report. Try again.');
     } finally {
       setGenerating(false);
     }
@@ -275,9 +294,9 @@ export default function EvaluationFormScreen() {
 
           {/* AI generate */}
           <TouchableOpacity
-            style={[st.generateBtn, { opacity: canGenerate && !generating ? 1 : 0.4 }]}
+            style={[st.generateBtn, { opacity: generating ? 0.6 : 1 }]}
             onPress={generateAI}
-            disabled={!canGenerate || generating}
+            disabled={generating}
             activeOpacity={0.85}
           >
             {generating ? (
