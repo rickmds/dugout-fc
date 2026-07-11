@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -26,12 +25,12 @@ type IdpRow = {
 };
 
 type ReportData = {
-  bio: { position: string; birth_year: string; school: string; graduation_class: string; hometown: string };
+  bio:   { position: string; birth_year: string; school: string; graduation_class: string; hometown: string };
   stats: { max_speed: string; total_distance: string; secondary_foot: string; games_played: string; minutes_played: string };
-  super_strengths: [string, string, string];
+  super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
-  outcome_goals: [string, string];
-  performance_goals: [string, string];
+  outcome_goals:        [string, string];
+  performance_goals:    [string, string];
   idp: IdpRow[];
 };
 
@@ -68,13 +67,13 @@ const sh = StyleSheet.create({
   text: { fontSize: 9, fontWeight: '900', letterSpacing: 2 },
 });
 
-// ─── Numbered list item ───────────────────────────────────────────────────────
+// ─── Numbered bullet row ──────────────────────────────────────────────────────
 
 function BulletRow({ n, text, color }: { n: number; text: string; color: string }) {
   if (!text?.trim()) return null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
-      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${color}20`, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: `${color}1A`, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
         <Text style={{ fontSize: 10, fontWeight: '900', color }}>{n}</Text>
       </View>
       <Text style={{ flex: 1, fontSize: 13.5, color: '#1e293b', lineHeight: 20, fontWeight: '500' }}>{text}</Text>
@@ -86,9 +85,9 @@ function BulletRow({ n, text, color }: { n: number; text: string; color: string 
 
 function StatChip({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <View style={{ alignItems: 'center', minWidth: 64 }}>
-      <Text style={{ fontSize: 16, fontWeight: '900', color, letterSpacing: -0.3 }}>{value}</Text>
-      <Text style={{ fontSize: 9, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5, marginTop: 2 }}>{label}</Text>
+    <View style={{ alignItems: 'center', minWidth: 60 }}>
+      <Text style={{ fontSize: 14, fontWeight: '900', color, letterSpacing: -0.3 }}>{value}</Text>
+      <Text style={{ fontSize: 8, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5, marginTop: 2 }}>{label}</Text>
     </View>
   );
 }
@@ -100,14 +99,11 @@ function RatingBox({ label, value, color, anim }: {
 }) {
   return (
     <Animated.View style={{ flex: 1, alignItems: 'center', opacity: anim }}>
-      <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 12 }}>
-        <Text style={{ fontSize: 28, fontWeight: '900', color, lineHeight: 32 }}>{value ?? '—'}</Text>
-        <Text style={{ fontSize: 9, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5, marginTop: 1 }}>/5</Text>
+      <Text style={{ fontSize: 26, fontWeight: '900', color, lineHeight: 30 }}>{value ?? '—'}</Text>
+      <View style={{ width: '75%', height: 3, backgroundColor: '#f1f5f9', borderRadius: 2, marginTop: 6, marginBottom: 5, overflow: 'hidden' }}>
+        <View style={{ width: `${((value ?? 0) / 5) * 100}%`, height: '100%', backgroundColor: color, borderRadius: 2 }} />
       </View>
-      <View style={{ width: '80%', height: 2, backgroundColor: `${color}30`, borderRadius: 1 }}>
-        <View style={{ width: `${((value ?? 0) / 5) * 100}%`, height: '100%', backgroundColor: color, borderRadius: 1 }} />
-      </View>
-      <Text style={{ fontSize: 9, fontWeight: '800', color: '#64748b', letterSpacing: 0.8, marginTop: 6 }}>{label.toUpperCase()}</Text>
+      <Text style={{ fontSize: 8, fontWeight: '800', color: '#64748b', letterSpacing: 0.8 }}>{label.toUpperCase()}</Text>
     </Animated.View>
   );
 }
@@ -166,6 +162,7 @@ export default function EvalDetailScreen() {
   }
 
   const rd = ev.report_data;
+
   const RATINGS = [
     { label: 'Technical', value: ev.rating_technical, color: '#3B82F6' },
     { label: 'Tactical',  value: ev.rating_tactical,  color: '#8B5CF6' },
@@ -174,182 +171,189 @@ export default function EvalDetailScreen() {
   ];
 
   const publishDate = ev.published_at
-    ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()
     : null;
 
+  const lastName      = ev.players?.full_name?.split(' ').slice(-1)[0]?.toUpperCase() ?? '';
   const hasStrengths  = rd?.super_strengths?.some(Boolean);
   const hasDev        = rd?.areas_of_development?.some(Boolean);
   const hasOutcome    = rd?.outcome_goals?.some(Boolean);
   const hasPerf       = rd?.performance_goals?.some(Boolean);
   const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
-  const hasBioStats   = rd?.bio?.position || rd?.bio?.birth_year || rd?.bio?.school;
-  const hasPerfStats  = rd?.stats?.max_speed || rd?.stats?.total_distance || rd?.stats?.games_played;
+  const hasBioStats   = rd?.bio?.birth_year || rd?.bio?.school || rd?.bio?.graduation_class || rd?.bio?.hometown;
+  const hasPerfStats  = rd?.stats?.max_speed || rd?.stats?.total_distance || rd?.stats?.secondary_foot || rd?.stats?.games_played;
 
   return (
     <View style={st.screen}>
       <ClubHeader title="Player Report" onBack={() => router.back()} />
       <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── REPORT CARD (light background) ──────── */}
         <View style={st.card}>
 
-          {/* ─ Document header ─ */}
-          <View style={st.docHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          {/* ── Club-branded header band ── */}
+          <View style={[st.headerBand, { backgroundColor: primary }]}>
+            <View style={st.headerLeft}>
               {club?.logo_url ? (
-                <Image source={{ uri: club.logo_url }} style={st.clubLogo} />
+                <Image source={{ uri: club.logo_url }} style={st.headerLogo} />
               ) : (
-                <View style={[st.clubLogoBadge, { backgroundColor: primary }]}>
-                  <Text style={st.clubLogoText}>
+                <View style={st.headerBadge}>
+                  <Text style={st.headerBadgeText}>
                     {(club?.name ?? clubSlug).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
                   </Text>
                 </View>
               )}
-              <Text style={st.clubNameText}>{club?.name ?? ''}</Text>
+              <View style={{ gap: 2 }}>
+                <Text style={st.headerClubName}>{club?.name ?? ''}</Text>
+                <Text style={st.headerReportType}>PLAYER DEVELOPMENT REPORT</Text>
+              </View>
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              {publishDate && <Text style={st.dateText}>{publishDate.toUpperCase()}</Text>}
-              <Text style={[st.reportTypeText, { color: primary }]}>PLAYER PROFILE</Text>
-            </View>
+            {publishDate && <Text style={st.headerDate}>{publishDate}</Text>}
           </View>
 
-          {/* ─ Divider ─ */}
-          <View style={[st.divider, { backgroundColor: primary }]} />
-
-          {/* ─ Player hero ─ */}
-          <View style={st.heroSection}>
-            <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-              {rd?.bio?.position ? (
-                <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}40` }]}>
-                  <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
-                </View>
-              ) : null}
-              {ev.players?.jersey_number != null && (
+          {/* ── Player hero with last-name watermark ── */}
+          <View style={{ overflow: 'hidden' }}>
+            {lastName ? (
+              <Text style={[st.heroWatermark, { color: `${primary}10` }]} numberOfLines={1}>
+                {lastName}
+              </Text>
+            ) : null}
+            <View style={st.heroSection}>
+              <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                {rd?.bio?.position ? (
+                  <View style={[st.pill, { backgroundColor: `${primary}15`, borderColor: `${primary}35` }]}>
+                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
+                  </View>
+                ) : null}
+                {ev.players?.jersey_number != null && (
+                  <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                    <Text style={[st.pillText, { color: '#475569' }]}>#{ev.players.jersey_number}</Text>
+                  </View>
+                )}
                 <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
-                  <Text style={[st.pillText, { color: '#475569' }]}>#{ev.players.jersey_number}</Text>
+                  <Text style={[st.pillText, { color: '#475569' }]}>{ev.period_label} · {ev.season_label}</Text>
                 </View>
-              )}
-              <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
-                <Text style={[st.pillText, { color: '#475569' }]}>{ev.period_label} · {ev.season_label}</Text>
               </View>
             </View>
           </View>
 
-          {/* ─ Bio stats strip ─ */}
+          {/* ── Bio stats strip ── */}
           {hasBioStats && (
             <View style={[st.statsStrip, { borderColor: '#e2e8f0' }]}>
-              {rd!.bio.birth_year    ? <StatChip label="BIRTH YEAR"  value={rd!.bio.birth_year}        color="#1e293b" /> : null}
-              {rd!.bio.school        ? <StatChip label="SCHOOL"       value={rd!.bio.school}             color="#1e293b" /> : null}
-              {rd!.bio.graduation_class ? <StatChip label="CLASS"    value={`'${rd!.bio.graduation_class.slice(-2)}`} color="#1e293b" /> : null}
-              {rd!.bio.hometown      ? <StatChip label="HOMETOWN"     value={rd!.bio.hometown}           color="#1e293b" /> : null}
+              {rd!.bio.birth_year       ? <StatChip label="BIRTH YEAR" value={rd!.bio.birth_year}                             color="#0f172a" /> : null}
+              {rd!.bio.school           ? <StatChip label="SCHOOL"      value={rd!.bio.school}                                color="#0f172a" /> : null}
+              {rd!.bio.graduation_class ? <StatChip label="CLASS"       value={`'${rd!.bio.graduation_class.slice(-2)}`}      color="#0f172a" /> : null}
+              {rd!.bio.hometown         ? <StatChip label="HOMETOWN"     value={rd!.bio.hometown}                             color="#0f172a" /> : null}
             </View>
           )}
 
-          {/* ─ Performance stats strip ─ */}
+          {/* ── GPS/performance stats strip ── */}
           {hasPerfStats && (
             <View style={[st.statsStrip, { borderColor: '#e2e8f0' }]}>
-              {rd!.stats.max_speed      ? <StatChip label="MAX SPEED"    value={rd!.stats.max_speed}      color={primary} /> : null}
-              {rd!.stats.total_distance ? <StatChip label="DISTANCE"     value={rd!.stats.total_distance} color={primary} /> : null}
-              {rd!.stats.secondary_foot ? <StatChip label="2ND FOOT"     value={rd!.stats.secondary_foot} color={primary} /> : null}
-              {rd!.stats.games_played   ? <StatChip label="GAMES"        value={rd!.stats.games_played}   color={primary} /> : null}
+              {rd!.stats.max_speed       ? <StatChip label="MAX SPEED"  value={rd!.stats.max_speed}       color={primary} /> : null}
+              {rd!.stats.total_distance  ? <StatChip label="DISTANCE"   value={rd!.stats.total_distance}  color={primary} /> : null}
+              {rd!.stats.secondary_foot  ? <StatChip label="2ND FOOT"   value={rd!.stats.secondary_foot}  color={primary} /> : null}
+              {rd!.stats.games_played    ? <StatChip label="GAMES"       value={rd!.stats.games_played}    color={primary} /> : null}
             </View>
           )}
 
-          {/* ─ Ratings grid ─ */}
+          {/* ── Ratings row — keep distinct colors, these are data ── */}
           <View style={st.ratingsRow}>
             {RATINGS.map((r, i) => (
               <RatingBox key={r.label} label={r.label} value={r.value} color={r.color} anim={anims[i]} />
             ))}
           </View>
 
-          {/* ─ Strengths & Development side by side ─ */}
+          {/* ── Strengths + Development areas — all primary color ── */}
           {(hasStrengths || hasDev) && (
             <View style={st.twoCol}>
               {hasStrengths && (
                 <View style={{ flex: 1 }}>
-                  <SectionHead label="SUPER STRENGTHS" color="#22C55E" />
-                  {rd!.super_strengths.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#22C55E" />)}
+                  <SectionHead label="SUPER STRENGTHS" color={primary} />
+                  {rd!.super_strengths.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color={primary} />)}
                 </View>
               )}
               {hasStrengths && hasDev && <View style={st.colDivider} />}
               {hasDev && (
                 <View style={{ flex: 1 }}>
-                  <SectionHead label="AREAS OF DEVELOPMENT" color="#F97316" />
-                  {rd!.areas_of_development.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#F97316" />)}
+                  <SectionHead label="AREAS OF DEVELOPMENT" color={primary} />
+                  {rd!.areas_of_development.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color={primary} />)}
                 </View>
               )}
             </View>
           )}
 
-          {/* ─ Goals side by side ─ */}
+          {/* ── Goals row — all primary color ── */}
           {(hasOutcome || hasPerf) && (
             <>
               <View style={st.sectionSep} />
               <View style={st.twoCol}>
                 {hasOutcome && (
                   <View style={{ flex: 1 }}>
-                    <SectionHead label="OUTCOME GOALS" color="#8B5CF6" />
-                    {rd!.outcome_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#8B5CF6" />)}
+                    <SectionHead label="OUTCOME GOALS" color={primary} />
+                    {rd!.outcome_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color={primary} />)}
                   </View>
                 )}
                 {hasOutcome && hasPerf && <View style={st.colDivider} />}
                 {hasPerf && (
                   <View style={{ flex: 1 }}>
-                    <SectionHead label="PERFORMANCE GOALS" color="#3B82F6" />
-                    {rd!.performance_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color="#3B82F6" />)}
+                    <SectionHead label="PERFORMANCE GOALS" color={primary} />
+                    {rd!.performance_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color={primary} />)}
                   </View>
                 )}
               </View>
             </>
           )}
 
-          {/* ─ Individual Development Plan ─ */}
+          {/* ── Individual Development Plan ── */}
           {hasIDP && (
             <>
               <View style={st.sectionSep} />
-              <SectionHead label="INDIVIDUAL DEVELOPMENT PLAN" color="#A855F7" />
-              {/* Table header */}
-              <View style={st.idpTableHead}>
-                <Text style={[st.idpHeadCell, { flex: 3 }]}>PERFORMANCE GOAL</Text>
-                <Text style={[st.idpHeadCell, { flex: 3 }]}>MEASURABLES</Text>
-                <Text style={[st.idpHeadCell, { flex: 4 }]}>ACTION PLAN</Text>
-              </View>
-              {rd!.idp.filter(r => r.goal?.trim()).map((row, i) => (
-                <View key={i} style={[st.idpRow, { backgroundColor: i % 2 === 0 ? '#f8faff' : '#ffffff' }]}>
-                  <Text style={[st.idpCell, { flex: 3 }]}>{row.goal}</Text>
-                  <Text style={[st.idpCell, { flex: 3 }]}>{row.measurables}</Text>
-                  <View style={{ flex: 4, gap: 4 }}>
-                    {row.action_items.filter(Boolean).map((item, j) => (
-                      <View key={j} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-                        <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#A855F7', marginTop: 5 }} />
-                        <Text style={[st.idpCell, { flex: 1 }]}>{item}</Text>
-                      </View>
-                    ))}
-                  </View>
+              <View style={st.idpWrap}>
+                <SectionHead label="INDIVIDUAL DEVELOPMENT PLAN" color={primary} />
+                <View style={[st.idpTableHead, { backgroundColor: `${primary}0C` }]}>
+                  <Text style={[st.idpHeadCell, { flex: 3, color: primary }]}>PERFORMANCE GOAL</Text>
+                  <Text style={[st.idpHeadCell, { flex: 3, color: primary }]}>MEASURABLES</Text>
+                  <Text style={[st.idpHeadCell, { flex: 4, color: primary }]}>ACTION PLAN</Text>
                 </View>
-              ))}
+                {rd!.idp.filter(r => r.goal?.trim()).map((row, i) => (
+                  <View key={i} style={[st.idpRow, { backgroundColor: i % 2 === 0 ? `${primary}05` : '#ffffff' }]}>
+                    <Text style={[st.idpCell, { flex: 3 }]}>{row.goal}</Text>
+                    <Text style={[st.idpCell, { flex: 3 }]}>{row.measurables}</Text>
+                    <View style={{ flex: 4, gap: 4 }}>
+                      {row.action_items.filter(Boolean).map((item, j) => (
+                        <View key={j} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 }}>
+                          <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: primary, marginTop: 5 }} />
+                          <Text style={[st.idpCell, { flex: 1 }]}>{item}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </View>
             </>
           )}
 
-          {/* ─ Coach's summary ─ */}
+          {/* ── Coach's summary ── */}
           {ev.final_text?.trim() && (
             <>
               <View style={st.sectionSep} />
-              <SectionHead label="COACH'S SUMMARY" color="#EC4899" />
-              <Text style={st.summaryText}>{ev.final_text}</Text>
+              <View style={st.summarySection}>
+                <SectionHead label="COACH'S SUMMARY" color={primary} />
+                <Text style={st.summaryText}>{ev.final_text}</Text>
+              </View>
             </>
           )}
 
-          {/* ─ Footer ─ */}
+          {/* ── Footer ── */}
           <View style={[st.footer, { borderTopColor: `${primary}20` }]}>
-            <Ionicons name="ribbon-outline" size={12} color={`${primary}80`} />
-            <Text style={[st.footerText, { color: `${primary}80` }]}>
+            <Ionicons name="ribbon-outline" size={11} color={`${primary}70`} />
+            <Text style={[st.footerText, { color: `${primary}70` }]}>
               {club?.name ?? ''}  ·  {ev.period_label}  ·  {ev.season_label}
             </Text>
           </View>
-        </View>
 
+        </View>
         <View style={{ height: 32 }} />
       </ScrollView>
     </View>
@@ -363,52 +367,53 @@ const st = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: 16 },
 
-  // White report card
   card: {
     width: CARD_W, backgroundColor: '#ffffff',
     borderRadius: 16, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 16, elevation: 6,
+    shadowOpacity: 0.14, shadowRadius: 18, elevation: 7,
   },
 
-  // Document header
-  docHeader:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 },
-  clubLogo:      { width: 24, height: 24, borderRadius: 5, resizeMode: 'contain' },
-  clubLogoBadge: { width: 24, height: 24, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
-  clubLogoText:  { fontSize: 9, fontWeight: '900', color: '#fff' },
-  clubNameText:  { fontSize: 11, fontWeight: '700', color: '#64748b', letterSpacing: 0.3 },
-  dateText:      { fontSize: 9, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5 },
-  reportTypeText:{ fontSize: 9, fontWeight: '900', letterSpacing: 1.5, marginTop: 1 },
+  // Branded header band
+  headerBand:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 16 },
+  headerLeft:       { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  headerLogo:       { width: 36, height: 36, borderRadius: 8, resizeMode: 'contain', backgroundColor: 'rgba(255,255,255,0.18)' },
+  headerBadge:      { width: 36, height: 36, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)', alignItems: 'center', justifyContent: 'center' },
+  headerBadgeText:  { fontSize: 12, fontWeight: '900', color: '#fff' },
+  headerClubName:   { fontSize: 14, fontWeight: '900', color: '#fff', letterSpacing: 0.2 },
+  headerReportType: { fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.7)', letterSpacing: 1.5 },
+  headerDate:       { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 0.5 },
 
-  divider: { height: 2, marginHorizontal: 20 },
-
-  // Player hero
-  heroSection: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
-  playerName:  { fontSize: 28, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5, lineHeight: 32 },
-  pill:        { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  pillText:    { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  // Hero with watermark
+  heroSection:   { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12, zIndex: 1 },
+  heroWatermark: { position: 'absolute', fontSize: 88, fontWeight: '900', letterSpacing: -4, top: -4, left: 12, lineHeight: 88 },
+  playerName:    { fontSize: 27, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5, lineHeight: 30 },
+  pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
+  pillText:      { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 
   // Stats strips
-  statsStrip: { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 12, paddingHorizontal: 20, gap: 4, justifyContent: 'space-around' },
+  statsStrip: { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 11, paddingHorizontal: 16, justifyContent: 'space-around' },
 
   // Ratings row
-  ratingsRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  ratingsRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
 
   // Two-column content
-  twoCol:     { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8, gap: 0 },
-  colDivider: { width: 1, backgroundColor: '#f1f5f9', marginHorizontal: 16, marginVertical: 4 },
-  sectionSep: { height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 20 },
+  twoCol:     { flexDirection: 'row', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10, gap: 0 },
+  colDivider: { width: 1, backgroundColor: '#f1f5f9', marginHorizontal: 14, marginVertical: 4 },
+  sectionSep: { height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 18 },
 
-  // IDP table
-  idpTableHead: { flexDirection: 'row', backgroundColor: '#f8f9fb', paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0' },
-  idpHeadCell:  { fontSize: 8, fontWeight: '900', color: '#64748b', letterSpacing: 1 },
-  idpRow:       { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', gap: 8 },
-  idpCell:      { fontSize: 11.5, color: '#334155', lineHeight: 16 },
+  // IDP
+  idpWrap:      { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 },
+  idpTableHead: { flexDirection: 'row', paddingHorizontal: 0, paddingVertical: 7, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0' },
+  idpHeadCell:  { fontSize: 8, fontWeight: '900', letterSpacing: 1, paddingHorizontal: 6 },
+  idpRow:       { flexDirection: 'row', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  idpCell:      { fontSize: 11, color: '#334155', lineHeight: 16, paddingHorizontal: 6 },
 
-  // Coach summary
-  summaryText: { fontSize: 13.5, color: '#334155', lineHeight: 22, fontStyle: 'italic', paddingHorizontal: 20, paddingBottom: 8 },
+  // Summary
+  summarySection: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 },
+  summaryText:    { fontSize: 13.5, color: '#334155', lineHeight: 22, fontStyle: 'italic' },
 
   // Footer
-  footer:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, marginHorizontal: 20, borderTopWidth: 1, marginTop: 12 },
+  footer:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 13, marginHorizontal: 18, borderTopWidth: 1, marginTop: 10 },
   footerText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
 });
