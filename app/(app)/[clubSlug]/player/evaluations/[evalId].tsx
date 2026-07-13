@@ -252,7 +252,7 @@ export default function EvalDetailScreen() {
               <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                 {rd?.bio?.position ? (
-                  <View style={[st.pill, { backgroundColor: `${primary}15`, borderColor: `${primary}35` }]}>
+                  <View style={[st.pill, { backgroundColor: '#ffffff', borderColor: `${primary}50` }]}>
                     <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
                   </View>
                 ) : null}
