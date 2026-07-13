@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   Dimensions,
   Image,
   ScrollView,
@@ -9,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../lib/supabase';
@@ -92,19 +92,58 @@ function StatChip({ label, value, color }: { label: string; value: string; color
   );
 }
 
-// ─── Rating box ───────────────────────────────────────────────────────────────
+// ─── Radar chart ─────────────────────────────────────────────────────────────
 
-function RatingBox({ label, value, color, anim }: {
-  label: string; value: number | null; color: string; anim: Animated.Value;
-}) {
+const SVG_W = 300, SVG_H = 270, RC = 150, RCY = 135, MAX_R = 74;
+
+const RADAR_AXES = [
+  { label: 'TECHNICAL', color: '#3B82F6', angle: -Math.PI / 2, sx: RC,  sy: 45,  sA: 'middle' as const, lx: RC,  ly: 59,  lA: 'middle' as const },
+  { label: 'PHYSICAL',  color: '#F59E0B', angle: 0,            sx: 228, sy: 127, sA: 'start'  as const, lx: 228, ly: 143, lA: 'start'  as const },
+  { label: 'MENTAL',    color: '#22C55E', angle: Math.PI / 2,  sx: RC,  sy: 211, sA: 'middle' as const, lx: RC,  ly: 225, lA: 'middle' as const },
+  { label: 'TACTICAL',  color: '#8B5CF6', angle: Math.PI,      sx: 72,  sy: 127, sA: 'end'    as const, lx: 72,  ly: 143, lA: 'end'    as const },
+];
+
+function gridPts(lvl: number) {
+  return RADAR_AXES.map(ax => {
+    const r = (lvl / 5) * MAX_R;
+    return `${RC + r * Math.cos(ax.angle)},${RCY + r * Math.sin(ax.angle)}`;
+  }).join(' ');
+}
+
+function RadarChart({ values, color }: { values: number[]; color: string }) {
+  const pts = RADAR_AXES.map((ax, i) => {
+    const r = ((values[i] ?? 0) / 5) * MAX_R;
+    return { x: RC + r * Math.cos(ax.angle), y: RCY + r * Math.sin(ax.angle) };
+  });
+  const dataPoly = pts.map(p => `${p.x},${p.y}`).join(' ');
   return (
-    <Animated.View style={{ flex: 1, alignItems: 'center', opacity: anim }}>
-      <Text style={{ fontSize: 26, fontWeight: '900', color, lineHeight: 30 }}>{value ?? '—'}</Text>
-      <View style={{ width: '75%', height: 3, backgroundColor: '#f1f5f9', borderRadius: 2, marginTop: 6, marginBottom: 5, overflow: 'hidden' }}>
-        <View style={{ width: `${((value ?? 0) / 5) * 100}%`, height: '100%', backgroundColor: color, borderRadius: 2 }} />
-      </View>
-      <Text style={{ fontSize: 8, fontWeight: '800', color: '#64748b', letterSpacing: 0.8 }}>{label.toUpperCase()}</Text>
-    </Animated.View>
+    <Svg width="100%" height={SVG_H} viewBox={`0 0 ${SVG_W} ${SVG_H}`}>
+      {[1,2,3,4,5].map(lvl => (
+        <Polygon key={lvl} points={gridPts(lvl)} fill="none"
+          stroke={lvl === 5 ? 'rgba(0,0,0,0.13)' : 'rgba(0,0,0,0.06)'}
+          strokeWidth={lvl === 5 ? 1.5 : 1}
+        />
+      ))}
+      {RADAR_AXES.map((ax, i) => (
+        <Line key={i} x1={RC} y1={RCY} x2={RC + MAX_R * Math.cos(ax.angle)} y2={RCY + MAX_R * Math.sin(ax.angle)}
+          stroke="rgba(0,0,0,0.08)" strokeWidth={1}
+        />
+      ))}
+      <Polygon points={dataPoly} fill={color} fillOpacity={0.12} stroke={color} strokeWidth={2.5} strokeLinejoin="round" />
+      {pts.map((p, i) => (
+        <Circle key={i} cx={p.x} cy={p.y} r={4} fill={RADAR_AXES[i].color} />
+      ))}
+      {RADAR_AXES.map((ax, i) => (
+        <G key={i}>
+          <SvgText x={ax.sx} y={ax.sy} textAnchor={ax.sA} fontSize={16} fontWeight="900" fill={ax.color}>
+            {values[i] ?? '—'}
+          </SvgText>
+          <SvgText x={ax.lx} y={ax.ly} textAnchor={ax.lA} fontSize={7} fontWeight="800" fill={ax.color} letterSpacing={1}>
+            {ax.label}
+          </SvgText>
+        </G>
+      ))}
+    </Svg>
   );
 }
 
@@ -120,8 +159,6 @@ export default function EvalDetailScreen() {
   const [club,    setClub]    = useState<ClubInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const anims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
-
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -134,9 +171,6 @@ export default function EvalDetailScreen() {
         setEv(data as EvalDetail);
         const { data: cData } = await supabase.from('clubs').select('name,logo_url').eq('slug', clubSlug).single();
         setClub(cData as ClubInfo | null);
-        Animated.stagger(70, anims.map(a =>
-          Animated.timing(a, { toValue: 1, duration: 400, useNativeDriver: true })
-        )).start();
       }
       setLoading(false);
     }
@@ -162,13 +196,6 @@ export default function EvalDetailScreen() {
   }
 
   const rd = ev.report_data;
-
-  const RATINGS = [
-    { label: 'Technical', value: ev.rating_technical, color: '#3B82F6' },
-    { label: 'Tactical',  value: ev.rating_tactical,  color: '#8B5CF6' },
-    { label: 'Physical',  value: ev.rating_physical,  color: '#F59E0B' },
-    { label: 'Mental',    value: ev.rating_mental,    color: '#22C55E' },
-  ];
 
   const publishDate = ev.published_at
     ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).toUpperCase()
@@ -283,11 +310,17 @@ export default function EvalDetailScreen() {
             </View>
           )}
 
-          {/* ── Ratings row — keep distinct colors, these are data ── */}
-          <View style={st.ratingsRow}>
-            {RATINGS.map((r, i) => (
-              <RatingBox key={r.label} label={r.label} value={r.value} color={r.color} anim={anims[i]} />
-            ))}
+          {/* ── Radar chart ── */}
+          <View style={st.radarWrap}>
+            <RadarChart
+              values={[
+                ev.rating_technical ?? 0,
+                ev.rating_physical  ?? 0,
+                ev.rating_mental    ?? 0,
+                ev.rating_tactical  ?? 0,
+              ]}
+              color={primary}
+            />
           </View>
 
           {/* ── Strengths + Development areas — all primary color ── */}
@@ -423,8 +456,8 @@ const st = StyleSheet.create({
   statBlockLabel: { fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 1.5 },
   statRow:        { flexDirection: 'row', justifyContent: 'space-around' },
 
-  // Ratings row
-  ratingsRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  // Radar chart
+  radarWrap: { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
 
   // Two-column content
   twoCol:     { flexDirection: 'row', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10, gap: 0 },
