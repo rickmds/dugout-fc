@@ -47,7 +47,16 @@
         }
       ],
       "expo-splash-screen",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#000000",
+          "defaultChannel": "default",
+          "iosDisplayInForeground": true
+        }
+      ]
     ],
     "extra": {
       "router": {},
