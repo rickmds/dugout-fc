@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Save, ChevronDown, ChevronRight, Info, Link2, Mail, Eye, X } from 'lucide-react';
+import { Save, Info, Eye, X } from 'lucide-react';
 
 type OfferSettings = {
   id?: string;
@@ -49,7 +49,8 @@ const MERGE_TOKENS = [
   { token: '{{payment_link}}',      desc: 'Link to pay' },
   { token: '{{uniform_link}}',      desc: 'Uniform shop link' },
   { token: '{{club_website}}',      desc: 'Club website' },
-  { token: '{{coach_name}}',        desc: 'Head coach full name' },
+  { token: '{{coach_name}}',        desc: 'Head coach — pulled from Coaches tab' },
+  { token: '{{training_schedule}}', desc: 'Practice days/times — pulled from Practice Schedule tab' },
   { token: '{{accept_link}}',       desc: 'One-click accept button' },
   { token: '{{decline_link}}',      desc: 'One-click decline button' },
 ];
@@ -69,7 +70,7 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 
 <h2>Training Schedule</h2>
 <div style="background:#fafafa;border-left:3px solid #6b7280;padding:14px 18px;border-radius:4px;margin:8px 0;">
-  <ul style="margin:0;padding-left:18px;"><li>Wednesday 5:00 PM–6:30 PM</li><li>Monday 5:00 PM–6:30 PM</li></ul>
+  {{training_schedule}}
 </div>
 <p style="font-size:13px;color:#6b7280;">We maintain this schedule through spring whenever possible. Your coach will reach out shortly with a personal welcome.</p>
 
@@ -127,6 +128,27 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 
 <p>We're excited to welcome <strong>{{player_first_name}}</strong> to the {{club_name}} family!</p>`;
 
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n').replace(/<p[^>]*>/gi, '')
+    .replace(/<\/h[1-6]>/gi, '\n\n').replace(/<h[1-6][^>]*>/gi, '')
+    .replace(/<\/li>/gi, '\n').replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function textToHtml(text: string): string {
+  if (!text.trim()) return '';
+  return text.split(/\n\n+/).map(p => p.trim()).filter(Boolean)
+    .map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('\n');
+}
+
+function hasHtmlTags(str: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(str);
+}
+
 const inp: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: '9px',
   border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A',
@@ -147,8 +169,9 @@ export default function TryoutOfferSettingsPage() {
   const [templates, setTemplates] = useState<Record<string, EmailTemplate>>({});
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
-  const [open, setOpen]           = useState<string | null>('costs');
+  const [activeSection, setActiveSection] = useState<'settings'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens'>('settings');
   const [preview, setPreview]     = useState<string | null>(null);
+  const [emailModes, setEmailModes] = useState<Record<string, 'simple'|'html'>>({});
 
   useEffect(() => {
     if (!club) return;
@@ -208,6 +231,7 @@ export default function TryoutOfferSettingsPage() {
       season_fee: '2,295', deposit_amount: '765',
       payment_link: '#', uniform_link: '#', club_website: '#',
       accept_link: '#accept', decline_link: '#decline',
+      training_schedule: '<ul style="margin:0;padding-left:18px;"><li><strong>Mon</strong> 5:00pm–6:30pm — Superdome Sports, Field A</li><li><strong>Wed</strong> 5:00pm–6:30pm — Superdome Sports, Field B</li></ul>',
     };
 
     let body = bodyHtml || '<p style="color:#6b7280;font-style:italic;">(No email body written yet.)</p>';
@@ -303,148 +327,318 @@ export default function TryoutOfferSettingsPage() {
 </body></html>`;
   }
 
-  function Section({ id, title, icon, children }: { id: string; title: string; icon?: React.ReactNode; children: React.ReactNode }) {
-    const isOpen = open === id;
+  const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
+
+  type SectionId = 'settings'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens';
+
+  const SECTIONS: { id: SectionId; num: number; label: string; desc: string }[] = [
+    { id: 'settings',  num: 1, label: 'Global settings',     desc: 'From name, deadline, links' },
+    { id: 'offer',     num: 2, label: 'Offer letter (U9+)',  desc: 'Main roster offer email' },
+    { id: 'offer-u8',  num: 3, label: 'Offer letter (U8)',   desc: 'Academy — leave blank to use above' },
+    { id: 'waitlist',  num: 4, label: 'Waitlist email',      desc: 'Player on the waitlist' },
+    { id: 'decline',   num: 5, label: 'Decline email',       desc: 'Player not selected' },
+    { id: 'reminder',  num: 6, label: 'Reminder email',      desc: 'Follow-up before deadline' },
+    { id: 'tokens',    num: 7, label: 'Merge tokens',        desc: `${MERGE_TOKENS.length} available variables` },
+  ];
+
+  function hint(when: string) {
     return (
-      <div style={{ background: '#fff', border: `1px solid ${isOpen ? '#C7D2FE' : '#E2E8F0'}`, borderRadius: '14px', overflow: 'hidden', marginBottom: '10px', boxShadow: isOpen ? '0 2px 12px rgba(99,102,241,0.07)' : '0 1px 4px rgba(0,0,0,0.03)' }}>
-        <button onClick={() => setOpen(isOpen ? null : id)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 20px', background: isOpen ? '#F5F7FF' : '#fff', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'background 0.15s' }}>
-          {icon && <span style={{ color: isOpen ? '#6366F1' : '#64748B', flexShrink: 0 }}>{icon}</span>}
-          <span style={{ flex: 1, fontWeight: '700', fontSize: '14px', color: '#0F172A' }}>{title}</span>
-          {isOpen ? <ChevronDown size={15} color="#6366F1" /> : <ChevronRight size={15} color="#94A3B8" />}
-        </button>
-        {isOpen && (
-          <div style={{ padding: '0 20px 20px', borderTop: '1px solid #EEF2FF' }}>
-            {children}
+      <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12.5px', color: '#92400E', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+        <span style={{ flexShrink: 0 }}>📧</span><span><strong>When sent:</strong> {when}</span>
+      </div>
+    );
+  }
+
+  function EmailBodyEditor({ editorKey, value, onChange, onPreview, previewLabel, showCta, placeholder }: {
+    editorKey: string; value: string; onChange: (v: string) => void;
+    onPreview: () => void; previewLabel: string; showCta: boolean; placeholder?: string;
+  }) {
+    const mode = emailModes[editorKey] ?? (hasHtmlTags(value) ? 'html' : 'simple');
+    const isSimple = mode === 'simple';
+
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+          <label style={{ fontSize: '12px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email body</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Simple / HTML toggle */}
+            <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '6px', padding: '2px', gap: '1px' }}>
+              <button onClick={() => setEmailModes(m => ({ ...m, [editorKey]: 'simple' }))}
+                style={{ padding: '4px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
+                  background: isSimple ? '#fff' : 'transparent', color: isSimple ? '#0F172A' : '#64748B',
+                  boxShadow: isSimple ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.1s' }}>
+                ✏ Text
+              </button>
+              <button onClick={() => setEmailModes(m => ({ ...m, [editorKey]: 'html' }))}
+                style={{ padding: '4px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
+                  background: !isSimple ? '#fff' : 'transparent', color: !isSimple ? '#0F172A' : '#64748B',
+                  boxShadow: !isSimple ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.1s' }}>
+                {'<>'} HTML
+              </button>
+            </div>
+            {!value && previewLabel === 'Roster Offer' && (
+              <button onClick={() => { onChange(DEFAULT_OFFER_BODY); setEmailModes(m => ({ ...m, [editorKey]: 'html' })); }}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '6px', background: '#EFF6FF', border: '1px solid #BFDBFE', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#1D4ED8' }}>
+                Load template
+              </button>
+            )}
+            <button onClick={onPreview}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '6px', background: '#F1F5F9', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
+              <Eye size={12} /> Preview
+            </button>
           </div>
+        </div>
+
+        {isSimple ? (
+          <textarea
+            value={stripHtmlToText(value)}
+            onChange={e => onChange(textToHtml(e.target.value))}
+            style={{ ...bodyTA, fontFamily: 'inherit', fontSize: '14px', lineHeight: '1.7', minHeight: showCta ? '220px' : '160px' }}
+            placeholder={'Write your message here…\n\nUse blank lines to separate paragraphs.\nMerge tokens like {{player_first_name}} work here too.'}
+          />
+        ) : (
+          <textarea
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            style={{ ...bodyTA, minHeight: showCta ? '280px' : '180px' }}
+            placeholder={placeholder}
+          />
         )}
+
+        <div style={{ marginTop: '8px', fontSize: '11px', color: '#94A3B8', lineHeight: '1.8' }}>
+          {isSimple ? (
+            'Plain text — blank lines create paragraphs. Switch to HTML for tables and advanced formatting.'
+          ) : (
+            <>HTML source. Quick tokens: <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{player_first_name}}'}</code>
+              <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{team_name}}'}</code>
+              <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{offer_deadline}}'}</code>
+              <button onClick={() => setActiveSection('tokens')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: primary, fontWeight: '600', fontSize: '11px', padding: '0 2px' }}>all tokens →</button>
+            </>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '28px 36px', maxWidth: '820px', overflowY: 'auto', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+      {/* Sticky header */}
+      <div style={{ padding: '14px 24px', background: '#fff', borderBottom: `3px solid ${primary}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Tryout Module</div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', margin: '2px 0 4px' }}>Offer Settings</h1>
-          <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>Set fees, links, and email templates. Use merge tokens to auto-populate the offer letter.</p>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '2px' }}>Tryout Setup</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Offer Templates</h1>
         </div>
         <button onClick={handleSave} disabled={saving}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', padding: '10px 20px', fontWeight: '700', fontSize: '13.5px', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
-          <Save size={14} /> {saved ? 'Saved!' : saving ? 'Saving…' : 'Save All'}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
+          <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save changes'}
         </button>
       </div>
 
-      {/* ── LINKS ── */}
-      <Section id="links" title="Links" icon={<Link2 size={16} />}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '16px' }}>
-          <div>
-            {lbl('Payment Link')}
-            <input value={settings.payment_link} onChange={e => set({ payment_link: e.target.value })} placeholder="https://pay.example.com" style={inp} />
-            <div style={{ fontSize: '10.5px', color: '#94A3B8', marginTop: '4px' }}>Token: {'{{payment_link}}'}</div>
-          </div>
-          <div>
-            {lbl('Uniform Shop URL')}
-            <input value={settings.uniform_shop_url} onChange={e => set({ uniform_shop_url: e.target.value })} placeholder="https://shop.example.com" style={inp} />
-            <div style={{ fontSize: '10.5px', color: '#94A3B8', marginTop: '4px' }}>Token: {'{{uniform_link}}'}</div>
-          </div>
-          <div>
-            {lbl('Club Website')}
-            <input value={settings.club_website_url} onChange={e => set({ club_website_url: e.target.value })} placeholder="https://yourclub.com" style={inp} />
-            <div style={{ fontSize: '10.5px', color: '#94A3B8', marginTop: '4px' }}>Token: {'{{club_website}}'}</div>
-          </div>
-        </div>
-      </Section>
+      {/* Body: left nav + right panel */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
-      {/* ── OFFER EMAIL ── */}
-      <Section id="offer" title="Roster Offer Email (U9 and above)" icon={<Mail size={16} />}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '16px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div>
-              {lbl('Subject line')}
-              <input value={settings.email_subject} onChange={e => set({ email_subject: e.target.value })} style={inp} />
+        {/* Left section list */}
+        <div style={{ width: '240px', flexShrink: 0, borderRight: '1px solid #E2E8F0', background: '#fff', overflowY: 'auto', padding: '16px 12px' }}>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '10px' }}>Setup flow</div>
+          {SECTIONS.map(s => {
+            const active = activeSection === s.id;
+            return (
+              <button key={s.id} onClick={() => setActiveSection(s.id)}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%', padding: '10px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', marginBottom: '2px',
+                  background: active ? `${primary}12` : 'transparent',
+                  borderLeft: active ? `2px solid ${primary}` : '2px solid transparent',
+                }}>
+                <div style={{ width: '22px', height: '22px', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800',
+                  background: active ? primary : '#F1F5F9',
+                  color: active ? '#fff' : '#64748B' }}>
+                  {s.num}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#0D1117' : '#374151', lineHeight: '1.3' }}>{s.label}</div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>{s.desc}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right editing panel */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', background: '#F0F2F5' }}>
+
+          {activeSection === 'settings' && (
+            <div style={{ maxWidth: '680px' }}>
+              <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12.5px', color: '#1D4ED8', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <span>ℹ️</span><span><strong>Start here.</strong> These settings apply across all emails. Set them once and your templates will pick them up via merge tokens.</span>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    {lbl('From name')}
+                    <input value={settings.from_name} onChange={e => set({ from_name: e.target.value })} placeholder="Maroons SC" style={inp} />
+                    <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Shown as the sender on all offer emails</div>
+                  </div>
+                  <div>
+                    {lbl('Offer response deadline')}
+                    <input type="datetime-local" value={settings.offer_deadline ? settings.offer_deadline.slice(0, 16) : ''} onChange={e => set({ offer_deadline: e.target.value })} style={inp} />
+                    <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Token: <code style={{ background: '#F1F5F9', padding: '1px 4px', borderRadius: '3px' }}>{'{{offer_deadline}}'}</code></div>
+                  </div>
+                </div>
+                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '20px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#374151', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Links (used via tokens in email body)</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      {lbl('Payment link')}
+                      <input value={settings.payment_link} onChange={e => set({ payment_link: e.target.value })} placeholder="https://pay.example.com" style={inp} />
+                      <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Token: <code style={{ background: '#F1F5F9', padding: '1px 4px', borderRadius: '3px' }}>{'{{payment_link}}'}</code></div>
+                    </div>
+                    <div>
+                      {lbl('Uniform shop URL')}
+                      <input value={settings.uniform_shop_url} onChange={e => set({ uniform_shop_url: e.target.value })} placeholder="https://shop.example.com" style={inp} />
+                      <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Token: <code style={{ background: '#F1F5F9', padding: '1px 4px', borderRadius: '3px' }}>{'{{uniform_link}}'}</code></div>
+                    </div>
+                    <div>
+                      {lbl('Club website')}
+                      <input value={settings.club_website_url} onChange={e => set({ club_website_url: e.target.value })} placeholder="https://yourclub.com" style={inp} />
+                      <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Token: <code style={{ background: '#F1F5F9', padding: '1px 4px', borderRadius: '3px' }}>{'{{club_website}}'}</code></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              {lbl('From name')}
-              <input value={settings.from_name} onChange={e => set({ from_name: e.target.value })} placeholder="Maroons SC" style={inp} />
+          )}
+
+          {activeSection === 'offer' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Sent to families when their child is offered a spot on a competitive team (U9 and above). Includes the Accept / Decline buttons.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>
+                    {lbl('Subject line')}
+                    <input value={settings.email_subject} onChange={e => set({ email_subject: e.target.value })} style={inp} />
+                  </div>
+                  <div>
+                    {lbl('From name')}
+                    <input value={settings.from_name} onChange={e => set({ from_name: e.target.value })} placeholder="Maroons SC" style={inp} />
+                  </div>
+                </div>
+                <EmailBodyEditor
+                  editorKey="offer"
+                  value={settings.email_body_html}
+                  onChange={v => set({ email_body_html: v })}
+                  onPreview={() => setPreview(buildPreviewHtml(settings.email_body_html, 'Roster Offer', true))}
+                  previewLabel="Roster Offer"
+                  showCta={true}
+                  placeholder={`<p>Dear {{parent_name}},</p>\n<p>We are pleased to offer <strong>{{player_first_name}}</strong> a roster spot on <strong>{{team_name}}</strong> for the {{season_label}} season.</p>`}
+                />
+              </div>
             </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              {lbl('Offer response deadline')}
-              <input type="datetime-local" value={settings.offer_deadline ? settings.offer_deadline.slice(0, 16) : ''} onChange={e => set({ offer_deadline: e.target.value })} style={{ ...inp, maxWidth: '260px' }} />
-              <div style={{ fontSize: '10.5px', color: '#94A3B8', marginTop: '4px' }}>Token: {'{{offer_deadline}}'} — shown in the email body wherever you place it.</div>
+          )}
+
+          {activeSection === 'offer-u8' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Sent to U8 Academy families when their child is offered a spot. Leave the body blank and the U9+ offer template will be used instead.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
+                <EmailBodyEditor
+                  editorKey="offer-u8"
+                  value={settings.email_body_html_u8}
+                  onChange={v => set({ email_body_html_u8: v })}
+                  onPreview={() => setPreview(buildPreviewHtml(settings.email_body_html_u8 || settings.email_body_html, 'Roster Offer', true))}
+                  previewLabel="U8 Offer"
+                  showCta={true}
+                  placeholder="Leave blank to use the U9+ offer email above."
+                />
+              </div>
             </div>
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-              <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email body (HTML)</span>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {!settings.email_body_html && (
-                  <button onClick={() => set({ email_body_html: DEFAULT_OFFER_BODY })}
-                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '7px', background: '#EFF6FF', border: '1px solid #BFDBFE', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#1D4ED8' }}>
-                    Load template
+          )}
+
+          {activeSection === 'waitlist' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint("Sent when a player is moved to the waitlist. Lets the family know they weren't selected initially but may still receive an offer if a spot opens.")}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>{lbl('Subject')}<input value={templates['waitlist']?.subject ?? ''} onChange={e => setTmpl('waitlist', { subject: e.target.value })} style={inp} /></div>
+                  <div>{lbl('From name')}<input value={templates['waitlist']?.from_name ?? ''} onChange={e => setTmpl('waitlist', { from_name: e.target.value })} placeholder={settings.from_name || 'Maroons SC'} style={inp} /></div>
+                </div>
+                <EmailBodyEditor
+                  editorKey="waitlist"
+                  value={templates['waitlist']?.body_html ?? ''}
+                  onChange={v => setTmpl('waitlist', { body_html: v })}
+                  onPreview={() => setPreview(buildPreviewHtml(templates['waitlist']?.body_html ?? '', 'Waitlist', false))}
+                  previewLabel="Waitlist"
+                  showCta={false}
+                />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'decline' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Sent when a player is not selected. Keep it respectful and encouraging — this is a family getting difficult news.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>{lbl('Subject')}<input value={templates['decline']?.subject ?? ''} onChange={e => setTmpl('decline', { subject: e.target.value })} style={inp} /></div>
+                  <div>{lbl('From name')}<input value={templates['decline']?.from_name ?? ''} onChange={e => setTmpl('decline', { from_name: e.target.value })} placeholder={settings.from_name || 'Maroons SC'} style={inp} /></div>
+                </div>
+                <EmailBodyEditor
+                  editorKey="decline"
+                  value={templates['decline']?.body_html ?? ''}
+                  onChange={v => setTmpl('decline', { body_html: v })}
+                  onPreview={() => setPreview(buildPreviewHtml(templates['decline']?.body_html ?? '', 'Decline', false))}
+                  previewLabel="Decline"
+                  showCta={false}
+                />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'reminder' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Sent as a follow-up to families who received an offer but haven\'t responded yet. Typically sent 24-48 hours before the deadline.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>{lbl('Subject')}<input value={templates['reminder']?.subject ?? ''} onChange={e => setTmpl('reminder', { subject: e.target.value })} style={inp} /></div>
+                  <div>{lbl('From name')}<input value={templates['reminder']?.from_name ?? ''} onChange={e => setTmpl('reminder', { from_name: e.target.value })} placeholder={settings.from_name || 'Maroons SC'} style={inp} /></div>
+                </div>
+                <EmailBodyEditor
+                  editorKey="reminder"
+                  value={templates['reminder']?.body_html ?? ''}
+                  onChange={v => setTmpl('reminder', { body_html: v })}
+                  onPreview={() => setPreview(buildPreviewHtml(templates['reminder']?.body_html ?? '', 'Reminder', true))}
+                  previewLabel="Reminder"
+                  showCta={true}
+                />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'tokens' && (
+            <div style={{ maxWidth: '720px' }}>
+              <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12.5px', color: '#1D4ED8', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <Info size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                <span>Copy any token into your email body — it will be replaced with real data when the email is sent. Click a token to copy it.</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '8px' }}>
+                {MERGE_TOKENS.map(({ token, desc }) => (
+                  <button key={token} onClick={() => navigator.clipboard.writeText(token)}
+                    style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '10px 14px', borderRadius: '8px', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = primary}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'}>
+                    <code style={{ fontSize: '11.5px', background: '#EEF2FF', color: '#4338CA', borderRadius: '4px', padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: '700' }}>{token}</code>
+                    <span style={{ fontSize: '12px', color: '#64748B' }}>{desc}</span>
                   </button>
-                )}
-                <button onClick={() => setPreview(buildPreviewHtml(settings.email_body_html, 'Roster Offer', true))}
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '7px', background: '#F1F5F9', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
-                  <Eye size={12} /> Preview
-                </button>
+                ))}
               </div>
             </div>
-            <textarea value={settings.email_body_html} onChange={e => set({ email_body_html: e.target.value })} style={{ ...bodyTA, minHeight: '220px' }}
-              placeholder={`<p>Dear {{parent_name}},</p>\n<p>We are pleased to offer <strong>{{player_first_name}}</strong> a spot on <strong>{{team_name}}</strong> for the {{season_label}} season.</p>\n<p><strong>Season fee:</strong> {{season_fee}}<br><strong>Deposit due at registration:</strong> {{deposit_amount}}</p>\n<p>Please respond by <strong>{{offer_deadline}}</strong>:</p>`}
-            />
-          </div>
+          )}
+
         </div>
-      </Section>
+      </div>
 
-      <Section id="offer-u8" title="Roster Offer Email (U8 Academy — leave blank to use U9+ template)" icon={<Mail size={16} />}>
-        <div style={{ paddingTop: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-            <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email body (HTML)</span>
-            <button onClick={() => setPreview(buildPreviewHtml(settings.email_body_html_u8 || settings.email_body_html, 'Roster Offer', true))}
-              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '7px', background: '#F1F5F9', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
-              <Eye size={12} /> Preview
-            </button>
-          </div>
-          <textarea value={settings.email_body_html_u8} onChange={e => set({ email_body_html_u8: e.target.value })} style={bodyTA} placeholder="Leave blank to use the standard offer email above." />
-        </div>
-      </Section>
-
-      {/* ── ADDITIONAL TEMPLATES ── */}
-      {(['waitlist', 'decline', 'reminder'] as const).map(key => (
-        <Section key={key} id={key} title={`${TEMPLATE_LABELS[key]} Email Template`} icon={<Mail size={16} />}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>
-                {lbl('Subject')}
-                <input value={templates[key]?.subject ?? ''} onChange={e => setTmpl(key, { subject: e.target.value })} style={inp} />
-              </div>
-              <div>
-                {lbl('From name')}
-                <input value={templates[key]?.from_name ?? ''} onChange={e => setTmpl(key, { from_name: e.target.value })} placeholder="Maroons SC" style={inp} />
-              </div>
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Body (HTML)</span>
-                <button onClick={() => setPreview(buildPreviewHtml(templates[key]?.body_html ?? '', TEMPLATE_LABELS[key], false))}
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '7px', background: '#F1F5F9', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
-                  <Eye size={12} /> Preview
-                </button>
-              </div>
-              <textarea value={templates[key]?.body_html ?? ''} onChange={e => setTmpl(key, { body_html: e.target.value })} style={{ ...bodyTA, minHeight: '130px' }} />
-            </div>
-          </div>
-        </Section>
-      ))}
-
-      {/* ── EMAIL PREVIEW MODAL ── */}
+      {/* Email preview modal */}
       {preview && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPreview(null)}>
-          <div style={{ background: '#fff', borderRadius: '16px', width: '720px', maxWidth: '94vw', height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.45)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: '#fff', borderRadius: '8px', width: '720px', maxWidth: '94vw', height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.45)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
               <div>
                 <div style={{ fontWeight: '700', fontSize: '14px', color: '#0F172A' }}>Email Preview</div>
@@ -456,23 +650,6 @@ export default function TryoutOfferSettingsPage() {
           </div>
         </div>
       )}
-
-      {/* ── MERGE TOKEN REFERENCE ── */}
-      <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', marginTop: '4px' }}>
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Info size={14} color="#6366F1" />
-          <span style={{ fontSize: '12px', fontWeight: '800', color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Merge token reference</span>
-          <span style={{ fontSize: '11px', color: '#94A3B8', marginLeft: '2px' }}>— copy into any email body</span>
-        </div>
-        <div style={{ padding: '14px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '8px' }}>
-          {MERGE_TOKENS.map(({ token, desc }) => (
-            <div key={token} style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '6px 10px', borderRadius: '7px', background: '#F8FAFC', border: '1px solid #F1F5F9' }}>
-              <code style={{ fontSize: '11px', background: '#EEF2FF', color: '#4338CA', borderRadius: '4px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0, fontWeight: '700' }}>{token}</code>
-              <span style={{ fontSize: '11px', color: '#64748B' }}>{desc}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
