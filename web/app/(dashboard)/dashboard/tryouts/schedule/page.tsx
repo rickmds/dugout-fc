@@ -7,6 +7,7 @@ import { seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
 import { Plus, X, LayoutGrid, List, AlertTriangle, MapPin, Users, Copy } from 'lucide-react';
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as const;
+const WEEKDAYS = ['Mon','Tue','Wed','Thu','Fri'] as const;
 type Day = typeof DAYS[number];
 const DAY_FULL: Record<string,string> = { Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday' };
 const TIME_PRESETS = ['15:00','16:00','17:00','18:00','19:00','20:00'];
@@ -65,6 +66,7 @@ export default function PracticeSchedulePage() {
   const [filterGender, setFG]        = useState('All');
   const [filterCoach,  setFC]        = useState('All');
   const [showConflictsOnly, setConflictsOnly] = useState(false);
+  const [showWeekends, setShowWeekends] = useState(false);
 
   // Slot modal
   const [showSlotModal, setShowSlotModal] = useState(false);
@@ -174,24 +176,24 @@ export default function PracticeSchedulePage() {
     const duration   = fmtDuration(slot.start_time, slot.end_time);
 
     if (compact) {
-      // Grid view chip
+      // Grid view chip — tight, coloured left bar, full width
       return (
-        <div style={{ background:isConflict?'#FEF2F2':`${color}14`, border:`1.5px solid ${isConflict?'#FCA5A5':color+'55'}`, borderLeft:`3px solid ${isConflict?'#EF4444':color}`, borderRadius:'7px', padding:'5px 8px', marginBottom:'4px', cursor:'pointer', transition:'box-shadow 0.1s', position:'relative' }}
-          onMouseEnter={e=>(e.currentTarget as HTMLElement).style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'}
+        <div style={{ background:isConflict?'#FEF2F2':'#fff', border:`1px solid ${isConflict?'#FCA5A5':'#E2E8F0'}`, borderLeft:`3px solid ${isConflict?'#EF4444':color}`, borderRadius:'6px', padding:'4px 6px', marginBottom:'3px', transition:'box-shadow 0.1s', overflow:'hidden' }}
+          onMouseEnter={e=>(e.currentTarget as HTMLElement).style.boxShadow='0 2px 6px rgba(0,0,0,0.08)'}
           onMouseLeave={e=>(e.currentTarget as HTMLElement).style.boxShadow='none'}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-            <div onClick={()=>openEditSlot(slot)} style={{ flex:1, cursor:'pointer' }}>
-              <div style={{ fontWeight:'800', fontSize:'11.5px', color:isConflict?'#EF4444':color, lineHeight:1.2 }}>{slot.team ?? 'Open'}</div>
-              {(slot.start_time||slot.end_time) && <div style={{ fontSize:'10.5px', color:'#64748B', marginTop:'2px', fontWeight:'600' }}>{fmt12(slot.start_time)}{slot.end_time?`–${fmt12(slot.end_time)}`:''}{duration?` · ${duration}`:''}</div>}
-              {cn && <div style={{ fontSize:'10px', color:'#94A3B8', marginTop:'1px' }}>{cn}</div>}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:'3px' }}>
+            <div onClick={()=>openEditSlot(slot)} style={{ flex:1, cursor:'pointer', minWidth:0 }}>
+              <div style={{ fontWeight:'800', fontSize:'11px', color:isConflict?'#EF4444':color, lineHeight:1.25, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{slot.team ?? 'Open'}</div>
+              {cn && <div style={{ fontSize:'9.5px', color:'#64748B', marginTop:'1px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{cn}</div>}
+              {slot.start_time && <div style={{ fontSize:'9.5px', color:'#94A3B8', marginTop:'1px', fontVariantNumeric:'tabular-nums' }}>{fmt12(slot.start_time)}{slot.end_time?`–${fmt12(slot.end_time)}`:''}</div>}
             </div>
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'3px', marginLeft:'5px', flexShrink:0 }}>
-              {isConflict && <span style={{ fontSize:'10px', color:'#EF4444' }}>⚠</span>}
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'2px', flexShrink:0 }}>
+              {isConflict && <span style={{ fontSize:'9px', color:'#EF4444' }}>⚠</span>}
               <button onClick={e=>openDupPopover(e,slot)} title="Copy to another day"
-                style={{ background:'none', border:'none', cursor:'pointer', padding:'2px', display:'flex', color:'#CBD5E1', transition:'color 0.1s' }}
+                style={{ background:'none', border:'none', cursor:'pointer', padding:'1px', display:'flex', color:'#E2E8F0', transition:'color 0.1s' }}
                 onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color=color}
-                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='#CBD5E1'}>
-                <Copy size={11}/>
+                onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color='#E2E8F0'}>
+                <Copy size={10}/>
               </button>
             </div>
           </div>
@@ -417,59 +419,73 @@ export default function PracticeSchedulePage() {
 
         {/* ── GRID VIEW ── */}
         {view==='grid' && (
-          <div style={{ flex:1, overflowX:'auto', overflowY:'auto' }}>
+          <div style={{ flex:1, overflowY:'auto', overflowX:'hidden' }}>
             {activeFields.length===0 ? (
               <EmptyState icon="📅" title="No fields configured" sub={<span>Go to <strong>Fields &amp; Zones</strong> in the sidebar to set up your fields first.</span>} />
-            ) : (
-              <table style={{ borderCollapse:'collapse', minWidth:'100%', fontSize:'12.5px' }}>
-                <thead>
-                  <tr style={{ background:'#0F172A', position:'sticky', top:0, zIndex:2 }}>
-                    <th style={{ padding:'10px 16px', textAlign:'left', fontSize:'10px', fontWeight:'800', color:'rgba(255,255,255,0.5)', letterSpacing:'1.5px', width:'160px', whiteSpace:'nowrap' }}>FIELD / ZONE</th>
-                    {DAYS.map(d=>{
-                      const dayCount = slots.filter(s=>s.day_of_week===d).length;
-                      return (
-                        <th key={d} style={{ padding:'8px 14px', textAlign:'center', fontSize:'10px', fontWeight:'800', color:'rgba(255,255,255,0.5)', letterSpacing:'1.5px', minWidth:'150px' }}>
-                          <div style={{ color:'rgba(255,255,255,0.7)' }}>{DAY_FULL[d].toUpperCase()}</div>
-                          <div style={{ fontSize:'9px', fontWeight:'600', color:'rgba(255,255,255,0.35)', marginTop:'2px' }}>{dayCount>0?`${dayCount} session${dayCount!==1?'s':''}`:''}</div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeFields.flatMap((field,fi) => {
-                    const zones = (field.sub_zones??[]).length>0 ? field.sub_zones : [null as unknown as string];
-                    return zones.map((zone,zi)=>{
-                      const isFirst = zi===0;
-                      const rowBg   = fi%2===0 ? '#fff' : '#FAFAFA';
-                      return (
-                        <tr key={`${field.id}-${zone??'main'}`} style={{ borderBottom:'1px solid #F1F5F9', background:rowBg }}>
-                          <td style={{ padding:'8px 16px', borderRight:'1px solid #E2E8F0', verticalAlign:'top', whiteSpace:'nowrap' }}>
-                            {isFirst && <div style={{ fontSize:'12.5px', fontWeight:'800', color:'#0F172A', display:'flex', alignItems:'center', gap:'5px' }}><MapPin size={11} color={primary}/>{field.name}</div>}
-                            {zone && <div style={{ fontSize:'11px', color:'#94A3B8', marginTop:isFirst?'2px':'0', paddingLeft:isFirst?'16px':'0' }}>{zone}</div>}
-                          </td>
-                          {DAYS.map(day=>{
-                            const cell = slots
-                              .filter(s=>s.field_name===field.name && s.sub_zone===(zone??null) && s.day_of_week===day)
-                              .filter(s=>!showConflictsOnly || conflictIds.has(s.id))
-                              .sort((a,b)=>(a.start_time??'').localeCompare(b.start_time??''));
-                            return (
-                              <td key={day}
-                                onDragOver={e=>{e.preventDefault();(e.currentTarget as HTMLElement).style.background=`${primary}10`;}}
-                                onDragLeave={e=>{(e.currentTarget as HTMLElement).style.background='';}}
-                                onDrop={e=>{e.preventDefault();(e.currentTarget as HTMLElement).style.background='';handleDrop(field.name,zone??null,day as Day);}}
-                                style={{ padding:'5px 7px', borderRight:'1px solid #F1F5F9', verticalAlign:'top', minWidth:'150px', minHeight:'52px', transition:'background 0.1s' }}>
-                                {cell.map(s=><SessionChip key={s.id} slot={s} compact />)}
+            ) : (() => {
+              const gridDays = (showWeekends ? DAYS : WEEKDAYS) as readonly Day[];
+              const weekendCount = slots.filter(s=>s.day_of_week==='Sat'||s.day_of_week==='Sun').length;
+              return (
+                <>
+                  {/* weekend toggle bar */}
+                  <div style={{ padding:'8px 14px', borderBottom:'1px solid #F1F5F9', background:'#fff', display:'flex', alignItems:'center', gap:'10px' }}>
+                    <button onClick={()=>setShowWeekends(x=>!x)}
+                      style={{ fontSize:'12px', fontWeight:'600', padding:'4px 12px', borderRadius:'6px', border:`1px solid ${showWeekends?primary:'#E2E8F0'}`, background:showWeekends?`${primary}15`:'#F8FAFC', color:showWeekends?primary:'#64748B', cursor:'pointer', fontFamily:'inherit' }}>
+                      {showWeekends ? '✓ Weekends' : 'Show weekends'}
+                    </button>
+                    {!showWeekends && weekendCount>0 && <span style={{ fontSize:'11.5px', color:'#F59E0B', fontWeight:'600' }}>{weekendCount} session{weekendCount!==1?'s':''} on Sat/Sun hidden</span>}
+                  </div>
+                  <table style={{ borderCollapse:'collapse', width:'100%', tableLayout:'fixed', fontSize:'12.5px' }}>
+                    <thead>
+                      <tr style={{ background:'#0F172A', position:'sticky', top:0, zIndex:2 }}>
+                        <th style={{ padding:'10px 12px', textAlign:'left', fontSize:'10px', fontWeight:'800', color:'rgba(255,255,255,0.5)', letterSpacing:'1.5px', width:'120px' }}>FIELD / ZONE</th>
+                        {gridDays.map(d=>{
+                          const dayCount = slots.filter(s=>s.day_of_week===d).length;
+                          return (
+                            <th key={d} style={{ padding:'8px 10px', textAlign:'center', fontSize:'10px', fontWeight:'800', color:'rgba(255,255,255,0.7)', letterSpacing:'1px' }}>
+                              <div>{DAY_FULL[d].toUpperCase()}</div>
+                              <div style={{ fontSize:'9px', fontWeight:'600', color:'rgba(255,255,255,0.35)', marginTop:'2px' }}>{dayCount>0?`${dayCount} sessions`:''}</div>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeFields.flatMap((field,fi) => {
+                        const zones = (field.sub_zones??[]).length>0 ? field.sub_zones : [null as unknown as string];
+                        return zones.map((zone,zi)=>{
+                          const isFirst = zi===0;
+                          const rowBg   = fi%2===0 ? '#fff' : '#FAFAFA';
+                          return (
+                            <tr key={`${field.id}-${zone??'main'}`} style={{ borderBottom:'1px solid #F1F5F9', background:rowBg }}>
+                              <td style={{ padding:'6px 12px', borderRight:'1px solid #E2E8F0', verticalAlign:'top', overflow:'hidden' }}>
+                                {isFirst && <div style={{ fontSize:'11.5px', fontWeight:'800', color:'#0F172A', display:'flex', alignItems:'center', gap:'4px', overflow:'hidden' }}><MapPin size={10} color={primary}/><span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{field.name}</span></div>}
+                                {zone && <div style={{ fontSize:'10px', color:'#94A3B8', marginTop:isFirst?'2px':'0', paddingLeft:isFirst?'14px':'0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{zone}</div>}
                               </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    });
-                  })}
-                </tbody>
-              </table>
-            )}
+                              {gridDays.map(day=>{
+                                const cell = slots
+                                  .filter(s=>s.field_name===field.name && s.sub_zone===(zone??null) && s.day_of_week===day)
+                                  .filter(s=>!showConflictsOnly || conflictIds.has(s.id))
+                                  .sort((a,b)=>(a.start_time??'').localeCompare(b.start_time??''));
+                                return (
+                                  <td key={day}
+                                    onDragOver={e=>{e.preventDefault();(e.currentTarget as HTMLElement).style.background=`${primary}10`;}}
+                                    onDragLeave={e=>{(e.currentTarget as HTMLElement).style.background='';}}
+                                    onDrop={e=>{e.preventDefault();(e.currentTarget as HTMLElement).style.background='';handleDrop(field.name,zone??null,day as Day);}}
+                                    style={{ padding:'4px 5px', borderRight:'1px solid #F1F5F9', verticalAlign:'top', minHeight:'48px', transition:'background 0.1s' }}>
+                                    {cell.map(s=><SessionChip key={s.id} slot={s} compact />)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        });
+                      })}
+                    </tbody>
+                  </table>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
