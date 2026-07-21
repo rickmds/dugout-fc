@@ -139,8 +139,15 @@ export default function PracticeSchedulePage() {
   function handleDrop(fieldName:string, zone:string|null, day:Day) {
     const team = dragTeamRef.current;
     if (!team) return;
+    // Auto-start: find the latest end_time of sessions already in this zone+day
+    const existing = slots.filter(s=>s.field_name===fieldName && s.sub_zone===zone && s.day_of_week===day);
+    const latestEnd = existing.map(s=>s.end_time).filter(Boolean).sort().pop() ?? null;
     setEditSlot(null);
-    setDraftSlot({ field_name:fieldName, sub_zone:zone??undefined, day_of_week:day, team:team.name, age_group:team.age_group??undefined, gender:team.gender??undefined });
+    setDraftSlot({
+      field_name: fieldName, sub_zone: zone??undefined, day_of_week: day,
+      team: team.name, age_group: team.age_group??undefined, gender: team.gender??undefined,
+      start_time: latestEnd ?? undefined,
+    });
     setShowSlotModal(true);
     dragTeamRef.current = null;
   }
