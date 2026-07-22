@@ -585,9 +585,9 @@ export default function TeamSchedulePage() {
 
         {/* RSVP Panel */}
         {selectedEvent && (
-          <div style={{ width: '320px', flexShrink: 0, background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '24px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+          <div style={{ width: '320px', flexShrink: 0, background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '24px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 40px)' }}>
 
-            <div style={{ padding: '16px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+            <div style={{ padding: '16px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexShrink: 0 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: TYPE_COLORS[selectedEvent.type], flexShrink: 0 }} />
@@ -617,7 +617,7 @@ export default function TeamSchedulePage() {
             </div>
 
             {!rsvpLoading && (
-              <div style={{ display: 'flex', gap: '8px', padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
+              <div style={{ display: 'flex', gap: '8px', padding: '12px 18px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
                 <div style={{ flex: 1, textAlign: 'center', background: '#F0FDF4', borderRadius: '8px', padding: '8px 6px' }}>
                   <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{attending.length + confirmedGuestCount}</div>
                   <div style={{ fontSize: '10px', fontWeight: '700', color: '#22C55E' }}>Going</div>
@@ -636,7 +636,7 @@ export default function TeamSchedulePage() {
               </div>
             )}
 
-            <div style={{ maxHeight: '480px', overflowY: 'auto' }}>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
               {rsvpLoading ? (
                 <div style={{ padding: '40px', textAlign: 'center' }}>
                   <div style={{ width: '22px', height: '22px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
@@ -700,7 +700,6 @@ export default function TeamSchedulePage() {
                   })}
                 </>
               )}
-            </div>
             <GuestSection
               eventId={selectedEvent.id}
               teamId={teamId}
@@ -717,6 +716,7 @@ export default function TeamSchedulePage() {
               eventTitle={selectedEvent.title}
               primary={primary}
             />
+            </div>
           </div>
         )}
       </div>
