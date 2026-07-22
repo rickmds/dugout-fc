@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -8,6 +8,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { PULSE_COLORS } from '../../../../constants/colors';
+import { sendProfilesPush } from '../../../../lib/push';
 
 type GuestRequest = {
   id: string;
@@ -52,6 +53,7 @@ export default function GuestRequestScreen() {
   const [alreadyVolunteered,  setAlreadyVolunteered]  = useState(false);
   const [loading,             setLoading]             = useState(true);
   const [volunteering,        setVolunteering]        = useState(false);
+  const coachProfileIds       = useRef<string[]>([]);
 
   useEffect(() => {
     if (requestId && profile) load();
@@ -65,12 +67,14 @@ export default function GuestRequestScreen() {
     setRequest(req as unknown as GuestRequest);
 
     const r = req as unknown as GuestRequest;
-    const [eventRes, teamRes, guestsRes, myPlayerRes] = await Promise.all([
+    const [eventRes, teamRes, guestsRes, myPlayerRes, coachesRes] = await Promise.all([
       supabase.from('events').select('title,type,event_date,event_time,location').eq('id', r.event_id).single(),
       supabase.from('teams').select('name').eq('id', r.requesting_team_id).single(),
       supabase.from('event_guests').select('player_id').eq('event_id', r.event_id).eq('role', 'player').neq('status', 'declined'),
       supabase.from('players').select('id,full_name').eq('team_id', r.target_team_id).eq('profile_id', profile.id).maybeSingle(),
+      supabase.from('team_members').select('profile_id').eq('team_id', r.requesting_team_id).eq('role', 'coach'),
     ]);
+    coachProfileIds.current = ((coachesRes.data ?? []) as any[]).map(c => c.profile_id).filter(Boolean) as string[];
 
     if (eventRes.data) setEvent(eventRes.data as EventInfo);
     if (teamRes.data)  setRequestingTeamName(teamRes.data.name);
@@ -121,6 +125,17 @@ export default function GuestRequestScreen() {
       await (supabase as any).from('guest_requests').update({ status: 'filled' }).eq('id', request.id);
       setRequest(r => r ? { ...r, status: 'filled' } : r);
     }
+
+    // Notify the requesting team's coaches
+    if (coachProfileIds.current.length > 0) {
+      await sendProfilesPush({
+        profileIds: coachProfileIds.current,
+        title: 'Guest spot filled',
+        body: `${myPlayerName} has volunteered to guest play for ${requestingTeamName}${event?.title ? ` — ${event.title}` : ''}.`,
+        data: { type: 'guest_accepted', event_id: request.event_id, club_slug: clubSlug },
+      });
+    }
+
     setAlreadyVolunteered(true);
     setSpotsLeft(Math.max(0, newLeft));
     setVolunteering(false);

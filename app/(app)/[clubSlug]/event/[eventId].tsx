@@ -203,6 +203,16 @@ type GuestEntry = {
   status: 'pending' | 'confirmed' | 'declined';
   linked_profile_id: string | null;
   team_name: string | null;
+  team_id: string | null;
+};
+
+type GuestCallout = {
+  id: string;
+  target_team_id: string;
+  target_team_name: string;
+  spots_needed: number;
+  status: 'open' | 'filled' | 'cancelled';
+  note: string | null;
 };
 
 type GuestPlayerResult = {
@@ -296,6 +306,7 @@ export default function EventDetailScreen() {
   const [rsvpSaving, setRsvpSaving] = useState(false);
   const [nudging, setNudging] = useState(false);
   const [guests, setGuests] = useState<GuestEntry[]>([]);
+  const [callouts, setCallouts] = useState<GuestCallout[]>([]);
   const [guestQuery, setGuestQuery] = useState('');
   const [guestPlayerResults, setGuestPlayerResults] = useState<GuestPlayerResult[]>([]);
   const [guestCoachResults, setGuestCoachResults] = useState<CoachResult[]>([]);
@@ -409,6 +420,27 @@ export default function EventDetailScreen() {
       (attendanceRes.data ?? []).map((r: any) => [r.player_id as string, r.status as 'present' | 'absent' | 'late'])
     );
     setAttendanceMap(attMap);
+
+    // Load active call-outs for this event (coaches only, games only)
+    const evType = (eventRes.data as any)?.type;
+    const isCoachRole = profile.role === 'org_admin' || profile.role === 'coach';
+    if (isCoachRole && evType === 'game') {
+      const { data: calloutData } = await (supabase as any).from('guest_requests')
+        .select('id,target_team_id,spots_needed,status,note')
+        .eq('event_id', eventId)
+        .eq('requesting_team_id', team.id)
+        .neq('status', 'cancelled');
+      if (calloutData?.length > 0) {
+        const teamIds = [...new Set((calloutData as any[]).map(c => c.target_team_id as string))];
+        const { data: teamData } = await supabase.from('teams').select('id,name').in('id', teamIds);
+        const nameMap = new Map(((teamData ?? []) as any[]).map(t => [t.id as string, t.name as string]));
+        setCallouts((calloutData as any[]).map(c => ({
+          id: c.id, target_team_id: c.target_team_id,
+          target_team_name: nameMap.get(c.target_team_id) ?? 'Unknown team',
+          spots_needed: c.spots_needed, status: c.status, note: c.note,
+        })));
+      }
+    }
 
     // Fetch weather — pass lat/lng or address; WeatherAPI handles both
     const ev = eventRes.data as unknown as EventDetail;
@@ -609,12 +641,12 @@ export default function EventDetailScreen() {
 
   async function resolveAndSetGuests(raw: any[]) {
     const playerGuestIds = raw.filter(g => g.role === 'player' && g.player_id).map(g => g.player_id as string);
-    const playerInfoMap = new Map<string, { profile_id: string | null; team_name: string | null }>();
+    const playerInfoMap = new Map<string, { profile_id: string | null; team_name: string | null; team_id: string | null }>();
     if (playerGuestIds.length > 0) {
       const { data: pData } = await (supabase as any)
-        .from('players').select('id,profile_id,teams(name)').in('id', playerGuestIds);
+        .from('players').select('id,profile_id,team_id,teams(name)').in('id', playerGuestIds);
       for (const p of pData ?? []) {
-        playerInfoMap.set(p.id, { profile_id: p.profile_id ?? null, team_name: p.teams?.name ?? null });
+        playerInfoMap.set(p.id, { profile_id: p.profile_id ?? null, team_name: p.teams?.name ?? null, team_id: p.team_id ?? null });
       }
     }
     setGuests(raw.map(g => {
@@ -624,6 +656,7 @@ export default function EventDetailScreen() {
         full_name: g.full_name, role: g.role, status: g.status,
         linked_profile_id: g.role === 'player' ? (pInfo?.profile_id ?? null) : g.profile_id,
         team_name: pInfo?.team_name ?? null,
+        team_id: pInfo?.team_id ?? null,
       } as GuestEntry;
     }));
   }
@@ -768,6 +801,16 @@ export default function EventDetailScreen() {
     ]);
   }
 
+  function handleCancelCallout(calloutId: string, teamName: string) {
+    Alert.alert('Cancel call out', `Cancel the call out to ${teamName}?`, [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Cancel call out', style: 'destructive', onPress: async () => {
+        await (supabase as any).from('guest_requests').update({ status: 'cancelled' }).eq('id', calloutId);
+        setCallouts(prev => prev.filter(c => c.id !== calloutId));
+      }},
+    ]);
+  }
+
   function parseAge(ag: string | null | undefined): number {
     if (!ag) return 999;
     const m = ag.match(/\d+/);
@@ -817,6 +860,11 @@ export default function EventDetailScreen() {
         data: { type: 'guest_request', request_id: newReq.id, club_slug: clubSlug },
       });
     }
+    setCallouts(prev => [...prev, {
+      id: newReq.id, target_team_id: requestTargetId,
+      target_team_name: targetTeam?.name ?? 'Unknown team',
+      spots_needed: requestSpots, status: 'open', note: requestNote.trim() || null,
+    }]);
     setRequestSending(false); setGuestModal(false);
     Alert.alert('Call out sent!', `${targetTeam?.name ?? 'The team'}'s parents have been notified and can volunteer their child.`);
   }
@@ -1495,6 +1543,42 @@ export default function EventDetailScreen() {
                       ))}
                     </>
                   )}
+                </View>
+              )}
+
+              {/* Active call-outs */}
+              {callouts.length > 0 && (
+                <View style={styles.calloutList}>
+                  {callouts.map(c => {
+                    const filled = guestPlayers.filter(g => g.team_id === c.target_team_id && g.status !== 'declined').length;
+                    const spotsLeft = Math.max(0, c.spots_needed - filled);
+                    return (
+                      <View key={c.id} style={styles.calloutRow}>
+                        <View style={styles.calloutIcon}>
+                          <Ionicons name="megaphone-outline" size={14} color="#f97316" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.calloutTeam}>{c.target_team_name}</Text>
+                          <Text style={styles.calloutMeta}>
+                            {c.status === 'filled'
+                              ? `All ${c.spots_needed} spot${c.spots_needed !== 1 ? 's' : ''} filled`
+                              : `${filled}/${c.spots_needed} spots filled · ${spotsLeft} remaining`}
+                            {c.note ? ` · "${c.note}"` : ''}
+                          </Text>
+                        </View>
+                        <View style={[styles.calloutBadge, c.status === 'filled' && { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+                          <Text style={[styles.calloutBadgeText, c.status === 'filled' && { color: '#22c55e' }]}>
+                            {c.status === 'filled' ? 'Filled' : 'Open'}
+                          </Text>
+                        </View>
+                        {c.status === 'open' && (
+                          <TouchableOpacity onPress={() => handleCancelCallout(c.id, c.target_team_name)} hitSlop={8} style={{ marginLeft: 8 }}>
+                            <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
               )}
 
@@ -2694,6 +2778,23 @@ const styles = StyleSheet.create({
   guestRoleLabel: { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1, textTransform: 'uppercase' },
   addGuestCoachLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   addGuestCoachLinkText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  calloutList: { marginTop: 10, gap: 6 },
+  calloutRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: 'rgba(249,115,22,0.06)', borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(249,115,22,0.2)', padding: 10,
+  },
+  calloutIcon: {
+    width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(249,115,22,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  calloutTeam: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calloutMeta: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  calloutBadge: {
+    backgroundColor: 'rgba(249,115,22,0.12)', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 2,
+  },
+  calloutBadgeText: { fontSize: 11, fontWeight: '700', color: '#f97316' },
   guestStatusChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   guestStatusText: { fontSize: 11, fontWeight: '700' },
 

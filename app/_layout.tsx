@@ -52,6 +52,7 @@ function AppShell() {
           break;
         case 'guest_invite':
         case 'guest_coach_invite':
+        case 'guest_accepted':
           if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
           else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
           break;
