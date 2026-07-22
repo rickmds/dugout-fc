@@ -296,23 +296,21 @@ export default function EventDetailScreen() {
   const [rsvpSaving, setRsvpSaving] = useState(false);
   const [nudging, setNudging] = useState(false);
   const [guests, setGuests] = useState<GuestEntry[]>([]);
-  const [guestSheet, setGuestSheet] = useState<'player' | 'coach' | null>(null);
   const [guestQuery, setGuestQuery] = useState('');
   const [guestPlayerResults, setGuestPlayerResults] = useState<GuestPlayerResult[]>([]);
   const [guestCoachResults, setGuestCoachResults] = useState<CoachResult[]>([]);
   const [guestSearching, setGuestSearching] = useState(false);
   const [addingGuest, setAddingGuest] = useState<string | null>(null);
   type ClubTeamBrowse = { id: string; name: string; players: GuestPlayerResult[] };
-  const [clubBrowse,       setClubBrowse]       = useState<ClubTeamBrowse[]>([]);
-  const [browseLoading,    setBrowseLoading]    = useState(false);
-  const [requestSheet,        setRequestSheet]        = useState(false);
-  const [requestTeams,        setRequestTeams]        = useState<{ id: string; name: string; age_group: string | null }[]>([]);
-  const [requestTargetId,     setRequestTargetId]     = useState('');
-  const [requestTargetPlayers,setRequestTargetPlayers]= useState<GuestPlayerResult[]>([]);
-  const [requestSelectedIds,  setRequestSelectedIds]  = useState<Set<string>>(new Set());
-  const [requestLoadingPl,    setRequestLoadingPl]    = useState(false);
-  const [requestSpots,        setRequestSpots]        = useState(1);
-  const [requestNote,         setRequestNote]         = useState('');
+  const [clubBrowse,    setClubBrowse]    = useState<ClubTeamBrowse[]>([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
+  const [guestModal,    setGuestModal]    = useState(false);
+  const [guestRole,     setGuestRole]     = useState<'player' | 'coach'>('player');
+  const [guestTab,      setGuestTab]      = useState<'invite' | 'callout'>('invite');
+  const [requestTeams,    setRequestTeams]    = useState<{ id: string; name: string; age_group: string | null }[]>([]);
+  const [requestTargetId, setRequestTargetId] = useState('');
+  const [requestSpots,    setRequestSpots]    = useState(1);
+  const [requestNote,     setRequestNote]     = useState('');
   const [requestSending,      setRequestSending]      = useState(false);
   const [activeMainTab, setActiveMainTab] = useState<'details' | 'availability' | 'attendance'>(section === 'attendance' ? 'attendance' : 'details');
   const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late'>>(new Map());
@@ -631,13 +629,15 @@ export default function EventDetailScreen() {
   }
 
   useEffect(() => {
-    if (guestSheet === 'player') {
-      setGuestQuery(''); setGuestPlayerResults([]); setClubBrowse([]);
+    if (!guestModal) return;
+    setGuestQuery(''); setGuestPlayerResults([]); setGuestCoachResults([]);
+    setRequestTargetId(''); setRequestSpots(1); setRequestNote('');
+    if (guestRole === 'player') {
+      setClubBrowse([]);
       loadClubBrowse();
-    } else if (guestSheet === 'coach') {
-      setGuestQuery(''); setGuestCoachResults([]);
+      loadEligibleTeams();
     }
-  }, [guestSheet]);
+  }, [guestModal, guestRole]);
 
   async function loadClubBrowse() {
     if (!profile?.club_id || !team?.id) return;
@@ -670,7 +670,7 @@ export default function EventDetailScreen() {
       setGuestPlayerResults([]); setGuestCoachResults([]); return;
     }
     setGuestSearching(true);
-    if (guestSheet === 'player') {
+    if (guestRole === 'player') {
       const { data: teams } = await supabase.from('teams').select('id,name,age_group')
         .eq('club_id', profile.club_id).neq('id', team.id);
       const myAge = parseAge((team as any).age_group);
@@ -714,7 +714,7 @@ export default function EventDetailScreen() {
     const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
     await resolveAndSetGuests((fresh ?? []) as any[]);
     setAddingGuest(null);
-    setGuestSheet(null);
+    setGuestModal(false);
   }
 
   async function handleAddGuestCoach(c: CoachResult) {
@@ -739,7 +739,7 @@ export default function EventDetailScreen() {
     const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
     await resolveAndSetGuests((fresh ?? []) as any[]);
     setAddingGuest(null);
-    setGuestSheet(null);
+    setGuestModal(false);
   }
 
   async function handleGuestRespond(guestId: string, newStatus: 'confirmed' | 'declined') {
@@ -774,88 +774,51 @@ export default function EventDetailScreen() {
     return m ? parseInt(m[0]) : 999;
   }
 
-  async function openRequestSheet() {
+  function openGuestModal(role: 'player' | 'coach') {
+    setGuestRole(role);
+    setGuestTab('invite');
+    setGuestModal(true);
+  }
+
+  async function loadEligibleTeams() {
     if (!profile?.club_id || !team?.id) return;
     const { data: teams } = await supabase.from('teams').select('id,name,age_group')
       .eq('club_id', profile.club_id).neq('id', team.id).order('name');
     const myAge = parseAge((team as any).age_group);
-    // Only offer teams where age ≤ current team's age (younger players can play up, not down)
     const eligible = ((teams ?? []) as { id: string; name: string; age_group: string | null }[])
       .filter(t => parseAge(t.age_group) <= myAge);
     setRequestTeams(eligible);
-    setRequestTargetId(''); setRequestSelectedIds(new Set()); setRequestTargetPlayers([]);
-    setRequestSpots(1); setRequestNote('');
-    setRequestSheet(true);
-  }
-
-  async function loadRequestTeamPlayers(teamId: string) {
-    setRequestLoadingPl(true); setRequestSelectedIds(new Set());
-    const { data } = await supabase.from('players')
-      .select('id,full_name,jersey_number,position,profile_id,team_id')
-      .eq('team_id', teamId).order('jersey_number');
-    const already = new Set(guests.map(g => g.player_id).filter(Boolean) as string[]);
-    setRequestTargetPlayers(
-      ((data ?? []) as any[])
-        .filter(p => !already.has(p.id))
-        .map(p => ({ ...p, team_name: requestTeams.find(t => t.id === teamId)?.name ?? '' }))
-    );
-    setRequestLoadingPl(false);
   }
 
   async function sendRequest() {
     if (!profile || !team || !event || !requestTargetId) return;
     setRequestSending(true);
     const targetTeam = requestTeams.find(t => t.id === requestTargetId);
-    const specificPlayers = requestTargetPlayers.filter(p => requestSelectedIds.has(p.id));
-    const isSpecific = specificPlayers.length > 0;
 
-    if (isSpecific) {
-      // Invite each selected player directly (same as the Add flow)
-      await Promise.all(specificPlayers.map(async p => {
-        const { error } = await supabase.from('event_guests').insert({
-          event_id: event.id, player_id: p.id, full_name: p.full_name,
-          role: 'player', status: 'pending', added_by: profile.id,
-        });
-        if (!error && p.profile_id) {
-          await sendProfilesPush({
-            profileIds: [p.profile_id],
-            title: 'Guest invitation',
-            body: `${profile.full_name ?? 'Coach'} invited ${p.full_name} to guest play for ${team.name} — ${event.title}.`,
-            data: { type: 'guest_invite', event_id: event.id, club_slug: clubSlug },
-          });
-        }
-      }));
-      const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', event.id);
-      await resolveAndSetGuests((fresh ?? []) as any[]);
-      setRequestSending(false); setRequestSheet(false);
-      Alert.alert('Invites sent!', `${specificPlayers.length} player${specificPlayers.length !== 1 ? 's' : ''} have been invited directly.`);
-    } else {
-      // Blanket request — notify whole team
-      const { data: newReq, error } = await (supabase as any).from('guest_requests').insert({
-        event_id:           event.id,
-        requesting_team_id: team.id,
-        target_team_id:     requestTargetId,
-        note:               requestNote.trim() || null,
-        spots_needed:       requestSpots,
-        status:             'open',
-        created_by:         profile.id,
-      }).select('id').single();
-      if (error || !newReq) {
-        Alert.alert('Error', 'Could not send request. Try again.'); setRequestSending(false); return;
-      }
-      const { data: players } = await supabase.from('players').select('profile_id').eq('team_id', requestTargetId);
-      const profileIds = ((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean) as string[];
-      if (profileIds.length > 0) {
-        await sendProfilesPush({
-          profileIds,
-          title: `${team.name} needs guest players`,
-          body: `${profile.full_name ?? 'A coach'} is looking for ${requestSpots} player${requestSpots !== 1 ? 's' : ''} for ${event.title}${requestNote.trim() ? ` — ${requestNote.trim()}` : ''}. Tap to volunteer.`,
-          data: { type: 'guest_request', request_id: newReq.id, club_slug: clubSlug },
-        });
-      }
-      setRequestSending(false); setRequestSheet(false);
-      Alert.alert('Request sent!', `${targetTeam?.name ?? 'The team'}'s parents have been notified and can volunteer their child.`);
+    const { data: newReq, error } = await (supabase as any).from('guest_requests').insert({
+      event_id:           event.id,
+      requesting_team_id: team.id,
+      target_team_id:     requestTargetId,
+      note:               requestNote.trim() || null,
+      spots_needed:       requestSpots,
+      status:             'open',
+      created_by:         profile.id,
+    }).select('id').single();
+    if (error || !newReq) {
+      Alert.alert('Error', 'Could not send call out. Try again.'); setRequestSending(false); return;
     }
+    const { data: players } = await supabase.from('players').select('profile_id').eq('team_id', requestTargetId);
+    const profileIds = ((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean) as string[];
+    if (profileIds.length > 0) {
+      await sendProfilesPush({
+        profileIds,
+        title: `${team.name} needs guest players`,
+        body: `${profile.full_name ?? 'A coach'} is looking for ${requestSpots} player${requestSpots !== 1 ? 's' : ''} for ${event.title}${requestNote.trim() ? ` — ${requestNote.trim()}` : ''}. Tap to volunteer.`,
+        data: { type: 'guest_request', request_id: newReq.id, club_slug: clubSlug },
+      });
+    }
+    setRequestSending(false); setGuestModal(false);
+    Alert.alert('Call out sent!', `${targetTeam?.name ?? 'The team'}'s parents have been notified and can volunteer their child.`);
   }
 
   async function markAttendance(playerId: string, newStatus: 'present' | 'absent' | 'late') {
@@ -1453,6 +1416,99 @@ export default function EventDetailScreen() {
             </View>
           )}
 
+          {/* Coach — Guests card (games only) */}
+          {isCoach && event.type === 'game' && (
+            <View style={styles.section}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>Guests</Text>
+                <TouchableOpacity
+                  onPress={() => openGuestModal('player')}
+                  style={[styles.guestCardAddBtn, { backgroundColor: rgba(0.1) }]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="person-add-outline" size={13} color={primaryColor} />
+                  <Text style={[styles.guestCardAddBtnText, { color: primaryColor }]}>Add guests</Text>
+                </TouchableOpacity>
+              </View>
+
+              {guests.length === 0 ? (
+                <View style={styles.guestCardEmpty}>
+                  <Ionicons name="people-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                  <Text style={styles.guestCardEmptyText}>No guests yet — add players or coaches from other teams.</Text>
+                </View>
+              ) : (
+                <View style={styles.playerCard}>
+                  {guestPlayers.length > 0 && (
+                    <>
+                      <View style={styles.guestRoleHeader}>
+                        <Text style={styles.guestRoleLabel}>PLAYERS</Text>
+                      </View>
+                      {guestPlayers.map((g) => (
+                        <View key={g.id}>
+                          <View style={styles.playerDivider} />
+                          <View style={styles.playerRow}>
+                            <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.15)' }]}>
+                              <Text style={[styles.jerseyNum, { color: '#f97316' }]}>G</Text>
+                            </View>
+                            <View style={styles.playerInfo}>
+                              <Text style={styles.playerName}>{g.full_name}</Text>
+                              {g.team_name && <Text style={styles.playerPosition}>{g.team_name}</Text>}
+                            </View>
+                            <View style={[styles.guestStatusChip, { backgroundColor: guestStatusColor(g.status) + '18' }]}>
+                              <Text style={[styles.guestStatusText, { color: guestStatusColor(g.status) }]}>
+                                {g.status.charAt(0).toUpperCase() + g.status.slice(1)}
+                              </Text>
+                            </View>
+                            <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
+                              <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  )}
+                  {guestCoaches.length > 0 && (
+                    <>
+                      <View style={[styles.guestRoleHeader, guestPlayers.length > 0 && { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border }]}>
+                        <Text style={styles.guestRoleLabel}>COACHES</Text>
+                      </View>
+                      {guestCoaches.map((g) => (
+                        <View key={g.id}>
+                          <View style={styles.playerDivider} />
+                          <View style={styles.playerRow}>
+                            <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.15)' }]}>
+                              <Ionicons name="people-outline" size={14} color="#3B82F6" />
+                            </View>
+                            <View style={styles.playerInfo}>
+                              <Text style={styles.playerName}>{g.full_name}</Text>
+                            </View>
+                            <View style={[styles.guestStatusChip, { backgroundColor: guestStatusColor(g.status) + '18' }]}>
+                              <Text style={[styles.guestStatusText, { color: guestStatusColor(g.status) }]}>
+                                {g.status.charAt(0).toUpperCase() + g.status.slice(1)}
+                              </Text>
+                            </View>
+                            <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
+                              <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </>
+                  )}
+                </View>
+              )}
+
+              <TouchableOpacity
+                onPress={() => openGuestModal('coach')}
+                style={styles.addGuestCoachLink}
+                hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+              >
+                <Ionicons name="person-add-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                <Text style={styles.addGuestCoachLinkText}>Add a guest coach</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Coach actions */}
           {isCoach && (
             <View style={styles.section}>
@@ -1883,90 +1939,31 @@ export default function EventDetailScreen() {
                 ))}
               </View>
             )}
-            {/* Guest Players section */}
-            {isCoach && event.type === 'game' && (
-              <View style={styles.guestSection}>
-                <View style={styles.guestSectionRow}>
-                  <Text style={styles.guestSectionTitle}>GUEST PLAYERS</Text>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: 'rgba(249,115,22,0.1)' }]} onPress={openRequestSheet}>
-                      <Ionicons name="megaphone-outline" size={13} color="#f97316" />
-                      <Text style={[styles.addGuestBtnText, { color: '#f97316' }]}>Request</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: rgba(0.1) }]} onPress={() => { setGuestQuery(''); setGuestPlayerResults([]); setGuestSheet('player'); }}>
-                      <Ionicons name="person-add-outline" size={13} color={primaryColor} />
-                      <Text style={[styles.addGuestBtnText, { color: primaryColor }]}>Add</Text>
-                    </TouchableOpacity>
-                  </View>
+            {/* Confirmed guests — shown at bottom of Going list only */}
+            {activeRsvpTab === 'attending' && event.type === 'game' && guestPlayers.filter(g => g.status === 'confirmed').length > 0 && (
+              <View style={{ marginTop: 12 }}>
+                <View style={styles.guestRoleHeader}>
+                  <Text style={styles.guestRoleLabel}>CONFIRMED GUESTS</Text>
                 </View>
-                {guestPlayers.length > 0 ? (
-                  <View style={styles.playerCard}>
-                    {guestPlayers.map((g, i) => (
-                      <View key={g.id}>
-                        {i > 0 && <View style={styles.playerDivider} />}
-                        <View style={styles.playerRow}>
-                          <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.15)' }]}>
-                            <Text style={[styles.jerseyNum, { color: '#f97316' }]}>G</Text>
-                          </View>
-                          <View style={styles.playerInfo}>
-                            <Text style={styles.playerName}>{g.full_name}</Text>
-                            {g.team_name && <Text style={styles.playerPosition}>{g.team_name}</Text>}
-                          </View>
-                          <View style={[styles.guestStatusChip, { backgroundColor: guestStatusColor(g.status) + '18' }]}>
-                            <Text style={[styles.guestStatusText, { color: guestStatusColor(g.status) }]}>
-                              {g.status.charAt(0).toUpperCase() + g.status.slice(1)}
-                            </Text>
-                          </View>
-                          <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
-                            <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
-                          </TouchableOpacity>
+                <View style={styles.playerCard}>
+                  {guestPlayers.filter(g => g.status === 'confirmed').map((g, i) => (
+                    <View key={g.id}>
+                      {i > 0 && <View style={styles.playerDivider} />}
+                      <View style={styles.playerRow}>
+                        <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.15)' }]}>
+                          <Text style={[styles.jerseyNum, { color: '#f97316' }]}>G</Text>
+                        </View>
+                        <View style={styles.playerInfo}>
+                          <Text style={styles.playerName}>{g.full_name}</Text>
+                          {g.team_name && <Text style={styles.playerPosition}>{g.team_name}</Text>}
+                        </View>
+                        <View style={[styles.guestStatusChip, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+                          <Text style={[styles.guestStatusText, { color: '#22c55e' }]}>Confirmed</Text>
                         </View>
                       </View>
-                    ))}
-                  </View>
-                ) : (
-                  <Text style={styles.guestEmpty}>No guest players invited yet.</Text>
-                )}
-              </View>
-            )}
-
-            {/* Guest Coaches section — all coaches */}
-            {isCoach && event.type === 'game' && (
-              <View style={styles.guestSection}>
-                <View style={styles.guestSectionRow}>
-                  <Text style={styles.guestSectionTitle}>GUEST COACHES</Text>
-                  <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: rgba(0.1) }]} onPress={() => { setGuestQuery(''); setGuestCoachResults([]); setGuestSheet('coach'); }}>
-                    <Ionicons name="person-add-outline" size={13} color={primaryColor} />
-                    <Text style={[styles.addGuestBtnText, { color: primaryColor }]}>Add</Text>
-                  </TouchableOpacity>
+                    </View>
+                  ))}
                 </View>
-                {guestCoaches.length > 0 ? (
-                  <View style={styles.playerCard}>
-                    {guestCoaches.map((g, i) => (
-                      <View key={g.id}>
-                        {i > 0 && <View style={styles.playerDivider} />}
-                        <View style={styles.playerRow}>
-                          <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.15)' }]}>
-                            <Ionicons name="people-outline" size={14} color="#3B82F6" />
-                          </View>
-                          <View style={styles.playerInfo}>
-                            <Text style={styles.playerName}>{g.full_name}</Text>
-                          </View>
-                          <View style={[styles.guestStatusChip, { backgroundColor: guestStatusColor(g.status) + '18' }]}>
-                            <Text style={[styles.guestStatusText, { color: guestStatusColor(g.status) }]}>
-                              {g.status.charAt(0).toUpperCase() + g.status.slice(1)}
-                            </Text>
-                          </View>
-                          <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
-                            <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                ) : (
-                  <Text style={styles.guestEmpty}>No guest coaches invited yet.</Text>
-                )}
               </View>
             )}
 
@@ -1975,279 +1972,271 @@ export default function EventDetailScreen() {
         </View>
       )}
 
-      {/* Guest search sheet */}
-      <Modal
-        visible={guestSheet !== null}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setGuestSheet(null)}
-      >
+      {/* ── Unified guest modal ── */}
+      <Modal visible={guestModal} animationType="slide" transparent onRequestClose={() => setGuestModal(false)}>
         <KeyboardAvoidingView style={styles.guestSheetKAV} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <TouchableOpacity style={styles.guestSheetOverlay} activeOpacity={1} onPress={() => setGuestSheet(null)} />
+          <TouchableOpacity style={styles.guestSheetOverlay} activeOpacity={1} onPress={() => setGuestModal(false)} />
           <View style={styles.guestSheetPanel}>
             <View style={styles.guestSheetHandle} />
-            <Text style={styles.guestSheetTitle}>
-              {guestSheet === 'player' ? 'Add Guest Player' : 'Add Guest Coach'}
-            </Text>
-            <Text style={styles.guestSheetSub}>
-              {guestSheet === 'player'
-                ? 'Browse or search players from other teams in your club.'
-                : 'Search for a coach in your club.'}
-            </Text>
-            <View style={styles.guestSearchRow}>
-              <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
-              <TextInput
-                style={styles.guestSearchInput}
-                placeholder="Search by name…"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
-                value={guestQuery}
-                onChangeText={q => { setGuestQuery(q); searchGuests(q); }}
-                autoFocus
-                returnKeyType="search"
-              />
-              {(guestSearching || browseLoading) && <ActivityIndicator size="small" color={primaryColor} />}
-            </View>
-            <ScrollView style={styles.guestResultsList} keyboardShouldPersistTaps="handled">
-              {/* Search results */}
-              {guestSheet === 'player' && guestQuery.length >= 2 && guestPlayerResults.map(p => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={styles.guestResultRow}
-                  onPress={() => handleAddGuestPlayer(p)}
-                  disabled={!!addingGuest}
-                >
-                  <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
-                    <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.guestResultName}>{p.full_name}</Text>
-                    <Text style={styles.guestResultSub}>{p.team_name}{p.position ? ` · ${p.position}` : ''}</Text>
-                  </View>
-                  {addingGuest === p.id
-                    ? <ActivityIndicator size="small" color={primaryColor} />
-                    : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
-                </TouchableOpacity>
-              ))}
-              {guestSheet === 'coach' && guestCoachResults.map(c => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={styles.guestResultRow}
-                  onPress={() => handleAddGuestCoach(c)}
-                  disabled={!!addingGuest}
-                >
-                  <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.12)', marginRight: 12 }]}>
-                    <Ionicons name="people-outline" size={14} color="#3B82F6" />
-                  </View>
-                  <Text style={[styles.guestResultName, { flex: 1 }]}>{c.full_name}</Text>
-                  {addingGuest === c.id
-                    ? <ActivityIndicator size="small" color={primaryColor} />
-                    : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
-                </TouchableOpacity>
-              ))}
-              {guestQuery.length >= 2 && !guestSearching && guestPlayerResults.length === 0 && guestCoachResults.length === 0 && (
-                <Text style={styles.guestNoResults}>No results for "{guestQuery}"</Text>
-              )}
-              {/* Browse by team — shown before any search query */}
-              {guestSheet === 'player' && guestQuery.length < 2 && !browseLoading && clubBrowse.map(team => (
-                <View key={team.id}>
-                  <View style={styles.guestTeamHeader}>
-                    <Ionicons name="shield-outline" size={12} color={primaryColor} />
-                    <Text style={[styles.guestTeamLabel, { color: primaryColor }]}>{team.name}</Text>
-                  </View>
-                  {team.players.map(p => {
-                    const alreadyAdded = guests.some(g => g.player_id === p.id);
-                    return (
-                      <TouchableOpacity
-                        key={p.id}
-                        style={[styles.guestResultRow, alreadyAdded && { opacity: 0.4 }]}
-                        onPress={() => !alreadyAdded && handleAddGuestPlayer(p)}
-                        disabled={!!addingGuest || alreadyAdded}
-                      >
-                        <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
-                          <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.guestResultName}>{p.full_name}</Text>
-                          {p.position ? <Text style={styles.guestResultSub}>{p.position}</Text> : null}
-                        </View>
-                        {alreadyAdded
-                          ? <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
-                          : addingGuest === p.id
-                            ? <ActivityIndicator size="small" color={primaryColor} />
-                            : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ))}
-              {guestSheet === 'player' && guestQuery.length < 2 && !browseLoading && clubBrowse.length === 0 && !browseLoading && (
-                <Text style={styles.guestNoResults}>No other teams in your club yet.</Text>
-              )}
-              {guestSheet === 'coach' && guestQuery.length < 2 && (
-                <Text style={styles.guestNoResults}>Type to search coaches in your club.</Text>
-              )}
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
-      {/* Request players from a team — bottom sheet */}
-      <Modal visible={requestSheet} animationType="slide" transparent onRequestClose={() => setRequestSheet(false)}>
-        <KeyboardAvoidingView style={styles.guestSheetKAV} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <TouchableOpacity style={styles.guestSheetOverlay} activeOpacity={1} onPress={() => setRequestSheet(false)} />
-          <View style={styles.requestSheetPanel}>
-            {/* Fixed header */}
-            <View style={styles.guestSheetHandle} />
-            <Text style={[styles.guestSheetTitle, { marginBottom: 2 }]}>Request guest players</Text>
-            <Text style={[styles.guestSheetSub, { marginBottom: 16 }]}>
-              Pick a team, then select specific players or send to the whole team.
-            </Text>
-
-            {/* Scrollable content */}
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-
-              {/* Team picker — wrapping chips */}
-              <Text style={styles.requestSectionLabel}>WHICH TEAM?</Text>
-              {requestTeams.length === 0 ? (
-                <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No age-eligible teams in your club.</Text>
-              ) : (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                  {requestTeams.map(t => {
-                    const sel = requestTargetId === t.id;
-                    return (
-                      <TouchableOpacity
-                        key={t.id}
-                        onPress={() => { setRequestTargetId(t.id); loadRequestTeamPlayers(t.id); }}
-                        style={{
-                          paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
-                          backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
-                          borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>
-                          {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-
-              {/* Player list — shown after a team is picked */}
-              {requestTargetId !== '' && (
-                <>
-                  <Text style={styles.requestSectionLabel}>
-                    {requestSelectedIds.size > 0 ? `PLAYERS — ${requestSelectedIds.size} SELECTED` : 'PICK PLAYERS (OPTIONAL)'}
-                  </Text>
-                  {requestLoadingPl ? (
-                    <ActivityIndicator color={primaryColor} style={{ marginVertical: 12 }} />
-                  ) : requestTargetPlayers.length === 0 ? (
-                    <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No available players on this team.</Text>
-                  ) : (
-                    <View style={{ borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
-                      {requestTargetPlayers.map((p, i) => {
-                        const sel = requestSelectedIds.has(p.id);
-                        return (
-                          <TouchableOpacity
-                            key={p.id}
-                            onPress={() => setRequestSelectedIds(prev => {
-                              const next = new Set(prev);
-                              sel ? next.delete(p.id) : next.add(p.id);
-                              return next;
-                            })}
-                            style={{
-                              flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 12, gap: 12,
-                              backgroundColor: sel ? rgba(0.12) : PULSE_COLORS.ui.surface,
-                              borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border,
-                            }}
-                          >
-                            <View style={[styles.jerseyBadge, { backgroundColor: sel ? rgba(0.2) : PULSE_COLORS.ui.surfaceAlt, marginRight: 0, flexShrink: 0 }]}>
-                              <Text style={[styles.jerseyNum, { color: sel ? primaryColor : PULSE_COLORS.ui.textSecondary }]}>{p.jersey_number ?? '—'}</Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text }}>{p.full_name}</Text>
-                              {p.position ? <Text style={{ fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 }}>{p.position}</Text> : null}
-                            </View>
-                            <View style={{
-                              width: 24, height: 24, borderRadius: 12, borderWidth: 2, flexShrink: 0,
-                              borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
-                              backgroundColor: sel ? primaryColor : 'transparent',
-                              alignItems: 'center', justifyContent: 'center',
-                            }}>
-                              {sel && <Ionicons name="checkmark" size={14} color="#fff" />}
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-
-                  {/* Spots picker — only for blanket requests */}
-                  {requestSelectedIds.size === 0 && (
-                    <>
-                      <Text style={styles.requestSectionLabel}>HOW MANY SPOTS?</Text>
-                      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-                        {[1, 2, 3, 4, 5].map(n => {
-                          const sel = requestSpots === n;
-                          return (
-                            <TouchableOpacity
-                              key={n}
-                              onPress={() => setRequestSpots(n)}
-                              style={{
-                                width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-                                backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
-                                borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
-                              }}
-                            >
-                              <Text style={{ fontSize: 16, fontWeight: '800', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* Note */}
-              <Text style={styles.requestSectionLabel}>NOTE (OPTIONAL)</Text>
-              <TextInput
-                value={requestNote}
-                onChangeText={setRequestNote}
-                placeholder="e.g. Need a striker for Saturday"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
-                style={{
-                  borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10,
-                  padding: 12, fontSize: 14, color: PULSE_COLORS.ui.text, marginBottom: 8,
-                  fontFamily: 'System',
-                }}
-                maxLength={120}
-              />
-              <View style={{ height: 8 }} />
-            </ScrollView>
-
-            {/* Pinned send button */}
-            <View style={{ paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border }}>
+            {/* Players / Coaches toggle */}
+            <View style={styles.guestRoleToggleRow}>
               <TouchableOpacity
-                onPress={sendRequest}
-                disabled={!requestTargetId || requestSending}
-                activeOpacity={0.85}
-                style={{
-                  backgroundColor: !requestTargetId || requestSending ? '#E2E8F0' : primaryColor,
-                  borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 8,
-                }}
+                onPress={() => setGuestRole('player')}
+                style={[styles.guestRoleToggleBtn, guestRole === 'player' && { backgroundColor: rgba(0.1), borderColor: primaryColor }]}
               >
-                {requestSending
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Ionicons name="megaphone-outline" size={16} color={!requestTargetId ? '#94A3B8' : '#fff'} />}
-                <Text style={{ fontSize: 15, fontWeight: '800', color: !requestTargetId || requestSending ? '#94A3B8' : '#fff' }}>
-                  {requestSending ? 'Sending…' : requestSelectedIds.size > 0
-                    ? `Invite ${requestSelectedIds.size} Player${requestSelectedIds.size !== 1 ? 's' : ''}`
-                    : 'Request from Team'}
-                </Text>
+                <Ionicons name="person-outline" size={14} color={guestRole === 'player' ? primaryColor : PULSE_COLORS.ui.muted} />
+                <Text style={[styles.guestRoleToggleText, guestRole === 'player' && { color: primaryColor }]}>Players</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setGuestRole('coach')}
+                style={[styles.guestRoleToggleBtn, guestRole === 'coach' && { backgroundColor: 'rgba(59,130,246,0.1)', borderColor: '#3B82F6' }]}
+              >
+                <Ionicons name="people-outline" size={14} color={guestRole === 'coach' ? '#3B82F6' : PULSE_COLORS.ui.muted} />
+                <Text style={[styles.guestRoleToggleText, guestRole === 'coach' && { color: '#3B82F6' }]}>Coaches</Text>
               </TouchableOpacity>
             </View>
+
+            {/* ── Players content ── */}
+            {guestRole === 'player' && (
+              <>
+                {/* Invite / Call out tab strip */}
+                <View style={styles.guestInnerTabRow}>
+                  <TouchableOpacity
+                    onPress={() => setGuestTab('invite')}
+                    style={[styles.guestInnerTab, guestTab === 'invite' && { borderBottomColor: primaryColor }]}
+                  >
+                    <Text style={[styles.guestInnerTabText, guestTab === 'invite' && { color: primaryColor, fontWeight: '700' }]}>
+                      Invite a player
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setGuestTab('callout')}
+                    style={[styles.guestInnerTab, guestTab === 'callout' && { borderBottomColor: '#f97316' }]}
+                  >
+                    <Ionicons name="megaphone-outline" size={13} color={guestTab === 'callout' ? '#f97316' : PULSE_COLORS.ui.muted} />
+                    <Text style={[styles.guestInnerTabText, guestTab === 'callout' && { color: '#f97316', fontWeight: '700' }]}>
+                      Send a call out
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {guestTab === 'invite' ? (
+                  /* ── Invite tab: browse + search ── */
+                  <>
+                    <View style={styles.guestSearchRow}>
+                      <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                      <TextInput
+                        style={styles.guestSearchInput}
+                        placeholder="Search by name…"
+                        placeholderTextColor={PULSE_COLORS.ui.muted}
+                        value={guestQuery}
+                        onChangeText={q => { setGuestQuery(q); searchGuests(q); }}
+                        returnKeyType="search"
+                      />
+                      {(guestSearching || browseLoading) && <ActivityIndicator size="small" color={primaryColor} />}
+                    </View>
+                    <ScrollView style={styles.guestResultsList} keyboardShouldPersistTaps="handled">
+                      {guestQuery.length >= 2
+                        ? guestPlayerResults.map(p => (
+                            <TouchableOpacity
+                              key={p.id}
+                              style={styles.guestResultRow}
+                              onPress={() => handleAddGuestPlayer(p)}
+                              disabled={!!addingGuest}
+                            >
+                              <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
+                                <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.guestResultName}>{p.full_name}</Text>
+                                <Text style={styles.guestResultSub}>{p.team_name}{p.position ? ` · ${p.position}` : ''}</Text>
+                              </View>
+                              {addingGuest === p.id
+                                ? <ActivityIndicator size="small" color={primaryColor} />
+                                : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
+                            </TouchableOpacity>
+                          ))
+                        : clubBrowse.map(t => (
+                            <View key={t.id}>
+                              <View style={styles.guestTeamHeader}>
+                                <Ionicons name="shield-outline" size={12} color={primaryColor} />
+                                <Text style={[styles.guestTeamLabel, { color: primaryColor }]}>{t.name}</Text>
+                              </View>
+                              {t.players.map(p => {
+                                const alreadyAdded = guests.some(g => g.player_id === p.id);
+                                return (
+                                  <TouchableOpacity
+                                    key={p.id}
+                                    style={[styles.guestResultRow, alreadyAdded && { opacity: 0.4 }]}
+                                    onPress={() => !alreadyAdded && handleAddGuestPlayer(p)}
+                                    disabled={!!addingGuest || alreadyAdded}
+                                  >
+                                    <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
+                                      <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.guestResultName}>{p.full_name}</Text>
+                                      {p.position ? <Text style={styles.guestResultSub}>{p.position}</Text> : null}
+                                    </View>
+                                    {alreadyAdded
+                                      ? <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                                      : addingGuest === p.id
+                                        ? <ActivityIndicator size="small" color={primaryColor} />
+                                        : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          ))
+                      }
+                      {guestQuery.length >= 2 && !guestSearching && guestPlayerResults.length === 0 && (
+                        <Text style={styles.guestNoResults}>No results for "{guestQuery}"</Text>
+                      )}
+                      {guestQuery.length < 2 && !browseLoading && clubBrowse.length === 0 && (
+                        <Text style={styles.guestNoResults}>No other teams in your club yet.</Text>
+                      )}
+                    </ScrollView>
+                  </>
+                ) : (
+                  /* ── Call out tab ── */
+                  <>
+                    <Text style={styles.guestCalloutHint}>
+                      Parents on that team get a push notification. First to volunteer fills the spot.
+                    </Text>
+                    <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                      <Text style={styles.requestSectionLabel}>WHICH TEAM?</Text>
+                      {requestTeams.length === 0 ? (
+                        <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No age-eligible teams in your club.</Text>
+                      ) : (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                          {requestTeams.map(t => {
+                            const sel = requestTargetId === t.id;
+                            return (
+                              <TouchableOpacity
+                                key={t.id}
+                                onPress={() => setRequestTargetId(t.id)}
+                                style={{
+                                  paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
+                                  backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
+                                  borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+                                }}
+                              >
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>
+                                  {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {requestTargetId !== '' && (
+                        <>
+                          <Text style={styles.requestSectionLabel}>HOW MANY SPOTS?</Text>
+                          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                            {[1, 2, 3, 4, 5].map(n => {
+                              const sel = requestSpots === n;
+                              return (
+                                <TouchableOpacity
+                                  key={n}
+                                  onPress={() => setRequestSpots(n)}
+                                  style={{
+                                    width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
+                                    backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
+                                    borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 16, fontWeight: '800', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </>
+                      )}
+
+                      <Text style={styles.requestSectionLabel}>NOTE (OPTIONAL)</Text>
+                      <TextInput
+                        value={requestNote}
+                        onChangeText={setRequestNote}
+                        placeholder="e.g. Need a striker — any position fine"
+                        placeholderTextColor={PULSE_COLORS.ui.muted}
+                        style={{
+                          borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10,
+                          padding: 12, fontSize: 14, color: PULSE_COLORS.ui.text,
+                          fontFamily: 'System', marginBottom: 8,
+                        }}
+                        maxLength={120}
+                      />
+                      <View style={{ height: 8 }} />
+                    </ScrollView>
+                    <View style={{ paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border }}>
+                      <TouchableOpacity
+                        onPress={sendRequest}
+                        disabled={!requestTargetId || requestSending}
+                        activeOpacity={0.85}
+                        style={{
+                          backgroundColor: !requestTargetId || requestSending ? '#E2E8F0' : '#f97316',
+                          borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
+                          flexDirection: 'row', gap: 8,
+                        }}
+                      >
+                        {requestSending
+                          ? <ActivityIndicator color="#fff" size="small" />
+                          : <Ionicons name="megaphone-outline" size={16} color={!requestTargetId ? '#94A3B8' : '#fff'} />}
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: !requestTargetId || requestSending ? '#94A3B8' : '#fff' }}>
+                          {requestSending ? 'Sending…' : 'Send call out'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── Coaches content ── */}
+            {guestRole === 'coach' && (
+              <>
+                <Text style={styles.guestSheetSub}>Search for a coach in your club to invite them to this game.</Text>
+                <View style={styles.guestSearchRow}>
+                  <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                  <TextInput
+                    style={styles.guestSearchInput}
+                    placeholder="Search by name…"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    value={guestQuery}
+                    onChangeText={q => { setGuestQuery(q); searchGuests(q); }}
+                    autoFocus
+                    returnKeyType="search"
+                  />
+                  {guestSearching && <ActivityIndicator size="small" color="#3B82F6" />}
+                </View>
+                <ScrollView style={styles.guestResultsList} keyboardShouldPersistTaps="handled">
+                  {guestCoachResults.map(c => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={styles.guestResultRow}
+                      onPress={() => handleAddGuestCoach(c)}
+                      disabled={!!addingGuest}
+                    >
+                      <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.12)', marginRight: 12 }]}>
+                        <Ionicons name="people-outline" size={14} color="#3B82F6" />
+                      </View>
+                      <Text style={[styles.guestResultName, { flex: 1 }]}>{c.full_name}</Text>
+                      {addingGuest === c.id
+                        ? <ActivityIndicator size="small" color="#3B82F6" />
+                        : <Ionicons name="add-circle-outline" size={20} color="#3B82F6" />}
+                    </TouchableOpacity>
+                  ))}
+                  {guestQuery.length >= 2 && !guestSearching && guestCoachResults.length === 0 && (
+                    <Text style={styles.guestNoResults}>No coaches found for "{guestQuery}"</Text>
+                  )}
+                  {guestQuery.length < 2 && (
+                    <Text style={styles.guestNoResults}>Type at least 2 characters to search.</Text>
+                  )}
+                </ScrollView>
+              </>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -2687,39 +2676,64 @@ const styles = StyleSheet.create({
   },
   guestDeclineText: { color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', fontSize: 14 },
 
-  // Guest sections in Availability tab
-  guestSection: { marginHorizontal: 16, marginTop: 20 },
-  guestSectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  guestSectionTitle: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1.2 },
-  addGuestBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  addGuestBtnText: { fontSize: 12, fontWeight: '700' },
+  // Guests card in Details tab
+  guestCardAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  guestCardAddBtnText: { fontSize: 12, fontWeight: '700' },
+  guestCardEmpty: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    padding: 14,
+  },
+  guestCardEmptyText: { fontSize: 13, color: PULSE_COLORS.ui.muted, flex: 1, lineHeight: 18 },
+  guestRoleHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+  },
+  guestRoleLabel: { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1, textTransform: 'uppercase' },
+  addGuestCoachLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  addGuestCoachLinkText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
   guestStatusChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   guestStatusText: { fontSize: 11, fontWeight: '700' },
-  guestEmpty: { fontSize: 13, color: PULSE_COLORS.ui.muted, marginTop: 4 },
 
-  // Guest search sheet
-  guestTeamHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingTop: 14, paddingBottom: 6 },
-  guestTeamLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
-  requestSheetPanel: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingTop: 12, paddingHorizontal: 20, paddingBottom: 36,
-    height: '80%', flexDirection: 'column',
-  },
-  requestSectionLabel: {
-    fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted,
-    letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 10,
-  },
+  // Unified guest modal sheet
   guestSheetKAV: { flex: 1, justifyContent: 'flex-end' },
   guestSheetOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   guestSheetPanel: {
     backgroundColor: PULSE_COLORS.ui.surface,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingTop: 12, paddingHorizontal: 16, paddingBottom: 32,
-    maxHeight: '80%',
+    height: '85%',
   },
-  guestSheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginBottom: 16 },
-  guestSheetTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  guestSheetSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 14, lineHeight: 18 },
+  guestSheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginBottom: 14 },
+  guestSheetSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 12, lineHeight: 18 },
+  guestRoleToggleRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  guestRoleToggleBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+  },
+  guestRoleToggleText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  guestInnerTabRow: {
+    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border, marginBottom: 12,
+  },
+  guestInnerTab: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent',
+  },
+  guestInnerTabText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  guestCalloutHint: {
+    fontSize: 13, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10,
+    padding: 12, marginBottom: 14,
+  },
+  requestSectionLabel: {
+    fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted,
+    letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 10,
+  },
+  guestTeamHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingTop: 14, paddingBottom: 6 },
+  guestTeamLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   guestSearchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,
