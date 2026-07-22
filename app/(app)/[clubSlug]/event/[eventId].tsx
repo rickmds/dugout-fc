@@ -2120,7 +2120,7 @@ export default function EventDetailScreen() {
                         onPress={() => { setRequestTargetId(t.id); loadRequestTeamPlayers(t.id); }}
                         style={{
                           paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
-                          backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.background,
+                          backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
                           borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
                         }}
                       >
@@ -2157,12 +2157,12 @@ export default function EventDetailScreen() {
                             })}
                             style={{
                               flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 12, gap: 12,
-                              backgroundColor: sel ? rgba(0.06) : '#fff',
+                              backgroundColor: sel ? rgba(0.12) : PULSE_COLORS.ui.surface,
                               borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border,
                             }}
                           >
-                            <View style={[styles.jerseyBadge, { backgroundColor: sel ? rgba(0.15) : 'rgba(0,0,0,0.05)', marginRight: 0, flexShrink: 0 }]}>
-                              <Text style={[styles.jerseyNum, { color: sel ? primaryColor : PULSE_COLORS.ui.muted }]}>{p.jersey_number ?? '—'}</Text>
+                            <View style={[styles.jerseyBadge, { backgroundColor: sel ? rgba(0.2) : PULSE_COLORS.ui.surfaceAlt, marginRight: 0, flexShrink: 0 }]}>
+                              <Text style={[styles.jerseyNum, { color: sel ? primaryColor : PULSE_COLORS.ui.textSecondary }]}>{p.jersey_number ?? '—'}</Text>
                             </View>
                             <View style={{ flex: 1 }}>
                               <Text style={{ fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text }}>{p.full_name}</Text>
@@ -2195,7 +2195,7 @@ export default function EventDetailScreen() {
                               onPress={() => setRequestSpots(n)}
                               style={{
                                 width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-                                backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.background,
+                                backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
                                 borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
                               }}
                             >
