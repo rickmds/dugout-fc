@@ -2702,8 +2702,8 @@ const styles = StyleSheet.create({
   guestTeamLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   requestSheetPanel: {
     backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingTop: 12, paddingHorizontal: 20, paddingBottom: 36, maxHeight: '88%',
-    display: 'flex', flexDirection: 'column',
+    paddingTop: 12, paddingHorizontal: 20, paddingBottom: 36,
+    height: '80%', flexDirection: 'column',
   },
   requestSectionLabel: {
     fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted,
