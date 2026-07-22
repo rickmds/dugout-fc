@@ -58,6 +58,7 @@ export default function PracticeSchedulePage() {
   const [fields,    setFields]   = useState<TryoutField[]>([]);
   const [teams,     setTeams]    = useState<TryoutTeam[]>([]);
   const [coaches,   setCoaches]  = useState<TryoutCoach[]>([]);
+  const [closures,  setClosures] = useState<{id:string;field_name:string;closed_from:string;closed_until:string|null;reason:string|null}[]>([]);
   const [loading,   setLoading]  = useState(true);
   const [view,      setView]     = useState<'grid'|'pitches'>('pitches');
   const [activeDay, setActiveDay]= useState<Day>('Mon');
@@ -82,16 +83,18 @@ export default function PracticeSchedulePage() {
 
   async function load() {
     if (!club) return;
-    const [{ data: sl }, { data: fi }, { data: ts }, { data: cs }] = await Promise.all([
+    const [{ data: sl }, { data: fi }, { data: ts }, { data: cs }, { data: cl }] = await Promise.all([
       supabase.from('tryout_practice_slots').select('*').eq('club_id', club.id).eq('season_label', season),
       supabase.from('tryout_fields').select('*').eq('club_id', club.id).order('sort_order').order('name'),
       supabase.from('tryout_teams').select('id,name,color,age_group,gender,head_coach_id').eq('club_id', club.id).eq('is_active', true).order('name'),
       supabase.from('tryout_coaches').select('id,full_name').eq('club_id', club.id).eq('is_active', true),
+      supabase.from('field_closures').select('id,field_name,closed_from,closed_until,reason').eq('club_id', club.id),
     ]);
     setSlots((sl??[]) as PracticeSlot[]);
     setFields((fi??[]) as TryoutField[]);
     setTeams((ts??[]) as TryoutTeam[]);
     setCoaches((cs??[]) as TryoutCoach[]);
+    setClosures((cl??[]) as {id:string;field_name:string;closed_from:string;closed_until:string|null;reason:string|null}[]);
     setLoading(false);
   }
   useEffect(() => { load(); }, [club, season]);
@@ -167,6 +170,16 @@ export default function PracticeSchedulePage() {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setDupSource(slot);
     setDupAnchor({ top: rect.bottom + 6, left: rect.left });
+  }
+
+  function activeClosureFor(fieldName: string) {
+    const now = new Date();
+    return closures.find(c => {
+      if (c.field_name !== fieldName) return false;
+      if (new Date(c.closed_from) > now) return false;
+      if (!c.closed_until) return true;
+      return new Date(c.closed_until) > now;
+    }) ?? null;
   }
 
   if (loading) return <div style={{padding:'40px',color:'#94A3B8',fontSize:'14px'}}>Loading schedule…</div>;
@@ -388,12 +401,18 @@ export default function PracticeSchedulePage() {
             ) : activeFields.map(field => {
               const zones    = (field.sub_zones??[]).length>0 ? field.sub_zones : [null as unknown as string];
               const daySlots = slots.filter(s=>s.field_name===field.name && s.day_of_week===activeDay);
+              const closure  = activeClosureFor(field.name);
               return (
                 <div key={field.id} style={{ marginBottom:'24px' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px' }}>
-                    <MapPin size={15} color={primary} />
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'10px', flexWrap:'wrap' }}>
+                    <MapPin size={15} color={closure?'#EF4444':primary} />
                     <span style={{ fontSize:'16px', fontWeight:'900', color:'#0D1117', letterSpacing:'-0.3px' }}>{field.name}</span>
-                    {daySlots.length>0 && <span style={{ fontSize:'11px', fontWeight:'700', color:primary, background:`${primary}15`, borderRadius:'6px', padding:'2px 8px' }}>{daySlots.length} session{daySlots.length!==1?'s':''} today</span>}
+                    {closure && (
+                      <span style={{ fontSize:'11px', fontWeight:'800', color:'#fff', background:'#EF4444', borderRadius:'6px', padding:'2px 9px', animation:'pulse 1.5s infinite' }}>
+                        CLOSED{closure.reason?` · ${closure.reason}`:''}
+                      </span>
+                    )}
+                    {daySlots.length>0 && !closure && <span style={{ fontSize:'11px', fontWeight:'700', color:primary, background:`${primary}15`, borderRadius:'6px', padding:'2px 8px' }}>{daySlots.length} session{daySlots.length!==1?'s':''} today</span>}
                   </div>
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:'10px' }}>
                     {zones.map((zone,zi) => {
@@ -463,10 +482,12 @@ export default function PracticeSchedulePage() {
                         return zones.map((zone,zi)=>{
                           const isFirst = zi===0;
                           const rowBg   = fi%2===0 ? '#fff' : '#FAFAFA';
+                          const gridClosure = isFirst ? activeClosureFor(field.name) : null;
                           return (
-                            <tr key={`${field.id}-${zone??'main'}`} style={{ borderBottom:'1px solid #F1F5F9', background:rowBg }}>
-                              <td style={{ padding:'6px 12px', borderRight:'1px solid #E2E8F0', verticalAlign:'top', overflow:'hidden' }}>
-                                {isFirst && <div style={{ fontSize:'11.5px', fontWeight:'800', color:'#0F172A', display:'flex', alignItems:'center', gap:'4px', overflow:'hidden' }}><MapPin size={10} color={primary}/><span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{field.name}</span></div>}
+                            <tr key={`${field.id}-${zone??'main'}`} style={{ borderBottom:'1px solid #F1F5F9', background:gridClosure?'#FFF5F5':rowBg }}>
+                              <td style={{ padding:'6px 12px', borderRight:`2px solid ${gridClosure?'#FCA5A5':'#E2E8F0'}`, verticalAlign:'top', overflow:'hidden' }}>
+                                {isFirst && <div style={{ fontSize:'11.5px', fontWeight:'800', color:'#0F172A', display:'flex', alignItems:'center', gap:'4px', overflow:'hidden' }}><MapPin size={10} color={gridClosure?'#EF4444':primary}/><span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{field.name}</span></div>}
+                                {isFirst && gridClosure && <div style={{ fontSize:'9px', fontWeight:'800', color:'#EF4444', marginTop:'2px', textTransform:'uppercase', letterSpacing:'0.5px' }}>CLOSED</div>}
                                 {zone && <div style={{ fontSize:'10px', color:'#94A3B8', marginTop:isFirst?'2px':'0', paddingLeft:isFirst?'14px':'0', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{zone}</div>}
                               </td>
                               {gridDays.map(day=>{
