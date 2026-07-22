@@ -305,12 +305,15 @@ export default function EventDetailScreen() {
   type ClubTeamBrowse = { id: string; name: string; players: GuestPlayerResult[] };
   const [clubBrowse,       setClubBrowse]       = useState<ClubTeamBrowse[]>([]);
   const [browseLoading,    setBrowseLoading]    = useState(false);
-  const [requestSheet,     setRequestSheet]     = useState(false);
-  const [requestTeams,     setRequestTeams]     = useState<{ id: string; name: string }[]>([]);
-  const [requestTargetId,  setRequestTargetId]  = useState('');
-  const [requestSpots,     setRequestSpots]     = useState(1);
-  const [requestNote,      setRequestNote]      = useState('');
-  const [requestSending,   setRequestSending]   = useState(false);
+  const [requestSheet,        setRequestSheet]        = useState(false);
+  const [requestTeams,        setRequestTeams]        = useState<{ id: string; name: string; age_group: string | null }[]>([]);
+  const [requestTargetId,     setRequestTargetId]     = useState('');
+  const [requestTargetPlayers,setRequestTargetPlayers]= useState<GuestPlayerResult[]>([]);
+  const [requestSelectedIds,  setRequestSelectedIds]  = useState<Set<string>>(new Set());
+  const [requestLoadingPl,    setRequestLoadingPl]    = useState(false);
+  const [requestSpots,        setRequestSpots]        = useState(1);
+  const [requestNote,         setRequestNote]         = useState('');
+  const [requestSending,      setRequestSending]      = useState(false);
   const [activeMainTab, setActiveMainTab] = useState<'details' | 'availability' | 'attendance'>(section === 'attendance' ? 'attendance' : 'details');
   const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late'>>(new Map());
   const [savingAttendance, setSavingAttendance] = useState<string | null>(null);
@@ -639,11 +642,13 @@ export default function EventDetailScreen() {
   async function loadClubBrowse() {
     if (!profile?.club_id || !team?.id) return;
     setBrowseLoading(true);
-    const { data: teams } = await supabase.from('teams').select('id,name')
+    const { data: teams } = await supabase.from('teams').select('id,name,age_group')
       .eq('club_id', profile.club_id).neq('id', team.id).order('name');
-    const otherIds = (teams ?? []).map((t: any) => t.id as string);
+    const myAge = parseAge((team as any).age_group);
+    const eligible = ((teams ?? []) as any[]).filter(t => parseAge(t.age_group) <= myAge);
+    const otherIds = eligible.map((t: any) => t.id as string);
     if (!otherIds.length) { setClubBrowse([]); setBrowseLoading(false); return; }
-    const nameMap = new Map((teams ?? []).map((t: any) => [t.id as string, t.name as string]));
+    const nameMap = new Map(eligible.map((t: any) => [t.id as string, t.name as string]));
     const { data: pData } = await supabase.from('players')
       .select('id,full_name,jersey_number,position,profile_id,team_id')
       .in('team_id', otherIds).order('jersey_number');
@@ -666,11 +671,13 @@ export default function EventDetailScreen() {
     }
     setGuestSearching(true);
     if (guestSheet === 'player') {
-      const { data: teams } = await supabase.from('teams').select('id,name')
+      const { data: teams } = await supabase.from('teams').select('id,name,age_group')
         .eq('club_id', profile.club_id).neq('id', team.id);
-      const otherIds = (teams ?? []).map(t => t.id);
+      const myAge = parseAge((team as any).age_group);
+      const eligible = ((teams ?? []) as any[]).filter(t => parseAge(t.age_group) <= myAge);
+      const otherIds = eligible.map((t: any) => t.id as string);
       if (!otherIds.length) { setGuestPlayerResults([]); setGuestSearching(false); return; }
-      const nameMap = new Map((teams ?? []).map(t => [t.id, t.name]));
+      const nameMap = new Map(eligible.map((t: any) => [t.id as string, t.name as string]));
       const { data: pData } = await supabase.from('players')
         .select('id,full_name,jersey_number,position,profile_id,team_id')
         .in('team_id', otherIds).ilike('full_name', `%${query}%`).limit(20);
@@ -761,48 +768,94 @@ export default function EventDetailScreen() {
     ]);
   }
 
+  function parseAge(ag: string | null | undefined): number {
+    if (!ag) return 999;
+    const m = ag.match(/\d+/);
+    return m ? parseInt(m[0]) : 999;
+  }
+
   async function openRequestSheet() {
     if (!profile?.club_id || !team?.id) return;
-    const { data: teams } = await supabase.from('teams').select('id,name')
+    const { data: teams } = await supabase.from('teams').select('id,name,age_group')
       .eq('club_id', profile.club_id).neq('id', team.id).order('name');
-    setRequestTeams((teams ?? []) as { id: string; name: string }[]);
-    setRequestTargetId(''); setRequestSpots(1); setRequestNote('');
+    const myAge = parseAge((team as any).age_group);
+    // Only offer teams where age ≤ current team's age (younger players can play up, not down)
+    const eligible = ((teams ?? []) as { id: string; name: string; age_group: string | null }[])
+      .filter(t => parseAge(t.age_group) <= myAge);
+    setRequestTeams(eligible);
+    setRequestTargetId(''); setRequestSelectedIds(new Set()); setRequestTargetPlayers([]);
+    setRequestSpots(1); setRequestNote('');
     setRequestSheet(true);
+  }
+
+  async function loadRequestTeamPlayers(teamId: string) {
+    setRequestLoadingPl(true); setRequestSelectedIds(new Set());
+    const { data } = await supabase.from('players')
+      .select('id,full_name,jersey_number,position,profile_id,team_id')
+      .eq('team_id', teamId).order('jersey_number');
+    const already = new Set(guests.map(g => g.player_id).filter(Boolean) as string[]);
+    setRequestTargetPlayers(
+      ((data ?? []) as any[])
+        .filter(p => !already.has(p.id))
+        .map(p => ({ ...p, team_name: requestTeams.find(t => t.id === teamId)?.name ?? '' }))
+    );
+    setRequestLoadingPl(false);
   }
 
   async function sendRequest() {
     if (!profile || !team || !event || !requestTargetId) return;
     setRequestSending(true);
-    const { data: newReq, error } = await (supabase as any).from('guest_requests').insert({
-      event_id:           event.id,
-      requesting_team_id: team.id,
-      target_team_id:     requestTargetId,
-      note:               requestNote.trim() || null,
-      spots_needed:       requestSpots,
-      status:             'open',
-      created_by:         profile.id,
-    }).select('id').single();
-    if (error || !newReq) {
-      Alert.alert('Error', 'Could not send request. Try again.'); setRequestSending(false); return;
-    }
-    // Notify all players/parents on the target team
-    const { data: players } = await supabase.from('players').select('profile_id').eq('team_id', requestTargetId);
-    const profileIds = ((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean) as string[];
     const targetTeam = requestTeams.find(t => t.id === requestTargetId);
-    if (profileIds.length > 0) {
-      await sendProfilesPush({
-        profileIds,
-        title: `${team.name} needs guest players`,
-        body: `${profile.full_name ?? 'A coach'} is looking for ${requestSpots} player${requestSpots !== 1 ? 's' : ''} for ${event.title}${requestNote.trim() ? ` — ${requestNote.trim()}` : ''}. Tap to volunteer.`,
-        data: { type: 'guest_request', request_id: newReq.id, club_slug: clubSlug },
-      });
+    const specificPlayers = requestTargetPlayers.filter(p => requestSelectedIds.has(p.id));
+    const isSpecific = specificPlayers.length > 0;
+
+    if (isSpecific) {
+      // Invite each selected player directly (same as the Add flow)
+      await Promise.all(specificPlayers.map(async p => {
+        const { error } = await supabase.from('event_guests').insert({
+          event_id: event.id, player_id: p.id, full_name: p.full_name,
+          role: 'player', status: 'pending', added_by: profile.id,
+        });
+        if (!error && p.profile_id) {
+          await sendProfilesPush({
+            profileIds: [p.profile_id],
+            title: 'Guest invitation',
+            body: `${profile.full_name ?? 'Coach'} invited ${p.full_name} to guest play for ${team.name} — ${event.title}.`,
+            data: { type: 'guest_invite', event_id: event.id, club_slug: clubSlug },
+          });
+        }
+      }));
+      const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', event.id);
+      await resolveAndSetGuests((fresh ?? []) as any[]);
+      setRequestSending(false); setRequestSheet(false);
+      Alert.alert('Invites sent!', `${specificPlayers.length} player${specificPlayers.length !== 1 ? 's' : ''} have been invited directly.`);
+    } else {
+      // Blanket request — notify whole team
+      const { data: newReq, error } = await (supabase as any).from('guest_requests').insert({
+        event_id:           event.id,
+        requesting_team_id: team.id,
+        target_team_id:     requestTargetId,
+        note:               requestNote.trim() || null,
+        spots_needed:       requestSpots,
+        status:             'open',
+        created_by:         profile.id,
+      }).select('id').single();
+      if (error || !newReq) {
+        Alert.alert('Error', 'Could not send request. Try again.'); setRequestSending(false); return;
+      }
+      const { data: players } = await supabase.from('players').select('profile_id').eq('team_id', requestTargetId);
+      const profileIds = ((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean) as string[];
+      if (profileIds.length > 0) {
+        await sendProfilesPush({
+          profileIds,
+          title: `${team.name} needs guest players`,
+          body: `${profile.full_name ?? 'A coach'} is looking for ${requestSpots} player${requestSpots !== 1 ? 's' : ''} for ${event.title}${requestNote.trim() ? ` — ${requestNote.trim()}` : ''}. Tap to volunteer.`,
+          data: { type: 'guest_request', request_id: newReq.id, club_slug: clubSlug },
+        });
+      }
+      setRequestSending(false); setRequestSheet(false);
+      Alert.alert('Request sent!', `${targetTeam?.name ?? 'The team'}'s parents have been notified and can volunteer their child.`);
     }
-    setRequestSending(false);
-    setRequestSheet(false);
-    Alert.alert(
-      'Request sent!',
-      `${targetTeam?.name ?? 'The team'}'s parents have been notified and can volunteer their child.`,
-    );
   }
 
   async function markAttendance(playerId: string, newStatus: 'present' | 'absent' | 'late') {
@@ -998,8 +1051,8 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {/* Guest invite banner — shown to the invited person */}
-          {myGuestInvite && (
+          {/* Guest invite banner — shown to the invited person (games only) */}
+          {myGuestInvite && event.type === 'game' && (
             <View style={[styles.guestInviteBanner, { borderColor: guestStatusColor(myGuestInvite.status) + '40' }]}>
               <View style={styles.guestInviteBannerTop}>
                 <View style={[styles.guestInviteIcon, { backgroundColor: guestStatusColor(myGuestInvite.status) + '18' }]}>
@@ -1831,7 +1884,7 @@ export default function EventDetailScreen() {
               </View>
             )}
             {/* Guest Players section */}
-            {isCoach && (
+            {isCoach && event.type === 'game' && (
               <View style={styles.guestSection}>
                 <View style={styles.guestSectionRow}>
                   <Text style={styles.guestSectionTitle}>GUEST PLAYERS</Text>
@@ -1878,7 +1931,7 @@ export default function EventDetailScreen() {
             )}
 
             {/* Guest Coaches section — all coaches */}
-            {isCoach && (
+            {isCoach && event.type === 'game' && (
               <View style={styles.guestSection}>
                 <View style={styles.guestSectionRow}>
                   <Text style={styles.guestSectionTitle}>GUEST COACHES</Text>
@@ -2051,47 +2104,101 @@ export default function EventDetailScreen() {
 
             {/* Team picker */}
             <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>WHICH TEAM?</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {requestTeams.map(t => (
-                  <TouchableOpacity
-                    key={t.id}
-                    onPress={() => setRequestTargetId(t.id)}
-                    style={{
-                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                      backgroundColor: requestTargetId === t.id ? primaryColor : 'rgba(0,0,0,0.05)',
-                      borderWidth: 1.5,
-                      borderColor: requestTargetId === t.id ? primaryColor : PULSE_COLORS.ui.border,
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: requestTargetId === t.id ? '#fff' : PULSE_COLORS.ui.text }}>
-                      {t.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-                {requestTeams.length === 0 && (
-                  <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted }}>No other teams in your club.</Text>
-                )}
-              </View>
-            </ScrollView>
+            {requestTeams.length === 0 ? (
+              <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 14 }}>No age-eligible teams in your club.</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {requestTeams.map(t => (
+                    <TouchableOpacity
+                      key={t.id}
+                      onPress={() => { setRequestTargetId(t.id); loadRequestTeamPlayers(t.id); }}
+                      style={{
+                        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                        backgroundColor: requestTargetId === t.id ? primaryColor : 'rgba(0,0,0,0.05)',
+                        borderWidth: 1.5,
+                        borderColor: requestTargetId === t.id ? primaryColor : PULSE_COLORS.ui.border,
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: requestTargetId === t.id ? '#fff' : PULSE_COLORS.ui.text }}>
+                        {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
 
-            {/* Spots needed */}
-            <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>HOW MANY SPOTS?</Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-              {[1, 2, 3, 4, 5].map(n => (
-                <TouchableOpacity
-                  key={n}
-                  onPress={() => setRequestSpots(n)}
-                  style={{
-                    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: requestSpots === n ? primaryColor : 'rgba(0,0,0,0.05)',
-                    borderWidth: 1.5, borderColor: requestSpots === n ? primaryColor : PULSE_COLORS.ui.border,
-                  }}
-                >
-                  <Text style={{ fontSize: 15, fontWeight: '800', color: requestSpots === n ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {/* Specific player picker — shown after team is selected */}
+            {requestTargetId !== '' && (
+              <>
+                <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 6 }]}>
+                  SPECIFIC PLAYERS{requestSelectedIds.size > 0 ? ` (${requestSelectedIds.size} selected)` : ' — OPTIONAL'}
+                </Text>
+                {requestLoadingPl ? (
+                  <ActivityIndicator color={primaryColor} style={{ marginBottom: 12 }} />
+                ) : requestTargetPlayers.length === 0 ? (
+                  <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 12 }}>No available players on this team.</Text>
+                ) : (
+                  <View style={{ borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10, marginBottom: 14, overflow: 'hidden' }}>
+                    {requestTargetPlayers.map((p, i) => {
+                      const sel = requestSelectedIds.has(p.id);
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          onPress={() => setRequestSelectedIds(prev => {
+                            const next = new Set(prev);
+                            sel ? next.delete(p.id) : next.add(p.id);
+                            return next;
+                          })}
+                          style={{
+                            flexDirection: 'row', alignItems: 'center', padding: 10, gap: 10,
+                            backgroundColor: sel ? rgba(0.06) : '#fff',
+                            borderTopWidth: i === 0 ? 0 : 1, borderTopColor: PULSE_COLORS.ui.border,
+                          }}
+                        >
+                          <View style={[styles.jerseyBadge, { backgroundColor: sel ? rgba(0.15) : 'rgba(0,0,0,0.05)', marginRight: 0 }]}>
+                            <Text style={[styles.jerseyNum, { color: sel ? primaryColor : PULSE_COLORS.ui.muted }]}>{p.jersey_number ?? '—'}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text }}>{p.full_name}</Text>
+                            {p.position ? <Text style={{ fontSize: 12, color: PULSE_COLORS.ui.muted }}>{p.position}</Text> : null}
+                          </View>
+                          <View style={{
+                            width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+                            borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+                            backgroundColor: sel ? primaryColor : 'transparent',
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {sel && <Ionicons name="checkmark" size={13} color="#fff" />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+                {requestSelectedIds.size === 0 && (
+                  <>
+                    <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>HOW MANY SPOTS?</Text>
+                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                      {[1, 2, 3, 4, 5].map(n => (
+                        <TouchableOpacity
+                          key={n}
+                          onPress={() => setRequestSpots(n)}
+                          style={{
+                            width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+                            backgroundColor: requestSpots === n ? primaryColor : 'rgba(0,0,0,0.05)',
+                            borderWidth: 1.5, borderColor: requestSpots === n ? primaryColor : PULSE_COLORS.ui.border,
+                          }}
+                        >
+                          <Text style={{ fontSize: 15, fontWeight: '800', color: requestSpots === n ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
 
             {/* Note */}
             <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>NOTE (OPTIONAL)</Text>
@@ -2117,7 +2224,7 @@ export default function EventDetailScreen() {
                 ? <ActivityIndicator color="#fff" size="small" />
                 : <Ionicons name="megaphone-outline" size={16} color={!requestTargetId ? '#94A3B8' : '#fff'} />}
               <Text style={{ fontSize: 15, fontWeight: '800', color: !requestTargetId || requestSending ? '#94A3B8' : '#fff' }}>
-                {requestSending ? 'Sending…' : 'Send Request'}
+                {requestSending ? 'Sending…' : requestSelectedIds.size > 0 ? `Invite ${requestSelectedIds.size} Player${requestSelectedIds.size !== 1 ? 's' : ''}` : 'Request from Team'}
               </Text>
             </TouchableOpacity>
           </View>
