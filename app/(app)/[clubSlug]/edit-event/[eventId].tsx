@@ -356,6 +356,7 @@ export default function EditEventScreen() {
   const [videoUrl, setVideoUrl] = useState('');
   const [requireRsvp, setRequireRsvp] = useState(true);
   const [rsvpLockHours, setRsvpLockHours] = useState(24);
+  const [notifyParents, setNotifyParents] = useState(true);
 
   // For SmartLocationInput remount when data loads
   const [locationKey, setLocationKey] = useState(0);
@@ -461,7 +462,7 @@ export default function EditEventScreen() {
       rsvp_lock_at: computeLockAt(),
     }).eq('id', eventId);
 
-    if (eventTeamId) {
+    if (eventTeamId && notifyParents) {
       const orig = originalRef.current;
       let pushBody = `${savedTitle} has been updated`;
       if (orig) {
@@ -873,6 +874,15 @@ export default function EditEventScreen() {
                 </FieldRow>
               </>
             )}
+            <RowDivider />
+            <FieldRow icon={notifyParents ? 'notifications-outline' : 'notifications-off-outline'} label="Notify parents & players">
+              <Switch
+                value={notifyParents}
+                onValueChange={setNotifyParents}
+                trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                thumbColor="#fff"
+              />
+            </FieldRow>
           </Card>
 
           {/* ── Cancel / Uncancel ───────────────────────── */}

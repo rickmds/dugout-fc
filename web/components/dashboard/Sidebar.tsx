@@ -34,7 +34,7 @@ const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard/email',         icon: Mail,          label: 'Email' },
   { section: 'Manage' },
   { href: '/dashboard/fees',          icon: DollarSign,    label: 'Fees' },
-  { href: '/dashboard/forms',         icon: ClipboardList, label: 'Forms' },
+  { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations' },
   { href: '/dashboard/waivers',       icon: FileLock2,     label: 'Waivers' },
   { href: '/dashboard/reports',       icon: BarChart2,     label: 'Reports' },
   { href: '/dashboard/admin',         icon: Shield,        label: 'Administration', adminOnly: true },
@@ -65,8 +65,9 @@ export default function Sidebar() {
   const primary     = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const initials    = (club?.name ?? 'FC').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const userInitials = (profile?.full_name ?? '??').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+  const tryoutsActive = club?.tryouts_active ?? false;
   const isTryouts   = pathname.startsWith('/dashboard/tryouts');
-  const activeNav   = isTryouts ? TRYOUTS_NAV : CLUB_NAV;
+  const activeNav   = (isTryouts && tryoutsActive) ? TRYOUTS_NAV : CLUB_NAV;
 
   const navRef = useRef<HTMLElement>(null);
 
@@ -151,30 +152,32 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Mode toggle */}
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '3px', gap: '2px' }}>
-          {(['club', 'tryouts'] as const).map(mode => {
-            const active = mode === 'club' ? !isTryouts : isTryouts;
-            return (
-              <button
-                key={mode}
-                onClick={() => router.push(mode === 'tryouts' ? '/dashboard/tryouts' : '/dashboard')}
-                style={{
-                  flex: 1, padding: '6px 0', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                  fontSize: '12px', fontWeight: '700', letterSpacing: '0.3px',
-                  background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
-                  color: active ? '#fff' : 'rgba(255,255,255,0.35)',
-                  transition: 'all 0.15s',
-                  textTransform: 'capitalize',
-                }}
-              >
-                {mode}
-              </button>
-            );
-          })}
+      {/* Mode toggle — only shown when tryout season is active */}
+      {tryoutsActive && (
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '3px', gap: '2px' }}>
+            {(['club', 'tryouts'] as const).map(mode => {
+              const active = mode === 'club' ? !isTryouts : isTryouts;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => router.push(mode === 'tryouts' ? '/dashboard/tryouts' : '/dashboard')}
+                  style={{
+                    flex: 1, padding: '6px 0', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: '700', letterSpacing: '0.3px',
+                    background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+                    color: active ? '#fff' : 'rgba(255,255,255,0.35)',
+                    transition: 'all 0.15s',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {mode}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Nav */}
       <nav ref={navRef} style={{ flex: 1, padding: '8px 8px 12px', overflowY: 'auto' }}>

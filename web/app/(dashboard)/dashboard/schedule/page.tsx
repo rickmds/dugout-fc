@@ -299,7 +299,7 @@ export default function SchedulePage() {
       coach_notes: ev.coach_notes ?? '',
       require_rsvp: ev.require_rsvp ?? true,
       rsvp_lock_hours: computeLockHours(ev.rsvp_lock_at, ev.event_date, ev.event_time),
-      push_notify: false,
+      push_notify: true,
     });
     setEditId(ev.id);
     setShowModal(true);
@@ -314,7 +314,7 @@ export default function SchedulePage() {
     if (ev) {
       const teamName = teams.find((t) => t.id === ev.team_id)?.name ?? 'your team';
       supabase.functions.invoke('send-push', {
-        body: { team_id: ev.team_id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } },
+        body: { team_id: ev.team_id, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } },
       }).catch(() => {});
     }
   }
@@ -359,12 +359,20 @@ export default function SchedulePage() {
       const { data } = await supabase.from('events').insert(payload).select('id').single();
       eventId = (data as any)?.id ?? null;
     }
-    if (!editId && form.push_notify && eventId) {
+    if (form.push_notify && eventId) {
       const teamName = teams.find((t) => t.id === form.team_id)?.name ?? 'your team';
       const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const isEdit = !!editId;
       try {
         await supabase.functions.invoke('send-push', {
-          body: { team_id: form.team_id, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`, data: { event_id: eventId } },
+          body: {
+            team_id: form.team_id,
+            exclude_profile_id: profile?.id,
+            type: isEdit ? 'event_updated' : 'new_event',
+            title: isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`,
+            body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
+            data: { event_id: eventId },
+          },
         });
       } catch { /* non-critical */ }
     }
@@ -407,7 +415,7 @@ export default function SchedulePage() {
   const pending = rsvpPlayers.filter((p) => p.status === 'pending');
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       <style>{`
         @media (max-width: 768px) {
           .sched-header { padding: 12px 16px !important; }
@@ -421,10 +429,10 @@ export default function SchedulePage() {
       `}</style>
 
       {/* Sticky header */}
-      <div className="sched-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+      <div className="sched-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{club?.name ?? 'Club'}</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Schedule</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>{club?.name ?? 'Club'}</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Schedule</h1>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
 
@@ -473,10 +481,10 @@ export default function SchedulePage() {
             </div>
           )}
 
-          <button onClick={() => setShowAI(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '13px', padding: '9px 14px', borderRadius: '9px', border: '1.5px solid #E2E8F0', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => setShowAI(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '13px', padding: '9px 14px', borderRadius: '6px', border: '1.5px solid #E2E8F0', cursor: 'pointer', fontFamily: 'inherit' }}>
             <Sparkles size={14} color="#8B5CF6" /> AI Import
           </button>
-          <button onClick={openCreate} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button onClick={openCreate} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Plus size={15} /> New Event
           </button>
         </div>
@@ -490,7 +498,7 @@ export default function SchedulePage() {
 
           {/* Calendar view */}
           {viewMode === 'calendar' && (
-            <div className="cal-scroll"><div className="cal-inner" style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+            <div className="cal-scroll"><div className="cal-inner" style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               {/* Month nav */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #F1F5F9' }}>
                 <button onClick={() => { setCalMonth(({ year, month }) => month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }); setSelectedCalDay(null); }}
@@ -668,14 +676,14 @@ export default function SchedulePage() {
                 <div style={{ width: '28px', height: '28px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               </div>
             ) : sortedDates.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
+              <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
                 <CalendarDays size={40} color="#CBD5E1" style={{ marginBottom: '12px' }} />
                 <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>No {tab} events</div>
                 <div style={{ fontSize: '13px', color: '#94A3B8', marginBottom: '20px' }}>
                   {tab === 'upcoming' ? 'Add your first event to get started' : 'Past events will appear here'}
                 </div>
                 {tab === 'upcoming' && (
-                  <button onClick={openCreate} style={{ background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>
+                  <button onClick={openCreate} style={{ background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
                     + Add Event
                   </button>
                 )}
@@ -1014,31 +1022,30 @@ export default function SchedulePage() {
                   )}
                 </div>
 
-                {/* Notify parents (new events only) */}
-                {!editId && (
-                  <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #E2E8F0' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      {form.push_notify ? <Bell size={16} color={primary} /> : <BellOff size={16} color="#94A3B8" />}
-                      <div>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Notify parents &amp; players</div>
-                        <div style={{ fontSize: '11px', color: '#94A3B8' }}>Send push to all team members</div>
-                      </div>
-                    </div>
-                    <button onClick={() => setForm((f) => ({ ...f, push_notify: !f.push_notify }))}
-                      style={{ width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer', background: form.push_notify ? primary : '#CBD5E1', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
-                      <div style={{ position: 'absolute', top: '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', left: form.push_notify ? '22px' : '2px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
             {/* Footer */}
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', flexShrink: 0 }}>
-              <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving || !form.title.trim()} style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: saving || !form.title.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                {saving ? 'Saving…' : editId ? 'Save changes' : 'Create Event'}
-              </button>
+            <div style={{ padding: '12px 24px 16px', borderTop: '1px solid #F1F5F9', flexShrink: 0 }}>
+              {/* Notify toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', padding: '10px 14px', background: form.push_notify ? `${primary}08` : '#F8FAFC', borderRadius: '10px', border: `1px solid ${form.push_notify ? `${primary}30` : '#E2E8F0'}`, transition: 'all 0.15s' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {form.push_notify ? <Bell size={14} color={primary} /> : <BellOff size={14} color="#94A3B8" />}
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: form.push_notify ? '#0F172A' : '#64748B' }}>
+                    Notify parents &amp; players
+                  </span>
+                </div>
+                <button onClick={() => setForm((f) => ({ ...f, push_notify: !f.push_notify }))}
+                  style={{ width: '40px', height: '22px', borderRadius: '11px', border: 'none', cursor: 'pointer', background: form.push_notify ? primary : '#CBD5E1', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                  <div style={{ position: 'absolute', top: '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', left: form.push_notify ? '20px' : '2px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={handleSave} disabled={saving || !form.title.trim()} style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: saving || !form.title.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  {saving ? 'Saving…' : editId ? 'Save changes' : 'Create Event'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

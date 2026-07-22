@@ -46,6 +46,15 @@ function AppShell() {
           if (data.conversation_id) router.push(`/(app)/${slug}/conversation/${data.conversation_id}` as any);
           else router.push(`/(app)/${slug}/(tabs)/chat` as any);
           break;
+        case 'guest_request':
+          if (data.request_id) router.push(`/(app)/${slug}/guest-request/${data.request_id}` as any);
+          else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+          break;
+        case 'guest_invite':
+        case 'guest_coach_invite':
+          if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
+          else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+          break;
         case 'invite_accepted':
           router.push(`/(app)/${slug}/admin` as any);
           break;

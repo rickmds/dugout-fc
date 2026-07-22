@@ -416,6 +416,7 @@ export default function CreateEventScreen() {
   const [videoUrl, setVideoUrl] = useState('');
   const [requireRsvp, setRequireRsvp] = useState(true);
   const [rsvpLockHours, setRsvpLockHours] = useState(24);
+  const [notifyParents, setNotifyParents] = useState(true);
 
   // Recurrence
   const [recurrence, setRecurrence] = useState<RecurrenceType>('none');
@@ -502,13 +503,15 @@ export default function CreateEventScreen() {
       }
     }
 
-    sendTeamPush({
-      teamId: team.id,
-      title: '📅 New event added',
-      body: `${savedTitle} — ${fmtDate(date)}`,
-      excludeProfileId: profile?.id,
-      data: { type: 'new_event', event_id: newEventId },
-    });
+    if (notifyParents) {
+      sendTeamPush({
+        teamId: team.id,
+        title: '📅 New event added',
+        body: `${savedTitle} — ${fmtDate(date)}`,
+        excludeProfileId: profile?.id,
+        data: { type: 'new_event', event_id: newEventId },
+      });
+    }
 
     setSaving(false);
     router.back();
@@ -811,6 +814,15 @@ export default function CreateEventScreen() {
                 </FieldRow>
               </>
             )}
+            <RowDivider />
+            <FieldRow icon={notifyParents ? 'notifications-outline' : 'notifications-off-outline'} label="Notify parents & players">
+              <Switch
+                value={notifyParents}
+                onValueChange={setNotifyParents}
+                trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                thumbColor="#fff"
+              />
+            </FieldRow>
           </Card>
 
           {/* ── Recurrence ──────────────────────────────── */}

@@ -24,21 +24,27 @@ export function usePushNotifications() {
 }
 
 async function registerToken(profileId: string) {
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
+  try {
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
 
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') return;
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: '3b35d5d3-278b-42c4-b66b-1a487815ce31',
+    });
+    const token = tokenData.data;
+
+    await supabase.from('push_tokens').upsert(
+      { profile_id: profileId, token, platform: Platform.OS as 'ios' | 'android' },
+      { onConflict: 'profile_id,token', ignoreDuplicates: true }
+    );
+  } catch (err) {
+    console.error('[PushNotifications] Token registration failed:', err);
   }
-
-  if (finalStatus !== 'granted') return;
-
-  const tokenData = await Notifications.getExpoPushTokenAsync();
-  const token = tokenData.data;
-
-  await supabase.from('push_tokens').upsert(
-    { profile_id: profileId, token, platform: Platform.OS as 'ios' | 'android' },
-    { onConflict: 'profile_id,token', ignoreDuplicates: true }
-  );
 }

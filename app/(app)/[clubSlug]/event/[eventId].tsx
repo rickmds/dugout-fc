@@ -302,6 +302,15 @@ export default function EventDetailScreen() {
   const [guestCoachResults, setGuestCoachResults] = useState<CoachResult[]>([]);
   const [guestSearching, setGuestSearching] = useState(false);
   const [addingGuest, setAddingGuest] = useState<string | null>(null);
+  type ClubTeamBrowse = { id: string; name: string; players: GuestPlayerResult[] };
+  const [clubBrowse,       setClubBrowse]       = useState<ClubTeamBrowse[]>([]);
+  const [browseLoading,    setBrowseLoading]    = useState(false);
+  const [requestSheet,     setRequestSheet]     = useState(false);
+  const [requestTeams,     setRequestTeams]     = useState<{ id: string; name: string }[]>([]);
+  const [requestTargetId,  setRequestTargetId]  = useState('');
+  const [requestSpots,     setRequestSpots]     = useState(1);
+  const [requestNote,      setRequestNote]      = useState('');
+  const [requestSending,   setRequestSending]   = useState(false);
   const [activeMainTab, setActiveMainTab] = useState<'details' | 'availability' | 'attendance'>(section === 'attendance' ? 'attendance' : 'details');
   const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late'>>(new Map());
   const [savingAttendance, setSavingAttendance] = useState<string | null>(null);
@@ -618,6 +627,39 @@ export default function EventDetailScreen() {
     }));
   }
 
+  useEffect(() => {
+    if (guestSheet === 'player') {
+      setGuestQuery(''); setGuestPlayerResults([]); setClubBrowse([]);
+      loadClubBrowse();
+    } else if (guestSheet === 'coach') {
+      setGuestQuery(''); setGuestCoachResults([]);
+    }
+  }, [guestSheet]);
+
+  async function loadClubBrowse() {
+    if (!profile?.club_id || !team?.id) return;
+    setBrowseLoading(true);
+    const { data: teams } = await supabase.from('teams').select('id,name')
+      .eq('club_id', profile.club_id).neq('id', team.id).order('name');
+    const otherIds = (teams ?? []).map((t: any) => t.id as string);
+    if (!otherIds.length) { setClubBrowse([]); setBrowseLoading(false); return; }
+    const nameMap = new Map((teams ?? []).map((t: any) => [t.id as string, t.name as string]));
+    const { data: pData } = await supabase.from('players')
+      .select('id,full_name,jersey_number,position,profile_id,team_id')
+      .in('team_id', otherIds).order('jersey_number');
+    const grouped = new Map<string, GuestPlayerResult[]>();
+    for (const p of (pData ?? []) as any[]) {
+      const tid = p.team_id as string;
+      if (!grouped.has(tid)) grouped.set(tid, []);
+      grouped.get(tid)!.push({ ...p, team_name: nameMap.get(tid) ?? '' } as GuestPlayerResult);
+    }
+    setClubBrowse(
+      (teams ?? []).map((t: any) => ({ id: t.id, name: t.name, players: grouped.get(t.id) ?? [] }))
+        .filter((t: ClubTeamBrowse) => t.players.length > 0)
+    );
+    setBrowseLoading(false);
+  }
+
   async function searchGuests(query: string) {
     if (!profile?.club_id || !team?.id || query.length < 2) {
       setGuestPlayerResults([]); setGuestCoachResults([]); return;
@@ -659,7 +701,7 @@ export default function EventDetailScreen() {
         profileIds: [p.profile_id],
         title: 'Guest invitation',
         body: `${profile.full_name ?? 'Coach'} invited ${p.full_name} to guest play for ${team.name} — ${event.title}.`,
-        data: { type: 'guest_invite', event_id: eventId },
+        data: { type: 'guest_invite', event_id: eventId, club_slug: clubSlug },
       });
     }
     const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
@@ -684,7 +726,7 @@ export default function EventDetailScreen() {
         profileIds: [c.id],
         title: 'Guest coaching invitation',
         body: `You've been invited to guest coach ${team.name} — ${event.title}.`,
-        data: { type: 'guest_coach_invite', event_id: eventId },
+        data: { type: 'guest_coach_invite', event_id: eventId, club_slug: clubSlug },
       });
     }
     const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
@@ -717,6 +759,50 @@ export default function EventDetailScreen() {
         setGuests(prev => prev.filter(g => g.id !== guestId));
       }},
     ]);
+  }
+
+  async function openRequestSheet() {
+    if (!profile?.club_id || !team?.id) return;
+    const { data: teams } = await supabase.from('teams').select('id,name')
+      .eq('club_id', profile.club_id).neq('id', team.id).order('name');
+    setRequestTeams((teams ?? []) as { id: string; name: string }[]);
+    setRequestTargetId(''); setRequestSpots(1); setRequestNote('');
+    setRequestSheet(true);
+  }
+
+  async function sendRequest() {
+    if (!profile || !team || !event || !requestTargetId) return;
+    setRequestSending(true);
+    const { data: newReq, error } = await (supabase as any).from('guest_requests').insert({
+      event_id:           event.id,
+      requesting_team_id: team.id,
+      target_team_id:     requestTargetId,
+      note:               requestNote.trim() || null,
+      spots_needed:       requestSpots,
+      status:             'open',
+      created_by:         profile.id,
+    }).select('id').single();
+    if (error || !newReq) {
+      Alert.alert('Error', 'Could not send request. Try again.'); setRequestSending(false); return;
+    }
+    // Notify all players/parents on the target team
+    const { data: players } = await supabase.from('players').select('profile_id').eq('team_id', requestTargetId);
+    const profileIds = ((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean) as string[];
+    const targetTeam = requestTeams.find(t => t.id === requestTargetId);
+    if (profileIds.length > 0) {
+      await sendProfilesPush({
+        profileIds,
+        title: `${team.name} needs guest players`,
+        body: `${profile.full_name ?? 'A coach'} is looking for ${requestSpots} player${requestSpots !== 1 ? 's' : ''} for ${event.title}${requestNote.trim() ? ` — ${requestNote.trim()}` : ''}. Tap to volunteer.`,
+        data: { type: 'guest_request', request_id: newReq.id, club_slug: clubSlug },
+      });
+    }
+    setRequestSending(false);
+    setRequestSheet(false);
+    Alert.alert(
+      'Request sent!',
+      `${targetTeam?.name ?? 'The team'}'s parents have been notified and can volunteer their child.`,
+    );
   }
 
   async function markAttendance(playerId: string, newStatus: 'present' | 'absent' | 'late') {
@@ -1749,10 +1835,16 @@ export default function EventDetailScreen() {
               <View style={styles.guestSection}>
                 <View style={styles.guestSectionRow}>
                   <Text style={styles.guestSectionTitle}>GUEST PLAYERS</Text>
-                  <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: rgba(0.1) }]} onPress={() => { setGuestQuery(''); setGuestPlayerResults([]); setGuestSheet('player'); }}>
-                    <Ionicons name="person-add-outline" size={13} color={primaryColor} />
-                    <Text style={[styles.addGuestBtnText, { color: primaryColor }]}>Add</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: 'rgba(249,115,22,0.1)' }]} onPress={openRequestSheet}>
+                      <Ionicons name="megaphone-outline" size={13} color="#f97316" />
+                      <Text style={[styles.addGuestBtnText, { color: '#f97316' }]}>Request</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.addGuestBtn, { backgroundColor: rgba(0.1) }]} onPress={() => { setGuestQuery(''); setGuestPlayerResults([]); setGuestSheet('player'); }}>
+                      <Ionicons name="person-add-outline" size={13} color={primaryColor} />
+                      <Text style={[styles.addGuestBtnText, { color: primaryColor }]}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 {guestPlayers.length > 0 ? (
                   <View style={styles.playerCard}>
@@ -1846,7 +1938,7 @@ export default function EventDetailScreen() {
             </Text>
             <Text style={styles.guestSheetSub}>
               {guestSheet === 'player'
-                ? 'Search for a player from another team in your club.'
+                ? 'Browse or search players from other teams in your club.'
                 : 'Search for a coach in your club.'}
             </Text>
             <View style={styles.guestSearchRow}>
@@ -1860,10 +1952,11 @@ export default function EventDetailScreen() {
                 autoFocus
                 returnKeyType="search"
               />
-              {guestSearching && <ActivityIndicator size="small" color={primaryColor} />}
+              {(guestSearching || browseLoading) && <ActivityIndicator size="small" color={primaryColor} />}
             </View>
             <ScrollView style={styles.guestResultsList} keyboardShouldPersistTaps="handled">
-              {guestSheet === 'player' && guestPlayerResults.map(p => (
+              {/* Search results */}
+              {guestSheet === 'player' && guestQuery.length >= 2 && guestPlayerResults.map(p => (
                 <TouchableOpacity
                   key={p.id}
                   style={styles.guestResultRow}
@@ -1901,10 +1994,132 @@ export default function EventDetailScreen() {
               {guestQuery.length >= 2 && !guestSearching && guestPlayerResults.length === 0 && guestCoachResults.length === 0 && (
                 <Text style={styles.guestNoResults}>No results for "{guestQuery}"</Text>
               )}
-              {guestQuery.length < 2 && (
-                <Text style={styles.guestNoResults}>Type at least 2 characters to search.</Text>
+              {/* Browse by team — shown before any search query */}
+              {guestSheet === 'player' && guestQuery.length < 2 && !browseLoading && clubBrowse.map(team => (
+                <View key={team.id}>
+                  <View style={styles.guestTeamHeader}>
+                    <Ionicons name="shield-outline" size={12} color={primaryColor} />
+                    <Text style={[styles.guestTeamLabel, { color: primaryColor }]}>{team.name}</Text>
+                  </View>
+                  {team.players.map(p => {
+                    const alreadyAdded = guests.some(g => g.player_id === p.id);
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={[styles.guestResultRow, alreadyAdded && { opacity: 0.4 }]}
+                        onPress={() => !alreadyAdded && handleAddGuestPlayer(p)}
+                        disabled={!!addingGuest || alreadyAdded}
+                      >
+                        <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
+                          <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.guestResultName}>{p.full_name}</Text>
+                          {p.position ? <Text style={styles.guestResultSub}>{p.position}</Text> : null}
+                        </View>
+                        {alreadyAdded
+                          ? <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                          : addingGuest === p.id
+                            ? <ActivityIndicator size="small" color={primaryColor} />
+                            : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+              {guestSheet === 'player' && guestQuery.length < 2 && !browseLoading && clubBrowse.length === 0 && !browseLoading && (
+                <Text style={styles.guestNoResults}>No other teams in your club yet.</Text>
+              )}
+              {guestSheet === 'coach' && guestQuery.length < 2 && (
+                <Text style={styles.guestNoResults}>Type to search coaches in your club.</Text>
               )}
             </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Request players from a team — bottom sheet */}
+      <Modal visible={requestSheet} animationType="slide" transparent onRequestClose={() => setRequestSheet(false)}>
+        <KeyboardAvoidingView style={styles.guestSheetKAV} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={styles.guestSheetOverlay} activeOpacity={1} onPress={() => setRequestSheet(false)} />
+          <View style={styles.guestSheetPanel}>
+            <View style={styles.guestSheetHandle} />
+            <Text style={styles.guestSheetTitle}>Request guest players</Text>
+            <Text style={styles.guestSheetSub}>
+              Parents on the chosen team will get a notification and can volunteer their child.
+            </Text>
+
+            {/* Team picker */}
+            <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>WHICH TEAM?</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {requestTeams.map(t => (
+                  <TouchableOpacity
+                    key={t.id}
+                    onPress={() => setRequestTargetId(t.id)}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                      backgroundColor: requestTargetId === t.id ? primaryColor : 'rgba(0,0,0,0.05)',
+                      borderWidth: 1.5,
+                      borderColor: requestTargetId === t.id ? primaryColor : PULSE_COLORS.ui.border,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: requestTargetId === t.id ? '#fff' : PULSE_COLORS.ui.text }}>
+                      {t.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {requestTeams.length === 0 && (
+                  <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted }}>No other teams in your club.</Text>
+                )}
+              </View>
+            </ScrollView>
+
+            {/* Spots needed */}
+            <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>HOW MANY SPOTS?</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <TouchableOpacity
+                  key={n}
+                  onPress={() => setRequestSpots(n)}
+                  style={{
+                    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: requestSpots === n ? primaryColor : 'rgba(0,0,0,0.05)',
+                    borderWidth: 1.5, borderColor: requestSpots === n ? primaryColor : PULSE_COLORS.ui.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: requestSpots === n ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Note */}
+            <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>NOTE (OPTIONAL)</Text>
+            <TextInput
+              value={requestNote}
+              onChangeText={setRequestNote}
+              placeholder="e.g. Need midfielders, must be U14"
+              placeholderTextColor={PULSE_COLORS.ui.muted}
+              style={[styles.guestSearchInput, { borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8, padding: 10, marginBottom: 16 }]}
+              maxLength={120}
+            />
+
+            <TouchableOpacity
+              onPress={sendRequest}
+              disabled={!requestTargetId || requestSending}
+              style={{
+                backgroundColor: !requestTargetId || requestSending ? '#E2E8F0' : primaryColor,
+                borderRadius: 12, padding: 14, alignItems: 'center', justifyContent: 'center',
+                flexDirection: 'row', gap: 8,
+              }}
+            >
+              {requestSending
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Ionicons name="megaphone-outline" size={16} color={!requestTargetId ? '#94A3B8' : '#fff'} />}
+              <Text style={{ fontSize: 15, fontWeight: '800', color: !requestTargetId || requestSending ? '#94A3B8' : '#fff' }}>
+                {requestSending ? 'Sending…' : 'Send Request'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -2355,6 +2570,8 @@ const styles = StyleSheet.create({
   guestEmpty: { fontSize: 13, color: PULSE_COLORS.ui.muted, marginTop: 4 },
 
   // Guest search sheet
+  guestTeamHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingTop: 14, paddingBottom: 6 },
+  guestTeamLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
   guestSheetKAV: { flex: 1, justifyContent: 'flex-end' },
   guestSheetOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   guestSheetPanel: {

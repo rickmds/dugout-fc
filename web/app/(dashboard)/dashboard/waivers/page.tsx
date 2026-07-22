@@ -30,6 +30,7 @@ type UnsignedPlayer = {
   full_name: string;
   team_name: string;
   parent_email: string | null;
+  profile_id: string | null;
 };
 
 export default function WaiversPage() {
@@ -114,7 +115,7 @@ export default function WaiversPage() {
 
       const [sigRes, playerRes, inviteRes] = await Promise.all([
         supabase.from('waiver_signatures').select('id, player_id, signed_by_name, signed_at').eq('waiver_id', activeWaiver.id),
-        supabase.from('players').select('id, full_name, team_id').in('team_id', assignedTeamIds),
+        supabase.from('players').select('id, full_name, team_id, profile_id').in('team_id', assignedTeamIds),
         supabase.from('invites').select('player_id, email').in('team_id', assignedTeamIds),
       ]);
 
@@ -143,6 +144,7 @@ export default function WaiversPage() {
           full_name: p.full_name,
           team_name: teamMap[p.team_id] ?? '—',
           parent_email: inviteMap[p.id] ?? null,
+          profile_id: (p as any).profile_id ?? null,
         }));
 
       setSignatures(sigs);
@@ -176,15 +178,27 @@ export default function WaiversPage() {
 
   async function sendReminder(player: UnsignedPlayer) {
     if (!player.parent_email || !activeWaiver) return;
-    await supabase.functions.invoke('send-waiver-reminder', {
-      body: {
-        to_email: player.parent_email,
-        player_name: player.full_name,
-        waiver_title: activeWaiver.title,
-        club_name: club?.name ?? '',
-        portal_url: `${window.location.origin}/portal`,
-      },
-    });
+    await Promise.all([
+      supabase.functions.invoke('send-waiver-reminder', {
+        body: {
+          to_email: player.parent_email,
+          player_name: player.full_name,
+          waiver_title: activeWaiver.title,
+          club_name: club?.name ?? '',
+          portal_url: `${window.location.origin}/portal`,
+        },
+      }),
+      player.profile_id
+        ? supabase.functions.invoke('send-push', {
+            body: {
+              profile_ids: [player.profile_id],
+              title: `📋 Waiver reminder — ${player.full_name}`,
+              body: `Please sign: ${activeWaiver.title}`,
+              data: { type: 'waiver_reminder' },
+            },
+          })
+        : Promise.resolve(),
+    ]);
     alert(`Reminder sent to ${player.parent_email}`);
   }
 
@@ -195,8 +209,8 @@ export default function WaiversPage() {
     ? Math.round((activeWaiver.signed_count / activeWaiver.total_players) * 100)
     : 0;
 
-  const thSt: React.CSSProperties = { padding: '9px 14px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em' };
-  const tdSt: React.CSSProperties = { padding: '11px 14px', fontSize: '13px', color: '#374151', borderBottom: '1px solid #F8FAFC' };
+  const thSt: React.CSSProperties = { padding: '9px 14px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px' };
+  const tdSt: React.CSSProperties = { padding: '11px 14px', fontSize: '13px', color: '#374151', fontWeight: '500', borderBottom: '1px solid #F1F5F9' };
 
   return (
     <div style={{ padding: '32px 36px', maxWidth: '1100px' }}>
@@ -204,11 +218,11 @@ export default function WaiversPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '2px' }}>Waivers</h1>
-          <p style={{ fontSize: '13px', color: '#64748B' }}>Consent forms and documents — track who has and hasn't signed</p>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', marginBottom: '2px' }}>Waivers</h1>
+          <p style={{ fontSize: '12px', color: '#94A3B8' }}>Consent forms and documents — track who has and hasn't signed</p>
         </div>
         {profile?.role === 'org_admin' && (
-          <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', fontWeight: '700', fontSize: '14px', padding: '10px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
             <Plus size={16} /> New Waiver
           </button>
         )}
@@ -222,7 +236,7 @@ export default function WaiversPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
               {[1, 2, 3].map(i => (
-                <div key={i} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                <div key={i} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
                   <div style={{ height: '13px', borderRadius: '5px', width: '75%', marginBottom: '12px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
                   <div style={{ height: '5px', borderRadius: '3px', marginBottom: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
                   <div style={{ height: '11px', borderRadius: '5px', width: '55%', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
@@ -230,14 +244,14 @@ export default function WaiversPage() {
               ))}
             </div>
           ) : waivers.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
                 <FileText size={24} color="#CBD5E1" />
               </div>
               <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '5px' }}>No waivers yet</div>
               <div style={{ fontSize: '12px', color: '#94A3B8', lineHeight: '1.6', marginBottom: '16px' }}>Create consent forms for liability, photos, or medical info</div>
               {profile?.role === 'org_admin' && (
-                <button onClick={() => setShowCreate(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '9px 18px', borderRadius: '9px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <button onClick={() => setShowCreate(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                   <Plus size={14} /> Create First Waiver
                 </button>
               )}
@@ -248,7 +262,7 @@ export default function WaiversPage() {
             const overdue = w.required_by && new Date(w.required_by) < new Date() && wpct < 100;
             return (
               <button key={w.id} onClick={() => setActiveWaiver(w)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', background: isSelected ? `${primary}08` : '#fff', border: `1.5px solid ${isSelected ? primary : '#E2E8F0'}`, borderRadius: '14px', padding: '16px', cursor: 'pointer', fontFamily: 'inherit', boxShadow: isSelected ? `0 2px 12px ${primary}20` : '0 1px 4px rgba(0,0,0,0.04)', transition: 'box-shadow 0.15s, border-color 0.15s' }}>
+                style={{ display: 'block', width: '100%', textAlign: 'left', background: isSelected ? `${primary}08` : '#fff', border: `1.5px solid ${isSelected ? primary : '#E2E8F0'}`, borderRadius: '8px', padding: '16px', cursor: 'pointer', fontFamily: 'inherit', boxShadow: isSelected ? `0 2px 12px ${primary}20` : '0 1px 2px rgba(0,0,0,0.06)', transition: 'box-shadow 0.15s, border-color 0.15s' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
                   <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', lineHeight: 1.3 }}>{w.title}</div>
                   {overdue && <AlertTriangle size={14} color="#D97706" style={{ flexShrink: 0, marginTop: '1px' }} />}
@@ -272,7 +286,7 @@ export default function WaiversPage() {
         {/* Detail panel */}
         {activeWaiver && (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+            <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
               {/* Panel header */}
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                 <div style={{ flex: 1 }}>
@@ -392,7 +406,7 @@ export default function WaiversPage() {
       {/* Create modal */}
       {showCreate && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '24px' }} onClick={() => setShowCreate(false)}>
-          <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '540px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: '#fff', borderRadius: '12px', width: '100%', maxWidth: '540px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
               <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A' }}>New Waiver / Consent Form</h2>
               <button onClick={() => setShowCreate(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={18} color="#64748B" /></button>
@@ -435,9 +449,9 @@ export default function WaiversPage() {
               {createError && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '10px 12px', fontSize: '13px', color: '#DC2626' }}>{createError}</div>}
             </div>
             <div style={{ padding: '0 24px 24px', display: 'flex', gap: '10px', flexShrink: 0 }}>
-              <button onClick={() => setShowCreate(false)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={() => setShowCreate(false)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               <button onClick={handleCreate} disabled={saving || !title.trim() || !body.trim() || !assignedTeams.length}
-                style={{ flex: 2, padding: '11px', background: saving || !title.trim() || !body.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 2, padding: '11px', background: saving || !title.trim() || !body.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
                 {saving ? 'Creating…' : 'Create Waiver'}
               </button>
             </div>
@@ -448,5 +462,5 @@ export default function WaiversPage() {
   );
 }
 
-const labelSt: React.CSSProperties = { fontSize: '10px', fontWeight: '700', color: '#94A3B8', letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' };
+const labelSt: React.CSSProperties = { fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '6px' };
 const inputSt: React.CSSProperties = { width: '100%', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '10px 13px', fontSize: '14px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' };

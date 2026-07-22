@@ -86,7 +86,7 @@ function emptyForm(teamId: string): FormState {
     location: '', address: '', lat: null, lng: null,
     field_type: null, field_notes: '', uniform: null,
     notes: '', coach_notes: '',
-    require_rsvp: true, rsvp_lock_hours: 24, push_notify: false,
+    require_rsvp: true, rsvp_lock_hours: 24, push_notify: true,
   };
 }
 
@@ -112,7 +112,7 @@ function formFromEvent(ev: EventFull): FormState {
     coach_notes: ev.coach_notes ?? '',
     require_rsvp: ev.require_rsvp ?? true,
     rsvp_lock_hours: computeLockHours(ev.rsvp_lock_at, ev.event_date, ev.event_time),
-    push_notify: false,
+    push_notify: true,
   };
 }
 
@@ -241,11 +241,18 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
       eventId = (data as any)?.id ?? null;
     }
 
-    if (!isEdit && form.push_notify && eventId) {
+    if (form.push_notify && eventId) {
       try {
         const teamName = teams.find(t => t.id === form.team_id)?.name ?? 'your team';
         await supabase.functions.invoke('send-push', {
-          body: { team_id: form.team_id, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: savedTitle, data: { event_id: eventId } },
+          body: {
+            team_id: form.team_id,
+            exclude_profile_id: profileId,
+            type: isEdit ? 'event_updated' : 'new_event',
+            title: isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`,
+            body: savedTitle,
+            data: { event_id: eventId },
+          },
         });
       } catch { /* non-critical */ }
     }
@@ -456,31 +463,28 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
               )}
             </div>
 
-            {/* Notify (new events only) */}
-            {!isEdit && (
-              <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #E2E8F0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {form.push_notify ? <Bell size={16} color={primary} /> : <BellOff size={16} color="#94A3B8" />}
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Notify parents &amp; players</div>
-                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>Send push to all team members</div>
-                  </div>
-                </div>
-                <button onClick={() => setForm(f => ({ ...f, push_notify: !f.push_notify }))}
-                  style={{ width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer', background: form.push_notify ? primary : '#CBD5E1', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
-                  <div style={{ position: 'absolute', top: '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', left: form.push_notify ? '22px' : '2px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Footer */}
-          <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', flexShrink: 0 }}>
-            <button onClick={onClose} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-            <button onClick={handleSave} disabled={saving || !form.title.trim()}
-              style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: saving || !form.title.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-              {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create Event'}
-            </button>
+          <div style={{ padding: '12px 24px 16px', borderTop: '1px solid #F1F5F9', flexShrink: 0 }}>
+            {/* Notify toggle — always visible */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', padding: '10px 14px', background: form.push_notify ? `${primary}08` : '#F8FAFC', borderRadius: '10px', border: `1px solid ${form.push_notify ? `${primary}30` : '#E2E8F0'}`, transition: 'all 0.15s' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {form.push_notify ? <Bell size={14} color={primary} /> : <BellOff size={14} color="#94A3B8" />}
+                <span style={{ fontSize: '13px', fontWeight: '600', color: form.push_notify ? '#0F172A' : '#64748B' }}>Notify parents &amp; players</span>
+              </div>
+              <button onClick={() => setForm(f => ({ ...f, push_notify: !f.push_notify }))}
+                style={{ width: '40px', height: '22px', borderRadius: '11px', border: 'none', cursor: 'pointer', background: form.push_notify ? primary : '#CBD5E1', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                <div style={{ position: 'absolute', top: '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', left: form.push_notify ? '20px' : '2px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={onClose} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={handleSave} disabled={saving || !form.title.trim()}
+                style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: saving || !form.title.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create Event'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
