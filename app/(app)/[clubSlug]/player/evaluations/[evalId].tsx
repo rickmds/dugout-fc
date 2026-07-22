@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
+
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../../../lib/supabase';
 import { PULSE_COLORS } from '../../../../../constants/colors';
 import { useClub } from '../../../../../hooks/useClub';
@@ -47,8 +51,6 @@ type EvalDetail = {
   published_at: string | null;
   players: { full_name: string; jersey_number: number | null } | null;
 };
-
-type ClubInfo = { name: string; logo_url: string | null };
 
 const SCREEN_W = Dimensions.get('window').width;
 const CARD_W   = SCREEN_W - 32;
@@ -150,14 +152,28 @@ function RadarChart({ values, color }: { values: number[]; color: string }) {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function EvalDetailScreen() {
-  const { primaryColor } = useClub();
-  const { clubSlug, evalId } = useLocalSearchParams<{ clubSlug: string; evalId: string }>();
+  const { primaryColor, logoUrl: clubLogoUrl, clubName } = useClub();
+  const { evalId } = useLocalSearchParams<{ clubSlug: string; evalId: string }>();
   const router = useRouter();
   const primary = primaryColor ?? '#22C55E';
 
   const [ev,      setEv]      = useState<EvalDetail | null>(null);
-  const [club,    setClub]    = useState<ClubInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sharing, setSharing] = useState(false);
+  const logoBase64Ref = useRef<string | null>(null);
+
+  // Pre-fetch logo as base64 so share is instant
+  useEffect(() => {
+    if (!clubLogoUrl) return;
+    (async () => {
+      try {
+        const tmp = FileSystem.cacheDirectory! + 'report-logo-cached.png';
+        await FileSystem.downloadAsync(clubLogoUrl, tmp);
+        const b64 = await FileSystem.readAsStringAsync(tmp, { encoding: FileSystem.EncodingType.Base64 });
+        logoBase64Ref.current = `data:image/png;base64,${b64}`;
+      } catch { /* logo optional */ }
+    })();
+  }, [clubLogoUrl]);
 
   useEffect(() => {
     async function load() {
@@ -167,15 +183,183 @@ export default function EvalDetailScreen() {
         .select('*, players(full_name,jersey_number)')
         .eq('id', evalId)
         .single();
-      if (data) {
-        setEv(data as EvalDetail);
-        const { data: cData } = await supabase.from('clubs').select('name,logo_url').eq('slug', clubSlug).single();
-        setClub(cData as ClubInfo | null);
-      }
+      if (data) setEv(data as EvalDetail);
       setLoading(false);
     }
     load();
   }, [evalId]);
+
+  const handleShare = useCallback(async () => {
+    if (!ev) return;
+    setSharing(true);
+    try {
+      const rd         = ev.report_data;
+      const playerName = ev.players?.full_name ?? '';
+      const lastName   = playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? '';
+      const jerseyNum  = ev.players?.jersey_number;
+      const pubDate    = ev.published_at
+        ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+        : '';
+
+      const logoDataUri = logoBase64Ref.current ?? '';
+
+      // Radar SVG
+      const axes  = [
+        { label: 'Technical', val: ev.rating_technical ?? 0, angle: -Math.PI / 2, color: '#3B82F6' },
+        { label: 'Physical',  val: ev.rating_physical  ?? 0, angle: 0,            color: '#F59E0B' },
+        { label: 'Mental',    val: ev.rating_mental    ?? 0, angle: Math.PI / 2,  color: '#22C55E' },
+        { label: 'Tactical',  val: ev.rating_tactical  ?? 0, angle: Math.PI,      color: '#8B5CF6' },
+      ];
+      const CX = 160, CY = 140, MR = 90;
+      function rPt(val: number, angle: number) {
+        const r = (val / 5) * MR;
+        return { x: CX + r * Math.cos(angle), y: CY + r * Math.sin(angle) };
+      }
+      function gridPoly(lvl: number) {
+        return axes.map(a => { const r = (lvl/5)*MR; return `${CX+r*Math.cos(a.angle)},${CY+r*Math.sin(a.angle)}`; }).join(' ');
+      }
+      const dataPts  = axes.map(a => rPt(a.val, a.angle));
+      const dataPoly = dataPts.map(p => `${p.x},${p.y}`).join(' ');
+      const radarSvg = `
+        <svg width="320" height="280" viewBox="0 0 320 280" xmlns="http://www.w3.org/2000/svg">
+          ${[1,2,3,4,5].map(l => `<polygon points="${gridPoly(l)}" fill="none" stroke="${l===5?'rgba(0,0,0,0.15)':'rgba(0,0,0,0.07)'}" stroke-width="${l===5?1.5:1}"/>`).join('')}
+          ${axes.map(a => `<line x1="${CX}" y1="${CY}" x2="${CX+MR*Math.cos(a.angle)}" y2="${CY+MR*Math.sin(a.angle)}" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>`).join('')}
+          <polygon points="${dataPoly}" fill="${primary}" fill-opacity="0.15" stroke="${primary}" stroke-width="2.5" stroke-linejoin="round"/>
+          ${dataPts.map((p,i) => `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${axes[i].color}"/>`).join('')}
+          ${axes.map((a,i) => {
+            const lx = CX + (MR+22)*Math.cos(a.angle);
+            const ly = CY + (MR+22)*Math.sin(a.angle);
+            const ta = Math.abs(a.angle) < 0.1 ? 'start' : Math.abs(Math.abs(a.angle)-Math.PI) < 0.1 ? 'end' : 'middle';
+            return `<text x="${lx}" y="${ly-8}" text-anchor="${ta}" font-size="18" font-weight="900" fill="${axes[i].color}">${a.val}</text>
+                    <text x="${lx}" y="${ly+6}" text-anchor="${ta}" font-size="8" font-weight="800" fill="${axes[i].color}" letter-spacing="1">${a.label.toUpperCase()}</text>`;
+          }).join('')}
+        </svg>`;
+
+      function bullets(items: string[], color: string) {
+        return items.filter(Boolean).map((t, i) =>
+          `<div style="display:flex;gap:10px;margin-bottom:6px;align-items:flex-start">
+            <div style="min-width:20px;height:20px;border-radius:10px;background:${color}22;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:${color}">${i+1}</div>
+            <p style="margin:0;font-size:13px;color:#1e293b;line-height:1.5;font-weight:500">${t}</p>
+           </div>`
+        ).join('');
+      }
+
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, Helvetica, Arial, sans-serif; }
+          body { background: #f1f5f9; padding: 24px; }
+          .card { background: #fff; border-radius: 16px; overflow: hidden; max-width: 680px; margin: 0 auto; box-shadow: 0 4px 24px rgba(0,0,0,0.12); }
+          .band { background: ${primary}; padding: 16px 22px; display: flex; justify-content: space-between; align-items: center; }
+          .band-left { display: flex; align-items: center; gap: 14px; }
+          .band img { width: 44px; height: 44px; object-fit: contain; }
+          .report-type { font-size: 8px; font-weight: 700; color: rgba(255,255,255,0.6); letter-spacing: 2px; margin-bottom: 2px; }
+          .club-name { font-size: 15px; font-weight: 900; color: #fff; }
+          .band-date { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.6); letter-spacing: 0.5px; }
+          .hero { padding: 22px 22px 16px; border-bottom: 1px solid #f1f5f9; position: relative; overflow: hidden; }
+          .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
+          .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
+          .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
+          .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
+          .pill-primary { background: ${primary}22; border-color: ${primary}44; color: ${primary}; }
+          .pill-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
+          .stat-block { padding: 10px 22px 14px; border-top: 1px solid #e2e8f0; }
+          .stat-label { font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 1.5px; margin-bottom: 10px; }
+          .stat-row { display: flex; justify-content: space-around; }
+          .stat-chip { text-align: center; min-width: 60px; }
+          .stat-val { font-size: 15px; font-weight: 900; }
+          .stat-sub { font-size: 8px; font-weight: 700; color: #94a3b8; letter-spacing: 0.5px; margin-top: 2px; }
+          .radar-wrap { display: flex; justify-content: center; border-top: 1px solid #f1f5f9; padding: 8px 0; }
+          .two-col { display: flex; gap: 0; padding: 18px 22px 12px; border-top: 1px solid #f1f5f9; }
+          .col { flex: 1; }
+          .col-div { width: 1px; background: #f1f5f9; margin: 0 14px; }
+          .section-head { border-left: 3px solid ${primary}; padding-left: 10px; margin-bottom: 12px; font-size: 9px; font-weight: 900; color: ${primary}; letter-spacing: 1.2px; }
+          .summary { padding: 0 22px 18px; }
+          .summary-text { font-size: 13.5px; color: #334155; line-height: 1.65; }
+          .footer { border-top: 1px solid ${primary}22; padding: 10px 22px; font-size: 9px; color: ${primary}88; font-weight: 600; letter-spacing: 0.3px; }
+        </style></head><body>
+        <div class="card">
+          <div class="band">
+            <div class="band-left">
+              ${logoDataUri ? `<img src="${logoDataUri}" />` : ''}
+              <div>
+                <div class="report-type">PLAYER DEVELOPMENT REPORT</div>
+                <div class="club-name">${clubName}</div>
+              </div>
+            </div>
+            <div class="band-date">${pubDate}</div>
+          </div>
+          <div class="hero">
+            <div class="hero-wm">${playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? ''}</div>
+            <div class="player-name">${playerName}</div>
+            <div class="pills">
+              ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position}</span>` : ''}
+              ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
+              <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
+            </div>
+          </div>
+          ${rd?.bio?.birth_year || rd?.bio?.school ? `
+          <div class="stat-block">
+            <div class="stat-label">PROFILE</div>
+            <div class="stat-row">
+              ${rd.bio.birth_year ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.birth_year}</div><div class="stat-sub">BIRTH YEAR</div></div>` : ''}
+              ${rd.bio.school     ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a;font-size:12px">${rd.bio.school}</div><div class="stat-sub">SCHOOL</div></div>` : ''}
+            </div>
+          </div>` : ''}
+          ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct ? `
+          <div class="stat-block">
+            <div class="stat-label">ATTENDANCE</div>
+            <div class="stat-row">
+              ${rd.stats.rsvp_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.rsvp_pct}</div><div class="stat-sub">RSVP</div></div>` : ''}
+              ${rd.stats.practice_pct ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.practice_pct}</div><div class="stat-sub">PRACTICE</div></div>` : ''}
+              ${rd.stats.game_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.game_pct}</div><div class="stat-sub">GAMES</div></div>` : ''}
+            </div>
+          </div>` : ''}
+          ${rd?.stats?.games_played ? `
+          <div class="stat-block">
+            <div class="stat-label">SEASON</div>
+            <div class="stat-row">
+              ${rd.stats.games_played                               ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.games_played}</div><div class="stat-sub">PLAYED</div></div>` : ''}
+              ${rd.stats.goals    && rd.stats.goals    !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.goals}</div><div class="stat-sub">GOALS</div></div>` : ''}
+              ${rd.stats.assists  && rd.stats.assists  !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.assists}</div><div class="stat-sub">ASSISTS</div></div>` : ''}
+              ${rd.stats.minutes_played                             ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.stats.minutes_played}</div><div class="stat-sub">MINUTES</div></div>` : ''}
+              ${rd.stats.secondary_foot                             ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.stats.secondary_foot}</div><div class="stat-sub">2ND FOOT</div></div>` : ''}
+            </div>
+          </div>` : ''}
+          <div class="radar-wrap">${radarSvg}</div>
+          ${(rd?.super_strengths?.some(Boolean) || rd?.areas_of_development?.some(Boolean)) ? `
+          <div class="two-col">
+            ${rd?.super_strengths?.some(Boolean) ? `<div class="col"><div class="section-head">SUPER STRENGTHS</div>${bullets(rd.super_strengths, primary)}</div>` : ''}
+            ${rd?.super_strengths?.some(Boolean) && rd?.areas_of_development?.some(Boolean) ? '<div class="col-div"></div>' : ''}
+            ${rd?.areas_of_development?.some(Boolean) ? `<div class="col"><div class="section-head">DEVELOPMENT</div>${bullets(rd.areas_of_development, primary)}</div>` : ''}
+          </div>` : ''}
+          ${(rd?.outcome_goals?.some(Boolean) || rd?.performance_goals?.some(Boolean)) ? `
+          <div class="two-col" style="border-top:1px solid #f1f5f9">
+            ${rd?.outcome_goals?.some(Boolean) ? `<div class="col"><div class="section-head">OUTCOME GOALS</div>${bullets(rd.outcome_goals, primary)}</div>` : ''}
+            ${rd?.outcome_goals?.some(Boolean) && rd?.performance_goals?.some(Boolean) ? '<div class="col-div"></div>' : ''}
+            ${rd?.performance_goals?.some(Boolean) ? `<div class="col"><div class="section-head">PERF. GOALS</div>${bullets(rd.performance_goals, primary)}</div>` : ''}
+          </div>` : ''}
+          ${ev.final_text?.trim() ? `
+          <div class="summary" style="border-top:1px solid #f1f5f9;padding-top:18px">
+            <div class="section-head">COACH'S SUMMARY</div>
+            <p class="summary-text">${ev.final_text}</p>
+          </div>` : ''}
+          <div class="footer">🎖 ${clubName} · ${ev.period_label} · ${ev.season_label}</div>
+        </div></body></html>`;
+
+      const Print = await import('expo-print');
+      const Sharing = await import('expo-sharing');
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: `${playerName} – Player Report`,
+        UTI: 'com.adobe.pdf',
+      });
+    } catch (e) {
+      Alert.alert('Could not export report', String(e));
+    } finally {
+      setSharing(false);
+    }
+  }, [ev, primary, clubName]);
 
   if (loading) {
     return (
@@ -216,7 +400,17 @@ export default function EvalDetailScreen() {
 
   return (
     <View style={st.screen}>
-      <ClubHeader title="Player Report" onBack={() => router.back()} />
+      <ClubHeader
+        title="Player Report"
+        onBack={() => router.back()}
+        right={
+          <TouchableOpacity onPress={handleShare} disabled={sharing} style={st.shareBtn}>
+            {sharing
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="share-outline" size={22} color="#fff" />}
+          </TouchableOpacity>
+        }
+      />
       <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
 
         <View style={st.card}>
@@ -224,35 +418,29 @@ export default function EvalDetailScreen() {
           {/* ── Club-branded header band ── */}
           <View style={[st.headerBand, { backgroundColor: primary }]}>
             <View style={st.headerLeft}>
-              {club?.logo_url ? (
-                <Image source={{ uri: club.logo_url }} style={st.headerLogo} />
-              ) : (
-                <View style={st.headerBadge}>
-                  <Text style={st.headerBadgeText}>
-                    {(club?.name ?? clubSlug).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
-                  </Text>
-                </View>
-              )}
-              <View style={{ gap: 2 }}>
-                <Text style={st.headerClubName}>{club?.name ?? ''}</Text>
+              {clubLogoUrl ? (
+                <Image source={{ uri: clubLogoUrl }} style={st.headerLogo} />
+              ) : null}
+              <View style={{ gap: 1 }}>
                 <Text style={st.headerReportType}>PLAYER DEVELOPMENT REPORT</Text>
+                <Text style={st.headerClubName}>{clubName}</Text>
               </View>
             </View>
             {publishDate && <Text style={st.headerDate}>{publishDate}</Text>}
           </View>
 
-          {/* ── Player hero with last-name watermark ── */}
-          <View style={{ overflow: 'hidden' }}>
+          {/* ── Player hero ── */}
+          <View style={st.heroSection}>
             {lastName ? (
-              <Text style={[st.heroWatermark, { color: `${primary}10` }]} numberOfLines={1}>
+              <Text style={[st.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} adjustsFontSizeToFit={false}>
                 {lastName}
               </Text>
             ) : null}
-            <View style={st.heroSection}>
+            <View style={st.heroContent}>
               <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              <View style={[st.pillRow, { zIndex: 2 }]}>
                 {rd?.bio?.position ? (
-                  <View style={[st.pill, { backgroundColor: '#ffffff', borderColor: `${primary}50` }]}>
+                  <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
                     <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
                   </View>
                 ) : null}
@@ -262,7 +450,7 @@ export default function EvalDetailScreen() {
                   </View>
                 )}
                 <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
-                  <Text style={[st.pillText, { color: '#475569' }]}>{ev.period_label} · {ev.season_label}</Text>
+                  <Text style={[st.pillText, { color: '#64748b' }]}>{ev.period_label} · {ev.season_label}</Text>
                 </View>
               </View>
             </View>
@@ -408,7 +596,7 @@ export default function EvalDetailScreen() {
           <View style={[st.footer, { borderTopColor: `${primary}20` }]}>
             <Ionicons name="ribbon-outline" size={11} color={`${primary}70`} />
             <Text style={[st.footerText, { color: `${primary}70` }]}>
-              {club?.name ?? ''}  ·  {ev.period_label}  ·  {ev.season_label}
+              {clubName}  ·  {ev.period_label}  ·  {ev.season_label}
             </Text>
           </View>
 
@@ -422,7 +610,8 @@ export default function EvalDetailScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  screen:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  shareBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: 16 },
 
@@ -434,19 +623,19 @@ const st = StyleSheet.create({
   },
 
   // Branded header band
-  headerBand:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 16 },
-  headerLeft:       { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  headerLogo:       { width: 36, height: 36, borderRadius: 8, resizeMode: 'contain', backgroundColor: 'rgba(255,255,255,0.18)' },
-  headerBadge:      { width: 36, height: 36, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)', alignItems: 'center', justifyContent: 'center' },
-  headerBadgeText:  { fontSize: 12, fontWeight: '900', color: '#fff' },
-  headerClubName:   { fontSize: 14, fontWeight: '900', color: '#fff', letterSpacing: 0.2 },
-  headerReportType: { fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.7)', letterSpacing: 1.5 },
-  headerDate:       { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.65)', letterSpacing: 0.5 },
+  headerBand:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14 },
+  headerLeft:       { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  headerLogo:       { width: 40, height: 40, resizeMode: 'contain' },
+  headerClubName:   { fontSize: 15, fontWeight: '900', color: '#fff', letterSpacing: 0.1 },
+  headerReportType: { fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 1.8 },
+  headerDate:       { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 0.5 },
 
-  // Hero with watermark
-  heroSection:   { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12, zIndex: 1 },
-  heroWatermark: { position: 'absolute', fontSize: 88, fontWeight: '900', letterSpacing: -4, top: -4, left: 12, lineHeight: 88 },
-  playerName:    { fontSize: 27, fontWeight: '900', color: '#0f172a', letterSpacing: -0.5, lineHeight: 30 },
+  // Hero
+  heroSection:   { overflow: 'hidden', paddingBottom: 4 },
+  heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
+  heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
+  playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
+  pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   pillText:      { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 

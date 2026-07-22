@@ -244,16 +244,53 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
     if (form.push_notify && eventId) {
       try {
         const teamName = teams.find(t => t.id === form.team_id)?.name ?? 'your team';
+        const notifType = isEdit ? 'event_updated' : 'new_event';
+        const notifTitle = isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`;
+
+        // Notify team members
         await supabase.functions.invoke('send-push', {
           body: {
             team_id: form.team_id,
             exclude_profile_id: profileId,
-            type: isEdit ? 'event_updated' : 'new_event',
-            title: isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`,
+            type: notifType,
+            title: notifTitle,
             body: savedTitle,
             data: { event_id: eventId },
           },
         });
+
+        // Also notify confirmed guests (they're on a different team, not in team_members)
+        if (isEdit) {
+          const { data: guestRows } = await supabase
+            .from('event_guests')
+            .select('profile_id, player_id')
+            .eq('event_id', eventId)
+            .eq('status', 'confirmed');
+
+          // Coach guests have profile_id; player guests need profile_id resolved via players table
+          const directIds = (guestRows ?? []).filter((g: any) => g.profile_id).map((g: any) => g.profile_id as string);
+          const playerIds = (guestRows ?? []).filter((g: any) => g.player_id && !g.profile_id).map((g: any) => g.player_id as string);
+
+          let playerProfileIds: string[] = [];
+          if (playerIds.length > 0) {
+            const { data: playerRows } = await supabase
+              .from('players').select('profile_id').in('id', playerIds).not('profile_id', 'is', null);
+            playerProfileIds = (playerRows ?? []).map((p: any) => p.profile_id as string);
+          }
+
+          const guestProfileIds = [...directIds, ...playerProfileIds].filter(id => id !== profileId);
+          if (guestProfileIds.length > 0) {
+            await supabase.functions.invoke('send-push', {
+              body: {
+                profile_ids: guestProfileIds,
+                type: notifType,
+                title: notifTitle,
+                body: savedTitle,
+                data: { event_id: eventId },
+              },
+            });
+          }
+        }
       } catch { /* non-critical */ }
     }
 

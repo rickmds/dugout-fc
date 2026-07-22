@@ -103,18 +103,18 @@ export default function ClubAdminPage() {
     a.click();
   }
 
-  const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '9px', border: '1.5px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' as const };
+  const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1.5px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' as const };
   const labelStyle = { fontSize: '12px', fontWeight: '600' as const, color: '#374151', display: 'block' as const, marginBottom: '5px' };
-  const sectionCard = { background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' as const, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' };
+  const sectionCard = { background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' as const, boxShadow: '0 1px 2px rgba(0,0,0,0.06)' };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       {/* Sticky header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Administration</h1>
-          <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748B' }}>Manage your club settings, branding, and data</p>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Administration</h1>
+          <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94A3B8' }}>Manage your club settings, branding, and data</p>
         </div>
       </div>
       <div style={{ padding: '24px 32px' }}>
@@ -122,7 +122,7 @@ export default function ClubAdminPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '20px', alignItems: 'start' }}>
 
         {/* Sidebar nav */}
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '20px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '20px', padding: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {SECTIONS.map(s => (
             <button key={s} onClick={() => setActive(s)} style={{
               display: 'block', width: '100%', textAlign: 'left',
@@ -181,7 +181,7 @@ export default function ClubAdminPage() {
               </div>
               <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 {saved && <span style={{ fontSize: '13px', color: '#22C55E', display: 'flex', alignItems: 'center', gap: '5px' }}><Check size={14} /> Saved</span>}
-                <button onClick={saveProfile} disabled={saving} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <button onClick={saveProfile} disabled={saving} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
                   {saving ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>
@@ -248,7 +248,7 @@ export default function ClubAdminPage() {
               </div>
               <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 {saved && <span style={{ fontSize: '13px', color: '#22C55E', display: 'flex', alignItems: 'center', gap: '5px' }}><Check size={14} /> Saved</span>}
-                <button onClick={saveBranding} disabled={saving} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Save Branding</button>
+                <button onClick={saveBranding} disabled={saving} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Save Branding</button>
               </div>
             </div>
           )}

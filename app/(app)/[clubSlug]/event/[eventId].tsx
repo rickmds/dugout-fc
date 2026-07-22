@@ -731,18 +731,31 @@ export default function EventDetailScreen() {
       Alert.alert('Already invited', `${p.full_name} has already been invited.`); return;
     }
     setAddingGuest(p.id);
-    const { error } = await supabase.from('event_guests').insert({
+    const { data: newGuest, error } = await supabase.from('event_guests').insert({
       event_id: eventId, player_id: p.id, full_name: p.full_name,
       role: 'player', status: 'pending', added_by: profile.id,
-    });
+    }).select('id').single();
     if (error) { Alert.alert('Error', 'Could not add guest player.'); setAddingGuest(null); return; }
     if (p.profile_id) {
-      await sendProfilesPush({
-        profileIds: [p.profile_id],
-        title: 'Guest invitation',
-        body: `${profile.full_name ?? 'Coach'} invited ${p.full_name} to guest play for ${team.name} — ${event.title}.`,
-        data: { type: 'guest_invite', event_id: eventId, club_slug: clubSlug },
-      });
+      await Promise.all([
+        sendProfilesPush({
+          profileIds: [p.profile_id],
+          title: 'Guest invitation',
+          body: `${profile.full_name ?? 'Coach'} invited ${p.full_name} to guest play for ${team.name} — ${event.title}.`,
+          data: { type: 'guest_invite', event_id: eventId, club_slug: clubSlug },
+        }),
+        supabase.functions.invoke('send-guest-invite', {
+          body: {
+            profile_id:          p.profile_id,
+            player_name:         p.full_name,
+            event_id:            eventId,
+            guest_id:            (newGuest as any)?.id ?? null,
+            requesting_team_id:  team.id,
+            coach_name:          profile.full_name ?? 'Coach',
+            role:                'player',
+          },
+        }),
+      ]);
     }
     const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
     await resolveAndSetGuests((fresh ?? []) as any[]);
@@ -756,18 +769,31 @@ export default function EventDetailScreen() {
       Alert.alert('Already invited', `${c.full_name} has already been invited.`); return;
     }
     setAddingGuest(c.id);
-    const { error } = await supabase.from('event_guests').insert({
+    const { data: newCoachGuest, error } = await supabase.from('event_guests').insert({
       event_id: eventId, profile_id: c.id, full_name: c.full_name ?? 'Coach',
       role: 'coach', status: 'pending', added_by: profile.id,
-    });
+    }).select('id').single();
     if (error) { Alert.alert('Error', 'Could not add guest coach.'); setAddingGuest(null); return; }
     if (c.id) {
-      await sendProfilesPush({
-        profileIds: [c.id],
-        title: 'Guest coaching invitation',
-        body: `You've been invited to guest coach ${team.name} — ${event.title}.`,
-        data: { type: 'guest_coach_invite', event_id: eventId, club_slug: clubSlug },
-      });
+      await Promise.all([
+        sendProfilesPush({
+          profileIds: [c.id],
+          title: 'Guest coaching invitation',
+          body: `You've been invited to guest coach ${team.name} — ${event.title}.`,
+          data: { type: 'guest_coach_invite', event_id: eventId, club_slug: clubSlug },
+        }),
+        supabase.functions.invoke('send-guest-invite', {
+          body: {
+            profile_id:          c.id,
+            player_name:         c.full_name ?? 'Coach',
+            event_id:            eventId,
+            guest_id:            (newCoachGuest as any)?.id ?? null,
+            requesting_team_id:  team.id,
+            coach_name:          profile.full_name ?? 'Coach',
+            role:                'coach',
+          },
+        }),
+      ]);
     }
     const { data: fresh } = await supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId);
     await resolveAndSetGuests((fresh ?? []) as any[]);
@@ -779,15 +805,39 @@ export default function EventDetailScreen() {
     const { error } = await supabase.from('event_guests')
       .update({ status: newStatus, responded_at: new Date().toISOString() }).eq('id', guestId);
     if (error) { Alert.alert('Error', 'Could not update your response.'); return; }
-    if (newStatus === 'confirmed') {
-      const g = guests.find(x => x.id === guestId);
-      if (g?.player_id) {
-        await supabase.from('event_rsvps').upsert(
-          { event_id: eventId, player_id: g.player_id, responded_by: profile?.id, status: 'attending' },
-          { onConflict: 'event_id,player_id' }
-        );
+
+    const g = guests.find(x => x.id === guestId);
+
+    if (newStatus === 'confirmed' && g?.player_id) {
+      await supabase.from('event_rsvps').upsert(
+        { event_id: eventId, player_id: g.player_id, responded_by: profile?.id, status: 'attending' },
+        { onConflict: 'event_id,player_id' }
+      );
+    }
+
+    // Notify coaches on the event's team
+    if (team && event) {
+      const { data: coachRows } = await supabase
+        .from('team_members')
+        .select('profile_id')
+        .eq('team_id', team.id)
+        .eq('role', 'coach');
+      const coachIds = ((coachRows ?? []) as { profile_id: string }[])
+        .map(r => r.profile_id)
+        .filter(id => id !== profile?.id);
+      if (coachIds.length > 0) {
+        const guestName = g?.full_name ?? 'A guest';
+        await sendProfilesPush({
+          profileIds: coachIds,
+          title: newStatus === 'confirmed' ? 'Guest confirmed ✓' : 'Guest declined',
+          body: newStatus === 'confirmed'
+            ? `${guestName} confirmed for ${event.title}.`
+            : `${guestName} declined the guest invite for ${event.title}.`,
+          data: { type: 'guest_response', event_id: eventId, club_slug: clubSlug },
+        });
       }
     }
+
     setGuests(prev => prev.map(g => g.id === guestId ? { ...g, status: newStatus } : g));
   }
 
@@ -958,7 +1008,9 @@ export default function EventDetailScreen() {
 
   const guestPlayers = guests.filter(g => g.role === 'player');
   const guestCoaches = guests.filter(g => g.role === 'coach');
+  const confirmedGuestCount = guests.filter(g => g.status === 'confirmed').length;
   const myGuestInvite = guests.find(g => g.linked_profile_id === profile?.id);
+  const isGuestEvent = !!myGuestInvite; // viewing an event the user was invited to as a guest
   const hasLocation = !!(event.location || event.address);
   const hasMap = !!(event.lat || event.address);
   const hasFieldInfo = !!event.field_notes;
@@ -1062,8 +1114,8 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {/* Guest invite banner — shown to the invited person (games only) */}
-          {myGuestInvite && event.type === 'game' && (
+          {/* Guest invite banner — shown to the invited person */}
+          {myGuestInvite && (
             <View style={[styles.guestInviteBanner, { borderColor: guestStatusColor(myGuestInvite.status) + '40' }]}>
               <View style={styles.guestInviteBannerTop}>
                 <View style={[styles.guestInviteIcon, { backgroundColor: guestStatusColor(myGuestInvite.status) + '18' }]}>
@@ -1300,8 +1352,8 @@ export default function EventDetailScreen() {
               </>
             )}
 
-            {/* ── RSVP inside card — parents only ── */}
-            {!isCoach && myPlayerId && (
+            {/* ── RSVP inside card — parents only (not shown for guest events; invite banner covers status) ── */}
+            {!isCoach && myPlayerId && !isGuestEvent && (
               <>
                 <View style={styles.metaDivider} />
                 <View style={[styles.metaRow, { alignItems: 'flex-start', paddingVertical: 14 }]}>
@@ -1436,8 +1488,11 @@ export default function EventDetailScreen() {
 
               <View style={styles.summaryRow}>
                 <TouchableOpacity style={styles.summaryPill} onPress={() => switchToAvailability('attending')} activeOpacity={0.7}>
-                  <Text style={[styles.summaryNum, { color: PULSE_COLORS.rsvp.attending }]}>{attending.length}</Text>
+                  <Text style={[styles.summaryNum, { color: PULSE_COLORS.rsvp.attending }]}>{attending.length + confirmedGuestCount}</Text>
                   <Text style={styles.summaryLabel}>Going</Text>
+                  {confirmedGuestCount > 0 && (
+                    <Text style={styles.summaryGuestNote}>{attending.length} team · {confirmedGuestCount}G</Text>
+                  )}
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.summaryPill} onPress={() => switchToAvailability('not_attending')} activeOpacity={0.7}>
                   <Text style={[styles.summaryNum, { color: PULSE_COLORS.rsvp.not_attending }]}>{notAttending.length}</Text>
@@ -1908,22 +1963,31 @@ export default function EventDetailScreen() {
           {/* Stats header — tap a card to filter */}
           <View style={styles.availHeader}>
             <View style={styles.availStats}>
-              <TouchableOpacity style={styles.availStat} onPress={() => setActiveRsvpTab('attending')} activeOpacity={0.7}>
-                <Text style={[styles.availStatNum, { color: PULSE_COLORS.rsvp.attending }]}>{attending.length}</Text>
+              <TouchableOpacity
+                style={[styles.availStat, activeRsvpTab === 'attending' && { backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 14 }]}
+                onPress={() => setActiveRsvpTab('attending')} activeOpacity={0.7}
+              >
+                <Text style={[styles.availStatNum, { color: PULSE_COLORS.rsvp.attending }]}>{attending.length + confirmedGuestCount}</Text>
                 <Text style={[styles.availStatLabel, activeRsvpTab === 'attending' && { color: PULSE_COLORS.rsvp.attending, fontWeight: '700' }]}>Going</Text>
-                <View style={[styles.availStatIndicator, activeRsvpTab === 'attending' && { backgroundColor: PULSE_COLORS.rsvp.attending }]} />
+                {confirmedGuestCount > 0 && (
+                  <Text style={styles.availStatGuestNote}>{attending.length} + {confirmedGuestCount}G</Text>
+                )}
               </TouchableOpacity>
               <View style={styles.availStatDivider} />
-              <TouchableOpacity style={styles.availStat} onPress={() => setActiveRsvpTab('not_attending')} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={[styles.availStat, activeRsvpTab === 'not_attending' && { backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 14 }]}
+                onPress={() => setActiveRsvpTab('not_attending')} activeOpacity={0.7}
+              >
                 <Text style={[styles.availStatNum, { color: PULSE_COLORS.rsvp.not_attending }]}>{notAttending.length}</Text>
                 <Text style={[styles.availStatLabel, activeRsvpTab === 'not_attending' && { color: PULSE_COLORS.rsvp.not_attending, fontWeight: '700' }]}>Can't go</Text>
-                <View style={[styles.availStatIndicator, activeRsvpTab === 'not_attending' && { backgroundColor: PULSE_COLORS.rsvp.not_attending }]} />
               </TouchableOpacity>
               <View style={styles.availStatDivider} />
-              <TouchableOpacity style={styles.availStat} onPress={() => setActiveRsvpTab('none')} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={[styles.availStat, activeRsvpTab === 'none' && { backgroundColor: 'rgba(100,116,139,0.08)', borderRadius: 14 }]}
+                onPress={() => setActiveRsvpTab('none')} activeOpacity={0.7}
+              >
                 <Text style={[styles.availStatNum, { color: PULSE_COLORS.ui.muted }]}>{noResponse.length}</Text>
                 <Text style={[styles.availStatLabel, activeRsvpTab === 'none' && { color: PULSE_COLORS.ui.text, fontWeight: '700' }]}>Pending</Text>
-                <View style={[styles.availStatIndicator, activeRsvpTab === 'none' && { backgroundColor: PULSE_COLORS.ui.muted }]} />
               </TouchableOpacity>
             </View>
             {players.length > 0 && (
@@ -1937,7 +2001,7 @@ export default function EventDetailScreen() {
           {upcoming && !event.cancelled_at && noResponse.length > 0 && (
             <View style={styles.nudgeRow}>
               <TouchableOpacity
-                style={styles.nudgeBtn}
+                style={[styles.nudgeBtn, { borderColor: rgba(0.25), backgroundColor: rgba(0.07) }]}
                 onPress={handleNudge}
                 disabled={nudging}
                 activeOpacity={0.75}
@@ -2024,12 +2088,19 @@ export default function EventDetailScreen() {
               </View>
             )}
             {/* Confirmed guests — shown at bottom of Going list only */}
-            {activeRsvpTab === 'attending' && event.type === 'game' && guestPlayers.filter(g => g.status === 'confirmed').length > 0 && (
-              <View style={{ marginTop: 12 }}>
-                <View style={styles.guestRoleHeader}>
-                  <Text style={styles.guestRoleLabel}>CONFIRMED GUESTS</Text>
+            {activeRsvpTab === 'attending' && guestPlayers.filter(g => g.status === 'confirmed').length > 0 && (
+              <View style={{ marginTop: 20 }}>
+                {/* Divider header */}
+                <View style={styles.guestListHeader}>
+                  <View style={styles.guestListLine} />
+                  <View style={styles.guestListLabelWrap}>
+                    <Ionicons name="people-outline" size={11} color="#f97316" />
+                    <Text style={styles.guestListLabel}>CONFIRMED GUESTS</Text>
+                  </View>
+                  <View style={styles.guestListLine} />
                 </View>
-                <View style={styles.playerCard}>
+                {/* Guest card with orange left accent */}
+                <View style={[styles.playerCard, styles.guestPlayerCard]}>
                   {guestPlayers.filter(g => g.status === 'confirmed').map((g, i) => (
                     <View key={g.id}>
                       {i > 0 && <View style={styles.playerDivider} />}
@@ -2039,11 +2110,9 @@ export default function EventDetailScreen() {
                         </View>
                         <View style={styles.playerInfo}>
                           <Text style={styles.playerName}>{g.full_name}</Text>
-                          {g.team_name && <Text style={styles.playerPosition}>{g.team_name}</Text>}
+                          {g.team_name && <Text style={[styles.playerPosition, { color: '#f97316' }]}>{g.team_name}</Text>}
                         </View>
-                        <View style={[styles.guestStatusChip, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
-                          <Text style={[styles.guestStatusText, { color: '#22c55e' }]}>Confirmed</Text>
-                        </View>
+                        <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
                       </View>
                     </View>
                   ))}
@@ -2530,6 +2599,7 @@ const styles = StyleSheet.create({
   },
   summaryNum: { fontSize: 24, fontWeight: '800' },
   summaryLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 3 },
+  summaryGuestNote: { fontSize: 9, color: '#f97316', fontWeight: '700', marginTop: 3 },
 
   attendanceFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
   viewBreakdownBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -2567,24 +2637,22 @@ const styles = StyleSheet.create({
     backgroundColor: PULSE_COLORS.ui.surface,
   },
   availStats: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  availStat: { flex: 1, alignItems: 'center', gap: 3 },
-  availStatNum: { fontSize: 28, fontWeight: '800' },
+  availStat: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, paddingHorizontal: 4 },
+  availStatNum: { fontSize: 30, fontWeight: '800' },
   availStatLabel: { fontSize: 12, color: PULSE_COLORS.ui.muted },
-  availStatIndicator: { height: 3, width: 28, borderRadius: 2, marginTop: 6, backgroundColor: 'transparent' },
+  availStatGuestNote: { fontSize: 10, color: '#f97316', fontWeight: '700', marginTop: 1 },
   availStatDivider: { width: 1, height: 36, backgroundColor: PULSE_COLORS.ui.border },
   availProgressTrack: {
     height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, overflow: 'hidden',
   },
   availProgressFill: { height: '100%', backgroundColor: PULSE_COLORS.brand.green, borderRadius: 2 },
 
-  nudgeRow: { paddingHorizontal: 20, paddingBottom: 4 },
+  nudgeRow: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 4 },
   nudgeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 10, borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    alignSelf: 'flex-start',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    paddingHorizontal: 16, paddingVertical: 11,
+    borderRadius: 12, borderWidth: 1.5,
+    alignSelf: 'stretch',
   },
   nudgeBtnText: { fontSize: 13, fontWeight: '700' },
 
@@ -2604,7 +2672,7 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
   segmentTextActive: { color: '#000' },
 
-  availScroll: { paddingHorizontal: 20, paddingTop: 4 },
+  availScroll: { paddingHorizontal: 20, paddingTop: 14 },
 
   emptyAvailability: { alignItems: 'center', paddingVertical: 52, gap: 10 },
   emptyIconWrap: {
@@ -2776,6 +2844,11 @@ const styles = StyleSheet.create({
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
   guestRoleLabel: { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1, textTransform: 'uppercase' },
+  guestListHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  guestListLine: { flex: 1, height: 1, backgroundColor: 'rgba(249,115,22,0.25)' },
+  guestListLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  guestListLabel: { fontSize: 10, fontWeight: '800', color: '#f97316', letterSpacing: 0.8 },
+  guestPlayerCard: { borderLeftWidth: 3, borderLeftColor: '#f97316' },
   addGuestCoachLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   addGuestCoachLinkText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
   calloutList: { marginTop: 10, gap: 6 },

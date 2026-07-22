@@ -156,7 +156,7 @@ export default function SearchPage() {
     <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
 
       {/* Sticky header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '20px 32px' }}>
         <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
         <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Search</h1>
         <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748B' }}>Find any player across all {teams.length} team{teams.length !== 1 ? 's' : ''}</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { Plus, Edit2, Trash2, X, Check, RefreshCw, ArrowRight, DollarSign, Copy } from 'lucide-react';
@@ -57,6 +57,7 @@ export default function TryoutTeamsSettingsPage() {
   const [bulkApplyFee, setBulkApplyFee]         = useState('');
   const [bulkApplyDeposit, setBulkApplyDeposit] = useState('');
   const [bulkSaving, setBulkSaving]   = useState(false);
+  const autoSyncedRef = useRef(false);
 
   async function load() {
     if (!club) return;
@@ -70,6 +71,16 @@ export default function TryoutTeamsSettingsPage() {
   }
 
   useEffect(() => { load(); }, [club]);
+
+  // Auto-sync from club teams on first load when no tryout teams exist yet
+  useEffect(() => {
+    if (loading) return;
+    if (autoSyncedRef.current) return;
+    if (teams.length === 0 && clubTeams.length > 0) {
+      autoSyncedRef.current = true;
+      doSync();
+    }
+  }, [loading, teams.length, clubTeams.length]);
 
   function openAdd() {
     setEditId(null);
@@ -179,34 +190,181 @@ export default function TryoutTeamsSettingsPage() {
     load();
   }
 
+  function openAddWithDefaults(gender?: string, age_group?: string, tier?: string) {
+    setEditId(null);
+    setForm({ ...blank(), gender: gender ?? null, age_group: age_group ?? null, tier: tier ?? null });
+    setShowModal(true);
+  }
+
+  function renderGenderGrid(gender: 'Male' | 'Female', label: string) {
+    const genderTeams = teams.filter(t => t.gender === gender);
+    const fromData = genderTeams.filter(t => t.tier).map(t => t.tier as string);
+    const tiers = Array.from(new Set(['A', 'B', 'C', 'D', ...fromData])).sort();
+    const lastTier = tiers[tiers.length - 1];
+    const nextTierLabel = lastTier && /^[A-Z]$/.test(lastTier)
+      ? String.fromCharCode(lastTier.charCodeAt(0) + 1)
+      : String(tiers.length + 1);
+    const cols = `64px repeat(${tiers.length + 1}, 1fr)`;
+    const ungrouped = genderTeams.filter(t => !t.age_group);
+    const notier    = genderTeams.filter(t => t.age_group && !t.tier);
+    const accent = gender === 'Male' ? '#3B82F6' : '#EC4899';
+
+    return (
+      <div key={gender} style={{ marginBottom: '28px' }}>
+        {/* Section header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '3px', height: '20px', background: accent, borderRadius: '2px' }} />
+            <span style={{ fontSize: '15px', fontWeight: '900', color: '#0F172A', letterSpacing: '-0.3px' }}>{label}</span>
+            <span style={{ fontSize: '12px', color: '#94A3B8' }}>{genderTeams.length} team{genderTeams.length !== 1 ? 's' : ''}</span>
+          </div>
+          <button onClick={() => openAddWithDefaults(gender)}
+            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', background: '#fff', border: `1.5px solid ${accent}40`, borderRadius: '6px', fontSize: '12px', fontWeight: '700', color: accent, cursor: 'pointer' }}>
+            <Plus size={12} /> Add {label} team
+          </button>
+        </div>
+
+        {/* Tier column headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: '8px', marginBottom: '6px', paddingLeft: '4px' }}>
+          <div />
+          {tiers.map(tier => (
+            <div key={tier} style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', textAlign: 'center' }}>
+              Tier {tier}
+            </div>
+          ))}
+          <div style={{ fontSize: '10px', fontWeight: '700', color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: '1px', textAlign: 'center' }}>
+            + Tier {nextTierLabel}
+          </div>
+        </div>
+
+        {/* Age group rows */}
+        {AGE_GROUPS.map(ag => (
+          <div key={ag} style={{ display: 'grid', gridTemplateColumns: cols, gap: '8px', marginBottom: '8px', alignItems: 'stretch' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: '13px', fontWeight: '900', color: '#0F172A', background: '#F1F5F9', borderRadius: '6px', padding: '4px 8px', letterSpacing: '-0.3px' }}>{ag}</span>
+            </div>
+            {tiers.map(tier => {
+              const team = genderTeams.find(t => t.age_group === ag && t.tier === tier);
+              if (!team) return (
+                <div key={tier} onClick={() => openAddWithDefaults(gender, ag, tier)}
+                  style={{ background: '#fff', border: '1px dashed #E2E8F0', borderRadius: '8px', minHeight: '72px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: 0.6, transition: 'opacity 0.15s' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '0.6'}>
+                  <Plus size={13} color="#CBD5E1" />
+                </div>
+              );
+              return (
+                <div key={tier} style={{ background: '#fff', border: '1px solid #E2E8F0', borderTop: `3px solid ${team.color}`, borderRadius: '8px', padding: '10px 12px', position: 'relative', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+                  <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A', marginBottom: '5px', paddingRight: '36px' }}>{team.name}</div>
+                  {team.format && (
+                    <div style={{ marginBottom: '6px' }}>
+                      <span style={{ fontSize: '10px', background: '#F1F5F9', color: '#64748B', borderRadius: '4px', padding: '1px 5px', fontWeight: '600' }}>{team.format}</span>
+                    </div>
+                  )}
+                  {team.season_fee
+                    ? <div style={{ fontSize: '12px', fontWeight: '800', color: '#15803D' }}>{currSym}{team.season_fee}{team.deposit_amount ? <span style={{ fontWeight: '500', color: '#94A3B8', fontSize: '10px' }}> / {currSym}{team.deposit_amount} dep</span> : null}</div>
+                    : <div style={{ fontSize: '10px', color: '#D97706', fontWeight: '600' }}>No fee</div>}
+                  <div style={{ position: 'absolute', top: '6px', right: '6px', display: 'flex', gap: '1px' }}>
+                    <button onClick={() => openEdit(team)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: '#94A3B8' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#0F172A'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#94A3B8'}>
+                      <Edit2 size={11} />
+                    </button>
+                    <button onClick={() => setDeleteId(team.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: '#94A3B8' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = '#EF4444'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = '#94A3B8'}>
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {/* New tier slot */}
+            <div onClick={() => openAddWithDefaults(gender, ag, nextTierLabel)}
+              style={{ background: '#FAFBFC', border: '1px dashed #E2E8F0', borderRadius: '8px', minHeight: '72px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', opacity: 0.4, transition: 'opacity 0.15s' }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.9'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '0.4'}>
+              <Plus size={11} color="#94A3B8" />
+            </div>
+          </div>
+        ))}
+
+        {/* Teams with age group but no tier */}
+        {notier.length > 0 && (
+          <div style={{ marginTop: '10px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 14px' }}>
+            <div style={{ fontSize: '10px', fontWeight: '800', color: '#92400E', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>
+              ⚠ No tier assigned — edit to place in the grid
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              {notier.map(t => (
+                <div key={t.id} style={{ background: '#fff', border: '1px solid #FDE68A', borderLeft: `4px solid ${t.color}`, borderRadius: '6px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ flex: 1, fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>{t.name}</div>
+                  <span style={{ fontSize: '11px', background: '#F1F5F9', color: '#64748B', borderRadius: '4px', padding: '1px 6px', fontWeight: '600' }}>{t.age_group}</span>
+                  {t.format && <span style={{ fontSize: '11px', background: '#F1F5F9', color: '#64748B', borderRadius: '4px', padding: '1px 6px', fontWeight: '600' }}>{t.format}</span>}
+                  {t.season_fee ? <span style={{ fontSize: '12px', fontWeight: '700', color: '#15803D' }}>{currSym}{t.season_fee}</span> : <span style={{ fontSize: '10px', color: '#D97706', fontWeight: '600' }}>No fee</span>}
+                  <button onClick={() => openEdit(t)} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: '5px', padding: '4px 10px', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700', color: '#92400E' }}>
+                    <Edit2 size={10} /> Set tier
+                  </button>
+                  <button onClick={() => setDeleteId(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8' }}><Trash2 size={12} /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Ungrouped teams for this gender */}
+        {ungrouped.length > 0 && (
+          <div style={{ marginTop: '8px' }}>
+            <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>No age group</div>
+            {ungrouped.map(t => (
+              <div key={t.id} style={{ background: '#fff', border: '1px solid #E2E8F0', borderLeft: `4px solid ${t.color}`, borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <div style={{ flex: 1, fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>{t.name}</div>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {[t.format, t.tier ? `Tier ${t.tier}` : null].filter(Boolean).map((tag, i) => (
+                    <span key={i} style={{ fontSize: '10px', background: '#F1F5F9', color: '#64748B', borderRadius: '4px', padding: '1px 6px', fontWeight: '600' }}>{tag}</span>
+                  ))}
+                </div>
+                {t.season_fee ? <span style={{ fontSize: '12px', fontWeight: '700', color: '#15803D' }}>{currSym}{t.season_fee}</span> : <span style={{ fontSize: '10px', color: '#D97706', fontWeight: '600' }}>No fee</span>}
+                <button onClick={() => openEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8' }}><Edit2 size={13} /></button>
+                <button onClick={() => setDeleteId(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8' }}><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ height: '1px', background: '#E2E8F0', marginTop: '12px' }} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {/* sticky header */}
-      <div style={{ padding: '20px 28px 16px', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ padding: '14px 32px', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>Tryout Setup</div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Teams</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '2px' }}>Tryout Setup</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Teams</h1>
           <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 0' }}>Define the team slots used in the Team Builder.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           {clubTeams.length > 0 && (
-            <button onClick={() => setShowSync(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '9px 16px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
+            <button onClick={() => setShowSync(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', border: '1.5px solid #E2E8F0', borderRadius: '6px', padding: '8px 16px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
               <RefreshCw size={13} /> Sync from Club
             </button>
           )}
           {teams.length > 0 && (
-            <button onClick={openBulkFees} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '9px 16px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
+            <button onClick={openBulkFees} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', border: '1.5px solid #E2E8F0', borderRadius: '6px', padding: '8px 16px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
               <DollarSign size={13} /> Set Fees
             </button>
           )}
-          <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', padding: '9px 18px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
+          <button onClick={openAdd} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#22C55E', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
             <Plus size={15} /> Add Team
           </button>
         </div>
       </div>
 
       {/* scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', background: '#F8FAFC' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', background: '#F0F2F5' }}>
         {loading ? (
           <div style={{ color: '#94A3B8', fontSize: '14px' }}>Loading…</div>
         ) : teams.length === 0 ? (
@@ -235,53 +393,40 @@ export default function TryoutTeamsSettingsPage() {
           </div>
         ) : (
           <>
-            {/* summary bar */}
-            <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '10px', padding: '10px 18px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <span style={{ fontSize: '13px', fontWeight: '800', color: '#15803D' }}>{teams.filter(t => t.is_active).length} active teams</span>
-              <span style={{ width: '1px', height: '16px', background: '#BBF7D0' }} />
-              <span style={{ fontSize: '12.5px', color: '#64748B', fontWeight: '600' }}>{teams.length} total</span>
+            {/* Summary bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: '#374151' }}>{teams.filter(t => t.is_active).length} active · {teams.length} total</span>
               {teams.some(t => !t.season_fee) && (
-                <>
-                  <span style={{ width: '1px', height: '16px', background: '#BBF7D0' }} />
-                  <span style={{ fontSize: '12px', color: '#D97706', fontWeight: '600' }}>⚠ {teams.filter(t => !t.season_fee).length} team{teams.filter(t => !t.season_fee).length !== 1 ? 's' : ''} missing fee</span>
-                </>
+                <span style={{ fontSize: '12px', color: '#D97706', fontWeight: '600', background: '#FEF3C7', borderRadius: '4px', padding: '2px 8px' }}>⚠ {teams.filter(t => !t.season_fee).length} missing fee</span>
               )}
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {teams.map(t => (
-                <div key={t.id} style={{ background: '#fff', border: '1px solid #E2E8F0', borderLeft: `5px solid ${t.color}`, borderRadius: '12px', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: `${t.color}20`, border: `2px solid ${t.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <div style={{ width: '14px', height: '14px', borderRadius: '50%', background: t.color }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A', marginBottom: '6px' }}>{t.name}</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {[t.age_group, t.gender, t.format, t.tier ? `Tier ${t.tier}` : null].filter(Boolean).map((tag, i) => (
-                        <span key={i} style={{ fontSize: '11px', background: '#F1F5F9', color: '#64748B', borderRadius: '20px', padding: '2px 9px', fontWeight: '600' }}>{tag}</span>
-                      ))}
+            {renderGenderGrid('Male', 'Boys')}
+            {renderGenderGrid('Female', 'Girls')}
+
+            {/* Mixed / ungrouped by gender */}
+            {(() => {
+              const other = teams.filter(t => t.gender !== 'Male' && t.gender !== 'Female');
+              if (other.length === 0) return null;
+              return (
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>Mixed / No gender set</div>
+                  {other.map(t => (
+                    <div key={t.id} style={{ background: '#fff', border: '1px solid #E2E8F0', borderLeft: `4px solid ${t.color}`, borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                      <div style={{ flex: 1, fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>{t.name}</div>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {[t.age_group, t.gender, t.format, t.tier ? `Tier ${t.tier}` : null].filter(Boolean).map((tag, i) => (
+                          <span key={i} style={{ fontSize: '10px', background: '#F1F5F9', color: '#64748B', borderRadius: '4px', padding: '1px 6px', fontWeight: '600' }}>{tag}</span>
+                        ))}
+                      </div>
+                      {t.season_fee ? <span style={{ fontSize: '12px', fontWeight: '700', color: '#15803D' }}>{currSym}{t.season_fee}</span> : <span style={{ fontSize: '10px', color: '#D97706', fontWeight: '600' }}>No fee</span>}
+                      <button onClick={() => openEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8' }}><Edit2 size={13} /></button>
+                      <button onClick={() => setDeleteId(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8' }}><Trash2 size={13} /></button>
                     </div>
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0, minWidth: '100px' }}>
-                    {t.season_fee ? (
-                      <>
-                        <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>{currSym}{t.season_fee}</div>
-                        {t.deposit_amount && <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '1px' }}>{currSym}{t.deposit_amount} deposit</div>}
-                      </>
-                    ) : (
-                      <span style={{ fontSize: '11px', fontWeight: '600', color: '#D97706', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: '5px', padding: '2px 8px' }}>No fee set</span>
-                    )}
-                  </div>
-                  {!t.is_active && <span style={{ fontSize: '11px', background: '#FEF9C3', color: '#92400E', borderRadius: '6px', padding: '2px 8px', fontWeight: '600' }}>Inactive</span>}
-                  <button onClick={() => openEdit(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '6px', color: '#64748B' }}>
-                    <Edit2 size={14} />
-                  </button>
-                  <button onClick={() => setDeleteId(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '6px', color: '#EF4444' }}>
-                    <Trash2 size={14} />
-                  </button>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </>
         )}
       </div>
@@ -289,7 +434,7 @@ export default function TryoutTeamsSettingsPage() {
       {/* Add/Edit modal */}
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setShowModal(false)}>
-          <div style={{ background: '#fff', borderRadius: '16px', width: '460px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: '#fff', borderRadius: '8px', width: '460px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>{editId ? 'Edit Team' : 'Add Team'}</span>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#64748B" /></button>
@@ -329,11 +474,10 @@ export default function TryoutTeamsSettingsPage() {
                 </div>
                 <div>
                   <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '5px' }}>Tier</label>
-                  <select value={form.tier ?? ''} onChange={e => setForm(f => ({ ...f, tier: e.target.value || null }))}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: '9px', border: '1px solid #E2E8F0', fontSize: '14px', color: '#0F172A', background: '#fff', outline: 'none' }}>
-                    <option value="">—</option>
-                    {TIERS.map(v => <option key={v} value={v}>{v}</option>)}
-                  </select>
+                  <input value={form.tier ?? ''} onChange={e => setForm(f => ({ ...f, tier: e.target.value || null }))}
+                    placeholder="A, B, C, D, E…"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '9px', border: '1px solid #E2E8F0', fontSize: '14px', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }} />
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '3px' }}>Any letter — more tiers auto-appear in the grid</div>
                 </div>
               </div>
               <div>
@@ -381,7 +525,7 @@ export default function TryoutTeamsSettingsPage() {
       {/* Bulk Fees modal */}
       {showBulkFees && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }}>
-          <div style={{ background: '#fff', borderRadius: '18px', width: '100%', maxWidth: '760px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', width: '100%', maxWidth: '760px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
 
             {/* Header */}
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -419,13 +563,13 @@ export default function TryoutTeamsSettingsPage() {
             <div style={{ flex: 1, overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                  <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
-                    <th style={{ padding: '9px 16px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Team</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Age</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Format</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Tier</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Season fee ({currSym})</th>
-                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Deposit ({currSym})</th>
+                  <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
+                    <th style={{ padding: '9px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Team</th>
+                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Age</th>
+                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Format</th>
+                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Tier</th>
+                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Season fee ({currSym})</th>
+                    <th style={{ padding: '9px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Deposit ({currSym})</th>
                     <th style={{ width: '36px' }} />
                   </tr>
                 </thead>
@@ -485,7 +629,7 @@ export default function TryoutTeamsSettingsPage() {
       {/* Sync from Club modal */}
       {showSync && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setShowSync(false)}>
-          <div style={{ background: '#fff', borderRadius: '16px', width: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: '#fff', borderRadius: '8px', width: '500px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontWeight: '800', fontSize: '16px', color: '#0F172A' }}>Sync from Club Teams</div>
@@ -533,7 +677,7 @@ export default function TryoutTeamsSettingsPage() {
       {/* Delete confirm */}
       {deleteId && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: '#fff', borderRadius: '14px', padding: '28px', width: '340px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', padding: '28px', width: '340px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
             <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A', marginBottom: '8px' }}>Delete team?</div>
             <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '20px' }}>This won't delete players — just the team slot.</div>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>

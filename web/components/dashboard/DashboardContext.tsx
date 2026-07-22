@@ -21,6 +21,10 @@ export type Club = {
   secondary_color: string | null;
   logo_url: string | null;
   currency: string;
+  tryouts_active: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  timezone: string | null;
 };
 
 export type Team = {
@@ -81,7 +85,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     if (prof.club_id) {
       const { data: c } = await supabase
         .from('clubs')
-        .select('id, name, slug, primary_color, secondary_color, logo_url, currency')
+        .select('id, name, slug, primary_color, secondary_color, logo_url, currency, tryouts_active, latitude, longitude, timezone')
         .eq('id', prof.club_id)
         .single();
       if (c) {

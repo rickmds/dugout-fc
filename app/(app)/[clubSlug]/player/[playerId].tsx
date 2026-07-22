@@ -1695,11 +1695,11 @@ function GuardiansTab({
       {/* ── Add guardian ── */}
       {canManage && (
         <TouchableOpacity
-          style={[st.addGuardianBtn, { borderColor: rgba(0.35), backgroundColor: rgba(0.08) }, hasAny && { marginTop: 20 }]}
+          style={[st.addGuardianBtn, { borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }, hasAny && { marginTop: 20 }]}
           onPress={onAddGuardian}
         >
-          <Ionicons name="person-add-outline" size={16} color={primaryColor} />
-          <Text style={[st.addGuardianText, { color: primaryColor }]}>
+          <Ionicons name="person-add-outline" size={16} color="#ffffff" />
+          <Text style={[st.addGuardianText, { color: '#ffffff' }]}>
             {hasAny ? 'Add Another Guardian' : 'Add Guardian'}
           </Text>
         </TouchableOpacity>

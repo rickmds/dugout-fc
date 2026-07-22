@@ -121,14 +121,14 @@ export default function TryoutRostersPage() {
   const genders = filterGender === 'All' ? ['Male', 'Female'] : [filterGender];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#F1F5F9' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#F0F2F5' }}>
 
       {/* ── HEADER ── */}
-      <div style={{ padding: '16px 24px 12px', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
+      <div style={{ padding: '14px 32px', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <div>
-            <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Tryout Module · {season}</div>
-            <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', margin: '2px 0 0' }}>Rosters</h1>
+            <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Tryout Module · {season}</div>
+            <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Rosters</h1>
           </div>
           <select value={season} onChange={e => setSeason(e.target.value)}
             style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', background: '#fff', outline: 'none' }}>
@@ -261,7 +261,7 @@ export default function TryoutRostersPage() {
                         const unsent   = tp.filter(p => { const os = assigns.get(p.id)?.offer_status; return !os || os === 'NotSent'; });
 
                         return (
-                          <div key={team.id} style={{ background: '#fff', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                          <div key={team.id} style={{ background: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.06)' }}>
 
                             {/* Colored header band */}
                             <div style={{ background: team.color, padding: '14px 16px 0' }}>

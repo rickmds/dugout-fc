@@ -11,6 +11,9 @@ const TEAM_PALETTE = ['#6366F1', '#F59E0B', '#10B981', '#EC4899', '#14B8A6', '#F
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import AIScheduleImport from '@/components/dashboard/AIScheduleImport';
+import GuestSection from '@/components/dashboard/GuestSection';
+import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
+import GuestCalloutSection from '@/components/dashboard/GuestCalloutSection';
 
 type Event = {
   id: string;
@@ -155,9 +158,11 @@ export default function SchedulePage() {
   const [viewMode, setViewMode]     = useState<'list' | 'calendar'>('list');
 
   // RSVP panel
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [rsvpPlayers, setRsvpPlayers]     = useState<RsvpPlayer[]>([]);
-  const [rsvpLoading, setRsvpLoading]     = useState(false);
+  const [selectedEvent, setSelectedEvent]         = useState<Event | null>(null);
+  const [rsvpPlayers, setRsvpPlayers]             = useState<RsvpPlayer[]>([]);
+  const [rsvpLoading, setRsvpLoading]             = useState(false);
+  const [confirmedGuestCount, setConfirmedGuestCount] = useState(0);
+  const [confirmedGuests, setConfirmedGuests] = useState<ConfirmedGuest[]>([]);
 
   // RSVP summary bars (eventId → counts)
   type RsvpSummary = { attending: number; not_attending: number; total: number };
@@ -230,6 +235,9 @@ export default function SchedulePage() {
   }, [teams, tab, viewMode, calMonth]);
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  // Reset guest count when event changes
+  useEffect(() => { setConfirmedGuestCount(0); setConfirmedGuests([]); }, [selectedEvent?.id]);
 
   // Load RSVP players when an event is selected
   useEffect(() => {
@@ -757,8 +765,11 @@ export default function SchedulePage() {
             {!rsvpLoading && (
               <div style={{ display: 'flex', gap: '8px', padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
                 <div style={{ flex: 1, textAlign: 'center', background: '#F0FDF4', borderRadius: '10px', padding: '8px 6px' }}>
-                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{attending.length}</div>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{attending.length + confirmedGuestCount}</div>
                   <div style={{ fontSize: '10px', fontWeight: '700', color: '#22C55E' }}>Going</div>
+                  {confirmedGuestCount > 0 && (
+                    <div style={{ fontSize: '9px', fontWeight: '700', color: '#f97316', marginTop: '2px' }}>{attending.length} + {confirmedGuestCount}G</div>
+                  )}
                 </div>
                 <div style={{ flex: 1, textAlign: 'center', background: '#FEF2F2', borderRadius: '10px', padding: '8px 6px' }}>
                   <div style={{ fontSize: '20px', fontWeight: '900', color: '#DC2626' }}>{notAttending.length}</div>
@@ -786,11 +797,14 @@ export default function SchedulePage() {
                 <>
                   {[{ list: attending, label: 'Going', color: '#16A34A', bg: '#F0FDF4' },
                     { list: notAttending, label: 'Not going', color: '#DC2626', bg: '#FEF2F2' },
-                    { list: pending, label: 'No response', color: '#94A3B8', bg: '#F8FAFC' }].map(({ list, label, color, bg }) =>
-                    list.length > 0 && (
+                    { list: pending, label: 'No response', color: '#94A3B8', bg: '#F8FAFC' }].map(({ list, label, color, bg }) => {
+                    const isGoing = label === 'Going';
+                    const totalCount = isGoing ? list.length + confirmedGuests.length : list.length;
+                    if (totalCount === 0) return null;
+                    return (
                       <div key={label}>
                         <div style={{ padding: '8px 18px 4px', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', background: '#FAFAFA', borderTop: '1px solid #F1F5F9' }}>
-                          {label} · {list.length}
+                          {label} · {totalCount}
                         </div>
                         {list.map((p) => (
                           <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 18px', borderBottom: '1px solid #F8FAFC' }}>
@@ -816,12 +830,41 @@ export default function SchedulePage() {
                             </div>
                           </div>
                         ))}
+                        {/* Confirmed guests appended at the bottom of the Going group */}
+                        {isGoing && confirmedGuests.map((g) => (
+                          <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 18px', borderBottom: '1px solid #F8FAFC' }}>
+                            <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(249,115,22,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: '#f97316', flexShrink: 0 }}>
+                              {g.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.full_name}</div>
+                              <div style={{ fontSize: '11px', color: '#f97316', fontWeight: '600' }}>Guest {g.role}</div>
+                            </div>
+                            <div style={{ fontSize: '10px', fontWeight: '700', color: '#f97316', background: 'rgba(249,115,22,0.1)', padding: '3px 7px', borderRadius: '5px', flexShrink: 0 }}>G</div>
+                          </div>
+                        ))}
                       </div>
-                    )
-                  )}
+                    );
+                  })}
                 </>
               )}
             </div>
+            <GuestSection
+              eventId={selectedEvent.id}
+              teamId={selectedEvent.team_id}
+              teamName={selectedEvent.team_name ?? ''}
+              eventTitle={selectedEvent.title}
+              primary={primary}
+              onConfirmedCount={setConfirmedGuestCount}
+              onConfirmedGuests={setConfirmedGuests}
+            />
+            <GuestCalloutSection
+              eventId={selectedEvent.id}
+              teamId={selectedEvent.team_id}
+              teamName={selectedEvent.team_name ?? ''}
+              eventTitle={selectedEvent.title}
+              primary={primary}
+            />
           </div>
         )}
       </div>

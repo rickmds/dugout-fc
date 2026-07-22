@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import GuestSection from '@/components/dashboard/GuestSection';
+import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
+import GuestCalloutSection from '@/components/dashboard/GuestCalloutSection';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -68,7 +71,7 @@ const RSVP_LOCK_OPTIONS = [
 
 const labelStyle: React.CSSProperties = { fontSize: '11px', fontWeight: '700', color: '#64748B', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' };
 const inputStyle: React.CSSProperties = { width: '100%', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '10px 13px', fontSize: '14px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' };
-const sectionStyle: React.CSSProperties = { fontSize: '10px', fontWeight: '700', color: '#94A3B8', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid #F1F5F9' };
+const sectionStyle: React.CSSProperties = { fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid #F1F5F9' };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -218,7 +221,7 @@ function EventRow({ ev, primary, selected, onSelect, onEdit, onDelete }: {
       onClick={onSelect}
       style={{
         background: selected ? `${primary}0D` : '#fff',
-        borderRadius: '14px',
+        borderRadius: '8px',
         border: `1.5px solid ${selected ? primary : hover ? '#CBD5E1' : '#E2E8F0'}`,
         display: 'flex', alignItems: 'stretch', overflow: 'hidden',
         boxShadow: hover ? '0 4px 16px rgba(0,0,0,0.07)' : '0 1px 3px rgba(0,0,0,0.04)',
@@ -231,7 +234,7 @@ function EventRow({ ev, primary, selected, onSelect, onEdit, onDelete }: {
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px', background: TYPE_BG[ev.type], borderRadius: '7px', padding: '5px 9px', border: `1px solid ${color}20` }}>
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px', background: TYPE_BG[ev.type], borderRadius: '6px', padding: '5px 9px', border: `1px solid ${color}20` }}>
             <span style={{ fontSize: '13px', lineHeight: 1 }}>{TYPE_EMOJI[ev.type]}</span>
             <span style={{ fontSize: '11px', fontWeight: '700', color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{TYPE_LABELS[ev.type]}</span>
           </div>
@@ -299,9 +302,11 @@ export default function TeamSchedulePage() {
   const [delTitle,   setDelTitle]   = useState('');
 
   // RSVP panel
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [rsvpPlayers,   setRsvpPlayers]   = useState<RsvpPlayer[]>([]);
-  const [rsvpLoading,   setRsvpLoading]   = useState(false);
+  const [selectedEvent,       setSelectedEvent]       = useState<Event | null>(null);
+  const [rsvpPlayers,         setRsvpPlayers]         = useState<RsvpPlayer[]>([]);
+  const [rsvpLoading,         setRsvpLoading]         = useState(false);
+  const [confirmedGuestCount, setConfirmedGuestCount] = useState(0);
+  const [confirmedGuests,     setConfirmedGuests]     = useState<ConfirmedGuest[]>([]);
 
   const dialogRef    = useRef<HTMLDialogElement>(null);
   const delDialogRef = useRef<HTMLDialogElement>(null);
@@ -358,6 +363,9 @@ export default function TeamSchedulePage() {
       document.getElementById(`event-${eventId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
   }, [events, searchParams]);
+
+  // Reset guest count when event changes
+  useEffect(() => { setConfirmedGuestCount(0); setConfirmedGuests([]); }, [selectedEvent?.id]);
 
   // Load RSVP players when an event is selected
   useEffect(() => {
@@ -517,7 +525,7 @@ export default function TeamSchedulePage() {
             </button>
           ))}
         </div>
-        <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '9px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
+        <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
           <Plus size={14} /> Add Event
         </button>
       </div>
@@ -531,8 +539,8 @@ export default function TeamSchedulePage() {
               <div style={{ width: '28px', height: '28px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             </div>
           ) : sortedDates.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '64px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0' }}>
-              <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            <div style={{ textAlign: 'center', padding: '64px 40px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
                 <CalendarDays size={26} color="#94A3B8" />
               </div>
               <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No {tab} events</div>
@@ -540,7 +548,7 @@ export default function TeamSchedulePage() {
                 {tab === 'upcoming' ? 'Create your first event to get started.' : 'No past events recorded for this team.'}
               </div>
               {tab === 'upcoming' && (
-                <button onClick={openCreate} style={{ background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '10px 22px', borderRadius: '9px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <button onClick={openCreate} style={{ background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '10px 22px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                   Add Event
                 </button>
               )}
@@ -577,7 +585,7 @@ export default function TeamSchedulePage() {
 
         {/* RSVP Panel */}
         {selectedEvent && (
-          <div style={{ width: '320px', flexShrink: 0, background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.07)' }}>
+          <div style={{ width: '320px', flexShrink: 0, background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '24px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
 
             <div style={{ padding: '16px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
               <div style={{ minWidth: 0 }}>
@@ -610,14 +618,21 @@ export default function TeamSchedulePage() {
 
             {!rsvpLoading && (
               <div style={{ display: 'flex', gap: '8px', padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
-                {[{ count: attending.length, label: 'Going', numColor: '#16A34A', bg: '#F0FDF4', labelColor: '#22C55E' },
-                  { count: notAttending.length, label: 'Out', numColor: '#DC2626', bg: '#FEF2F2', labelColor: '#EF4444' },
-                  { count: pending.length, label: 'Pending', numColor: '#64748B', bg: '#F8FAFC', labelColor: '#94A3B8' }].map(({ count, label, numColor, bg, labelColor }) => (
-                  <div key={label} style={{ flex: 1, textAlign: 'center', background: bg, borderRadius: '10px', padding: '8px 6px' }}>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: numColor }}>{count}</div>
-                    <div style={{ fontSize: '10px', fontWeight: '700', color: labelColor }}>{label}</div>
-                  </div>
-                ))}
+                <div style={{ flex: 1, textAlign: 'center', background: '#F0FDF4', borderRadius: '8px', padding: '8px 6px' }}>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{attending.length + confirmedGuestCount}</div>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: '#22C55E' }}>Going</div>
+                  {confirmedGuestCount > 0 && (
+                    <div style={{ fontSize: '9px', fontWeight: '700', color: '#f97316', marginTop: '2px' }}>{attending.length} + {confirmedGuestCount}G</div>
+                  )}
+                </div>
+                <div style={{ flex: 1, textAlign: 'center', background: '#FEF2F2', borderRadius: '8px', padding: '8px 6px' }}>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#DC2626' }}>{notAttending.length}</div>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: '#EF4444' }}>Out</div>
+                </div>
+                <div style={{ flex: 1, textAlign: 'center', background: '#F8FAFC', borderRadius: '8px', padding: '8px 6px' }}>
+                  <div style={{ fontSize: '20px', fontWeight: '900', color: '#64748B' }}>{pending.length}</div>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: '#94A3B8' }}>Pending</div>
+                </div>
               </div>
             )}
 
@@ -635,11 +650,14 @@ export default function TeamSchedulePage() {
                 <>
                   {[{ list: attending, label: 'Going', color: '#16A34A', bg: '#F0FDF4' },
                     { list: notAttending, label: 'Not going', color: '#DC2626', bg: '#FEF2F2' },
-                    { list: pending, label: 'No response', color: '#94A3B8', bg: '#F8FAFC' }].map(({ list, label, color, bg }) =>
-                    list.length > 0 && (
+                    { list: pending, label: 'No response', color: '#94A3B8', bg: '#F8FAFC' }].map(({ list, label, color, bg }) => {
+                    const isGoing = label === 'Going';
+                    const totalCount = isGoing ? list.length + confirmedGuests.length : list.length;
+                    if (totalCount === 0) return null;
+                    return (
                       <div key={label}>
-                        <div style={{ padding: '8px 18px 4px', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', background: '#FAFAFA', borderTop: '1px solid #F1F5F9' }}>
-                          {label} · {list.length}
+                        <div style={{ padding: '8px 18px 4px', fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', background: '#FAFAFA', borderTop: '1px solid #F1F5F9' }}>
+                          {label} · {totalCount}
                         </div>
                         {list.map(p => (
                           <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 18px', borderBottom: '1px solid #F8FAFC' }}>
@@ -664,12 +682,41 @@ export default function TeamSchedulePage() {
                             </div>
                           </div>
                         ))}
+                        {/* Confirmed guests at the bottom of Going */}
+                        {isGoing && confirmedGuests.map((g) => (
+                          <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 18px', borderBottom: '1px solid #F8FAFC' }}>
+                            <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(249,115,22,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: '#f97316', flexShrink: 0 }}>
+                              {g.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.full_name}</div>
+                              <div style={{ fontSize: '11px', color: '#f97316', fontWeight: '600' }}>Guest {g.role}</div>
+                            </div>
+                            <div style={{ fontSize: '10px', fontWeight: '700', color: '#f97316', background: 'rgba(249,115,22,0.1)', padding: '3px 7px', borderRadius: '5px', flexShrink: 0 }}>G</div>
+                          </div>
+                        ))}
                       </div>
-                    )
-                  )}
+                    );
+                  })}
                 </>
               )}
             </div>
+            <GuestSection
+              eventId={selectedEvent.id}
+              teamId={teamId}
+              teamName={teams.find(t => t.id === teamId)?.name ?? ''}
+              eventTitle={selectedEvent.title}
+              primary={primary}
+              onConfirmedCount={setConfirmedGuestCount}
+              onConfirmedGuests={setConfirmedGuests}
+            />
+            <GuestCalloutSection
+              eventId={selectedEvent.id}
+              teamId={teamId}
+              teamName={teams.find(t => t.id === teamId)?.name ?? ''}
+              eventTitle={selectedEvent.title}
+              primary={primary}
+            />
           </div>
         )}
       </div>
@@ -867,9 +914,9 @@ export default function TeamSchedulePage() {
         </div>
 
         <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', flexShrink: 0 }}>
-          <button onClick={() => dialogRef.current?.close()} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={() => dialogRef.current?.close()} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
           <button onClick={handleSave} disabled={saving || !form.title.trim()}
-            style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: saving || !form.title.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: saving || !form.title.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
             {saving ? 'Saving…' : editId ? 'Save changes' : 'Create Event'}
           </button>
         </div>
@@ -884,8 +931,8 @@ export default function TeamSchedulePage() {
           <strong style={{ color: '#0F172A' }}>{delTitle}</strong> will be permanently deleted including all RSVPs.
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => delDialogRef.current?.close()} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button onClick={() => editId && handleDelete(editId)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+          <button onClick={() => delDialogRef.current?.close()} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={() => editId && handleDelete(editId)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
         </div>
       </dialog>
 

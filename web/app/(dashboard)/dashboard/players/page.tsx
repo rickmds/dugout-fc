@@ -49,7 +49,7 @@ export default function PlayersPage() {
   const hasFilters = !!(teamFilter || ageFilter);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       <style>{`
         @media (max-width: 768px) {
           .players-header { padding: 12px 16px !important; }
@@ -64,10 +64,10 @@ export default function PlayersPage() {
       `}</style>
 
       {/* Sticky header */}
-      <div className="players-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div className="players-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Players</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Players</h1>
         </div>
       </div>
 
@@ -131,7 +131,7 @@ export default function PlayersPage() {
           { label: 'Teams',         value: teams.length,   color: '#8B5CF6' },
           { label: 'Age Groups',    value: ageGroups.length, color: '#F59E0B' },
         ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+          <div key={label} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <div style={{ fontSize: '28px', fontWeight: '900', color, lineHeight: 1 }}>{value}</div>
             <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '4px', fontWeight: '600' }}>{label}</div>
           </div>
@@ -147,8 +147,8 @@ export default function PlayersPage() {
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             <Users size={22} color="#94A3B8" />
           </div>
           <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>
@@ -159,12 +159,12 @@ export default function PlayersPage() {
           </div>
         </div>
       ) : (
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
+              <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                 {['Player','#','Position','Team','Age Group',''].map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -186,7 +186,7 @@ export default function PlayersPage() {
                   </td>
                   <td style={{ padding: '11px 16px', fontSize: '13px', color: '#64748B', fontWeight: '600' }}>{p.jersey_number ?? '—'}</td>
                   <td style={{ padding: '11px 16px' }}>
-                    {p.position ? <span style={{ fontSize: '11.5px', fontWeight: '700', padding: '3px 8px', borderRadius: '5px', background: `${primary}15`, color: primary }}>{p.position}</span> : <span style={{ color: '#CBD5E1', fontSize: '13px' }}>—</span>}
+                    {p.position ? <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: `${primary}15`, color: primary }}>{p.position}</span> : <span style={{ color: '#CBD5E1', fontSize: '13px' }}>—</span>}
                   </td>
                   <td style={{ padding: '11px 16px' }}>
                     <Link href={`/dashboard/teams/${p.team_id}`} onClick={e => e.stopPropagation()} style={{ fontSize: '13px', color: primary, textDecoration: 'none', fontWeight: '600' }}>{p.team_name}</Link>

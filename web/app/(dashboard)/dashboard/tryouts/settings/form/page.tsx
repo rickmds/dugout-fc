@@ -236,7 +236,7 @@ function QuestionCard({ q, idx, total, onMove, onUpdate, onRemove }: {
   }
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+    <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
       {/* Card header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px', borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
         {/* Number badge */}
@@ -374,7 +374,7 @@ export default function TryoutFormConfigPage() {
   const [config, setConfig] = useState<FormConfig>(MAROONS_DEFAULT);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general'|'schedule'|'questions'>('general');
+  const [activeSection, setActiveSection] = useState<'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success'>('header');
 
   useEffect(() => {
     if (!club) return;
@@ -410,173 +410,245 @@ export default function TryoutFormConfigPage() {
     });
   }
 
-  const inp: React.CSSProperties = { padding: '8px 11px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' };
-  const ta: React.CSSProperties = { ...inp, resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.5' };
-  const lbl = (t: string) => <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>{t}</label>;
+  const inp: React.CSSProperties = { padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' };
+  const ta: React.CSSProperties = { ...inp, resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.6' };
+  const lbl = (t: string, sub?: string) => (
+    <div style={{ marginBottom: '6px' }}>
+      <label style={{ fontSize: '12px', fontWeight: '700', color: '#374151', display: 'block' }}>{t}</label>
+      {sub && <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>{sub}</div>}
+    </div>
+  );
+  const hint = (text: string) => (
+    <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12.5px', color: '#92400E', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+      <span style={{ flexShrink: 0 }}>👁</span><span><strong>What families see:</strong> {text}</span>
+    </div>
+  );
 
   const publicUrl = club ? `${typeof window !== 'undefined' ? window.location.origin : 'https://pulse-fc.app'}/tryout-registration?club=${(club as { slug?: string }).slug ?? ''}` : '';
 
-  const TABS = [
-    { key: 'general', label: 'General & Info' },
-    { key: 'schedule', label: 'Sessions & Timeline' },
-    { key: 'questions', label: `Form Questions (${config.questions.length})` },
-  ] as const;
+  type SectionId = 'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success';
+
+  const SECTIONS: { id: SectionId; num: number; label: string; icon: string; desc: string }[] = [
+    { id: 'header',    num: 1, label: 'Header & welcome',  icon: 'H₁', desc: 'Title, subtitle, and intro message' },
+    { id: 'location',  num: 2, label: 'Location',          icon: '📍', desc: config.locationText || 'Where tryouts are held' },
+    { id: 'schedule',  num: 3, label: 'Session schedule',  icon: '📅', desc: 'Dates, times, and age group breakdown' },
+    { id: 'offers',    num: 4, label: 'Offer process',     icon: '📬', desc: 'How and when offers will be sent' },
+    { id: 'info',      num: 5, label: 'Important info',    icon: '📌', desc: 'What to bring, what to expect' },
+    { id: 'contacts',  num: 6, label: 'Contacts',          icon: '📞', desc: 'Who families should reach out to' },
+    { id: 'options',   num: 7, label: 'Drop-down lists',   icon: '⚙', desc: 'Grade, position, referral, jersey sizes' },
+    { id: 'questions', num: 8, label: 'Custom questions',  icon: '❓', desc: `${config.questions.length} question${config.questions.length !== 1 ? 's' : ''} added` },
+    { id: 'success',   num: 9, label: 'Submit & success',  icon: '✓', desc: 'Confirmation shown after registration' },
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {/* Sticky header + tabs */}
-      <div style={{ padding: '20px 28px 0', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '14px' }}>
+
+      {/* Sticky header */}
+      <div style={{ padding: '14px 24px', background: '#fff', borderBottom: `3px solid ${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>Tryout Setup</div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Registration Form</h1>
-          <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 0' }}>Configure your public tryout registration form.</p>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '2px' }}>Tryout Setup</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Registration Form</h1>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {publicUrl && (
             <a href={publicUrl} target="_blank" rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '12px', color: '#3B82F6', textDecoration: 'none', fontWeight: '600' }}>
-              <ExternalLink size={11} /> Preview public form
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B', textDecoration: 'none', fontWeight: '600', padding: '7px 14px', border: '1px solid #E2E8F0', borderRadius: '6px', background: '#fff' }}>
+              <ExternalLink size={12} /> Preview form
             </a>
           )}
-        </div>
-        <button onClick={handleSave} disabled={saving}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '10px', padding: '9px 18px', fontWeight: '700', fontSize: '13.5px', cursor: 'pointer', flexShrink: 0, boxShadow: saved ? 'none' : '0 2px 8px #22C55E40' }}>
-          <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save Form'}
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: '2px' }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            style={{ padding: '8px 18px', border: 'none', borderBottom: activeTab === t.key ? '2px solid #22C55E' : '2px solid transparent', background: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: activeTab === t.key ? '700' : '500', color: activeTab === t.key ? '#22C55E' : '#64748B' }}>
-            {t.label}
+          <button onClick={handleSave} disabled={saving}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
+            <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save changes'}
           </button>
-        ))}
+        </div>
       </div>
 
-      </div>{/* end sticky header */}
+      {/* Body: left nav + right panel */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
-      {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', background: '#F8FAFC' }}>
-      {activeTab === 'general' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '0', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Form identity</div>
-            <div style={{ padding: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>{lbl('Season label')}<input value={config.seasonLabel} onChange={e => setConfig(c => ({ ...c, seasonLabel: e.target.value }))} style={inp} /></div>
-              <div>{lbl('Form title')}<input value={config.formTitle} onChange={e => setConfig(c => ({ ...c, formTitle: e.target.value }))} style={inp} /></div>
-              <div style={{ gridColumn: '1/-1' }}>{lbl('Subtitle')}<input value={config.formSubtitle} onChange={e => setConfig(c => ({ ...c, formSubtitle: e.target.value }))} style={inp} /></div>
-              <div>{lbl('Submit button label')}<input value={config.submitLabel} onChange={e => setConfig(c => ({ ...c, submitLabel: e.target.value }))} style={inp} /></div>
-              <div>{lbl('Success title')}<input value={config.successTitle} onChange={e => setConfig(c => ({ ...c, successTitle: e.target.value }))} style={inp} /></div>
-              <div style={{ gridColumn: '1/-1' }}>{lbl('Success message')}<textarea value={config.successBody} onChange={e => setConfig(c => ({ ...c, successBody: e.target.value }))} rows={2} style={ta} /></div>
-            </div>
-            </div>
-          </div>
-
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Welcome text &amp; info sections</div>
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>{lbl('Welcome / intro text')}<textarea value={config.welcomeText} onChange={e => setConfig(c => ({ ...c, welcomeText: e.target.value }))} rows={6} style={ta} /></div>
-              <div>{lbl('Location')}<input value={config.locationText} onChange={e => setConfig(c => ({ ...c, locationText: e.target.value }))} style={inp} /></div>
-              <div>{lbl('Important info (bullet points)')}<textarea value={config.importantInfoText} onChange={e => setConfig(c => ({ ...c, importantInfoText: e.target.value }))} rows={4} style={ta} /></div>
-              <div>{lbl('Contact information')}<textarea value={config.contactText} onChange={e => setConfig(c => ({ ...c, contactText: e.target.value }))} rows={2} style={ta} /></div>
-            </div>
-          </div>
-
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
-              <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Drop-down option lists</div>
-              <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Populate the Grade, Position, Referral, and Jersey Size pickers. Comma-separated.</div>
-            </div>
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {([['gradeOptions','Grade options'],['positionOptions','Position options'],['referralOptions','Referral source options'],['jerseySizeOptions','Jersey size options']] as const).map(([key, label]) => (
-                <div key={key}>
-                  {lbl(label)}
-                  <input value={(config[key] as string[]).join(', ')}
-                    onChange={e => setConfig(c => ({ ...c, [key]: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
-                    style={inp} />
+        {/* Left section list */}
+        <div style={{ width: '240px', flexShrink: 0, borderRight: '1px solid #E2E8F0', background: '#fff', overflowY: 'auto', padding: '16px 12px' }}>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '10px' }}>Form sections</div>
+          {SECTIONS.map(s => {
+            const active = activeSection === s.id;
+            return (
+              <button key={s.id} onClick={() => setActiveSection(s.id)}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%', padding: '10px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', marginBottom: '2px',
+                  background: active ? `${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}12` : 'transparent',
+                  borderLeft: active ? `2px solid ${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}` : '2px solid transparent',
+                }}>
+                <div style={{ width: '22px', height: '22px', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800',
+                  background: active ? (club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E') : '#F1F5F9',
+                  color: active ? '#fff' : '#64748B' }}>
+                  {s.num}
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'schedule' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
-              <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Session schedule</div>
-              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Displayed on the registration form above the date selection question.</div>
-            </div>
-            <div style={{ padding: '16px 20px' }}>
-              <textarea value={config.sessionScheduleText} onChange={e => setConfig(c => ({ ...c, sessionScheduleText: e.target.value }))} rows={14} style={ta} />
-            </div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
-              <div style={{ fontWeight: '700', fontSize: '13px', color: '#0F172A' }}>Offer process &amp; timeline</div>
-              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Shown in the info section before the form fields.</div>
-            </div>
-            <div style={{ padding: '16px 20px' }}>
-              <textarea value={config.offerTimelineText} onChange={e => setConfig(c => ({ ...c, offerTimelineText: e.target.value }))} rows={5} style={ta} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'questions' && (
-        <div>
-          {/* Built-in fields */}
-          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px' }}>
-            <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '16px', height: '16px', borderRadius: '50%', background: '#22C55E', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '900' }}>✓</span>
-              Always included — no setup needed
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-              {BUILT_IN_FIELDS.map(f => (
-                <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '20px', background: '#fff', border: '1px solid #D1FAE5', fontSize: '11.5px', color: '#065F46', fontWeight: '600' }}>
-                  <span style={{ fontSize: '11px' }}>{f.icon}</span> {f.label}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#0D1117' : '#374151', lineHeight: '1.3' }}>{s.label}</div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>{s.desc}</div>
                 </div>
-              ))}
-            </div>
-          </div>
+              </button>
+            );
+          })}
+        </div>
 
-          {/* Tip about {{clubName}} */}
-          <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '12.5px', color: '#92400E', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>💡</span>
-            <span>Use <code style={{ background: '#FEF3C7', padding: '1px 5px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '12px' }}>{'{{clubName}}'}</code> anywhere in labels or options — it&apos;ll be replaced with your club name on the live form.</span>
-          </div>
+        {/* Right editing panel */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', background: '#F0F2F5' }}>
 
-          {/* Question cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-            {config.questions.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', background: '#FAFBFC', border: '1px dashed #E2E8F0', borderRadius: '14px' }}>
-                <div style={{ fontSize: '28px', marginBottom: '10px' }}>📋</div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '4px' }}>No custom questions yet</div>
-                <div style={{ fontSize: '13px', color: '#94A3B8' }}>Add questions below for anything beyond the built-in fields above.</div>
+          {activeSection === 'header' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('A bold banner at the top of the form showing your title, subtitle, and a welcome message that explains what the tryout is about.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div>{lbl('Form title', 'Big bold headline at the top')}<input value={config.formTitle} onChange={e => setConfig(c => ({ ...c, formTitle: e.target.value }))} style={inp} /></div>
+                  <div>{lbl('Season label', 'Internal reference, e.g. 2026-27')}<input value={config.seasonLabel} onChange={e => setConfig(c => ({ ...c, seasonLabel: e.target.value }))} style={inp} /></div>
+                  <div style={{ gridColumn: '1/-1' }}>{lbl('Subtitle', 'Smaller line below the title, e.g. "Fall 2026 – Spring 2027 Registration"')}<input value={config.formSubtitle} onChange={e => setConfig(c => ({ ...c, formSubtitle: e.target.value }))} style={inp} /></div>
+                  <div style={{ gridColumn: '1/-1' }}>{lbl('Welcome / intro text', 'Friendly paragraph explaining the tryout process and what to expect')}<textarea value={config.welcomeText} onChange={e => setConfig(c => ({ ...c, welcomeText: e.target.value }))} rows={8} style={ta} /></div>
+                </div>
               </div>
-            )}
-            {config.questions.map((q, idx) => (
-              <QuestionCard
-                key={q.id} q={q} idx={idx} total={config.questions.length}
-                onMove={dir => moveQ(q.id, dir)}
-                onUpdate={patch => updateQ(q.id, patch)}
-                onRemove={() => removeQ(q.id)}
-              />
-            ))}
-          </div>
+            </div>
+          )}
 
-          <button onClick={addQuestion}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', border: '2px dashed #CBD5E1', borderRadius: '12px', padding: '14px 20px', fontSize: '13.5px', cursor: 'pointer', color: '#475569', fontWeight: '700', width: '100%', justifyContent: 'center', transition: 'border-color 0.15s' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#22C55E'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#CBD5E1'}>
-            <Plus size={15} color="#22C55E" /> Add custom question
-          </button>
+          {activeSection === 'location' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Displayed in a section of the form so families know where to show up.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
+                {lbl('Venue name & address', 'e.g. Superdome Sports, 134 Hopper Ave, Waldwick, NJ 07463')}
+                <input value={config.locationText} onChange={e => setConfig(c => ({ ...c, locationText: e.target.value }))} style={inp} />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'schedule' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Shown as a formatted block before families pick their tryout date. Use line breaks and bullet points — it renders exactly as you type it.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
+                {lbl('Session schedule', 'Dates, times, and which age groups attend each session')}
+                <textarea value={config.sessionScheduleText} onChange={e => setConfig(c => ({ ...c, sessionScheduleText: e.target.value }))} rows={16} style={ta} />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'offers' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Displayed in an info block so families understand when and how they will hear back about roster spots.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
+                {lbl('Offer process & timeline')}
+                <textarea value={config.offerTimelineText} onChange={e => setConfig(c => ({ ...c, offerTimelineText: e.target.value }))} rows={6} style={ta} />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'info' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('A bullet-point block shown to families. Include what to bring, what to wear, any fees, and day-of logistics.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
+                {lbl('Important information', 'Use • for bullet points')}
+                <textarea value={config.importantInfoText} onChange={e => setConfig(c => ({ ...c, importantInfoText: e.target.value }))} rows={6} style={ta} />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'contacts' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Shown at the bottom of the info sections. List the right contact for each program (boys, girls, etc.).')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
+                {lbl('Contact information', 'e.g. Boys Program: Rick Breheny – rick@club.com')}
+                <textarea value={config.contactText} onChange={e => setConfig(c => ({ ...c, contactText: e.target.value }))} rows={4} style={ta} />
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'options' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('These power the drop-down pickers on the registration form. Edit each list to match what your club uses.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {([
+                  ['gradeOptions',    'Grade options',           'e.g. 1st Grade, 2nd Grade, 3rd Grade…'],
+                  ['positionOptions', 'Position options',        'e.g. GK, Defender, Midfielder, Forward, Not Sure'],
+                  ['referralOptions', 'How did you hear options','e.g. Friend, Social Media, Coach Referral…'],
+                  ['jerseySizeOptions','Jersey size options',    'e.g. YS, YM, YL, AS, AM, AL, AXL'],
+                ] as const).map(([key, label, placeholder]) => (
+                  <div key={key}>
+                    {lbl(label, 'Comma-separated list')}
+                    <input
+                      placeholder={placeholder}
+                      value={(config[key] as string[]).join(', ')}
+                      onChange={e => setConfig(c => ({ ...c, [key]: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
+                      style={inp}
+                    />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                      {(config[key] as string[]).map((opt, i) => (
+                        <span key={i} style={{ fontSize: '11px', background: '#F1F5F9', color: '#374151', borderRadius: '4px', padding: '2px 8px', fontWeight: '600' }}>{opt}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'questions' && (
+            <div style={{ maxWidth: '720px' }}>
+              {/* Built-in fields */}
+              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '8px', padding: '14px 18px', marginBottom: '20px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803D', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '16px', height: '16px', borderRadius: '50%', background: '#22C55E', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '900' }}>✓</span>
+                  Always included — no setup needed
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                  {BUILT_IN_FIELDS.map(f => (
+                    <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '20px', background: '#fff', border: '1px solid #D1FAE5', fontSize: '11.5px', color: '#065F46', fontWeight: '600' }}>
+                      <span style={{ fontSize: '11px' }}>{f.icon}</span> {f.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12.5px', color: '#92400E', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>💡</span>
+                <span>Use <code style={{ background: '#FEF3C7', padding: '1px 5px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '12px' }}>{'{{clubName}}'}</code> anywhere — it&apos;ll be replaced with your club name on the live form.</span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+                {config.questions.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', background: '#fff', border: '1px dashed #E2E8F0', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '28px', marginBottom: '10px' }}>📋</div>
+                    <div style={{ fontSize: '14px', fontWeight: '600', color: '#374151', marginBottom: '4px' }}>No custom questions yet</div>
+                    <div style={{ fontSize: '13px', color: '#94A3B8' }}>Add questions for anything beyond the built-in fields above.</div>
+                  </div>
+                )}
+                {config.questions.map((q, idx) => (
+                  <QuestionCard
+                    key={q.id} q={q} idx={idx} total={config.questions.length}
+                    onMove={dir => moveQ(q.id, dir)}
+                    onUpdate={patch => updateQ(q.id, patch)}
+                    onRemove={() => removeQ(q.id)}
+                  />
+                ))}
+              </div>
+
+              <button onClick={addQuestion}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', border: '2px dashed #CBD5E1', borderRadius: '8px', padding: '14px 20px', fontSize: '13.5px', cursor: 'pointer', color: '#475569', fontWeight: '700', width: '100%', justifyContent: 'center' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#22C55E'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#CBD5E1'}>
+                <Plus size={15} color="#22C55E" /> Add custom question
+              </button>
+            </div>
+          )}
+
+          {activeSection === 'success' && (
+            <div style={{ maxWidth: '680px' }}>
+              {hint('Shown immediately after a family submits the form. Keep it warm and informative — confirm they\'re registered and tell them what happens next.')}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>{lbl('Submit button label', 'Text on the button families click to send their registration')}<input value={config.submitLabel} onChange={e => setConfig(c => ({ ...c, submitLabel: e.target.value }))} style={inp} /></div>
+                <div>{lbl('Success heading', 'e.g. Registration Complete!')}<input value={config.successTitle} onChange={e => setConfig(c => ({ ...c, successTitle: e.target.value }))} style={inp} /></div>
+                <div>{lbl('Success message', 'e.g. Thank you! Offer letters will be sent on June 1st.')}<textarea value={config.successBody} onChange={e => setConfig(c => ({ ...c, successBody: e.target.value }))} rows={4} style={ta} /></div>
+              </div>
+            </div>
+          )}
+
         </div>
-      )}
-      </div>{/* end scrollable content */}
+      </div>
     </div>
   );
 }

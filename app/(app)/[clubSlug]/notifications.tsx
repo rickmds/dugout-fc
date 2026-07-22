@@ -30,11 +30,15 @@ type Notif = {
 // ─── Config per notification type ─────────────────────────────────────────────
 
 const TYPE_CFG: Record<string, { icon: React.ComponentProps<typeof Ionicons>['name']; color: string }> = {
-  rsvp_reminder:    { icon: 'calendar-outline',     color: '#3B82F6' },
-  new_announcement: { icon: 'megaphone-outline',    color: '#8B5CF6' },
-  new_dm:           { icon: 'chatbubble-outline',   color: PULSE_COLORS.brand.green },
-  schedule_change:  { icon: 'alert-circle-outline', color: '#F59E0B' },
-  invite_accepted:  { icon: 'person-add-outline',   color: PULSE_COLORS.brand.green },
+  rsvp_reminder:     { icon: 'calendar-outline',     color: '#3B82F6' },
+  new_announcement:  { icon: 'megaphone-outline',    color: '#8B5CF6' },
+  new_dm:            { icon: 'chatbubble-outline',   color: PULSE_COLORS.brand.green },
+  schedule_change:   { icon: 'alert-circle-outline', color: '#F59E0B' },
+  invite_accepted:   { icon: 'person-add-outline',   color: PULSE_COLORS.brand.green },
+  guest_invite:      { icon: 'person-add-outline',   color: '#F97316' },
+  guest_coach_invite:{ icon: 'person-add-outline',   color: '#F97316' },
+  guest_accepted:    { icon: 'checkmark-circle-outline', color: PULSE_COLORS.brand.green },
+  guest_response:    { icon: 'checkmark-circle-outline', color: PULSE_COLORS.brand.green },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -128,6 +132,19 @@ export default function NotificationsScreen() {
         (profile?.role === 'org_admin' || profile?.role === 'coach')
           ? router.push(`/(app)/${slug}/admin` as any)
           : router.push(`/(app)/${slug}/(tabs)/roster` as any);
+        break;
+      case 'guest_invite':
+      case 'guest_coach_invite':
+      case 'guest_accepted':
+      case 'guest_response':
+        d?.event_id
+          ? router.push(`/(app)/${slug}/event/${d.event_id}` as any)
+          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+        break;
+      case 'guest_request':
+        d?.request_id
+          ? router.push(`/(app)/${slug}/guest-request/${d.request_id}` as any)
+          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
         break;
       default:
         break;

@@ -20,6 +20,8 @@ type FieldDef = {
   accept?: string;
 };
 
+type PriceTier = { label: string; price: number };
+
 type Form = {
   id: string;
   title: string;
@@ -37,6 +39,8 @@ type Form = {
   plan_installments: number;
   plan_frequency: 'monthly' | 'weekly';
   plan_deposit: number | null;
+  price_mode: 'flat' | 'field' | 'tiers' | null;
+  price_tiers: unknown;
   clubs: {
     name: string;
     logo_url: string | null;
@@ -62,12 +66,13 @@ export default function RegisterPage() {
   const [done, setDone]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, boolean>>({});
   const [paymentChoice, setPaymentChoice] = useState<'full' | 'plan' | null>(null);
+  const [selectedTier,  setSelectedTier]  = useState<PriceTier | null>(null);
 
   useEffect(() => {
     async function load() {
       const { data, error } = await supabase
         .from('registration_forms')
-        .select('id,title,description,fields,deadline,max_spots,status,confirmation_message,send_confirmation_email,token,price,currency,payment_options,plan_installments,plan_frequency,plan_deposit,clubs(name,logo_url,primary_color)')
+        .select('id,title,description,fields,deadline,max_spots,status,confirmation_message,send_confirmation_email,token,price,currency,payment_options,plan_installments,plan_frequency,plan_deposit,price_mode,price_tiers,clubs(name,logo_url,primary_color)')
         .eq('token', token)
         .single();
 
@@ -125,7 +130,15 @@ export default function RegisterPage() {
         errs[f.label] = 'Please enter a valid email address';
       }
     }
-    if (form?.price && !paymentChoice) {
+    const mode = form?.price_mode ?? 'flat';
+    if (mode === 'tiers') {
+      if (!selectedTier) errs['__payment'] = 'Please select your registration tier';
+      else if (!paymentChoice) errs['__payment'] = 'Please select a payment option to continue';
+    } else if (mode === 'field') {
+      const pt = form?.price_tiers as { field: string; rules: Record<string, number> } | null;
+      const resolvedPrice = pt ? (pt.rules[values[pt.field] ?? ''] ?? null) : null;
+      if (resolvedPrice !== null && !paymentChoice) errs['__payment'] = 'Please select a payment option to continue';
+    } else if (form?.price && !paymentChoice) {
       errs['__payment'] = 'Please select a payment option to continue';
     }
     return errs;
@@ -169,14 +182,25 @@ export default function RegisterPage() {
       }
     }
 
+    // Resolve amount_due from pricing mode
+    const pMode = form!.price_mode ?? 'flat';
+    let finalAmountDue: number | null = form!.price;
+    if (pMode === 'tiers') {
+      finalAmountDue = selectedTier?.price ?? null;
+    } else if (pMode === 'field') {
+      const pt = form!.price_tiers as { field: string; rules: Record<string, number> } | null;
+      finalAmountDue = pt ? (pt.rules[finalValues[pt.field] ?? ''] ?? null) : null;
+    }
+    const hasFee = finalAmountDue !== null;
+
     // 2. Insert submission
     const { error: subErr } = await supabase.from('registration_submissions').insert({
       form_id: form!.id,
       data: finalValues,
       status: 'pending',
-      payment_choice: form!.price ? paymentChoice : null,
-      payment_status: form!.price ? 'unpaid' : null,
-      amount_due: form!.price ?? null,
+      payment_choice: hasFee ? paymentChoice : null,
+      payment_status: hasFee ? 'unpaid' : null,
+      amount_due: finalAmountDue,
     });
 
     if (subErr) {
@@ -322,15 +346,28 @@ export default function RegisterPage() {
           ))}
 
           {/* ── Payment section ── */}
-          {form.price && (() => {
-            const sym = form.currency === 'GBP' ? '£' : form.currency === 'USD' ? '$' : '€';
-            const total = form.price;
-            const dep = form.plan_deposit ?? 0;
-            const n = form.plan_installments ?? 3;
-            const freq = form.plan_frequency ?? 'monthly';
-            const remaining = Math.max(0, total - dep);
-            const instAmount = remaining / n;
+          {(() => {
+            const pMode = form.price_mode ?? 'flat';
+            const sym   = form.currency === 'GBP' ? '£' : form.currency === 'USD' ? '$' : '€';
+            const dep   = form.plan_deposit ?? 0;
+            const n     = form.plan_installments ?? 3;
+            const freq  = form.plan_frequency ?? 'monthly';
             const hasError = !!errors['__payment'];
+
+            // Resolve the active price for display + plan calc
+            let activePrice: number | null = form.price;
+            if (pMode === 'tiers') activePrice = selectedTier?.price ?? null;
+            if (pMode === 'field') {
+              const pt = form.price_tiers as { field: string; rules: Record<string, number> } | null;
+              activePrice = pt ? (pt.rules[values[pt.field ?? ''] ?? ''] ?? null) : null;
+            }
+
+            // No fee configured at all — nothing to render
+            if (pMode === 'flat' && !form.price) return null;
+            if (pMode === 'field' && !form.price_tiers) return null;
+            if (pMode === 'tiers' && !form.price_tiers) return null;
+
+            const instAmount = activePrice !== null ? Math.max(0, activePrice - dep) / n : 0;
 
             return (
               <div style={{ marginTop: '24px', marginBottom: '8px' }}>
@@ -338,52 +375,105 @@ export default function RegisterPage() {
                   <h3 style={{ fontSize: '12px', fontWeight: '800', color: '#0F172A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Payment</h3>
                 </div>
 
-                <div style={{ background: `${primary}08`, border: `1.5px solid ${primary}25`, borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: '12px', color: '#64748B', fontWeight: '600', marginBottom: '2px' }}>Registration fee</div>
-                    <div style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A' }}>{sym}{total.toFixed(2)}</div>
-                  </div>
-                  <div style={{ fontSize: '28px' }}>💳</div>
-                </div>
+                {/* ── Manual tiers: parent picks their tier ── */}
+                {pMode === 'tiers' && (() => {
+                  const tiers = form.price_tiers as PriceTier[];
+                  return (
+                    <div style={{ marginBottom: '16px' }}>
+                      <p style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '10px' }}>Select your registration tier</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {tiers.map((tier) => (
+                          <button key={tier.label} type="button" onClick={() => { setSelectedTier(tier); setPaymentChoice(null); }}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: '12px', border: `2px solid ${selectedTier?.label === tier.label ? primary : hasError ? '#EF4444' : '#E2E8F0'}`, background: selectedTier?.label === tier.label ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.1s' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: `2px solid ${selectedTier?.label === tier.label ? primary : '#CBD5E1'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                {selectedTier?.label === tier.label && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: primary }} />}
+                              </div>
+                              <span style={{ fontSize: '15px', fontWeight: '700', color: selectedTier?.label === tier.label ? '#0F172A' : '#374151' }}>{tier.label}</span>
+                            </div>
+                            <span style={{ fontSize: '18px', fontWeight: '800', color: primary }}>{sym}{tier.price.toFixed(2)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
-                {hasError && (
-                  <p style={{ fontSize: '12px', color: '#EF4444', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>⚠ {errors['__payment']}</p>
+                {/* ── Field-linked: show resolved fee (or pending message) ── */}
+                {pMode === 'field' && (() => {
+                  const pt = form.price_tiers as { field: string; rules: Record<string, number> } | null;
+                  if (!pt) return null;
+                  return (
+                    <div style={{ marginBottom: '16px' }}>
+                      {activePrice !== null ? (
+                        <div style={{ background: `${primary}08`, border: `1.5px solid ${primary}25`, borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <div style={{ fontSize: '12px', color: '#64748B', fontWeight: '600', marginBottom: '2px' }}>Registration fee</div>
+                            <div style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A' }}>{sym}{activePrice.toFixed(2)}</div>
+                            <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>Based on your {pt.field} selection</div>
+                          </div>
+                          <div style={{ fontSize: '28px' }}>💳</div>
+                        </div>
+                      ) : (
+                        <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ fontSize: '24px' }}>⏳</div>
+                          <div style={{ fontSize: '13px', color: '#64748B' }}>Your fee will appear once you select your <strong>{pt.field}</strong> above.</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* ── Flat: fee tile ── */}
+                {pMode === 'flat' && form.price && (
+                  <div style={{ background: `${primary}08`, border: `1.5px solid ${primary}25`, borderRadius: '12px', padding: '14px 16px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#64748B', fontWeight: '600', marginBottom: '2px' }}>Registration fee</div>
+                      <div style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A' }}>{sym}{form.price.toFixed(2)}</div>
+                    </div>
+                    <div style={{ fontSize: '28px' }}>💳</div>
+                  </div>
                 )}
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {/* Full payment option */}
-                  {(form.payment_options === 'full' || form.payment_options === 'both') && (
-                    <button type="button" onClick={() => setPaymentChoice('full')} style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', padding: '16px', borderRadius: '12px', border: `2px solid ${paymentChoice === 'full' ? primary : hasError ? '#EF4444' : '#E2E8F0'}`, background: paymentChoice === 'full' ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.1s' }}>
-                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: `2px solid ${paymentChoice === 'full' ? primary : '#CBD5E1'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
-                        {paymentChoice === 'full' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: primary }} />}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '15px', fontWeight: '700', color: paymentChoice === 'full' ? '#0F172A' : '#374151', marginBottom: '3px' }}>Pay in full — {sym}{total.toFixed(2)}</div>
-                        <div style={{ fontSize: '13px', color: '#64748B' }}>One payment. Payment link will be sent to you after registration.</div>
-                      </div>
-                    </button>
-                  )}
-
-                  {/* Payment plan option */}
-                  {(form.payment_options === 'plan' || form.payment_options === 'both') && (
-                    <button type="button" onClick={() => setPaymentChoice('plan')} style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', padding: '16px', borderRadius: '12px', border: `2px solid ${paymentChoice === 'plan' ? primary : hasError ? '#EF4444' : '#E2E8F0'}`, background: paymentChoice === 'plan' ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.1s' }}>
-                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: `2px solid ${paymentChoice === 'plan' ? primary : '#CBD5E1'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
-                        {paymentChoice === 'plan' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: primary }} />}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '15px', fontWeight: '700', color: paymentChoice === 'plan' ? '#0F172A' : '#374151', marginBottom: '3px' }}>
-                          Payment plan
-                          {dep > 0 ? ` — ${sym}${dep.toFixed(2)} now, then ${n}× ${sym}${instAmount.toFixed(2)} ${freq}` : ` — ${n}× ${sym}${instAmount.toFixed(2)} ${freq}`}
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#64748B' }}>Spread payments over time. Total: {sym}{total.toFixed(2)}. Links sent after registration.</div>
-                      </div>
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ marginTop: '12px', background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 13px', fontSize: '12px', color: '#92400E' }}>
-                  💡 No payment is taken now. You'll receive a secure payment link by email after submitting.
-                </div>
+                {/* ── Payment options (shown when we have an active price) ── */}
+                {activePrice !== null && (
+                  <>
+                    {hasError && (
+                      <p style={{ fontSize: '12px', color: '#EF4444', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>⚠ {errors['__payment']}</p>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {(form.payment_options === 'full' || form.payment_options === 'both') && (
+                        <button type="button" onClick={() => setPaymentChoice('full')}
+                          style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', padding: '16px', borderRadius: '12px', border: `2px solid ${paymentChoice === 'full' ? primary : hasError ? '#EF4444' : '#E2E8F0'}`, background: paymentChoice === 'full' ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.1s' }}>
+                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: `2px solid ${paymentChoice === 'full' ? primary : '#CBD5E1'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
+                            {paymentChoice === 'full' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: primary }} />}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '15px', fontWeight: '700', color: paymentChoice === 'full' ? '#0F172A' : '#374151', marginBottom: '3px' }}>Pay in full — {sym}{activePrice.toFixed(2)}</div>
+                            <div style={{ fontSize: '13px', color: '#64748B' }}>One payment. Payment link will be sent to you after registration.</div>
+                          </div>
+                        </button>
+                      )}
+                      {(form.payment_options === 'plan' || form.payment_options === 'both') && (
+                        <button type="button" onClick={() => setPaymentChoice('plan')}
+                          style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', padding: '16px', borderRadius: '12px', border: `2px solid ${paymentChoice === 'plan' ? primary : hasError ? '#EF4444' : '#E2E8F0'}`, background: paymentChoice === 'plan' ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.1s' }}>
+                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: `2px solid ${paymentChoice === 'plan' ? primary : '#CBD5E1'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
+                            {paymentChoice === 'plan' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: primary }} />}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '15px', fontWeight: '700', color: paymentChoice === 'plan' ? '#0F172A' : '#374151', marginBottom: '3px' }}>
+                              Payment plan{dep > 0 ? ` — ${sym}${dep.toFixed(2)} now, then ${n}× ${sym}${instAmount.toFixed(2)} ${freq}` : ` — ${n}× ${sym}${instAmount.toFixed(2)} ${freq}`}
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#64748B' }}>Spread payments over time. Total: {sym}{activePrice.toFixed(2)}. Links sent after registration.</div>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ marginTop: '12px', background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 13px', fontSize: '12px', color: '#92400E' }}>
+                      💡 No payment is taken now. You&apos;ll receive a secure payment link by email after submitting.
+                    </div>
+                  </>
+                )}
               </div>
             );
           })()}

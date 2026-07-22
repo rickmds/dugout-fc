@@ -303,8 +303,8 @@ export default function PlayerPoolPage() {
       <div style={{ padding: '20px 28px 0', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <div>
-            <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '2px' }}>Tryout Module · {season}</div>
-            <h1 style={{ fontSize: '21px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Player Pool</h1>
+            <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>Tryout Module · {season}</div>
+            <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Player Pool</h1>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <select value={season} onChange={e => setSeason(e.target.value)} style={{ padding: '7px 11px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', background: '#fff', outline: 'none', cursor: 'pointer' }}>
@@ -352,8 +352,8 @@ export default function PlayerPoolPage() {
           )
           : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
-              <tr style={{ background: '#F8FAFC', position: 'sticky', top: 0, zIndex: 2, boxShadow: '0 1px 0 #E2E8F0' }}>
-                {['First','Last','DOB','Grade','Age Grp','Coach Rank','Tryout Rank','Team','Status','Email',''].map(h => <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: '700', color: '#94A3B8', letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', background: '#F8FAFC' }}>{h}</th>)}
+              <tr style={{ background: '#0F172A', position: 'sticky', top: 0, zIndex: 2, boxShadow: 'none' }}>
+                {['First','Last','DOB','Grade','Age Grp','Coach Rank','Tryout Rank','Team','Status','Email',''].map(h => <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap', background: '#0F172A' }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -386,7 +386,7 @@ export default function PlayerPoolPage() {
       {/* Print Eval Forms modal */}
       {showPrintModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => setShowPrintModal(false)}>
-          <div style={{ background: '#fff', borderRadius: '18px', width: '100%', maxWidth: '560px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.22)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: '#fff', borderRadius: '8px', width: '100%', maxWidth: '560px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.22)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
 
             {/* Header */}
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -470,7 +470,7 @@ export default function PlayerPoolPage() {
       {showAdd && <PlayerModal club={club as ClubT} player={editP} seasonYear={seasonYear} season={season} onClose={() => { setShowAdd(false); setEditP(null); }} onSaved={load} />}
 
       {delId && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-        <div style={{ background: '#fff', borderRadius: '14px', padding: '28px', width: '340px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', padding: '28px', width: '340px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
           <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A', marginBottom: '8px' }}>Delete player?</div>
           <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '20px' }}>Removes them from the pool and all assignments.</div>
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
@@ -483,7 +483,7 @@ export default function PlayerPoolPage() {
       {showImport && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
           onClick={() => { setShowImport(false); setImportText(''); setImportRows([]); setImportParsed(false); }}>
-          <div style={{ background: '#fff', borderRadius: '16px', width: '640px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.22)', overflow: 'hidden' }}
+          <div style={{ background: '#fff', borderRadius: '8px', width: '640px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.22)', overflow: 'hidden' }}
             onClick={e => e.stopPropagation()}>
 
             {/* Header */}
@@ -544,9 +544,9 @@ export default function PlayerPoolPage() {
                 <div style={{ overflowY: 'auto', flex: 1 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
-                      <tr style={{ background: '#F8FAFC', position: 'sticky', top: 0 }}>
+                      <tr style={{ background: '#0F172A', position: 'sticky', top: 0 }}>
                         {['#', 'Input Name', 'Matched Player', 'Score', ''].map(h => (
-                          <th key={h} style={{ padding: '8px 14px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', letterSpacing: '0.07em', textTransform: 'uppercase', borderBottom: '1px solid #E2E8F0' }}>{h}</th>
+                          <th key={h} style={{ padding: '8px 14px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', letterSpacing: '1.5px', textTransform: 'uppercase', borderBottom: 'none' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -614,7 +614,7 @@ function PlayerModal({ club, player, season, seasonYear, onClose, onSaved }: { c
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: '16px', width: '520px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: '#fff', borderRadius: '8px', width: '520px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '18px 22px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <span style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>{player ? 'Edit Player' : 'Add Player'}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#64748B" /></button>
@@ -624,7 +624,7 @@ function PlayerModal({ club, player, season, seasonYear, onClose, onSaved }: { c
           <div>{lbl('Last name')}<input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} style={inp} /></div>
           <div>{lbl('Date of birth')}<input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value, final_age_group: '' }))} style={inp} /></div>
           <div>{lbl(`Age group${autoAg ? ` (auto: ${autoAg})` : ''}`)}<input value={form.final_age_group} onChange={e => setForm(f => ({ ...f, final_age_group: e.target.value }))} placeholder={autoAg || 'e.g. U10'} style={inp} /></div>
-          <div>{lbl('Gender')}<select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} style={inp}><option>Male</option><option>Female</option><option>Other</option></select></div>
+          <div>{lbl('Gender')}<select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} style={inp}><option>Male</option><option>Female</option></select></div>
           <div>{lbl('Grade')}<input value={form.grade} onChange={e => setForm(f => ({ ...f, grade: e.target.value }))} placeholder="3rd" style={inp} /></div>
           <div style={{ gridColumn: '1/-1' }}>{lbl('Email')}<input type="email" value={form.email_primary} onChange={e => setForm(f => ({ ...f, email_primary: e.target.value }))} style={inp} /></div>
           <div style={{ gridColumn: '1/-1' }}>{lbl('Positions (comma-separated)')}<input value={form.positions} onChange={e => setForm(f => ({ ...f, positions: e.target.value }))} placeholder="GK, CB, CM" style={inp} /></div>

@@ -556,9 +556,9 @@ export default function AdminPanel() {
           <Text style={st.noTeamTitle}>No teams yet</Text>
           <Text style={st.noTeamBody}>Get your club set up using one of the options below.</Text>
 
-          <TouchableOpacity style={[st.noTeamCard, { borderColor: rgba(0.3), backgroundColor: rgba(0.07) }]} onPress={() => router.push(`/(app)/${slug}/admin/club-import` as any)} activeOpacity={0.75}>
-            <View style={[st.noTeamCardIcon, { backgroundColor: rgba(0.12) }]}>
-              <Ionicons name="sparkles" size={22} color={primaryColor} />
+          <TouchableOpacity style={[st.noTeamCard, { borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]} onPress={() => router.push(`/(app)/${slug}/admin/club-import` as any)} activeOpacity={0.75}>
+            <View style={[st.noTeamCardIcon, { backgroundColor: primaryColor }]}>
+              <Ionicons name="sparkles" size={22} color="#ffffff" />
             </View>
             <View style={st.noTeamCardText}>
               <Text style={st.noTeamCardTitle}>Import Club with AI</Text>

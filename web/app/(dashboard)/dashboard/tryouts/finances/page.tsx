@@ -74,8 +74,8 @@ export default function TryoutFinancesPage() {
   }
 
   const StatCard = ({ label, val, sub, green }: { label: string; val: string; sub: string; green?: boolean }) => (
-    <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '20px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>{label}</div>
+    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+      <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px' }}>{label}</div>
       <div style={{ fontSize: '28px', fontWeight: '900', color: green === false ? '#EF4444' : green ? '#22C55E' : '#0F172A', lineHeight: 1 }}>{val}</div>
       <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '6px' }}>{sub}</div>
     </div>
@@ -92,10 +92,10 @@ export default function TryoutFinancesPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ padding: '16px 24px', background: '#fff', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+      <div style={{ padding: '14px 32px', background: '#fff', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div>
-          <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Tryout Module · {season}</div>
-          <h1 style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A', margin: '2px 0 0' }}>Finances</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Tryout Module · {season}</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Finances</h1>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <select value={season} onChange={e => setSeason(e.target.value)} style={{ padding: '6px 10px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', background: '#fff', outline: 'none' }}>
@@ -106,7 +106,7 @@ export default function TryoutFinancesPage() {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', background: '#F0F2F5' }}>
         {/* Fee config */}
         <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '14px 20px', marginBottom: '20px', display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', borderLeft: '4px solid #6366F1' }}>
           <span style={{ fontSize: '11px', fontWeight: '800', color: '#6366F1', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Fee Config</span>
@@ -131,7 +131,7 @@ export default function TryoutFinancesPage() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '16px', marginBottom: '22px' }}>
           {/* Actual P&L */}
-          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <div style={{ fontWeight: '700', fontSize: '13.5px', color: '#0F172A', marginBottom: '14px' }}>Actual P & L</div>
             {[
               { label: 'Registration fees', val: totalReg, positive: true },
@@ -151,7 +151,7 @@ export default function TryoutFinancesPage() {
 
           {/* Expense chart */}
           {chartData.length > 0 && (
-            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '16px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ fontWeight: '700', fontSize: '13.5px', color: '#0F172A', marginBottom: '10px' }}>Expenses by Category</div>
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 4 }}>
@@ -168,7 +168,7 @@ export default function TryoutFinancesPage() {
         </div>
 
         {/* Expenses table */}
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: '700', fontSize: '13.5px', color: '#0F172A' }}>Expenses ({expenses.length})</span>
             <span style={{ fontWeight: '700', fontSize: '13.5px', color: '#EF4444' }}>{fmt(totalExpenses)} total</span>
@@ -184,8 +184,8 @@ export default function TryoutFinancesPage() {
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
-                <tr style={{ background: '#F8FAFC', position: 'sticky', top: 0, zIndex: 1 }}>
-                  {['Category','Description','Amount','Notes',''].map(h => <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>{h}</th>)}
+                <tr style={{ background: '#0F172A', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {['Category','Description','Amount','Notes',''].map(h => <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px', borderBottom: 'none', background: '#0F172A' }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -257,7 +257,7 @@ function ExpenseModal({ club, season, expense, onClose, onSaved }: { club: { id:
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: '16px', width: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: '#fff', borderRadius: '8px', width: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '18px 22px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A' }}>{expense ? 'Edit Expense' : 'Add Expense'}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#64748B" /></button>

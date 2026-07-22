@@ -57,6 +57,33 @@ export async function POST(req: NextRequest) {
     coachName = (ca?.tryout_coaches as any)?.full_name ?? '';
   }
 
+  // Practice schedule for this team
+  let trainingScheduleHtml = '';
+  if (teamName) {
+    const { data: slots } = await sb
+      .from('tryout_practice_slots')
+      .select('day_of_week, start_time, end_time, field_name, sub_zone')
+      .eq('club_id', club_id)
+      .eq('team', teamName);
+    if (slots && slots.length > 0) {
+      const dayOrder: Record<string, number> = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6 };
+      const fmt = (t: string | null) => {
+        if (!t) return '';
+        const [h, m] = t.split(':');
+        const hr = parseInt(h);
+        return `${hr % 12 || 12}:${m}${hr >= 12 ? 'pm' : 'am'}`;
+      };
+      const items = [...slots]
+        .sort((a, b) => (dayOrder[a.day_of_week] ?? 7) - (dayOrder[b.day_of_week] ?? 7))
+        .map(s => {
+          const time = s.start_time && s.end_time ? `${fmt(s.start_time)}–${fmt(s.end_time)}` : '';
+          const venue = [s.field_name, s.sub_zone].filter(Boolean).join(', ');
+          return `<li><strong>${s.day_of_week}</strong> ${time}${venue ? ` — ${venue}` : ''}</li>`;
+        }).join('');
+      trainingScheduleHtml = `<ul style="margin:0;padding-left:18px;">${items}</ul>`;
+    }
+  }
+
   const isU8 = (player.final_age_group ?? '') === 'U8';
   const bodyTemplate = (isU8 && settings.email_body_html_u8) ? settings.email_body_html_u8 : settings.email_body_html;
 
@@ -69,7 +96,8 @@ export async function POST(req: NextRequest) {
     : '';
 
   const body = mergeTokens(bodyTemplate ?? '', {
-    coach_name:        coachName,
+    coach_name:         coachName,
+    training_schedule:  trainingScheduleHtml,
     player_first_name: player.first_name    ?? '',
     player_full_name:  `${player.first_name ?? ''} ${player.last_name ?? ''}`.trim(),
     parent_name:       player.parent_name   ?? '',

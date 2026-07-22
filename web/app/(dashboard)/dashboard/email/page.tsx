@@ -202,8 +202,8 @@ export default function EmailPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '2px' }}>Email Team</h1>
-          <p style={{ fontSize: '13px', color: '#64748B' }}>Write a message to parents — use AI to draft it from bullet points</p>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', marginBottom: '2px' }}>Email Team</h1>
+          <p style={{ fontSize: '12px', color: '#94A3B8' }}>Write a message to parents — use AI to draft it from bullet points</p>
         </div>
         <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px' }}>
           {([['compose', 'Compose'], ['sent', 'Sent']] as const).map(([v, lbl]) => (
@@ -218,13 +218,13 @@ export default function EmailPage() {
       {pageTab === 'sent' && (
         <div style={{ maxWidth: '760px' }}>
           {logsLoading ? (
-            <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ width: '28px', height: '28px', border: `2.5px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
               <div style={{ fontSize: '13px', color: '#94A3B8' }}>Loading sent emails…</div>
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
             </div>
           ) : logs.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                 <Clock size={26} color="#CBD5E1" />
               </div>
@@ -237,7 +237,7 @@ export default function EmailPage() {
                 const isExpanded = expandedLog === log.id;
                 const sentDate = new Date(log.sent_at);
                 return (
-                  <div key={log.id} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', transition: 'box-shadow 0.15s' }}
+                  <div key={log.id} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', transition: 'box-shadow 0.15s' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'; }}>
                     <div onClick={() => setExpandedLog(isExpanded ? null : log.id)} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px', cursor: 'pointer' }}
@@ -281,11 +281,11 @@ export default function EmailPage() {
 
           {/* Team scope picker */}
           {teams.length > 1 && (
-            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '20px' }}>
+            <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px' }}>
               <label style={labelSt}>Sending to</label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: teamScope === 'select' ? '16px' : '0' }}>
                 {([['all', `All teams (${teams.length})`], ['select', 'Specific teams']] as const).map(([v, lbl]) => (
-                  <button key={v} onClick={() => { setTeamScope(v); if (v === 'all') setSelectedTeams(teams.map((t) => t.id)); }} style={{ flex: 1, padding: '9px', borderRadius: '9px', border: `2px solid ${teamScope === v ? primary : '#E2E8F0'}`, background: teamScope === v ? `${primary}10` : '#F8FAFC', color: teamScope === v ? primary : '#64748B', fontWeight: teamScope === v ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <button key={v} onClick={() => { setTeamScope(v); if (v === 'all') setSelectedTeams(teams.map((t) => t.id)); }} style={{ flex: 1, padding: '9px', borderRadius: '6px', border: `2px solid ${teamScope === v ? primary : '#E2E8F0'}`, background: teamScope === v ? `${primary}10` : '#F8FAFC', color: teamScope === v ? primary : '#64748B', fontWeight: teamScope === v ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
                     {lbl}
                   </button>
                 ))}
@@ -321,7 +321,7 @@ export default function EmailPage() {
           {/* Write with AI toggle */}
           <button
             onClick={() => setShowAI((v) => !v)}
-            style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: '7px', background: showAI ? `${primary}12` : '#F8FAFC', border: `1.5px solid ${showAI ? primary + '40' : '#E2E8F0'}`, borderRadius: '10px', padding: '9px 16px', color: showAI ? primary : '#64748B', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
+            style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: '7px', background: showAI ? `${primary}12` : '#F8FAFC', border: `1.5px solid ${showAI ? primary + '40' : '#E2E8F0'}`, borderRadius: '6px', padding: '9px 16px', color: showAI ? primary : '#64748B', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
           >
             <Sparkles size={14} />
             {showAI ? 'Hide AI tools' : 'Write with AI'}
@@ -330,12 +330,12 @@ export default function EmailPage() {
           {showAI && (
             <>
               {/* Tone */}
-              <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
+              <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
                 <label style={labelSt}>Tone</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
                   {TONES.map((t) => (
                     <button key={t.value} onClick={() => setTone(t.value)} style={{
-                      padding: '10px 8px', borderRadius: '10px', border: `2px solid ${tone === t.value ? primary : '#E2E8F0'}`,
+                      padding: '10px 8px', borderRadius: '6px', border: `2px solid ${tone === t.value ? primary : '#E2E8F0'}`,
                       background: tone === t.value ? `${primary}10` : '#fff',
                       cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
@@ -349,7 +349,7 @@ export default function EmailPage() {
               </div>
 
               {/* AI Compose */}
-              <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
+              <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                   <label style={{ ...labelSt, margin: 0 }}>What do you want to say?</label>
                   <span style={{ fontSize: '11px', color: '#94A3B8' }}>Bullet points, notes, anything</span>
@@ -368,7 +368,7 @@ export default function EmailPage() {
                     display: 'flex', alignItems: 'center', gap: '8px',
                     background: writing || !bullets.trim() ? '#F1F5F9' : `${primary}15`,
                     border: `1.5px solid ${writing || !bullets.trim() ? '#E2E8F0' : `${primary}40`}`,
-                    borderRadius: '10px', padding: '10px 16px',
+                    borderRadius: '6px', padding: '8px 16px',
                     color: writing || !bullets.trim() ? '#94A3B8' : primary,
                     fontWeight: '700', fontSize: '13px', cursor: writing || !bullets.trim() ? 'not-allowed' : 'pointer',
                     fontFamily: 'inherit', transition: 'all 0.15s',
@@ -389,7 +389,7 @@ export default function EmailPage() {
           <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
 
           {/* Subject + Body — shown after AI writes */}
-          <div style={{ background: '#fff', borderRadius: '14px', border: `1px solid ${hasAI ? `${primary}30` : '#E2E8F0'}`, padding: '20px', transition: 'border-color 0.2s' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: `1px solid ${hasAI ? `${primary}30` : '#E2E8F0'}`, padding: '20px', transition: 'border-color 0.2s' }}>
             {hasAI && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', fontSize: '12px', color: primary, fontWeight: '600' }}>
                 <Sparkles size={12} /> AI drafted — edit freely before sending
@@ -434,8 +434,8 @@ export default function EmailPage() {
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
               background: sending || !subject.trim() || !body.trim() || !selectedRec.length
                 ? '#CBD5E1' : sent ? '#22C55E' : primary,
-              color: '#fff', fontWeight: '700', fontSize: '15px',
-              padding: '14px', borderRadius: '12px', border: 'none',
+              color: '#fff', fontWeight: '700', fontSize: '13px',
+              padding: '8px 16px', borderRadius: '6px', border: 'none',
               cursor: sending || !subject.trim() || !body.trim() || !selectedRec.length ? 'not-allowed' : 'pointer',
               fontFamily: 'inherit', transition: 'background 0.2s',
             }}
@@ -449,7 +449,7 @@ export default function EmailPage() {
         </div>
 
         {/* ── Right: Recipients ── */}
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '24px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', position: 'sticky', top: '24px' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={15} color="#64748B" />
@@ -538,8 +538,8 @@ export default function EmailPage() {
 }
 
 const labelSt: React.CSSProperties = {
-  fontSize: '10px', fontWeight: '700', color: '#94A3B8',
-  letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: '8px',
+  fontSize: '10px', fontWeight: '800', color: '#94A3B8',
+  letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '8px',
 };
 
 const inputSt: React.CSSProperties = {

@@ -34,9 +34,9 @@ function StatusChip({ status }: { status: BatchRow['status'] }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: '5px',
-      padding: '3px 10px', borderRadius: '20px',
+      padding: '2px 8px', borderRadius: '4px',
       background: cfg.bg, color: cfg.color,
-      fontSize: '11.5px', fontWeight: '700',
+      fontSize: '11px', fontWeight: '700',
     }}>
       <Icon size={11} />
       {cfg.label}
@@ -102,7 +102,7 @@ export default function EvaluationsPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       <style>{`
         @media (max-width: 768px) {
           .eval-header { padding: 12px 16px !important; }
@@ -112,14 +112,14 @@ export default function EvaluationsPage() {
       `}</style>
 
       {/* Header */}
-      <div className="eval-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div className="eval-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Develop</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Evaluations</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Develop</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Evaluations</h1>
         </div>
         {isAdmin && (
           <button
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', borderRadius: '10px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
             onClick={() => {/* TODO: open new batch modal */}}
           >
             <Plus size={14} />
@@ -138,7 +138,7 @@ export default function EvaluationsPage() {
             { label: 'Approved',          value: approved,   color: '#22C55E' },
             { label: 'Reports Written',   value: `${completedEvals}/${totalEvals}`, color: primary },
           ].map(({ label, value, color }) => (
-            <div key={label} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div key={label} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ fontSize: '28px', fontWeight: '900', color, lineHeight: 1 }}>{value}</div>
               <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '4px', fontWeight: '600' }}>{label}</div>
             </div>
@@ -149,13 +149,13 @@ export default function EvaluationsPage() {
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {[1,2,3].map(i => (
-              <div key={i} style={{ height: '72px', borderRadius: '12px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite', border: '1px solid #E2E8F0' }} />
+              <div key={i} style={{ height: '72px', borderRadius: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite', border: '1px solid #E2E8F0' }} />
             ))}
             <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
           </div>
         ) : sorted.length === 0 ? (
-          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
               <Award size={22} color="#94A3B8" />
             </div>
             <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No evaluation batches yet</div>
@@ -170,12 +170,12 @@ export default function EvaluationsPage() {
                 key={batch.id}
                 onClick={() => router.push(`/dashboard/evaluations/${batch.id}`)}
                 style={{
-                  background: '#fff', borderRadius: '14px', border: `1px solid ${batch.status === 'submitted' ? 'rgba(59,130,246,0.25)' : '#E2E8F0'}`,
-                  padding: '16px 20px', boxShadow: batch.status === 'submitted' ? '0 0 0 3px rgba(59,130,246,0.06)' : '0 1px 4px rgba(0,0,0,0.04)',
+                  background: '#fff', borderRadius: '8px', border: `1px solid ${batch.status === 'submitted' ? 'rgba(59,130,246,0.25)' : '#E2E8F0'}`,
+                  padding: '16px 20px', boxShadow: batch.status === 'submitted' ? '0 0 0 3px rgba(59,130,246,0.06)' : '0 1px 2px rgba(0,0,0,0.06)',
                   cursor: 'pointer', transition: 'box-shadow 0.15s',
                 }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = batch.status === 'submitted' ? '0 0 0 3px rgba(59,130,246,0.06)' : '0 1px 4px rgba(0,0,0,0.04)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = batch.status === 'submitted' ? '0 0 0 3px rgba(59,130,246,0.06)' : '0 1px 2px rgba(0,0,0,0.06)'}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                   {/* Left: team + period */}
@@ -233,7 +233,7 @@ export default function EvaluationsPage() {
                   <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end' }}>
                     <button
                       onClick={e => { e.stopPropagation(); router.push(`/dashboard/evaluations/${batch.id}`); }}
-                      style={{ padding: '7px 16px', borderRadius: '8px', border: 'none', background: '#3B82F6', color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+                      style={{ padding: '7px 16px', borderRadius: '6px', border: 'none', background: '#3B82F6', color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
                     >
                       <CheckCircle size={13} />
                       Review & Approve

@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { useActiveTeam } from '../../../hooks/TeamContext';
@@ -262,6 +263,21 @@ export default function SettingsScreen() {
     if (result.canceled || !result.assets[0]) return;
     setLogoEditorUri(result.assets[0].uri);
     setLogoEditorVisible(true);
+  }
+
+  async function handleLogoReEdit() {
+    if (!logoUrl) return;
+    try {
+      // ImageManipulator needs a local file URI — download remote logo first
+      const localPath = FileSystem.cacheDirectory! + 'logo-edit-source.png';
+      await FileSystem.downloadAsync(logoUrl, localPath);
+      setLogoEditorUri(localPath);
+      setLogoEditorVisible(true);
+    } catch {
+      // Fallback: pass URL directly and let ImageManipulator try
+      setLogoEditorUri(logoUrl);
+      setLogoEditorVisible(true);
+    }
   }
 
   async function handleLogoEditorSave(uri: string) {
@@ -627,9 +643,20 @@ export default function SettingsScreen() {
                 <Ionicons name="image-outline" size={28} color={PULSE_COLORS.ui.muted} />
               )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
-              <Text style={[st.logoHint, { color: primaryColor }]}>{logoUrl ? 'Change logo' : 'Upload logo'}</Text>
-            </TouchableOpacity>
+            {logoUrl ? (
+              <View style={{ flexDirection: 'row', gap: 16 }}>
+                <TouchableOpacity onPress={handleLogoReEdit} disabled={logoUploading} activeOpacity={0.7}>
+                  <Text style={[st.logoHint, { color: primaryColor }]}>Edit crop</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
+                  <Text style={[st.logoHint, { color: PULSE_COLORS.ui.muted }]}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
+                <Text style={[st.logoHint, { color: primaryColor }]}>Upload logo</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={st.divider} />

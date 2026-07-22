@@ -153,15 +153,15 @@ export default function StaffPage() {
     teams.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
 
       {/* Sticky header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Staff</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Staff</h1>
         </div>
-        <button onClick={() => setShowInvite(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <button onClick={() => setShowInvite(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
           <Plus size={15} /> Invite staff
         </button>
       </div>
@@ -172,13 +172,13 @@ export default function StaffPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#94A3B8' }}>Loading…</div>
       ) : staff.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '64px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '64px', textAlign: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
             <Users size={26} color="#94A3B8" />
           </div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No staff yet</div>
           <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '24px' }}>Invite coaches and admins to give them dashboard access</div>
-          <button onClick={() => setShowInvite(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => setShowInvite(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
             <Plus size={15} /> Invite first staff member
           </button>
         </div>
@@ -192,7 +192,7 @@ export default function StaffPage() {
             const aColor   = avatarColor(s.id);
 
             return (
-              <div key={s.id} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div key={s.id} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
 
                 <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: aColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: '#fff', flexShrink: 0, boxShadow: `0 0 0 3px ${aColor}22` }}>
                   {initials(s.full_name)}
@@ -201,16 +201,16 @@ export default function StaffPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>{s.full_name ?? 'Unnamed'}</span>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '20px', padding: '3px 9px', border: `1px solid ${s.role === 'org_admin' ? '#DDD6FE' : `${primary}30`}` }}>
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${s.role === 'org_admin' ? '#DDD6FE' : `${primary}30`}` }}>
                       {s.role === 'org_admin' ? 'Admin' : 'Coach'}
                     </span>
                     {s.assigned_teams.length > 0 && (
-                      <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748B', background: '#F1F5F9', borderRadius: '20px', padding: '3px 9px', border: '1px solid #E2E8F0' }}>
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', background: '#F1F5F9', borderRadius: '4px', padding: '2px 8px', border: '1px solid #E2E8F0' }}>
                         {s.assigned_teams.length} {s.assigned_teams.length === 1 ? 'team' : 'teams'}
                       </span>
                     )}
                     {isMe && (
-                      <span style={{ fontSize: '11px', color: primary, background: `${primary}15`, borderRadius: '20px', padding: '3px 9px', fontWeight: '600' }}>You</span>
+                      <span style={{ fontSize: '11px', color: primary, background: `${primary}15`, borderRadius: '4px', padding: '2px 8px', fontWeight: '700' }}>You</span>
                     )}
                   </div>
 
@@ -237,7 +237,7 @@ export default function StaffPage() {
                 {!isMe && (
                   <button
                     onClick={() => openEdit(s)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600', color: '#475569', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '7px 14px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: '#374151', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '8px 16px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#F1F5F9'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; }}
                   >
@@ -520,12 +520,12 @@ export default function StaffPage() {
 
 const sectionLabelSt: React.CSSProperties = {
   fontSize: '10px', fontWeight: '800', color: '#94A3B8',
-  letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '10px',
+  letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '10px',
 };
 
 const labelSt: React.CSSProperties = {
-  fontSize: '11px', fontWeight: '700', color: '#64748B',
-  letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: '6px',
+  fontSize: '10px', fontWeight: '800', color: '#94A3B8',
+  letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '6px',
 };
 
 const inputSt: React.CSSProperties = {

@@ -284,12 +284,12 @@ export default function CoachProfileScreen() {
 
         {/* ── Resend invite ── */}
         {isPending && isOrgAdmin && (
-          <TouchableOpacity style={[st.resendBtn, { borderColor: rgba(0.3), backgroundColor: rgba(0.07) }]} onPress={handleResend} disabled={resending}>
+          <TouchableOpacity style={[st.resendBtn, { borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]} onPress={handleResend} disabled={resending}>
             {resending
               ? <ActivityIndicator size="small" color={primaryColor} />
               : <>
-                  <Ionicons name="send-outline" size={16} color={primaryColor} />
-                  <Text style={[st.resendBtnText, { color: primaryColor }]}>Resend Invite</Text>
+                  <Ionicons name="send-outline" size={16} color="#ffffff" />
+                  <Text style={[st.resendBtnText, { color: '#ffffff' }]}>Resend Invite</Text>
                 </>}
           </TouchableOpacity>
         )}

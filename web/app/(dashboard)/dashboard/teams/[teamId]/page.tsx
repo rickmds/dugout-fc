@@ -133,14 +133,14 @@ export default function TeamSummaryPage() {
           { icon: CalendarDays,label: 'Next Event',       value: data?.nextEvent ? fmtDate(data.nextEvent.event_date) : '—', color: '#8B5CF6', href: `${base}/schedule`, sub: data?.nextEvent?.title ?? 'No upcoming events' },
         ].map(({ icon: Icon, label, value, color, href, sub }) => (
           <Link key={label} href={href} style={{ textDecoration: 'none' }}>
-            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
+            <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', cursor: 'pointer', transition: 'box-shadow 0.15s' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)'}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.06)'}
             >
               <div style={{ height: '3px', background: color }} />
               <div style={{ padding: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: '34px', height: '34px', borderRadius: '6px', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon size={17} color={color} />
                   </div>
                   <ChevronRight size={13} color="#CBD5E1" />
@@ -157,7 +157,7 @@ export default function TeamSummaryPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
 
         {/* Next event card */}
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>Next Event</div>
             <Link href={`${base}/schedule`} style={{ fontSize: '12px', color: primary, textDecoration: 'none', fontWeight: '600' }}>View all →</Link>
@@ -171,7 +171,7 @@ export default function TeamSummaryPage() {
                 <div
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
-                  style={{ borderRadius: '10px', padding: '4px', margin: '-4px', cursor: 'pointer', transition: 'background 0.15s' }}
+                  style={{ borderRadius: '8px', padding: '4px', margin: '-4px', cursor: 'pointer', transition: 'background 0.15s' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: TYPE_COLOR[data.nextEvent.type] ?? '#94A3B8', flexShrink: 0 }} />
@@ -185,7 +185,7 @@ export default function TeamSummaryPage() {
                       <MapPin size={11} /> {data.nextEvent.location}
                     </div>
                   )}
-                  <div style={{ marginTop: '14px', padding: '12px', background: '#F1F5F9', borderRadius: '10px' }}>
+                  <div style={{ marginTop: '14px', padding: '12px', background: '#F1F5F9', borderRadius: '8px' }}>
                     <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>RSVP Status</div>
                     <div style={{ display: 'flex', gap: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -211,7 +211,7 @@ export default function TeamSummaryPage() {
         </div>
 
         {/* Recent announcements */}
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>Recent Announcements</div>
             <Link href={`${base}/contact`} style={{ fontSize: '12px', color: primary, textDecoration: 'none', fontWeight: '600' }}>View all →</Link>

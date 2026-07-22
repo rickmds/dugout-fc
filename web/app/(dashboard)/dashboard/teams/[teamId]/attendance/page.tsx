@@ -142,7 +142,7 @@ export default function TeamAttendancePage() {
 
       {/* Summary banner */}
       {!loading && tab === 'players' && (
-        <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '16px 20px', marginBottom: '16px', display: 'flex', gap: '32px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', marginBottom: '16px', display: 'flex', gap: '32px' }}>
           <div>
             <div style={{ fontSize: '28px', fontWeight: '800', color: rateColor(avgRate), letterSpacing: '-0.5px' }}>{avgRate}%</div>
             <div style={{ fontSize: '12px', color: '#64748B' }}>Team avg attendance</div>
@@ -162,25 +162,25 @@ export default function TeamAttendancePage() {
         <>
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[1,2,3,4,5].map(i => <div key={i} style={{ height: '60px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+            {[1,2,3,4,5].map(i => <div key={i} style={{ height: '60px', borderRadius: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
           </div>
         </>
       ) : tab === 'players' ? (
         sorted.length === 0 ? (
-          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '56px 40px', textAlign: 'center' }}>
-            <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 40px', textAlign: 'center' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
               <TrendingUp size={24} color="#94A3B8" />
             </div>
             <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>No players on roster</div>
             <div style={{ fontSize: '13px', color: '#64748B' }}>Add players to the roster to track attendance.</div>
           </div>
         ) : (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+              <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                 {['Player','Position','Attended','Rate',''].map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -219,10 +219,10 @@ export default function TeamAttendancePage() {
         </div>
         )
       ) : (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           {events.length === 0 ? (
             <div style={{ padding: '56px 40px', textAlign: 'center' }}>
-              <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+              <div style={{ width: '52px', height: '52px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
                 <CalendarDays size={24} color="#94A3B8" />
               </div>
               <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>No events in this period</div>
@@ -231,9 +231,9 @@ export default function TeamAttendancePage() {
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                   {['Event','Date','Attending','Declined','Pending','Rate'].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>

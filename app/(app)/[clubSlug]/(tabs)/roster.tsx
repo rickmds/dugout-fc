@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Image,
@@ -94,13 +95,13 @@ function PlayerCard({
   const [first, last] = splitName(item.full_name);
 
   return (
-    <TouchableOpacity style={[st.card, { borderColor: `${primaryColor}22` }]} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity style={[st.card, { borderColor: 'rgba(255,255,255,0.1)' }]} onPress={onPress} activeOpacity={0.75}>
 
       {/* ── Thin top brand stripe ── */}
       <View style={{ height: 3, backgroundColor: primaryColor }} />
 
       {/* ── Photo zone ── */}
-      <View style={[st.photoZone, { backgroundColor: `${primaryColor}14` }]}>
+      <View style={[st.photoZone, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
 
         {hasImg ? (
           /* Real photo ─ fill, cover, fade bottom, position badge */
@@ -113,8 +114,8 @@ function PlayerCard({
         ) : (
           /* No photo ─ initials as hero */
           <View style={st.placeholder}>
-            <View style={[st.bgRing, { width: CARD_W * 0.90, height: CARD_W * 0.90, borderRadius: CARD_W * 0.45, borderColor: `${primaryColor}18`, backgroundColor: `${primaryColor}08` }]} />
-            <View style={[st.bgRing, { width: CARD_W * 0.62, height: CARD_W * 0.62, borderRadius: CARD_W * 0.31, opacity: 0.7, borderColor: `${primaryColor}25`, backgroundColor: `${primaryColor}10` }]} />
+            <View style={[st.bgRing, { width: CARD_W * 0.90, height: CARD_W * 0.90, borderRadius: CARD_W * 0.45, borderColor: 'rgba(255,255,255,0.07)', backgroundColor: 'rgba(255,255,255,0.03)' }]} />
+            <View style={[st.bgRing, { width: CARD_W * 0.62, height: CARD_W * 0.62, borderRadius: CARD_W * 0.31, opacity: 0.7, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)' }]} />
             <Text
               style={[st.placeholderInitials, { color: pc.primary, opacity: 0.38 }]}
               adjustsFontSizeToFit
@@ -141,13 +142,13 @@ function PlayerCard({
       </View>
 
       {/* ── Name strip ── */}
-      <View style={[st.strip, { backgroundColor: `${primaryColor}08`, borderTopColor: `${primaryColor}20` }]}>
+      <View style={[st.strip, { backgroundColor: 'rgba(255,255,255,0.05)', borderTopColor: 'rgba(255,255,255,0.1)' }]}>
         {item.jersey_number != null ? (
           <>
             <View style={st.stripNumCol}>
-              <Text style={[st.stripNum, { color: primaryColor }]}>{item.jersey_number}</Text>
+              <Text style={[st.stripNum, { color: '#ffffff' }]}>{item.jersey_number}</Text>
             </View>
-            <View style={[st.stripDivider, { backgroundColor: `${primaryColor}25` }]} />
+            <View style={[st.stripDivider, { backgroundColor: 'rgba(255,255,255,0.12)' }]} />
           </>
         ) : null}
 
@@ -172,8 +173,8 @@ function CoachAvatar({ uri, name }: { uri: string | null; name: string }) {
     return <Image source={{ uri }} style={st.coachImg} onError={() => setErr(true)} />;
   }
   return (
-    <View style={[st.coachImgFallback, { borderColor: rgba(0.22) }]}>
-      <Text style={[st.coachInitials, { color: primaryColor }]}>{initials(name)}</Text>
+    <View style={[st.coachImgFallback, { borderColor: 'rgba(255,255,255,0.15)', backgroundColor: primaryColor }]}>
+      <Text style={[st.coachInitials, { color: '#ffffff' }]}>{initials(name)}</Text>
     </View>
   );
 }
@@ -208,9 +209,9 @@ function ListHeader({
                     <Text style={st.coachName}>{n}</Text>
                     <Text style={st.coachRole}>Coach</Text>
                   </View>
-                  <View style={[st.coachTag, { backgroundColor: rgba(0.08), borderColor: rgba(0.18) }]}>
-                    <Ionicons name="shield-checkmark" size={10} color={primaryColor} />
-                    <Text style={[st.coachTagText, { color: primaryColor }]}>STAFF</Text>
+                  <View style={[st.coachTag, { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.18)' }]}>
+                    <Ionicons name="shield-checkmark" size={10} color="#ffffff" />
+                    <Text style={[st.coachTagText, { color: '#ffffff' }]}>STAFF</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
                 </TouchableOpacity>

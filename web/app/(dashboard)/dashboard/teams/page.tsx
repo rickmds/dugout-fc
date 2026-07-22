@@ -238,7 +238,7 @@ export default function TeamsPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       <style>{`
         @media (max-width: 768px) {
           .teams-header { padding: 12px 16px !important; }
@@ -250,12 +250,12 @@ export default function TeamsPage() {
       `}</style>
 
       {/* Sticky header */}
-      <div className="teams-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div className="teams-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Teams</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Teams</h1>
         </div>
-        <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '9px', padding: '9px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+        <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
           <Plus size={15} /> Add team
         </button>
       </div>
@@ -265,8 +265,8 @@ export default function TeamsPage() {
 
       {/* Summary cards */}
       <div className="teams-stat-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '24px' }}>
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Shield size={20} color={primary} />
           </div>
           <div>
@@ -274,8 +274,8 @@ export default function TeamsPage() {
             <div style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', marginTop: '3px' }}>Total teams</div>
           </div>
         </div>
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '18px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <Users size={20} color="#3B82F6" />
           </div>
           <div>
@@ -285,8 +285,8 @@ export default function TeamsPage() {
         </div>
         <button
           onClick={() => setAttentionFilter(a => !a)}
-          style={{ background: attentionFilter ? (teamsWithIssues > 0 ? '#FFFBEB' : '#F0FDF4') : '#fff', borderRadius: '16px', border: `1.5px solid ${attentionFilter ? (teamsWithIssues > 0 ? '#FDE68A' : '#86EFAC') : '#E2E8F0'}`, padding: '18px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: teamsWithIssues > 0 ? '#FEF3C7' : '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          style={{ background: attentionFilter ? (teamsWithIssues > 0 ? '#FFFBEB' : '#F0FDF4') : '#fff', borderRadius: '8px', border: `1.5px solid ${attentionFilter ? (teamsWithIssues > 0 ? '#FDE68A' : '#86EFAC') : '#E2E8F0'}`, padding: '18px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%' }}>
+          <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: teamsWithIssues > 0 ? '#FEF3C7' : '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <AlertTriangle size={20} color={teamsWithIssues > 0 ? '#D97706' : '#22C55E'} />
           </div>
           <div>
@@ -306,12 +306,12 @@ export default function TeamsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search teams or age groups…"
-            style={{ width: '100%', padding: '10px 36px', borderRadius: '10px', border: '1.5px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', fontFamily: 'inherit' }}
+            style={{ width: '100%', padding: '10px 36px', borderRadius: '8px', border: '1.5px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', fontFamily: 'inherit' }}
           />
           {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', color: '#94A3B8' }}><X size={13} /></button>}
         </div>
         {attentionFilter && (
-          <button onClick={() => setAttentionFilter(false)} style={{ flexShrink: 0, padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #FCA5A5', background: '#FEF2F2', fontSize: '12.5px', fontWeight: '700', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
+          <button onClick={() => setAttentionFilter(false)} style={{ flexShrink: 0, padding: '10px 14px', borderRadius: '6px', border: '1.5px solid #FCA5A5', background: '#FEF2F2', fontSize: '12.5px', fontWeight: '700', color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}>
             <X size={12} /> Issues only
           </button>
         )}
@@ -321,7 +321,7 @@ export default function TeamsPage() {
       {loading ? (
         <>
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
-          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
             {[1,2,3,4].map((i, idx) => (
               <div key={i} style={{ padding: '14px 20px', borderBottom: idx < 3 ? '1px solid #F1F5F9' : 'none' }}>
                 <div style={{ height: '36px', borderRadius: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
@@ -330,8 +330,8 @@ export default function TeamsPage() {
           </div>
         </>
       ) : filtered.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '64px', textAlign: 'center' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '64px', textAlign: 'center' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             <Shield size={26} color="#94A3B8" />
           </div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>{search ? 'No teams match your search' : 'No teams yet'}</div>
@@ -339,15 +339,15 @@ export default function TeamsPage() {
             {search ? `Try a different name or age group.` : 'Create your first team to get started.'}
           </div>
           {!search && (
-            <button onClick={openCreate} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '10px', padding: '11px 22px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={openCreate} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '11px 22px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>
               <Plus size={15} /> Add first team
             </button>
           )}
         </div>
       ) : (
-        <div className="teams-table-scroll"><div className="teams-table-inner" style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div className="teams-table-scroll"><div className="teams-table-inner" style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
           {/* Sortable header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 80px 80px 170px 116px', padding: '10px 20px', background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 80px 80px 170px 116px', padding: '10px 20px', background: '#0F172A', borderBottom: 'none' }}>
             {([
               { label: 'Team',    field: 'name' as SortField },
               { label: 'Age',     field: 'age_group' as SortField },
@@ -358,7 +358,7 @@ export default function TeamsPage() {
             ] as { label: string; field: SortField | null }[]).map((h) => (
               <div key={h.label}
                 onClick={h.field ? () => toggleSort(h.field!) : undefined}
-                style={{ fontSize: '10.5px', fontWeight: '700', color: sortField === h.field ? primary : '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: h.field ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px', userSelect: 'none' }}>
+                style={{ fontSize: '10px', fontWeight: '800', color: sortField === h.field ? primary : 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px', cursor: h.field ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px', userSelect: 'none' }}>
                 {h.label}
                 {h.field && sortField === h.field && (sortAsc ? <ChevronUp size={11} /> : <ChevronDown size={11} />)}
               </div>
@@ -377,7 +377,7 @@ export default function TeamsPage() {
               >
                 {/* Name + warnings */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0 }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: tc, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '900', color: '#fff', flexShrink: 0, letterSpacing: '0.03em' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: tc, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '900', color: '#fff', flexShrink: 0, letterSpacing: '0.03em' }}>
                     {t.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
                   </div>
                   <div style={{ minWidth: 0 }}>
@@ -397,10 +397,10 @@ export default function TeamsPage() {
                 {/* Age group + gender */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   {t.age_group
-                    ? <span style={{ fontSize: '12px', fontWeight: '700', color: '#475569', background: '#F1F5F9', borderRadius: '6px', padding: '3px 8px', display: 'inline-block', width: 'fit-content' }}>{t.age_group}</span>
+                    ? <span style={{ fontSize: '12px', fontWeight: '700', color: '#475569', background: '#F1F5F9', borderRadius: '4px', padding: '3px 8px', display: 'inline-block', width: 'fit-content' }}>{t.age_group}</span>
                     : <span style={{ color: '#CBD5E1', fontSize: '13px' }}>—</span>}
                   {t.gender && (
-                    <span style={{ fontSize: '10px', fontWeight: '700', color: t.gender === 'boys' ? '#2563EB' : t.gender === 'girls' ? '#DB2777' : '#7C3AED', background: t.gender === 'boys' ? '#EFF6FF' : t.gender === 'girls' ? '#FDF2F8' : '#F5F3FF', borderRadius: '5px', padding: '2px 6px', display: 'inline-block', width: 'fit-content', textTransform: 'capitalize' }}>{t.gender}</span>
+                    <span style={{ fontSize: '10px', fontWeight: '700', color: t.gender === 'boys' ? '#2563EB' : t.gender === 'girls' ? '#DB2777' : '#7C3AED', background: t.gender === 'boys' ? '#EFF6FF' : t.gender === 'girls' ? '#FDF2F8' : '#F5F3FF', borderRadius: '4px', padding: '2px 6px', display: 'inline-block', width: 'fit-content', textTransform: 'capitalize' }}>{t.gender}</span>
                   )}
                 </div>
 
@@ -412,7 +412,7 @@ export default function TeamsPage() {
                 {/* Coaches */}
                 <div>
                   {t.coach_count === 0
-                    ? <span style={{ fontSize: '12px', fontWeight: '700', color: '#DC2626', background: '#FEF2F2', borderRadius: '6px', padding: '3px 8px' }}>0</span>
+                    ? <span style={{ fontSize: '12px', fontWeight: '700', color: '#DC2626', background: '#FEF2F2', borderRadius: '4px', padding: '3px 8px' }}>0</span>
                     : <span style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>{t.coach_count}</span>}
                 </div>
 
@@ -431,18 +431,18 @@ export default function TeamsPage() {
                   <button
                     onClick={() => setRollover({ team: t, newSeason: '', copyRoster: true, saving: false })}
                     title="New season"
-                    style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', padding: '5px 8px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px' }}
+                    style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 8px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = `${primary}10`; (e.currentTarget as HTMLElement).style.color = primary; (e.currentTarget as HTMLElement).style.borderColor = primary; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; (e.currentTarget as HTMLElement).style.color = '#64748B'; (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'; }}
                   >
                     <RefreshCw size={10} /> Season
                   </button>
-                  <button onClick={() => openEdit(t)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '7px', display: 'flex', color: '#CBD5E1' }}
+                  <button onClick={() => openEdit(t)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '6px', display: 'flex', color: '#CBD5E1' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#64748B'; (e.currentTarget as HTMLElement).style.background = '#F1F5F9'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#CBD5E1'; (e.currentTarget as HTMLElement).style.background = 'none'; }}>
                     <Pencil size={14} />
                   </button>
-                  <button onClick={() => setDeleteConfirm({ id: t.id, name: t.name })} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '7px', display: 'flex', color: '#CBD5E1' }}
+                  <button onClick={() => setDeleteConfirm({ id: t.id, name: t.name })} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '6px', display: 'flex', color: '#CBD5E1' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#EF4444'; (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#CBD5E1'; (e.currentTarget as HTMLElement).style.background = 'none'; }}>
                     <Trash2 size={14} />
@@ -529,8 +529,8 @@ export default function TeamsPage() {
 
             {/* Footer */}
             <div style={{ padding: '14px 24px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px' }}>
-              <button onClick={() => setFormModal(null)} style={{ flex: 1, padding: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '9px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={saveForm} disabled={formSaving || !form.name.trim()} style={{ flex: 2, padding: '10px', background: formSaving || !form.name.trim() ? '#CBD5E1' : primary, border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: formSaving || !form.name.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+              <button onClick={() => setFormModal(null)} style={{ flex: 1, padding: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={saveForm} disabled={formSaving || !form.name.trim()} style={{ flex: 2, padding: '10px', background: formSaving || !form.name.trim() ? '#CBD5E1' : primary, border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: formSaving || !form.name.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                 {formSaving ? 'Saving…' : formModal.mode === 'create' ? 'Add team' : 'Save changes'}
               </button>
             </div>
@@ -579,8 +579,8 @@ export default function TeamsPage() {
               </div>
             </div>
             <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px' }}>
-              <button onClick={() => setRollover(null)} style={{ flex: 1, padding: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '9px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={doRollover} disabled={rollover.saving || !rollover.newSeason.trim()} style={{ flex: 2, padding: '10px', background: rollover.saving || !rollover.newSeason.trim() ? '#CBD5E1' : primary, border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: rollover.saving || !rollover.newSeason.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}>
+              <button onClick={() => setRollover(null)} style={{ flex: 1, padding: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={doRollover} disabled={rollover.saving || !rollover.newSeason.trim()} style={{ flex: 2, padding: '10px', background: rollover.saving || !rollover.newSeason.trim() ? '#CBD5E1' : primary, border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: rollover.saving || !rollover.newSeason.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}>
                 {rollover.saving
                   ? <><div style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />Creating…</>
                   : <><RefreshCw size={13} />Create new season</>}
@@ -594,7 +594,7 @@ export default function TeamsPage() {
       {deleteConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => setDeleteConfirm(null)}>
           <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+            <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
               <Trash2 size={20} color="#EF4444" />
             </div>
             <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>Delete team?</div>
@@ -602,8 +602,8 @@ export default function TeamsPage() {
               <strong style={{ color: '#0F172A' }}>{deleteConfirm.name}</strong> and all its players, events, and RSVPs will be permanently deleted.
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={() => confirmDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+              <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={() => confirmDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
             </div>
           </div>
         </div>
@@ -616,8 +616,8 @@ export default function TeamsPage() {
 }
 
 const labelSt: React.CSSProperties = {
-  fontSize: '11px', fontWeight: '700', color: '#64748B',
-  letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: '6px',
+  fontSize: '10px', fontWeight: '800', color: '#94A3B8',
+  letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '6px',
 };
 const inputSt: React.CSSProperties = {
   width: '100%', background: '#fff', border: '1.5px solid #E2E8F0',

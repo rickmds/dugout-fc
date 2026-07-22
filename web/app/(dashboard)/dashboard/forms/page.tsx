@@ -70,20 +70,20 @@ export default function FormsPage() {
       draft:  { bg: '#FFFBEB', color: '#92400E', label: 'Draft' },
     };
     const m = map[s] ?? map.draft;
-    return <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '20px', background: m.bg, color: m.color, letterSpacing: '0.02em' }}>{m.label}</span>;
+    return <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: m.bg, color: m.color, letterSpacing: '0.02em' }}>{m.label}</span>;
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       {/* Sticky header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Forms</h1>
-          <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748B' }}>Registration forms and player waivers</p>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Forms</h1>
+          <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94A3B8' }}>Registration forms and player waivers</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignSelf: 'center' }}>
-          <Link href="/dashboard/registrations" style={{ padding: '9px 16px', borderRadius: '9px', border: 'none', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
+          <Link href="/dashboard/registrations" style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
             + New Form
           </Link>
         </div>
@@ -111,7 +111,7 @@ export default function FormsPage() {
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {[1, 2, 3].map(i => (
-            <div key={i} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div key={i} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '18px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ height: '14px', borderRadius: '6px', width: '45%', marginBottom: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
               <div style={{ height: '11px', borderRadius: '6px', width: '30%', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
             </div>
@@ -122,12 +122,12 @@ export default function FormsPage() {
         filteredForms.length === 0 ? (
           <EmptyState icon={<FileText size={28} color={primary} />} title="No registration forms yet" sub="Create forms to collect player info, medical details, and more." action={{ label: 'Create your first form', href: '/dashboard/registrations' }} primary={primary} />
         ) : (
-          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
+                <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                   {['Form Title','Team','Status','Submissions',''].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -159,7 +159,7 @@ export default function FormsPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {filteredWaivers.map(w => (
-              <div key={w.id} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', transition: 'box-shadow 0.15s' }}
+              <div key={w.id} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', transition: 'box-shadow 0.15s' }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'; }}>
                 <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -203,11 +203,11 @@ export default function FormsPage() {
 
 function EmptyState({ icon, title, sub, action, primary }: { icon: React.ReactNode; title: string; sub: string; action: { label: string; href: string }; primary: string }) {
   return (
-    <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '48px', textAlign: 'center' }}>
+    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '48px', textAlign: 'center' }}>
       <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>{icon}</div>
       <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', marginBottom: '6px' }}>{title}</div>
       <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '18px' }}>{sub}</div>
-      <Link href={action.href} style={{ display: 'inline-block', padding: '9px 20px', borderRadius: '9px', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700' }}>{action.label}</Link>
+      <Link href={action.href} style={{ display: 'inline-block', padding: '8px 16px', borderRadius: '6px', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700' }}>{action.label}</Link>
     </div>
   );
 }

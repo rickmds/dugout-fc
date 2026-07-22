@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -43,7 +44,7 @@ type NextEvent = {
   rsvp_lock_at: string | null;
 };
 
-type Headcount = { going: number; notGoing: number; tbd: number };
+type Headcount = { going: number; notGoing: number; tbd: number; confirmedGuests?: number };
 
 type MyPlayer = {
   id: string;
@@ -58,6 +59,15 @@ type Announcement = {
   title: string;
   body: string;
   created_at: string;
+};
+
+type Callout = {
+  id: string;
+  title: string;
+  body: string | null;
+  created_at: string;
+  expires_at: string | null;
+  helper_count?: number;
 };
 
 type OutstandingFee = {
@@ -227,6 +237,13 @@ export default function HomeScreen() {
   const [seasonTotalMarked, setSeasonTotalMarked]   = useState(0);
   const [attendanceHistory, setAttendanceHistory]   = useState<{ id: string; type: string; date: string; status: string | null; title: string | null }[]>([]);
   const [showAttendanceSheet, setShowAttendanceSheet] = useState(false);
+
+  const [callouts, setCallouts] = useState<Callout[]>([]);
+  const [calloutResponses, setCalloutResponses] = useState<Record<string, 'helping' | 'dismissed'>>({});
+  const [showCalloutModal, setShowCalloutModal] = useState(false);
+  const [calloutTitle, setCalloutTitle] = useState('');
+  const [calloutBody, setCalloutBody] = useState('');
+  const [calloutPosting, setCalloutPosting] = useState(false);
 
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
   const slug = clubSlug ?? club?.slug ?? '';
@@ -465,21 +482,25 @@ export default function HomeScreen() {
     }
 
     if (isCoach) {
-      const [gameRsvps, trainingRsvps] = await Promise.all([
+      const [gameRsvps, trainingRsvps, gameGuests, trainingGuests] = await Promise.all([
         nextG ? supabase.from('event_rsvps').select('status').eq('event_id', nextG.id) : Promise.resolve({ data: null as null }),
         nextT ? supabase.from('event_rsvps').select('status').eq('event_id', nextT.id) : Promise.resolve({ data: null as null }),
+        nextG ? supabase.from('event_guests').select('id', { count: 'exact', head: true }).eq('event_id', nextG.id).eq('status', 'confirmed') : Promise.resolve({ count: 0 }),
+        nextT ? supabase.from('event_guests').select('id', { count: 'exact', head: true }).eq('event_id', nextT.id).eq('status', 'confirmed') : Promise.resolve({ count: 0 }),
       ]);
       if (nextG && gameRsvps.data) {
         const going = gameRsvps.data.filter((r: any) => r.status === 'attending').length;
         const notGoing = gameRsvps.data.filter((r: any) => r.status === 'not_attending').length;
-        setGameHeadcount({ going, notGoing, tbd: Math.max(0, (pc ?? 0) - going - notGoing) });
+        const confirmedGuests = (gameGuests as any).count ?? 0;
+        setGameHeadcount({ going, notGoing, tbd: Math.max(0, (pc ?? 0) - going - notGoing), confirmedGuests });
       } else {
         setGameHeadcount(null);
       }
       if (nextT && trainingRsvps.data) {
         const going = trainingRsvps.data.filter((r: any) => r.status === 'attending').length;
         const notGoing = trainingRsvps.data.filter((r: any) => r.status === 'not_attending').length;
-        setTrainingHeadcount({ going, notGoing, tbd: Math.max(0, (pc ?? 0) - going - notGoing) });
+        const confirmedGuests = (trainingGuests as any).count ?? 0;
+        setTrainingHeadcount({ going, notGoing, tbd: Math.max(0, (pc ?? 0) - going - notGoing), confirmedGuests });
       } else {
         setTrainingHeadcount(null);
       }
@@ -517,6 +538,47 @@ export default function HomeScreen() {
       setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round(((trainingAtt.count ?? 0) / (trainingIds.length * playerN)) * 100) : null);
     }
 
+    // Callouts (cast through any — new tables not yet in generated types)
+    const sb = supabase as any;
+    const { data: calloutData } = await sb
+      .from('team_callouts')
+      .select('id, title, body, created_at, expires_at')
+      .eq('team_id', team.id)
+      .or('expires_at.is.null,expires_at.gt.now()')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    const activeCallouts = (calloutData ?? []) as Callout[];
+
+    if (activeCallouts.length > 0 && profile?.id) {
+      const cIds = activeCallouts.map(c => c.id);
+      const [responseRes, helpCountRes] = await Promise.all([
+        sb.from('team_callout_responses').select('callout_id, response').in('callout_id', cIds).eq('profile_id', profile.id),
+        isCoach
+          ? sb.from('team_callout_responses').select('callout_id').in('callout_id', cIds).eq('response', 'helping')
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const rMap: Record<string, 'helping' | 'dismissed'> = {};
+      for (const r of (responseRes.data ?? []) as { callout_id: string; response: string }[]) {
+        rMap[r.callout_id] = r.response as 'helping' | 'dismissed';
+      }
+      setCalloutResponses(rMap);
+
+      if (isCoach && helpCountRes.data) {
+        const helpMap: Record<string, number> = {};
+        for (const r of helpCountRes.data as { callout_id: string }[]) {
+          helpMap[r.callout_id] = (helpMap[r.callout_id] ?? 0) + 1;
+        }
+        setCallouts(activeCallouts.map(c => ({ ...c, helper_count: helpMap[c.id] ?? 0 })));
+      } else {
+        setCallouts(activeCallouts);
+      }
+    } else {
+      setCallouts(activeCallouts);
+      setCalloutResponses({});
+    }
+
     setLoading(false);
   }
 
@@ -524,6 +586,48 @@ export default function HomeScreen() {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
+  }
+
+  async function postCallout() {
+    if (!team || !profile || !calloutTitle.trim()) return;
+    setCalloutPosting(true);
+    await (supabase as any).from('team_callouts').insert({
+      team_id: team.id,
+      title: calloutTitle.trim(),
+      body: calloutBody.trim() || null,
+      created_by: profile.id,
+    });
+    setCalloutTitle('');
+    setCalloutBody('');
+    setShowCalloutModal(false);
+    setCalloutPosting(false);
+    await fetchData();
+  }
+
+  async function deleteCallout(calloutId: string) {
+    Alert.alert('Delete callout?', 'This will remove the callout for all parents.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          setCallouts(prev => prev.filter(c => c.id !== calloutId));
+          await (supabase as any).from('team_callouts').delete().eq('id', calloutId);
+        },
+      },
+    ]);
+  }
+
+  async function respondToCallout(calloutId: string, response: 'helping' | 'dismissed') {
+    if (!profile?.id) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCalloutResponses(prev => ({ ...prev, [calloutId]: response }));
+    if (response === 'dismissed') {
+      setCallouts(prev => prev.filter(c => c.id !== calloutId));
+    }
+    await (supabase as any).from('team_callout_responses').upsert(
+      { callout_id: calloutId, profile_id: profile.id, response },
+      { onConflict: 'callout_id,profile_id' }
+    );
   }
 
   async function handleRsvp(
@@ -691,18 +795,27 @@ export default function HomeScreen() {
                 onPress={() => router.push({ pathname: `/(app)/${slug}/event/${event.id}`, params: { section: 'attendance' } } as never)}
                 activeOpacity={0.7}
               >
-                {[
-                  { count: headcount.going,    color: '#22C55E', label: 'Going' },
-                  { count: headcount.tbd,      color: '#F59E0B', label: 'TBD'   },
-                  { count: headcount.notGoing, color: '#EF4444', label: 'Out'   },
-                ].map(({ count, color, label: lbl }) => (
-                  <View key={lbl} style={styles.headcountItem}>
-                    <View style={[styles.headcountCircle, { backgroundColor: color }]}>
-                      <Text style={styles.headcountCircleNum}>{count}</Text>
+                {(() => {
+                  const guests = headcount.confirmedGuests ?? 0;
+                  const totalGoing = headcount.going + guests;
+                  return [
+                    { count: totalGoing,         color: '#22C55E', label: 'Going', guests },
+                    { count: headcount.tbd,       color: '#F59E0B', label: 'TBD',   guests: 0 },
+                    { count: headcount.notGoing,  color: '#EF4444', label: 'Out',   guests: 0 },
+                  ].map(({ count, color, label: lbl, guests: g }) => (
+                    <View key={lbl} style={styles.headcountItem}>
+                      <View style={[styles.headcountCircle, { backgroundColor: color }]}>
+                        <Text style={styles.headcountCircleNum}>{count}</Text>
+                      </View>
+                      <Text style={styles.headcountLabel}>{lbl}</Text>
+                      {g > 0 && (
+                        <View style={styles.headcountGuestPill}>
+                          <Text style={styles.headcountGuestPillText}>+{g}G</Text>
+                        </View>
+                      )}
                     </View>
-                    <Text style={styles.headcountLabel}>{lbl}</Text>
-                  </View>
-                ))}
+                  ));
+                })()}
                 <View style={styles.headcountChevron}>
                   <Text style={styles.headcountChevronText}>View breakdown</Text>
                   <Ionicons name="chevron-forward" size={12} color={PULSE_COLORS.ui.muted} />
@@ -974,6 +1087,84 @@ export default function HomeScreen() {
           );
         })()}
 
+        {/* ── Callouts ── */}
+        {callouts.length > 0 && (
+          <>
+            <View style={[styles.sectionTitleRow, { marginTop: isCoach ? 0 : 8 }]}>
+              <View style={[styles.sectionTitleDot, { backgroundColor: '#F59E0B' }]} />
+              <Text style={styles.sectionTitle}>TEAM CALLOUT</Text>
+              {isCoach && (
+                <TouchableOpacity
+                  style={styles.calloutAddBtn}
+                  onPress={() => setShowCalloutModal(true)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="add" size={13} color="#F59E0B" />
+                  <Text style={styles.calloutAddBtnText}>New</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {callouts.map(callout => {
+              const myResponse = calloutResponses[callout.id];
+              const isHelping = myResponse === 'helping';
+              return (
+                <View key={callout.id} style={styles.calloutCard}>
+                  <View style={styles.calloutAccent} />
+                  <View style={styles.calloutBody}>
+                    <View style={styles.calloutHeader}>
+                      <Ionicons name="hand-right-outline" size={14} color="#F59E0B" />
+                      <Text style={styles.calloutTitle}>{callout.title}</Text>
+                      {isCoach ? (
+                        <TouchableOpacity onPress={() => deleteCallout(callout.id)} style={styles.calloutDeleteBtn} activeOpacity={0.7}>
+                          <Ionicons name="trash-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity onPress={() => respondToCallout(callout.id, 'dismissed')} style={styles.calloutDeleteBtn} activeOpacity={0.7}>
+                          <Ionicons name="close" size={15} color={PULSE_COLORS.ui.muted} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {callout.body ? <Text style={styles.calloutBodyText}>{callout.body}</Text> : null}
+                    {isCoach ? (
+                      <View style={styles.calloutCoachFooter}>
+                        <Ionicons name="people-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                        <Text style={styles.calloutHelperCount}>
+                          {callout.helper_count === 1 ? '1 parent helping' : `${callout.helper_count ?? 0} parents helping`}
+                        </Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.calloutHelpBtn, isHelping && styles.calloutHelpBtnActive]}
+                        onPress={() => !isHelping && respondToCallout(callout.id, 'helping')}
+                        activeOpacity={isHelping ? 1 : 0.75}
+                      >
+                        <Ionicons
+                          name={isHelping ? 'checkmark-circle' : 'hand-right-outline'}
+                          size={14}
+                          color={isHelping ? '#22C55E' : '#F59E0B'}
+                        />
+                        <Text style={[styles.calloutHelpBtnText, isHelping && { color: '#22C55E' }]}>
+                          {isHelping ? "You're helping" : "I can help"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        )}
+        {isCoach && callouts.length === 0 && (
+          <TouchableOpacity
+            style={styles.calloutEmptyBtn}
+            onPress={() => setShowCalloutModal(true)}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="hand-right-outline" size={14} color={PULSE_COLORS.ui.muted} />
+            <Text style={styles.calloutEmptyBtnText}>Post a callout to parents</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Next Game + Next Training */}
         {renderNextCard(
           'NEXT GAME',
@@ -1128,18 +1319,18 @@ export default function HomeScreen() {
         {/* Weekend Outlook entry — coaches only */}
         {isCoach && (
           <TouchableOpacity
-            style={[styles.weekendOutlookBtn, { borderColor: rgba(0.3), backgroundColor: rgba(0.06) }]}
+            style={[styles.weekendOutlookBtn, { borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]}
             onPress={() => router.push(`/(app)/${slug}/weekend-outlook` as never)}
             activeOpacity={0.8}
           >
-            <View style={[styles.weekendOutlookIcon, { backgroundColor: rgba(0.15) }]}>
-              <Ionicons name="calendar-outline" size={20} color={primaryColor} />
+            <View style={[styles.weekendOutlookIcon, { backgroundColor: primaryColor }]}>
+              <Ionicons name="calendar-outline" size={20} color="#ffffff" />
             </View>
             <View style={styles.weekendOutlookText}>
-              <Text style={[styles.weekendOutlookTitle, { color: primaryColor }]}>Weekend Outlook</Text>
+              <Text style={[styles.weekendOutlookTitle, { color: '#ffffff' }]}>Weekend Outlook</Text>
               <Text style={styles.weekendOutlookSub}>All your weekend games, travel times & lineup status</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={rgba(0.6)} />
+            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.45)" />
           </TouchableOpacity>
         )}
 
@@ -1214,6 +1405,46 @@ export default function HomeScreen() {
               </View>
             );
           })}
+        </View>
+      </Modal>
+
+      {/* Callout creation modal */}
+      <Modal visible={showCalloutModal} transparent animationType="slide" onRequestClose={() => setShowCalloutModal(false)}>
+        <TouchableOpacity style={styles.devOverlay} activeOpacity={1} onPress={() => setShowCalloutModal(false)} />
+        <View style={styles.devSheet}>
+          <View style={styles.devHandle} />
+          <Text style={styles.devTitle}>Post a Callout</Text>
+          <Text style={styles.devSub}>Ask parents for help with something</Text>
+          <TextInput
+            style={styles.calloutInput}
+            placeholder="What do you need? (e.g. Water bottles for Saturday)"
+            placeholderTextColor={PULSE_COLORS.ui.muted}
+            value={calloutTitle}
+            onChangeText={setCalloutTitle}
+            maxLength={120}
+            returnKeyType="next"
+          />
+          <TextInput
+            style={[styles.calloutInput, styles.calloutInputMulti]}
+            placeholder="More detail (optional)"
+            placeholderTextColor={PULSE_COLORS.ui.muted}
+            value={calloutBody}
+            onChangeText={setCalloutBody}
+            multiline
+            numberOfLines={3}
+            maxLength={400}
+          />
+          <TouchableOpacity
+            style={[styles.calloutPostBtn, (!calloutTitle.trim() || calloutPosting) && { opacity: 0.45 }]}
+            onPress={postCallout}
+            disabled={!calloutTitle.trim() || calloutPosting}
+            activeOpacity={0.8}
+          >
+            {calloutPosting
+              ? <ActivityIndicator size="small" color="#000" />
+              : <Text style={styles.calloutPostBtnText}>Post Callout</Text>
+            }
+          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -1696,6 +1927,8 @@ const styles = StyleSheet.create({
   headcountCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   headcountCircleNum: { color: '#fff', fontSize: 12, fontWeight: '800' },
   headcountLabel: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontWeight: '600', letterSpacing: 0.5 },
+  headcountGuestPill: { backgroundColor: 'rgba(249,115,22,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
+  headcountGuestPillText: { fontSize: 8, fontWeight: '800', color: '#f97316' },
   headcountChevron: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'center' },
   headcountChevronText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
@@ -1817,6 +2050,55 @@ const styles = StyleSheet.create({
     borderRadius: 8, borderWidth: 1,
   },
   feeStatusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // Callouts
+  calloutCard: {
+    flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 14, marginBottom: 10, overflow: 'hidden',
+  },
+  calloutAccent: { width: 3, backgroundColor: '#F59E0B' },
+  calloutBody: { flex: 1, paddingHorizontal: 13, paddingVertical: 12, gap: 8 },
+  calloutHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  calloutTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calloutDeleteBtn: { padding: 4, marginLeft: 4 },
+  calloutBodyText: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18 },
+  calloutCoachFooter: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  calloutHelperCount: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  calloutHelpBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+  },
+  calloutHelpBtnActive: { backgroundColor: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.3)' },
+  calloutHelpBtnText: { fontSize: 13, fontWeight: '700', color: '#F59E0B' },
+  calloutAddBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    marginLeft: 'auto',
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8,
+    backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+  },
+  calloutAddBtnText: { fontSize: 11, fontWeight: '700', color: '#F59E0B' },
+  calloutEmptyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12, marginBottom: 20,
+    borderWidth: 1, borderStyle: 'dashed' as any, borderColor: PULSE_COLORS.ui.border,
+  },
+  calloutEmptyBtnText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  calloutInput: {
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: PULSE_COLORS.ui.text,
+    marginBottom: 10,
+  },
+  calloutInputMulti: { minHeight: 80, textAlignVertical: 'top' },
+  calloutPostBtn: {
+    backgroundColor: '#F59E0B', borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center', marginTop: 4,
+  },
+  calloutPostBtnText: { color: '#000', fontWeight: '800', fontSize: 15 },
 
   // Dev switcher / shared sheet styles
   devOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapPin, Plus, X, Trash2, Pencil, AlertOctagon, CheckCircle, Clock, CloudRain, Sun, Cloud, Zap, Snowflake, Wind, RefreshCw, Sparkles, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
@@ -92,7 +92,6 @@ export default function FieldsPage() {
   const [editRule,         setEditRule]         = useState<AvailabilityRule|null>(null);
   const [showTplModal,     setShowTplModal]      = useState(false);
   const [editTpl,          setEditTpl]          = useState<ClosureTemplate|null>(null);
-  const [locationForm,     setLocationForm]     = useState({ lat:'', lng:'' });
   const [savingLocation,   setSavingLocation]   = useState(false);
 
   // Club lat/lng
@@ -121,7 +120,7 @@ export default function FieldsPage() {
   useEffect(() => {
     if (!clubAny?.latitude || !clubAny?.longitude) return;
     const tz = clubAny.timezone ?? 'America/New_York';
-    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${clubAny.latitude}&longitude=${clubAny.longitude}&hourly=precipitation_probability,weathercode,temperature_2m&timezone=${encodeURIComponent(tz)}&forecast_days=3`)
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${clubAny.latitude}&longitude=${clubAny.longitude}&hourly=precipitation_probability,weathercode,temperature_2m&timezone=${encodeURIComponent(tz)}&forecast_days=7`)
       .then(r => r.json())
       .then(d => {
         const hours: WeatherHour[] = (d.hourly?.time ?? []).map((t: string, i: number) => ({
@@ -130,22 +129,22 @@ export default function FieldsPage() {
           weathercode: d.hourly.weathercode[i],
           temperature_2m: d.hourly.temperature_2m[i],
         }));
-        // Keep 3pm–8pm window for next 3 days
+        // Keep 3pm–8pm window for next 7 days
         const now = new Date();
         const relevant = hours.filter(h => {
           const dt = new Date(h.time);
           const hour = dt.getHours();
           const dayDiff = Math.floor((dt.getTime() - now.getTime()) / 86400000);
-          return hour >= 15 && hour <= 20 && dayDiff >= 0 && dayDiff < 3;
+          return hour >= 15 && hour <= 20 && dayDiff >= 0 && dayDiff < 7;
         });
         setWeather(relevant);
       }).catch(() => {});
   }, [clubAny?.latitude, clubAny?.longitude, clubAny?.timezone]);
 
-  async function saveLocation() {
-    if (!club || !locationForm.lat || !locationForm.lng) return;
+  async function saveLocation(lat: number, lng: number) {
+    if (!club) return;
     setSavingLocation(true);
-    await supabase.from('clubs').update({ latitude: parseFloat(locationForm.lat), longitude: parseFloat(locationForm.lng) }).eq('id', club.id);
+    await supabase.from('clubs').update({ latitude: lat, longitude: lng }).eq('id', club.id);
     setSavingLocation(false);
     window.location.reload();
   }
@@ -235,7 +234,6 @@ export default function FieldsPage() {
             {/* Weather widget */}
             <WeatherWidget
               weather={weather} hasLocation={!!clubAny?.latitude}
-              locationForm={locationForm} setLocationForm={setLocationForm}
               onSave={saveLocation} saving={savingLocation} primary={primary}
             />
 
@@ -423,31 +421,86 @@ export default function FieldsPage() {
 
 // ── Weather Widget ─────────────────────────────────────────────────────────────
 
-function WeatherWidget({ weather, hasLocation, locationForm, setLocationForm, onSave, saving, primary }: {
+function WeatherWidget({ weather, hasLocation, onSave, saving, primary }: {
   weather: WeatherHour[]; hasLocation: boolean;
-  locationForm:{lat:string;lng:string}; setLocationForm: React.Dispatch<React.SetStateAction<{lat:string;lng:string}>>;
-  onSave:()=>void; saving:boolean; primary:string;
+  onSave:(lat:number,lng:number)=>void; saving:boolean; primary:string;
 }) {
-  const [showSetup, setShowSetup] = useState(false);
+  const [showSetup,    setShowSetup]    = useState(false);
+  const [query,        setQuery]        = useState('');
+  const [suggestions,  setSuggestions]  = useState<{place_id:string;description:string}[]>([]);
+  const [locating,     setLocating]     = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+
+  function handleQueryChange(val: string) {
+    setQuery(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!val.trim()) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      const res = await fetch(`/api/places?input=${encodeURIComponent(val)}`);
+      const data = await res.json();
+      setSuggestions(data.predictions ?? []);
+    }, 300);
+  }
+
+  async function selectPlace(placeId: string, description: string) {
+    setQuery(description);
+    setSuggestions([]);
+    const res = await fetch(`/api/places?place_id=${encodeURIComponent(placeId)}`);
+    const data = await res.json();
+    const loc = data.result?.geometry?.location;
+    if (loc) onSave(loc.lat, loc.lng);
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => { setLocating(false); onSave(pos.coords.latitude, pos.coords.longitude); },
+      ()  => { setLocating(false); alert('Could not get your location — try searching instead.'); }
+    );
+  }
+
   if (!hasLocation) {
     return (
-      <div style={{ background:'#FFF7ED', border:'1px solid #FDE68A', borderRadius:'10px', padding:'14px 18px', marginBottom:'16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px' }}>
-        <div style={{ fontSize:'13px', color:'#92400E' }}>
-          <strong>Set club location</strong> to see weather forecasts and get rain alerts for your fields.
+      <div style={{ background:'#FFF7ED', border:'1px solid #FDE68A', borderRadius:'10px', padding:'14px 18px', marginBottom:'16px' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px' }}>
+          <div style={{ fontSize:'13px', color:'#92400E' }}>
+            <strong>Set club location</strong> to see weather forecasts and get rain alerts for your fields.
+          </div>
+          <button onClick={()=>setShowSetup(x=>!x)}
+            style={{ padding:'6px 14px', borderRadius:'7px', border:'1px solid #FDE68A', background:'#fff', color:'#92400E', fontSize:'12px', fontWeight:'700', cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+            {showSetup?'Cancel':'Set location'}
+          </button>
         </div>
-        <button onClick={()=>setShowSetup(x=>!x)}
-          style={{ padding:'6px 14px', borderRadius:'7px', border:'1px solid #FDE68A', background:'#fff', color:'#92400E', fontSize:'12px', fontWeight:'700', cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
-          {showSetup?'Cancel':'Set location'}
-        </button>
         {showSetup && (
-          <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
-            <input placeholder="Latitude" value={locationForm.lat} onChange={e=>setLocationForm(f=>({...f,lat:e.target.value}))}
-              style={{ ...inp, width:'110px', padding:'6px 9px' }}/>
-            <input placeholder="Longitude" value={locationForm.lng} onChange={e=>setLocationForm(f=>({...f,lng:e.target.value}))}
-              style={{ ...inp, width:'110px', padding:'6px 9px' }}/>
-            <button onClick={onSave} disabled={saving||!locationForm.lat||!locationForm.lng}
-              style={{ padding:'6px 14px', borderRadius:'7px', border:'none', background:primary, color:'#fff', fontSize:'12px', fontWeight:'700', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:'5px' }}>
-              <Save size={12}/>{saving?'Saving…':'Save'}
+          <div style={{ marginTop:'12px', display:'flex', flexDirection:'column', gap:'8px' }}>
+            <div style={{ position:'relative' }}>
+              <input
+                placeholder="Search your club address…"
+                value={query}
+                onChange={e=>handleQueryChange(e.target.value)}
+                style={{ ...inp, paddingRight:'36px' }}
+                autoFocus
+              />
+              {saving && (
+                <div style={{ position:'absolute', right:'10px', top:'50%', transform:'translateY(-50%)', fontSize:'11px', color:'#92400E' }}>Saving…</div>
+              )}
+              {suggestions.length > 0 && (
+                <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#fff', border:'1.5px solid #E2E8F0', borderRadius:'8px', marginTop:'3px', boxShadow:'0 8px 24px rgba(0,0,0,0.12)', zIndex:50, overflow:'hidden' }}>
+                  {suggestions.map(s=>(
+                    <div key={s.place_id} onClick={()=>selectPlace(s.place_id, s.description)}
+                      style={{ padding:'9px 13px', fontSize:'13px', color:'#0F172A', cursor:'pointer', borderBottom:'1px solid #F1F5F9' }}
+                      onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFC')}
+                      onMouseLeave={e=>(e.currentTarget.style.background='#fff')}>
+                      {s.description}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={useMyLocation} disabled={locating}
+              style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:'6px', padding:'6px 13px', borderRadius:'7px', border:'1px solid #E2E8F0', background:'#fff', color:'#64748B', fontSize:'12px', fontWeight:'600', cursor:'pointer', fontFamily:'inherit' }}>
+              <MapPin size={12}/>{locating?'Getting location…':'Use my current location'}
             </button>
           </div>
         )}
@@ -563,6 +616,7 @@ function CloseFieldModal({ target, fields, templates, club, primary, onClose, on
   const [message,        setMessage]        = useState('');
   const [selectedTpl,    setSelectedTpl]    = useState('');
   const [drafting,       setDrafting]       = useState(false);
+  const [draftError,     setDraftError]     = useState('');
   const [sending,        setSending]        = useState(false);
   const [step,           setStep]           = useState<'config'|'preview'>('config');
   const [blastCount,     setBlastCount]     = useState<{sessions:number;coaches:number;parents:number}|null>(null);
@@ -579,19 +633,27 @@ function CloseFieldModal({ target, fields, templates, club, primary, onClose, on
 
   // AI draft
   async function draftMessage() {
-    if (!reason) return;
+    if (!message.trim()) return;
     setDrafting(true);
+    setDraftError('');
     const fieldNames = selectedFields.join(', ');
     const durationDesc = duration==='rest_of_day'?'for the rest of today':duration==='hours'?`for the next ${customHours} hours`:duration==='indefinite'?'until further notice':'for a specific period';
-    const prompt = `Write a short, friendly notification message to parents and coaches of a youth soccer club called "${club?.name ?? 'our club'}". The field(s) closed are: ${fieldNames}. Reason: ${reason}. Duration: ${durationDesc}. Keep it to 2-3 sentences, be empathetic, and end with "We'll update you when the field reopens." Don't use jargon. Return only the message text, no subject line.`;
+    const prompt = `You are writing a field closure notification for a youth soccer club called "${club?.name ?? 'our club'}". The admin has written these raw notes: "${message.trim()}". Field(s) affected: ${fieldNames}. Duration: ${durationDesc}${reason ? `. Reason: ${reason}` : ''}. Rewrite it as a single short paragraph (2-3 sentences max) for parents and coaches. Be direct and clear — no fluff, no filler phrases like "We understand this may be disappointing". End with "We'll update you when the field reopens." Return only the message text.`;
     try {
       const res = await fetch('/api/ai', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ type:'general', prompt }),
+        body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
-      setMessage(data.result ?? data.text ?? '');
-    } catch {}
+      const text: string | undefined = data.result ?? data.text;
+      if (text) {
+        setMessage(text);
+      } else {
+        setDraftError(data.error ?? 'AI draft failed — try again');
+      }
+    } catch {
+      setDraftError('Network error — check connection and try again');
+    }
     setDrafting(false);
   }
 
@@ -678,15 +740,23 @@ function CloseFieldModal({ target, fields, templates, club, primary, onClose, on
           <div style={{ padding:'20px 22px', display:'flex', flexDirection:'column', gap:'16px' }}>
 
             {/* Template picker */}
-            {templates.length>0 && (
-              <div>
-                {lbl('Use a template')}
-                <select value={selectedTpl} onChange={e=>applyTemplate(e.target.value)} style={inp}>
-                  <option value="">— Start fresh —</option>
-                  {templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-            )}
+            <div>
+              {lbl('Use a template')}
+              {templates.length === 0 ? (
+                <div style={{ fontSize:'12px', color:'#94A3B8', padding:'8px 12px', background:'#F8FAFC', borderRadius:'7px', border:'1px solid #E2E8F0' }}>
+                  No templates yet — create them in the Templates tab to speed up common closures.
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexWrap:'wrap', gap:'6px' }}>
+                  {templates.map(t=>(
+                    <button key={t.id} onClick={()=>applyTemplate(t.id)}
+                      style={{ padding:'5px 13px', borderRadius:'7px', border:`1.5px solid ${selectedTpl===t.id?primary:'#E2E8F0'}`, background:selectedTpl===t.id?`${primary}10`:'#F8FAFC', color:selectedTpl===t.id?primary:'#374151', fontSize:'12.5px', fontWeight:'600', cursor:'pointer', fontFamily:'inherit' }}>
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Field selector */}
             <div>
@@ -748,13 +818,18 @@ function CloseFieldModal({ target, fields, templates, club, primary, onClose, on
             <div>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'5px' }}>
                 {lbl('Parent & coach notification')}
-                <button onClick={draftMessage} disabled={drafting||!reason}
-                  style={{ display:'flex', alignItems:'center', gap:'5px', padding:'4px 10px', borderRadius:'6px', border:`1px solid ${primary}`, background:`${primary}10`, color:primary, fontSize:'11.5px', fontWeight:'700', cursor:!reason?'not-allowed':'pointer', fontFamily:'inherit', opacity:!reason?0.5:1 }}>
-                  <Sparkles size={11}/>{drafting?'Drafting…':'AI Draft'}
+                <button onClick={draftMessage} disabled={drafting||!message.trim()}
+                  style={{ display:'flex', alignItems:'center', gap:'5px', padding:'4px 10px', borderRadius:'6px', border:`1px solid ${primary}`, background:`${primary}10`, color:primary, fontSize:'11.5px', fontWeight:'700', cursor:!message.trim()?'not-allowed':'pointer', fontFamily:'inherit', opacity:!message.trim()?0.5:1 }}>
+                  <Sparkles size={11}/>{drafting?'Drafting…':'AI Polish'}
                 </button>
               </div>
+              {draftError && (
+                <div style={{ fontSize:'11.5px', color:'#EF4444', marginBottom:'6px', padding:'6px 10px', background:'#FEF2F2', borderRadius:'6px', border:'1px solid #FCA5A5' }}>
+                  {draftError}
+                </div>
+              )}
               <textarea value={message} onChange={e=>setMessage(e.target.value)}
-                placeholder="The message that will be emailed and pushed to all parents and coaches…"
+                placeholder="Jot your notes here (e.g. 'rain overnight, fields waterlogged') then hit AI Polish to clean it up…"
                 rows={4}
                 style={{ ...inp, resize:'vertical', lineHeight:1.6 }}/>
             </div>

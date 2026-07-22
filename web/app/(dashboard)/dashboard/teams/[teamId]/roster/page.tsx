@@ -64,7 +64,7 @@ export default function TeamRosterPage() {
         <div style={{ fontSize: '13px', color: '#64748B' }}>{players.length} player{players.length !== 1 ? 's' : ''}</div>
         <button
           onClick={() => router.push(`/dashboard/roster?team=${teamId}`)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '9px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
           <Plus size={14} /> Add Player
         </button>
       </div>
@@ -72,10 +72,10 @@ export default function TeamRosterPage() {
       {/* Coaching staff */}
       {!loading && coaches.length > 0 && (
         <div style={{ marginBottom: '20px' }}>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>Coaching Staff</div>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>Coaching Staff</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {coaches.map(c => (
-              <div key={c.profile_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px' }}>
+              <div key={c.profile_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
                 <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '800', color: primary, flexShrink: 0 }}>
                   {c.full_name ? c.full_name[0].toUpperCase() : '?'}
                 </div>
@@ -93,25 +93,25 @@ export default function TeamRosterPage() {
         <>
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[1,2,3,4,5].map(i => <div key={i} style={{ height: '60px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+            {[1,2,3,4,5].map(i => <div key={i} style={{ height: '60px', borderRadius: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
           </div>
         </>
       ) : players.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '56px 48px', textAlign: 'center' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 48px', textAlign: 'center' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             <Users size={26} color="#94A3B8" />
           </div>
           <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No players yet</div>
           <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '20px' }}>Add your first player to get started with this roster.</div>
-          <button onClick={() => router.push(`/dashboard/roster?team=${teamId}`)} style={{ display: 'inline-block', padding: '9px 22px', borderRadius: '9px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>Add first player</button>
+          <button onClick={() => router.push(`/dashboard/roster?team=${teamId}`)} style={{ display: 'inline-block', padding: '9px 22px', borderRadius: '6px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>Add first player</button>
         </div>
       ) : (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+              <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                 {['Player', '#', 'Position', 'Parent status', ''].map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -138,12 +138,12 @@ export default function TeamRosterPage() {
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       {p.position
-                        ? <span style={{ fontSize: '11.5px', fontWeight: '700', padding: '3px 8px', borderRadius: '5px', background: `${primary}15`, color: primary }}>{p.position}</span>
+                        ? <span style={{ fontSize: '11.5px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: `${primary}15`, color: primary }}>{p.position}</span>
                         : <span style={{ color: '#CBD5E1', fontSize: '13px' }}>—</span>}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       {status
-                        ? <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '5px', background: status.bg, color: status.color }}>{status.label}</span>
+                        ? <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: status.bg, color: status.color }}>{status.label}</span>
                         : <span style={{ color: '#CBD5E1', fontSize: '13px' }}>Not invited</span>}
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>

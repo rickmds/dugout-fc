@@ -34,6 +34,9 @@ type FieldDef = {
 type PaymentOptions = 'full' | 'plan' | 'both';
 type PaymentStatus  = 'unpaid' | 'paid' | 'partial' | 'refunded';
 
+type PriceMode = 'flat' | 'field' | 'tiers';
+type PriceTier = { label: string; price: number };
+
 type RegForm = {
   id: string;
   title: string;
@@ -52,6 +55,8 @@ type RegForm = {
   plan_installments: number;
   plan_frequency: 'monthly' | 'weekly';
   plan_deposit: number | null;
+  price_mode: PriceMode | null;
+  price_tiers: unknown;
   submission_count?: number;
 };
 
@@ -78,7 +83,7 @@ const TEMPLATES: Record<string, { label: string; description: string; icon: stri
       { type: 'section',    label: 'Player Information', required: false },
       { type: 'text',       label: "Player's full name", required: true, placeholder: 'First and last name' },
       { type: 'date',       label: 'Date of birth', required: true },
-      { type: 'radio',      label: 'Gender', required: true, options: 'Male,Female,Non-binary,Prefer not to say' },
+      { type: 'radio',      label: 'Gender', required: true, options: 'Male,Female' },
       { type: 'select',     label: 'Primary position', required: false, options: 'Goalkeeper,Defender,Midfielder,Forward,Not sure yet' },
       { type: 'number',     label: 'Jersey number preference', required: false, placeholder: 'e.g. 10' },
       { type: 'select',     label: 'Kit size', required: false, options: 'YXS,YS,YM,YL,YXL,AS,AM,AL,AXL' },
@@ -196,6 +201,43 @@ const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   waiver:      'Consent / waiver',
 };
 
+const FIELD_CHIP: Record<FieldType, string> = {
+  section: 'SECTION', text: 'SHORT TEXT', textarea: 'LONG TEXT',
+  email: 'EMAIL', phone: 'PHONE', number: 'NUMBER', date: 'DATE',
+  select: 'DROPDOWN', radio: 'SINGLE CHOICE', multiselect: 'CHECKBOXES',
+  file: 'FILE UPLOAD', waiver: 'CONSENT',
+};
+
+const FIELD_COLORS: Record<FieldType, { color: string; bg: string }> = {
+  section:     { color: '#7C3AED', bg: '#F5F3FF' },
+  text:        { color: '#2563EB', bg: '#EFF6FF' },
+  textarea:    { color: '#2563EB', bg: '#EFF6FF' },
+  email:       { color: '#0891B2', bg: '#ECFEFF' },
+  phone:       { color: '#059669', bg: '#ECFDF5' },
+  number:      { color: '#D97706', bg: '#FFFBEB' },
+  date:        { color: '#D97706', bg: '#FFFBEB' },
+  select:      { color: '#7C3AED', bg: '#F5F3FF' },
+  radio:       { color: '#7C3AED', bg: '#F5F3FF' },
+  multiselect: { color: '#7C3AED', bg: '#F5F3FF' },
+  file:        { color: '#EA580C', bg: '#FFF7ED' },
+  waiver:      { color: '#DC2626', bg: '#FEF2F2' },
+};
+
+const FIELD_GROUPS: { label: string; types: FieldType[] }[] = [
+  { label: 'Layout',   types: ['section'] },
+  { label: 'Text',     types: ['text', 'textarea', 'number', 'date'] },
+  { label: 'Contact',  types: ['email', 'phone'] },
+  { label: 'Choice',   types: ['select', 'radio', 'multiselect'] },
+  { label: 'Special',  types: ['file', 'waiver'] },
+];
+
+const SIDEBAR_BTN_LABELS: Record<FieldType, string> = {
+  section: '── Section header', text: 'Short text', textarea: 'Long text',
+  email: 'Email', phone: 'Phone', number: 'Number', date: 'Date',
+  select: 'Dropdown', radio: 'Single choice', multiselect: 'Checkboxes',
+  file: 'File upload', waiver: 'Consent / waiver',
+};
+
 const STATUS_STYLES: Record<FormStatus, { color: string; bg: string; label: string }> = {
   draft:  { color: '#64748B', bg: '#F1F5F9', label: 'Draft' },
   open:   { color: '#16A34A', bg: '#DCFCE7', label: 'Open' },
@@ -259,12 +301,16 @@ export default function RegistrationsPage() {
   const [fields, setFields]           = useState<FieldDef[]>([]);
   // Pricing
   const [isPaid, setIsPaid]               = useState(false);
+  const [priceMode, setPriceMode]         = useState<PriceMode>('flat');
   const [price, setPrice]                 = useState('');
   const [currency, setCurrency]           = useState('USD');
   const [paymentOptions, setPaymentOptions] = useState<PaymentOptions>('both');
   const [planInstallments, setPlanInstallments] = useState('3');
   const [planFrequency, setPlanFrequency] = useState<'monthly' | 'weekly'>('monthly');
   const [planDeposit, setPlanDeposit]     = useState('');
+  const [priceTiers, setPriceTiers]       = useState<{ label: string; price: string }[]>([{ label: '', price: '' }]);
+  const [priceFieldLabel, setPriceFieldLabel] = useState('');
+  const [priceFieldRules, setPriceFieldRules] = useState<Record<string, string>>({});
   const [saving, setSaving]           = useState(false);
   const [createError, setCreateError] = useState('');
   const [deleteFormConfirm, setDeleteFormConfirm] = useState<{ id: string; title: string } | null>(null);
@@ -321,12 +367,18 @@ export default function RegistrationsPage() {
       max_spots: maxSpots ? parseInt(maxSpots) : null,
       confirmation_message: confMsg,
       send_confirmation_email: sendEmail,
-      price: isPaid && price ? parseFloat(price) : null,
+      price: isPaid && priceMode === 'flat' && price ? parseFloat(price) : null,
       currency,
       payment_options: isPaid ? paymentOptions : 'full',
       plan_installments: parseInt(planInstallments) || 3,
       plan_frequency: planFrequency,
       plan_deposit: isPaid && planDeposit ? parseFloat(planDeposit) : null,
+      price_mode: isPaid ? priceMode : 'flat',
+      price_tiers: isPaid && priceMode === 'field'
+        ? { field: priceFieldLabel, rules: Object.fromEntries(Object.entries(priceFieldRules).map(([k, v]) => [k, parseFloat(v) || 0])) }
+        : isPaid && priceMode === 'tiers'
+        ? priceTiers.filter((t) => t.label && t.price).map((t) => ({ label: t.label, price: parseFloat(t.price) || 0 }))
+        : null,
       status: 'draft',
       created_by: profile?.id,
     });
@@ -343,8 +395,9 @@ export default function RegistrationsPage() {
     setTeamId(teams[0]?.id ?? ''); setDeadline(''); setMaxSpots('');
     setConfMsg('Thank you for registering! We\'ll be in touch shortly with next steps.');
     setSendEmail(true); setFields([]);
-    setIsPaid(false); setPrice(''); setCurrency('GBP'); setPaymentOptions('both');
+    setIsPaid(false); setPriceMode('flat'); setPrice(''); setCurrency('USD'); setPaymentOptions('both');
     setPlanInstallments('3'); setPlanFrequency('monthly'); setPlanDeposit('');
+    setPriceTiers([{ label: '', price: '' }]); setPriceFieldLabel(''); setPriceFieldRules({});
     setEditingFormId(null); setCreateError('');
   }
 
@@ -358,13 +411,26 @@ export default function RegistrationsPage() {
     setConfMsg(form.confirmation_message ?? 'Thank you for registering! We\'ll be in touch shortly with next steps.');
     setSendEmail(form.send_confirmation_email);
     setFields(formFields(form));
-    setIsPaid(form.price !== null);
+    const mode = (form.price_mode ?? 'flat') as PriceMode;
+    setIsPaid(form.price !== null || !!form.price_tiers);
+    setPriceMode(mode);
     setPrice(form.price ? String(form.price) : '');
-    setCurrency(form.currency ?? 'GBP');
+    setCurrency(form.currency ?? 'USD');
     setPaymentOptions(form.payment_options ?? 'both');
     setPlanInstallments(String(form.plan_installments ?? 3));
     setPlanFrequency(form.plan_frequency ?? 'monthly');
     setPlanDeposit(form.plan_deposit ? String(form.plan_deposit) : '');
+    if (form.price_tiers) {
+      const pt = form.price_tiers as Record<string, unknown>;
+      if (mode === 'field') {
+        setPriceFieldLabel((pt.field as string) ?? '');
+        setPriceFieldRules(Object.fromEntries(Object.entries((pt.rules as Record<string, number>) ?? {}).map(([k, v]) => [k, String(v)])));
+      } else if (mode === 'tiers') {
+        setPriceTiers(((pt as unknown) as PriceTier[]).map((t) => ({ label: t.label, price: String(t.price) })));
+      }
+    } else {
+      setPriceTiers([{ label: '', price: '' }]); setPriceFieldLabel(''); setPriceFieldRules({});
+    }
     setCreateError('');
     setStep('build');
     setView('create');
@@ -382,12 +448,18 @@ export default function RegistrationsPage() {
       max_spots: maxSpots ? parseInt(maxSpots) : null,
       confirmation_message: confMsg,
       send_confirmation_email: sendEmail,
-      price: isPaid && price ? parseFloat(price) : null,
+      price: isPaid && priceMode === 'flat' && price ? parseFloat(price) : null,
       currency,
       payment_options: isPaid ? paymentOptions : 'full',
       plan_installments: parseInt(planInstallments) || 3,
       plan_frequency: planFrequency,
       plan_deposit: isPaid && planDeposit ? parseFloat(planDeposit) : null,
+      price_mode: isPaid ? priceMode : 'flat',
+      price_tiers: isPaid && priceMode === 'field'
+        ? { field: priceFieldLabel, rules: Object.fromEntries(Object.entries(priceFieldRules).map(([k, v]) => [k, parseFloat(v) || 0])) }
+        : isPaid && priceMode === 'tiers'
+        ? priceTiers.filter((t) => t.label && t.price).map((t) => ({ label: t.label, price: parseFloat(t.price) || 0 }))
+        : null,
     }).eq('id', editingFormId);
     setSaving(false);
     if (error) { setCreateError(error.message); return; }
@@ -657,7 +729,7 @@ export default function RegistrationsPage() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
-                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                  <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                     <th style={{ ...thSt, width: '40px' }}>
                       <div onClick={toggleAllSubs} style={{ width: '18px', height: '18px', borderRadius: '5px', border: `2px solid ${selectedSubs.size === submissions.length && submissions.length > 0 ? primary : '#D1D5DB'}`, background: selectedSubs.size === submissions.length && submissions.length > 0 ? primary : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {selectedSubs.size === submissions.length && submissions.length > 0 && <Check size={11} color="#fff" strokeWidth={3} />}
@@ -731,7 +803,7 @@ export default function RegistrationsPage() {
   // CREATE FORM VIEW
   if (view === 'create') {
     return (
-      <div style={{ padding: '32px 36px', maxWidth: '860px' }}>
+      <div style={{ padding: '32px 36px', maxWidth: step === 'build' ? '1100px' : '820px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '28px' }}>
           <button onClick={() => { resetCreate(); setView('list'); }} style={backBtnSt}>← {editingFormId ? 'Discard changes' : 'Cancel'}</button>
           <div style={{ flex: 1 }}>
@@ -782,45 +854,80 @@ export default function RegistrationsPage() {
         {/* ── STEP 2: Build fields ── */}
         {step === 'build' && (
           <div>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={labelSt}>Form title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Fall 2025 Season Registration" style={{ ...inputSt, fontSize: '16px', fontWeight: '600' }} />
-            </div>
-            <div style={{ marginBottom: '24px' }}>
-              <label style={labelSt}>Description (shown to parents at the top of the form)</label>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Add any instructions or context parents should see before filling in the form…" style={{ ...inputSt, resize: 'vertical' }} />
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', margin: 0 }}>Form fields <span style={{ fontSize: '12px', color: '#94A3B8', fontWeight: '400' }}>{fields.length} fields</span></h3>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {(['section', 'text', 'textarea', 'email', 'phone', 'number', 'date', 'select', 'radio', 'multiselect', 'file', 'waiver'] as FieldType[]).map((t) => (
-                  <button key={t} onClick={() => addField(t)} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    + {t === 'section' ? '── Section' : FIELD_TYPE_LABELS[t].split(' ')[0]}
-                  </button>
-                ))}
+            {/* Title + description */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '20px' }}>
+              <div>
+                <label style={labelSt}>Form title</label>
+                <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Fall 2025 Season Registration" style={{ ...inputSt, fontSize: '15px', fontWeight: '600' }} />
+              </div>
+              <div>
+                <label style={labelSt}>Description shown to parents</label>
+                <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Any instructions before they start filling in…" style={inputSt} />
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
-              {fields.map((f, i) => (
-                <FieldEditor key={f.id} field={f} index={i} total={fields.length} primary={primary}
-                  onChange={(patch) => updateField(f.id, patch)}
-                  onRemove={() => removeField(f.id)}
-                  onMove={(dir) => moveField(f.id, dir)} />
-              ))}
-              {fields.length === 0 && (
-                <div style={{ border: '2px dashed #E2E8F0', borderRadius: '12px', padding: '32px', textAlign: 'center', color: '#94A3B8', fontSize: '14px' }}>
-                  Use the + buttons above to add fields
-                </div>
-              )}
-            </div>
+            {/* Two-column: fields list + sidebar */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 210px', gap: '20px', alignItems: 'start' }}>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              {!editingFormId && <button onClick={() => setStep('template')} style={{ ...backBtnSt }}>← Back</button>}
-              <button onClick={() => setStep('settings')} disabled={!title.trim() || fields.length === 0} style={{ flex: 1, padding: '13px', background: !title.trim() || fields.length === 0 ? '#CBD5E1' : primary, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: !title.trim() || fields.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                Next → Form settings
-              </button>
+              {/* Field list */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <h3 style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Form fields
+                  </h3>
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '600' }}>{fields.length} field{fields.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
+                  {fields.map((f, i) => (
+                    <FieldEditor key={f.id} field={f} index={i} total={fields.length} primary={primary}
+                      onChange={(patch) => updateField(f.id, patch)}
+                      onRemove={() => removeField(f.id)}
+                      onMove={(dir) => moveField(f.id, dir)} />
+                  ))}
+                  {fields.length === 0 && (
+                    <div style={{ border: '2px dashed #E2E8F0', borderRadius: '12px', padding: '48px 24px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '28px', marginBottom: '10px' }}>📋</div>
+                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#94A3B8', marginBottom: '4px' }}>No fields yet</div>
+                      <div style={{ fontSize: '12px', color: '#CBD5E1' }}>Click a field type on the right to add it</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {!editingFormId && <button onClick={() => setStep('template')} style={backBtnSt}>← Back</button>}
+                  <button onClick={() => setStep('settings')} disabled={!title.trim() || fields.length === 0} style={{ flex: 1, padding: '13px', background: !title.trim() || fields.length === 0 ? '#CBD5E1' : primary, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: !title.trim() || fields.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    Next → Form settings
+                  </button>
+                </div>
+              </div>
+
+              {/* Sticky add-field sidebar */}
+              <div style={{ position: 'sticky', top: '24px' }}>
+                <div style={{ background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                  <div style={{ padding: '12px 14px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Add a field</div>
+                  </div>
+                  <div style={{ padding: '10px 10px 14px' }}>
+                    {FIELD_GROUPS.map((group) => (
+                      <div key={group.label} style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: '800', color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '5px', paddingLeft: '4px' }}>{group.label}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {group.types.map((type) => {
+                            const c = FIELD_COLORS[type];
+                            return (
+                              <button key={type} onClick={() => addField(type)} style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '7px', padding: '7px 10px', fontSize: '12px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%', transition: 'all 0.1s' }}
+                                onMouseEnter={(e) => { const el = e.currentTarget; el.style.background = c.bg; el.style.color = c.color; el.style.borderColor = `${c.color}40`; }}
+                                onMouseLeave={(e) => { const el = e.currentTarget; el.style.background = '#F8FAFC'; el.style.color = '#374151'; el.style.borderColor = '#F1F5F9'; }}>
+                                <span style={{ fontSize: '11px', color: c.color, fontWeight: '900' }}>+</span>
+                                {SIDEBAR_BTN_LABELS[type]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -850,125 +957,227 @@ export default function RegistrationsPage() {
             </div>
 
             {/* ── Pricing ── */}
-            <div style={{ border: '1.5px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 18px', cursor: 'pointer', background: isPaid ? '#F0FDF4' : '#F8FAFC', borderBottom: isPaid ? '1px solid #D1FAE5' : 'none' }}>
-                <div style={{ width: '40px', height: '22px', borderRadius: '11px', background: isPaid ? primary : '#CBD5E1', position: 'relative', flexShrink: 0, transition: 'background 0.2s', cursor: 'pointer' }} onClick={() => setIsPaid((p) => !p)}>
-                  <div style={{ position: 'absolute', top: '2px', left: isPaid ? '20px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>This registration has a fee</div>
-                  <div style={{ fontSize: '12px', color: '#64748B' }}>Set a price and payment options for parents</div>
-                </div>
-              </label>
-
-              {isPaid && (
-                <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Price + currency */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'end' }}>
-                    <div>
-                      <label style={labelSt}>Currency</label>
-                      <div style={{ position: 'relative' }}>
-                        <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
-                          <option value="GBP">£ GBP</option>
-                          <option value="USD">$ USD</option>
-                          <option value="EUR">€ EUR</option>
-                        </select>
-                        <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                      </div>
+            {(() => {
+              const sym = currency === 'GBP' ? '£' : currency === 'USD' ? '$' : '€';
+              const selectFields = fields.filter((f) => ['select', 'radio', 'multiselect'].includes(f.type) && f.options);
+              const linkedField  = selectFields.find((f) => f.label === priceFieldLabel);
+              const linkedOpts   = linkedField?.options?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
+              const hasPrices    =
+                priceMode === 'flat' ? !!price :
+                priceMode === 'field' ? Object.values(priceFieldRules).some((v) => !!v) :
+                priceTiers.some((t) => t.label && t.price);
+              return (
+                <div style={{ border: '1.5px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden' }}>
+                  {/* Toggle */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 18px', cursor: 'pointer', background: isPaid ? '#F0FDF4' : '#F8FAFC', borderBottom: isPaid ? '1px solid #D1FAE5' : 'none' }}>
+                    <div style={{ width: '40px', height: '22px', borderRadius: '11px', background: isPaid ? primary : '#CBD5E1', position: 'relative', flexShrink: 0, transition: 'background 0.2s', cursor: 'pointer' }} onClick={() => setIsPaid((p) => !p)}>
+                      <div style={{ position: 'absolute', top: '2px', left: isPaid ? '20px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
                     </div>
                     <div>
-                      <label style={labelSt}>Total fee</label>
-                      <div style={{ position: 'relative' }}>
-                        <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#64748B', fontWeight: '600' }}>
-                          {currency === 'GBP' ? '£' : currency === 'USD' ? '$' : '€'}
-                        </span>
-                        <input type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" style={{ ...inputSt, paddingLeft: '28px' }} />
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>This registration has a fee</div>
+                      <div style={{ fontSize: '12px', color: '#64748B' }}>Set a price and payment options for parents</div>
+                    </div>
+                  </label>
+
+                  {isPaid && (
+                    <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                      {/* ── Pricing mode ── */}
+                      <div>
+                        <label style={labelSt}>How is the fee calculated?</label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                          {([
+                            ['flat',  'Flat fee',        'Everyone pays the same'],
+                            ['field', 'Field-linked',    'Price set by a dropdown answer'],
+                            ['tiers', 'Manual tiers',    'Parent selects their tier'],
+                          ] as [PriceMode, string, string][]).map(([val, lbl, sub]) => (
+                            <button key={val} type="button" onClick={() => setPriceMode(val)}
+                              style={{ padding: '12px', borderRadius: '10px', border: `2px solid ${priceMode === val ? primary : '#E2E8F0'}`, background: priceMode === val ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: priceMode === val ? primary : '#374151', marginBottom: '2px' }}>{lbl}</div>
+                              <div style={{ fontSize: '11px', color: '#94A3B8' }}>{sub}</div>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </div>
 
-                  {/* Payment options */}
-                  <div>
-                    <label style={labelSt}>Payment options offered to parents</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                      {([
-                        ['both',  'Full payment or plan', 'Parent chooses'],
-                        ['full',  'Full payment only',    'One upfront payment'],
-                        ['plan',  'Payment plan only',    'Instalments only'],
-                      ] as [PaymentOptions, string, string][]).map(([val, label, sub]) => (
-                        <button key={val} type="button" onClick={() => setPaymentOptions(val)} style={{ padding: '12px', borderRadius: '10px', border: `2px solid ${paymentOptions === val ? primary : '#E2E8F0'}`, background: paymentOptions === val ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-                          <div style={{ fontSize: '13px', fontWeight: '700', color: paymentOptions === val ? primary : '#374151', marginBottom: '2px' }}>{label}</div>
-                          <div style={{ fontSize: '11px', color: '#94A3B8' }}>{sub}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Plan config — shown when plan is available */}
-                  {(paymentOptions === 'plan' || paymentOptions === 'both') && (
-                    <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <p style={{ margin: 0, fontSize: '12px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Payment plan settings</p>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      {/* ── Currency (all modes) ── */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '10px', alignItems: 'end' }}>
                         <div>
-                          <label style={labelSt}>Number of instalments</label>
+                          <label style={labelSt}>Currency</label>
                           <div style={{ position: 'relative' }}>
-                            <select value={planInstallments} onChange={(e) => setPlanInstallments(e.target.value)} style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
-                              {[2,3,4,5,6,9,10,12].map((n) => <option key={n} value={n}>{n} payments</option>)}
+                            <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
+                              <option value="GBP">£ GBP</option>
+                              <option value="USD">$ USD</option>
+                              <option value="EUR">€ EUR</option>
                             </select>
                             <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                           </div>
                         </div>
-                        <div>
-                          <label style={labelSt}>Frequency</label>
-                          <div style={{ position: 'relative' }}>
-                            <select value={planFrequency} onChange={(e) => setPlanFrequency(e.target.value as 'monthly' | 'weekly')} style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
-                              <option value="monthly">Monthly</option>
-                              <option value="weekly">Weekly</option>
-                            </select>
-                            <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                          </div>
-                        </div>
-                        <div>
-                          <label style={labelSt}>Upfront deposit (optional)</label>
-                          <div style={{ position: 'relative' }}>
-                            <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#64748B', fontWeight: '600' }}>
-                              {currency === 'GBP' ? '£' : currency === 'USD' ? '$' : '€'}
-                            </span>
-                            <input type="number" min="0" step="0.01" value={planDeposit} onChange={(e) => setPlanDeposit(e.target.value)} placeholder="0.00" style={{ ...inputSt, paddingLeft: '28px' }} />
-                          </div>
-                          <p style={{ margin: '5px 0 0', fontSize: '11px', color: '#94A3B8' }}>Paid now; remainder split over instalments</p>
-                        </div>
-                        {/* Live preview */}
-                        {price && (
-                          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <p style={{ margin: 0, fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</p>
-                            {(() => {
-                              const sym = currency === 'GBP' ? '£' : currency === 'USD' ? '$' : '€';
-                              const total = parseFloat(price) || 0;
-                              const dep = parseFloat(planDeposit) || 0;
-                              const n = parseInt(planInstallments) || 3;
-                              const remaining = Math.max(0, total - dep);
-                              const inst = remaining / n;
-                              return (
-                                <>
-                                  {dep > 0 && <p style={{ margin: 0, fontSize: '13px', color: '#374151' }}>Deposit: <strong>{sym}{dep.toFixed(2)}</strong></p>}
-                                  <p style={{ margin: 0, fontSize: '13px', color: '#374151' }}>{n}× {sym}{inst.toFixed(2)} {planFrequency}</p>
-                                  <p style={{ margin: 0, fontSize: '12px', color: '#94A3B8' }}>Total: {sym}{total.toFixed(2)}</p>
-                                </>
-                              );
-                            })()}
+
+                        {/* ── Flat: single price input ── */}
+                        {priceMode === 'flat' && (
+                          <div>
+                            <label style={labelSt}>Total fee</label>
+                            <div style={{ position: 'relative' }}>
+                              <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#64748B', fontWeight: '600' }}>{sym}</span>
+                              <input type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" style={{ ...inputSt, paddingLeft: '28px' }} />
+                            </div>
                           </div>
                         )}
+
+                        {/* ── Field-linked / Tiers: spacer ── */}
+                        {(priceMode === 'field' || priceMode === 'tiers') && <div />}
+                      </div>
+
+                      {/* ── Field-linked config ── */}
+                      {priceMode === 'field' && (
+                        <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div>
+                            <label style={labelSt}>Which field sets the price?</label>
+                            {selectFields.length === 0 ? (
+                              <div style={{ background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 13px', fontSize: '12px', color: '#92400E' }}>
+                                ⚠ No dropdown or radio fields in this form yet. Go back and add one (e.g. Age Group).
+                              </div>
+                            ) : (
+                              <div style={{ position: 'relative' }}>
+                                <select value={priceFieldLabel} onChange={(e) => { setPriceFieldLabel(e.target.value); setPriceFieldRules({}); }}
+                                  style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
+                                  <option value="">Select a field…</option>
+                                  {selectFields.map((f) => <option key={f.label} value={f.label}>{f.label}</option>)}
+                                </select>
+                                <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                              </div>
+                            )}
+                          </div>
+                          {priceFieldLabel && linkedOpts.length > 0 && (
+                            <div>
+                              <label style={labelSt}>Price per option</label>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {linkedOpts.map((opt) => (
+                                  <div key={opt} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151', flex: 1 }}>{opt}</span>
+                                    <div style={{ position: 'relative', width: '140px', flexShrink: 0 }}>
+                                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: '#64748B', fontWeight: '600' }}>{sym}</span>
+                                      <input type="number" min="0" step="0.01" value={priceFieldRules[opt] ?? ''} onChange={(e) => setPriceFieldRules((p) => ({ ...p, [opt]: e.target.value }))} placeholder="0.00" style={{ ...inputSt, paddingLeft: '26px', width: '140px' }} />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ── Manual tiers config ── */}
+                      {priceMode === 'tiers' && (
+                        <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <label style={labelSt}>Tiers</label>
+                          {priceTiers.map((tier, i) => (
+                            <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <input value={tier.label} onChange={(e) => setPriceTiers((p) => p.map((t, ti) => ti === i ? { ...t, label: e.target.value } : t))}
+                                placeholder="Tier name (e.g. U9, Early bird)" style={{ ...inputSt, flex: 1 }} />
+                              <div style={{ position: 'relative', width: '130px', flexShrink: 0 }}>
+                                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: '#64748B', fontWeight: '600' }}>{sym}</span>
+                                <input type="number" min="0" step="0.01" value={tier.price} onChange={(e) => setPriceTiers((p) => p.map((t, ti) => ti === i ? { ...t, price: e.target.value } : t))}
+                                  placeholder="0.00" style={{ ...inputSt, paddingLeft: '26px', width: '130px' }} />
+                              </div>
+                              <button type="button" onClick={() => setPriceTiers((p) => p.filter((_, ti) => ti !== i))}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#CBD5E1', display: 'flex', borderRadius: '6px', flexShrink: 0 }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#EF4444'; (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#CBD5E1'; (e.currentTarget as HTMLElement).style.background = 'none'; }}>
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button type="button" onClick={() => setPriceTiers((p) => [...p, { label: '', price: '' }])}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#fff', border: '1.5px dashed #CBD5E1', borderRadius: '8px', padding: '8px', fontSize: '12px', fontWeight: '700', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', width: '100%' }}>
+                            + Add tier
+                          </button>
+                        </div>
+                      )}
+
+                      {/* ── Payment options (all modes) ── */}
+                      {hasPrices && (
+                        <div>
+                          <label style={labelSt}>Payment options offered to parents</label>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                            {([
+                              ['both', 'Full or plan', 'Parent chooses'],
+                              ['full', 'Full only',    'One upfront payment'],
+                              ['plan', 'Plan only',    'Instalments only'],
+                            ] as [PaymentOptions, string, string][]).map(([val, lbl, sub]) => (
+                              <button key={val} type="button" onClick={() => setPaymentOptions(val)}
+                                style={{ padding: '12px', borderRadius: '10px', border: `2px solid ${paymentOptions === val ? primary : '#E2E8F0'}`, background: paymentOptions === val ? `${primary}08` : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                                <div style={{ fontSize: '13px', fontWeight: '700', color: paymentOptions === val ? primary : '#374151', marginBottom: '2px' }}>{lbl}</div>
+                                <div style={{ fontSize: '11px', color: '#94A3B8' }}>{sub}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── Payment plan config ── */}
+                      {hasPrices && (paymentOptions === 'plan' || paymentOptions === 'both') && (
+                        <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <p style={{ margin: 0, fontSize: '12px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Payment plan settings</p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            <div>
+                              <label style={labelSt}>Number of instalments</label>
+                              <div style={{ position: 'relative' }}>
+                                <select value={planInstallments} onChange={(e) => setPlanInstallments(e.target.value)} style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
+                                  {[2,3,4,5,6,9,10,12].map((n) => <option key={n} value={n}>{n} payments</option>)}
+                                </select>
+                                <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                              </div>
+                            </div>
+                            <div>
+                              <label style={labelSt}>Frequency</label>
+                              <div style={{ position: 'relative' }}>
+                                <select value={planFrequency} onChange={(e) => setPlanFrequency(e.target.value as 'monthly' | 'weekly')} style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
+                                  <option value="monthly">Monthly</option>
+                                  <option value="weekly">Weekly</option>
+                                </select>
+                                <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                              </div>
+                            </div>
+                            <div>
+                              <label style={labelSt}>Upfront deposit (optional)</label>
+                              <div style={{ position: 'relative' }}>
+                                <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#64748B', fontWeight: '600' }}>{sym}</span>
+                                <input type="number" min="0" step="0.01" value={planDeposit} onChange={(e) => setPlanDeposit(e.target.value)} placeholder="0.00" style={{ ...inputSt, paddingLeft: '28px' }} />
+                              </div>
+                              <p style={{ margin: '5px 0 0', fontSize: '11px', color: '#94A3B8' }}>Paid now; remainder split over instalments</p>
+                            </div>
+                            {priceMode === 'flat' && price && (
+                              <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '12px 14px' }}>
+                                <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</p>
+                                {(() => {
+                                  const total = parseFloat(price) || 0;
+                                  const dep   = parseFloat(planDeposit) || 0;
+                                  const n     = parseInt(planInstallments) || 3;
+                                  const inst  = Math.max(0, total - dep) / n;
+                                  return (
+                                    <>
+                                      {dep > 0 && <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#374151' }}>Deposit: <strong>{sym}{dep.toFixed(2)}</strong></p>}
+                                      <p style={{ margin: '0 0 2px', fontSize: '13px', color: '#374151' }}>{n}× {sym}{inst.toFixed(2)} {planFrequency}</p>
+                                      <p style={{ margin: 0, fontSize: '12px', color: '#94A3B8' }}>Total: {sym}{total.toFixed(2)}</p>
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{ background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '10px', padding: '11px 14px', fontSize: '12px', color: '#92400E' }}>
+                        💳 <strong>Stripe not yet connected.</strong> Pricing is saved and will be shown to parents — payments will be collected once Stripe is live.
                       </div>
                     </div>
                   )}
-
-                  <div style={{ background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '10px', padding: '11px 14px', fontSize: '12px', color: '#92400E' }}>
-                    💳 <strong>Stripe not yet connected.</strong> Pricing is saved and will be shown to parents — payments will be collected once Stripe is live.
-                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             <div>
               <label style={labelSt}>Confirmation message shown after submission</label>
@@ -1102,67 +1311,123 @@ function FieldEditor({ field: f, index, total, primary, onChange, onRemove, onMo
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
 }) {
-  const isSection = f.type === 'section';
+  const isSection    = f.type === 'section';
   const needsOptions = ['select', 'radio', 'multiselect'].includes(f.type);
   const needsWaiver  = f.type === 'waiver';
   const needsAccept  = f.type === 'file';
+  const c = FIELD_COLORS[f.type] ?? { color: '#64748B', bg: '#F8FAFC' };
 
+  const moveButtons = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', flexShrink: 0 }}>
+      <button onClick={() => onMove(-1)} disabled={index === 0}
+        style={{ background: 'none', border: 'none', cursor: index === 0 ? 'default' : 'pointer', padding: '2px', color: index === 0 ? '#E2E8F0' : '#94A3B8', display: 'flex' }}>
+        <ChevronUp size={12} />
+      </button>
+      <button onClick={() => onMove(1)} disabled={index === total - 1}
+        style={{ background: 'none', border: 'none', cursor: index === total - 1 ? 'default' : 'pointer', padding: '2px', color: index === total - 1 ? '#E2E8F0' : '#94A3B8', display: 'flex' }}>
+        <ChevronDown size={12} />
+      </button>
+    </div>
+  );
+
+  const deleteBtn = (
+    <button onClick={onRemove}
+      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#E2E8F0', display: 'flex', flexShrink: 0, borderRadius: '5px' }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#EF4444'; (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#E2E8F0'; (e.currentTarget as HTMLElement).style.background = 'none'; }}>
+      <X size={14} />
+    </button>
+  );
+
+  /* ── Section header ── */
+  if (isSection) {
+    return (
+      <div style={{ background: c.bg, border: `1.5px solid ${c.color}30`, borderLeft: `4px solid ${c.color}`, borderRadius: '8px', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {moveButtons}
+        <span style={{ fontSize: '9px', fontWeight: '800', color: c.color, letterSpacing: '1.5px', flexShrink: 0 }}>SECTION</span>
+        <input
+          value={f.label}
+          onChange={(e) => onChange({ label: e.target.value })}
+          placeholder="Section title — e.g. Player Information"
+          style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '13px', fontWeight: '700', color: '#4C1D95', outline: 'none', fontFamily: 'inherit' }}
+        />
+        {deleteBtn}
+      </div>
+    );
+  }
+
+  /* ── Regular field ── */
   return (
-    <div style={{ background: isSection ? '#F8FAFC' : '#fff', border: `1.5px solid ${isSection ? '#E2E8F0' : '#E2E8F0'}`, borderRadius: '12px', padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '2px' }}>
-          <button onClick={() => onMove(-1)} disabled={index === 0} style={{ background: 'none', border: 'none', cursor: index === 0 ? 'default' : 'pointer', padding: '2px', color: index === 0 ? '#E2E8F0' : '#94A3B8' }}><ChevronUp size={13} /></button>
-          <button onClick={() => onMove(1)} disabled={index === total - 1} style={{ background: 'none', border: 'none', cursor: index === total - 1 ? 'default' : 'pointer', padding: '2px', color: index === total - 1 ? '#E2E8F0' : '#94A3B8' }}><ChevronDown size={13} /></button>
+    <div style={{ background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', overflow: 'hidden' }}>
+      <div style={{ height: '2px', background: c.color }} />
+      <div style={{ padding: '10px 12px' }}>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+          {moveButtons}
+          <span style={{ fontSize: '9px', fontWeight: '800', color: c.color, background: c.bg, borderRadius: '4px', padding: '2px 6px', flexShrink: 0, letterSpacing: '0.6px' }}>
+            {FIELD_CHIP[f.type]}
+          </span>
+          <input
+            value={f.label}
+            onChange={(e) => onChange({ label: e.target.value })}
+            placeholder="Field label"
+            style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '13px', fontWeight: '600', color: '#0F172A', outline: 'none', fontFamily: 'inherit' }}
+          />
+          <button
+            onClick={() => onChange({ required: !f.required })}
+            style={{ padding: '3px 9px', borderRadius: '5px', border: `1.5px solid ${f.required ? '#22C55E' : '#E2E8F0'}`, background: f.required ? '#F0FDF4' : '#F8FAFC', color: f.required ? '#16A34A' : '#94A3B8', fontSize: '10px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, letterSpacing: '0.3px' }}>
+            {f.required ? '● Required' : '○ Optional'}
+          </button>
+          {deleteBtn}
         </div>
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '10px', fontWeight: '700', color: primary, background: `${primary}15`, borderRadius: '5px', padding: '2px 6px', flexShrink: 0 }}>
-              {isSection ? '── SECTION' : FIELD_TYPE_LABELS[f.type].toUpperCase()}
-            </span>
+        {/* Help text */}
+        <input
+          value={f.description ?? ''}
+          onChange={(e) => onChange({ description: e.target.value })}
+          placeholder="Help text (optional)"
+          style={{ width: '100%', background: '#F8FAFC', border: 'none', borderRadius: '6px', padding: '5px 9px', fontSize: '11.5px', color: '#64748B', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', marginBottom: needsOptions || needsWaiver || needsAccept ? '8px' : 0 }}
+        />
+
+        {needsOptions && (
+          <div>
+            <div style={{ fontSize: '9px', fontWeight: '800', color: '#CBD5E1', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '4px' }}>Options — comma separated</div>
             <input
-              value={f.label}
-              onChange={(e) => onChange({ label: e.target.value })}
-              placeholder={isSection ? 'Section title (e.g. Player Information)' : 'Field label'}
-              style={{ flex: 1, background: '#fff', border: '1px solid #E2E8F0', borderRadius: '7px', padding: '6px 10px', fontSize: '13px', color: '#0F172A', fontFamily: 'inherit', outline: 'none', fontWeight: isSection ? '700' : '400' }}
+              value={f.options ?? ''}
+              onChange={(e) => onChange({ options: e.target.value })}
+              placeholder="Option 1, Option 2, Option 3"
+              style={{ width: '100%', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 9px', fontSize: '12px', color: '#374151', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
             />
-            {!isSection && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B', cursor: 'pointer', flexShrink: 0 }}>
-                <input type="checkbox" checked={f.required} onChange={(e) => onChange({ required: e.target.checked })} style={{ margin: 0 }} />
-                Required
-              </label>
+            {f.options && (
+              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '6px' }}>
+                {f.options.split(',').filter(Boolean).map((o, i) => (
+                  <span key={i} style={{ fontSize: '11px', color: c.color, background: c.bg, borderRadius: '4px', padding: '2px 7px', fontWeight: '600' }}>{o.trim()}</span>
+                ))}
+              </div>
             )}
           </div>
+        )}
 
-          {!isSection && (
-            <input value={f.description ?? ''} onChange={(e) => onChange({ description: e.target.value })} placeholder="Help text (optional — shown below the field)" style={{ width: '100%', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '7px', padding: '6px 10px', fontSize: '12px', color: '#64748B', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
-          )}
+        {needsWaiver && (
+          <textarea
+            value={f.waiver_text ?? ''}
+            onChange={(e) => onChange({ waiver_text: e.target.value })}
+            placeholder="Full consent text that parents must agree to…"
+            rows={3}
+            style={{ width: '100%', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '8px 10px', fontSize: '12px', color: '#374151', fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
+          />
+        )}
 
-          {needsOptions && (
-            <input value={f.options ?? ''} onChange={(e) => onChange({ options: e.target.value })} placeholder="Options separated by commas  e.g. Option 1,Option 2,Option 3" style={{ width: '100%', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '7px', padding: '6px 10px', fontSize: '12px', color: '#374151', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
-          )}
-
-          {needsWaiver && (
-            <textarea value={f.waiver_text ?? ''} onChange={(e) => onChange({ waiver_text: e.target.value })} placeholder="Full consent text that parents must agree to…" rows={3} style={{ width: '100%', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '7px', padding: '8px 10px', fontSize: '12px', color: '#374151', fontFamily: 'inherit', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
-          )}
-
-          {needsAccept && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', color: '#64748B' }}>Accepted:</span>
-              {[['image/*,.pdf', 'Images & PDF'], ['image/*', 'Images only'], ['.pdf', 'PDF only']].map(([val, lbl]) => (
-                <button key={val} onClick={() => onChange({ accept: val })} style={{ padding: '3px 8px', borderRadius: '6px', border: `1px solid ${f.accept === val ? primary : '#E2E8F0'}`, background: f.accept === val ? `${primary}10` : '#fff', color: f.accept === val ? primary : '#64748B', fontSize: '11px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <button onClick={onRemove} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#CBD5E1', display: 'flex', flexShrink: 0 }}
-          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = '#EF4444'}
-          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = '#CBD5E1'}>
-          <X size={15} />
-        </button>
+        {needsAccept && (
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '600' }}>Accept:</span>
+            {[['image/*,.pdf', 'Images & PDF'], ['image/*', 'Images only'], ['.pdf', 'PDF only']].map(([val, lbl]) => (
+              <button key={val} onClick={() => onChange({ accept: val })} style={{ padding: '3px 9px', borderRadius: '5px', border: `1.5px solid ${f.accept === val ? c.color : '#E2E8F0'}`, background: f.accept === val ? c.bg : '#F8FAFC', color: f.accept === val ? c.color : '#64748B', fontSize: '11px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1201,7 +1466,7 @@ const backBtnSt: React.CSSProperties = {
 };
 const thSt: React.CSSProperties = {
   padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700',
-  color: '#64748B', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap',
+  color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap',
 };
 const tdSt: React.CSSProperties = {
   padding: '12px 16px', fontSize: '13px', color: '#374151', verticalAlign: 'middle',

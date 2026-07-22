@@ -256,7 +256,7 @@ export default function TeamFeesPage() {
           { label: 'Outstanding',      value: `$${totalOutstanding.toFixed(2)}`, color: '#F59E0B' },
           { label: 'Overdue',          value: overdueCount,                       color: '#EF4444' },
         ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+          <div key={label} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
             <div style={{ height: '3px', background: color }} />
             <div style={{ padding: '14px 16px' }}>
               <div style={{ fontSize: '24px', fontWeight: '800', color, letterSpacing: '-0.5px' }}>{value}</div>
@@ -268,7 +268,7 @@ export default function TeamFeesPage() {
 
       {/* Collection bar */}
       {totalDue > 0 && (
-        <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '14px 18px', marginBottom: '20px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '14px 18px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: '#64748B' }}>
             <span>Collection progress</span>
             <span style={{ fontWeight: '700', color: primary }}>{Math.round((totalPaid / totalDue) * 100)}% collected</span>
@@ -295,10 +295,10 @@ export default function TeamFeesPage() {
           ))}
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setShowCategory(true)} style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button onClick={() => setShowCategory(true)} style={{ padding: '7px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Plus size={14} /> Fee Type
           </button>
-          <button onClick={() => setShowAssign(true)} style={{ padding: '7px 16px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button onClick={() => setShowAssign(true)} style={{ padding: '7px 16px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Plus size={14} /> Assign Fee
           </button>
         </div>
@@ -309,12 +309,12 @@ export default function TeamFeesPage() {
         <>
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[1,2,3].map(i => <div key={i} style={{ height: '64px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+            {[1,2,3].map(i => <div key={i} style={{ height: '64px', borderRadius: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
           </div>
         </>
       ) : filtered.length === 0 ? (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '56px 40px', textAlign: 'center' }}>
-          <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 40px', textAlign: 'center' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             <DollarSign size={24} color="#94A3B8" />
           </div>
           <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>
@@ -324,13 +324,13 @@ export default function TeamFeesPage() {
             {filter === 'all' ? 'Assign your first fee to start tracking player payments.' : `No fees are currently ${filter}.`}
           </div>
           {filter === 'all' && (
-            <button onClick={() => setShowAssign(true)} style={{ padding: '9px 22px', borderRadius: '9px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => setShowAssign(true)} style={{ padding: '9px 22px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
               Assign Fee
             </button>
           )}
         </div>
       ) : (
-        <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
           {filtered.map((fee, i) => {
             const owed    = fee.amount_due - fee.discount - fee.amount_paid;
             const cfg     = STATUS_CONFIG[fee.status] ?? STATUS_CONFIG.outstanding;
@@ -360,7 +360,7 @@ export default function TeamFeesPage() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
                       <span style={{ fontSize: '13px', color: '#94A3B8' }}>${fee.amount_paid.toFixed(2)} / ${(fee.amount_due - fee.discount).toFixed(2)}</span>
-                      <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '6px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                      <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
                       {!['paid','waived'].includes(fee.status) && (
                         <span style={{ fontSize: '15px', fontWeight: '800', color: cfg.color }}>${Math.max(owed, 0).toFixed(2)}</span>
                       )}
@@ -395,15 +395,15 @@ export default function TeamFeesPage() {
                       {!['paid','waived'].includes(fee.status) && (
                         <>
                           <button onClick={() => { setShowPayment(fee); setPayForm({ amount: Math.max(owed,0).toFixed(2), method: 'cash', reference: '', notes: '', pay_plan_full: false }); }}
-                            style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <CheckCircle size={13} /> Record Payment
                           </button>
                           <button onClick={() => sendReminder(fee)}
-                            style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', color: '#374151', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', color: '#374151', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <Send size={13} /> Send Reminder
                           </button>
                           <button onClick={() => setShowWaive(fee)}
-                            style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', color: '#8B5CF6', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>
+                            style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', color: '#8B5CF6', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>
                             Waive
                           </button>
                         </>
@@ -477,9 +477,9 @@ export default function TeamFeesPage() {
               )}
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button onClick={() => setShowAssign(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => setShowAssign(false)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleAssign} disabled={saving || (!assignForm.apply_to_all && !assignForm.player_id) || !assignForm.amount_due}
-                style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: saving ? '#94A3B8' : primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>
+                style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: saving ? '#94A3B8' : primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>
                 {saving ? 'Saving…' : 'Assign Fee'}
               </button>
             </div>
@@ -536,9 +536,9 @@ export default function TeamFeesPage() {
               </label>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button onClick={() => setShowPayment(null)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => setShowPayment(null)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
               <button onClick={handlePayment} disabled={saving || !payForm.amount}
-                style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: saving ? '#94A3B8' : '#22C55E', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>
+                style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: saving ? '#94A3B8' : '#22C55E', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>
                 {saving ? 'Saving…' : 'Record Payment'}
               </button>
             </div>
@@ -557,8 +557,8 @@ export default function TeamFeesPage() {
               <input value={waiveReason} onChange={e => setWaiveReason(e.target.value)} placeholder="e.g. Scholarship, hardship exemption" style={inputStyle} />
             </label>
             <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowWaive(null)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleWaive} disabled={saving} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#8B5CF6', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>Waive Fee</button>
+              <button onClick={() => setShowWaive(null)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleWaive} disabled={saving} style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: '#8B5CF6', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>Waive Fee</button>
             </div>
           </div>
         </div>
@@ -578,8 +578,8 @@ export default function TeamFeesPage() {
               <label style={labelStyle}>Description <input value={catForm.description} onChange={e => setCatForm(f => ({...f, description: e.target.value}))} placeholder="Optional" style={inputStyle} /></label>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button onClick={() => setShowCategory(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleCreateCategory} disabled={saving || !catForm.name || !catForm.amount} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>Save Type</button>
+              <button onClick={() => setShowCategory(false)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleCreateCategory} disabled={saving || !catForm.name || !catForm.amount} style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>Save Type</button>
             </div>
           </div>
         </div>

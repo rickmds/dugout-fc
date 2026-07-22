@@ -10,12 +10,16 @@ import { Menu, X } from 'lucide-react';
 function Shell({ children }: { children: React.ReactNode }) {
   const { loading } = useDashboard();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
   const pathname = usePathname();
 
   // Close sidebar on every navigation
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
-  if (loading) {
+  // Track when we've loaded at least once so reload() never unmounts sidebar
+  useEffect(() => { if (!loading) setInitialLoaded(true); }, [loading]);
+
+  if (loading && !initialLoaded) {
     return (
       <FlipBoard
         fullPage
@@ -31,7 +35,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div id="dashboard" style={{ minHeight: '100vh', background: '#F8FAFC', display: 'flex', color: '#0F172A', alignItems: 'flex-start' }}>
+    <div id="dashboard" style={{ minHeight: '100vh', background: '#F0F2F5', display: 'flex', color: '#0F172A', alignItems: 'flex-start' }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -62,16 +66,16 @@ function Shell({ children }: { children: React.ReactNode }) {
       {/* ── Mobile topbar ─── hidden on desktop via display:none, overridden by CSS on mobile */}
       <div id="dash-mob-bar" style={{
         display: 'none', position: 'fixed', top: 0, left: 0, right: 0, height: '52px',
-        background: '#fff', borderBottom: '1px solid #E2E8F0', zIndex: 200,
+        background: '#0F172A', borderBottom: '1px solid rgba(255,255,255,0.06)', zIndex: 200,
         alignItems: 'center', padding: '0 16px', gap: '12px',
       }}>
         <button
           onClick={() => setSidebarOpen(o => !o)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
         >
-          {sidebarOpen ? <X size={20} color="#374151" /> : <Menu size={20} color="#374151" />}
+          {sidebarOpen ? <X size={20} color="rgba(255,255,255,0.7)" /> : <Menu size={20} color="rgba(255,255,255,0.7)" />}
         </button>
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '40px', width: 'auto' }} />
+        <img src="/logo.png" alt="Pulse FC" style={{ height: '28px', width: 'auto', filter: 'brightness(0) invert(1)' }} />
       </div>
 
       {/* ── Mobile backdrop ── always in DOM; invisible + non-interactive on desktop */}

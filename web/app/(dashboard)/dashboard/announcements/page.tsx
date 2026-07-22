@@ -244,16 +244,16 @@ export default function AnnouncementsPage() {
           {composeMode && (
             <button
               onClick={() => setComposeMode(false)}
-              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '6px 12px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}
             >
               ← Back
             </button>
           )}
           <div>
-            <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '2px', letterSpacing: '-0.3px' }}>
+            <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', marginBottom: '2px', letterSpacing: '-0.5px' }}>
               {composeMode ? 'New Announcement' : 'Announcements'}
             </h1>
-            <p style={{ fontSize: '14px', color: '#64748B' }}>
+            <p style={{ fontSize: '12px', color: '#94A3B8' }}>
               {composeMode ? 'Draft with AI or write manually — visible to all team members immediately' : 'Broadcast messages to parents and players'}
             </p>
           </div>
@@ -261,7 +261,7 @@ export default function AnnouncementsPage() {
         {!composeMode && (
           <button
             onClick={openCreate}
-            style={{ display: 'flex', alignItems: 'center', gap: '7px', background: primary, color: '#fff', fontWeight: '700', fontSize: '14px', padding: '10px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer', boxShadow: `0 2px 8px ${primary}40`, fontFamily: 'inherit' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '7px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', boxShadow: `0 2px 8px ${primary}40`, fontFamily: 'inherit' }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.08)'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}
           >
@@ -280,7 +280,7 @@ export default function AnnouncementsPage() {
             {/* Write with AI toggle */}
             <button
               onClick={() => { setShowAI((v) => !v); }}
-              style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: '7px', background: showAI ? `${primary}12` : '#F8FAFC', border: `1.5px solid ${showAI ? primary + '40' : '#E2E8F0'}`, borderRadius: '10px', padding: '9px 16px', color: showAI ? primary : '#64748B', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
+              style={{ display: 'inline-flex', alignSelf: 'flex-start', alignItems: 'center', gap: '7px', background: showAI ? `${primary}12` : '#F8FAFC', border: `1.5px solid ${showAI ? primary + '40' : '#E2E8F0'}`, borderRadius: '6px', padding: '9px 16px', color: showAI ? primary : '#64748B', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
             >
               <Sparkles size={14} />
               {showAI ? 'Hide AI tools' : 'Write with AI'}
@@ -289,11 +289,11 @@ export default function AnnouncementsPage() {
             {showAI && (
               <>
                 {/* Tone */}
-                <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
+                <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
                   <label style={labelStyle}>Tone</label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '8px' }}>
                     {TONES.map((t) => (
-                      <button key={t.value} onClick={() => setTone(t.value)} style={{ padding: '10px 8px', borderRadius: '10px', border: `2px solid ${tone === t.value ? primary : '#E2E8F0'}`, background: tone === t.value ? `${primary}10` : '#fff', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                      <button key={t.value} onClick={() => setTone(t.value)} style={{ padding: '10px 8px', borderRadius: '6px', border: `2px solid ${tone === t.value ? primary : '#E2E8F0'}`, background: tone === t.value ? `${primary}10` : '#fff', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                         <span style={{ fontSize: '18px' }}>{t.emoji}</span>
                         <span style={{ fontSize: '12px', fontWeight: tone === t.value ? '700' : '500', color: tone === t.value ? primary : '#374151' }}>{t.label}</span>
                         <span style={{ fontSize: '10px', color: '#94A3B8', textAlign: 'center' }}>{t.desc}</span>
@@ -303,7 +303,7 @@ export default function AnnouncementsPage() {
                 </div>
 
                 {/* AI compose */}
-                <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
+                <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px', animation: 'fadeIn 0.15s ease' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                     <label style={{ ...labelStyle, margin: 0 }}>What do you want to say?</label>
                     <span style={{ fontSize: '11px', color: '#94A3B8' }}>Bullet points, notes, anything</span>
@@ -318,7 +318,7 @@ export default function AnnouncementsPage() {
                   <button
                     onClick={handleDraftWithAI}
                     disabled={writing || !bullets.trim()}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', background: writing || !bullets.trim() ? '#F1F5F9' : `${primary}15`, border: `1.5px solid ${writing || !bullets.trim() ? '#E2E8F0' : primary + '40'}`, borderRadius: '10px', padding: '10px 16px', color: writing || !bullets.trim() ? '#94A3B8' : primary, fontWeight: '700', fontSize: '13px', cursor: writing || !bullets.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', background: writing || !bullets.trim() ? '#F1F5F9' : `${primary}15`, border: `1.5px solid ${writing || !bullets.trim() ? '#E2E8F0' : primary + '40'}`, borderRadius: '6px', padding: '8px 16px', color: writing || !bullets.trim() ? '#94A3B8' : primary, fontWeight: '700', fontSize: '13px', cursor: writing || !bullets.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
                   >
                     {writing ? <><RefreshCw size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Writing…</> : <><Sparkles size={14} /> Draft with AI</>}
                   </button>
@@ -328,7 +328,7 @@ export default function AnnouncementsPage() {
             )}
 
             {/* Title + body */}
-            <div style={{ background: '#fff', borderRadius: '14px', border: `1px solid ${aiDrafted ? primary + '30' : '#E2E8F0'}`, padding: '20px', transition: 'border-color 0.2s' }}>
+            <div style={{ background: '#fff', borderRadius: '8px', border: `1px solid ${aiDrafted ? primary + '30' : '#E2E8F0'}`, padding: '20px', transition: 'border-color 0.2s' }}>
               {aiDrafted && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', fontSize: '12px', color: primary, fontWeight: '600' }}>
                   <Sparkles size={12} /> AI drafted — edit freely before posting
@@ -364,7 +364,7 @@ export default function AnnouncementsPage() {
           <div style={{ position: 'sticky', top: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
             {/* Settings card */}
-            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+            <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
 
               {/* Team checklist */}
               <div style={{ borderBottom: '1px solid #F1F5F9' }}>
@@ -410,7 +410,7 @@ export default function AnnouncementsPage() {
             <button
               onClick={handleSave}
               disabled={saving || !form.title.trim() || !form.body.trim() || !form.team_ids.length}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', background: saving || !form.title.trim() || !form.body.trim() || !form.team_ids.length ? '#CBD5E1' : primary, color: '#fff', fontWeight: '700', fontSize: '15px', padding: '14px', borderRadius: '12px', border: 'none', cursor: saving || !form.title.trim() || !form.body.trim() || !form.team_ids.length ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'background 0.2s' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', background: saving || !form.title.trim() || !form.body.trim() || !form.team_ids.length ? '#CBD5E1' : primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: saving || !form.title.trim() || !form.body.trim() || !form.team_ids.length ? 'not-allowed' : 'pointer', fontFamily: 'inherit', transition: 'background 0.2s' }}
             >
               {saving
                 ? <><div style={{ width: '15px', height: '15px', border: '2px solid rgba(255,255,255,0.35)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> Posting…</>
@@ -424,7 +424,7 @@ export default function AnnouncementsPage() {
           {/* Team filter */}
           {teams.length > 1 && (
             <div style={{ position: 'relative', display: 'inline-flex', marginBottom: '20px' }}>
-              <select value={filterTeam} onChange={(e) => setFilterTeam(e.target.value)} style={{ appearance: 'none', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '8px 36px 8px 13px', fontSize: '13px', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '500', outline: 'none' }}>
+              <select value={filterTeam} onChange={(e) => setFilterTeam(e.target.value)} style={{ appearance: 'none', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '6px', padding: '8px 36px 8px 13px', fontSize: '13px', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', fontWeight: '500', outline: 'none' }}>
                 <option value="all">All teams</option>
                 {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
@@ -442,7 +442,7 @@ export default function AnnouncementsPage() {
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[1, 2, 3].map((i) => (
-                <div key={i} style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '22px 24px' }}>
+                <div key={i} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '22px 24px' }}>
                   <div style={{ height: '16px', borderRadius: '6px', width: '55%', marginBottom: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
                   <div style={{ height: '13px', borderRadius: '6px', width: '85%', marginBottom: '6px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
                   <div style={{ height: '13px', borderRadius: '6px', width: '65%', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
@@ -450,7 +450,7 @@ export default function AnnouncementsPage() {
               ))}
             </div>
           ) : displayed.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '20px', border: '1px solid #E2E8F0', animation: 'fadeIn 0.3s ease' }}>
+            <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', animation: 'fadeIn 0.3s ease' }}>
               <div style={{ width: '68px', height: '68px', borderRadius: '20px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
                 <Megaphone size={30} color="#CBD5E1" />
               </div>
@@ -458,7 +458,7 @@ export default function AnnouncementsPage() {
               <div style={{ fontSize: '13px', color: '#94A3B8', lineHeight: '1.65', maxWidth: '280px', margin: '0 auto 26px' }}>
                 Keep parents and players in the loop. Post updates, reminders, and news here.
               </div>
-              <button onClick={openCreate} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', background: primary, color: '#fff', fontWeight: '700', fontSize: '14px', padding: '11px 22px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <button onClick={openCreate} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
                 <Plus size={15} /> Create First Announcement
               </button>
             </div>
@@ -470,7 +470,7 @@ export default function AnnouncementsPage() {
                 const bodyPreview = isLong && !isExpanded ? a.body.slice(0, 220).trimEnd() + '…' : a.body;
                 const isEmailing = emailingId === a.id;
                 return (
-                  <div key={a.id} style={{ background: '#fff', borderRadius: '16px', border: `1px solid ${a.pinned ? primary + '35' : '#E2E8F0'}`, padding: '20px 22px', position: 'relative', animation: 'fadeIn 0.2s ease', transition: 'box-shadow 0.15s', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+                  <div key={a.id} style={{ background: '#fff', borderRadius: '8px', border: `1px solid ${a.pinned ? primary + '35' : '#E2E8F0'}`, padding: '20px 22px', position: 'relative', animation: 'fadeIn 0.2s ease', transition: 'box-shadow 0.15s', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.08)'; }}
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'; }}>
                     {a.pinned && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: primary, borderRadius: '16px 16px 0 0' }} />}
@@ -482,10 +482,10 @@ export default function AnnouncementsPage() {
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '7px' }}>
                           <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', lineHeight: '1.3' }}>{a.title}</span>
-                            {a.pinned && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: '700', color: primary, background: `${primary}15`, borderRadius: '20px', padding: '2px 8px', letterSpacing: '0.05em', textTransform: 'uppercase', flexShrink: 0 }}><Pin size={9} style={{ transform: 'rotate(45deg)' }} /> Pinned</span>}
+                            {a.pinned && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '11px', fontWeight: '700', color: primary, background: `${primary}15`, borderRadius: '4px', padding: '2px 8px', letterSpacing: '0.05em', textTransform: 'uppercase', flexShrink: 0 }}><Pin size={9} style={{ transform: 'rotate(45deg)' }} /> Pinned</span>}
                             {a.is_club_wide
-                              ? <span style={{ fontSize: '11px', color: '#6366F1', background: '#EEF2FF', borderRadius: '20px', padding: '2px 9px', fontWeight: '600', flexShrink: 0 }}>Club-wide</span>
-                              : teams.length > 1 && a.team_name && <span style={{ fontSize: '11px', color: '#64748B', background: '#F1F5F9', borderRadius: '20px', padding: '2px 9px', fontWeight: '500', flexShrink: 0 }}>{a.team_name}</span>
+                              ? <span style={{ fontSize: '11px', color: '#6366F1', background: '#EEF2FF', borderRadius: '4px', padding: '2px 8px', fontWeight: '700', flexShrink: 0 }}>Club-wide</span>
+                              : teams.length > 1 && a.team_name && <span style={{ fontSize: '11px', color: '#64748B', background: '#F1F5F9', borderRadius: '4px', padding: '2px 8px', fontWeight: '700', flexShrink: 0 }}>{a.team_name}</span>
                             }
                           </div>
                           <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
@@ -501,7 +501,7 @@ export default function AnnouncementsPage() {
                         {isLong && <button onClick={() => setExpandedId(isExpanded ? null : a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0 0', fontSize: '12px', fontWeight: '600', color: primary, fontFamily: 'inherit' }}>{isExpanded ? 'Show less' : 'Read more'}</button>}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
                           <span title={formatFull(a.created_at)} style={{ fontSize: '12px', color: '#94A3B8', cursor: 'default' }}>{timeAgo(a.created_at)}</span>
-                          <button onClick={() => handleEmailTeam(a)} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: isEmailing ? `${primary}12` : '#F8FAFC', border: `1.5px solid ${isEmailing ? primary + '30' : '#E2E8F0'}`, borderRadius: '8px', padding: '5px 11px', fontSize: '12px', fontWeight: '600', color: isEmailing ? primary : '#64748B', cursor: isEmailing ? 'default' : 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }} onMouseEnter={(e) => { if (!isEmailing) { (e.currentTarget as HTMLElement).style.background = `${primary}10`; (e.currentTarget as HTMLElement).style.borderColor = `${primary}30`; (e.currentTarget as HTMLElement).style.color = primary; } }} onMouseLeave={(e) => { if (!isEmailing) { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'; (e.currentTarget as HTMLElement).style.color = '#64748B'; } }}>
+                          <button onClick={() => handleEmailTeam(a)} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: isEmailing ? `${primary}12` : '#F8FAFC', border: `1.5px solid ${isEmailing ? primary + '30' : '#E2E8F0'}`, borderRadius: '6px', padding: '5px 11px', fontSize: '12px', fontWeight: '600', color: isEmailing ? primary : '#64748B', cursor: isEmailing ? 'default' : 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }} onMouseEnter={(e) => { if (!isEmailing) { (e.currentTarget as HTMLElement).style.background = `${primary}10`; (e.currentTarget as HTMLElement).style.borderColor = `${primary}30`; (e.currentTarget as HTMLElement).style.color = primary; } }} onMouseLeave={(e) => { if (!isEmailing) { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'; (e.currentTarget as HTMLElement).style.color = '#64748B'; } }}>
                             {isEmailing ? <Send size={12} /> : <Mail size={12} />}
                             {isEmailing ? 'Sent!' : 'Email team'}
                           </button>
@@ -518,7 +518,7 @@ export default function AnnouncementsPage() {
 
       {deleteConfirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => setDeleteConfirm(null)}>
-          <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '380px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: '#fff', borderRadius: '12px', width: '100%', maxWidth: '380px', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
               <Trash2 size={20} color="#EF4444" />
             </div>
@@ -527,8 +527,8 @@ export default function AnnouncementsPage() {
               <strong style={{ color: '#0F172A' }}>{deleteConfirm.title}</strong> will be permanently deleted and removed for all parents.
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={() => handleDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+              <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={() => handleDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
             </div>
           </div>
         </div>
@@ -575,8 +575,8 @@ function ToggleRow({
 }
 
 const labelStyle: React.CSSProperties = {
-  fontSize: '10px', fontWeight: '700', color: '#94A3B8',
-  letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: '7px',
+  fontSize: '10px', fontWeight: '800', color: '#94A3B8',
+  letterSpacing: '1.5px', textTransform: 'uppercase', display: 'block', marginBottom: '7px',
 };
 
 const inputStyle: React.CSSProperties = {

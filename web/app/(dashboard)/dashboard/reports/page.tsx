@@ -250,7 +250,7 @@ export default function ReportsPage() {
     a.click();
   }
 
-  const thSt: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
+  const thSt: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
   const tdSt: React.CSSProperties = { padding: '11px 16px', fontSize: '13px', color: '#374151', borderBottom: '1px solid #F1F5F9', verticalAlign: 'middle' };
 
   const hasGames = playerStats.some((p) => p.games_attended > 0);
@@ -310,18 +310,18 @@ export default function ReportsPage() {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Sticky header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '20px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Club</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.5px' }}>Reports</h1>
-          <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748B' }}>Attendance and playing time across your teams</p>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Reports</h1>
+          <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94A3B8' }}>Attendance and playing time across your teams</p>
         </div>
         <button onClick={exportCSV} disabled={!playerStats.length}
-          style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '10px 16px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', fontSize: '13px', fontWeight: '700', color: '#374151', cursor: playerStats.length ? 'pointer' : 'not-allowed', opacity: playerStats.length ? 1 : 0.5, fontFamily: 'inherit' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '6px', fontSize: '13px', fontWeight: '700', color: '#374151', cursor: playerStats.length ? 'pointer' : 'not-allowed', opacity: playerStats.length ? 1 : 0.5, fontFamily: 'inherit' }}>
           <Download size={14} /> Export CSV
         </button>
       </div>
@@ -360,13 +360,13 @@ export default function ReportsPage() {
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 40px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <div style={{ width: '32px', height: '32px', border: `3px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '14px' }} />
             <div style={{ fontSize: '14px', fontWeight: '600', color: '#64748B' }}>Loading reports…</div>
           </div>
         ) : playerStats.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-            <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+          <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
               <BarChart2 size={30} color="#CBD5E1" />
             </div>
             <div style={{ fontSize: '17px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No data yet</div>
@@ -381,8 +381,8 @@ export default function ReportsPage() {
                   <div key={t.id}
                     onClick={() => router.push(`/dashboard/teams/${t.id}`)}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = primary; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 4px 16px rgba(0,0,0,0.10)`; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = '#E2E8F0'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'; }}
-                    style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '20px 22px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s' }}>
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = '#E2E8F0'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.06)'; }}
+                    style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s' }}>
                     <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A', marginBottom: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
                     <div>
                       <div style={{ fontSize: '11.5px', fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Attendance</div>
@@ -400,7 +400,7 @@ export default function ReportsPage() {
             )}
 
             {/* Player table */}
-            <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+            <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Users size={15} color="#64748B" />
                 <span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>Player breakdown</span>
@@ -409,7 +409,7 @@ export default function ReportsPage() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' }}>
+                    <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                       <th style={thSt} onClick={() => toggleSort('name')}>
                         Player {sortBy === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
                       </th>
@@ -419,7 +419,7 @@ export default function ReportsPage() {
                         Going {sortBy === 'attended' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
                       </th>
                       <th style={{ ...thSt, color: '#DC2626' }}>Out</th>
-                      <th style={{ ...thSt, color: '#94A3B8' }}>Pending</th>
+                      <th style={{ ...thSt, color: 'rgba(255,255,255,0.55)' }}>Pending</th>
                       <th style={thSt} onClick={() => toggleSort('att_pct')}>
                         Att % {sortBy === 'att_pct' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
                       </th>
@@ -499,7 +499,7 @@ export default function ReportsPage() {
             onClick={() => setSelectedPlayer(null)}
           >
             <div
-              style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '520px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' }}
+              style={{ background: '#fff', borderRadius: '8px', width: '100%', maxWidth: '520px', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', overflow: 'hidden' }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}

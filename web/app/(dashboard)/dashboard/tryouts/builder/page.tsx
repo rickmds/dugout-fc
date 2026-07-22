@@ -419,7 +419,7 @@ export default function TeamBuilderPage() {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#F1F5F9' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#F0F2F5' }}>
 
       {/* ── PRIMARY COLOR HEADER ── */}
       <div style={{ background: primary, flexShrink: 0 }}>
@@ -1001,7 +1001,7 @@ export default function TeamBuilderPage() {
 
       {delTeamId && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: '#fff', borderRadius: '16px', padding: '28px', width: '360px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', padding: '28px', width: '360px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ fontSize: '20px', marginBottom: '10px' }}>🗑</div>
             <div style={{ fontWeight: '800', fontSize: '15px', color: '#0F172A', marginBottom: '6px' }}>Delete this team?</div>
             <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '22px' }}>All players will be moved back to the Unassigned Pool.</div>
@@ -1238,7 +1238,7 @@ function SendOfferModal({ colLabel, playerIds, players, assigns, club, season, p
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: '16px', width: '680px', height: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: '#fff', borderRadius: '8px', width: '680px', height: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '18px 22px 14px', borderBottom: '1px solid #F1F5F9' }}>
@@ -1352,7 +1352,7 @@ function EmailModal({ title, rows, onClose }: { title: string; rows: { name: str
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: '16px', width: '480px', maxHeight: '72vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: '#fff', borderRadius: '8px', width: '480px', maxHeight: '72vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: '1px solid #F1F5F9' }}>
           <div>
@@ -1425,7 +1425,7 @@ function AddTeamModal({ club, team, defaultAg, defaultGender, usedColors, onClos
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: '16px', width: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: '#fff', borderRadius: '8px', width: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
         {/* Modal header */}
         <div style={{ background: color, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: '800', fontSize: '15px', color: '#fff' }}>{team ? 'Edit Team' : 'New Team'}</span>

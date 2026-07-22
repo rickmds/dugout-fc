@@ -177,7 +177,7 @@ export default function PendingInvitesScreen() {
 
           {/* ── Resend All ── */}
           <TouchableOpacity
-            style={[st.resendAllBtn, { borderColor: rgba(0.3), backgroundColor: rgba(0.07) }]}
+            style={[st.resendAllBtn, { borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]}
             onPress={handleResendAll}
             disabled={resendingAll}
             activeOpacity={0.8}
@@ -186,8 +186,8 @@ export default function PendingInvitesScreen() {
               <ActivityIndicator size="small" color={primaryColor} />
             ) : (
               <>
-                <Ionicons name="send" size={16} color={primaryColor} />
-                <Text style={[st.resendAllText, { color: primaryColor }]}>
+                <Ionicons name="send" size={16} color="#ffffff" />
+                <Text style={[st.resendAllText, { color: '#ffffff' }]}>
                   Resend All ({invites.length})
                 </Text>
               </>

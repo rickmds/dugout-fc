@@ -50,6 +50,8 @@ type Event = {
   score_away: number | null;
   rsvp_lock_at: string | null;
   video_url: string | null;
+  isGuest?: boolean;
+  guestStatus?: 'confirmed' | 'pending';
 };
 
 const TEAM_PALETTE = ['#3B82F6', '#22c55e', '#F59E0B', '#8B5CF6', '#EF4444', '#06B6D4'];
@@ -141,6 +143,9 @@ export default function ScheduleScreen() {
   const [weatherMap, setWeatherMap] = useState<Record<string, WeatherData>>({});
   const [driveTimeMap, setDriveTimeMap] = useState<Record<string, string>>({});
 
+  const [guestTeamNames, setGuestTeamNames] = useState<Record<string, string>>({});
+  const [guestCountsMap, setGuestCountsMap] = useState<Record<string, number>>({});
+
   const [activeTab, setActiveTab] = useState<Tab>('upcoming');
 
   const todayDate = new Date();
@@ -177,7 +182,6 @@ export default function ScheduleScreen() {
     ]);
 
     const evs = (eventsRes.data as unknown as Event[]) ?? [];
-    setEvents(evs);
     setPlayerCount(countRes.count ?? 0);
 
     const pRows = (playersRes as any).data ?? [];
@@ -186,12 +190,29 @@ export default function ScheduleScreen() {
     setPlayerIdMap(pidMap);
     setMyPlayerId(pid);
 
-    if (evs.length > 0) {
-      await fetchRsvpData(evs, pidMap);
-    }
+    // Set events immediately so they render even if guest/RSVP loading fails
+    setEvents(evs);
     setLoading(false);
 
-    fetchContextData(evs.filter(e => isUpcoming(e.event_date) && !e.cancelled_at));
+    const allPlayerIds = !isCoach ? [...pidMap.values()] : [];
+    const [, guestEvs] = await Promise.all([
+      evs.length > 0 ? fetchRsvpData(evs, pidMap) : Promise.resolve(),
+      (async () => {
+        try {
+          return allPlayerIds.length > 0 ? await loadGuestEvents(evs, allPlayerIds) : ([] as Event[]);
+        } catch {
+          return [] as Event[];
+        }
+      })(),
+    ]);
+
+    const mergedEvs = [...evs, ...(guestEvs ?? [])].sort((a, b) => {
+      const d = a.event_date.localeCompare(b.event_date);
+      return d !== 0 ? d : (a.event_time ?? '').localeCompare(b.event_time ?? '');
+    });
+    if (guestEvs && guestEvs.length > 0) setEvents(mergedEvs);
+
+    fetchContextData(mergedEvs.filter(e => isUpcoming(e.event_date) && !e.cancelled_at));
   }
 
   async function fetchContextData(upcomingEvs: Event[]) {
@@ -231,6 +252,53 @@ export default function ScheduleScreen() {
     }
   }
 
+  async function loadGuestEvents(existingEvs: Event[], playerIds: string[]): Promise<Event[]> {
+    const { data: guestEntries } = await supabase
+      .from('event_guests')
+      .select('event_id, status')
+      .in('player_id', playerIds)
+      .in('status', ['confirmed', 'pending']);
+
+    const existingIds = new Set(existingEvs.map(e => e.id));
+    const guestStatusMap = new Map<string, 'confirmed' | 'pending'>();
+    for (const g of (guestEntries ?? []) as { event_id: string; status: string }[]) {
+      if (!existingIds.has(g.event_id)) {
+        // prefer 'confirmed' if the player has multiple entries somehow
+        if (!guestStatusMap.has(g.event_id) || g.status === 'confirmed') {
+          guestStatusMap.set(g.event_id, g.status as 'confirmed' | 'pending');
+        }
+      }
+    }
+    const guestEventIds = [...guestStatusMap.keys()];
+
+    if (guestEventIds.length === 0) return [];
+
+    const { data: guestEvData } = await supabase
+      .from('events')
+      .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at, video_url')
+      .in('id', guestEventIds);
+
+    const guestEvs: Event[] = ((guestEvData ?? []) as unknown as Event[]).map(e => ({
+      ...e,
+      isGuest: true,
+      guestStatus: guestStatusMap.get(e.id) ?? 'pending',
+    }));
+
+    const guestTeamIds = [...new Set(guestEvs.map(e => e.team_id))];
+    const { data: teamData } = await supabase.from('teams').select('id, name').in('id', guestTeamIds);
+    const teamNameMap: Record<string, string> = {};
+    for (const t of (teamData ?? []) as { id: string; name: string }[]) {
+      teamNameMap[t.id] = t.name;
+    }
+    const nameById: Record<string, string> = {};
+    for (const e of guestEvs) {
+      nameById[e.id] = teamNameMap[e.team_id] ?? 'Guest';
+    }
+    setGuestTeamNames(prev => ({ ...prev, ...nameById }));
+
+    return guestEvs;
+  }
+
   async function handleRefresh() {
     setRefreshing(true);
     await load();
@@ -241,12 +309,19 @@ export default function ScheduleScreen() {
     const eventIds = evs.map((e) => e.id);
     const playerIds = [...pidMap.values()];
 
-    const [countsRes, myRes] = await Promise.all([
+    const [countsRes, myRes, guestRes] = await Promise.all([
       supabase.from('event_rsvps').select('event_id, status').in('event_id', eventIds),
       playerIds.length > 0
         ? supabase.from('event_rsvps').select('event_id, player_id, status').in('event_id', eventIds).in('player_id', playerIds)
         : Promise.resolve({ data: [] }),
+      supabase.from('event_guests').select('event_id').in('event_id', eventIds).eq('status', 'confirmed'),
     ]);
+
+    const gCounts: Record<string, number> = {};
+    for (const row of (guestRes.data ?? []) as { event_id: string }[]) {
+      gCounts[row.event_id] = (gCounts[row.event_id] ?? 0) + 1;
+    }
+    setGuestCountsMap(gCounts);
 
     const counts: Record<string, RsvpCounts> = {};
     for (const row of (countsRes.data ?? []) as { event_id: string; status: string }[]) {
@@ -312,6 +387,7 @@ export default function ScheduleScreen() {
     const isPast = !isUpcoming(item.event_date);
     const today = isToday(item.event_date);
     const isCancelled = !!item.cancelled_at;
+    const isGuest = !!item.isGuest;
     const d = new Date(item.event_date + 'T00:00:00');
     const pending = playerCount > 0 && counts != null
       ? Math.max(0, playerCount - counts.attending - counts.not_attending)
@@ -328,7 +404,12 @@ export default function ScheduleScreen() {
         onPress={() => router.push(`/(app)/${clubSlug}/event/${item.id}` as any)}
         activeOpacity={0.75}
       >
-        <View style={[styles.typeStripe, { backgroundColor: isCancelled ? '#ef4444' : cfg.color }]} />
+        <View style={[styles.typeStripe, {
+          backgroundColor: isCancelled ? '#ef4444'
+            : (isGuest && item.guestStatus === 'pending') ? '#F59E0B'
+            : isGuest ? '#F97316'
+            : cfg.color,
+        }]} />
 
         <View style={[
           styles.dateCol,
@@ -371,6 +452,18 @@ export default function ScheduleScreen() {
                   <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
                 </View>
               )}
+              {isGuest && (
+                item.guestStatus === 'pending' ? (
+                  <View style={[styles.typeBadge, { backgroundColor: 'rgba(245,158,11,0.14)', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                    <Ionicons name="time-outline" size={10} color="#F59E0B" />
+                    <Text style={[styles.typeText, { color: '#F59E0B' }]}>Invite pending</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.typeBadge, { backgroundColor: 'rgba(249,115,22,0.12)' }]}>
+                    <Text style={[styles.typeText, { color: '#F97316' }]}>Guest</Text>
+                  </View>
+                )
+              )}
               {item.video_url ? (
                 <View style={styles.videoBadge}>
                   <Ionicons name="play-circle" size={11} color="#A855F7" />
@@ -400,24 +493,38 @@ export default function ScheduleScreen() {
                   </Text>
                 </View>
               )}
-              {/* My RSVP status — only for parents */}
-              {!isCoach && (playerIdMap.get(item.team_id) ?? myPlayerId) && !isPast && myStatus && (
-                <View style={[
-                  styles.myStatusChip,
-                  { backgroundColor: myStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
-                ]}>
-                  <Ionicons
-                    name={myStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
-                    size={11}
-                    color={myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
-                  />
-                  <Text style={[
-                    styles.myStatusChipText,
-                    { color: myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
+              {/* Status chip — "Confirmed" for guests, RSVP status for team members */}
+              {!isCoach && !isPast && (
+                isGuest ? (
+                  item.guestStatus === 'pending' ? (
+                    <View style={[styles.myStatusChip, { backgroundColor: 'rgba(245,158,11,0.12)' }]}>
+                      <Ionicons name="ellipse-outline" size={11} color="#F59E0B" />
+                      <Text style={[styles.myStatusChipText, { color: '#F59E0B' }]}>Respond</Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.myStatusChip, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+                      <Ionicons name="checkmark-circle" size={11} color={PULSE_COLORS.rsvp.attending} />
+                      <Text style={[styles.myStatusChipText, { color: PULSE_COLORS.rsvp.attending }]}>Confirmed</Text>
+                    </View>
+                  )
+                ) : (playerIdMap.get(item.team_id) ?? myPlayerId) && myStatus ? (
+                  <View style={[
+                    styles.myStatusChip,
+                    { backgroundColor: myStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
                   ]}>
-                    {myStatus === 'attending' ? 'Going' : "Can't go"}
-                  </Text>
-                </View>
+                    <Ionicons
+                      name={myStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
+                      size={11}
+                      color={myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
+                    />
+                    <Text style={[
+                      styles.myStatusChipText,
+                      { color: myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
+                    ]}>
+                      {myStatus === 'attending' ? 'Going' : "Can't go"}
+                    </Text>
+                  </View>
+                ) : null
               )}
             </View>
 
@@ -432,8 +539,17 @@ export default function ScheduleScreen() {
 
           <Text style={[styles.eventTitle, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>{item.title}</Text>
 
-          {/* Team indicator for multi-team parents */}
-          {!isCoach && allTeams.length > 1 && (() => {
+          {/* Team indicator */}
+          {!isCoach && (() => {
+            if (isGuest && guestTeamNames[item.id]) {
+              return (
+                <View style={styles.teamDotRow}>
+                  <View style={[styles.teamDot, { backgroundColor: '#F97316' }]} />
+                  <Text style={[styles.teamDotLabel, { color: '#F97316' }]}>{guestTeamNames[item.id]}</Text>
+                </View>
+              );
+            }
+            if (allTeams.length <= 1) return null;
             const tIdx = allTeams.findIndex((t) => t.id === item.team_id);
             if (tIdx < 0) return null;
             const tColor = TEAM_PALETTE[tIdx % TEAM_PALETTE.length];
@@ -475,31 +591,38 @@ export default function ScheduleScreen() {
           )}
 
           {/* Coach RSVP summary */}
-          {isCoach && !isPast && !isCancelled && (
-            <View style={styles.rsvpSummaryRow}>
-              <View style={styles.rsvpStat}>
-                <Ionicons name="checkmark-circle" size={13} color={PULSE_COLORS.rsvp.attending} />
-                <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.attending }]}>
-                  {counts?.attending ?? 0}
-                </Text>
-              </View>
-              <View style={styles.rsvpStat}>
-                <Ionicons name="close-circle" size={13} color={PULSE_COLORS.rsvp.not_attending} />
-                <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.not_attending }]}>
-                  {counts?.not_attending ?? 0}
-                </Text>
-              </View>
-              {pending != null && pending > 0 && (
+          {isCoach && !isPast && !isCancelled && (() => {
+            const confirmedGuests = guestCountsMap[item.id] ?? 0;
+            const totalGoing = (counts?.attending ?? 0) + confirmedGuests;
+            return (
+              <View style={styles.rsvpSummaryRow}>
                 <View style={styles.rsvpStat}>
-                  <Ionicons name="ellipse-outline" size={13} color={PULSE_COLORS.ui.muted} />
-                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.ui.muted }]}>{pending}</Text>
+                  <Ionicons name="checkmark-circle" size={13} color={PULSE_COLORS.rsvp.attending} />
+                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.attending }]}>{totalGoing}</Text>
+                  {confirmedGuests > 0 && (
+                    <View style={styles.guestCountPill}>
+                      <Text style={styles.guestCountPillText}>+{confirmedGuests}G</Text>
+                    </View>
+                  )}
                 </View>
-              )}
-            </View>
-          )}
+                <View style={styles.rsvpStat}>
+                  <Ionicons name="close-circle" size={13} color={PULSE_COLORS.rsvp.not_attending} />
+                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.not_attending }]}>
+                    {counts?.not_attending ?? 0}
+                  </Text>
+                </View>
+                {pending != null && pending > 0 && (
+                  <View style={styles.rsvpStat}>
+                    <Ionicons name="ellipse-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                    <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.ui.muted }]}>{pending}</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })()}
 
           {/* Parent RSVP buttons */}
-          {!isCoach && (playerIdMap.get(item.team_id) ?? myPlayerId) && !isPast && !isCancelled && (
+          {!isCoach && !isGuest && (playerIdMap.get(item.team_id) ?? myPlayerId) && !isPast && !isCancelled && (
             <View style={styles.rsvpRow}>
               <TouchableOpacity
                 style={[styles.rsvpBtn, myStatus === 'attending' && styles.rsvpBtnGoing]}
@@ -704,15 +827,15 @@ export default function ScheduleScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
             ListHeaderComponent={
               <TouchableOpacity
-                style={[styles.syncBanner, { backgroundColor: rgba(0.07), borderColor: rgba(0.22) }]}
+                style={[styles.syncBanner, { backgroundColor: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.13)' }]}
                 onPress={handleSyncCalendar}
                 activeOpacity={0.75}
               >
-                <View style={[styles.syncIconWrap, { backgroundColor: rgba(0.18) }]}>
-                  <Ionicons name="calendar" size={20} color={primaryColor} />
+                <View style={[styles.syncIconWrap, { backgroundColor: primaryColor }]}>
+                  <Ionicons name="calendar" size={20} color="#ffffff" />
                 </View>
                 <View style={styles.syncBannerText}>
-                  <Text style={[styles.syncBannerTitle, { color: primaryColor }]}>Sync schedule to calendar</Text>
+                  <Text style={[styles.syncBannerTitle, { color: '#ffffff' }]}>Sync schedule to calendar</Text>
                   <View style={styles.syncPlatforms}>
                     <Ionicons name="logo-apple" size={11} color={PULSE_COLORS.ui.muted} />
                     <Text style={styles.syncPlatformText}>Apple</Text>
@@ -722,8 +845,8 @@ export default function ScheduleScreen() {
                     <Text style={styles.syncDot}>· Copy link</Text>
                   </View>
                 </View>
-                <View style={[styles.syncChevron, { backgroundColor: rgba(0.12) }]}>
-                  <Ionicons name="chevron-forward" size={14} color={primaryColor} />
+                <View style={[styles.syncChevron, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+                  <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
                 </View>
               </TouchableOpacity>
             }
@@ -1043,6 +1166,11 @@ const styles = StyleSheet.create({
   rsvpSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2 },
   rsvpStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rsvpStatText: { fontSize: 13, fontWeight: '700' },
+  guestCountPill: {
+    backgroundColor: 'rgba(249,115,22,0.15)',
+    borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1,
+  },
+  guestCountPillText: { fontSize: 9, fontWeight: '800', color: '#f97316' },
   rsvpRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
   rsvpBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,

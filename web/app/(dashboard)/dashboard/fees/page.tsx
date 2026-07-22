@@ -479,20 +479,20 @@ export default function ClubFeesPage() {
 
   // ── Shared styles ──────────────────────────────────────────────────────────────
   const inp: React.CSSProperties = { width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: '#fff' };
-  const lbl: React.CSSProperties = { fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.06em' };
-  const card: React.CSSProperties = { background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' };
+  const lbl: React.CSSProperties = { fontSize: '10px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '1.5px' };
+  const card: React.CSSProperties = { background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' };
   const shimmerStyle: React.CSSProperties = { background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite', borderRadius: '8px' };
 
   // ── Render ─────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#F0F2F5', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
       <style>{`
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
         @keyframes popIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
         .fee-row:hover { background: #F8FAFC !important; }
         .filter-sel { appearance:none; -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394A3B8'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; padding-right:28px !important; }
-        .th-btn { background:none; border:none; cursor:pointer; font-family:inherit; font-size:10.5px; font-weight:700; color:#94A3B8; letter-spacing:0.08em; text-transform:uppercase; display:flex; align-items:center; gap:4px; padding:0; }
-        .th-btn:hover { color:#64748B; }
+        .th-btn { background:none; border:none; cursor:pointer; font-family:inherit; font-size:10px; font-weight:800; color:rgba(255,255,255,0.55); letter-spacing:1.5px; text-transform:uppercase; display:flex; align-items:center; gap:4px; padding:0; }
+        .th-btn:hover { color:rgba(255,255,255,0.9); }
 
         /* ── Mobile responsive ──────────────────────────────────────── */
         @media (max-width: 768px) {
@@ -516,18 +516,18 @@ export default function ClubFeesPage() {
       `}</style>
 
       {/* ── Sticky header ──────────────────────────────────────────────────────── */}
-      <div className="fees-header" style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="fees-header" style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', margin: 0, letterSpacing: '-0.4px' }}>Fees</h1>
-          <p style={{ fontSize: '13px', color: '#94A3B8', margin: '3px 0 0' }}>Club-wide fee tracking, collection, and payment recording.</p>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Fees</h1>
+          <p style={{ fontSize: '12px', color: '#94A3B8', margin: '3px 0 0' }}>Club-wide fee tracking, collection, and payment recording.</p>
         </div>
         <div className="fees-header-btns" style={{ display: 'flex', gap: '8px' }}>
           <button onClick={() => { setShowCashMode(true); setCashPaidIds(new Set()); }}
-            style={{ padding: '8px 14px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
+            style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
             <Banknote size={14} /> Collect Cash
           </button>
           <button onClick={() => setShowAssign(true)}
-            style={{ padding: '8px 16px', borderRadius: '9px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
+            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
             <Plus size={14} /> Assign Club-Wide
           </button>
         </div>
@@ -562,7 +562,7 @@ export default function ClubFeesPage() {
             { label: 'Overdue',         value: `$${fmt(overdueTotal)}`,        color: '#EF4444', icon: AlertCircle,  iconBg: '#FEF2F2', extra: null },
             { label: 'Due This Month',  value: `$${fmt(dueThisMonthTotal)}`,   color: '#8B5CF6', icon: Calendar,     iconBg: '#F5F3FF', extra: null },
           ].map(({ label, value, color, icon: Icon, iconBg, extra }) => (
-            <div key={label} style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '18px 20px' }}>
+            <div key={label} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '18px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: extra ? '10px' : '0' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                   <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -581,7 +581,7 @@ export default function ClubFeesPage() {
 
         {/* 3. Collection progress */}
         {(totalInvoiced > 0 || loading) && (
-          <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '16px 20px', marginBottom: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                 <TrendingUp size={13} color="#64748B" />
@@ -629,7 +629,7 @@ export default function ClubFeesPage() {
             { label: '31–60 days', sublabel: 'Overdue',    arr: aging.d60,     color: '#B91C1C', bg: '#FFF5F5', border: '#FECACA', dot: '#EF4444' },
             { label: '60+ days', sublabel: 'Overdue',      arr: aging.d60p,    color: '#7F1D1D', bg: '#FEF2F2', border: '#FCA5A5', dot: '#991B1B' },
           ].map(({ label, sublabel, arr, color, bg, border, dot }) => (
-            <div key={label} style={{ background: bg, borderRadius: '12px', border: `1px solid ${border}`, padding: '16px 18px' }}>
+            <div key={label} style={{ background: bg, borderRadius: '8px', border: `1px solid ${border}`, padding: '16px 18px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
                 <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: dot }} />
                 <span style={{ fontSize: '10.5px', fontWeight: '700', color, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
@@ -812,7 +812,7 @@ export default function ClubFeesPage() {
         ) : (
           <div className="fee-table-scroll"><div className="fee-table-card" style={card}>
             {/* Table header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '36px 160px 130px 1fr 80px 70px 80px 100px 52px', padding: '9px 16px', borderBottom: '1px solid #F1F5F9', background: '#F8FAFC', alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '36px 160px 130px 1fr 80px 70px 80px 100px 52px', padding: '9px 16px', borderBottom: 'none', background: '#0F172A', alignItems: 'center' }}>
               <input type="checkbox" checked={allVisibleSelected} onChange={e => { if (e.target.checked) setSelectedIds(new Set(filtered.map(f => f.id))); else setSelectedIds(new Set()); }} style={{ width: '14px', height: '14px', accentColor: primary, cursor: 'pointer' }} />
               {(['Player','Team','Description','Invoiced','Paid','Owed','Status',''] as const).map((h, i) => {
                 const colMap: Record<string, SortCol> = { Player: 'player', Team: 'team', Description: 'description', Invoiced: 'invoiced', Paid: 'paid', Owed: 'owed', Status: 'status' };
@@ -852,7 +852,7 @@ export default function ClubFeesPage() {
                   <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#374151' }}>${fmt(fee.amount_due - fee.discount)}</div>
                   <div style={{ fontSize: '12.5px', color: fee.amount_paid > 0 ? '#22C55E' : '#CBD5E1', fontWeight: fee.amount_paid > 0 ? '600' : '400' }}>${fmt(fee.amount_paid)}</div>
                   <div style={{ fontSize: '12.5px', fontWeight: '700', color: owed > 0 ? cfg.color : '#CBD5E1' }}>{owed > 0 ? `$${fmt(owed)}` : '—'}</div>
-                  <div><span style={{ display: 'inline-block', fontSize: '10.5px', fontWeight: '700', padding: '3px 8px', borderRadius: '6px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span></div>
+                  <div><span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span></div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     {canPay && <RowMenu onPay={() => openPayment(fee)} onWaive={() => setShowWaive(fee)} primary={primary} />}
                   </div>
@@ -904,7 +904,7 @@ export default function ClubFeesPage() {
                         <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>{fee.team_name}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <span style={{ display: 'inline-block', fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '5px', background: cfg.bg, color: cfg.color, marginBottom: '6px' }}>{cfg.label}</span>
+                        <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color, marginBottom: '6px' }}>{cfg.label}</span>
                         <div style={{ fontSize: '15px', fontWeight: '800', color: owed > 0 ? cfg.color : '#22C55E' }}>{owed > 0 ? `$${fmt(owed)} owed` : 'Paid'}</div>
                       </div>
                     </div>

@@ -110,7 +110,7 @@ export default function TryoutOverviewPage() {
   }).filter(t => t.count > 0);
 
   const StatCard = ({ label, val, icon, color }: { label: string; val: number | string; icon: React.ReactNode; color: string }) => (
-    <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '20px 22px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px 22px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
       <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: `${color}12`, border: `1.5px solid ${color}25`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
       <div>
         <div style={{ fontSize: '30px', fontWeight: '900', color: '#0F172A', lineHeight: 1, letterSpacing: '-0.02em' }}>{val}</div>
@@ -129,12 +129,12 @@ export default function TryoutOverviewPage() {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#F8FAFC' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#F0F2F5' }}>
       {/* Page header */}
-      <div style={{ padding: '20px 28px 16px', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ padding: '14px 32px', background: '#fff', borderBottom: '1px solid #E2E8F0', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Tryout Module</div>
-          <h1 style={{ fontSize: '24px', fontWeight: '900', color: '#0F172A', margin: '2px 0 0' }}>Overview — {season}</h1>
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Tryout Module</div>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Overview — {season}</h1>
         </div>
         <select value={season} onChange={e => setSeason(e.target.value)} style={{ padding: '7px 11px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', background: '#fff', outline: 'none' }}>
           {seasonOptions().map(s => <option key={s} value={s}>{s}</option>)}
@@ -145,7 +145,7 @@ export default function TryoutOverviewPage() {
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
 
         {/* Phase tracker */}
-        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px 24px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px 24px', marginBottom: '20px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '20px' }}>Tryout Progress</div>
           <div style={{ display: 'flex', alignItems: 'flex-start', position: 'relative' }}>
             {PHASES.map((phase, i) => {
@@ -183,7 +183,7 @@ export default function TryoutOverviewPage() {
               <span style={{ fontSize: '13px', color: '#64748B' }}>
                 <strong style={{ color: '#0F172A' }}>Next:</strong> {PHASES[currentPhase].sub}
               </span>
-              <a href={PHASES[currentPhase].href} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 20px', borderRadius: '8px', background: '#3B82F6', color: '#fff', textDecoration: 'none', fontSize: '14px', fontWeight: '800' }}>
+              <a href={PHASES[currentPhase].href} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 16px', borderRadius: '6px', background: '#3B82F6', color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700' }}>
                 {PHASES[currentPhase].cta} <ArrowRight size={14} />
               </a>
             </div>
@@ -207,15 +207,15 @@ export default function TryoutOverviewPage() {
         </div>
 
         {/* Age group breakdown */}
-        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', marginBottom: '24px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '24px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9' }}>
             <span style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>Placement by Age Group</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
               <thead>
-                <tr style={{ background: '#F8FAFC' }}>
-                  {['Age Group','Gender','Total','In Pool','Placed','Accepted','Cut','Progress'].map(h => <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #E2E8F0', whiteSpace: 'nowrap' }}>{h}</th>)}
+                <tr style={{ background: '#0F172A' }}>
+                  {['Age Group','Gender','Total','In Pool','Placed','Accepted','Cut','Progress'].map(h => <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px', borderBottom: 'none', whiteSpace: 'nowrap' }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -262,7 +262,7 @@ export default function TryoutOverviewPage() {
 
         {/* Team acceptance tracker */}
         {teamAcceptance.length > 0 && (
-          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9' }}>
               <span style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>Team Roster Acceptance</span>
             </div>
@@ -270,7 +270,7 @@ export default function TryoutOverviewPage() {
               {teamAcceptance.map(t => {
                 const pct = t.count > 0 ? Math.round((t.accepted / t.count) * 100) : 0;
                 return (
-                  <div key={t.id} style={{ minWidth: '200px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', borderLeft: `6px solid ${t.color}`, padding: '14px 16px' }}>
+                  <div key={t.id} style={{ minWidth: '200px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', borderLeft: `6px solid ${t.color}`, padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                       <span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{t.name}</span>
                       {t.age_group && <span style={{ fontSize: '10.5px', color: '#94A3B8' }}>{t.age_group}</span>}

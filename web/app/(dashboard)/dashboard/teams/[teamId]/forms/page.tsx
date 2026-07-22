@@ -51,7 +51,7 @@ export default function TeamFormsPage() {
       draft:  { bg: '#FFFBEB', color: '#92400E' },
     };
     const m = map[s] ?? map.draft;
-    return <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '5px', background: m.bg, color: m.color, textTransform: 'capitalize' }}>{s}</span>;
+    return <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: m.bg, color: m.color, textTransform: 'capitalize' }}>{s}</span>;
   };
 
   return (
@@ -64,7 +64,7 @@ export default function TeamFormsPage() {
             </button>
           ))}
         </div>
-        <Link href={tab === 'forms' ? '/dashboard/registrations' : '/dashboard/waivers'} style={{ padding: '8px 16px', borderRadius: '9px', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700' }}>
+        <Link href={tab === 'forms' ? '/dashboard/registrations' : '/dashboard/waivers'} style={{ padding: '8px 16px', borderRadius: '6px', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700' }}>
           + New {tab === 'forms' ? 'Form' : 'Waiver'}
         </Link>
       </div>
@@ -73,19 +73,19 @@ export default function TeamFormsPage() {
         <>
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {[1,2].map(i => <div key={i} style={{ height: '64px', borderRadius: '10px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+            {[1,2].map(i => <div key={i} style={{ height: '64px', borderRadius: '8px', background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
           </div>
         </>
       ) : tab === 'forms' ? (
         forms.length === 0 ? (
           <Empty icon={<FileText size={26} color={primary} />} title="No registration forms for this team" action={{ label: 'Create a form', href: '/dashboard/registrations' }} primary={primary} />
         ) : (
-          <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                <tr style={{ background: '#0F172A', borderBottom: 'none' }}>
                   {['Form', 'Status', 'Submissions', ''].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
+                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.5px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -115,8 +115,8 @@ export default function TeamFormsPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {waivers.map(w => (
-              <div key={w.id} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div key={w.id} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '8px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <ClipboardCheck size={18} color={primary} />
                 </div>
                 <div style={{ flex: 1 }}>
@@ -141,10 +141,10 @@ export default function TeamFormsPage() {
 
 function Empty({ icon, title, action, primary }: { icon: React.ReactNode; title: string; action: { label: string; href: string }; primary: string }) {
   return (
-    <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '48px', textAlign: 'center' }}>
-      <div style={{ width: '52px', height: '52px', borderRadius: '13px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>{icon}</div>
+    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '48px', textAlign: 'center' }}>
+      <div style={{ width: '52px', height: '52px', borderRadius: '8px', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>{icon}</div>
       <div style={{ fontSize: '15px', fontWeight: '700', color: '#94A3B8', marginBottom: '14px' }}>{title}</div>
-      <Link href={action.href} style={{ display: 'inline-block', padding: '8px 20px', borderRadius: '8px', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700' }}>{action.label}</Link>
+      <Link href={action.href} style={{ display: 'inline-block', padding: '8px 20px', borderRadius: '6px', background: primary, color: '#fff', textDecoration: 'none', fontSize: '13px', fontWeight: '700' }}>{action.label}</Link>
     </div>
   );
 }
