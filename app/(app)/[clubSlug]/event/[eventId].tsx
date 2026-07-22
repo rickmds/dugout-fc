@@ -2095,138 +2095,159 @@ export default function EventDetailScreen() {
       <Modal visible={requestSheet} animationType="slide" transparent onRequestClose={() => setRequestSheet(false)}>
         <KeyboardAvoidingView style={styles.guestSheetKAV} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <TouchableOpacity style={styles.guestSheetOverlay} activeOpacity={1} onPress={() => setRequestSheet(false)} />
-          <View style={styles.guestSheetPanel}>
+          <View style={styles.requestSheetPanel}>
+            {/* Fixed header */}
             <View style={styles.guestSheetHandle} />
-            <Text style={styles.guestSheetTitle}>Request guest players</Text>
-            <Text style={styles.guestSheetSub}>
-              Parents on the chosen team will get a notification and can volunteer their child.
+            <Text style={[styles.guestSheetTitle, { marginBottom: 2 }]}>Request guest players</Text>
+            <Text style={[styles.guestSheetSub, { marginBottom: 16 }]}>
+              Pick a team, then select specific players or send to the whole team.
             </Text>
 
-            {/* Team picker */}
-            <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>WHICH TEAM?</Text>
-            {requestTeams.length === 0 ? (
-              <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 14 }}>No age-eligible teams in your club.</Text>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {requestTeams.map(t => (
-                    <TouchableOpacity
-                      key={t.id}
-                      onPress={() => { setRequestTargetId(t.id); loadRequestTeamPlayers(t.id); }}
-                      style={{
-                        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                        backgroundColor: requestTargetId === t.id ? primaryColor : 'rgba(0,0,0,0.05)',
-                        borderWidth: 1.5,
-                        borderColor: requestTargetId === t.id ? primaryColor : PULSE_COLORS.ui.border,
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: requestTargetId === t.id ? '#fff' : PULSE_COLORS.ui.text }}>
-                        {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+            {/* Scrollable content */}
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+
+              {/* Team picker — wrapping chips */}
+              <Text style={styles.requestSectionLabel}>WHICH TEAM?</Text>
+              {requestTeams.length === 0 ? (
+                <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No age-eligible teams in your club.</Text>
+              ) : (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                  {requestTeams.map(t => {
+                    const sel = requestTargetId === t.id;
+                    return (
+                      <TouchableOpacity
+                        key={t.id}
+                        onPress={() => { setRequestTargetId(t.id); loadRequestTeamPlayers(t.id); }}
+                        style={{
+                          paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
+                          backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.background,
+                          borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>
+                          {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              </ScrollView>
-            )}
+              )}
 
-            {/* Specific player picker — shown after team is selected */}
-            {requestTargetId !== '' && (
-              <>
-                <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 6 }]}>
-                  SPECIFIC PLAYERS{requestSelectedIds.size > 0 ? ` (${requestSelectedIds.size} selected)` : ' — OPTIONAL'}
-                </Text>
-                {requestLoadingPl ? (
-                  <ActivityIndicator color={primaryColor} style={{ marginBottom: 12 }} />
-                ) : requestTargetPlayers.length === 0 ? (
-                  <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 12 }}>No available players on this team.</Text>
-                ) : (
-                  <View style={{ borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10, marginBottom: 14, overflow: 'hidden' }}>
-                    {requestTargetPlayers.map((p, i) => {
-                      const sel = requestSelectedIds.has(p.id);
-                      return (
-                        <TouchableOpacity
-                          key={p.id}
-                          onPress={() => setRequestSelectedIds(prev => {
-                            const next = new Set(prev);
-                            sel ? next.delete(p.id) : next.add(p.id);
-                            return next;
-                          })}
-                          style={{
-                            flexDirection: 'row', alignItems: 'center', padding: 10, gap: 10,
-                            backgroundColor: sel ? rgba(0.06) : '#fff',
-                            borderTopWidth: i === 0 ? 0 : 1, borderTopColor: PULSE_COLORS.ui.border,
-                          }}
-                        >
-                          <View style={[styles.jerseyBadge, { backgroundColor: sel ? rgba(0.15) : 'rgba(0,0,0,0.05)', marginRight: 0 }]}>
-                            <Text style={[styles.jerseyNum, { color: sel ? primaryColor : PULSE_COLORS.ui.muted }]}>{p.jersey_number ?? '—'}</Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text }}>{p.full_name}</Text>
-                            {p.position ? <Text style={{ fontSize: 12, color: PULSE_COLORS.ui.muted }}>{p.position}</Text> : null}
-                          </View>
-                          <View style={{
-                            width: 22, height: 22, borderRadius: 11, borderWidth: 2,
-                            borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
-                            backgroundColor: sel ? primaryColor : 'transparent',
-                            alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            {sel && <Ionicons name="checkmark" size={13} color="#fff" />}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-                {requestSelectedIds.size === 0 && (
-                  <>
-                    <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>HOW MANY SPOTS?</Text>
-                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                      {[1, 2, 3, 4, 5].map(n => (
-                        <TouchableOpacity
-                          key={n}
-                          onPress={() => setRequestSpots(n)}
-                          style={{
-                            width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
-                            backgroundColor: requestSpots === n ? primaryColor : 'rgba(0,0,0,0.05)',
-                            borderWidth: 1.5, borderColor: requestSpots === n ? primaryColor : PULSE_COLORS.ui.border,
-                          }}
-                        >
-                          <Text style={{ fontSize: 15, fontWeight: '800', color: requestSpots === n ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
-                        </TouchableOpacity>
-                      ))}
+              {/* Player list — shown after a team is picked */}
+              {requestTargetId !== '' && (
+                <>
+                  <Text style={styles.requestSectionLabel}>
+                    {requestSelectedIds.size > 0 ? `PLAYERS — ${requestSelectedIds.size} SELECTED` : 'PICK PLAYERS (OPTIONAL)'}
+                  </Text>
+                  {requestLoadingPl ? (
+                    <ActivityIndicator color={primaryColor} style={{ marginVertical: 12 }} />
+                  ) : requestTargetPlayers.length === 0 ? (
+                    <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No available players on this team.</Text>
+                  ) : (
+                    <View style={{ borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
+                      {requestTargetPlayers.map((p, i) => {
+                        const sel = requestSelectedIds.has(p.id);
+                        return (
+                          <TouchableOpacity
+                            key={p.id}
+                            onPress={() => setRequestSelectedIds(prev => {
+                              const next = new Set(prev);
+                              sel ? next.delete(p.id) : next.add(p.id);
+                              return next;
+                            })}
+                            style={{
+                              flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 12, gap: 12,
+                              backgroundColor: sel ? rgba(0.06) : '#fff',
+                              borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border,
+                            }}
+                          >
+                            <View style={[styles.jerseyBadge, { backgroundColor: sel ? rgba(0.15) : 'rgba(0,0,0,0.05)', marginRight: 0, flexShrink: 0 }]}>
+                              <Text style={[styles.jerseyNum, { color: sel ? primaryColor : PULSE_COLORS.ui.muted }]}>{p.jersey_number ?? '—'}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text }}>{p.full_name}</Text>
+                              {p.position ? <Text style={{ fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 }}>{p.position}</Text> : null}
+                            </View>
+                            <View style={{
+                              width: 24, height: 24, borderRadius: 12, borderWidth: 2, flexShrink: 0,
+                              borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+                              backgroundColor: sel ? primaryColor : 'transparent',
+                              alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              {sel && <Ionicons name="checkmark" size={14} color="#fff" />}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  </>
-                )}
-              </>
-            )}
+                  )}
 
-            {/* Note */}
-            <Text style={[styles.guestTeamLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 8 }]}>NOTE (OPTIONAL)</Text>
-            <TextInput
-              value={requestNote}
-              onChangeText={setRequestNote}
-              placeholder="e.g. Need midfielders, must be U14"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
-              style={[styles.guestSearchInput, { borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8, padding: 10, marginBottom: 16 }]}
-              maxLength={120}
-            />
+                  {/* Spots picker — only for blanket requests */}
+                  {requestSelectedIds.size === 0 && (
+                    <>
+                      <Text style={styles.requestSectionLabel}>HOW MANY SPOTS?</Text>
+                      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                        {[1, 2, 3, 4, 5].map(n => {
+                          const sel = requestSpots === n;
+                          return (
+                            <TouchableOpacity
+                              key={n}
+                              onPress={() => setRequestSpots(n)}
+                              style={{
+                                width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.background,
+                                borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+                              }}
+                            >
+                              <Text style={{ fontSize: 16, fontWeight: '800', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </>
+                  )}
+                </>
+              )}
 
-            <TouchableOpacity
-              onPress={sendRequest}
-              disabled={!requestTargetId || requestSending}
-              style={{
-                backgroundColor: !requestTargetId || requestSending ? '#E2E8F0' : primaryColor,
-                borderRadius: 12, padding: 14, alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'row', gap: 8,
-              }}
-            >
-              {requestSending
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Ionicons name="megaphone-outline" size={16} color={!requestTargetId ? '#94A3B8' : '#fff'} />}
-              <Text style={{ fontSize: 15, fontWeight: '800', color: !requestTargetId || requestSending ? '#94A3B8' : '#fff' }}>
-                {requestSending ? 'Sending…' : requestSelectedIds.size > 0 ? `Invite ${requestSelectedIds.size} Player${requestSelectedIds.size !== 1 ? 's' : ''}` : 'Request from Team'}
-              </Text>
-            </TouchableOpacity>
+              {/* Note */}
+              <Text style={styles.requestSectionLabel}>NOTE (OPTIONAL)</Text>
+              <TextInput
+                value={requestNote}
+                onChangeText={setRequestNote}
+                placeholder="e.g. Need a striker for Saturday"
+                placeholderTextColor={PULSE_COLORS.ui.muted}
+                style={{
+                  borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10,
+                  padding: 12, fontSize: 14, color: PULSE_COLORS.ui.text, marginBottom: 8,
+                  fontFamily: 'System',
+                }}
+                maxLength={120}
+              />
+              <View style={{ height: 8 }} />
+            </ScrollView>
+
+            {/* Pinned send button */}
+            <View style={{ paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border }}>
+              <TouchableOpacity
+                onPress={sendRequest}
+                disabled={!requestTargetId || requestSending}
+                activeOpacity={0.85}
+                style={{
+                  backgroundColor: !requestTargetId || requestSending ? '#E2E8F0' : primaryColor,
+                  borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
+                  flexDirection: 'row', gap: 8,
+                }}
+              >
+                {requestSending
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Ionicons name="megaphone-outline" size={16} color={!requestTargetId ? '#94A3B8' : '#fff'} />}
+                <Text style={{ fontSize: 15, fontWeight: '800', color: !requestTargetId || requestSending ? '#94A3B8' : '#fff' }}>
+                  {requestSending ? 'Sending…' : requestSelectedIds.size > 0
+                    ? `Invite ${requestSelectedIds.size} Player${requestSelectedIds.size !== 1 ? 's' : ''}`
+                    : 'Request from Team'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -2679,6 +2700,15 @@ const styles = StyleSheet.create({
   // Guest search sheet
   guestTeamHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingTop: 14, paddingBottom: 6 },
   guestTeamLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  requestSheetPanel: {
+    backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingTop: 12, paddingHorizontal: 20, paddingBottom: 36, maxHeight: '88%',
+    display: 'flex', flexDirection: 'column',
+  },
+  requestSectionLabel: {
+    fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted,
+    letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 10,
+  },
   guestSheetKAV: { flex: 1, justifyContent: 'flex-end' },
   guestSheetOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   guestSheetPanel: {
