@@ -23,6 +23,7 @@ alter table team_callouts enable row level security;
 alter table team_callout_responses enable row level security;
 
 -- Callouts: team members can read, coaches can write
+drop policy if exists "team members can read callouts" on team_callouts;
 create policy "team members can read callouts"
   on team_callouts for select
   using (
@@ -33,6 +34,7 @@ create policy "team members can read callouts"
     )
   );
 
+drop policy if exists "coaches can manage callouts" on team_callouts;
 create policy "coaches can manage callouts"
   on team_callouts for all
   using (
@@ -51,11 +53,13 @@ create policy "coaches can manage callouts"
   );
 
 -- Responses: own user can read/write their own; coaches can read all for their team
+drop policy if exists "users can manage own callout responses" on team_callout_responses;
 create policy "users can manage own callout responses"
   on team_callout_responses for all
   using (profile_id = auth.uid())
   with check (profile_id = auth.uid());
 
+drop policy if exists "coaches can read callout responses" on team_callout_responses;
 create policy "coaches can read callout responses"
   on team_callout_responses for select
   using (

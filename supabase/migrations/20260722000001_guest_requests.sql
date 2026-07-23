@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.guest_requests (
 ALTER TABLE public.guest_requests ENABLE ROW LEVEL SECURITY;
 
 -- Coaches/admins in the same club can create requests
+DROP POLICY IF EXISTS "Club coaches can create guest requests" ON public.guest_requests;
 CREATE POLICY "Club coaches can create guest requests"
   ON public.guest_requests
   FOR INSERT
@@ -29,6 +30,7 @@ CREATE POLICY "Club coaches can create guest requests"
   );
 
 -- Anyone in the same club can view requests (needed for the volunteer screen)
+DROP POLICY IF EXISTS "Club members can view guest requests" ON public.guest_requests;
 CREATE POLICY "Club members can view guest requests"
   ON public.guest_requests
   FOR SELECT
@@ -42,6 +44,7 @@ CREATE POLICY "Club members can view guest requests"
   );
 
 -- Request creator can cancel/update
+DROP POLICY IF EXISTS "Request creator can update status" ON public.guest_requests;
 CREATE POLICY "Request creator can update status"
   ON public.guest_requests
   FOR UPDATE
@@ -49,6 +52,7 @@ CREATE POLICY "Request creator can update status"
 
 -- NEW event_guests INSERT policy: parents can volunteer their own child
 -- when there is an open guest_request targeting that child's team for this event
+DROP POLICY IF EXISTS "Parents can self-volunteer as guest player" ON public.event_guests;
 CREATE POLICY "Parents can self-volunteer as guest player"
   ON public.event_guests
   FOR INSERT

@@ -72,9 +72,11 @@ alter table public.field_closure_templates enable row level security;
 alter table public.field_availability_rules enable row level security;
 
 -- field_closures: public read (for public status page), club admin write
+drop policy if exists "field_closures_public_read" on public.field_closures;
 create policy "field_closures_public_read" on public.field_closures
   for select using (true);
 
+drop policy if exists "field_closures_admin_all" on public.field_closures;
 create policy "field_closures_admin_all" on public.field_closures
   for all using (
     exists (select 1 from public.profiles
@@ -83,9 +85,11 @@ create policy "field_closures_admin_all" on public.field_closures
   );
 
 -- acknowledgements: public insert (no-login link), club admin read
+drop policy if exists "ack_public_insert" on public.field_closure_acknowledgements;
 create policy "ack_public_insert" on public.field_closure_acknowledgements
   for insert with check (true);
 
+drop policy if exists "ack_admin_read" on public.field_closure_acknowledgements;
 create policy "ack_admin_read" on public.field_closure_acknowledgements
   for select using (
     exists (select 1 from public.profiles
@@ -94,6 +98,7 @@ create policy "ack_admin_read" on public.field_closure_acknowledgements
   );
 
 -- templates: club staff read/write
+drop policy if exists "templates_club_all" on public.field_closure_templates;
 create policy "templates_club_all" on public.field_closure_templates
   for all using (
     exists (select 1 from public.profiles
@@ -102,9 +107,11 @@ create policy "templates_club_all" on public.field_closure_templates
   );
 
 -- availability rules: public read, club admin write
+drop policy if exists "avail_rules_public_read" on public.field_availability_rules;
 create policy "avail_rules_public_read" on public.field_availability_rules
   for select using (true);
 
+drop policy if exists "avail_rules_admin_all" on public.field_availability_rules;
 create policy "avail_rules_admin_all" on public.field_availability_rules
   for all using (
     exists (select 1 from public.profiles
