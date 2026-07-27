@@ -57,17 +57,19 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
   const { profile, club, teams } = useDashboard();
   const isCoach = ['coach', 'org_admin', 'app_admin'].includes(profile?.role ?? '');
 
-  const [guests,    setGuests]    = useState<GuestRow[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [showAdd,   setShowAdd]   = useState(false);
-  const [addTab,    setAddTab]    = useState<'player' | 'coach'>('player');
-  const [query,     setQuery]     = useState('');
-  const [playerRes, setPlayerRes] = useState<PlayerResult[]>([]);
-  const [coachRes,  setCoachRes]  = useState<CoachResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [adding,    setAdding]    = useState<string | null>(null);
-  const [removing,  setRemoving]  = useState<string | null>(null);
-  const [resending, setResending] = useState<string | null>(null);
+  const [guests,          setGuests]          = useState<GuestRow[]>([]);
+  const [loading,         setLoading]         = useState(true);
+  const [showAdd,         setShowAdd]         = useState(false);
+  const [addTab,          setAddTab]          = useState<'player' | 'coach'>('player');
+  const [query,           setQuery]           = useState('');
+  const [coachQuery,      setCoachQuery]      = useState('');
+  const [playerRes,       setPlayerRes]       = useState<PlayerResult[]>([]);
+  const [allCoaches,      setAllCoaches]      = useState<CoachResult[]>([]);
+  const [playersSearching, setPlayersSearching] = useState(false);
+  const [coachesLoading,  setCoachesLoading]  = useState(false);
+  const [adding,          setAdding]          = useState<string | null>(null);
+  const [removing,        setRemoving]        = useState<string | null>(null);
+  const [resending,       setResending]       = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clubId   = club?.id   ?? '';
@@ -109,25 +111,26 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
 
   useEffect(() => { loadGuests(); }, [loadGuests]);
 
-  // ── Reset & load results when modal opens or tab changes ─────────────────────
+  // ── Reset & load results when modal opens ────────────────────────────────────
 
   useEffect(() => {
-    if (!showAdd) { setQuery(''); setPlayerRes([]); setCoachRes([]); return; }
+    if (!showAdd) { setQuery(''); setCoachQuery(''); setPlayerRes([]); setAllCoaches([]); return; }
     setQuery('');
-    if (addTab === 'player') fetchPlayers('');
-    else fetchCoaches('');
-  }, [showAdd, addTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    setCoachQuery('');
+    fetchPlayers('');
+    fetchAllCoaches();
+  }, [showAdd]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Player / coach search ─────────────────────────────────────────────────────
+  // ── Player search ─────────────────────────────────────────────────────────────
 
   async function fetchPlayers(q: string) {
     if (!clubId) return;
-    setSearching(true);
+    setPlayersSearching(true);
 
     const { data: clubTeams } = await supabase
       .from('teams').select('id, name').eq('club_id', clubId).neq('id', teamId);
     const otherIds = (clubTeams ?? []).map((t: any) => t.id);
-    if (!otherIds.length) { setPlayerRes([]); setSearching(false); return; }
+    if (!otherIds.length) { setPlayerRes([]); setPlayersSearching(false); return; }
 
     const existingPids = guests.filter(g => g.player_id).map(g => g.player_id as string);
 
@@ -144,12 +147,14 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     setPlayerRes(
       ((players ?? []) as any[]).map(p => ({ ...p, team_name: nameMap[p.team_id] ?? 'Other Team' }))
     );
-    setSearching(false);
+    setPlayersSearching(false);
   }
 
-  async function fetchCoaches(q: string) {
+  // ── Coach list (fetched once, filtered in-memory) ─────────────────────────────
+
+  async function fetchAllCoaches() {
     if (!clubId) return;
-    setSearching(true);
+    setCoachesLoading(true);
 
     const existingCids = guests.filter(g => g.profile_id).map(g => g.profile_id as string);
 
@@ -159,22 +164,23 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
       .in('role', ['coach', 'org_admin'])
       .neq('id', profile?.id ?? '')
       .order('full_name')
-      .limit(40);
-    if (q.trim()) cq = cq.ilike('full_name', `%${q.trim()}%`);
+      .limit(100);
     if (existingCids.length) cq = cq.not('id', 'in', `(${existingCids.join(',')})`);
 
     const { data } = await cq;
-    setCoachRes(((data ?? []) as any[]) as CoachResult[]);
-    setSearching(false);
+    setAllCoaches(((data ?? []) as any[]) as CoachResult[]);
+    setCoachesLoading(false);
   }
+
+  // Filtered coach list derived from in-memory search
+  const coachRes = coachQuery.trim()
+    ? allCoaches.filter(c => c.full_name.toLowerCase().includes(coachQuery.trim().toLowerCase()))
+    : allCoaches;
 
   function handleQuery(q: string) {
     setQuery(q);
     if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => {
-      if (addTab === 'player') fetchPlayers(q);
-      else fetchCoaches(q);
-    }, 280);
+    debounce.current = setTimeout(() => fetchPlayers(q), 280);
   }
 
   // ── Send invite helpers ───────────────────────────────────────────────────────
@@ -234,7 +240,7 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     }
     await loadGuests();
     setAdding(null);
-    fetchCoaches(query);
+    fetchAllCoaches();
   }
 
   // ── Remove / resend ───────────────────────────────────────────────────────────
@@ -371,21 +377,32 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
               ))}
             </div>
 
-            {/* Search */}
-            <div style={{ padding: '12px 20px', flexShrink: 0 }}>
-              <input value={query} onChange={e => handleQuery(e.target.value)} autoFocus
-                placeholder={addTab === 'player' ? 'Search players…' : 'Search coaches…'}
-                style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '9px 13px', fontSize: '14px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-            </div>
+            {/* Search — player tab only */}
+            {addTab === 'player' && (
+              <div style={{ padding: '12px 20px', flexShrink: 0 }}>
+                <input value={query} onChange={e => handleQuery(e.target.value)} autoFocus
+                  placeholder="Search players…"
+                  style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '9px 13px', fontSize: '14px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              </div>
+            )}
+
+            {/* Coach filter — only shown when list is long enough to warrant it */}
+            {addTab === 'coach' && allCoaches.length > 6 && (
+              <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
+                <input value={coachQuery} onChange={e => setCoachQuery(e.target.value)} autoFocus
+                  placeholder="Filter coaches…"
+                  style={{ width: '100%', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '9px 13px', fontSize: '14px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              </div>
+            )}
 
             {/* Results */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 16px' }}>
-              {searching ? (
-                <div style={{ padding: '28px', textAlign: 'center' }}>
-                  <div style={{ width: '20px', height: '20px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
-                </div>
-              ) : addTab === 'player' ? (
-                playersByTeam.length === 0 ? (
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 16px', marginTop: addTab === 'coach' && allCoaches.length <= 6 ? '12px' : '0' }}>
+              {addTab === 'player' ? (
+                playersSearching ? (
+                  <div style={{ padding: '28px', textAlign: 'center' }}>
+                    <div style={{ width: '20px', height: '20px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+                  </div>
+                ) : playersByTeam.length === 0 ? (
                   <div style={{ padding: '28px', textAlign: 'center', fontSize: '13px', color: '#94A3B8' }}>
                     {query ? 'No players found' : 'No players on other teams yet'}
                   </div>
@@ -417,15 +434,19 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
                   ))
                 )
               ) : (
-                coachRes.length === 0 ? (
+                coachesLoading ? (
+                  <div style={{ padding: '28px', textAlign: 'center' }}>
+                    <div style={{ width: '20px', height: '20px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
+                  </div>
+                ) : coachRes.length === 0 ? (
                   <div style={{ padding: '28px', textAlign: 'center', fontSize: '13px', color: '#94A3B8' }}>
-                    {query ? 'No coaches found' : 'No coaches in your club yet'}
+                    {coachQuery ? 'No coaches match that name' : 'No coaches in your club yet'}
                   </div>
                 ) : (
                   coachRes.map(c => (
-                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                      <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', flexShrink: 0 }}>
-                        {c.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #F8FAFC' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: `${primary}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '800', color: primary, flexShrink: 0 }}>
+                        {c.full_name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{c.full_name}</div>
@@ -433,7 +454,7 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
                       </div>
                       <button onClick={() => addCoach(c)} disabled={adding === c.id}
                         style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: adding === c.id ? '#E2E8F0' : primary, color: adding === c.id ? '#94A3B8' : '#fff', fontSize: '12px', fontWeight: '700', cursor: adding === c.id ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
-                        {adding === c.id ? '…' : 'Add'}
+                        {adding === c.id ? '…' : 'Invite'}
                       </button>
                     </div>
                   ))
