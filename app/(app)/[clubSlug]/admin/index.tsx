@@ -797,11 +797,11 @@ export default function AdminPanel() {
             </TouchableOpacity>
           )}
 
-          {/* AI tools */}
-          <SectionRow label="AI TOOLS" />
-          <View style={st.aiGroup}>
-            {isOrgAdmin && (
-              <>
+          {/* AI tools — org_admin only */}
+          {isOrgAdmin && (
+            <>
+              <SectionRow label="AI TOOLS" />
+              <View style={st.aiGroup}>
                 <AiToolCard
                   icon="sparkles-outline" color="#8B5CF6" bg="rgba(139,92,246,0.12)"
                   label="Import Club"
@@ -815,9 +815,9 @@ export default function AdminPanel() {
                   desc="Import the full season schedule from the league"
                   onPress={() => router.push(`/(app)/${slug}/admin/club-schedule` as any)}
                 />
-              </>
-            )}
-          </View>
+              </View>
+            </>
+          )}
 
           {/* Develop */}
           <SectionRow label="DEVELOP" />
