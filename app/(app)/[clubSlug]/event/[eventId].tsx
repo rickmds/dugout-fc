@@ -310,6 +310,8 @@ export default function EventDetailScreen() {
   const [guestQuery, setGuestQuery] = useState('');
   const [guestPlayerResults, setGuestPlayerResults] = useState<GuestPlayerResult[]>([]);
   const [guestCoachResults, setGuestCoachResults] = useState<CoachResult[]>([]);
+  const [allCoaches, setAllCoaches] = useState<CoachResult[]>([]);
+  const [coachesLoaded, setCoachesLoaded] = useState(false);
   const [guestSearching, setGuestSearching] = useState(false);
   const [addingGuest, setAddingGuest] = useState<string | null>(null);
   type ClubTeamBrowse = { id: string; name: string; players: GuestPlayerResult[] };
@@ -669,8 +671,24 @@ export default function EventDetailScreen() {
       setClubBrowse([]);
       loadClubBrowse();
       loadEligibleTeams();
+    } else {
+      loadAllCoaches();
     }
   }, [guestModal, guestRole]);
+
+  async function loadAllCoaches() {
+    if (!profile?.club_id) return;
+    setCoachesLoaded(false);
+    const { data } = await supabase.from('profiles')
+      .select('id,full_name')
+      .eq('club_id', profile.club_id)
+      .in('role', ['coach', 'org_admin'])
+      .neq('id', profile.id)
+      .order('full_name')
+      .limit(100);
+    setAllCoaches(((data ?? []) as CoachResult[]).filter(c => !guests.some(g => g.profile_id === c.id)));
+    setCoachesLoaded(true);
+  }
 
   async function loadClubBrowse() {
     if (!profile?.club_id || !team?.id) return;
@@ -2350,42 +2368,46 @@ export default function EventDetailScreen() {
             {/* ── Coaches content ── */}
             {guestRole === 'coach' && (
               <>
-                <Text style={styles.guestSheetSub}>Search for a coach in your club to invite them to this game.</Text>
-                <View style={styles.guestSearchRow}>
-                  <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
-                  <TextInput
-                    style={styles.guestSearchInput}
-                    placeholder="Search by name…"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
-                    value={guestQuery}
-                    onChangeText={q => { setGuestQuery(q); searchGuests(q); }}
-                    autoFocus
-                    returnKeyType="search"
-                  />
-                  {guestSearching && <ActivityIndicator size="small" color="#3B82F6" />}
-                </View>
+                {allCoaches.length > 6 && (
+                  <View style={styles.guestSearchRow}>
+                    <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                    <TextInput
+                      style={styles.guestSearchInput}
+                      placeholder="Filter coaches…"
+                      placeholderTextColor={PULSE_COLORS.ui.muted}
+                      value={guestQuery}
+                      onChangeText={setGuestQuery}
+                      returnKeyType="search"
+                    />
+                  </View>
+                )}
                 <ScrollView style={styles.guestResultsList} keyboardShouldPersistTaps="handled">
-                  {guestCoachResults.map(c => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={styles.guestResultRow}
-                      onPress={() => handleAddGuestCoach(c)}
-                      disabled={!!addingGuest}
-                    >
-                      <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.12)', marginRight: 12 }]}>
-                        <Ionicons name="people-outline" size={14} color="#3B82F6" />
-                      </View>
-                      <Text style={[styles.guestResultName, { flex: 1 }]}>{c.full_name}</Text>
-                      {addingGuest === c.id
-                        ? <ActivityIndicator size="small" color="#3B82F6" />
-                        : <Ionicons name="add-circle-outline" size={20} color="#3B82F6" />}
-                    </TouchableOpacity>
-                  ))}
-                  {guestQuery.length >= 2 && !guestSearching && guestCoachResults.length === 0 && (
-                    <Text style={styles.guestNoResults}>No coaches found for "{guestQuery}"</Text>
+                  {!coachesLoaded ? (
+                    <ActivityIndicator size="small" color="#3B82F6" style={{ marginTop: 24 }} />
+                  ) : allCoaches.length === 0 ? (
+                    <Text style={styles.guestNoResults}>No other coaches in your club yet.</Text>
+                  ) : (
+                    allCoaches
+                      .filter(c => !guestQuery.trim() || (c.full_name ?? '').toLowerCase().includes(guestQuery.trim().toLowerCase()))
+                      .map(c => (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={styles.guestResultRow}
+                          onPress={() => handleAddGuestCoach(c)}
+                          disabled={!!addingGuest}
+                        >
+                          <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(59,130,246,0.12)', marginRight: 12 }]}>
+                            <Ionicons name="people-outline" size={14} color="#3B82F6" />
+                          </View>
+                          <Text style={[styles.guestResultName, { flex: 1 }]}>{c.full_name}</Text>
+                          {addingGuest === c.id
+                            ? <ActivityIndicator size="small" color="#3B82F6" />
+                            : <Ionicons name="add-circle-outline" size={20} color="#3B82F6" />}
+                        </TouchableOpacity>
+                      ))
                   )}
-                  {guestQuery.length < 2 && (
-                    <Text style={styles.guestNoResults}>Type at least 2 characters to search.</Text>
+                  {coachesLoaded && guestQuery.trim() && allCoaches.filter(c => (c.full_name ?? '').toLowerCase().includes(guestQuery.trim().toLowerCase())).length === 0 && (
+                    <Text style={styles.guestNoResults}>No coaches match "{guestQuery}"</Text>
                   )}
                 </ScrollView>
               </>
