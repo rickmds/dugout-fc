@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -10,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -42,7 +42,7 @@ export default function LoginScreen() {
     AsyncStorage.getItem('pendingInviteToken').then((t) => setHasPendingInvite(!!t));
   }, []);
 
-  async function routeAfterAuth(userId: string) {
+  async function routeAfterAuth(userId: string, isSso = false) {
     const token = await AsyncStorage.getItem('pendingInviteToken');
     if (token) {
       await AsyncStorage.removeItem('pendingInviteToken');
@@ -54,11 +54,21 @@ export default function LoginScreen() {
       return;
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role, club_id')
-      .eq('id', userId)
-      .single();
+    // SSO creates the profile row via a DB trigger; give it time to fire
+    let profile = null;
+    let profileError = null;
+    const attempts = isSso ? 4 : 1;
+    for (let i = 0; i < attempts; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 600));
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role, club_id')
+        .eq('id', userId)
+        .single();
+      profile = data;
+      profileError = error;
+      if (data) break;
+    }
 
     if (profileError) { setError('Failed to load your profile. Please try again.'); return; }
 
@@ -77,7 +87,7 @@ export default function LoginScreen() {
     }
 
     if (profile.role === 'org_admin') {
-      setInfo('Your club setup is not finished yet. Please visit pulse-fc.app/onboarding to finish setting up your club.');
+      setInfo('Your club setup is not finished yet. Visit pulse-fc.app/onboarding to complete setup. Or sign out below.');
       return;
     }
 
@@ -107,7 +117,7 @@ export default function LoginScreen() {
     }
     setLoading(true);
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: Linking.createURL('/reset-password'),
+      redirectTo: 'https://pulse-fc.app/reset-password',
     });
     setLoading(false);
     if (resetError) { setError(resetError.message); return; }
@@ -121,7 +131,7 @@ export default function LoginScreen() {
       await signInWithGoogle();
       const { data } = await supabase.auth.getUser();
       if (data.user) {
-        await routeAfterAuth(data.user.id);
+        await routeAfterAuth(data.user.id, true);
       } else {
         setSocialLoading(null);
         return;
@@ -138,7 +148,7 @@ export default function LoginScreen() {
       await signInWithApple();
       const { data } = await supabase.auth.getUser();
       if (data.user) {
-        await routeAfterAuth(data.user.id);
+        await routeAfterAuth(data.user.id, true);
       } else {
         setSocialLoading(null);
         return;
@@ -191,6 +201,13 @@ export default function LoginScreen() {
           {info && (
             <View style={st.infoBanner}>
               <Text style={st.infoText}>{info}</Text>
+              <TouchableOpacity
+                onPress={async () => { await supabase.auth.signOut(); setInfo(null); }}
+                style={st.signOutLink}
+                activeOpacity={0.7}
+              >
+                <Text style={st.signOutLinkText}>Sign out</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -231,7 +248,9 @@ export default function LoginScreen() {
           </View>
 
           {/* ── Social ── */}
-          <SocialButton provider="apple" onPress={handleApple} loading={socialLoading === 'apple'} />
+          {Platform.OS === 'ios' && (
+            <SocialButton provider="apple" onPress={handleApple} loading={socialLoading === 'apple'} />
+          )}
           <SocialButton provider="google" onPress={handleGoogle} loading={socialLoading === 'google'} />
 
           {/* ── Register ── */}
@@ -314,7 +333,9 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
     borderRadius: 12, padding: 14, marginBottom: 16,
   },
-  infoText: { color: PULSE_COLORS.brand.green, fontSize: 14, lineHeight: 20 },
+  infoText: { color: PULSE_COLORS.brand.green, fontSize: 14, lineHeight: 20, marginBottom: 10 },
+  signOutLink: { alignSelf: 'flex-start' },
+  signOutLinkText: { color: PULSE_COLORS.brand.green, fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
 
   // Form
   form: { gap: 4, marginBottom: 4 },

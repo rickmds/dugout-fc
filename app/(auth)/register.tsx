@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
@@ -32,6 +33,8 @@ export default function RegisterScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
 
   async function routeAfterRegister() {
     const clubSlug = await acceptInviteIfPending();
@@ -72,7 +75,7 @@ export default function RegisterScreen() {
     }
 
     if (data.user && !data.session) {
-      setError('Check your email and click the confirmation link, then log in to continue.');
+      setAwaitingConfirmation(true);
       return;
     }
 
@@ -117,6 +120,44 @@ export default function RegisterScreen() {
     }
   }
 
+  async function handleResend() {
+    setResendLoading(true);
+    try {
+      await supabase.auth.resend({ type: 'signup', email });
+    } finally {
+      setResendLoading(false);
+    }
+  }
+
+  if (awaitingConfirmation) {
+    return (
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          <View style={styles.brandMark}>
+            <Image source={require('../../assets/icon.png')} style={styles.brandLogo} />
+            <Text style={styles.brandName}>Pulse<Text style={{ color: '#22C55E' }}>FC</Text></Text>
+          </View>
+          <Text style={styles.heading}>Check your email</Text>
+          <Text style={styles.confirmBody}>
+            We sent a confirmation link to{'\n'}<Text style={styles.confirmEmail}>{email}</Text>
+            {'\n\n'}Click the link in that email to activate your account, then come back here to log in.
+          </Text>
+          <PrimaryButton
+            title={resendLoading ? 'Sending…' : 'Resend confirmation email'}
+            onPress={handleResend}
+            loading={resendLoading}
+            style={styles.createButton}
+          />
+          <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.switchLink}>
+            <Text style={styles.switchText}>
+              Already confirmed? <Text style={styles.switchTextBold}>Log in</Text>
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -153,7 +194,9 @@ export default function RegisterScreen() {
         </View>
 
         <SocialButton provider="google" onPress={handleGoogle} loading={socialLoading === 'google'} />
-        <SocialButton provider="apple" onPress={handleApple} loading={socialLoading === 'apple'} />
+        {Platform.OS === 'ios' && (
+          <SocialButton provider="apple" onPress={handleApple} loading={socialLoading === 'apple'} />
+        )}
 
         <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.switchLink}>
           <Text style={styles.switchText}>
@@ -234,5 +277,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 24,
+  },
+  confirmBody: {
+    fontSize: 15,
+    color: PULSE_COLORS.ui.textSecondary,
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  confirmEmail: {
+    color: PULSE_COLORS.ui.text,
+    fontWeight: '700',
   },
 });

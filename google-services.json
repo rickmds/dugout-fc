@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "954363835853",
+    "project_id": "pulse-fc",
+    "storage_bucket": "pulse-fc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:954363835853:android:62909957c0c0702aa08084",
+        "android_client_info": {
+          "package_name": "app.pulsefc.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAg5RI6cT8yUw_-xk1zrZIyVw0gaJ-_Yz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

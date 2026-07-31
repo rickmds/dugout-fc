@@ -41,3 +41,6 @@ yarn-error.*
 /android
 .vercel
 .env
+
+# Android / Play Store secrets
+play-store-key.json
