@@ -315,6 +315,7 @@ export default function RegistrationsPage() {
   const [createError, setCreateError] = useState('');
   const [deleteFormConfirm, setDeleteFormConfirm] = useState<{ id: string; title: string } | null>(null);
   const [editingFormId, setEditingFormId] = useState<string | null>(null);
+  const [savedWaivers, setSavedWaivers] = useState<{ id: string; title: string; body: string }[]>([]);
 
   const loadForms = useCallback(async () => {
     if (!club) return;
@@ -340,6 +341,12 @@ export default function RegistrationsPage() {
   }, [club]);
 
   useEffect(() => { loadForms(); }, [loadForms]);
+
+  useEffect(() => {
+    if (!club) return;
+    supabase.from('waivers').select('id, title, body').eq('club_id', club.id).order('created_at', { ascending: false })
+      .then(({ data }) => setSavedWaivers(data ?? []));
+  }, [club?.id]);
 
   async function loadSubmissions(form: RegForm) {
     setActiveForm(form);
@@ -925,6 +932,30 @@ export default function RegistrationsPage() {
                         </div>
                       </div>
                     ))}
+
+                    {/* Saved waivers */}
+                    {savedWaivers.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: '9px', fontWeight: '800', color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '5px', paddingLeft: '4px' }}>Saved waivers</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {savedWaivers.map((w) => (
+                            <button
+                              key={w.id}
+                              onClick={() => {
+                                setFields(prev => [...prev, { id: uid(), type: 'waiver', label: w.title, required: true, waiver_text: w.body }]);
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '7px', padding: '7px 10px', fontSize: '12px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%', transition: 'all 0.1s' }}
+                              onMouseEnter={(e) => { const el = e.currentTarget; el.style.background = '#FEF2F2'; el.style.color = '#DC2626'; el.style.borderColor = '#DC262640'; }}
+                              onMouseLeave={(e) => { const el = e.currentTarget; el.style.background = '#F8FAFC'; el.style.color = '#374151'; el.style.borderColor = '#F1F5F9'; }}
+                              title={w.body.slice(0, 120)}
+                            >
+                              <span style={{ fontSize: '11px', color: '#DC2626', fontWeight: '900' }}>+</span>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.title}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

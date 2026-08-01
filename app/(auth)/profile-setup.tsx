@@ -28,7 +28,7 @@ export default function ProfileSetupScreen() {
   async function finishAndRedirect() {
     await refreshProfile();
     if (club) {
-      router.replace(`/(app)/${club.slug}/sign-waivers` as never);
+      router.replace(`/(app)/${club.slug}/(tabs)`);
     } else {
       router.replace('/(auth)/find-team');
     }
