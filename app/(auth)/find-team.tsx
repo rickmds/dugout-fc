@@ -64,7 +64,7 @@ export default function FindTeamScreen() {
     }
 
     await refreshProfile();
-    router.replace(`/(app)/${inviteData.club_slug}/(tabs)` as never);
+    router.replace(`/(app)/${inviteData.club_slug}/sign-waivers` as never);
   }
 
   async function handleFindClub() {

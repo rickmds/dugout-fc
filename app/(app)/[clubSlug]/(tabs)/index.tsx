@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Image,
   Modal,
   RefreshControl,
   ScrollView,
@@ -13,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -25,8 +25,12 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { positionColor } from '../../../../constants/positions';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import GameDayWidget from '../../../../components/home/GameDayWidget';
+import PollCard, { type Poll } from '../../../../components/home/PollCard';
+import CreatePollModal from '../../../../components/home/CreatePollModal';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
 import { fetchDriveTime } from '../../../../lib/drivetime';
+import { sendProfilesPush } from '../../../../lib/push';
+import GalleryCard from '../../../../components/home/GalleryCard';
 
 type NextEvent = {
   id: string;
@@ -77,6 +81,19 @@ type OutstandingFee = {
   discount: number;
   due_date: string | null;
   status: string;
+};
+
+type PendingGuestInvite = {
+  id: string;
+  event_id: string;
+  player_id: string;
+  full_name: string;
+  event_title: string;
+  event_date: string;
+  event_time: string | null;
+  event_type: string;
+  team_name: string;
+  team_id: string;
 };
 
 const DEV_ACCOUNTS = __DEV__ ? [
@@ -245,8 +262,38 @@ export default function HomeScreen() {
   const [calloutBody, setCalloutBody] = useState('');
   const [calloutPosting, setCalloutPosting] = useState(false);
 
+  const [pendingGuestInvites, setPendingGuestInvites] = useState<PendingGuestInvite[]>([]);
+  const [guestRespondLoading, setGuestRespondLoading] = useState<string | null>(null);
+  const [unsignedWaiverCount, setUnsignedWaiverCount] = useState(0);
+
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [showPollModal, setShowPollModal] = useState(false);
+  const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
+
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
   const slug = clubSlug ?? club?.slug ?? '';
+
+  // Realtime: keep notification badge in sync without polling
+  useEffect(() => {
+    if (!profile?.id) return;
+    const channel = supabase
+      .channel(`notif-badge-${profile.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `profile_id=eq.${profile.id}`,
+      }, () => {
+        supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('profile_id', profile.id)
+          .eq('read', false)
+          .then(({ count }) => setUnreadNotifCount(count ?? 0));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.id]);
 
   // Team picker
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
@@ -262,6 +309,7 @@ export default function HomeScreen() {
   const [devLoading, setDevLoading]   = useState<string | null>(null);
   const tapCount = useRef(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFetchRef = useRef<number>(0);
 
   function handleGreetingTap() {
     if (process.env.EXPO_PUBLIC_APP_ENV !== 'development') return;
@@ -300,66 +348,150 @@ export default function HomeScreen() {
       if (teamLoading) return;
       if (!team) { setLoading(false); return; }
       fetchData();
-    }, [team?.id, teamLoading])
+      checkUnsignedWaivers();
+    }, [team?.id, teamLoading, profile?.id])
   );
+
+  async function checkUnsignedWaivers() {
+    if (!profile?.id || !slug) return;
+    const { data: clubRow } = await supabase.from('clubs').select('id').eq('slug', slug).single();
+    if (!clubRow) return;
+    const { data: memberRows } = await supabase.from('team_members').select('team_id').eq('profile_id', profile.id);
+    if (!memberRows?.length) return;
+    const { data: clubTeams } = await supabase.from('teams').select('id').eq('club_id', clubRow.id).in('id', memberRows.map(r => r.team_id));
+    if (!clubTeams?.length) return;
+    const clubTeamIds = clubTeams.map(t => t.id);
+    const { data: players } = await supabase.from('players').select('id, team_id').eq('profile_id', profile.id).in('team_id', clubTeamIds);
+    if (!players?.length) return;
+    const playerIds = players.map(p => p.id);
+    const { data: assignments } = await supabase.from('waiver_assignments').select('waiver_id, team_id').in('team_id', clubTeamIds);
+    if (!assignments?.length) { setUnsignedWaiverCount(0); return; }
+    const { data: sigs } = await supabase.from('waiver_signatures').select('waiver_id, player_id').in('player_id', playerIds);
+    const signed = new Set((sigs ?? []).map(s => `${s.waiver_id}:${s.player_id}`));
+    const unsignedSet = new Set<string>();
+    for (const a of assignments) {
+      const teamPlayers = players.filter(p => p.team_id === a.team_id);
+      const hasUnsigned = teamPlayers.some(p => !signed.has(`${a.waiver_id}:${p.id}`));
+      if (hasUnsigned) unsignedSet.add(a.waiver_id);
+    }
+    setUnsignedWaiverCount(unsignedSet.size);
+  }
+
+  // Re-fetch immediately when the user switches teams while this tab is already active.
+  // useFocusEffect only fires on navigation focus events, not mid-session team changes.
+  // The 30s cache inside fetchData prevents a redundant double-fetch when both fire together.
+  useEffect(() => {
+    if (!team?.id || teamLoading) return;
+    lastFetchRef.current = 0;
+    fetchData();
+  }, [team?.id, teamLoading]);
+
+  function fetchWeatherAndDrive(event: NextEvent | null, setWeather: (w: WeatherData) => void, setDrive: (t: string) => void) {
+    if (!event) return;
+    const loc = (event.lat != null && event.lng != null)
+      ? `${event.lat},${event.lng}`
+      : (event.address ?? event.location ?? '');
+    if (!loc) return;
+    fetchDriveTime(loc).then(t => { if (t) setDrive(t); });
+    if (isWeatherForecastable(event.event_date)) {
+      fetchEventWeather(loc, event.event_date, event.event_time ?? null).then(w => { if (w) setWeather(w); });
+    }
+  }
 
   async function fetchData() {
     if (!team || !profile) return;
+
+    // Skip re-fetch if data is fresh (30s cache) — bypassed by pull-to-refresh
+    const now = Date.now();
+    if (lastFetchRef.current && now - lastFetchRef.current < 30_000) return;
+
     setLoading(true);
     const today = new Date().toISOString().split('T')[0];
+    const sb = supabase as any;
 
+    try {
+    // === CRITICAL PATH — unblocks skeleton as fast as possible ===
     const [
-      { count: pc },
-      { count: ec },
       { data: gameEvents },
       { data: trainingEvents },
-      playerRes,
       announcementRes,
-      { count: unreadNotifs },
-      { data: upcomingEventsData },
+      playerRes,
+      { data: calloutData },
     ] = await Promise.all([
-      supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', team.id),
-      supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
       supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
       supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
-      supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).eq('read', false),
-      supabase.from('events').select('id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
+      supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
+      sb.from('team_callouts').select('id, title, body, created_at, expires_at').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
     ]);
-
-    const upcomingEventIds = (upcomingEventsData ?? []).map((e: { id: string }) => e.id);
-
-    setPlayerCount(pc ?? 0);
-    setUpcomingCount(ec ?? 0);
-    setUnreadNotifCount(unreadNotifs ?? 0);
 
     const nextG = (gameEvents as NextEvent[])?.[0] ?? null;
     const nextT = (trainingEvents as NextEvent[])?.[0] ?? null;
+    const player = (playerRes as any).data as MyPlayer | null;
+    const activeCallouts = (calloutData ?? []) as Callout[];
+
     setNextGame(nextG);
     setNextTraining(nextT);
     setNextGameWeather(null);
     setNextTrainingWeather(null);
     setNextGameDriveTime(null);
     setNextTrainingDriveTime(null);
+    setMyPlayer(player);
+    setLatestAnnouncement((announcementRes as any).data ?? null);
+    setCallouts(activeCallouts);
+    setCalloutResponses({});
 
-    function fetchWeatherAndDrive(event: NextEvent | null, setWeather: (w: WeatherData) => void, setDrive: (t: string) => void) {
-      if (!event) return;
-      const loc = (event.lat != null && event.lng != null)
-        ? `${event.lat},${event.lng}`
-        : (event.address ?? event.location ?? '');
-      if (!loc) return;
-      fetchDriveTime(loc).then(t => { if (t) setDrive(t); });
-      if (isWeatherForecastable(event.event_date)) {
-        fetchEventWeather(loc, event.event_date, event.event_time ?? null).then(w => { if (w) setWeather(w); });
-      }
-    }
+    // Fire weather + drive time (non-blocking)
     fetchWeatherAndDrive(nextG, setNextGameWeather, setNextGameDriveTime);
     fetchWeatherAndDrive(nextT, setNextTrainingWeather, setNextTrainingDriveTime);
 
-    const player = (playerRes as any).data as MyPlayer | null;
-    setMyPlayer(player);
-    setLatestAnnouncement((announcementRes as any).data ?? null);
+    // Skeleton off — user sees main content now
+    setLoading(false);
+    lastFetchRef.current = Date.now();
+
+    // === BACKGROUND — fills in while the user reads ===
+
+    const [
+      { count: pc },
+      { count: ec },
+      { count: unreadNotifs },
+      { data: upcomingEventsData },
+    ] = await Promise.all([
+      supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', team.id),
+      supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
+      supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).eq('read', false),
+      supabase.from('events').select('id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
+    ]);
+
+    const upcomingEventIds = (upcomingEventsData ?? []).map((e: { id: string }) => e.id);
+    setPlayerCount(pc ?? 0);
+    setUpcomingCount(ec ?? 0);
+    setUnreadNotifCount(unreadNotifs ?? 0);
+
+    // Callout responses (needs callout IDs from critical batch)
+    if (activeCallouts.length > 0 && profile?.id) {
+      const cIds = activeCallouts.map(c => c.id);
+      const [responseRes, helpCountRes] = await Promise.all([
+        sb.from('team_callout_responses').select('callout_id, response').in('callout_id', cIds).eq('profile_id', profile.id),
+        isCoach
+          ? sb.from('team_callout_responses').select('callout_id').in('callout_id', cIds).eq('response', 'helping')
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const rMap: Record<string, 'helping' | 'dismissed'> = {};
+      for (const r of (responseRes.data ?? []) as { callout_id: string; response: string }[]) {
+        rMap[r.callout_id] = r.response as 'helping' | 'dismissed';
+      }
+      setCalloutResponses(rMap);
+
+      if (isCoach && helpCountRes.data) {
+        const helpMap: Record<string, number> = {};
+        for (const r of helpCountRes.data as { callout_id: string }[]) {
+          helpMap[r.callout_id] = (helpMap[r.callout_id] ?? 0) + 1;
+        }
+        setCallouts(activeCallouts.map(c => ({ ...c, helper_count: helpMap[c.id] ?? 0 })));
+      }
+    }
 
     if (player && !isCoach) {
       const { data: feesData } = await (supabase as any)
@@ -371,6 +503,51 @@ export default function HomeScreen() {
       setOutstandingFees((feesData ?? []) as OutstandingFee[]);
     } else {
       setOutstandingFees([]);
+    }
+
+    if (!isCoach && profile?.id) {
+      const { data: allPlayerRows } = await supabase.from('players').select('id').eq('profile_id', profile.id);
+      const allPlayerIds = (allPlayerRows ?? []).map((p: { id: string }) => p.id);
+      if (allPlayerIds.length > 0) {
+        const { data: guestRows } = await supabase
+          .from('event_guests')
+          .select('id, event_id, player_id, full_name')
+          .in('player_id', allPlayerIds)
+          .eq('status', 'pending');
+        if (guestRows && guestRows.length > 0) {
+          const eventIds = [...new Set(guestRows.map((g: any) => g.event_id as string))];
+          const { data: evData } = await supabase
+            .from('events')
+            .select('id, title, type, event_date, event_time, team_id')
+            .in('id', eventIds)
+            .gte('event_date', today);
+          const evMap: Record<string, any> = {};
+          for (const e of (evData ?? [])) evMap[(e as any).id] = e;
+          const teamIds = [...new Set((evData ?? []).map((e: any) => e.team_id as string))];
+          const { data: teamsData } = await supabase.from('teams').select('id, name').in('id', teamIds);
+          const teamMap: Record<string, string> = {};
+          for (const t of (teamsData ?? [])) teamMap[(t as any).id] = (t as any).name;
+          const invites: PendingGuestInvite[] = (guestRows as any[])
+            .filter((g) => evMap[g.event_id])
+            .map((g) => {
+              const ev = evMap[g.event_id];
+              return {
+                id: g.id, event_id: g.event_id, player_id: g.player_id, full_name: g.full_name,
+                event_title: ev.title, event_date: ev.event_date, event_time: ev.event_time ?? null,
+                event_type: ev.type, team_name: teamMap[ev.team_id] ?? 'Guest Event',
+                team_id: ev.team_id,
+              };
+            })
+            .sort((a, b) => a.event_date.localeCompare(b.event_date));
+          setPendingGuestInvites(invites);
+        } else {
+          setPendingGuestInvites([]);
+        }
+      } else {
+        setPendingGuestInvites([]);
+      }
+    } else {
+      setPendingGuestInvites([]);
     }
 
     if (player) {
@@ -481,7 +658,7 @@ export default function HomeScreen() {
       setMyRsvpCount(0);
     }
 
-    if (isCoach) {
+    {
       const [gameRsvps, trainingRsvps, gameGuests, trainingGuests] = await Promise.all([
         nextG ? supabase.from('event_rsvps').select('status').eq('event_id', nextG.id) : Promise.resolve({ data: null as null }),
         nextT ? supabase.from('event_rsvps').select('status').eq('event_id', nextT.id) : Promise.resolve({ data: null as null }),
@@ -504,9 +681,6 @@ export default function HomeScreen() {
       } else {
         setTrainingHeadcount(null);
       }
-    } else {
-      setGameHeadcount(null);
-      setTrainingHeadcount(null);
     }
 
     // Team Pulse — game vs training attendance this month (coaches only)
@@ -538,52 +712,65 @@ export default function HomeScreen() {
       setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round(((trainingAtt.count ?? 0) / (trainingIds.length * playerN)) * 100) : null);
     }
 
-    // Callouts (cast through any — new tables not yet in generated types)
-    const sb = supabase as any;
-    const { data: calloutData } = await sb
-      .from('team_callouts')
-      .select('id, title, body, created_at, expires_at')
+    // Polls
+    const { data: pollRows } = await sb
+      .from('team_polls')
+      .select('id, question, closes_at, is_anonymous, is_multiple_choice, result_visibility, rsvp_gated, event_id, created_by')
       .eq('team_id', team.id)
-      .or('expires_at.is.null,expires_at.gt.now()')
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(10);
 
-    const activeCallouts = (calloutData ?? []) as Callout[];
-
-    if (activeCallouts.length > 0 && profile?.id) {
-      const cIds = activeCallouts.map(c => c.id);
-      const [responseRes, helpCountRes] = await Promise.all([
-        sb.from('team_callout_responses').select('callout_id, response').in('callout_id', cIds).eq('profile_id', profile.id),
-        isCoach
-          ? sb.from('team_callout_responses').select('callout_id').in('callout_id', cIds).eq('response', 'helping')
-          : Promise.resolve({ data: null }),
+    if (pollRows?.length > 0) {
+      const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
+      const [optionsRes, votesRes] = await Promise.all([
+        sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
+        sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
       ]);
 
-      const rMap: Record<string, 'helping' | 'dismissed'> = {};
-      for (const r of (responseRes.data ?? []) as { callout_id: string; response: string }[]) {
-        rMap[r.callout_id] = r.response as 'helping' | 'dismissed';
+      // Track which events the current user RSVPed attending (for RSVP-gated polls)
+      const gatedEventIds = [...new Set((pollRows as any[])
+        .filter((p: any) => p.rsvp_gated && p.event_id)
+        .map((p: any) => p.event_id as string))];
+      if (gatedEventIds.length > 0 && player) {
+        const { data: rsvpRows } = await supabase
+          .from('event_rsvps')
+          .select('event_id')
+          .in('event_id', gatedEventIds)
+          .eq('player_id', player.id)
+          .eq('status', 'attending');
+        setMyRsvpEventIds(new Set((rsvpRows ?? []).map((r: any) => r.event_id as string)));
       }
-      setCalloutResponses(rMap);
 
-      if (isCoach && helpCountRes.data) {
-        const helpMap: Record<string, number> = {};
-        for (const r of helpCountRes.data as { callout_id: string }[]) {
-          helpMap[r.callout_id] = (helpMap[r.callout_id] ?? 0) + 1;
-        }
-        setCallouts(activeCallouts.map(c => ({ ...c, helper_count: helpMap[c.id] ?? 0 })));
-      } else {
-        setCallouts(activeCallouts);
-      }
+      const teamMemberCount = pc ?? 0;
+      const builtPolls: Poll[] = (pollRows as any[]).map((p: any) => ({
+        id: p.id,
+        question: p.question,
+        closes_at: p.closes_at,
+        is_anonymous: p.is_anonymous,
+        is_multiple_choice: p.is_multiple_choice,
+        result_visibility: p.result_visibility,
+        rsvp_gated: p.rsvp_gated,
+        event_id: p.event_id,
+        created_by: p.created_by,
+        options: (optionsRes.data ?? []).filter((o: any) => o.poll_id === p.id),
+        votes: (votesRes.data ?? []).filter((v: any) => v.poll_id === p.id),
+        totalParticipants: teamMemberCount,
+      }));
+      setPolls(builtPolls);
     } else {
-      setCallouts(activeCallouts);
-      setCalloutResponses({});
+      setPolls([]);
     }
 
-    setLoading(false);
+    } catch (e) {
+      console.error('fetchData error', e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleRefresh() {
     setRefreshing(true);
+    lastFetchRef.current = 0; // bypass 30s cache
     await fetchData();
     setRefreshing(false);
   }
@@ -610,8 +797,13 @@ export default function HomeScreen() {
       {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
+          const snapshot = callouts;
           setCallouts(prev => prev.filter(c => c.id !== calloutId));
-          await (supabase as any).from('team_callouts').delete().eq('id', calloutId);
+          const { error } = await (supabase as any).from('team_callouts').delete().eq('id', calloutId);
+          if (error) {
+            setCallouts(snapshot);
+            Alert.alert('Error', 'Could not delete callout. Please try again.');
+          }
         },
       },
     ]);
@@ -630,6 +822,65 @@ export default function HomeScreen() {
     );
   }
 
+  const handleDeletePoll = useCallback(async (pollId: string) => {
+    const snapshot = polls;
+    setPolls(prev => prev.filter(p => p.id !== pollId));
+    const { error } = await (supabase as any).from('team_polls').delete().eq('id', pollId);
+    if (error) { setPolls(snapshot); Alert.alert('Error', 'Could not delete poll.'); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polls]);
+
+  const handleVoteChange = useCallback((pollId: string, optionIds: string[]) => {
+    if (!profile) return;
+    setPolls(prev => prev.map(p => {
+      if (p.id !== pollId) return p;
+      const otherVotes = p.votes.filter(v => v.profile_id !== profile.id);
+      const myNewVotes = optionIds.map(oid => ({ poll_id: pollId, option_id: oid, profile_id: profile.id }));
+      return { ...p, votes: [...otherVotes, ...myNewVotes] };
+    }));
+  }, [profile?.id]);
+
+  const handleGameDayPress = useCallback(() => {
+    router.push(`/(app)/${slug}/game-day` as any);
+  }, [slug]);
+
+  async function handleGuestRespond(invite: PendingGuestInvite, status: 'confirmed' | 'declined') {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setGuestRespondLoading(invite.id);
+    const snapshot = pendingGuestInvites;
+    setPendingGuestInvites(prev => prev.filter(g => g.id !== invite.id));
+    try {
+      const { error } = await (supabase as any).from('event_guests').update({ status }).eq('id', invite.id);
+      if (error) {
+        setPendingGuestInvites(snapshot);
+        Alert.alert('Error', 'Could not respond to invite. Please try again.');
+        return;
+      }
+      // Notify coaches
+      const { data: coachRows } = await supabase
+        .from('team_members')
+        .select('profile_id')
+        .eq('team_id', invite.team_id)
+        .eq('role', 'coach');
+      const coachIds = ((coachRows ?? []) as any[]).map(r => r.profile_id as string).filter(Boolean);
+      if (coachIds.length > 0) {
+        await sendProfilesPush({
+          profileIds: coachIds,
+          title: status === 'confirmed' ? 'Guest confirmed ✓' : 'Guest declined',
+          body: status === 'confirmed'
+            ? `${invite.full_name} confirmed as guest player — ${invite.event_title}.`
+            : `${invite.full_name} declined the guest invitation for ${invite.event_title}.`,
+          data: { type: status === 'confirmed' ? 'guest_accepted' : 'guest_response', event_id: invite.event_id, club_slug: slug },
+        });
+      }
+    } catch (e) {
+      setPendingGuestInvites(snapshot);
+      Alert.alert('Error', 'Could not respond to invite. Please try again.');
+    } finally {
+      setGuestRespondLoading(null);
+    }
+  }
+
   async function handleRsvp(
     event: NextEvent,
     status: 'attending' | 'not_attending',
@@ -644,20 +895,29 @@ export default function HomeScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLoading(true);
-    if (currentStatus === status) {
-      await supabase.from('event_rsvps').delete().eq('event_id', event.id).eq('player_id', myPlayer.id);
-      setStatus(null);
-      if (status === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
-    } else {
-      await supabase.from('event_rsvps').upsert(
-        { event_id: event.id, player_id: myPlayer.id, responded_by: profile?.id, status },
-        { onConflict: 'event_id,player_id' }
-      );
-      if (status === 'attending') setMyRsvpCount((c) => c + 1);
-      else if (currentStatus === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
-      setStatus(status);
+    try {
+      if (currentStatus === status) {
+        const { error } = await supabase.from('event_rsvps').delete().eq('event_id', event.id).eq('player_id', myPlayer.id);
+        if (!error) {
+          setStatus(null);
+          if (status === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
+        }
+      } else {
+        const { error } = await supabase.from('event_rsvps').upsert(
+          { event_id: event.id, player_id: myPlayer.id, responded_by: profile?.id, status },
+          { onConflict: 'event_id,player_id' }
+        );
+        if (!error) {
+          if (status === 'attending') setMyRsvpCount((c) => c + 1);
+          else if (currentStatus === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
+          setStatus(status);
+        }
+      }
+    } catch (e) {
+      console.error('handleRsvp error', e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   if (teamLoading || loading) {
@@ -788,40 +1048,56 @@ export default function HomeScreen() {
               </View>
             ) : null}
 
-            {/* Headcount — coaches only, taps through to attendance tab */}
-            {isCoach && headcount ? (
-              <TouchableOpacity
-                style={styles.headcountRow}
-                onPress={() => router.push({ pathname: `/(app)/${slug}/event/${event.id}`, params: { section: 'attendance' } } as never)}
-                activeOpacity={0.7}
-              >
-                {(() => {
-                  const guests = headcount.confirmedGuests ?? 0;
-                  const totalGoing = headcount.going + guests;
-                  return [
-                    { count: totalGoing,         color: '#22C55E', label: 'Going', guests },
-                    { count: headcount.tbd,       color: '#F59E0B', label: 'TBD',   guests: 0 },
-                    { count: headcount.notGoing,  color: '#EF4444', label: 'Out',   guests: 0 },
-                  ].map(({ count, color, label: lbl, guests: g }) => (
-                    <View key={lbl} style={styles.headcountItem}>
-                      <View style={[styles.headcountCircle, { backgroundColor: color }]}>
-                        <Text style={styles.headcountCircleNum}>{count}</Text>
-                      </View>
-                      <Text style={styles.headcountLabel}>{lbl}</Text>
-                      {g > 0 && (
-                        <View style={styles.headcountGuestPill}>
-                          <Text style={styles.headcountGuestPillText}>+{g}G</Text>
-                        </View>
-                      )}
+            {/* Attendance bar — visible to all when headcount available */}
+            {headcount && (headcount.going + headcount.notGoing + headcount.tbd) > 0 ? (() => {
+              const guests   = headcount.confirmedGuests ?? 0;
+              const going    = headcount.going + guests;
+              const cantGo   = headcount.notGoing;
+              const pending  = headcount.tbd;
+              const total    = going + cantGo + pending;
+              const goingPct   = Math.round((going   / total) * 100);
+              const cantPct    = Math.min(100 - goingPct, Math.round((cantGo  / total) * 100));
+              const pendingPct = 100 - goingPct - cantPct;
+              const inner = (
+                <>
+                  <View style={styles.attendanceBarTrack}>
+                    {goingPct   > 0 && <View style={[styles.attendanceBarSeg, { flex: goingPct,   backgroundColor: '#22C55E' }]} />}
+                    {cantPct    > 0 && <View style={[styles.attendanceBarSeg, { flex: cantPct,    backgroundColor: '#EF4444' }]} />}
+                    {pendingPct > 0 && <View style={[styles.attendanceBarSeg, { flex: pendingPct, backgroundColor: PULSE_COLORS.ui.border }]} />}
+                  </View>
+                  <View style={styles.attendanceBarLegend}>
+                    <View style={styles.attendanceBarLegendItem}>
+                      <View style={[styles.attendanceBarDot, { backgroundColor: '#22C55E' }]} />
+                      <Text style={styles.attendanceBarLegendText}>{going} going{guests > 0 ? ` (+${guests}G)` : ''}</Text>
                     </View>
-                  ));
-                })()}
-                <View style={styles.headcountChevron}>
-                  <Text style={styles.headcountChevronText}>View breakdown</Text>
-                  <Ionicons name="chevron-forward" size={12} color={PULSE_COLORS.ui.muted} />
-                </View>
-              </TouchableOpacity>
-            ) : null}
+                    <View style={styles.attendanceBarLegendItem}>
+                      <View style={[styles.attendanceBarDot, { backgroundColor: '#EF4444' }]} />
+                      <Text style={styles.attendanceBarLegendText}>{cantGo} can't</Text>
+                    </View>
+                    <View style={styles.attendanceBarLegendItem}>
+                      <View style={[styles.attendanceBarDot, { backgroundColor: PULSE_COLORS.ui.border }]} />
+                      <Text style={styles.attendanceBarLegendText}>{pending} pending</Text>
+                    </View>
+                    {isCoach && (
+                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                        <Ionicons name="chevron-forward" size={12} color={PULSE_COLORS.ui.muted} />
+                      </View>
+                    )}
+                  </View>
+                </>
+              );
+              return isCoach ? (
+                <TouchableOpacity
+                  style={styles.attendanceBarWrap}
+                  onPress={() => router.push({ pathname: `/(app)/${slug}/event/${event.id}`, params: { section: 'attendance' } } as never)}
+                  activeOpacity={0.7}
+                >
+                  {inner}
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.attendanceBarWrap}>{inner}</View>
+              );
+            })() : null}
 
             {/* RSVP — parents with a linked player */}
             {!isCoach && myPlayer ? (
@@ -929,7 +1205,7 @@ export default function HomeScreen() {
             {/* Badge */}
             <View style={styles.heroBadgeGlow}>
               {logoUrl ? (
-                <Image source={{ uri: logoUrl }} style={{ width: 88, height: 88 }} resizeMode="contain" />
+                <Image source={{ uri: logoUrl }} style={{ width: 88, height: 88 }} contentFit="contain" />
               ) : (
                 <View style={[styles.heroBadgeRing, { borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(255,255,255,0.22)' }]}>
                   <Text style={[styles.heroBadgeLetters, { color: secondaryColor || '#fff' }]}>
@@ -957,9 +1233,84 @@ export default function HomeScreen() {
         </View>
 
 
+        {/* ── Pending guest invites — players only ── */}
+        {!isCoach && pendingGuestInvites.length > 0 && (
+          <>
+            <View style={[styles.sectionTitleRow, { marginTop: 20 }]}>
+              <View style={[styles.sectionTitleDot, { backgroundColor: '#F59E0B' }]} />
+              <Text style={styles.sectionTitle}>GUEST INVITES</Text>
+              <View style={styles.guestInviteBadge}>
+                <Text style={styles.guestInviteBadgeText}>{pendingGuestInvites.length}</Text>
+              </View>
+            </View>
+            {pendingGuestInvites.map(invite => {
+              const cfg = TYPE_CONFIG[invite.event_type] ?? TYPE_CONFIG.other;
+              return (
+                <View key={invite.id} style={styles.guestInviteCard}>
+                  <View style={[styles.guestInviteAccent, { backgroundColor: cfg.color }]} />
+                  <View style={styles.guestInviteBody}>
+                    <View style={styles.guestInviteTopRow}>
+                      <Ionicons name={cfg.icon} size={12} color={cfg.color} />
+                      <Text style={[styles.guestInviteTag, { color: cfg.color }]}>{invite.event_type.toUpperCase()}</Text>
+                      <Text style={styles.guestInviteTeam}>{invite.team_name}</Text>
+                    </View>
+                    <Text style={styles.guestInviteTitle}>{invite.event_title}</Text>
+                    <Text style={styles.guestInviteDate}>
+                      {formatDate(invite.event_date)}{invite.event_time ? `  ·  ${formatTime(invite.event_time)}` : ''}
+                    </Text>
+                    <Text style={styles.guestInviteSubtext}>
+                      You've been invited to play as a guest — {invite.full_name}
+                    </Text>
+                    <View style={styles.guestInviteActions}>
+                      <TouchableOpacity
+                        style={[styles.guestInviteBtn, { backgroundColor: '#22C55E18', borderColor: '#22C55E40' }]}
+                        onPress={() => handleGuestRespond(invite, 'confirmed')}
+                        activeOpacity={0.75}
+                        disabled={guestRespondLoading === invite.id}
+                      >
+                        <Ionicons name="checkmark" size={14} color="#22C55E" />
+                        <Text style={[styles.guestInviteBtnText, { color: '#22C55E' }]}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.guestInviteBtn, { backgroundColor: '#EF444418', borderColor: '#EF444440' }]}
+                        onPress={() => handleGuestRespond(invite, 'declined')}
+                        activeOpacity={0.75}
+                        disabled={guestRespondLoading === invite.id}
+                      >
+                        <Ionicons name="close" size={14} color="#EF4444" />
+                        <Text style={[styles.guestInviteBtnText, { color: '#EF4444' }]}>Decline</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        )}
+
+        {/* Unsigned waiver banner */}
+        {unsignedWaiverCount > 0 && (
+          <TouchableOpacity
+            onPress={() => router.push(`/(app)/${slug}/sign-waivers` as never)}
+            activeOpacity={0.85}
+            style={styles.waiverBanner}
+          >
+            <View style={styles.waiverBannerIcon}>
+              <Ionicons name="document-text" size={16} color="#92400E" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.waiverBannerTitle}>
+                {unsignedWaiverCount === 1 ? '1 waiver needs your signature' : `${unsignedWaiverCount} waivers need your signature`}
+              </Text>
+              <Text style={styles.waiverBannerSub}>Tap to review and sign</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#92400E" />
+          </TouchableOpacity>
+        )}
+
         {/* Game Day Outlook — coaches only */}
         {isCoach && (
-          <GameDayWidget onPress={() => router.push(`/(app)/${slug}/game-day` as any)} />
+          <GameDayWidget onPress={handleGameDayPress} />
         )}
 
         {/* Team Pulse — coaches only */}
@@ -1104,7 +1455,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            {callouts.map(callout => {
+            {callouts.filter(c => calloutResponses[c.id] !== 'dismissed').map(callout => {
               const myResponse = calloutResponses[callout.id];
               const isHelping = myResponse === 'helping';
               return (
@@ -1165,28 +1516,79 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Next Game + Next Training */}
-        {renderNextCard(
-          'NEXT GAME',
-          nextGame,
-          nextGameWeather,
-          nextGameDriveTime,
-          gameHeadcount,
-          myGameRsvpStatus,
-          gameRsvpLoading,
-          (s) => nextGame && handleRsvp(nextGame, s, myGameRsvpStatus, setMyGameRsvpStatus, setGameRsvpLoading),
-          isCoach ? 20 : (myPlayer && seasonTotalMarked > 0 ? 20 : 28),
+        {/* ── Polls ── */}
+        {(polls.length > 0 || isCoach) && (
+          <>
+            <View style={[styles.sectionTitleRow, { marginTop: 8 }]}>
+              <View style={[styles.sectionTitleDot, { backgroundColor: '#818CF8' }]} />
+              <Text style={styles.sectionTitle}>POLLS</Text>
+              {isCoach && (
+                <TouchableOpacity
+                  style={styles.calloutAddBtn}
+                  onPress={() => setShowPollModal(true)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="add" size={13} color="#818CF8" />
+                  <Text style={[styles.calloutAddBtnText, { color: '#818CF8' }]}>New</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {polls.length > 0 ? polls.map(poll => (
+              <PollCard
+                key={poll.id}
+                poll={poll}
+                myProfileId={profile?.id ?? ''}
+                isCoach={isCoach}
+                myRsvpEventIds={myRsvpEventIds}
+                primaryColor={primaryColor}
+                rgba={rgba}
+                onDelete={handleDeletePoll}
+                onVoteChange={handleVoteChange}
+              />
+            )) : isCoach ? (
+              <TouchableOpacity
+                style={styles.calloutEmptyBtn}
+                onPress={() => setShowPollModal(true)}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="bar-chart-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                <Text style={styles.calloutEmptyBtnText}>Ask your team a question</Text>
+              </TouchableOpacity>
+            ) : null}
+          </>
         )}
-        {renderNextCard(
-          'NEXT TRAINING',
-          nextTraining,
-          nextTrainingWeather,
-          nextTrainingDriveTime,
-          trainingHeadcount,
-          myTrainingRsvpStatus,
-          trainingRsvpLoading,
-          (s) => nextTraining && handleRsvp(nextTraining, s, myTrainingRsvpStatus, setMyTrainingRsvpStatus, setTrainingRsvpLoading),
-        )}
+
+        {/* Next Game + Next Training — soonest event first */}
+        {(() => {
+          const eventDateTime = (e: NextEvent) => `${e.event_date}T${e.event_time ?? '00:00'}`;
+          const gameFirst = !nextGame ? false
+            : !nextTraining ? true
+            : eventDateTime(nextGame) <= eventDateTime(nextTraining);
+          const firstMargin = isCoach ? 20 : (myPlayer && seasonTotalMarked > 0 ? 20 : 28);
+          const gameCard = renderNextCard(
+            'NEXT GAME',
+            nextGame,
+            nextGameWeather,
+            nextGameDriveTime,
+            gameHeadcount,
+            myGameRsvpStatus,
+            gameRsvpLoading,
+            (s) => nextGame && handleRsvp(nextGame, s, myGameRsvpStatus, setMyGameRsvpStatus, setGameRsvpLoading),
+            gameFirst ? firstMargin : 0,
+          );
+          const trainingCard = renderNextCard(
+            'NEXT TRAINING',
+            nextTraining,
+            nextTrainingWeather,
+            nextTrainingDriveTime,
+            trainingHeadcount,
+            myTrainingRsvpStatus,
+            trainingRsvpLoading,
+            (s) => nextTraining && handleRsvp(nextTraining, s, myTrainingRsvpStatus, setMyTrainingRsvpStatus, setTrainingRsvpLoading),
+            gameFirst ? 0 : firstMargin,
+          );
+          return gameFirst ? <>{gameCard}{trainingCard}</> : <>{trainingCard}{gameCard}</>;
+        })()}
 
         {/* Outstanding fees — parents only */}
         {!isCoach && outstandingFees.length > 0 && (() => {
@@ -1315,6 +1717,8 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </>
         )}
+
+        <GalleryCard onPress={() => router.push(`/(app)/${slug}/gallery` as never)} />
 
         {/* Weekend Outlook entry — coaches only */}
         {isCoach && (
@@ -1618,6 +2022,18 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      {isCoach && team && profile && (
+        <CreatePollModal
+          visible={showPollModal}
+          teamId={team.id}
+          profileId={profile.id}
+          primaryColor={primaryColor}
+          rgba={rgba}
+          onClose={() => setShowPollModal(false)}
+          onCreated={() => { setShowPollModal(false); fetchData(); }}
+        />
+      )}
     </>
   );
 }
@@ -1918,19 +2334,19 @@ const styles = StyleSheet.create({
   },
   nextCardChipText: { fontSize: 11, fontWeight: '700' },
 
-  // Coach headcount circles
-  headcountRow: {
-    flexDirection: 'row', gap: 12, marginTop: 6,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14,
+  // Attendance bar
+  attendanceBarWrap: {
+    marginTop: 6, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 12, gap: 7,
   },
-  headcountItem: { alignItems: 'center', gap: 5 },
-  headcountCircle: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  headcountCircleNum: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  headcountLabel: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontWeight: '600', letterSpacing: 0.5 },
-  headcountGuestPill: { backgroundColor: 'rgba(249,115,22,0.15)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
-  headcountGuestPillText: { fontSize: 8, fontWeight: '800', color: '#f97316' },
-  headcountChevron: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'center' },
-  headcountChevronText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  attendanceBarTrack: {
+    height: 6, borderRadius: 3, overflow: 'hidden', flexDirection: 'row',
+    backgroundColor: PULSE_COLORS.ui.border,
+  },
+  attendanceBarSeg: { height: '100%' },
+  attendanceBarLegend: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  attendanceBarLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  attendanceBarDot: { width: 6, height: 6, borderRadius: 3 },
+  attendanceBarLegendText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   // Inline RSVP
   nextEventRsvpRow: {
@@ -2195,5 +2611,117 @@ const styles = StyleSheet.create({
   attSheetStatusDot: {
     width: 22, height: 22, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Guest invite cards
+  guestInviteCard: {
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1,
+    borderColor: '#F59E0B22',
+    borderRadius: 16,
+    marginBottom: 10,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  guestInviteAccent: {
+    width: 3,
+    alignSelf: 'stretch',
+  },
+  guestInviteBody: {
+    flex: 1,
+    padding: 14,
+    gap: 3,
+  },
+  guestInviteTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 3,
+  },
+  guestInviteTag: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  guestInviteTeam: {
+    fontSize: 10,
+    color: PULSE_COLORS.ui.muted,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  guestInviteTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: PULSE_COLORS.ui.text,
+  },
+  guestInviteDate: {
+    fontSize: 12,
+    color: PULSE_COLORS.ui.textSecondary,
+    fontWeight: '500',
+  },
+  guestInviteSubtext: {
+    fontSize: 12,
+    color: PULSE_COLORS.ui.muted,
+    marginTop: 2,
+  },
+  guestInviteActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  waiverBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  waiverBannerIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FDE68A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waiverBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  waiverBannerSub: {
+    fontSize: 12,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  guestInviteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  guestInviteBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  guestInviteBadge: {
+    marginLeft: 8,
+    backgroundColor: '#F59E0B',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  guestInviteBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#000',
   },
 });
