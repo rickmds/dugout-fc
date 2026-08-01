@@ -5,6 +5,7 @@ import {
   Plus, Link2, Users, ChevronDown, X, Check, Trash2,
   ExternalLink, Copy, ChevronUp, Download, Eye,
   AlertCircle, Settings2, LayoutTemplate, Pencil,
+  Sparkles, RefreshCw, FileText,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -269,6 +270,17 @@ function makeFields(defs: Omit<FieldDef, 'id'>[]): FieldDef[] {
   return defs.map((d) => ({ ...d, id: uid() }));
 }
 
+// ─── Waiver templates (mirrors Waivers page) ─────────────────────────────────
+
+const WAIVER_TEMPLATES = [
+  { id: 'season_participation', label: 'Season Participation', emoji: '📋', desc: 'Training & game liability' },
+  { id: 'medical_consent',      label: 'Medical Consent',      emoji: '🏥', desc: 'Emergency treatment auth' },
+  { id: 'photo_video',          label: 'Photo & Video',        emoji: '📸', desc: 'Media use consent' },
+  { id: 'tournament_travel',    label: 'Tournament / Travel',  emoji: '✈️', desc: 'Away games & overnight trips' },
+  { id: 'clinic_camp',          label: 'Clinic or Camp',       emoji: '⚽', desc: 'Single event participation' },
+  { id: 'guest_player',         label: 'Guest Player',         emoji: '👤', desc: 'One-off player additions' },
+];
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function RegistrationsPage() {
@@ -316,6 +328,60 @@ export default function RegistrationsPage() {
   const [deleteFormConfirm, setDeleteFormConfirm] = useState<{ id: string; title: string } | null>(null);
   const [editingFormId, setEditingFormId] = useState<string | null>(null);
   const [savedWaivers, setSavedWaivers] = useState<{ id: string; title: string; body: string }[]>([]);
+
+  // Create-waiver-on-the-fly modal
+  const [showWaiverCreate, setShowWaiverCreate] = useState(false);
+  const [wvTemplate, setWvTemplate]   = useState<string | null>(null);
+  const [wvNotes, setWvNotes]         = useState('');
+  const [wvBody, setWvBody]           = useState('');
+  const [wvTitle, setWvTitle]         = useState('');
+  const [wvMode, setWvMode]           = useState<'preview' | 'edit'>('preview');
+  const [wvGenerating, setWvGenerating] = useState(false);
+  const [wvGenError, setWvGenError]   = useState('');
+  const [wvSaving, setWvSaving]       = useState(false);
+
+  function resetWaiverModal() {
+    setWvTemplate(null); setWvNotes(''); setWvBody('');
+    setWvTitle(''); setWvMode('preview'); setWvGenError('');
+  }
+
+  async function handleWvGenerate() {
+    if (!wvTemplate || !club) return;
+    setWvGenerating(true); setWvGenError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/ai/generate-waiver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` },
+        body: JSON.stringify({ template_type: wvTemplate, custom_notes: wvNotes, club_name: club.name }),
+      });
+      const data = await res.json();
+      if (data.body) {
+        setWvBody(data.body);
+        if (!wvTitle.trim()) {
+          const tmpl = WAIVER_TEMPLATES.find((t) => t.id === wvTemplate);
+          if (tmpl) { const yr = new Date().getFullYear(); setWvTitle(`${tmpl.label} ${yr}/${String(yr + 1).slice(2)}`); }
+        }
+      } else { setWvGenError('Generation failed. Try again.'); }
+    } catch { setWvGenError('Generation failed. Try again.'); }
+    finally { setWvGenerating(false); }
+  }
+
+  async function handleWvSaveAndAttach() {
+    if (!club || !wvTitle.trim() || !wvBody.trim()) return;
+    setWvSaving(true); setWvGenError('');
+    const { data: w, error } = await supabase
+      .from('waivers')
+      .insert({ club_id: club.id, title: wvTitle.trim(), body: wvBody.trim(), created_by: profile?.id })
+      .select('id, title, body')
+      .single();
+    if (error || !w) { setWvGenError('Failed to save. Try again.'); setWvSaving(false); return; }
+    setSavedWaivers((prev) => [w, ...prev]);
+    setFields((prev) => [...prev, { id: uid(), type: 'waiver', label: w.title, required: true, waiver_text: w.body }]);
+    setShowWaiverCreate(false);
+    resetWaiverModal();
+    setWvSaving(false);
+  }
 
   const loadForms = useCallback(async () => {
     if (!club) return;
@@ -934,28 +1000,37 @@ export default function RegistrationsPage() {
                     ))}
 
                     {/* Saved waivers */}
-                    {savedWaivers.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: '9px', fontWeight: '800', color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '5px', paddingLeft: '4px' }}>Saved waivers</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          {savedWaivers.map((w) => (
-                            <button
-                              key={w.id}
-                              onClick={() => {
-                                setFields(prev => [...prev, { id: uid(), type: 'waiver', label: w.title, required: true, waiver_text: w.body }]);
-                              }}
-                              style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '7px', padding: '7px 10px', fontSize: '12px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%', transition: 'all 0.1s' }}
-                              onMouseEnter={(e) => { const el = e.currentTarget; el.style.background = '#FEF2F2'; el.style.color = '#DC2626'; el.style.borderColor = '#DC262640'; }}
-                              onMouseLeave={(e) => { const el = e.currentTarget; el.style.background = '#F8FAFC'; el.style.color = '#374151'; el.style.borderColor = '#F1F5F9'; }}
-                              title={w.body.slice(0, 120)}
-                            >
-                              <span style={{ fontSize: '11px', color: '#DC2626', fontWeight: '900' }}>+</span>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.title}</span>
-                            </button>
-                          ))}
-                        </div>
+                    <div>
+                      <div style={{ fontSize: '9px', fontWeight: '800', color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '5px', paddingLeft: '4px' }}>Waivers</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {savedWaivers.map((w) => (
+                          <button
+                            key={w.id}
+                            onClick={() => setFields(prev => [...prev, { id: uid(), type: 'waiver', label: w.title, required: true, waiver_text: w.body }])}
+                            style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#F8FAFC', border: '1px solid #F1F5F9', borderRadius: '7px', padding: '7px 10px', fontSize: '12px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%', transition: 'all 0.1s' }}
+                            onMouseEnter={(e) => { const el = e.currentTarget; el.style.background = '#FEF2F2'; el.style.color = '#DC2626'; el.style.borderColor = '#DC262640'; }}
+                            onMouseLeave={(e) => { const el = e.currentTarget; el.style.background = '#F8FAFC'; el.style.color = '#374151'; el.style.borderColor = '#F1F5F9'; }}
+                            title={w.body.slice(0, 120)}
+                          >
+                            <span style={{ fontSize: '11px', color: '#DC2626', fontWeight: '900' }}>+</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.title}</span>
+                          </button>
+                        ))}
+                        {savedWaivers.length === 0 && (
+                          <p style={{ fontSize: '11px', color: '#CBD5E1', margin: '0 0 4px 4px' }}>No saved waivers yet</p>
+                        )}
+                        {/* Create on the fly */}
+                        <button
+                          onClick={() => setShowWaiverCreate(true)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '7px', padding: '7px 10px', fontSize: '12px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%', transition: 'all 0.1s' }}
+                          onMouseEnter={(e) => { const el = e.currentTarget; el.style.background = '#FEF2F2'; el.style.color = '#DC2626'; el.style.borderColor = '#DC2626'; }}
+                          onMouseLeave={(e) => { const el = e.currentTarget; el.style.background = '#F8FAFC'; el.style.color = '#64748B'; el.style.borderColor = '#CBD5E1'; }}
+                        >
+                          <Sparkles size={11} />
+                          Create new waiver
+                        </button>
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1236,6 +1311,155 @@ export default function RegistrationsPage() {
             </div>
           </div>
         )}
+
+        {/* ── Create-waiver-on-the-fly modal ── */}
+        {showWaiverCreate && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+            <div style={{ background: '#fff', borderRadius: '18px', width: '100%', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.28)' }}>
+              {/* Header */}
+              <div style={{ padding: '20px 24px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+                <div>
+                  <h2 style={{ fontSize: '17px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Create a waiver</h2>
+                  <p style={{ fontSize: '13px', color: '#64748B', margin: '2px 0 0' }}>It will be saved to your Waivers library and attached here.</p>
+                </div>
+                <button onClick={() => { setShowWaiverCreate(false); resetWaiverModal(); }} style={{ background: '#F1F5F9', border: 'none', borderRadius: '8px', padding: '8px', cursor: 'pointer', display: 'flex', color: '#64748B' }}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                {/* Template picker */}
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '10px' }}>Choose a template</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {WAIVER_TEMPLATES.map((t) => (
+                      <button key={t.id} onClick={() => setWvTemplate(t.id)}
+                        style={{ border: `2px solid ${wvTemplate === t.id ? primary : '#E2E8F0'}`, borderRadius: '10px', padding: '12px', background: wvTemplate === t.id ? `${primary}0D` : '#FAFAFA', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.1s' }}>
+                        <div style={{ fontSize: '20px', marginBottom: '6px' }}>{t.emoji}</div>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: wvTemplate === t.id ? primary : '#0F172A', marginBottom: '2px' }}>{t.label}</div>
+                        <div style={{ fontSize: '11px', color: '#94A3B8', lineHeight: '1.4' }}>{t.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom notes */}
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                    Custom notes for AI (optional)
+                  </label>
+                  <textarea
+                    value={wvNotes}
+                    onChange={(e) => setWvNotes(e.target.value)}
+                    placeholder="e.g. Include specific dates, mention equipment requirement, add our club's indemnity clause…"
+                    rows={3}
+                    style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '10px 13px', fontSize: '13px', color: '#0F172A', fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                {/* Generate button */}
+                <button
+                  onClick={handleWvGenerate}
+                  disabled={!wvTemplate || wvGenerating}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: !wvTemplate || wvGenerating ? '#CBD5E1' : primary, color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 20px', fontSize: '14px', fontWeight: '700', cursor: !wvTemplate || wvGenerating ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                >
+                  {wvGenerating ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Generating…</> : wvBody ? <><RefreshCw size={14} /> Regenerate</> : <><Sparkles size={14} /> Generate with AI</>}
+                </button>
+                {wvGenError && <p style={{ fontSize: '12px', color: '#DC2626', margin: '-12px 0 0' }}>{wvGenError}</p>}
+
+                {/* Preview / edit area — shown once body exists */}
+                {wvBody && (
+                  <div>
+                    {/* Preview/Edit toggle */}
+                    <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
+                      {(['preview', 'edit'] as const).map((m) => (
+                        <button key={m} onClick={() => setWvMode(m)} style={{ padding: '5px 12px', borderRadius: '6px', border: 'none', background: wvMode === m ? '#0F172A' : '#F1F5F9', color: wvMode === m ? '#fff' : '#64748B', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}>
+                          {m === 'preview' ? 'Preview' : 'Edit text'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {wvMode === 'preview' ? (
+                      /* Document preview with club branding */
+                      <div style={{ border: '1.5px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden' }}>
+                        {/* Chrome bar */}
+                        <div style={{ background: '#1E293B', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', gap: '5px' }}>
+                            {['#FF5F57','#FFBD2E','#28C840'].map((c) => <div key={c} style={{ width: '10px', height: '10px', borderRadius: '50%', background: c }} />)}
+                          </div>
+                          <div style={{ flex: 1, background: '#334155', borderRadius: '5px', height: '20px', display: 'flex', alignItems: 'center', paddingLeft: '10px' }}>
+                            <span style={{ fontSize: '10px', color: '#94A3B8' }}>pulse-fc.app/…</span>
+                          </div>
+                        </div>
+                        {/* Scrollable doc area */}
+                        <div style={{ background: '#F8FAFC', padding: '24px', maxHeight: '260px', overflowY: 'auto' }}>
+                          <div style={{ background: '#fff', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                            {/* Club color header */}
+                            <div style={{ background: primary, padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                              {club?.logo_url ? (
+                                <img src={club.logo_url} alt="" style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'contain', background: '#fff', padding: '4px' }} />
+                              ) : (
+                                <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: '#fff' }}>
+                                  {(club?.name ?? '').split(' ').slice(0, 2).map((w: string) => w[0] ?? '').join('').toUpperCase()}
+                                </div>
+                              )}
+                              <span style={{ fontSize: '15px', fontWeight: '700', color: '#fff' }}>{club?.name ?? 'Your Club'}</span>
+                            </div>
+                            {/* Document body */}
+                            <div style={{ padding: '24px' }}>
+                              <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', marginBottom: '12px', marginTop: 0 }}>{wvTitle || 'Untitled Waiver'}</h2>
+                              <div style={{ borderBottom: '1.5px solid #E2E8F0', marginBottom: '16px' }} />
+                              <p style={{ fontSize: '13px', color: '#374151', lineHeight: '1.8', whiteSpace: 'pre-wrap', fontFamily: 'Georgia, serif', margin: 0 }}>{wvBody}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <textarea
+                        value={wvBody}
+                        onChange={(e) => setWvBody(e.target.value)}
+                        rows={10}
+                        style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '12px 14px', fontSize: '13px', color: '#0F172A', fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box', lineHeight: '1.7' }}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Title input — shown once body exists */}
+                {wvBody && (
+                  <div>
+                    <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>Waiver title</label>
+                    <input
+                      value={wvTitle}
+                      onChange={(e) => setWvTitle(e.target.value)}
+                      placeholder="e.g. Season Participation Waiver 2025/26"
+                      style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '10px 13px', fontSize: '14px', fontWeight: '600', color: '#0F172A', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={() => { setShowWaiverCreate(false); resetWaiverModal(); }} style={{ padding: '12px 18px', background: '#F1F5F9', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleWvSaveAndAttach}
+                    disabled={!wvBody.trim() || !wvTitle.trim() || wvSaving}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px 18px', background: !wvBody.trim() || !wvTitle.trim() || wvSaving ? '#CBD5E1' : primary, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', cursor: !wvBody.trim() || !wvTitle.trim() || wvSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                  >
+                    <FileText size={14} />
+                    {wvSaving ? 'Saving…' : 'Save waiver & attach to form'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* CSS for spinner */}
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
