@@ -365,25 +365,34 @@ export default function ClubFeesPage() {
     const amount = parseFloat(payForm.amount);
     if (!amount || amount <= 0 || amount > owed + 0.01) return;
     setPaymentSaving(true);
-    const newPaid   = showPayment.amount_paid + amount;
-    const newStatus = newPaid >= showPayment.amount_due - showPayment.discount ? 'paid' : 'partial';
-    await supabase.from('fee_payments').insert({ player_fee_id: showPayment.id, amount, payment_method: payForm.method, reference: payForm.reference || null, notes: payForm.notes || null, recorded_by: profile.id });
-    await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', showPayment.id);
-    fetch('/api/send-payment-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: showPayment.id, amount_paid: amount }) }).catch(() => {});
-    setShowPayment(null);
-    setPayForm({ amount: '', method: 'Bank Transfer', reference: '', notes: '' });
-    setPaymentSaving(false);
-    load();
+    try {
+      const newPaid   = showPayment.amount_paid + amount;
+      const newStatus = newPaid >= showPayment.amount_due - showPayment.discount ? 'paid' : 'partial';
+      const { error: insertErr } = await supabase.from('fee_payments').insert({ player_fee_id: showPayment.id, amount, method: payForm.method, reference: payForm.reference || null, notes: payForm.notes || null, recorded_by: profile.id });
+      if (insertErr) { alert(`Could not record payment: ${insertErr.message}`); return; }
+      const { error: updateErr } = await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', showPayment.id);
+      if (updateErr) { alert(`Payment recorded but balance update failed: ${updateErr.message}`); return; }
+      fetch('/api/send-payment-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: showPayment.id, amount_paid: amount }) }).catch(() => {});
+      setShowPayment(null);
+      setPayForm({ amount: '', method: 'Bank Transfer', reference: '', notes: '' });
+      load();
+    } finally {
+      setPaymentSaving(false);
+    }
   }
 
   async function handleWaive() {
     if (!showWaive || !profile) return;
     setWaiveSaving(true);
-    await supabase.from('player_fees').update({ status: 'waived', discount_reason: waiveReason || 'Waived by admin' }).eq('id', showWaive.id);
-    setShowWaive(null);
-    setWaiveReason('');
-    setWaiveSaving(false);
-    load();
+    try {
+      const { error } = await supabase.from('player_fees').update({ status: 'waived', discount_reason: waiveReason || 'Waived by admin' }).eq('id', showWaive.id);
+      if (error) { alert(`Could not waive fee: ${error.message}`); return; }
+      setShowWaive(null);
+      setWaiveReason('');
+      load();
+    } finally {
+      setWaiveSaving(false);
+    }
   }
 
   async function handleCashRecord(fee: ClubFee) {
@@ -391,8 +400,10 @@ export default function ClubFeesPage() {
     const owed = Math.max(fee.amount_due - fee.discount - fee.amount_paid, 0);
     if (owed <= 0) return;
     const newPaid = fee.amount_paid + owed;
-    await supabase.from('fee_payments').insert({ player_fee_id: fee.id, amount: owed, payment_method: 'Cash', recorded_by: profile.id });
-    await supabase.from('player_fees').update({ amount_paid: newPaid, status: 'paid' }).eq('id', fee.id);
+    const { error: insertErr } = await supabase.from('fee_payments').insert({ player_fee_id: fee.id, amount: owed, method: 'cash', recorded_by: profile.id });
+    if (insertErr) { alert(`Could not record payment: ${insertErr.message}`); return; }
+    const { error: updateErr } = await supabase.from('player_fees').update({ amount_paid: newPaid, status: 'paid' }).eq('id', fee.id);
+    if (updateErr) { alert(`Payment recorded but balance update failed: ${updateErr.message}`); return; }
     setCashPaidIds(s => new Set([...s, fee.id]));
     fetch('/api/send-payment-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: fee.id, amount_paid: owed }) }).catch(() => {});
   }
@@ -426,6 +437,7 @@ export default function ClubFeesPage() {
   async function handleAssign() {
     if (!club || !profile) return;
     setSaving(true);
+    try {
     const targets = aForm.apply_to === 'all' ? teams : teams.filter(t => aForm.selected_teams.includes(t.id));
     const { data: playersData } = await supabase.from('players').select('id,team_id').in('team_id', targets.map(t => t.id));
     const players = (playersData ?? []) as { id: string; team_id: string }[];
@@ -450,18 +462,27 @@ export default function ClubFeesPage() {
     for (let i = 0; i < insertedIds.length; i += 10) {
       await Promise.allSettled(insertedIds.slice(i, i + 10).map(id => fetch('/api/send-fee-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: id }) })));
     }
-    setSaveProgress(''); setShowAssign(false); resetForm(); setSaving(false); load();
+      setSaveProgress(''); setShowAssign(false); resetForm(); load();
+    } catch (e) {
+      alert(`Fee assignment failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaving(false);
+      setSaveProgress('');
+    }
   }
 
   async function handleSaveCategory() {
     if (!club || !catForm.name || !catForm.amount) return;
     setCatSaving(true);
-    if (editCatId) {
-      await supabase.from('fee_categories').update({ name: catForm.name, amount: parseFloat(catForm.amount), description: catForm.description || null }).eq('id', editCatId);
-    } else {
-      await supabase.from('fee_categories').insert({ club_id: club.id, name: catForm.name, amount: parseFloat(catForm.amount), description: catForm.description || null });
+    try {
+      const { error } = editCatId
+        ? await supabase.from('fee_categories').update({ name: catForm.name, amount: parseFloat(catForm.amount), description: catForm.description || null }).eq('id', editCatId)
+        : await supabase.from('fee_categories').insert({ club_id: club.id, name: catForm.name, amount: parseFloat(catForm.amount), description: catForm.description || null });
+      if (error) { alert(`Could not save category: ${error.message}`); return; }
+      setEditCatId(null); setShowCatForm(false); setCatForm({ name: '', amount: '', description: '' }); load();
+    } finally {
+      setCatSaving(false);
     }
-    setCatSaving(false); setEditCatId(null); setShowCatForm(false); setCatForm({ name: '', amount: '', description: '' }); load();
   }
 
   async function handleDeleteCategory(id: string) {
