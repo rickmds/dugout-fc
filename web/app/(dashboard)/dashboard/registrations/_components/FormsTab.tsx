@@ -327,7 +327,7 @@ export default function FormsTab() {
             const sym           = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$';
 
             return (
-              <div key={form.id} style={{ background: '#fff', border: `1.5px solid ${isFull ? '#FECACA' : '#E2E8F0'}`, borderRadius: '14px', overflow: 'hidden', transition: 'border-color 0.15s', boxShadow: isExpanded ? `0 0 0 2px ${primary}30` : 'none' }}>
+              <div key={form.id} style={{ background: '#fff', border: `1.5px solid ${isFull ? '#FECACA' : '#E2E8F0'}`, borderRadius: '14px', transition: 'border-color 0.15s, box-shadow 0.15s', boxShadow: isExpanded ? `0 0 0 2px ${primary}30` : 'none' }}>
                 <div style={{ padding: '16px 20px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -407,7 +407,7 @@ export default function FormsTab() {
 
                 {/* ── Expanded panel ─────────────────────────────────────────── */}
                 {isExpanded && (
-                  <div style={{ borderTop: `2px solid ${primary}18`, background: 'linear-gradient(to bottom, #F8FAFC, #F4F6F9)' }}>
+                  <div style={{ borderTop: `2px solid ${primary}18`, background: 'linear-gradient(to bottom, #F8FAFC, #F4F6F9)', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', overflow: 'hidden' }}>
                     {subsLoading ? (
                       <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px' }}>
