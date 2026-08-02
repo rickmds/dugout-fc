@@ -282,6 +282,10 @@ export default function FormsTab() {
 
   return (
     <div style={{ padding: '28px 32px', maxWidth: '1000px' }}>
+      <style>{`
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        .reg-sub-row:hover { background: #F8FAFC !important; }
+      `}</style>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
         <div style={{ flex: 1 }}>
@@ -323,7 +327,7 @@ export default function FormsTab() {
             const sym           = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$';
 
             return (
-              <div key={form.id} style={{ background: '#fff', border: `1.5px solid ${isFull ? '#FECACA' : isExpanded ? primary : '#E2E8F0'}`, borderRadius: '14px', overflow: 'hidden', transition: 'border-color 0.15s' }}>
+              <div key={form.id} style={{ background: '#fff', border: `1.5px solid ${isFull ? '#FECACA' : '#E2E8F0'}`, borderRadius: '14px', overflow: 'hidden', transition: 'border-color 0.15s', boxShadow: isExpanded ? `0 0 0 2px ${primary}30` : 'none' }}>
                 <div style={{ padding: '16px 20px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -403,75 +407,99 @@ export default function FormsTab() {
 
                 {/* ── Expanded panel ─────────────────────────────────────────── */}
                 {isExpanded && (
-                  <div style={{ borderTop: `1.5px solid ${primary}20`, background: '#FAFBFC' }}>
+                  <div style={{ borderTop: `2px solid ${primary}18`, background: 'linear-gradient(to bottom, #F8FAFC, #F4F6F9)' }}>
                     {subsLoading ? (
-                      <div style={{ padding: '32px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading…</div>
+                      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '10px' }}>
+                          {[1,2,3,4].map(i => <div key={i} style={{ height: '76px', borderRadius: '10px', background: 'linear-gradient(90deg,#E2E8F0 25%,#EEF2F7 50%,#E2E8F0 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />)}
+                        </div>
+                        <div style={{ height: '120px', borderRadius: '10px', background: 'linear-gradient(90deg,#E2E8F0 25%,#EEF2F7 50%,#E2E8F0 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
+                      </div>
                     ) : (
-                      <div style={{ padding: '20px' }}>
-                        {/* Stat tiles */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '18px' }}>
-                          {[
-                            { label: 'Registered',   value: String(stats?.registered ?? subs.filter(s => s.status !== 'declined').length), icon: <Users size={14} color="#3B82F6" />, bg: '#EFF6FF', valColor: '#1E40AF' },
-                            { label: 'Income',        value: `${sym}${(stats?.income ?? 0).toFixed(2)}`, icon: <TrendingUp size={14} color="#16A34A" />, bg: '#DCFCE7', valColor: '#15803D' },
-                            { label: 'Outstanding',   value: `${sym}${(stats?.outstanding ?? 0).toFixed(2)}`, icon: <Clock size={14} color="#D97706" />, bg: '#FEF3C7', valColor: '#B45309' },
-                            { label: 'Refunded',      value: `${sym}${(stats?.refunded ?? 0).toFixed(2)}`, icon: <RotateCcw size={14} color="#64748B" />, bg: '#F1F5F9', valColor: '#475569' },
-                          ].map(({ label, value, icon, bg, valColor }) => (
-                            <div key={label} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px 16px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                                <div style={{ width: '26px', height: '26px', borderRadius: '6px', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
-                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+                      <div style={{ padding: '16px 20px 20px' }}>
+                        {/* Stat strip */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '14px' }}>
+                          {(() => {
+                            const reg  = stats?.registered ?? subs.filter(s => s.status !== 'declined').length;
+                            const inc  = stats?.income ?? 0;
+                            const out  = stats?.outstanding ?? 0;
+                            const ref  = stats?.refunded ?? 0;
+                            return [
+                              { label: 'Registered',  value: String(reg),              sub: `of ${subs.length} submitted`,  accent: '#3B82F6', accentBg: '#EFF6FF', numColor: reg   > 0 ? '#1D4ED8' : '#94A3B8' },
+                              { label: 'Income',       value: `${sym}${inc.toFixed(2)}`, sub: `net collected`,               accent: '#22C55E', accentBg: '#F0FDF4', numColor: inc   > 0 ? '#15803D' : '#94A3B8' },
+                              { label: 'Outstanding',  value: `${sym}${out.toFixed(2)}`, sub: `balance due`,                 accent: '#F59E0B', accentBg: '#FFFBEB', numColor: out   > 0 ? '#B45309' : '#94A3B8' },
+                              { label: 'Refunded',     value: `${sym}${ref.toFixed(2)}`, sub: `issued to families`,          accent: '#64748B', accentBg: '#F1F5F9', numColor: ref   > 0 ? '#475569' : '#94A3B8' },
+                            ].map(({ label, value, sub: subLabel, accent, accentBg, numColor }) => (
+                              <div key={label} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '13px 15px', borderTop: `3px solid ${accent}` }}>
+                                <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{label}</div>
+                                <div style={{ fontSize: '20px', fontWeight: '900', color: numColor, letterSpacing: '-0.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums', marginBottom: '4px' }}>{value}</div>
+                                <div style={{ fontSize: '10.5px', color: '#CBD5E1', fontWeight: '500' }}>{subLabel}</div>
                               </div>
-                              <div style={{ fontSize: '18px', fontWeight: '800', color: valColor, letterSpacing: '-0.3px' }}>{value}</div>
-                            </div>
-                          ))}
+                            ));
+                          })()}
                         </div>
 
                         {/* Submissions list */}
                         {subs.length === 0 ? (
-                          <div style={{ textAlign: 'center', padding: '32px', color: '#94A3B8', fontSize: '13px', background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                            No submissions yet
+                          <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '40px 24px', textAlign: 'center' }}>
+                            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                              <Users size={20} color="#CBD5E1" />
+                            </div>
+                            <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>No submissions yet</div>
+                            <div style={{ fontSize: '12.5px', color: '#94A3B8' }}>{form.status === 'open' ? 'Share the registration link to start collecting.' : 'Open the form to start accepting registrations.'}</div>
                           </div>
                         ) : (
                           <div style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-                            {/* Table header */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px 90px', padding: '8px 14px', background: '#0F172A', gap: '8px' }}>
-                              {['Player', 'Status', 'Invoice', 'Paid', 'Refunded', ''].map((h) => (
-                                <span key={h} style={{ fontSize: '10px', fontWeight: '700', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.2px' }}>{h}</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 95px 78px 78px 78px 84px', padding: '7px 16px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', gap: '8px', alignItems: 'center' }}>
+                              {[['Player', 'left'], ['Payment', 'left'], ['Invoice', 'right'], ['Net paid', 'right'], ['Refunded', 'right'], ['', 'right']] as [string, string][]}
+                              {[['Player', 'left'], ['Payment', 'left'], ['Invoice', 'right'], ['Net paid', 'right'], ['Refunded', 'right'], ['', 'right']].map(([h, align]) => (
+                                <span key={h} style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: align as 'left' | 'right' }}>{h}</span>
                               ))}
                             </div>
                             {subs.map((sub, i) => {
-                              const ps    = PAY_STATUS_STYLES[sub.payment_status] ?? PAY_STATUS_STYLES.unpaid;
-                              const name  = playerName(sub.data);
-                              const net   = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
-                              const canRefund = sub.payment_status !== 'refunded' && (sub.amount_paid ?? 0) > (sub.refunded_amount ?? 0);
+                              const ps        = PAY_STATUS_STYLES[sub.payment_status] ?? PAY_STATUS_STYLES.unpaid;
+                              const name      = playerName(sub.data);
+                              const net       = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
+                              const refAmt    = sub.refunded_amount ?? 0;
+                              const canRefund = sub.payment_status !== 'refunded' && (sub.amount_paid ?? 0) > refAmt;
                               return (
-                                <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px 90px', padding: '10px 14px', borderTop: i > 0 ? '1px solid #F8FAFC' : 'none', alignItems: 'center', gap: '8px', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
-                                  <div>
+                                <div key={sub.id} className="reg-sub-row" style={{ display: 'grid', gridTemplateColumns: '1fr 95px 78px 78px 78px 84px', padding: '9px 16px', borderTop: i > 0 ? '1px solid #F8FAFC' : 'none', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{ minWidth: 0 }}>
                                     <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-                                    <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px' }}>{fmtDate(sub.submitted_at)}</div>
+                                    <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px', fontVariantNumeric: 'tabular-nums' }}>{fmtDate(sub.submitted_at)}</div>
                                   </div>
                                   <div>
-                                    <span style={{ fontSize: '10.5px', fontWeight: '700', color: ps.color, background: ps.bg, borderRadius: '4px', padding: '2px 7px' }}>{ps.label}</span>
+                                    <span style={{ fontSize: '10.5px', fontWeight: '700', color: ps.color, background: ps.bg, borderRadius: '4px', padding: '2px 7px', whiteSpace: 'nowrap' }}>{ps.label}</span>
                                   </div>
-                                  <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#374151' }}>{sub.amount_due != null ? `${sym}${sub.amount_due.toFixed(2)}` : '—'}</div>
-                                  <div style={{ fontSize: '12.5px', fontWeight: '600', color: net > 0 ? '#15803D' : '#94A3B8' }}>{sym}{net.toFixed(2)}</div>
-                                  <div style={{ fontSize: '12.5px', color: (sub.refunded_amount ?? 0) > 0 ? '#DC2626' : '#CBD5E1' }}>
-                                    {(sub.refunded_amount ?? 0) > 0 ? `-${sym}${sub.refunded_amount.toFixed(2)}` : '—'}
+                                  <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#64748B', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sub.amount_due != null ? `${sym}${sub.amount_due.toFixed(2)}` : '—'}</div>
+                                  <div style={{ fontSize: '12.5px', fontWeight: '700', color: net > 0 ? '#15803D' : '#94A3B8', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{net > 0 ? `${sym}${net.toFixed(2)}` : '—'}</div>
+                                  <div style={{ fontSize: '12px', fontWeight: '600', color: refAmt > 0 ? '#DC2626' : '#E2E8F0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                    {refAmt > 0 ? `-${sym}${refAmt.toFixed(2)}` : '—'}
                                   </div>
                                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                    {canRefund && (
+                                    {canRefund ? (
                                       <button onClick={() => openRefund(sub, form)}
                                         style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                                         <RotateCcw size={10} /> Refund
                                       </button>
-                                    )}
-                                    {sub.payment_status === 'refunded' && (
-                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B' }}>Refunded</span>
-                                    )}
+                                    ) : sub.payment_status === 'refunded' ? (
+                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', background: '#F1F5F9', borderRadius: '4px', padding: '3px 7px' }}>Done</span>
+                                    ) : null}
                                   </div>
                                 </div>
                               );
                             })}
+                            {/* Footer summary */}
+                            {subs.length > 0 && (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 95px 78px 78px 78px 84px', padding: '8px 16px', background: '#F8FAFC', borderTop: '1px solid #E2E8F0', gap: '8px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B' }}>{subs.length} submission{subs.length !== 1 ? 's' : ''}</span>
+                                <span />
+                                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#374151', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sym}{subs.reduce((t, s) => t + (s.amount_due ?? 0), 0).toFixed(2)}</span>
+                                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#15803D', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sym}{subs.reduce((t, s) => t + Math.max((s.amount_paid ?? 0) - (s.refunded_amount ?? 0), 0), 0).toFixed(2)}</span>
+                                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#DC2626', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{subs.some(s => (s.refunded_amount ?? 0) > 0) ? `-${sym}${subs.reduce((t, s) => t + (s.refunded_amount ?? 0), 0).toFixed(2)}` : '—'}</span>
+                                <span />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
