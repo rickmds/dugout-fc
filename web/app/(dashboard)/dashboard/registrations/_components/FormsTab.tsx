@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Plus, Copy, ExternalLink, Trash2, Pencil, Archive, ArchiveRestore,
   Calendar, Users, Clock, CheckCircle, AlertCircle, ChevronDown,
-  RefreshCw, Mail, Lock, Unlock, Star,
+  RefreshCw, Mail, Lock, Unlock, Star, Tag, X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { STATUS_STYLES, fmtMoney, fmtDate, formFields, uid } from './shared';
-import type { RegForm } from './shared';
+import { STATUS_STYLES, fmtMoney, fmtDate, formFields, uid, labelSt, inputSt } from './shared';
+import type { RegForm, PromoCode, DiscountType } from './shared';
 import FormBuilder from './FormBuilder';
 import SeasonRolloverWizard from './SeasonRolloverWizard';
 
@@ -37,6 +37,7 @@ export default function FormsTab() {
   const [earlyDate, setEarlyDate]   = useState('');
   const [earlySaving, setEarlySaving] = useState(false);
   const [setupChecklist, setSetupChecklist] = useState<RegForm | null>(null);
+  const [promoForm, setPromoForm]           = useState<RegForm | null>(null);
 
   const loadForms = useCallback(async () => {
     if (!club) return;
@@ -282,6 +283,7 @@ export default function FormsTab() {
                       onEarlyAccess={() => { setEarlyForm(form); setEarlyDate(form.early_access_ends_at?.slice(0,16) ?? ''); }}
                       onLateInvite={() => setLateInviteForm(form)}
                       onSetupChecklist={() => setSetupChecklist(form)}
+                      onPromoCodes={() => setPromoForm(form)}
                       onArchive={() => archiveForm(form.id)}
                       onDelete={() => setDelConfirm(form)}
                       primary={primary}
@@ -378,6 +380,11 @@ export default function FormsTab() {
       {setupChecklist && (
         <SetupChecklistModal form={setupChecklist} primary={primary} onClose={() => setSetupChecklist(null)} />
       )}
+
+      {/* ── Promo codes ── */}
+      {promoForm && (
+        <PromoCodesModal form={promoForm} primary={primary} onClose={() => setPromoForm(null)} />
+      )}
     </div>
   );
 }
@@ -428,15 +435,16 @@ function ArchiveView({ onBack }: { onBack: () => void }) {
 
 // ── FormActionsMenu ───────────────────────────────────────────────────────────
 
-function FormActionsMenu({ form, onEdit, onSchedule, onEarlyAccess, onLateInvite, onSetupChecklist, onArchive, onDelete, primary }: {
+function FormActionsMenu({ form, onEdit, onSchedule, onEarlyAccess, onLateInvite, onSetupChecklist, onPromoCodes, onArchive, onDelete, primary }: {
   form: RegForm;
   onEdit: () => void; onSchedule: () => void; onEarlyAccess: () => void;
-  onLateInvite: () => void; onSetupChecklist: () => void;
+  onLateInvite: () => void; onSetupChecklist: () => void; onPromoCodes: () => void;
   onArchive: () => void; onDelete: () => void; primary: string;
 }) {
   const [open, setOpen] = useState(false);
   const items = [
     { label: 'Edit form',          icon: <Pencil size={12} />,         action: onEdit },
+    { label: 'Promo codes',        icon: <Tag size={12} />,            action: onPromoCodes },
     { label: 'Auto-schedule',      icon: <Calendar size={12} />,       action: onSchedule },
     { label: 'Early access',       icon: <Star size={12} />,           action: onEarlyAccess },
     { label: 'Late-reg invite',    icon: <Mail size={12} />,           action: onLateInvite },
@@ -521,6 +529,164 @@ function EmptyState({ onNew, primary }: { onNew: () => void; primary: string }) 
         <Plus size={15} /> Create first form
       </button>
     </div>
+  );
+}
+
+// ── Promo codes modal ─────────────────────────────────────────────────────────
+
+function PromoCodesModal({ form, primary, onClose }: { form: RegForm; primary: string; onClose: () => void }) {
+  const { club } = useDashboard();
+  const [codes, setCodes]     = useState<PromoCode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving]   = useState(false);
+
+  const [newCode, setNewCode]               = useState('');
+  const [newType, setNewType]               = useState<DiscountType>('percent');
+  const [newValue, setNewValue]             = useState('');
+  const [newMaxUses, setNewMaxUses]         = useState('');
+  const [newExpires, setNewExpires]         = useState('');
+
+  useEffect(() => {
+    if (!club) return;
+    supabase.from('registration_promo_codes').select('*')
+      .eq('club_id', club.id).eq('form_id', form.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setCodes((data ?? []) as PromoCode[]); setLoading(false); });
+  }, [club?.id, form.id]);
+
+  function generateCode() {
+    setNewCode(Math.random().toString(36).slice(2, 8).toUpperCase());
+  }
+
+  async function handleCreate() {
+    if (!club || !newCode.trim() || !newValue) return;
+    setSaving(true);
+    const { data } = await supabase.from('registration_promo_codes').insert({
+      club_id:        club.id,
+      form_id:        form.id,
+      code:           newCode.trim().toUpperCase(),
+      discount_type:  newType,
+      discount_value: parseFloat(newValue),
+      max_uses:       newMaxUses ? parseInt(newMaxUses) : null,
+      expires_at:     newExpires || null,
+      active:         true,
+    }).select('*').single();
+    if (data) setCodes((p) => [data as PromoCode, ...p]);
+    setCreating(false); setNewCode(''); setNewType('percent'); setNewValue(''); setNewMaxUses(''); setNewExpires('');
+    setSaving(false);
+  }
+
+  async function toggleActive(code: PromoCode) {
+    await supabase.from('registration_promo_codes').update({ active: !code.active }).eq('id', code.id);
+    setCodes((p) => p.map((c) => c.id === code.id ? { ...c, active: !c.active } : c));
+  }
+
+  async function deleteCode(id: string) {
+    await supabase.from('registration_promo_codes').delete().eq('id', id);
+    setCodes((p) => p.filter((c) => c.id !== id));
+  }
+
+  const sym = form.currency === 'USD' ? '$' : form.currency === 'EUR' ? '€' : '£';
+
+  return (
+    <Modal onClose={onClose}>
+      <div style={{ padding: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+          <Tag size={18} color={primary} />
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Promo codes</h3>
+            <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>{form.title}</p>
+          </div>
+        </div>
+
+        {loading ? <div style={{ textAlign: 'center', padding: '32px', color: '#94A3B8' }}>Loading…</div> : (
+          <>
+            {codes.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+                {codes.map((c) => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: c.active ? '#F8FAFC' : '#F1F5F9', border: `1px solid ${c.active ? '#E2E8F0' : '#CBD5E1'}`, borderRadius: '10px', padding: '10px 12px' }}>
+                    <code style={{ fontSize: '13px', fontWeight: '800', color: c.active ? '#0F172A' : '#94A3B8', fontFamily: 'monospace', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '3px 8px' }}>{c.code}</code>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151' }}>
+                      {c.discount_type === 'percent' ? `${c.discount_value}% off` : `${sym}${c.discount_value} off`}
+                    </span>
+                    {c.max_uses && <span style={{ fontSize: '11px', color: '#94A3B8' }}>{c.uses_count}/{c.max_uses} uses</span>}
+                    {c.expires_at && <span style={{ fontSize: '11px', color: '#94A3B8' }}>Exp {new Date(c.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
+                      <button onClick={() => toggleActive(c)}
+                        style={{ padding: '4px 10px', borderRadius: '6px', border: 'none', background: c.active ? '#DCFCE7' : '#F1F5F9', color: c.active ? '#16A34A' : '#94A3B8', fontSize: '11px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {c.active ? 'Active' : 'Off'}
+                      </button>
+                      <button onClick={() => deleteCode(c.id)} style={{ padding: '4px 8px', borderRadius: '6px', border: 'none', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', display: 'flex' }}><X size={11} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!creating ? (
+              <button onClick={() => { setCreating(true); generateCode(); }}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '11px', background: '#F8FAFC', border: '1.5px dashed #CBD5E1', borderRadius: '10px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', justifyContent: 'center' }}>
+                <Plus size={14} /> Add promo code
+              </button>
+            ) : (
+              <div style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'end' }}>
+                  <div>
+                    <label style={labelSt}>Code</label>
+                    <input value={newCode} onChange={(e) => setNewCode(e.target.value.toUpperCase())} placeholder="SUMMER10" style={{ ...inputSt, fontFamily: 'monospace', fontWeight: '700', letterSpacing: '0.08em' }} />
+                  </div>
+                  <button onClick={generateCode} style={{ padding: '10px 14px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', fontSize: '12px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Generate</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={labelSt}>Discount type</label>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {([['percent', '% off'], ['flat', `${sym} off`]] as [DiscountType, string][]).map(([val, lbl]) => (
+                        <button key={val} onClick={() => setNewType(val)}
+                          style={{ flex: 1, padding: '9px', borderRadius: '8px', border: `1.5px solid ${newType === val ? primary : '#E2E8F0'}`, background: newType === val ? `${primary}10` : '#fff', color: newType === val ? primary : '#64748B', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelSt}>Value</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: '#64748B', fontWeight: '600' }}>{newType === 'percent' ? '%' : sym}</span>
+                      <input type="number" min="0" value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="10" style={{ ...inputSt, paddingLeft: '28px' }} />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={labelSt}>Max uses (blank = unlimited)</label>
+                    <input type="number" min="1" value={newMaxUses} onChange={(e) => setNewMaxUses(e.target.value)} placeholder="∞" style={inputSt} />
+                  </div>
+                  <div>
+                    <label style={labelSt}>Expires</label>
+                    <input type="date" value={newExpires} onChange={(e) => setNewExpires(e.target.value)} style={inputSt} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => setCreating(false)} style={{ padding: '10px 16px', background: '#F1F5F9', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                  <button onClick={handleCreate} disabled={saving || !newCode.trim() || !newValue}
+                    style={{ flex: 1, padding: '10px', background: saving || !newCode.trim() || !newValue ? '#CBD5E1' : primary, color: '#fff', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: '700', cursor: saving || !newCode.trim() || !newValue ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                    {saving ? 'Saving…' : 'Create code'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {codes.length === 0 && !creating && (
+              <p style={{ textAlign: 'center', fontSize: '12px', color: '#CBD5E1', marginTop: '8px' }}>No promo codes yet for this form</p>
+            )}
+          </>
+        )}
+
+        <button onClick={onClose} style={{ width: '100%', marginTop: '20px', padding: '11px', background: '#F1F5F9', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
+      </div>
+    </Modal>
   );
 }
 

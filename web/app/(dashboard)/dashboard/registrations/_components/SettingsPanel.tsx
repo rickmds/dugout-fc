@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   X, Mail, Clock, Shield, ChevronDown, ChevronUp,
-  Trash2, Download, Search,
+  Trash2, Download, Search, CreditCard, ExternalLink, CheckCircle,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -20,7 +20,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'email' | 'late_invites' | 'privacy';
+type Tab = 'email' | 'late_invites' | 'privacy' | 'stripe';
 
 interface EditingTemplate {
   trigger_name: string;
@@ -30,9 +30,10 @@ interface EditingTemplate {
 }
 
 const TABS: Array<{ id: Tab; label: string; icon: React.ReactNode }> = [
-  { id: 'email',        label: 'Email templates', icon: <Mail size={13} />       },
-  { id: 'late_invites', label: 'Late invites',     icon: <Clock size={13} />      },
-  { id: 'privacy',      label: 'Data & Privacy',  icon: <Shield size={13} />     },
+  { id: 'email',        label: 'Email templates', icon: <Mail size={13} />        },
+  { id: 'late_invites', label: 'Late invites',     icon: <Clock size={13} />       },
+  { id: 'stripe',       label: 'Stripe',           icon: <CreditCard size={13} /> },
+  { id: 'privacy',      label: 'Data & Privacy',  icon: <Shield size={13} />      },
 ];
 
 const RETENTION_OPTIONS = [
@@ -680,6 +681,51 @@ export default function SettingsPanel({ onClose }: Props) {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── STRIPE ───────────────────────────────────────────────────── */}
+          {tab === 'stripe' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F0F4FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CreditCard size={22} color="#5850EC" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A' }}>Stripe</div>
+                    <div style={{ fontSize: '13px', color: '#64748B' }}>Accept card payments and payment plans online</div>
+                  </div>
+                </div>
+                <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '10px', padding: '12px 14px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '15px', flexShrink: 0 }}>⚠️</span>
+                  <div style={{ fontSize: '13px', color: '#92400E', lineHeight: '1.5' }}>
+                    Stripe is not yet connected. Registration payments are tracked manually in Submissions. Connect Stripe to enable online card payments.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                  {[
+                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'One-time and recurring payment plans' },
+                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'Automatic receipts emailed to parents' },
+                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'Refunds processed directly from dashboard' },
+                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'Stripe fees: 1.4% + 20p (EU cards), 2.9% + 30¢ (US cards)' },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#374151' }}>
+                      {item.icon} {item.text}
+                    </div>
+                  ))}
+                </div>
+                <a href="https://dashboard.stripe.com/register" target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 22px', background: '#5850EC', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: '700', textDecoration: 'none' }}>
+                  <ExternalLink size={14} /> Connect Stripe account
+                </a>
+              </div>
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px 20px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>Manual payments in the meantime</div>
+                <p style={{ fontSize: '13px', color: '#64748B', margin: 0, lineHeight: '1.6' }}>
+                  Until Stripe is connected, record cash, bank transfer, cheque, or other offline payments on individual submissions in the Submissions tab. All payment tracking is fully functional without Stripe.
+                </p>
+              </div>
             </div>
           )}
 
