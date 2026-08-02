@@ -163,8 +163,10 @@ export default function ClubFeesPage() {
   const [waiveSaving, setWaiveSaving] = useState(false);
 
   const [playerPanel,  setPlayerPanel]  = useState<string | null>(null); // player_id
-  const [showCashMode, setShowCashMode] = useState(false);
-  const [cashPaidIds,  setCashPaidIds]  = useState<Set<string>>(new Set());
+  const [showCashMode,   setShowCashMode]   = useState(false);
+  const [cashMethod,     setCashMethod]     = useState<'Cash' | 'Check' | 'Card'>('Cash');
+  const [cashCollected,  setCashCollected]  = useState<{ id: string; name: string; description: string; amount: number; method: string }[]>([]);
+  const cashPaidIds = new Set(cashCollected.map(c => c.id));
 
   // ── Category CRUD ─────────────────────────────────────────────────────────────
   const [editCatId,  setEditCatId]  = useState<string | null>(null);
@@ -420,12 +422,13 @@ export default function ClubFeesPage() {
     if (!profile) return;
     const owed = Math.max(fee.amount_due - fee.discount - fee.amount_paid, 0);
     if (owed <= 0) return;
-    const newPaid = fee.amount_paid + owed;
-    const { error: insertErr } = await supabase.from('fee_payments').insert({ player_fee_id: fee.id, amount: owed, method: 'cash', recorded_by: profile.id });
+    const newPaid  = fee.amount_paid + owed;
+    const method   = cashMethod.toLowerCase();
+    const { error: insertErr } = await supabase.from('fee_payments').insert({ player_fee_id: fee.id, amount: owed, method, recorded_by: profile.id });
     if (insertErr) { alert(`Could not record payment: ${insertErr.message}`); return; }
     const { error: updateErr } = await supabase.from('player_fees').update({ amount_paid: newPaid, status: 'paid' }).eq('id', fee.id);
     if (updateErr) { alert(`Payment recorded but balance update failed: ${updateErr.message}`); return; }
-    setCashPaidIds(s => new Set([...s, fee.id]));
+    setCashCollected(s => [...s, { id: fee.id, name: fee.player_name, description: fee.description, amount: owed, method: cashMethod }]);
     fetch('/api/send-payment-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: fee.id, amount_paid: owed }) }).catch(() => {});
   }
 
@@ -606,7 +609,7 @@ export default function ClubFeesPage() {
           </div>
           <div className="fees-header-btns" style={{ display: 'flex', gap: '8px' }}>
             {pageTab === 'ledger' && <>
-              <button onClick={() => { setShowCashMode(true); setCashPaidIds(new Set()); }}
+              <button onClick={() => { setShowCashMode(true); setCashCollected([]); setCashMethod('Cash'); }}
                 style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
                 <Banknote size={14} /> Collect Cash
               </button>
@@ -1117,63 +1120,145 @@ export default function ClubFeesPage() {
       )}
 
       {/* ── Cash collection mode ────────────────────────────────────────────────── */}
-      {showCashMode && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px' }}>
-          <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '560px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
-            <div style={{ padding: '22px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Banknote size={18} color={primary} />
-                  <span style={{ fontSize: '17px', fontWeight: '800', color: '#0F172A' }}>Cash Collection Mode</span>
-                </div>
-                <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '3px' }}>Tap a row to instantly record full cash payment</div>
-              </div>
-              <button onClick={() => { setShowCashMode(false); if (cashPaidIds.size > 0) load(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={20} color="#94A3B8" /></button>
-            </div>
-            <div style={{ overflowY: 'auto', flex: 1 }}>
-              {cashFees.length === 0 ? (
-                <div style={{ padding: '60px 24px', textAlign: 'center' }}>
-                  <CheckCircle size={36} color="#22C55E" style={{ margin: '0 auto 12px', display: 'block' }} />
-                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A' }}>All clear!</div>
-                  <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>No outstanding fees remaining</div>
-                </div>
-              ) : cashFees.map((fee, i) => {
-                const owed = Math.max(fee.amount_due - fee.discount - fee.amount_paid, 0);
-                const cfg  = STATUS_CONFIG[fee.status] ?? STATUS_CONFIG.outstanding;
-                return (
-                  <div key={fee.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 24px', borderBottom: i < cashFees.length - 1 ? '1px solid #F8FAFC' : 'none' }}>
-                    <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: primary, flexShrink: 0 }}>
-                      {initials(fee.player_name)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '13.5px', fontWeight: '700', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fee.player_name}</div>
-                      <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '2px' }}>{fee.team_name} · {fee.description}</div>
-                    </div>
-                    <div style={{ textAlign: 'right', marginRight: '10px' }}>
-                      <div style={{ fontSize: '15px', fontWeight: '800', color: cfg.color }}>${fmt(owed)}</div>
-                      <span style={{ fontSize: '10px', fontWeight: '700', color: cfg.color }}>{cfg.label}</span>
-                    </div>
-                    <button
-                      onClick={() => handleCashRecord(fee)}
-                      style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', background: '#F0FDF4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background 0.15s' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#22C55E'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#F0FDF4'}
-                      title={`Record $${fmt(owed)} cash`}
-                    >
-                      <CheckCircle size={20} color="#22C55E" />
-                    </button>
+      {showCashMode && (() => {
+        // Session totals by method
+        const methodTotals = cashCollected.reduce<Record<string, number>>((acc, c) => {
+          acc[c.method] = (acc[c.method] ?? 0) + c.amount;
+          return acc;
+        }, {});
+        const sessionTotal = cashCollected.reduce((s, c) => s + c.amount, 0);
+        const METHOD_ICONS: Record<string, string> = { Cash: '💵', Check: '📝', Card: '💳' };
+        const METHOD_COLORS: Record<string, { color: string; bg: string }> = {
+          Cash:  { color: '#15803D', bg: '#DCFCE7' },
+          Check: { color: '#1D4ED8', bg: '#DBEAFE' },
+          Card:  { color: '#7C3AED', bg: '#EDE9FE' },
+        };
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 400, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 20px' }}>
+            <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '580px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
+
+              {/* Header */}
+              <div style={{ padding: '20px 24px 0', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Banknote size={18} color={primary} />
+                    <span style={{ fontSize: '17px', fontWeight: '800', color: '#0F172A' }}>Collect Payment</span>
                   </div>
-                );
-              })}
-            </div>
-            {cashPaidIds.size > 0 && (
-              <div style={{ padding: '12px 24px', borderTop: '1px solid #F1F5F9', background: '#F0FDF4', fontSize: '13px', fontWeight: '600', color: '#15803D', textAlign: 'center' }}>
-                ✓ {cashPaidIds.size} payment{cashPaidIds.size !== 1 ? 's' : ''} recorded this session
+                  <button onClick={() => { setShowCashMode(false); if (cashCollected.length > 0) load(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={20} color="#94A3B8" /></button>
+                </div>
+
+                {/* Payment method selector */}
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B', alignSelf: 'center', marginRight: '4px' }}>Method:</span>
+                  {(['Cash', 'Check', 'Card'] as const).map(m => {
+                    const mc = METHOD_COLORS[m];
+                    const active = cashMethod === m;
+                    return (
+                      <button key={m} onClick={() => setCashMethod(m)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 16px', borderRadius: '8px', border: `1.5px solid ${active ? mc.color : '#E2E8F0'}`, background: active ? mc.bg : '#fff', fontSize: '13px', fontWeight: '700', color: active ? mc.color : '#64748B', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}>
+                        {METHOD_ICONS[m]} {m}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ fontSize: '12px', color: '#94A3B8', paddingBottom: '14px', borderBottom: '1px solid #F1F5F9' }}>
+                  Tap ✓ to record full {cashMethod.toLowerCase()} payment — switch method above for each person
+                </div>
               </div>
-            )}
+
+              {/* Scrollable fee list */}
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {cashFees.length === 0 ? (
+                  <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+                    <CheckCircle size={36} color="#22C55E" style={{ margin: '0 auto 12px', display: 'block' }} />
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A' }}>All clear!</div>
+                    <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>No outstanding fees remaining</div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ padding: '6px 0' }}>
+                      {cashFees.map((fee, i) => {
+                        const owed = Math.max(fee.amount_due - fee.discount - fee.amount_paid, 0);
+                        const cfg  = STATUS_CONFIG[fee.status] ?? STATUS_CONFIG.outstanding;
+                        const mc   = METHOD_COLORS[cashMethod];
+                        return (
+                          <div key={fee.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 24px', borderBottom: i < cashFees.length - 1 ? '1px solid #F8FAFC' : 'none' }}>
+                            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: primary, flexShrink: 0 }}>
+                              {initials(fee.player_name)}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13.5px', fontWeight: '700', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fee.player_name}</div>
+                              <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '2px' }}>{fee.team_name} · {fee.description}</div>
+                            </div>
+                            <div style={{ textAlign: 'right', marginRight: '8px' }}>
+                              <div style={{ fontSize: '15px', fontWeight: '800', color: cfg.color }}>${fmt(owed)}</div>
+                              <span style={{ fontSize: '10px', fontWeight: '700', color: cfg.color }}>{cfg.label}</span>
+                            </div>
+                            <button
+                              onClick={() => handleCashRecord(fee)}
+                              style={{ width: '40px', height: '40px', borderRadius: '50%', border: `2px solid ${mc.color}20`, background: mc.bg, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s', fontSize: '16px' }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = mc.color; (e.currentTarget as HTMLElement).style.transform = 'scale(1.1)'; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = mc.bg; (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
+                              title={`Record $${fmt(owed)} ${cashMethod}`}
+                            >
+                              <CheckCircle size={20} color={mc.color} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Collected this session */}
+                    {cashCollected.length > 0 && (
+                      <div style={{ margin: '0 16px 16px', background: '#F0FDF4', borderRadius: '12px', border: '1px solid #BBF7D0', overflow: 'hidden' }}>
+                        <div style={{ padding: '10px 16px', borderBottom: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <CheckCircle size={13} color="#16A34A" />
+                          <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#15803D' }}>Collected this session</span>
+                        </div>
+                        {cashCollected.map((c, i) => {
+                          const mc = METHOD_COLORS[c.method] ?? METHOD_COLORS.Cash;
+                          return (
+                            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 16px', borderBottom: i < cashCollected.length - 1 ? '1px solid #BBF7D030' : 'none' }}>
+                              <span style={{ fontSize: '14px' }}>{METHOD_ICONS[c.method] ?? '💵'}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: '12.5px', fontWeight: '600', color: '#166534' }}>{c.name}</span>
+                                <span style={{ fontSize: '11px', color: '#4ADE80', marginLeft: '6px' }}>{c.description}</span>
+                              </div>
+                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '5px', background: mc.bg, color: mc.color, flexShrink: 0 }}>{c.method}</span>
+                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#15803D', flexShrink: 0 }}>${fmt(c.amount)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Session summary footer */}
+              {cashCollected.length > 0 && (
+                <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', background: '#F8FAFC', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#374151' }}>Session total</span>
+                    <span style={{ fontSize: '16px', fontWeight: '800', color: '#15803D', letterSpacing: '-0.3px' }}>${fmt(sessionTotal)}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {Object.entries(methodTotals).map(([method, total]) => {
+                      const mc = METHOD_COLORS[method] ?? METHOD_COLORS.Cash;
+                      return (
+                        <span key={method} style={{ fontSize: '11.5px', fontWeight: '600', padding: '3px 10px', borderRadius: '6px', background: mc.bg, color: mc.color }}>
+                          {METHOD_ICONS[method] ?? '💵'} ${fmt(total)} {method}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Waive modal ─────────────────────────────────────────────────────────── */}
       {showWaive && (
