@@ -611,7 +611,7 @@ export default function ClubFeesPage() {
             {pageTab === 'ledger' && <>
               <button onClick={() => { setShowCashMode(true); setCashCollected([]); setCashMethod('Cash'); }}
                 style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
-                <Banknote size={14} /> Collect Cash
+                <Banknote size={14} /> Collect Payment
               </button>
               <button onClick={() => setShowAssign(true)}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
