@@ -27,7 +27,7 @@ type ClubFee     = {
   installment_total: number | null;
   last_reminded_at: string | null;
 };
-type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; recorder_name: string | null };
+type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; recorder_name: string | null };
 type ReminderLog = { id: string; sent_at: string; reminder_type: string; player_fee_id: string };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -63,7 +63,17 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 }
 
 // ── Row action menu ────────────────────────────────────────────────────────────
-function RowMenu({ onPay, onWaive, primary }: { onPay: () => void; onWaive: () => void; primary: string }) {
+type RowMenuProps = {
+  onPay?: () => void;
+  onWaive?: () => void;
+  onUndo?: () => void;
+  onEdit?: () => void;
+  onResendReceipt?: () => void;
+  isPaid?: boolean;
+  hasPayments?: boolean;
+  primary: string;
+};
+function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, isPaid, hasPayments, primary }: RowMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -71,6 +81,13 @@ function RowMenu({ onPay, onWaive, primary }: { onPay: () => void; onWaive: () =
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+  const item = (onClick: () => void, color: string, hoverBg: string, icon: React.ReactNode, label: string) => (
+    <button onClick={() => { setOpen(false); onClick(); }}
+      style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', border: 'none', background: 'none', fontSize: '12.5px', fontWeight: '600', color, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = hoverBg}
+      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+    >{icon} {label}</button>
+  );
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
       <button onClick={() => setOpen(o => !o)}
@@ -81,22 +98,13 @@ function RowMenu({ onPay, onWaive, primary }: { onPay: () => void; onWaive: () =
         <MoreHorizontal size={14} color="#94A3B8" />
       </button>
       {open && (
-        <div style={{ position: 'absolute', right: 0, top: '30px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: '140px', overflow: 'hidden' }}>
-          <button onClick={() => { setOpen(false); onPay(); }}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', border: 'none', background: 'none', fontSize: '12.5px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
-          >
-            <CreditCard size={13} color={primary} /> Record Payment
-          </button>
-          <div style={{ height: '1px', background: '#F1F5F9' }} />
-          <button onClick={() => { setOpen(false); onWaive(); }}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', border: 'none', background: 'none', fontSize: '12.5px', fontWeight: '600', color: '#8B5CF6', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F5F3FF'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
-          >
-            <CheckCircle size={13} color="#8B5CF6" /> Waive Fee
-          </button>
+        <div style={{ position: 'absolute', right: 0, top: '30px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: '160px', overflow: 'hidden' }}>
+          {onPay  && <>{item(onPay,  '#374151', '#F8FAFC', <CreditCard size={13} color={primary} />,   'Record Payment')}<div style={{ height: '1px', background: '#F1F5F9' }} /></>}
+          {onEdit && item(onEdit, '#374151', '#F8FAFC', <Calendar size={13} color="#64748B" />, 'Edit Fee')}
+          {onWaive && <>{item(onWaive, '#8B5CF6', '#F5F3FF', <CheckCircle size={13} color="#8B5CF6" />, 'Waive Fee')}</>}
+          {(onEdit || onWaive) && (onUndo || onResendReceipt) && <div style={{ height: '1px', background: '#F1F5F9' }} />}
+          {onUndo && item(onUndo, '#EF4444', '#FEF2F2', <X size={13} color="#EF4444" />, 'Undo Last Payment')}
+          {onResendReceipt && item(onResendReceipt, '#3B82F6', '#EFF6FF', <Send size={13} color="#3B82F6" />, 'Resend Receipt')}
         </div>
       )}
     </div>
@@ -143,6 +151,20 @@ export default function ClubFeesPage() {
   // ── Selection + bulk ─────────────────────────────────────────────────────────
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
   const [bulkReminding, setBulkReminding] = useState(false);
+
+  // ── Undo payment ─────────────────────────────────────────────────────────────
+  const [showUndoConfirm, setShowUndoConfirm] = useState<{ fee: ClubFee; payment: Payment } | null>(null);
+  const [undoSaving,      setUndoSaving]      = useState(false);
+
+  // ── Edit fee ─────────────────────────────────────────────────────────────────
+  const [showEditFee,   setShowEditFee]   = useState<ClubFee | null>(null);
+  const [editFeeForm,   setEditFeeForm]   = useState({ description: '', amount_due: '', due_date: '' });
+  const [editFeeSaving, setEditFeeSaving] = useState(false);
+
+  // ── Bulk waive ────────────────────────────────────────────────────────────────
+  const [showBulkWaive,   setShowBulkWaive]   = useState(false);
+  const [bulkWaiveReason, setBulkWaiveReason] = useState('');
+  const [bulkWaiving,     setBulkWaiving]     = useState(false);
 
   // ── Reminder state ────────────────────────────────────────────────────────────
   const [reminding,      setReminding]      = useState(false);
@@ -232,13 +254,14 @@ export default function ClubFeesPage() {
     if (mapped.length > 0) {
       const { data: pmts } = await supabase
         .from('fee_payments')
-        .select('id,player_fee_id,amount,paid_at,method,profiles!fee_payments_recorded_by_fkey(full_name)')
+        .select('id,player_fee_id,amount,paid_at,method,reference,profiles!fee_payments_recorded_by_fkey(full_name)')
         .in('player_fee_id', mapped.map(f => f.id))
         .order('paid_at', { ascending: false });
       setAllPayments((pmts ?? []).map((p: any) => ({
         id: p.id, player_fee_id: p.player_fee_id,
         amount: +p.amount, paid_at: p.paid_at,
         method: p.method ?? null,
+        reference: p.reference ?? null,
         recorder_name: (p.profiles as any)?.full_name ?? null,
       })) as Payment[]);
     }
@@ -421,6 +444,82 @@ export default function ClubFeesPage() {
       load();
     } finally {
       setWaiveSaving(false);
+    }
+  }
+
+  async function handleUndoPayment() {
+    if (!showUndoConfirm) return;
+    const { fee, payment } = showUndoConfirm;
+    setUndoSaving(true);
+    try {
+      const { error: delErr } = await supabase.from('fee_payments').delete().eq('id', payment.id);
+      if (delErr) { alert(`Could not undo payment: ${delErr.message}`); return; }
+      const newPaid = Math.max(fee.amount_paid - payment.amount, 0);
+      const newStatus = newPaid <= 0 ? 'outstanding' : 'partial';
+      await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', fee.id);
+      setShowUndoConfirm(null);
+      load();
+    } finally {
+      setUndoSaving(false);
+    }
+  }
+
+  async function handleUndoCollect(item: { id: string; name: string; description: string; amount: number; method: string }) {
+    const fee = fees.find(f => f.id === item.id);
+    if (!fee) return;
+    const pmt = allPayments.find(p => p.player_fee_id === item.id);
+    if (!pmt) {
+      setCashCollected(s => s.filter(c => c.id !== item.id));
+      load();
+      return;
+    }
+    const { error: delErr } = await supabase.from('fee_payments').delete().eq('id', pmt.id);
+    if (delErr) { alert(`Could not undo: ${delErr.message}`); return; }
+    const newPaid = Math.max(fee.amount_paid - pmt.amount, 0);
+    const newStatus = newPaid <= 0 ? 'outstanding' : 'partial';
+    await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', fee.id);
+    setCashCollected(s => s.filter(c => c.id !== item.id));
+    load();
+  }
+
+  async function handleEditFee() {
+    if (!showEditFee) return;
+    setEditFeeSaving(true);
+    try {
+      const updates: Record<string, unknown> = {};
+      if (editFeeForm.description)  updates.description = editFeeForm.description;
+      if (editFeeForm.amount_due)   updates.amount_due  = parseFloat(editFeeForm.amount_due);
+      if (editFeeForm.due_date !== undefined) updates.due_date = editFeeForm.due_date || null;
+      const { error } = await supabase.from('player_fees').update(updates).eq('id', showEditFee.id);
+      if (error) { alert(`Could not update fee: ${error.message}`); return; }
+      setShowEditFee(null);
+      load();
+    } finally {
+      setEditFeeSaving(false);
+    }
+  }
+
+  function handleResendReceipt(fee: ClubFee) {
+    fetch('/api/send-payment-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: fee.id, amount_paid: fee.amount_paid }) }).catch(() => {});
+    setReminderResult('Receipt resent.');
+    setTimeout(() => setReminderResult(null), 4000);
+  }
+
+  async function handleBulkWaive() {
+    const targets = filtered.filter(f => !['paid','waived'].includes(f.status) && selectedIds.has(f.id));
+    if (!targets.length) return;
+    setBulkWaiving(true);
+    try {
+      const { error } = await supabase.from('player_fees')
+        .update({ status: 'waived', discount_reason: bulkWaiveReason || 'Waived by admin' })
+        .in('id', targets.map(f => f.id));
+      if (error) { alert(`Could not waive fees: ${error.message}`); return; }
+      setShowBulkWaive(false);
+      setBulkWaiveReason('');
+      setSelectedIds(new Set());
+      load();
+    } finally {
+      setBulkWaiving(false);
     }
   }
 
@@ -887,19 +986,28 @@ export default function ClubFeesPage() {
         </div>
 
         {/* Bulk action bar */}
-        {selectedIds.size > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', background: `${primary}10`, border: `1px solid ${primary}30`, borderRadius: '10px', marginBottom: '10px' }}>
-            <span style={{ fontSize: '13px', fontWeight: '700', color: primary }}>{selectedIds.size} fee{selectedIds.size !== 1 ? 's' : ''} selected</span>
-            <button onClick={handleBulkRemind} disabled={bulkReminding}
-              style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: '#EF4444', color: '#fff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <Send size={12} /> {bulkReminding ? 'Sending…' : 'Remind selected overdue'}
-            </button>
-            <button onClick={() => setSelectedIds(new Set())}
-              style={{ padding: '6px 12px', borderRadius: '7px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', color: '#64748B' }}>
-              Clear selection
-            </button>
-          </div>
-        )}
+        {selectedIds.size > 0 && (() => {
+          const waivable = filtered.filter(f => !['paid','waived'].includes(f.status) && selectedIds.has(f.id));
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', background: `${primary}10`, border: `1px solid ${primary}30`, borderRadius: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: primary }}>{selectedIds.size} fee{selectedIds.size !== 1 ? 's' : ''} selected</span>
+              <button onClick={handleBulkRemind} disabled={bulkReminding}
+                style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: '#EF4444', color: '#fff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Send size={12} /> {bulkReminding ? 'Sending…' : 'Remind selected overdue'}
+              </button>
+              {waivable.length > 0 && (
+                <button onClick={() => { setBulkWaiveReason(''); setShowBulkWaive(true); }}
+                  style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: '#8B5CF6', color: '#fff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CheckCircle size={12} /> Waive {waivable.length} fee{waivable.length !== 1 ? 's' : ''}
+                </button>
+              )}
+              <button onClick={() => setSelectedIds(new Set())}
+                style={{ padding: '6px 12px', borderRadius: '7px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '12px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', color: '#64748B' }}>
+                Clear selection
+              </button>
+            </div>
+          );
+        })()}
 
         {/* 9. Fee table */}
         {loading ? (
@@ -966,7 +1074,7 @@ export default function ClubFeesPage() {
                   <div style={{ fontSize: '12.5px', fontWeight: '700', color: owed > 0 ? cfg.color : '#CBD5E1' }}>{owed > 0 ? `$${fmt(owed)}` : '—'}</div>
                   <div>
                     <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-                    {fee.status === 'paid' && (() => {
+                    {(fee.status === 'paid' || fee.status === 'partial') && (() => {
                       const pmt = allPayments.find(p => p.player_fee_id === fee.id);
                       if (!pmt) return null;
                       const d = new Date(pmt.paid_at);
@@ -977,6 +1085,7 @@ export default function ClubFeesPage() {
                           <div>{dateStr}</div>
                           {pmt.method && <div style={{ textTransform: 'capitalize' }}>{pmt.method}</div>}
                           {firstName && <div>Recv&apos;d by {firstName}</div>}
+                          {pmt.reference && <div>Ref: {pmt.reference}</div>}
                         </div>
                       );
                     })()}
@@ -987,7 +1096,22 @@ export default function ClubFeesPage() {
                     )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    {canPay && <RowMenu onPay={() => openPayment(fee)} onWaive={() => setShowWaive(fee)} primary={primary} />}
+                    {fee.status !== 'waived' && (() => {
+                      const feePayments = allPayments.filter(p => p.player_fee_id === fee.id);
+                      const latestPmt   = feePayments[0] ?? null;
+                      return (
+                        <RowMenu
+                          primary={primary}
+                          onPay={canPay ? () => openPayment(fee) : undefined}
+                          onWaive={canPay ? () => setShowWaive(fee) : undefined}
+                          onEdit={() => { setShowEditFee(fee); setEditFeeForm({ description: fee.description, amount_due: String(fee.amount_due), due_date: fee.due_date ?? '' }); }}
+                          onUndo={latestPmt ? () => setShowUndoConfirm({ fee, payment: latestPmt }) : undefined}
+                          onResendReceipt={fee.status === 'paid' ? () => handleResendReceipt(fee) : undefined}
+                          isPaid={fee.status === 'paid'}
+                          hasPayments={feePayments.length > 0}
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -1247,6 +1371,11 @@ export default function ClubFeesPage() {
                               </div>
                               <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '5px', background: mc.bg, color: mc.color, flexShrink: 0 }}>{c.method}</span>
                               <span style={{ fontSize: '13px', fontWeight: '800', color: '#15803D', flexShrink: 0 }}>${fmt(c.amount)}</span>
+                              <button onClick={() => handleUndoCollect(c)} title="Undo"
+                                style={{ flexShrink: 0, width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #FECACA', background: '#FEF2F2', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#FCA5A5'}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#FEF2F2'}
+                              ><X size={13} color="#EF4444" /></button>
                             </div>
                           );
                         })}
@@ -1473,6 +1602,111 @@ export default function ClubFeesPage() {
           </div>
         </div>
       )}
+
+      {/* ── Undo Payment Confirm Modal ───────────────────────────────────────────── */}
+      {showUndoConfirm && (() => {
+        const { fee, payment } = showUndoConfirm;
+        const d = new Date(payment.paid_at);
+        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: '20px' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Undo Payment</div>
+                <button onClick={() => setShowUndoConfirm(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+              </div>
+              <div style={{ padding: '20px 24px' }}>
+                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Payment to reverse</div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#DC2626' }}>${fmt(payment.amount)}</div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>{fee.player_name} · {fee.description}</div>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '3px' }}>{dateStr}{payment.method ? ` · ${payment.method}` : ''}{payment.reference ? ` · Ref: ${payment.reference}` : ''}</div>
+                </div>
+                <div style={{ fontSize: '13px', color: '#64748B', lineHeight: '1.5' }}>
+                  This will delete the payment record and mark the fee as <strong>outstanding</strong>. This cannot be undone.
+                </div>
+              </div>
+              <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowUndoConfirm(null)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={handleUndoPayment} disabled={undoSaving} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: '#EF4444', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: undoSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  {undoSaving ? 'Undoing…' : 'Undo Payment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Edit Fee Modal ───────────────────────────────────────────────────────── */}
+      {showEditFee && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Edit Fee</div>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>{showEditFee.player_name}</div>
+              </div>
+              <button onClick={() => setShowEditFee(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+            </div>
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={lbl}>Description</label>
+                <input value={editFeeForm.description} onChange={e => setEditFeeForm(f => ({ ...f, description: e.target.value }))} style={inp} autoFocus />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={lbl}>Amount due ($)</label>
+                  <input type="number" value={editFeeForm.amount_due} onChange={e => setEditFeeForm(f => ({ ...f, amount_due: e.target.value }))} placeholder="0.00" style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Due date</label>
+                  <input type="date" value={editFeeForm.due_date} onChange={e => setEditFeeForm(f => ({ ...f, due_date: e.target.value }))} style={inp} />
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowEditFee(null)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={handleEditFee} disabled={editFeeSaving} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: editFeeSaving ? '#94A3B8' : primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: editFeeSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {editFeeSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Waive Confirm Modal ─────────────────────────────────────────────── */}
+      {showBulkWaive && (() => {
+        const waivable = filtered.filter(f => !['paid','waived'].includes(f.status) && selectedIds.has(f.id));
+        const total    = waivable.reduce((s, f) => s + Math.max(f.amount_due - f.discount - f.amount_paid, 0), 0);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: '20px' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Bulk Waive Fees</div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>{waivable.length} fee{waivable.length !== 1 ? 's' : ''} · ${fmt(total)} total</div>
+                </div>
+                <button onClick={() => setShowBulkWaive(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+              </div>
+              <div style={{ padding: '20px 24px' }}>
+                <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Amount being waived</div>
+                  <div style={{ fontSize: '22px', fontWeight: '800', color: '#6D28D9', marginTop: '4px' }}>${fmt(total)}</div>
+                  <div style={{ fontSize: '11.5px', color: '#8B5CF6', marginTop: '4px' }}>{waivable.length} fee{waivable.length !== 1 ? 's' : ''} across {new Set(waivable.map(f => f.player_name)).size} player{new Set(waivable.map(f => f.player_name)).size !== 1 ? 's' : ''}</div>
+                </div>
+                <label style={lbl}>Reason (optional)</label>
+                <input value={bulkWaiveReason} onChange={e => setBulkWaiveReason(e.target.value)} placeholder="e.g. Season end, Team dissolved…" style={inp} autoFocus />
+              </div>
+              <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowBulkWaive(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={handleBulkWaive} disabled={bulkWaiving} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: '#8B5CF6', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: bulkWaiving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  {bulkWaiving ? 'Waiving…' : `Waive ${waivable.length} fee${waivable.length !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Team Picker Modal ────────────────────────────────────────────────────── */}
       {showTeamPicker && (() => {
