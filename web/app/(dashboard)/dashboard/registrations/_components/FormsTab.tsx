@@ -3,15 +3,33 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Plus, Copy, ExternalLink, Trash2, Pencil, Archive, ArchiveRestore,
-  Calendar, Users, Clock, CheckCircle, AlertCircle, ChevronDown,
-  RefreshCw, Mail, Lock, Unlock, Star, Tag, X,
+  Calendar, Users, Clock, CheckCircle, AlertCircle, ChevronDown, ChevronUp,
+  RefreshCw, Mail, Lock, Unlock, Star, Tag, X, TrendingUp, RotateCcw,
+  DollarSign, Percent,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { STATUS_STYLES, fmtMoney, fmtDate, formFields, uid, labelSt, inputSt } from './shared';
-import type { RegForm, PromoCode, DiscountType } from './shared';
+import { STATUS_STYLES, PAY_STATUS_STYLES, fmtMoney, fmtDate, formFields, uid, labelSt, inputSt, playerName, parentEmail } from './shared';
+import type { RegForm, PromoCode, DiscountType, PaymentStatus } from './shared';
 import FormBuilder from './FormBuilder';
 import SeasonRolloverWizard from './SeasonRolloverWizard';
+
+// ── Local types ───────────────────────────────────────────────────────────────
+type SubmissionRow = {
+  id: string;
+  data: Record<string, string>;
+  status: string;
+  payment_status: PaymentStatus;
+  amount_due: number | null;
+  amount_paid: number;
+  refunded_amount: number;
+  refund_notes: string | null;
+  submitted_at: string;
+  promo_code_used: string | null;
+  discount_applied: number;
+  financial_aid_amount: number | null;
+};
+type RefundMode = 'full' | 'partial' | 'percent';
 
 export default function FormsTab() {
   const { profile, club, teams } = useDashboard();
@@ -38,6 +56,84 @@ export default function FormsTab() {
   const [earlySaving, setEarlySaving] = useState(false);
   const [setupChecklist, setSetupChecklist] = useState<RegForm | null>(null);
   const [promoForm, setPromoForm]           = useState<RegForm | null>(null);
+
+  // ── Expand / stats ────────────────────────────────────────────────────────────
+  const [expandedId,       setExpandedId]       = useState<string | null>(null);
+  const [formSubs,         setFormSubs]         = useState<Record<string, SubmissionRow[]>>({});
+  const [formSubsLoading,  setFormSubsLoading]  = useState<string | null>(null);
+
+  // ── Refund modal ──────────────────────────────────────────────────────────────
+  const [showRefund,   setShowRefund]   = useState<{ sub: SubmissionRow; form: RegForm } | null>(null);
+  const [refundMode,   setRefundMode]   = useState<RefundMode>('full');
+  const [refundInput,  setRefundInput]  = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [refundSaving, setRefundSaving] = useState(false);
+
+  async function toggleExpand(formId: string) {
+    if (expandedId === formId) { setExpandedId(null); return; }
+    setExpandedId(formId);
+    if (formSubs[formId]) return;
+    setFormSubsLoading(formId);
+    const { data } = await supabase
+      .from('registration_submissions')
+      .select('id,data,status,payment_status,amount_due,amount_paid,refunded_amount,refund_notes,submitted_at,promo_code_used,discount_applied,financial_aid_amount')
+      .eq('form_id', formId)
+      .order('submitted_at', { ascending: false });
+    setFormSubs(prev => ({ ...prev, [formId]: (data ?? []) as SubmissionRow[] }));
+    setFormSubsLoading(null);
+  }
+
+  function openRefund(sub: SubmissionRow, form: RegForm) {
+    setShowRefund({ sub, form });
+    setRefundMode('full');
+    setRefundInput('');
+    setRefundReason('');
+  }
+
+  function calcRefundAmount(sub: SubmissionRow): number {
+    const maxRefundable = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
+    if (refundMode === 'full') return maxRefundable;
+    if (refundMode === 'partial') return Math.min(parseFloat(refundInput) || 0, maxRefundable);
+    if (refundMode === 'percent') return Math.round((parseFloat(refundInput) || 0) / 100 * maxRefundable * 100) / 100;
+    return 0;
+  }
+
+  async function processRefund() {
+    if (!showRefund) return;
+    const { sub, form } = showRefund;
+    const amount = calcRefundAmount(sub);
+    if (amount <= 0) return;
+    setRefundSaving(true);
+    try {
+      const newRefunded = (sub.refunded_amount ?? 0) + amount;
+      const netPaid     = (sub.amount_paid ?? 0) - newRefunded;
+      const newStatus: PaymentStatus = netPaid <= 0 ? 'refunded' : sub.payment_status;
+      const { error } = await supabase.from('registration_submissions')
+        .update({ refunded_amount: newRefunded, refund_notes: refundReason || null, payment_status: newStatus })
+        .eq('id', sub.id);
+      if (error) { alert(`Refund failed: ${error.message}`); return; }
+      setFormSubs(prev => ({
+        ...prev,
+        [form.id]: (prev[form.id] ?? []).map(s =>
+          s.id === sub.id ? { ...s, refunded_amount: newRefunded, refund_notes: refundReason || null, payment_status: newStatus } : s
+        ),
+      }));
+      setShowRefund(null);
+    } finally {
+      setRefundSaving(false);
+    }
+  }
+
+  function formStats(subs: SubmissionRow[]) {
+    const active    = subs.filter(s => s.status !== 'declined');
+    const income    = subs.reduce((t, s) => t + (s.amount_paid ?? 0), 0);
+    const refunded  = subs.reduce((t, s) => t + (s.refunded_amount ?? 0), 0);
+    const outstanding = subs.reduce((t, s) => {
+      if (s.payment_status === 'refunded' || s.payment_status === 'paid') return t;
+      return t + Math.max((s.amount_due ?? 0) - (s.amount_paid ?? 0), 0);
+    }, 0);
+    return { registered: active.length, income, refunded, outstanding };
+  }
 
   const loadForms = useCallback(async () => {
     if (!club) return;
@@ -219,82 +315,279 @@ export default function FormsTab() {
             const hasSchedule    = form.open_at || form.close_at;
             const hasEarlyAccess = form.early_access_ends_at && new Date(form.early_access_ends_at) > new Date();
 
+            const isExpanded    = expandedId === form.id;
+            const subs          = formSubs[form.id] ?? [];
+            const subsLoading   = formSubsLoading === form.id;
+            const stats         = isExpanded && subs.length > 0 ? formStats(subs) : null;
+            const currency      = form.currency ?? 'USD';
+            const sym           = currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$';
+
             return (
-              <div key={form.id} style={{ background: '#fff', border: `1.5px solid ${isFull ? '#FECACA' : '#E2E8F0'}`, borderRadius: '14px', padding: '16px 20px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* Title row */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>{form.title}</span>
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: s.color, background: s.bg, borderRadius: '20px', padding: '2px 9px' }}>{s.label}</span>
-                      {hasEarlyAccess && <span style={{ fontSize: '11px', fontWeight: '700', color: '#0891B2', background: '#ECFEFF', borderRadius: '20px', padding: '2px 9px', display: 'flex', alignItems: 'center', gap: '3px' }}><Star size={9} /> Early access</span>}
-                      {isFull     && <span style={{ fontSize: '11px', fontWeight: '700', color: '#DC2626', background: '#FEE2E2', borderRadius: '20px', padding: '2px 9px' }}>Full</span>}
-                      {isNearCapacity && !isFull && <span style={{ fontSize: '11px', fontWeight: '700', color: '#D97706', background: '#FEF3C7', borderRadius: '20px', padding: '2px 9px' }}>Nearly full</span>}
-                      {form.price && <span style={{ fontSize: '11px', fontWeight: '700', color: '#16A34A', background: '#DCFCE7', borderRadius: '20px', padding: '2px 9px' }}>{fmtMoney(form.price, form.currency)}</span>}
-                    </div>
-                    {/* Meta */}
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#94A3B8', flexWrap: 'wrap' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Users size={11} /> {form.submission_count ?? 0}{form.max_spots ? ` / ${form.max_spots}` : ''} registrations</span>
-                      <span>{teamName(form.team_id)}</span>
-                      {form.deadline && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={11} /> Deadline {fmtDate(form.deadline)}</span>}
-                      {hasSchedule && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={11} /> Scheduled</span>}
-                      {form.season_label && <span>{form.season_label}</span>}
-                    </div>
-                    {/* Capacity bar */}
-                    {form.max_spots && (form.submission_count ?? 0) > 0 && (
-                      <div style={{ marginTop: '8px' }}>
-                        <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '2px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${Math.min(100, Math.round(((form.submission_count ?? 0) / form.max_spots) * 100))}%`, background: isFull ? '#DC2626' : isNearCapacity ? '#D97706' : primary, borderRadius: '2px', transition: 'width 0.3s' }} />
+              <div key={form.id} style={{ background: '#fff', border: `1.5px solid ${isFull ? '#FECACA' : isExpanded ? primary : '#E2E8F0'}`, borderRadius: '14px', overflow: 'hidden', transition: 'border-color 0.15s' }}>
+                <div style={{ padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Title row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>{form.title}</span>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: s.color, background: s.bg, borderRadius: '20px', padding: '2px 9px' }}>{s.label}</span>
+                        {hasEarlyAccess && <span style={{ fontSize: '11px', fontWeight: '700', color: '#0891B2', background: '#ECFEFF', borderRadius: '20px', padding: '2px 9px', display: 'flex', alignItems: 'center', gap: '3px' }}><Star size={9} /> Early access</span>}
+                        {isFull     && <span style={{ fontSize: '11px', fontWeight: '700', color: '#DC2626', background: '#FEE2E2', borderRadius: '20px', padding: '2px 9px' }}>Full</span>}
+                        {isNearCapacity && !isFull && <span style={{ fontSize: '11px', fontWeight: '700', color: '#D97706', background: '#FEF3C7', borderRadius: '20px', padding: '2px 9px' }}>Nearly full</span>}
+                        {form.price && <span style={{ fontSize: '11px', fontWeight: '700', color: '#16A34A', background: '#DCFCE7', borderRadius: '20px', padding: '2px 9px' }}>{fmtMoney(form.price, form.currency)}</span>}
+                      </div>
+                      {/* Meta */}
+                      <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#94A3B8', flexWrap: 'wrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Users size={11} /> {form.submission_count ?? 0}{form.max_spots ? ` / ${form.max_spots}` : ''} registrations</span>
+                        <span>{teamName(form.team_id)}</span>
+                        {form.deadline && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={11} /> Deadline {fmtDate(form.deadline)}</span>}
+                        {hasSchedule && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Calendar size={11} /> Scheduled</span>}
+                        {form.season_label && <span>{form.season_label}</span>}
+                      </div>
+                      {/* Capacity bar */}
+                      {form.max_spots && (form.submission_count ?? 0) > 0 && (
+                        <div style={{ marginTop: '8px' }}>
+                          <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${Math.min(100, Math.round(((form.submission_count ?? 0) / form.max_spots) * 100))}%`, background: isFull ? '#DC2626' : isNearCapacity ? '#D97706' : primary, borderRadius: '2px', transition: 'width 0.3s' }} />
+                          </div>
                         </div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                      {/* Status toggle */}
+                      {form.status === 'open' ? (
+                        <button onClick={() => updateStatus(form.id, 'closed')} title="Close form" style={{ padding: '7px', background: '#FEE2E2', border: 'none', borderRadius: '7px', cursor: 'pointer', color: '#DC2626', display: 'flex' }}>
+                          <Lock size={13} />
+                        </button>
+                      ) : form.status === 'closed' ? (
+                        <button onClick={() => updateStatus(form.id, 'open')} title="Open form" style={{ padding: '7px', background: '#DCFCE7', border: 'none', borderRadius: '7px', cursor: 'pointer', color: '#16A34A', display: 'flex' }}>
+                          <Unlock size={13} />
+                        </button>
+                      ) : (
+                        <button onClick={() => updateStatus(form.id, 'open')} title="Publish" style={{ padding: '7px', background: '#DCFCE7', border: 'none', borderRadius: '7px', cursor: 'pointer', color: '#16A34A', display: 'flex' }}>
+                          <Unlock size={13} />
+                        </button>
+                      )}
+                      <button onClick={() => copy(form.token)} title="Copy link" style={{ padding: '7px', background: copied === form.token ? '#DCFCE7' : '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: copied === form.token ? '#16A34A' : '#64748B', display: 'flex' }}>
+                        {copied === form.token ? <CheckCircle size={13} /> : <Copy size={13} />}
+                      </button>
+                      <button onClick={() => window.open(`/register/${form.token}`, '_blank')} title="Preview" style={{ padding: '7px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: '#64748B', display: 'flex' }}>
+                        <ExternalLink size={13} />
+                      </button>
+                      <button onClick={() => duplicateForm(form)} title="Duplicate" style={{ padding: '7px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: '#64748B', display: 'flex' }}>
+                        <Copy size={13} />
+                      </button>
+                      {/* Dropdown actions */}
+                      <FormActionsMenu
+                        form={form}
+                        onEdit={() => setEditingForm(form)}
+                        onSchedule={() => { setSchedulingForm(form); setSchedOpenAt(form.open_at?.slice(0,16) ?? ''); setSchedCloseAt(form.close_at?.slice(0,16) ?? ''); }}
+                        onEarlyAccess={() => { setEarlyForm(form); setEarlyDate(form.early_access_ends_at?.slice(0,16) ?? ''); }}
+                        onLateInvite={() => setLateInviteForm(form)}
+                        onSetupChecklist={() => setSetupChecklist(form)}
+                        onPromoCodes={() => setPromoForm(form)}
+                        onArchive={() => archiveForm(form.id)}
+                        onDelete={() => setDelConfirm(form)}
+                        primary={primary}
+                      />
+                      {/* Expand toggle */}
+                      <button onClick={() => toggleExpand(form.id)} title={isExpanded ? 'Collapse' : 'Expand details'}
+                        style={{ padding: '7px', background: isExpanded ? `${primary}15` : '#F8FAFC', border: `1px solid ${isExpanded ? primary : '#E2E8F0'}`, borderRadius: '7px', cursor: 'pointer', color: isExpanded ? primary : '#64748B', display: 'flex' }}>
+                        {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Expanded panel ─────────────────────────────────────────── */}
+                {isExpanded && (
+                  <div style={{ borderTop: `1.5px solid ${primary}20`, background: '#FAFBFC' }}>
+                    {subsLoading ? (
+                      <div style={{ padding: '32px', textAlign: 'center', color: '#94A3B8', fontSize: '13px' }}>Loading…</div>
+                    ) : (
+                      <div style={{ padding: '20px' }}>
+                        {/* Stat tiles */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '18px' }}>
+                          {[
+                            { label: 'Registered',   value: String(stats?.registered ?? subs.filter(s => s.status !== 'declined').length), icon: <Users size={14} color="#3B82F6" />, bg: '#EFF6FF', valColor: '#1E40AF' },
+                            { label: 'Income',        value: `${sym}${(stats?.income ?? 0).toFixed(2)}`, icon: <TrendingUp size={14} color="#16A34A" />, bg: '#DCFCE7', valColor: '#15803D' },
+                            { label: 'Outstanding',   value: `${sym}${(stats?.outstanding ?? 0).toFixed(2)}`, icon: <Clock size={14} color="#D97706" />, bg: '#FEF3C7', valColor: '#B45309' },
+                            { label: 'Refunded',      value: `${sym}${(stats?.refunded ?? 0).toFixed(2)}`, icon: <RotateCcw size={14} color="#64748B" />, bg: '#F1F5F9', valColor: '#475569' },
+                          ].map(({ label, value, icon, bg, valColor }) => (
+                            <div key={label} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px 16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                                <div style={{ width: '26px', height: '26px', borderRadius: '6px', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
+                                <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+                              </div>
+                              <div style={{ fontSize: '18px', fontWeight: '800', color: valColor, letterSpacing: '-0.3px' }}>{value}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Submissions list */}
+                        {subs.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '32px', color: '#94A3B8', fontSize: '13px', background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                            No submissions yet
+                          </div>
+                        ) : (
+                          <div style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+                            {/* Table header */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px 90px', padding: '8px 14px', background: '#0F172A', gap: '8px' }}>
+                              {['Player', 'Status', 'Invoice', 'Paid', 'Refunded', ''].map((h) => (
+                                <span key={h} style={{ fontSize: '10px', fontWeight: '700', color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '1.2px' }}>{h}</span>
+                              ))}
+                            </div>
+                            {subs.map((sub, i) => {
+                              const ps    = PAY_STATUS_STYLES[sub.payment_status] ?? PAY_STATUS_STYLES.unpaid;
+                              const name  = playerName(sub.data);
+                              const net   = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
+                              const canRefund = sub.payment_status !== 'refunded' && (sub.amount_paid ?? 0) > (sub.refunded_amount ?? 0);
+                              return (
+                                <div key={sub.id} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px 90px', padding: '10px 14px', borderTop: i > 0 ? '1px solid #F8FAFC' : 'none', alignItems: 'center', gap: '8px', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
+                                  <div>
+                                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+                                    <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px' }}>{fmtDate(sub.submitted_at)}</div>
+                                  </div>
+                                  <div>
+                                    <span style={{ fontSize: '10.5px', fontWeight: '700', color: ps.color, background: ps.bg, borderRadius: '4px', padding: '2px 7px' }}>{ps.label}</span>
+                                  </div>
+                                  <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#374151' }}>{sub.amount_due != null ? `${sym}${sub.amount_due.toFixed(2)}` : '—'}</div>
+                                  <div style={{ fontSize: '12.5px', fontWeight: '600', color: net > 0 ? '#15803D' : '#94A3B8' }}>{sym}{net.toFixed(2)}</div>
+                                  <div style={{ fontSize: '12.5px', color: (sub.refunded_amount ?? 0) > 0 ? '#DC2626' : '#CBD5E1' }}>
+                                    {(sub.refunded_amount ?? 0) > 0 ? `-${sym}${sub.refunded_amount.toFixed(2)}` : '—'}
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                    {canRefund && (
+                                      <button onClick={() => openRefund(sub, form)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                                        <RotateCcw size={10} /> Refund
+                                      </button>
+                                    )}
+                                    {sub.payment_status === 'refunded' && (
+                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B' }}>Refunded</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-
-                  {/* Actions */}
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    {/* Status toggle */}
-                    {form.status === 'open' ? (
-                      <button onClick={() => updateStatus(form.id, 'closed')} title="Close form" style={{ padding: '7px', background: '#FEE2E2', border: 'none', borderRadius: '7px', cursor: 'pointer', color: '#DC2626', display: 'flex' }}>
-                        <Lock size={13} />
-                      </button>
-                    ) : form.status === 'closed' ? (
-                      <button onClick={() => updateStatus(form.id, 'open')} title="Open form" style={{ padding: '7px', background: '#DCFCE7', border: 'none', borderRadius: '7px', cursor: 'pointer', color: '#16A34A', display: 'flex' }}>
-                        <Unlock size={13} />
-                      </button>
-                    ) : (
-                      <button onClick={() => updateStatus(form.id, 'open')} title="Publish" style={{ padding: '7px', background: '#DCFCE7', border: 'none', borderRadius: '7px', cursor: 'pointer', color: '#16A34A', display: 'flex' }}>
-                        <Unlock size={13} />
-                      </button>
-                    )}
-                    <button onClick={() => copy(form.token)} title="Copy link" style={{ padding: '7px', background: copied === form.token ? '#DCFCE7' : '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: copied === form.token ? '#16A34A' : '#64748B', display: 'flex' }}>
-                      {copied === form.token ? <CheckCircle size={13} /> : <Copy size={13} />}
-                    </button>
-                    <button onClick={() => window.open(`/register/${form.token}`, '_blank')} title="Preview" style={{ padding: '7px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: '#64748B', display: 'flex' }}>
-                      <ExternalLink size={13} />
-                    </button>
-                    <button onClick={() => duplicateForm(form)} title="Duplicate" style={{ padding: '7px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: '#64748B', display: 'flex' }}>
-                      <Copy size={13} />
-                    </button>
-                    {/* Dropdown actions */}
-                    <FormActionsMenu
-                      form={form}
-                      onEdit={() => setEditingForm(form)}
-                      onSchedule={() => { setSchedulingForm(form); setSchedOpenAt(form.open_at?.slice(0,16) ?? ''); setSchedCloseAt(form.close_at?.slice(0,16) ?? ''); }}
-                      onEarlyAccess={() => { setEarlyForm(form); setEarlyDate(form.early_access_ends_at?.slice(0,16) ?? ''); }}
-                      onLateInvite={() => setLateInviteForm(form)}
-                      onSetupChecklist={() => setSetupChecklist(form)}
-                      onPromoCodes={() => setPromoForm(form)}
-                      onArchive={() => archiveForm(form.id)}
-                      onDelete={() => setDelConfirm(form)}
-                      primary={primary}
-                    />
-                  </div>
-                </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
+
+      {/* ── Refund modal ── */}
+      {showRefund && (() => {
+        const { sub, form } = showRefund;
+        const maxRefundable = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
+        const refundAmount  = calcRefundAmount(sub);
+        const sym2 = (form.currency === 'GBP' ? '£' : form.currency === 'EUR' ? '€' : '$');
+        const valid = refundAmount > 0 && refundAmount <= maxRefundable;
+        return (
+          <Modal onClose={() => setShowRefund(null)}>
+            <div style={{ padding: '24px' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <RotateCcw size={18} color="#DC2626" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Issue Refund</h3>
+                  <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>{playerName(sub.data)} · {form.title}</p>
+                </div>
+              </div>
+
+              {/* Payment summary */}
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px 16px', marginBottom: '20px', display: 'flex', gap: '20px' }}>
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Total paid</div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#0F172A' }}>{sym2}{(sub.amount_paid ?? 0).toFixed(2)}</div>
+                </div>
+                {(sub.refunded_amount ?? 0) > 0 && (
+                  <div>
+                    <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Already refunded</div>
+                    <div style={{ fontSize: '18px', fontWeight: '800', color: '#DC2626' }}>{sym2}{sub.refunded_amount.toFixed(2)}</div>
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Refundable</div>
+                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#15803D' }}>{sym2}{maxRefundable.toFixed(2)}</div>
+                </div>
+              </div>
+
+              {/* Refund type tabs */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ ...labelSt, marginBottom: '8px' }}>Refund type</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                  {([
+                    { mode: 'full' as RefundMode,    label: 'Full refund',    sub: `${sym2}${maxRefundable.toFixed(2)}` },
+                    { mode: 'partial' as RefundMode, label: 'Fixed amount',   sub: 'Enter $ amount' },
+                    { mode: 'percent' as RefundMode, label: 'Percentage',     sub: 'Enter % of paid' },
+                  ]).map(({ mode, label, sub: subLabel }) => (
+                    <button key={mode} onClick={() => { setRefundMode(mode); setRefundInput(''); }}
+                      style={{ padding: '10px 8px', borderRadius: '8px', border: `1.5px solid ${refundMode === mode ? '#DC2626' : '#E2E8F0'}`, background: refundMode === mode ? '#FEF2F2' : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' }}>
+                      <div style={{ fontSize: '12.5px', fontWeight: '700', color: refundMode === mode ? '#DC2626' : '#374151' }}>{label}</div>
+                      <div style={{ fontSize: '11px', color: refundMode === mode ? '#EF4444' : '#94A3B8', marginTop: '2px' }}>{subLabel}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Amount input */}
+              {refundMode !== 'full' && (
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={labelSt}>{refundMode === 'partial' ? `Amount (max ${sym2}${maxRefundable.toFixed(2)})` : 'Percentage (%)'}</label>
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#64748B', fontWeight: '600' }}>
+                      {refundMode === 'partial' ? sym2 : '%'}
+                    </span>
+                    <input type="number" min="0" max={refundMode === 'partial' ? maxRefundable : 100} step="0.01"
+                      value={refundInput} onChange={e => setRefundInput(e.target.value)} placeholder={refundMode === 'partial' ? '0.00' : '0'}
+                      style={{ ...inputSt, paddingLeft: '30px' }} autoFocus />
+                  </div>
+                  {refundMode === 'percent' && parseFloat(refundInput) > 0 && (
+                    <div style={{ fontSize: '12px', color: '#DC2626', fontWeight: '600', marginTop: '4px' }}>
+                      = {sym2}{(parseFloat(refundInput) / 100 * maxRefundable).toFixed(2)} refunded
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Reason */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={labelSt}>Reason (optional)</label>
+                <input value={refundReason} onChange={e => setRefundReason(e.target.value)}
+                  placeholder="e.g. Withdrawal, duplicate payment, overpayment…"
+                  style={inputSt} />
+              </div>
+
+              {/* Refund preview */}
+              {valid && (
+                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#DC2626' }}>Refund amount</span>
+                  <span style={{ fontSize: '18px', fontWeight: '800', color: '#DC2626' }}>{sym2}{refundAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setShowRefund(null)} style={{ padding: '11px 16px', background: '#F1F5F9', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={processRefund} disabled={refundSaving || !valid}
+                  style={{ flex: 1, padding: '11px', background: refundSaving || !valid ? '#CBD5E1' : '#DC2626', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: refundSaving || !valid ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <RotateCcw size={13} /> {refundSaving ? 'Processing…' : `Refund ${valid ? `${sym2}${refundAmount.toFixed(2)}` : ''}`}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* ── Delete confirm ── */}
       {delConfirm && (
