@@ -27,7 +27,7 @@ type ClubFee     = {
   installment_total: number | null;
   last_reminded_at: string | null;
 };
-type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method?: string };
+type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; recorder_name: string | null };
 type ReminderLog = { id: string; sent_at: string; reminder_type: string; player_fee_id: string };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -231,10 +231,16 @@ export default function ClubFeesPage() {
 
     if (mapped.length > 0) {
       const { data: pmts } = await supabase
-        .from('fee_payments').select('id,player_fee_id,amount,paid_at')
+        .from('fee_payments')
+        .select('id,player_fee_id,amount,paid_at,method,profiles!fee_payments_recorded_by_fkey(full_name)')
         .in('player_fee_id', mapped.map(f => f.id))
         .order('paid_at', { ascending: false });
-      setAllPayments((pmts ?? []) as Payment[]);
+      setAllPayments((pmts ?? []).map((p: any) => ({
+        id: p.id, player_fee_id: p.player_fee_id,
+        amount: +p.amount, paid_at: p.paid_at,
+        method: p.method ?? null,
+        recorder_name: (p.profiles as any)?.full_name ?? null,
+      })) as Payment[]);
     }
     setLoading(false);
   }, [club, today]);
@@ -960,6 +966,20 @@ export default function ClubFeesPage() {
                   <div style={{ fontSize: '12.5px', fontWeight: '700', color: owed > 0 ? cfg.color : '#CBD5E1' }}>{owed > 0 ? `$${fmt(owed)}` : '—'}</div>
                   <div>
                     <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                    {fee.status === 'paid' && (() => {
+                      const pmt = allPayments.find(p => p.player_fee_id === fee.id);
+                      if (!pmt) return null;
+                      const d = new Date(pmt.paid_at);
+                      const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                      const firstName = pmt.recorder_name?.split(' ')[0] ?? null;
+                      return (
+                        <div style={{ fontSize: '9.5px', color: '#94A3B8', marginTop: '3px', lineHeight: '1.5' }}>
+                          <div>{dateStr}</div>
+                          {pmt.method && <div style={{ textTransform: 'capitalize' }}>{pmt.method}</div>}
+                          {firstName && <div>Recv&apos;d by {firstName}</div>}
+                        </div>
+                      );
+                    })()}
                     {fee.last_reminded_at && fee.status === 'overdue' && (
                       <div style={{ fontSize: '9.5px', color: '#94A3B8', marginTop: '2px' }}>
                         Reminded {Math.floor((Date.now() - new Date(fee.last_reminded_at).getTime()) / 86400000)}d ago
