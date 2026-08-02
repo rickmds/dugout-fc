@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { player_fee_id } = await req.json();
   if (!player_fee_id) return NextResponse.json({ error: 'player_fee_id required' }, { status: 400 });
 
@@ -14,7 +18,7 @@ export async function POST(req: NextRequest) {
   // Fetch fee + player + team + club
   const { data: fee, error: feeErr } = await supabase
     .from('player_fees')
-    .select('id, description, amount_due, discount, due_date, status, player_id, players(full_name), teams(id, name, club_id, clubs(name, logo_url, primary_color))')
+    .select('id, description, amount_due, discount, due_date, status, player_id, players(full_name), teams(id, name, club_id, clubs(name, slug, logo_url, primary_color))')
     .eq('id', player_fee_id)
     .single();
 
@@ -168,6 +172,16 @@ export async function POST(req: NextRequest) {
 
   if (emailErr) console.error('Resend error:', emailErr);
 
+  // Update last_reminded_at and log the reminder
+  await Promise.allSettled([
+    supabase.from('player_fees').update({ last_reminded_at: new Date().toISOString() }).eq('id', player_fee_id),
+    supabase.from('fee_reminder_log').insert({
+      player_fee_id,
+      sent_by:       auth.userId,
+      reminder_type: isOverdue ? 'overdue' : 'due_soon',
+    }),
+  ]);
+
   // Push notification — find parent's profile via auth.admin
   let pushSent = 0;
   try {
@@ -181,7 +195,7 @@ export async function POST(req: NextRequest) {
         type: 'fee_reminder',
         title: isOverdue ? 'Overdue payment' : 'Payment reminder',
         body: `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}`,
-        data: { player_fee_id, type: 'fee_reminder' },
+        data: { player_fee_id, type: 'fee_reminder', club_slug: (fee as any).teams?.clubs?.slug ?? '' },
       });
 
       // Get push tokens and fire
@@ -196,7 +210,7 @@ export async function POST(req: NextRequest) {
           title: isOverdue ? `⚠️ Overdue: ${fee.description}` : `💳 Payment reminder: ${fee.description}`,
           body: `${fmtAmount}${fmtDue ? ` · Due ${fmtDue}` : ''}`,
           sound: 'default',
-          data: { type: 'fee_reminder', player_fee_id },
+          data: { type: 'fee_reminder', player_fee_id, club_slug: (fee as any).teams?.clubs?.slug ?? '' },
         }));
         await fetch(EXPO_PUSH_URL, {
           method: 'POST',

@@ -5,12 +5,15 @@ import {
   DollarSign, Plus, X, Send, Download, ChevronDown, ChevronUp,
   TrendingUp, AlertCircle, Clock, CheckCircle, CreditCard, Search,
   ChevronRight, Banknote, Tag, MoreHorizontal, ArrowUpDown,
-  ArrowUp, ArrowDown, Zap, Calendar, Users,
+  ArrowUp, ArrowDown, Zap, Calendar, Users, BarChart3, UserPlus,
 } from 'lucide-react';
+import FamiliesTab  from './_components/FamiliesTab';
+import FeeAnalytics from './_components/FeeAnalytics';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+type PageTab     = 'ledger' | 'families' | 'analytics';
 type Team        = { id: string; name: string };
 type FeeCategory = { id: string; name: string; amount: number; description: string | null };
 type ClubFee     = {
@@ -22,8 +25,10 @@ type ClubFee     = {
   plan_group_id: string | null;
   installment_number: number | null;
   installment_total: number | null;
+  last_reminded_at: string | null;
 };
-type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string };
+type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method?: string };
+type ReminderLog = { id: string; sent_at: string; reminder_type: string; player_fee_id: string };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -119,8 +124,21 @@ export default function ClubFeesPage() {
   const [sortDir,       setSortDir]       = useState<'asc'|'desc'>('asc');
 
   // ── UI toggles ────────────────────────────────────────────────────────────────
+  const [pageTab,       setPageTab]       = useState<PageTab>('ledger');
   const [showBreakdown, setShowBreakdown] = useState(true);
   const [showCategories,setShowCategories]= useState(false);
+
+  // ── Reminder log (loaded per-player when panel opens) ─────────────────────
+  const [reminderLog,        setReminderLog]        = useState<ReminderLog[]>([]);
+  const [reminderLogLoading, setReminderLogLoading] = useState(false);
+
+  // ── Individual player fee assignment ──────────────────────────────────────
+  const [showIndivAssign, setShowIndivAssign] = useState(false);
+  const [indivSaving,     setIndivSaving]     = useState(false);
+  const [indivForm,       setIndivForm]       = useState({
+    description: '', amount_due: '', due_date: '', discount_amount: '', discount_reason: '',
+  });
+  function resetIndivForm() { setIndivForm({ description: '', amount_due: '', due_date: '', discount_amount: '', discount_reason: '' }); }
 
   // ── Selection + bulk ─────────────────────────────────────────────────────────
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
@@ -157,12 +175,14 @@ export default function ClubFeesPage() {
   // ── Assign form ───────────────────────────────────────────────────────────────
   const [aForm, setAForm] = useState({
     category_id: '', description: '', amount_due: '', due_date: '', notes: '',
+    discount_amount: '', discount_reason: '',
     apply_to: 'all' as 'all' | 'select',
     selected_teams: [] as string[], team_search: '',
     use_plan: false, plan_count: '3', plan_dates: ['','',''] as string[],
   });
   const resetForm = () => setAForm({
     category_id: '', description: '', amount_due: '', due_date: '', notes: '',
+    discount_amount: '', discount_reason: '',
     apply_to: 'all', selected_teams: [], team_search: '',
     use_plan: false, plan_count: '3', plan_dates: ['','',''],
   });
@@ -187,7 +207,7 @@ export default function ClubFeesPage() {
 
     const { data: fd } = await supabase
       .from('player_fees')
-      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,players(full_name)')
+      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,players(full_name)')
       .in('team_id', tList.map(t => t.id))
       .order('due_date', { ascending: true, nullsFirst: false });
 
@@ -203,6 +223,7 @@ export default function ClubFeesPage() {
       plan_group_id: f.plan_group_id,
       installment_number: f.installment_number,
       installment_total: f.installment_total,
+      last_reminded_at: f.last_reminded_at ?? null,
     }));
     setFees(mapped);
 
@@ -446,10 +467,10 @@ export default function ClubFeesPage() {
     for (const p of players) {
       if (aForm.use_plan && instPrev.length > 0) {
         for (const inst of instPrev) {
-          rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: inst.amount, due_date: inst.due || null, notes: aForm.notes || null, created_by: profile.id, plan_group_id: planGroupId, installment_number: inst.num, installment_total: instPrev.length });
+          rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: inst.amount, due_date: inst.due || null, notes: aForm.notes || null, created_by: profile.id, plan_group_id: planGroupId, installment_number: inst.num, installment_total: instPrev.length, discount: parseFloat(aForm.discount_amount) || 0, discount_reason: aForm.discount_reason || null });
         }
       } else {
-        rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: parseFloat(aForm.amount_due) || 0, due_date: aForm.due_date || null, notes: aForm.notes || null, created_by: profile.id });
+        rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: parseFloat(aForm.amount_due) || 0, due_date: aForm.due_date || null, notes: aForm.notes || null, created_by: profile.id, discount: parseFloat(aForm.discount_amount) || 0, discount_reason: aForm.discount_reason || null });
       }
     }
     const insertedIds: string[] = [];
@@ -468,6 +489,46 @@ export default function ClubFeesPage() {
     } finally {
       setSaving(false);
       setSaveProgress('');
+    }
+  }
+
+  // Load reminder log when player panel opens
+  useEffect(() => {
+    if (!playerPanel) { setReminderLog([]); return; }
+    const feeIds = fees.filter(f => f.player_id === playerPanel).map(f => f.id);
+    if (!feeIds.length) return;
+    setReminderLogLoading(true);
+    supabase
+      .from('fee_reminder_log')
+      .select('id,sent_at,reminder_type,player_fee_id')
+      .in('player_fee_id', feeIds)
+      .order('sent_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => { setReminderLog((data ?? []) as ReminderLog[]); setReminderLogLoading(false); });
+  }, [playerPanel, fees]);
+
+  async function handleIndivAssign() {
+    if (!profile || !playerPanel || !indivForm.description || !indivForm.amount_due) return;
+    const targetFee = fees.find(f => f.player_id === playerPanel);
+    if (!targetFee) return;
+    setIndivSaving(true);
+    try {
+      const { error } = await supabase.from('player_fees').insert({
+        player_id:      playerPanel,
+        team_id:        targetFee.team_id,
+        description:    indivForm.description,
+        amount_due:     parseFloat(indivForm.amount_due) || 0,
+        due_date:       indivForm.due_date || null,
+        discount:       parseFloat(indivForm.discount_amount) || 0,
+        discount_reason: indivForm.discount_reason || null,
+        created_by:     profile.id,
+      });
+      if (error) { alert(`Could not assign fee: ${error.message}`); return; }
+      setShowIndivAssign(false);
+      resetIndivForm();
+      load();
+    } finally {
+      setIndivSaving(false);
     }
   }
 
@@ -537,25 +598,46 @@ export default function ClubFeesPage() {
       `}</style>
 
       {/* ── Sticky header ──────────────────────────────────────────────────────── */}
-      <div className="fees-header" style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Fees</h1>
-          <p style={{ fontSize: '12px', color: '#94A3B8', margin: '3px 0 0' }}>Club-wide fee tracking, collection, and payment recording.</p>
+      <div style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: `3px solid ${primary}` }}>
+        <div className="fees-header" style={{ padding: '14px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Fees</h1>
+            <p style={{ fontSize: '12px', color: '#94A3B8', margin: '3px 0 0' }}>Club-wide fee tracking, collection, and payment recording.</p>
+          </div>
+          <div className="fees-header-btns" style={{ display: 'flex', gap: '8px' }}>
+            {pageTab === 'ledger' && <>
+              <button onClick={() => { setShowCashMode(true); setCashPaidIds(new Set()); }}
+                style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
+                <Banknote size={14} /> Collect Cash
+              </button>
+              <button onClick={() => setShowAssign(true)}
+                style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
+                <Plus size={14} /> Assign Club-Wide
+              </button>
+            </>}
+          </div>
         </div>
-        <div className="fees-header-btns" style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => { setShowCashMode(true); setCashPaidIds(new Set()); }}
-            style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
-            <Banknote size={14} /> Collect Cash
-          </button>
-          <button onClick={() => setShowAssign(true)}
-            style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
-            <Plus size={14} /> Assign Club-Wide
-          </button>
+        {/* Tab bar */}
+        <div style={{ display: 'flex', gap: '2px', padding: '0 32px' }}>
+          {([
+            { id: 'ledger',    label: 'Ledger',    icon: <DollarSign size={13} /> },
+            { id: 'families',  label: 'Families',  icon: <Users size={13} /> },
+            { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={13} /> },
+          ] as { id: PageTab; label: string; icon: React.ReactNode }[]).map(t => (
+            <button key={t.id} onClick={() => setPageTab(t.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 14px', border: 'none', background: 'none', borderBottom: `2px solid ${pageTab === t.id ? '#0F172A' : 'transparent'}`, fontSize: '12.5px', fontWeight: pageTab === t.id ? '700' : '500', color: pageTab === t.id ? '#0F172A' : '#64748B', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              {t.icon} {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ── Page content ───────────────────────────────────────────────────────── */}
-      <div className="fees-content" style={{ padding: '24px 32px', maxWidth: '1240px' }}>
+      {/* ── Non-ledger tabs ───────────────────────────────────────────────────── */}
+      {pageTab === 'families'  && <FamiliesTab />}
+      {pageTab === 'analytics' && <FeeAnalytics />}
+
+      {/* ── Ledger tab content ─────────────────────────────────────────────────── */}
+      {pageTab === 'ledger' && <div className="fees-content" style={{ padding: '24px 32px', maxWidth: '1240px' }}>
 
         {/* 1. Smart insights banner */}
         {!loading && insights.length > 0 && (
@@ -873,7 +955,14 @@ export default function ClubFeesPage() {
                   <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#374151' }}>${fmt(fee.amount_due - fee.discount)}</div>
                   <div style={{ fontSize: '12.5px', color: fee.amount_paid > 0 ? '#22C55E' : '#CBD5E1', fontWeight: fee.amount_paid > 0 ? '600' : '400' }}>${fmt(fee.amount_paid)}</div>
                   <div style={{ fontSize: '12.5px', fontWeight: '700', color: owed > 0 ? cfg.color : '#CBD5E1' }}>{owed > 0 ? `$${fmt(owed)}` : '—'}</div>
-                  <div><span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span></div>
+                  <div>
+                    <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                    {fee.last_reminded_at && fee.status === 'overdue' && (
+                      <div style={{ fontSize: '9.5px', color: '#94A3B8', marginTop: '2px' }}>
+                        Reminded {Math.floor((Date.now() - new Date(fee.last_reminded_at).getTime()) / 86400000)}d ago
+                      </div>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     {canPay && <RowMenu onPay={() => openPayment(fee)} onWaive={() => setShowWaive(fee)} primary={primary} />}
                   </div>
@@ -887,7 +976,7 @@ export default function ClubFeesPage() {
             </div>
           </div></div>
         )}
-      </div>{/* end padded content */}
+      </div>}{/* end ledger tab */}
 
       {/* ── Player drill-down panel ─────────────────────────────────────────────── */}
       {playerPanel && (
@@ -908,6 +997,12 @@ export default function ClubFeesPage() {
               </button>
             </div>
             <div style={{ overflowY: 'auto', flex: 1, padding: '16px 24px' }}>
+              {/* Add fee button */}
+              <button onClick={() => setShowIndivAssign(true)}
+                style={{ width: '100%', marginBottom: '14px', padding: '8px', borderRadius: '8px', border: `1px dashed ${primary}`, background: `${primary}08`, color: primary, fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                <UserPlus size={13} /> Add fee to this player
+              </button>
+
               {panelFees.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', fontSize: '13px', color: '#94A3B8' }}>No fees for this player</div>
               ) : panelFees.map(fee => {
@@ -933,7 +1028,7 @@ export default function ClubFeesPage() {
                       <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '8px', marginBottom: '8px' }}>
                         {feePayments.map(p => (
                           <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', color: '#64748B', paddingBottom: '3px' }}>
-                            <span>${fmt(p.amount)} recorded</span>
+                            <span>${fmt(p.amount)} via {(p as any).method ?? 'unknown'}</span>
                             <span>{p.paid_at.slice(0,10)}</span>
                           </div>
                         ))}
@@ -947,6 +1042,75 @@ export default function ClubFeesPage() {
                   </div>
                 );
               })}
+
+              {/* Reminder communication log */}
+              {!reminderLogLoading && reminderLog.length > 0 && (
+                <div style={{ marginTop: '12px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E2E8F0', padding: '12px 14px' }}>
+                  <div style={{ fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Reminders sent</div>
+                  {reminderLog.map(log => (
+                    <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', color: '#64748B', paddingBottom: '3px' }}>
+                      <span style={{ textTransform: 'capitalize' }}>{log.reminder_type} reminder</span>
+                      <span>{log.sent_at.slice(0, 10)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Individual player fee assignment modal ──────────────────────────────── */}
+      {showIndivAssign && playerPanel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 650, padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Add Fee to Player</div>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>{panelName}</div>
+              </div>
+              <button onClick={() => { setShowIndivAssign(false); resetIndivForm(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+            </div>
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={lbl}>Description *</label>
+                <input value={indivForm.description} onChange={e => setIndivForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Kit replacement, Tournament entry…" style={inp} autoFocus />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={lbl}>Amount ($) *</label>
+                  <input type="number" value={indivForm.amount_due} onChange={e => setIndivForm(f => ({ ...f, amount_due: e.target.value }))} placeholder="0.00" style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Due date</label>
+                  <input type="date" value={indivForm.due_date} onChange={e => setIndivForm(f => ({ ...f, due_date: e.target.value }))} style={inp} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={lbl}>Discount ($)</label>
+                  <input type="number" value={indivForm.discount_amount} onChange={e => setIndivForm(f => ({ ...f, discount_amount: e.target.value }))} placeholder="0.00" style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Discount reason</label>
+                  <select value={indivForm.discount_reason} onChange={e => setIndivForm(f => ({ ...f, discount_reason: e.target.value }))} style={inp}>
+                    <option value="">None</option>
+                    <option>Scholarship</option>
+                    <option>Sibling discount</option>
+                    <option>Financial aid</option>
+                    <option>Early payment</option>
+                    <option>Promotional</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => { setShowIndivAssign(false); resetIndivForm(); }} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={handleIndivAssign} disabled={indivSaving || !indivForm.description || !indivForm.amount_due}
+                style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: indivSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!indivForm.description || !indivForm.amount_due) ? 0.5 : 1 }}>
+                {indivSaving ? 'Saving…' : 'Add Fee'}
+              </button>
             </div>
           </div>
         </div>
@@ -1168,6 +1332,24 @@ export default function ClubFeesPage() {
                   <input type="date" value={aForm.due_date} onChange={e => setAForm(f => ({ ...f, due_date: e.target.value }))} style={inp} />
                 </div>
               )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <span style={lbl}>Discount per player ($)</span>
+                  <input type="number" value={aForm.discount_amount} onChange={e => setAForm(f => ({ ...f, discount_amount: e.target.value }))} placeholder="0.00" style={inp} />
+                </div>
+                <div>
+                  <span style={lbl}>Discount reason</span>
+                  <select value={aForm.discount_reason} onChange={e => setAForm(f => ({ ...f, discount_reason: e.target.value }))} style={inp}>
+                    <option value="">None</option>
+                    <option>Scholarship</option>
+                    <option>Sibling discount</option>
+                    <option>Financial aid</option>
+                    <option>Early payment</option>
+                    <option>Promotional</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+              </div>
               <div>
                 <span style={lbl}>Notes (optional)</span>
                 <input value={aForm.notes} onChange={e => setAForm(f => ({ ...f, notes: e.target.value }))} placeholder="Internal note…" style={inp} />
