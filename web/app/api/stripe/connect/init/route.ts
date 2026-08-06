@@ -45,7 +45,10 @@ export async function POST(req: NextRequest) {
     await supabase.from('clubs').update({ stripe_connect_account_id: accountId }).eq('id', club_id);
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.pulse-fc.app';
+  const baseUrl = 'https://pulse-fc.app';
+
+  const returnUrl  = `${baseUrl}/api/stripe/connect/return?club_id=${club_id}`;
+  const refreshUrl = `${baseUrl}/api/stripe/connect/refresh?club_id=${club_id}`;
 
   // Generate a fresh account link (these expire after ~5 min)
   const linkRes = await fetch('https://api.stripe.com/v1/account_links', {
@@ -54,14 +57,14 @@ export async function POST(req: NextRequest) {
     body: new URLSearchParams({
       account:     accountId!,
       type:        'account_onboarding',
-      return_url:  `${baseUrl}/api/stripe/connect/return?club_id=${club_id}`,
-      refresh_url: `${baseUrl}/api/stripe/connect/refresh?club_id=${club_id}`,
+      return_url:  returnUrl,
+      refresh_url: refreshUrl,
     }),
   });
   const link = await linkRes.json();
   if (!link.url) {
-    console.error('Account link creation failed:', link);
-    return NextResponse.json({ error: link.error?.message ?? 'Could not generate Stripe onboarding link.' }, { status: 500 });
+    console.error('Account link creation failed:', JSON.stringify(link), { returnUrl, refreshUrl, accountId });
+    return NextResponse.json({ error: link.error?.message ?? 'Could not generate onboarding link.' }, { status: 500 });
   }
 
   return NextResponse.json({ url: link.url });
