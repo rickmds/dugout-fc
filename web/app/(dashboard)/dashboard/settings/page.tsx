@@ -552,43 +552,29 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
               <CreditCard size={18} color={primary} />
               <div>
                 <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Payment Settings</div>
-                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Configure how parents pay fees online via Stripe</div>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Configure how parents pay fees online</div>
               </div>
             </div>
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-              {/* Stripe Connect status */}
+              {/* Payout account status */}
               {(club as any)?.stripe_connect_onboarded ? (
-                <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '10px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#22C55E', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Check size={16} color="#fff" strokeWidth={3} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#15803D' }}>Stripe connected</div>
-                      <div style={{ fontSize: '11.5px', color: '#4ADE80', marginTop: '1px', fontFamily: 'monospace' }}>
-                        {(club as any).stripe_connect_account_id?.slice(0, 12)}…{(club as any).stripe_connect_account_id?.slice(-4)}
-                      </div>
-                    </div>
+                <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '10px', padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#22C55E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Check size={16} color="#fff" strokeWidth={3} />
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <a
-                      href={`https://dashboard.stripe.com/express/${(club as any).stripe_connect_account_id}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{ padding: '7px 14px', borderRadius: '7px', background: '#fff', border: '1px solid #BBF7D0', fontSize: '12.5px', fontWeight: '600', color: '#15803D', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '5px' }}
-                    >
-                      Open Stripe dashboard ↗
-                    </a>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#15803D' }}>Payouts connected</div>
+                    <div style={{ fontSize: '12px', color: '#166534', marginTop: '2px' }}>Online payments are active. Funds go directly to your bank account.</div>
                   </div>
                 </div>
               ) : (club as any)?.stripe_connect_account_id ? (
-                /* Account created but onboarding not finished */
                 <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <AlertCircle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#92400E' }}>Stripe onboarding incomplete</div>
-                      <div style={{ fontSize: '12px', color: '#B45309', marginTop: '2px' }}>Finish setting up your Stripe account to start accepting payments.</div>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#92400E' }}>Bank account setup incomplete</div>
+                      <div style={{ fontSize: '12px', color: '#B45309', marginTop: '2px' }}>Finish connecting your bank account to start accepting online payments.</div>
                     </div>
                   </div>
                   <button
@@ -598,7 +584,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                       const { data: { session } } = await supabase.auth.getSession();
                       const res = await fetch('/api/stripe/connect/init', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ club_id: club!.id }) });
                       const data = await res.json();
-                      if (data.url) { window.location.href = data.url; } else { setConnectingStripe(false); showToast('error', data.error ?? 'Could not generate Stripe link.'); }
+                      if (data.url) { window.location.href = data.url; } else { setConnectingStripe(false); showToast('error', data.error ?? 'Could not generate link.'); }
                     }}
                     style={{ flexShrink: 0, padding: '8px 18px', borderRadius: '7px', background: '#F59E0B', border: 'none', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
                   >
@@ -606,14 +592,13 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                   </button>
                 </div>
               ) : (
-                /* Not connected at all */
                 <div style={{ border: '1.5px dashed #CBD5E1', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '12px' }}>
-                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#635BFF15', border: '1.5px solid #635BFF40', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CreditCard size={22} color="#635BFF" />
+                  <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${primary}15`, border: `1.5px solid ${primary}40`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CreditCard size={22} color={primary} />
                   </div>
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: '800', color: '#0F172A' }}>Accept payments online</div>
-                    <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '4px', maxWidth: '380px' }}>Connect your club to Stripe to collect fees directly into your bank account. Stripe handles KYC, security, and compliance — no API keys needed.</div>
+                    <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '4px', maxWidth: '380px' }}>Connect your bank account to collect fees directly. Pulse FC handles the security, compliance, and payouts — no technical setup required.</div>
                   </div>
                   <button
                     disabled={connectingStripe}
@@ -622,11 +607,11 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                       const { data: { session } } = await supabase.auth.getSession();
                       const res = await fetch('/api/stripe/connect/init', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }, body: JSON.stringify({ club_id: club!.id }) });
                       const data = await res.json();
-                      if (data.url) { window.location.href = data.url; } else { setConnectingStripe(false); showToast('error', data.error ?? 'Could not start Stripe setup.'); }
+                      if (data.url) { window.location.href = data.url; } else { setConnectingStripe(false); showToast('error', data.error ?? 'Could not start setup.'); }
                     }}
-                    style={{ padding: '10px 24px', borderRadius: '8px', background: '#635BFF', border: 'none', color: '#fff', fontSize: '13.5px', fontWeight: '700', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '7px' }}
+                    style={{ padding: '10px 24px', borderRadius: '8px', background: primary, border: 'none', color: '#fff', fontSize: '13.5px', fontWeight: '700', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '7px' }}
                   >
-                    <CreditCard size={15} /> {connectingStripe ? 'Redirecting to Stripe…' : 'Connect with Stripe'}
+                    <CreditCard size={15} /> {connectingStripe ? 'Setting up…' : 'Connect bank account'}
                   </button>
                   <div style={{ fontSize: '11px', color: '#94A3B8' }}>Takes about 5 minutes. Money goes direct to your bank.</div>
                 </div>
@@ -635,7 +620,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
               {/* Fee handling */}
               <div>
                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>Who covers transaction fees?</div>
-                <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '12px' }}>All fees (Stripe 2.9% + 30¢ and Pulse FC 1.5%) are either absorbed by the club or passed entirely to parents — no manual percentages to set.</div>
+                <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '12px' }}>Online payment fees (~4.4% per transaction) are either absorbed by the club or passed entirely to parents — no manual percentages to set.</div>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   {(['absorb', 'pass_on'] as const).map(opt => (
                     <button
@@ -688,7 +673,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                   'Email notification the moment a fee is assigned',
                   'Automated reminder every 7 days until paid',
                   'No login required — one click from the email to pay',
-                  'Secure Stripe checkout — card saved for future payments',
+                  'Secure online checkout — card saved for future payments',
                   'Branded receipt email the moment payment clears',
                   'Fee marked paid automatically — nothing for you to do',
                 ].map(f => (
@@ -905,9 +890,9 @@ function SettingsPageInner() {
 
   useEffect(() => {
     if (!connectParam) return;
-    if (connectParam === 'success')    showToast('success', 'Stripe connected — you can now accept online payments.');
-    if (connectParam === 'incomplete') showToast('error',   'Stripe onboarding not completed. Click "Continue setup" to finish.');
-    if (connectParam === 'error')      showToast('error',   'Something went wrong connecting Stripe. Please try again.');
+    if (connectParam === 'success')    showToast('success', 'Payouts connected — you can now accept online payments.');
+    if (connectParam === 'incomplete') showToast('error',   'Bank account setup not completed. Click "Continue setup" to finish.');
+    if (connectParam === 'error')      showToast('error',   'Something went wrong. Please try connecting your bank account again.');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectParam]);
 
