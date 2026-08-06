@@ -89,7 +89,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       if (prof.club_id) {
         const { data: c } = await supabase
           .from('clubs')
-          .select('id, name, slug, primary_color, secondary_color, logo_url, currency, tryouts_active, latitude, longitude, timezone')
+          .select('id, name, slug, primary_color, secondary_color, logo_url, currency, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled')
           .eq('id', prof.club_id)
           .single();
         if (c) {
