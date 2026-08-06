@@ -598,7 +598,24 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                   </div>
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: '800', color: '#0F172A' }}>Accept payments online</div>
-                    <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '4px', maxWidth: '380px' }}>Connect your bank account to collect fees directly. Pulse FC handles the security, compliance, and payouts — no technical setup required.</div>
+                    <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '4px', maxWidth: '380px' }}>Connect your bank account to collect fees directly. Pulse FC handles security, compliance, and payouts.</div>
+                  </div>
+                  <div style={{ width: '100%', maxWidth: '400px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px 16px', textAlign: 'left' }}>
+                    <div style={{ fontSize: '11.5px', fontWeight: '700', color: '#374151', marginBottom: '8px' }}>What you&apos;ll need — takes about 5 minutes</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {[
+                        'Your club\'s legal business name and EIN (tax ID)',
+                        'Business address',
+                        'Bank account details for payouts',
+                        'A government-issued ID for identity verification',
+                      ].map(item => (
+                        <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12px', color: '#64748B' }}>
+                          <span style={{ color: '#22C55E', fontWeight: '700', flexShrink: 0, marginTop: '1px' }}>✓</span>
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #E2E8F0', fontSize: '11px', color: '#94A3B8' }}>This is a one-time setup required by law. Once done, payments go directly to your bank account with no manual steps.</div>
                   </div>
                   <button
                     disabled={connectingStripe}
@@ -613,7 +630,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                   >
                     <CreditCard size={15} /> {connectingStripe ? 'Setting up…' : 'Connect bank account'}
                   </button>
-                  <div style={{ fontSize: '11px', color: '#94A3B8' }}>Takes about 5 minutes. Money goes direct to your bank.</div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8' }}>Money goes directly to your bank — Pulse FC never holds your funds.</div>
                 </div>
               )}
 
