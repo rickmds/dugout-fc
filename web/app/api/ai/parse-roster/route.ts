@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { requireRole } from '@/lib/apiAuth';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -16,6 +17,8 @@ const IMAGE_MIMES: ImageMime[] = ['image/jpeg', 'image/png', 'image/gif', 'image
 function isImageMime(m: string): m is ImageMime { return IMAGE_MIMES.includes(m as ImageMime); }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
   const body = await req.json() as { base64?: string; mimeType?: string; text?: string };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

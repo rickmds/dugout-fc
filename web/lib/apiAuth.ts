@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from './supabase';
+import { createClient } from '@supabase/supabase-js';
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 type AllowedRole = 'app_admin' | 'org_admin' | 'coach';
 
-/**
- * Verifies the Bearer token in the Authorization header and checks the caller's
- * role against the allowed list. Returns the verified user + profile on success,
- * or a ready-to-return NextResponse error on failure.
- */
 export async function requireRole(
   req: NextRequest,
   allowed: AllowedRole[],
@@ -20,13 +18,23 @@ export async function requireRole(
     return { ok: false, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
 
-  const db = supabaseAdmin();
-  const { data: { user } } = await db.auth.getUser(token);
+  // Validate the JWT via Supabase Auth using the anon key (no service role key needed)
+  const anonClient = createClient(url, anon, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: { user }, error: userError } = await anonClient.auth.getUser(token);
   if (!user) {
-    return { ok: false, response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+    return { ok: false, response: NextResponse.json({ error: userError?.message ?? 'Unauthorized' }, { status: 401 }) };
   }
 
-  const { data: profile } = await db
+  // Read profile using the user's own JWT so RLS applies
+  const userClient = createClient(url, anon, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: profile } = await userClient
     .from('profiles')
     .select('role, club_id')
     .eq('id', user.id)

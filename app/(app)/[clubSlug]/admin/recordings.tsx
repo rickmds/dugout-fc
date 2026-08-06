@@ -42,12 +42,6 @@ export default function RecordingsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
 
-  useEffect(() => {
-    if (profile && !['coach', 'org_admin', 'app_admin'].includes(profile.role ?? '')) {
-      router.back();
-    }
-  }, [profile]);
-
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -74,6 +68,9 @@ export default function RecordingsScreen() {
       </View>
     );
   }
+
+  if (!profile) return <View style={styles.container}><View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color="#22C55E" size="large" /></View></View>;
+  if (!['coach', 'org_admin', 'app_admin'].includes(profile.role ?? '')) { router.back(); return null; }
 
   return (
     <View style={styles.container}>

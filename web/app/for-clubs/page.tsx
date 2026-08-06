@@ -254,7 +254,7 @@ export default function ForClubsPage() {
               Run Pulse FC for 30 days. If it doesn't make your club run more smoothly, retain more families, or free up your coaching staff — email us and we'll refund every cent immediately.
             </p>
             <p className="text-[#999] text-[17px] leading-[1.75]">
-              One email to <span className="text-white">info@pulse-fc.app</span> and it's done.
+              One email to <span className="text-white">support@pulse-fc.app</span> and it's done.
             </p>
           </Reveal>
         </div>
@@ -277,7 +277,7 @@ export default function ForClubsPage() {
           </Link>
           <p className="text-[#888] text-[12px] mt-6">
             Running a large club?{' '}
-            <a href="mailto:info@pulse-fc.app?subject=Club enquiry" className="text-[#777] hover:text-[#aaa] transition-colors underline underline-offset-2">
+            <a href="mailto:support@pulse-fc.app?subject=Club enquiry" className="text-[#777] hover:text-[#aaa] transition-colors underline underline-offset-2">
               Email us directly →
             </a>
           </p>

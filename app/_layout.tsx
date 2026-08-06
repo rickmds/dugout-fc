@@ -34,11 +34,21 @@ function AppShell() {
       if (!slug) return;
 
       switch (data?.type) {
+        // ── Event notifications ──────────────────────────────────────────────
         case 'new_event':
+        case 'event_updated':
         case 'schedule_change':
+        case 'rsvp_reminder':
+        case 'event_day_reminder':
+        case 'game_day':
           if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
           else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
           break;
+        case 'event_cancelled':
+        case 'field_closure':
+          router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+          break;
+        // ── Chat notifications ───────────────────────────────────────────────
         case 'new_announcement':
           router.push(`/(app)/${slug}/(tabs)/chat` as any);
           break;
@@ -46,6 +56,7 @@ function AppShell() {
           if (data.conversation_id) router.push(`/(app)/${slug}/conversation/${data.conversation_id}` as any);
           else router.push(`/(app)/${slug}/(tabs)/chat` as any);
           break;
+        // ── Guest notifications ──────────────────────────────────────────────
         case 'guest_request':
           if (data.request_id) router.push(`/(app)/${slug}/guest-request/${data.request_id}` as any);
           else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
@@ -57,9 +68,20 @@ function AppShell() {
           if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
           else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
           break;
+        // ── Admin notifications ──────────────────────────────────────────────
         case 'invite_accepted':
+        case 'guest_reminder':
+        case 'evaluation_published':
+        case 'waiver_reminder':
           router.push(`/(app)/${slug}/admin` as any);
           break;
+        // ── Fee notifications (no dedicated mobile screen — show notification centre) ──
+        case 'fee_assigned':
+        case 'fee_reminder':
+        case 'payment_confirmed':
+          router.push(`/(app)/${slug}/notifications` as any);
+          break;
+        // ── Fallback ─────────────────────────────────────────────────────────
         default:
           router.push(`/(app)/${slug}/notifications` as any);
       }

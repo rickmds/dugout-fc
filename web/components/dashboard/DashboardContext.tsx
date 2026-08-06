@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { type PlanId, PLAN_LIMITS, type PlanLimits } from '@/lib/plans';
@@ -58,6 +58,9 @@ export function useDashboard() {
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
   const [profile, setProfile]             = useState<Profile | null>(null);
   const [club, setClub]                   = useState<Club | null>(null);
   const [teams, setTeams]                 = useState<Team[]>([]);
@@ -67,63 +70,74 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) { router.push('/login'); return; }
+      if (!user) { routerRef.current.push('/login'); return; }
 
-    const { data: p } = await supabase
-      .from('profiles')
-      .select('id, role, full_name, avatar_url, club_id')
-      .eq('id', user.id)
-      .single();
-
-    if (!p || (p as any).role === 'player') { router.push('/login'); return; }
-
-    const prof = p as Profile;
-    setProfile(prof);
-
-    if (prof.club_id) {
-      const { data: c } = await supabase
-        .from('clubs')
-        .select('id, name, slug, primary_color, secondary_color, logo_url, currency, tryouts_active, latitude, longitude, timezone')
-        .eq('id', prof.club_id)
+      const { data: p } = await supabase
+        .from('profiles')
+        .select('id, role, full_name, avatar_url, club_id')
+        .eq('id', user.id)
         .single();
-      if (c) {
-        setClub(c as Club);
-        const { data: sub } = await supabase
-          .from('subscriptions')
-          .select('plan')
-          .eq('club_id', (c as Club).id)
-          .order('created_at', { ascending: false })
-          .limit(1)
+
+      if (!p || (p as any).role === 'player') { routerRef.current.push('/login'); return; }
+
+      const prof = p as Profile;
+      setProfile(prof);
+
+      if (prof.club_id) {
+        const { data: c } = await supabase
+          .from('clubs')
+          .select('id, name, slug, primary_color, secondary_color, logo_url, currency, tryouts_active, latitude, longitude, timezone')
+          .eq('id', prof.club_id)
           .single();
-        setPlan((sub?.plan as PlanId) ?? 'free');
+        if (c) {
+          setClub(c as Club);
+          const { data: sub } = await supabase
+            .from('subscriptions')
+            .select('plan')
+            .eq('club_id', (c as Club).id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          setPlan((sub?.plan as PlanId) ?? 'free');
+        }
       }
+
+      // Load teams based on role
+      let teamRows: Team[] = [];
+      if (prof.role === 'org_admin' && prof.club_id) {
+        const { data } = await supabase
+          .from('teams')
+          .select('id, name, age_group, season')
+          .eq('club_id', prof.club_id)
+          .order('name');
+        teamRows = (data ?? []) as Team[];
+      } else {
+        const { data } = await supabase
+          .from('team_members')
+          .select('teams(id, name, age_group, season)')
+          .eq('profile_id', prof.id)
+          .in('role', ['coach', 'org_admin']);
+        teamRows = (data ?? []).map((m: any) => m.teams).filter(Boolean) as Team[];
+      }
+
+      setTeams(teamRows);
+      if (teamRows.length >= 1) {
+        setSelectedTeamId(prev => prev ?? teamRows[0].id);
+      }
+    } catch (e) {
+      // Only redirect on auth errors, not transient network failures
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('JWT') || msg.includes('401') || msg.includes('not authenticated')) {
+        routerRef.current.push('/login');
+      }
+    } finally {
+      setLoading(false);
     }
-
-    // Load teams based on role
-    let teamRows: Team[] = [];
-    if (prof.role === 'org_admin' && prof.club_id) {
-      const { data } = await supabase
-        .from('teams')
-        .select('id, name, age_group, season')
-        .eq('club_id', prof.club_id)
-        .order('name');
-      teamRows = (data ?? []) as Team[];
-    } else {
-      const { data } = await supabase
-        .from('team_members')
-        .select('teams(id, name, age_group, season)')
-        .eq('profile_id', prof.id)
-        .in('role', ['coach', 'org_admin']);
-      teamRows = (data ?? []).map((m: any) => m.teams).filter(Boolean) as Team[];
-    }
-
-    setTeams(teamRows);
-    if (teamRows.length === 1) setSelectedTeamId(teamRows[0].id);
-
-    setLoading(false);
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 

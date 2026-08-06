@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -71,8 +73,19 @@ type Callout = {
   body: string | null;
   created_at: string;
   expires_at: string | null;
+  urgency: 'normal' | 'urgent';
   helper_count?: number;
+  helper_names?: string[];
 };
+
+const CALLOUT_TEMPLATES = [
+  { icon: '💧', label: 'Water bottles', text: 'Can someone bring extra water bottles?' },
+  { icon: '🙋', label: 'Volunteers', text: 'Need parent volunteers for next session' },
+  { icon: '👕', label: 'Kit wash', text: 'Can anyone wash the training kit this week?' },
+  { icon: '📋', label: 'Score keeper', text: 'Need a score keeper for the game' },
+  { icon: '🚗', label: 'Car pool', text: 'Anyone able to help with transport?' },
+  { icon: '📸', label: 'Photographer', text: 'Can someone take photos/videos at the match?' },
+];
 
 type OutstandingFee = {
   id: string;
@@ -260,6 +273,7 @@ export default function HomeScreen() {
   const [showCalloutModal, setShowCalloutModal] = useState(false);
   const [calloutTitle, setCalloutTitle] = useState('');
   const [calloutBody, setCalloutBody] = useState('');
+  const [calloutUrgency, setCalloutUrgency] = useState<'normal' | 'urgent'>('normal');
   const [calloutPosting, setCalloutPosting] = useState(false);
 
   const [pendingGuestInvites, setPendingGuestInvites] = useState<PendingGuestInvite[]>([]);
@@ -294,6 +308,39 @@ export default function HomeScreen() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [profile?.id]);
+
+  // Track current poll IDs in a ref so the vote subscription doesn't need to remount
+  const pollIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    pollIdsRef.current = polls.map(p => p.id);
+  }, [polls]);
+
+  // Realtime: sync poll votes across all users when anyone votes
+  useEffect(() => {
+    if (!team?.id) return;
+    const channel = supabase
+      .channel(`poll-votes-${team.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'team_poll_votes',
+      }, async () => {
+        const ids = pollIdsRef.current;
+        if (ids.length === 0) return;
+        const { data } = await (supabase as any)
+          .from('team_poll_votes')
+          .select('poll_id, option_id, profile_id')
+          .in('poll_id', ids);
+        if (data) {
+          setPolls(prev => prev.map(p => ({
+            ...p,
+            votes: (data as any[]).filter((v: any) => v.poll_id === p.id),
+          })));
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [team?.id]);
 
   // Team picker
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
@@ -422,7 +469,7 @@ export default function HomeScreen() {
       supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
-      sb.from('team_callouts').select('id, title, body, created_at, expires_at').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
+      sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
     ]);
 
     const nextG = (gameEvents as NextEvent[])?.[0] ?? null;
@@ -474,7 +521,7 @@ export default function HomeScreen() {
       const [responseRes, helpCountRes] = await Promise.all([
         sb.from('team_callout_responses').select('callout_id, response').in('callout_id', cIds).eq('profile_id', profile.id),
         isCoach
-          ? sb.from('team_callout_responses').select('callout_id').in('callout_id', cIds).eq('response', 'helping')
+          ? sb.from('team_callout_responses').select('callout_id, profiles:profile_id(full_name)').in('callout_id', cIds).eq('response', 'helping')
           : Promise.resolve({ data: null }),
       ]);
 
@@ -486,10 +533,20 @@ export default function HomeScreen() {
 
       if (isCoach && helpCountRes.data) {
         const helpMap: Record<string, number> = {};
-        for (const r of helpCountRes.data as { callout_id: string }[]) {
+        const nameMap: Record<string, string[]> = {};
+        for (const r of helpCountRes.data as { callout_id: string; profiles: { full_name: string | null } | null }[]) {
           helpMap[r.callout_id] = (helpMap[r.callout_id] ?? 0) + 1;
+          const name = r.profiles?.full_name;
+          if (name) {
+            if (!nameMap[r.callout_id]) nameMap[r.callout_id] = [];
+            nameMap[r.callout_id].push(name.split(' ')[0]); // first name only
+          }
         }
-        setCallouts(activeCallouts.map(c => ({ ...c, helper_count: helpMap[c.id] ?? 0 })));
+        setCallouts(activeCallouts.map(c => ({
+          ...c,
+          helper_count: helpMap[c.id] ?? 0,
+          helper_names: nameMap[c.id] ?? [],
+        })));
       }
     }
 
@@ -782,10 +839,23 @@ export default function HomeScreen() {
       team_id: team.id,
       title: calloutTitle.trim(),
       body: calloutBody.trim() || null,
+      urgency: calloutUrgency,
       created_by: profile.id,
     });
+    // Notify parents
+    const pushTitle = calloutUrgency === 'urgent' ? `🚨 Urgent: ${calloutTitle.trim()}` : `📢 ${calloutTitle.trim()}`;
+    supabase.functions.invoke('send-push', {
+      body: {
+        team_id: team.id,
+        title: pushTitle,
+        body: calloutBody.trim() || 'Tap to respond',
+        exclude_profile_id: profile.id,
+        data: { type: 'callout', team_id: team.id },
+      },
+    }).catch(() => {});
     setCalloutTitle('');
     setCalloutBody('');
+    setCalloutUrgency('normal');
     setShowCalloutModal(false);
     setCalloutPosting(false);
     await fetchData();
@@ -856,16 +926,18 @@ export default function HomeScreen() {
         Alert.alert('Error', 'Could not respond to invite. Please try again.');
         return;
       }
-      // Notify coaches
-      const { data: coachRows } = await supabase
-        .from('team_members')
-        .select('profile_id')
-        .eq('team_id', invite.team_id)
-        .eq('role', 'coach');
-      const coachIds = ((coachRows ?? []) as any[]).map(r => r.profile_id as string).filter(Boolean);
-      if (coachIds.length > 0) {
+      // Notify coaches and org admins
+      const [{ data: coachRows }, { data: adminRows }] = await Promise.all([
+        supabase.from('team_members').select('profile_id').eq('team_id', invite.team_id).eq('role', 'coach'),
+        supabase.from('profiles').select('id').eq('club_id', profile!.club_id).in('role', ['org_admin', 'app_admin']),
+      ]);
+      const recipientIds = [
+        ...((coachRows ?? []) as any[]).map(r => r.profile_id as string),
+        ...((adminRows ?? []) as any[]).map(r => r.id as string),
+      ].filter((id, i, arr) => !!id && arr.indexOf(id) === i);
+      if (recipientIds.length > 0) {
         await sendProfilesPush({
-          profileIds: coachIds,
+          profileIds: recipientIds,
           title: status === 'confirmed' ? 'Guest confirmed ✓' : 'Guest declined',
           body: status === 'confirmed'
             ? `${invite.full_name} confirmed as guest player — ${invite.event_title}.`
@@ -1233,6 +1305,64 @@ export default function HomeScreen() {
         </View>
 
 
+        {/* Outstanding fees — parents only, shown first so it's impossible to miss */}
+        {!isCoach && outstandingFees.length > 0 && (() => {
+          const hasOverdue = outstandingFees.some(f => f.status === 'overdue' || (f.due_date && new Date(f.due_date) < new Date()));
+          const accentColor = hasOverdue ? PULSE_COLORS.status.error : PULSE_COLORS.status.warning;
+          const totalOwed = outstandingFees.reduce((s, f) => s + Math.max(0, f.amount_due - (f.discount ?? 0)), 0);
+          const single = outstandingFees.length === 1 ? outstandingFees[0] : null;
+          const fmtDue = (due: string | null) => {
+            if (!due) return null;
+            const d = new Date(due + 'T00:00:00');
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          };
+          return (
+            <>
+              <View style={[styles.sectionTitleRow, { marginTop: 20 }]}>
+                <View style={[styles.sectionTitleDot, { backgroundColor: accentColor }]} />
+                <Text style={[styles.sectionTitle, { color: accentColor }]}>OUTSTANDING FEES</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.feeCard, { borderColor: `${accentColor}40` }]}
+                onPress={() => setShowFeeModal(true)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.feeAccent, { backgroundColor: accentColor }]} />
+                <View style={styles.feeBody}>
+                  <View style={styles.feeTop}>
+                    <View style={[styles.feeIconWrap, { backgroundColor: `${accentColor}18` }]}>
+                      <Ionicons name="card-outline" size={20} color={accentColor} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      {single ? (
+                        <>
+                          <Text style={styles.feeTitle}>{single.description}</Text>
+                          <Text style={[styles.feeAmount, { color: accentColor }]}>
+                            ${Math.max(0, single.amount_due - (single.discount ?? 0)).toFixed(2)}
+                            {fmtDue(single.due_date) ? `  ·  Due ${fmtDue(single.due_date)}` : ''}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.feeTitle}>{outstandingFees.length} fees outstanding</Text>
+                          <Text style={[styles.feeAmount, { color: accentColor }]}>${totalOwed.toFixed(2)} total</Text>
+                        </>
+                      )}
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                  </View>
+                  {hasOverdue && (
+                    <View style={styles.feeOverdueBadge}>
+                      <Ionicons name="alert-circle-outline" size={12} color={PULSE_COLORS.status.error} />
+                      <Text style={styles.feeOverdueText}>Payment overdue — contact your coach</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            </>
+          );
+        })()}
+
         {/* ── Pending guest invites — players only ── */}
         {!isCoach && pendingGuestInvites.length > 0 && (
           <>
@@ -1458,13 +1588,22 @@ export default function HomeScreen() {
             {callouts.filter(c => calloutResponses[c.id] !== 'dismissed').map(callout => {
               const myResponse = calloutResponses[callout.id];
               const isHelping = myResponse === 'helping';
+              const isUrgent = callout.urgency === 'urgent';
+              const accentColor = isUrgent ? '#EF4444' : '#F59E0B';
               return (
-                <View key={callout.id} style={styles.calloutCard}>
-                  <View style={styles.calloutAccent} />
+                <View key={callout.id} style={[styles.calloutCard, isUrgent && { borderColor: 'rgba(239,68,68,0.25)' }]}>
+                  <View style={[styles.calloutAccent, { backgroundColor: accentColor }]} />
                   <View style={styles.calloutBody}>
                     <View style={styles.calloutHeader}>
-                      <Ionicons name="hand-right-outline" size={14} color="#F59E0B" />
-                      <Text style={styles.calloutTitle}>{callout.title}</Text>
+                      {isUrgent
+                        ? <Ionicons name="warning-outline" size={14} color={accentColor} />
+                        : <Ionicons name="hand-right-outline" size={14} color={accentColor} />}
+                      <View style={{ flex: 1 }}>
+                        {isUrgent && (
+                          <Text style={[styles.calloutUrgencyBadge, { color: accentColor }]}>URGENT</Text>
+                        )}
+                        <Text style={styles.calloutTitle}>{callout.title}</Text>
+                      </View>
                       {isCoach ? (
                         <TouchableOpacity onPress={() => deleteCallout(callout.id)} style={styles.calloutDeleteBtn} activeOpacity={0.7}>
                           <Ionicons name="trash-outline" size={14} color={PULSE_COLORS.ui.muted} />
@@ -1478,24 +1617,33 @@ export default function HomeScreen() {
                     {callout.body ? <Text style={styles.calloutBodyText}>{callout.body}</Text> : null}
                     {isCoach ? (
                       <View style={styles.calloutCoachFooter}>
-                        <Ionicons name="people-outline" size={12} color={PULSE_COLORS.ui.muted} />
-                        <Text style={styles.calloutHelperCount}>
-                          {callout.helper_count === 1 ? '1 parent helping' : `${callout.helper_count ?? 0} parents helping`}
-                        </Text>
+                        <Ionicons name="people-outline" size={12} color={(callout.helper_count ?? 0) > 0 ? accentColor : PULSE_COLORS.ui.muted} />
+                        {(callout.helper_count ?? 0) === 0 ? (
+                          <Text style={styles.calloutHelperCount}>No responses yet</Text>
+                        ) : (
+                          <Text style={[styles.calloutHelperCount, { color: accentColor }]}>
+                            {callout.helper_names && callout.helper_names.length > 0
+                              ? callout.helper_names.slice(0, 3).join(', ') + (callout.helper_names.length > 3 ? ` +${callout.helper_names.length - 3} more` : '')
+                              : `${callout.helper_count} helping`}
+                          </Text>
+                        )}
                       </View>
                     ) : (
                       <TouchableOpacity
-                        style={[styles.calloutHelpBtn, isHelping && styles.calloutHelpBtnActive]}
+                        style={[
+                          styles.calloutHelpBtn,
+                          isHelping ? styles.calloutHelpBtnActive : isUrgent && { borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.06)' },
+                        ]}
                         onPress={() => !isHelping && respondToCallout(callout.id, 'helping')}
                         activeOpacity={isHelping ? 1 : 0.75}
                       >
                         <Ionicons
                           name={isHelping ? 'checkmark-circle' : 'hand-right-outline'}
-                          size={14}
-                          color={isHelping ? '#22C55E' : '#F59E0B'}
+                          size={15}
+                          color={isHelping ? '#22C55E' : accentColor}
                         />
-                        <Text style={[styles.calloutHelpBtnText, isHelping && { color: '#22C55E' }]}>
-                          {isHelping ? "You're helping" : "I can help"}
+                        <Text style={[styles.calloutHelpBtnText, { color: isHelping ? '#22C55E' : accentColor }]}>
+                          {isHelping ? "You're helping  ✓" : isUrgent ? 'I can help — count me in' : 'I can help'}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -1590,63 +1738,6 @@ export default function HomeScreen() {
           return gameFirst ? <>{gameCard}{trainingCard}</> : <>{trainingCard}{gameCard}</>;
         })()}
 
-        {/* Outstanding fees — parents only */}
-        {!isCoach && outstandingFees.length > 0 && (() => {
-          const hasOverdue = outstandingFees.some(f => f.status === 'overdue' || (f.due_date && new Date(f.due_date) < new Date()));
-          const accentColor = hasOverdue ? PULSE_COLORS.status.error : PULSE_COLORS.status.warning;
-          const totalOwed = outstandingFees.reduce((s, f) => s + Math.max(0, f.amount_due - (f.discount ?? 0)), 0);
-          const single = outstandingFees.length === 1 ? outstandingFees[0] : null;
-          const fmtDue = (due: string | null) => {
-            if (!due) return null;
-            const d = new Date(due + 'T00:00:00');
-            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          };
-          return (
-            <>
-              <View style={styles.sectionTitleRow}>
-                <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
-                <Text style={styles.sectionTitle}>OUTSTANDING FEES</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.feeCard, { borderColor: `${accentColor}40` }]}
-                onPress={() => setShowFeeModal(true)}
-                activeOpacity={0.85}
-              >
-                <View style={[styles.feeAccent, { backgroundColor: accentColor }]} />
-                <View style={styles.feeBody}>
-                  <View style={styles.feeTop}>
-                    <View style={[styles.feeIconWrap, { backgroundColor: `${accentColor}18` }]}>
-                      <Ionicons name="card-outline" size={20} color={accentColor} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      {single ? (
-                        <>
-                          <Text style={styles.feeTitle}>{single.description}</Text>
-                          <Text style={[styles.feeAmount, { color: accentColor }]}>
-                            ${Math.max(0, single.amount_due - (single.discount ?? 0)).toFixed(2)}
-                            {fmtDue(single.due_date) ? `  ·  Due ${fmtDue(single.due_date)}` : ''}
-                          </Text>
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.feeTitle}>{outstandingFees.length} fees outstanding</Text>
-                          <Text style={[styles.feeAmount, { color: accentColor }]}>${totalOwed.toFixed(2)} total</Text>
-                        </>
-                      )}
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
-                  </View>
-                  {hasOverdue && (
-                    <View style={styles.feeOverdueBadge}>
-                      <Ionicons name="alert-circle-outline" size={12} color={PULSE_COLORS.status.error} />
-                      <Text style={styles.feeOverdueText}>Payment overdue — contact your coach</Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            </>
-          );
-        })()}
 
         {/* My Player — parents only */}
         {!isCoach && myPlayer && (
@@ -1813,43 +1904,100 @@ export default function HomeScreen() {
       </Modal>
 
       {/* Callout creation modal */}
-      <Modal visible={showCalloutModal} transparent animationType="slide" onRequestClose={() => setShowCalloutModal(false)}>
-        <TouchableOpacity style={styles.devOverlay} activeOpacity={1} onPress={() => setShowCalloutModal(false)} />
-        <View style={styles.devSheet}>
-          <View style={styles.devHandle} />
-          <Text style={styles.devTitle}>Post a Callout</Text>
-          <Text style={styles.devSub}>Ask parents for help with something</Text>
-          <TextInput
-            style={styles.calloutInput}
-            placeholder="What do you need? (e.g. Water bottles for Saturday)"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
-            value={calloutTitle}
-            onChangeText={setCalloutTitle}
-            maxLength={120}
-            returnKeyType="next"
-          />
-          <TextInput
-            style={[styles.calloutInput, styles.calloutInputMulti]}
-            placeholder="More detail (optional)"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
-            value={calloutBody}
-            onChangeText={setCalloutBody}
-            multiline
-            numberOfLines={3}
-            maxLength={400}
-          />
-          <TouchableOpacity
-            style={[styles.calloutPostBtn, (!calloutTitle.trim() || calloutPosting) && { opacity: 0.45 }]}
-            onPress={postCallout}
-            disabled={!calloutTitle.trim() || calloutPosting}
-            activeOpacity={0.8}
-          >
-            {calloutPosting
-              ? <ActivityIndicator size="small" color="#000" />
-              : <Text style={styles.calloutPostBtnText}>Post Callout</Text>
-            }
-          </TouchableOpacity>
-        </View>
+      <Modal visible={showCalloutModal} transparent animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCalloutModal(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.calloutSheet}>
+            <View style={styles.devHandle} />
+            {/* Header */}
+            <View style={styles.calloutSheetHeader}>
+              <TouchableOpacity onPress={() => setShowCalloutModal(false)}>
+                <Text style={styles.calloutSheetCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.calloutSheetTitle}>Post Callout</Text>
+              <TouchableOpacity
+                onPress={postCallout}
+                disabled={!calloutTitle.trim() || calloutPosting}
+              >
+                {calloutPosting
+                  ? <ActivityIndicator size="small" color="#F59E0B" />
+                  : <Text style={[styles.calloutSheetPost, { opacity: calloutTitle.trim() ? 1 : 0.4 }]}>Post</Text>}
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 18 }}>
+              {/* Quick templates */}
+              <View style={{ gap: 8 }}>
+                <Text style={styles.calloutSectionLabel}>QUICK TEMPLATES</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {CALLOUT_TEMPLATES.map(t => (
+                    <TouchableOpacity
+                      key={t.label}
+                      style={[styles.calloutChip, calloutTitle === t.text && { borderColor: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.1)' }]}
+                      onPress={() => setCalloutTitle(t.text)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={styles.calloutChipIcon}>{t.icon}</Text>
+                      <Text style={styles.calloutChipText}>{t.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Message input */}
+              <View style={{ gap: 8 }}>
+                <Text style={styles.calloutSectionLabel}>MESSAGE</Text>
+                <TextInput
+                  style={styles.calloutInput}
+                  placeholder="What do you need from parents?"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  value={calloutTitle}
+                  onChangeText={setCalloutTitle}
+                  maxLength={120}
+                  returnKeyType="next"
+                  autoFocus
+                />
+                <TextInput
+                  style={[styles.calloutInput, styles.calloutInputMulti]}
+                  placeholder="More detail (optional)"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  value={calloutBody}
+                  onChangeText={setCalloutBody}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={400}
+                />
+              </View>
+
+              {/* Urgency toggle */}
+              <View style={{ gap: 8 }}>
+                <Text style={styles.calloutSectionLabel}>URGENCY</Text>
+                <View style={styles.calloutUrgencyRow}>
+                  <TouchableOpacity
+                    style={[styles.calloutUrgencyBtn, calloutUrgency === 'normal' && { borderColor: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.1)' }]}
+                    onPress={() => setCalloutUrgency('normal')}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="hand-right-outline" size={15} color={calloutUrgency === 'normal' ? '#F59E0B' : PULSE_COLORS.ui.muted} />
+                    <Text style={[styles.calloutUrgencyBtnText, calloutUrgency === 'normal' && { color: '#F59E0B' }]}>Normal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.calloutUrgencyBtn, calloutUrgency === 'urgent' && { borderColor: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)' }]}
+                    onPress={() => setCalloutUrgency('urgent')}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="warning-outline" size={15} color={calloutUrgency === 'urgent' ? '#EF4444' : PULSE_COLORS.ui.muted} />
+                    <Text style={[styles.calloutUrgencyBtnText, calloutUrgency === 'urgent' && { color: '#EF4444' }]}>Urgent</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.calloutUrgencyHint}>
+                  {calloutUrgency === 'urgent'
+                    ? 'Parents see a red alert — use for time-sensitive requests'
+                    : 'Parents see a standard callout card'}
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Dev switcher */}
@@ -2473,10 +2621,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
     borderRadius: 14, marginBottom: 10, overflow: 'hidden',
   },
-  calloutAccent: { width: 3, backgroundColor: '#F59E0B' },
+  calloutAccent: { width: 3 },
   calloutBody: { flex: 1, paddingHorizontal: 13, paddingVertical: 12, gap: 8 },
-  calloutHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  calloutTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calloutHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
+  calloutUrgencyBadge: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginBottom: 2 },
+  calloutTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
   calloutDeleteBtn: { padding: 4, marginLeft: 4 },
   calloutBodyText: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18 },
   calloutCoachFooter: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -2484,11 +2633,11 @@ const styles = StyleSheet.create({
   calloutHelpBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     alignSelf: 'flex-start',
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10,
     backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
   },
   calloutHelpBtnActive: { backgroundColor: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.3)' },
-  calloutHelpBtnText: { fontSize: 13, fontWeight: '700', color: '#F59E0B' },
+  calloutHelpBtnText: { fontSize: 13, fontWeight: '700' },
   calloutAddBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     marginLeft: 'auto',
@@ -2502,19 +2651,47 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderStyle: 'dashed' as any, borderColor: PULSE_COLORS.ui.border,
   },
   calloutEmptyBtnText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  // Modal
+  calloutSheet: {
+    flex: 1, marginTop: 60,
+    backgroundColor: PULSE_COLORS.ui.background,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  calloutSheetHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
+  calloutSheetCancel: { fontSize: 15, color: PULSE_COLORS.ui.muted },
+  calloutSheetTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calloutSheetPost: { fontSize: 15, fontWeight: '700', color: '#F59E0B' },
+  calloutSectionLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6 },
+  calloutChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  calloutChipIcon: { fontSize: 14 },
+  calloutChipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   calloutInput: {
     backgroundColor: PULSE_COLORS.ui.surface,
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 14, color: PULSE_COLORS.ui.text,
-    marginBottom: 10,
   },
   calloutInputMulti: { minHeight: 80, textAlignVertical: 'top' },
-  calloutPostBtn: {
-    backgroundColor: '#F59E0B', borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginTop: 4,
+  calloutUrgencyRow: { flexDirection: 'row', gap: 10 },
+  calloutUrgencyBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    paddingVertical: 12, borderRadius: 12,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
-  calloutPostBtnText: { color: '#000', fontWeight: '800', fontSize: 15 },
+  calloutUrgencyBtnText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  calloutUrgencyHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 17 },
+  // keep these unused stubs to avoid ref errors
+  calloutPostBtn: { display: 'none' },
+  calloutPostBtnText: { display: 'none' },
 
   // Dev switcher / shared sheet styles
   devOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },

@@ -44,12 +44,6 @@ export default function SeasonStatsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
 
-  useEffect(() => {
-    if (profile && !['coach', 'org_admin', 'app_admin'].includes(profile.role ?? '')) {
-      router.back();
-    }
-  }, [profile]);
-
   const [stats, setStats]               = useState<PlayerStat[]>([]);
   const [totalGames, setTotalGames]     = useState(0);
   const [totalAvailSecs, setTotalAvailSecs] = useState(0);
@@ -140,6 +134,9 @@ export default function SeasonStatsScreen() {
     setStats(playerStats);
     setLoading(false);
   }
+
+  if (!profile) return <View style={st.root}><View style={st.center}><ActivityIndicator color="#22C55E" size="large" /></View></View>;
+  if (!['coach', 'org_admin', 'app_admin'].includes(profile.role ?? '')) { router.back(); return null; }
 
   // Normalise bars against the top player so relative gaps are visible
   const maxPct = stats.length > 0 ? Math.max(...stats.map((s) => s.pct), 1) : 1;

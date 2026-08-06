@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../constants/colors';
@@ -125,13 +126,14 @@ function WidgetContent({ date, onPress }: { date: string; onPress: () => void })
   );
 }
 
-export default function GameDayWidget({ onPress }: { onPress: () => void }) {
+const GameDayWidget = memo(function GameDayWidget({ onPress }: { onPress: () => void }) {
   const { dates, loading } = useUpcomingGameDates(14);
   if (loading || !dates.length) return null;
   const today = localDateStr(0);
   const displayDate = dates.includes(today) ? today : dates[0];
   return <WidgetContent date={displayDate} onPress={onPress} />;
-}
+});
+export default GameDayWidget;
 
 const styles = StyleSheet.create({
   sectionLabel: {

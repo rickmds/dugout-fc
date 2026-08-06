@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   const results = await Promise.allSettled(
     recipients.map(r =>
       resend.emails.send({
-        from: 'Rick at Pulse FC <info@pulse-fc.app>',
+        from: 'Pulse FC <support@pulse-fc.app>',
         to: r.email,
         subject,
         html: html.replace(/{{name}}/g, r.name ?? 'there'),

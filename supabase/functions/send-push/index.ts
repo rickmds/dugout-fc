@@ -19,8 +19,8 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  const payload: PushPayload = await req.json();
-  const { team_id, profile_ids: directProfileIds, title, body, exclude_profile_id, data } = payload;
+  const payload: PushPayload & { type?: string } = await req.json();
+  const { team_id, profile_ids: directProfileIds, title, body, exclude_profile_id, data, type: notifType } = payload;
 
   // Fetch club slug for deep-link routing (from team_id if provided)
   let clubSlug = '';
@@ -33,8 +33,11 @@ Deno.serve(async (req) => {
     clubSlug = (teamRow?.clubs as any)?.slug ?? '';
   }
 
-  const enrichedData = { ...(data ?? {}), club_slug: clubSlug };
-  const notifType = (enrichedData.type as string) ?? 'general';
+  // Prefer top-level type, fall back to type already inside data, then 'general'
+  const resolvedType = notifType ?? (data as any)?.type ?? 'general';
+  // Prefer slug resolved from team_id; fall back to one already in data
+  const finalClubSlug = clubSlug || (data as any)?.club_slug || '';
+  const enrichedData = { ...(data ?? {}), type: resolvedType, club_slug: finalClubSlug };
 
   // Resolve profile IDs — either explicit list or all team members
   let profileIds: string[];
@@ -62,7 +65,7 @@ Deno.serve(async (req) => {
 
   let pushProfileIds = profileIds;
 
-  if (notifType === 'new_dm') {
+  if (resolvedType === 'new_dm') {
     const conversationId = (enrichedData.conversation_id as string) ?? null;
 
     if (conversationId) {
@@ -91,7 +94,7 @@ Deno.serve(async (req) => {
       if (newProfileIds.length) {
         await supabase.from('notifications').insert(
           newProfileIds.map((profile_id) => ({
-            profile_id, type: notifType, title, body, data: enrichedData,
+            profile_id, type: resolvedType, title, body, data: enrichedData,
           })),
         );
       }
@@ -110,7 +113,7 @@ Deno.serve(async (req) => {
     // All other notification types — always insert
     await supabase.from('notifications').insert(
       profileIds.map((profile_id) => ({
-        profile_id, type: notifType, title, body, data: enrichedData,
+        profile_id, type: resolvedType, title, body, data: enrichedData,
       })),
     );
   }

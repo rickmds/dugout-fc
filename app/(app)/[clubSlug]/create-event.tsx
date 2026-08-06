@@ -921,6 +921,19 @@ export default function CreateEventScreen() {
             )}
           </Card>
 
+          {recurrence !== 'none' && (() => {
+            const recurDates = generateRecurringDates(date, recurrence, weekDays, monthlyMode, endMode, endDate);
+            const total = recurDates.length + 1;
+            return (
+              <View style={styles.eventCountBanner}>
+                <Ionicons name="calendar-outline" size={15} color={primaryColor} />
+                <Text style={[styles.eventCountText, { color: primaryColor }]}>
+                  You are creating <Text style={styles.eventCountBold}>{total} event{total !== 1 ? 's' : ''}</Text>
+                </Text>
+              </View>
+            );
+          })()}
+
           <View style={{ height: 48 }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -978,6 +991,17 @@ export default function CreateEventScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  eventCountBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginTop: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  eventCountText: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
+  eventCountBold: { fontWeight: '700' },
+
   container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
 
   header: {

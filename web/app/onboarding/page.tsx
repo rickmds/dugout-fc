@@ -519,8 +519,9 @@ function UploadStep({ onAnalyse, onSkip }: {
 
 type ProcessingCounts = { teams: number; players: number; events: number; coaches: number };
 
-function ProcessingStep({ done, counts, onComplete }: {
+function ProcessingStep({ done, failed, counts, onComplete }: {
   done: boolean;
+  failed?: boolean;
   counts: ProcessingCounts | null;
   onComplete: () => void;
 }) {
@@ -660,8 +661,8 @@ function ProcessingStep({ done, counts, onComplete }: {
               </span>
             </>
           ) : (
-            <span className="text-[11px] font-bold text-[#22c55e]">
-              Import complete — heading to review
+            <span className={`text-[11px] font-bold ${failed ? 'text-[#f97316]' : 'text-[#22c55e]'}`}>
+              {failed ? 'AI parse failed — fill in details manually' : 'Import complete — heading to review'}
             </span>
           )}
         </div>
@@ -1387,8 +1388,9 @@ export default function OnboardingPage() {
   const [pendingCoachPayload, setPendingCoachPayload] = useState<CoachPayload | null>(null);
 
   const abortRef        = useRef<AbortController | null>(null);
-  const [processingDone, setProcessingDone]     = useState(false);
-  const [processingCounts, setProcessingCounts] = useState<ProcessingCounts | null>(null);
+  const [processingDone, setProcessingDone]         = useState(false);
+  const [processingFailed, setProcessingFailed]     = useState(false);
+  const [processingCounts, setProcessingCounts]     = useState<ProcessingCounts | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -1450,6 +1452,7 @@ export default function OnboardingPage() {
         setTeams([{ id: uid(), name: '', age_group: '', gender: '', conf: 'high' }]);
         setPlayers([]); setEvents([]); setCoaches([]);
         setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
+        setProcessingFailed(true);
       } else {
         populateFromAI(data);
         const d = data as Record<string, unknown[]>;
@@ -1467,6 +1470,7 @@ export default function OnboardingPage() {
       setTeams([{ id: uid(), name: '', age_group: '', gender: '', conf: 'high' }]);
       setPlayers([]); setEvents([]); setCoaches([]);
       setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
+      setProcessingFailed(true);
       setProcessingDone(true);
     } finally {
       abortRef.current = null;
@@ -1516,7 +1520,7 @@ export default function OnboardingPage() {
           <UploadStep onAnalyse={handleAnalyse} onSkip={skipUpload} />
         )}
         {step === 'processing' && (
-          <ProcessingStep done={processingDone} counts={processingCounts} onComplete={() => setStep('review')} />
+          <ProcessingStep done={processingDone} failed={processingFailed} counts={processingCounts} onComplete={() => setStep('review')} />
         )}
         {step === 'review' && (
           <ReviewStep

@@ -5,7 +5,7 @@ import {
   DollarSign, Plus, X, Send, Download, ChevronDown, ChevronUp,
   TrendingUp, AlertCircle, Clock, CheckCircle, CreditCard, Search,
   ChevronRight, Banknote, Tag, MoreHorizontal, ArrowUpDown,
-  ArrowUp, ArrowDown, Zap, Calendar, Users, BarChart3, UserPlus,
+  ArrowUp, ArrowDown, Zap, Calendar, Users, BarChart3, UserPlus, QrCode, Printer,
 } from 'lucide-react';
 import FamiliesTab  from './_components/FamiliesTab';
 import FeeAnalytics from './_components/FeeAnalytics';
@@ -26,6 +26,7 @@ type ClubFee     = {
   installment_number: number | null;
   installment_total: number | null;
   last_reminded_at: string | null;
+  payment_token: string | null;
 };
 type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; recorder_name: string | null };
 type ReminderLog = { id: string; sent_at: string; reminder_type: string; player_fee_id: string };
@@ -69,11 +70,12 @@ type RowMenuProps = {
   onUndo?: () => void;
   onEdit?: () => void;
   onResendReceipt?: () => void;
+  onQR?: () => void;
   isPaid?: boolean;
   hasPayments?: boolean;
   primary: string;
 };
-function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, isPaid, hasPayments, primary }: RowMenuProps) {
+function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, isPaid, hasPayments, primary }: RowMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -101,6 +103,7 @@ function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, isPaid, hasP
         <div style={{ position: 'absolute', right: 0, top: '30px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: '160px', overflow: 'hidden' }}>
           {onPay  && <>{item(onPay,  '#374151', '#F8FAFC', <CreditCard size={13} color={primary} />,   'Record Payment')}<div style={{ height: '1px', background: '#F1F5F9' }} /></>}
           {onEdit && item(onEdit, '#374151', '#F8FAFC', <Calendar size={13} color="#64748B" />, 'Edit Fee')}
+          {onQR   && item(onQR,   '#374151', '#F8FAFC', <QrCode size={13} color="#64748B" />, 'Payment QR Code')}
           {onWaive && <>{item(onWaive, '#8B5CF6', '#F5F3FF', <CheckCircle size={13} color="#8B5CF6" />, 'Waive Fee')}</>}
           {(onEdit || onWaive) && (onUndo || onResendReceipt) && <div style={{ height: '1px', background: '#F1F5F9' }} />}
           {onUndo && item(onUndo, '#EF4444', '#FEF2F2', <X size={13} color="#EF4444" />, 'Undo Last Payment')}
@@ -117,12 +120,24 @@ export default function ClubFeesPage() {
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const today   = new Date().toISOString().slice(0, 10);
 
+  if (profile && profile.role === 'coach') {
+    return (
+      <div style={{ padding: '80px 32px', textAlign: 'center', color: '#64748B', fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔒</div>
+        <div style={{ fontSize: '18px', fontWeight: '700', color: '#0F172A', marginBottom: '8px' }}>Access restricted</div>
+        <div style={{ fontSize: '14px' }}>Fee management is available to DOCs and club admins only.</div>
+      </div>
+    );
+  }
+
   // ── Core data state ──────────────────────────────────────────────────────────
-  const [teams,       setTeams]       = useState<Team[]>([]);
-  const [fees,        setFees]        = useState<ClubFee[]>([]);
-  const [categories,  setCategories]  = useState<FeeCategory[]>([]);
-  const [allPayments, setAllPayments] = useState<Payment[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const [teams,           setTeams]           = useState<Team[]>([]);
+  const [fees,            setFees]            = useState<ClubFee[]>([]);
+  const [categories,      setCategories]      = useState<FeeCategory[]>([]);
+  const [allPayments,     setAllPayments]     = useState<Payment[]>([]);
+  const [loading,         setLoading]         = useState(true);
+  const [hardshipBalance, setHardshipBalance] = useState<number | null>(null);
+  const [hardshipEnabled, setHardshipEnabled] = useState(false);
 
   // ── Filters + sort ────────────────────────────────────────────────────────────
   const [teamFilter,    setTeamFilter]    = useState('all');
@@ -148,6 +163,59 @@ export default function ClubFeesPage() {
   });
   function resetIndivForm() { setIndivForm({ description: '', amount_due: '', due_date: '', discount_amount: '', discount_reason: '' }); }
 
+  // ── Standalone "assign to any player" modal ────────────────────────────────
+  type RosterPlayer = { id: string; full_name: string; team_id: string; team_name: string };
+  const [showPlayerAssign, setShowPlayerAssign] = useState(false);
+  const [rosterPlayers,    setRosterPlayers]    = useState<RosterPlayer[]>([]);
+  const [rosterLoading,    setRosterLoading]    = useState(false);
+  const [playerSearch,     setPlayerSearch]     = useState('');
+  const [selectedPlayer,   setSelectedPlayer]   = useState<RosterPlayer | null>(null);
+  const [playerAssignForm, setPlayerAssignForm] = useState({ description: '', amount_due: '', due_date: '' });
+  const [playerAssignSaving, setPlayerAssignSaving] = useState(false);
+
+  async function openPlayerAssign() {
+    setShowPlayerAssign(true);
+    setPlayerSearch(''); setSelectedPlayer(null);
+    setPlayerAssignForm({ description: '', amount_due: '', due_date: '' });
+    if (rosterPlayers.length > 0) return; // already loaded
+    setRosterLoading(true);
+    const { data } = await supabase
+      .from('players').select('id,full_name,team_id,teams(name)')
+      .in('team_id', teams.map(t => t.id)).order('full_name');
+    setRosterPlayers(
+      (data ?? []).map((p: any) => ({ id: p.id, full_name: p.full_name, team_id: p.team_id, team_name: p.teams?.name ?? '' }))
+    );
+    setRosterLoading(false);
+  }
+
+  async function handlePlayerAssign() {
+    if (!profile || !selectedPlayer || !playerAssignForm.description || !playerAssignForm.amount_due) return;
+    setPlayerAssignSaving(true);
+    try {
+      const { data: inserted, error } = await supabase.from('player_fees').insert({
+        player_id:   selectedPlayer.id,
+        team_id:     selectedPlayer.team_id,
+        description: playerAssignForm.description,
+        amount_due:  parseFloat(playerAssignForm.amount_due) || 0,
+        due_date:    playerAssignForm.due_date || null,
+        created_by:  profile.id,
+      }).select('id').single();
+      if (error) { alert(`Could not assign fee: ${error.message}`); return; }
+      if (inserted?.id) {
+        fetch('/api/send-fee-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: inserted.id }) }).catch(() => {});
+      }
+      setShowPlayerAssign(false);
+      load();
+    } finally {
+      setPlayerAssignSaving(false);
+    }
+  }
+
+  const filteredRoster = rosterPlayers.filter(p =>
+    p.full_name.toLowerCase().includes(playerSearch.toLowerCase()) ||
+    p.team_name.toLowerCase().includes(playerSearch.toLowerCase())
+  );
+
   // ── Selection + bulk ─────────────────────────────────────────────────────────
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
   const [bulkReminding, setBulkReminding] = useState(false);
@@ -165,6 +233,18 @@ export default function ClubFeesPage() {
   const [showBulkWaive,   setShowBulkWaive]   = useState(false);
   const [bulkWaiveReason, setBulkWaiveReason] = useState('');
   const [bulkWaiving,     setBulkWaiving]     = useState(false);
+
+  // ── QR code modal ─────────────────────────────────────────────────────────────
+  const [qrFee, setQrFee] = useState<ClubFee | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  async function openQr(fee: ClubFee) {
+    setQrFee(fee);
+    setQrDataUrl(null);
+    const QRCode = (await import('qrcode')).default;
+    const payUrl = `https://pulse-fc.app/pay/${fee.payment_token}`;
+    const url = await QRCode.toDataURL(payUrl, { width: 300, margin: 2, color: { dark: '#000000', light: '#FFFFFF' } });
+    setQrDataUrl(url);
+  }
 
   // ── Reminder state ────────────────────────────────────────────────────────────
   const [reminding,      setReminding]      = useState(false);
@@ -223,6 +303,16 @@ export default function ClubFeesPage() {
       supabase.from('teams').select('id,name').eq('club_id', club.id).order('name'),
       supabase.from('fee_categories').select('id,name,amount,description').eq('club_id', club.id).order('name'),
     ]);
+    // Hardship fund
+    const { data: clubRow } = await supabase.from('clubs').select('hardship_fund_enabled').eq('id', club.id).single();
+    if ((clubRow as any)?.hardship_fund_enabled) {
+      setHardshipEnabled(true);
+      const { data: contribs } = await supabase.from('hardship_contributions').select('amount').eq('club_id', club.id);
+      setHardshipBalance((contribs ?? []).reduce((s: number, c: any) => s + Number(c.amount), 0));
+    } else {
+      setHardshipEnabled(false);
+      setHardshipBalance(null);
+    }
     const tList = (teamsRes.data ?? []) as Team[];
     setTeams(tList);
     setCategories((catsRes.data ?? []) as FeeCategory[]);
@@ -231,7 +321,7 @@ export default function ClubFeesPage() {
 
     const { data: fd } = await supabase
       .from('player_fees')
-      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,players(full_name)')
+      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,payment_token,players(full_name)')
       .in('team_id', tList.map(t => t.id))
       .order('due_date', { ascending: true, nullsFirst: false });
 
@@ -248,6 +338,7 @@ export default function ClubFeesPage() {
       installment_number: f.installment_number,
       installment_total: f.installment_total,
       last_reminded_at: f.last_reminded_at ?? null,
+      payment_token: f.payment_token ?? null,
     }));
     setFees(mapped);
 
@@ -621,7 +712,7 @@ export default function ClubFeesPage() {
     if (!targetFee) return;
     setIndivSaving(true);
     try {
-      const { error } = await supabase.from('player_fees').insert({
+      const { data: inserted, error } = await supabase.from('player_fees').insert({
         player_id:      playerPanel,
         team_id:        targetFee.team_id,
         description:    indivForm.description,
@@ -630,8 +721,11 @@ export default function ClubFeesPage() {
         discount:       parseFloat(indivForm.discount_amount) || 0,
         discount_reason: indivForm.discount_reason || null,
         created_by:     profile.id,
-      });
+      }).select('id').single();
       if (error) { alert(`Could not assign fee: ${error.message}`); return; }
+      if (inserted?.id) {
+        fetch('/api/send-fee-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: inserted.id }) }).catch(() => {});
+      }
       setShowIndivAssign(false);
       resetIndivForm();
       load();
@@ -718,6 +812,10 @@ export default function ClubFeesPage() {
                 style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
                 <Banknote size={14} /> Collect Payment
               </button>
+              <button onClick={openPlayerAssign}
+                style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
+                <UserPlus size={14} /> Assign to Player
+              </button>
               <button onClick={() => setShowAssign(true)}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'inherit' }}>
                 <Plus size={14} /> Assign Club-Wide
@@ -789,6 +887,20 @@ export default function ClubFeesPage() {
             </div>
           ))}
         </div>
+
+        {/* Hardship fund balance */}
+        {hardshipEnabled && hardshipBalance !== null && (
+          <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '8px', padding: '14px 20px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '20px' }}>❤️</span>
+              <div>
+                <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#15803D' }}>Hardship Fund</div>
+                <div style={{ fontSize: '11.5px', color: '#166534', marginTop: '1px' }}>Available to waive fees for families in need</div>
+              </div>
+            </div>
+            <div style={{ fontSize: '22px', fontWeight: '900', color: '#15803D', letterSpacing: '-0.5px' }}>${fmt(hardshipBalance)}</div>
+          </div>
+        )}
 
         {/* 3. Collection progress */}
         {(totalInvoiced > 0 || loading) && (
@@ -1107,6 +1219,7 @@ export default function ClubFeesPage() {
                           onEdit={() => { setShowEditFee(fee); setEditFeeForm({ description: fee.description, amount_due: String(fee.amount_due), due_date: fee.due_date ?? '' }); }}
                           onUndo={latestPmt ? () => setShowUndoConfirm({ fee, payment: latestPmt }) : undefined}
                           onResendReceipt={fee.status === 'paid' ? () => handleResendReceipt(fee) : undefined}
+                          onQR={fee.payment_token ? () => openQr(fee) : undefined}
                           isPaid={fee.status === 'paid'}
                           hasPayments={feePayments.length > 0}
                         />
@@ -1202,6 +1315,94 @@ export default function ClubFeesPage() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Assign to any player modal ────────────────────────────────────────── */}
+      {showPlayerAssign && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 650, padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '460px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            {/* Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Assign Fee to Player</div>
+                <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Search any player from your roster</div>
+              </div>
+              <button onClick={() => setShowPlayerAssign(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+            </div>
+
+            <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Player search */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '6px' }}>Player</label>
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    value={playerSearch}
+                    onChange={e => { setPlayerSearch(e.target.value); setSelectedPlayer(null); }}
+                    placeholder="Search by name or team…"
+                    style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }}
+                  />
+                </div>
+                {/* Dropdown results */}
+                {playerSearch && !selectedPlayer && (
+                  <div style={{ border: '1px solid #E2E8F0', borderRadius: '8px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', background: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+                    {rosterLoading ? (
+                      <div style={{ padding: '12px 14px', fontSize: '13px', color: '#94A3B8' }}>Loading roster…</div>
+                    ) : filteredRoster.length === 0 ? (
+                      <div style={{ padding: '12px 14px', fontSize: '13px', color: '#94A3B8' }}>No players found</div>
+                    ) : filteredRoster.slice(0, 20).map(p => (
+                      <button key={p.id} onClick={() => { setSelectedPlayer(p); setPlayerSearch(p.full_name); }}
+                        style={{ width: '100%', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #F8FAFC' }}>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</span>
+                        <span style={{ fontSize: '11px', color: '#94A3B8' }}>{p.team_name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedPlayer && (
+                  <div style={{ marginTop: '6px', padding: '7px 12px', background: '#F0FDF4', borderRadius: '7px', border: '1px solid #BBF7D0', fontSize: '12px', color: '#15803D', fontWeight: '600', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>✓ {selectedPlayer.full_name}</span>
+                    <span style={{ color: '#86EFAC' }}>{selectedPlayer.team_name}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Description */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '6px' }}>Description</label>
+                <input value={playerAssignForm.description} onChange={e => setPlayerAssignForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="e.g. Registration fee, Kit fee…"
+                  style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
+              </div>
+
+              {/* Amount + Due date */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '6px' }}>Amount ($)</label>
+                  <input type="number" min="0" step="0.01" value={playerAssignForm.amount_due} onChange={e => setPlayerAssignForm(f => ({ ...f, amount_due: e.target.value }))}
+                    placeholder="0.00"
+                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '6px' }}>Due Date</label>
+                  <input type="date" value={playerAssignForm.due_date} onChange={e => setPlayerAssignForm(f => ({ ...f, due_date: e.target.value }))}
+                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end', flexShrink: 0 }}>
+              <button onClick={() => setShowPlayerAssign(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button
+                onClick={handlePlayerAssign}
+                disabled={!selectedPlayer || !playerAssignForm.description || !playerAssignForm.amount_due || playerAssignSaving}
+                style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: (!selectedPlayer || !playerAssignForm.description || !playerAssignForm.amount_due) ? '#94A3B8' : primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: (!selectedPlayer || !playerAssignForm.description || !playerAssignForm.amount_due) ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {playerAssignSaving ? 'Saving…' : 'Assign Fee'}
+              </button>
             </div>
           </div>
         </div>
@@ -1750,6 +1951,64 @@ export default function ClubFeesPage() {
           </div>
         );
       })()}
+
+      {/* ── QR Code modal ──────────────────────────────────────────────────────── */}
+      {qrFee && (
+        <div onClick={() => setQrFee(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '360px', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', overflow: 'hidden', animation: 'popIn 0.2s ease' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Payment QR Code</div>
+                <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{qrFee.player_name} · {qrFee.description}</div>
+              </div>
+              <button onClick={() => setQrFee(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={18} color="#94A3B8" /></button>
+            </div>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+              <div style={{ background: '#F8FAFC', borderRadius: '14px', padding: '16px', border: '1px solid #E2E8F0' }}>
+                {qrDataUrl
+                  ? <img src={qrDataUrl} alt="Payment QR" style={{ width: '240px', height: '240px', display: 'block', borderRadius: '8px' }} />
+                  : <div style={{ width: '240px', height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: '28px', height: '28px', border: '3px solid #E2E8F0', borderTop: `3px solid ${primary}`, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                    </div>
+                }
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748B', textAlign: 'center', lineHeight: 1.6 }}>
+                Scan to pay · No login required<br />
+                <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#94A3B8', wordBreak: 'break-all' }}>
+                  pulse-fc.app/pay/{qrFee.payment_token?.slice(0, 8)}…
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                <button
+                  onClick={() => {
+                    if (!qrDataUrl) return;
+                    const a = document.createElement('a');
+                    a.href = qrDataUrl;
+                    a.download = `payment-qr-${qrFee.player_name.replace(/\s+/g, '-').toLowerCase()}.png`;
+                    a.click();
+                  }}
+                  style={{ flex: 1, padding: '10px', borderRadius: '9px', border: '1.5px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '700', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                >
+                  <Download size={14} /> Download PNG
+                </button>
+                <button
+                  onClick={() => {
+                    if (!qrDataUrl) return;
+                    const win = window.open('', '_blank');
+                    if (!win) return;
+                    win.document.write(`<html><body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${qrDataUrl}" style="width:400px;height:400px"></body></html>`);
+                    win.document.close();
+                    win.print();
+                  }}
+                  style={{ flex: 1, padding: '10px', borderRadius: '9px', border: '1.5px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '700', color: '#374151', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                >
+                  <Printer size={14} /> Print
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

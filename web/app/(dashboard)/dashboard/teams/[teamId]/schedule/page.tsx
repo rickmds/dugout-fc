@@ -426,7 +426,7 @@ export default function TeamSchedulePage() {
       notes: ev.notes ?? '', coach_notes: ev.coach_notes ?? '',
       require_rsvp: ev.require_rsvp ?? true,
       rsvp_lock_hours: computeLockHours(ev.rsvp_lock_at, ev.event_date, ev.event_time),
-      push_notify: false,
+      push_notify: true,
     });
     setEditId(ev.id);
     dialogRef.current?.showModal();
@@ -462,14 +462,27 @@ export default function TeamSchedulePage() {
       if (editId) {
         const { error } = await supabase.from('events').update(payload).eq('id', editId);
         if (error) throw error;
+        if (form.push_notify) {
+          try {
+            const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
+            const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            await fetch('/api/push-event', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_updated', title: `📝 Event updated — ${teamName}`, body: `${savedTitle} · ${label}${form.hasTime ? ' · ' + fmtTime(form.event_time) : ''}`, data: { event_id: editId } }),
+            });
+          } catch { /* non-critical */ }
+        }
       } else {
         const { data, error } = await supabase.from('events').insert(payload).select('id').single();
         if (error) throw error;
         if (form.push_notify && (data as any)?.id) {
           try {
             const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
-            await supabase.functions.invoke('send-push', {
-              body: { team_id: teamId, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: savedTitle, data: { event_id: (data as any).id } },
+            await fetch('/api/push-event', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ team_id: teamId, exclude_profile_id: profile?.id, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: savedTitle, data: { event_id: (data as any).id } }),
             });
           } catch { /* non-critical */ }
         }
@@ -493,8 +506,10 @@ export default function TeamSchedulePage() {
     delDialogRef.current?.close();
     load();
     if (ev && teamId) {
-      supabase.functions.invoke('send-push', {
-        body: { team_id: teamId, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } },
+      fetch('/api/push-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: teamId, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }),
       }).catch(() => {});
     }
   }

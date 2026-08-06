@@ -48,19 +48,29 @@ export async function POST(req: NextRequest) {
   const userId = authData.user!.id;
 
   // 3. Create profile
-  await db.from('profiles').upsert({
+  const { error: profErr } = await db.from('profiles').upsert({
     id: userId,
     full_name,
     role,
     club_id,
   });
+  if (profErr) {
+    await db.auth.admin.deleteUser(userId);
+    console.error('profile upsert failed:', profErr);
+    return NextResponse.json({ error: 'Account setup failed. Please try again.' }, { status: 500 });
+  }
 
   // 4. Join the team
-  await db.from('team_members').insert({
+  const { error: memberErr } = await db.from('team_members').insert({
     team_id:    inv.team_id,
     profile_id: userId,
     role:       teamRole,
   });
+  if (memberErr) {
+    await db.auth.admin.deleteUser(userId);
+    console.error('team_members insert failed:', memberErr);
+    return NextResponse.json({ error: 'Could not join team. Please try again.' }, { status: 500 });
+  }
 
   // 5. Link player record to this profile
   if (inv.player_id) {

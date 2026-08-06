@@ -20,7 +20,7 @@ import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
-import { sendTeamPush } from '../../../../lib/push';
+import { sendTeamPush, sendProfilesPush } from '../../../../lib/push';
 
 type Message = {
   id: string;
@@ -69,12 +69,15 @@ export default function ConversationScreen() {
   const [title, setTitle]           = useState<string>('Direct Message');
   const [convType, setConvType]     = useState<string | null>(null);
   const [convTeamId, setConvTeamId] = useState<string | null>(null);
-  const [messages, setMessages]   = useState<Message[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [text, setText]           = useState('');
-  const [sending, setSending]     = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText]   = useState('');
+  const [dmParticipantIds, setDmParticipantIds] = useState<string[]>([]);
+  const [messages, setMessages]       = useState<Message[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [hasMore, setHasMore]         = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [text, setText]               = useState('');
+  const [sending, setSending]         = useState(false);
+  const [editingId, setEditingId]     = useState<string | null>(null);
+  const [editText, setEditText]       = useState('');
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
 
@@ -82,9 +85,13 @@ export default function ConversationScreen() {
 
   useEffect(() => {
     if (!conversationId || !profile) return;
+    let cancelled = false;
     let cleanup: (() => void) | undefined;
-    bootstrap().then((fn) => { cleanup = fn; });
-    return () => { cleanup?.(); };
+    bootstrap().then((fn) => {
+      if (cancelled) { fn?.(); return; }
+      cleanup = fn;
+    });
+    return () => { cancelled = true; cleanup?.(); };
   }, [conversationId, profile?.id]);
 
   // Focus edit input when entering edit mode
@@ -105,6 +112,18 @@ export default function ConversationScreen() {
       setConvType(ct ?? null);
       if (ct !== 'team_group') setTitle((conv as any).title ?? 'Direct Message');
       setConvTeamId((conv as any).team_id ?? null);
+
+      if (ct === 'direct') {
+        const { data: parts } = await supabase
+          .from('conversation_participants')
+          .select('profile_id')
+          .eq('conversation_id', conversationId);
+        setDmParticipantIds(
+          ((parts ?? []) as { profile_id: string }[])
+            .map(p => p.profile_id)
+            .filter(id => id !== profile?.id)
+        );
+      }
     }
 
     const { error: partErr } = await supabase.from('conversation_participants').upsert(
@@ -118,13 +137,15 @@ export default function ConversationScreen() {
     return subscribe();
   }
 
+  const PAGE = 80;
+
   async function fetchMessages() {
     const { data, error } = await supabase
       .from('messages')
       .select('id, body, created_at, sender_id, edited, profiles:sender_id(full_name)')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .limit(200);
+      .order('created_at', { ascending: false })
+      .limit(PAGE + 1);
 
     if (error) {
       console.error('[Conversation] fetchMessages error:', error.message);
@@ -132,13 +153,40 @@ export default function ConversationScreen() {
       return;
     }
 
-    const mapped: Message[] = (data ?? []).map((m: any) => ({
+    const rows = data ?? [];
+    setHasMore(rows.length > PAGE);
+    const page = rows.slice(0, PAGE).reverse();
+    const mapped: Message[] = page.map((m: any) => ({
       id: m.id, body: m.body, created_at: m.created_at,
       sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
       edited: m.edited ?? false,
     }));
     setMessages(mapped);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100);
+  }
+
+  async function loadEarlier() {
+    if (!messages.length || loadingMore) return;
+    setLoadingMore(true);
+    const oldest = messages[0].created_at;
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, body, created_at, sender_id, edited, profiles:sender_id(full_name)')
+      .eq('conversation_id', conversationId)
+      .lt('created_at', oldest)
+      .order('created_at', { ascending: false })
+      .limit(PAGE + 1);
+    setLoadingMore(false);
+    if (error) return;
+    const rows = data ?? [];
+    setHasMore(rows.length > PAGE);
+    const page = rows.slice(0, PAGE).reverse();
+    const older: Message[] = page.map((m: any) => ({
+      id: m.id, body: m.body, created_at: m.created_at,
+      sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
+      edited: m.edited ?? false,
+    }));
+    setMessages((prev) => [...older, ...prev]);
   }
 
   function subscribe() {
@@ -202,12 +250,20 @@ export default function ConversationScreen() {
         Alert.alert('Could not send', error.message);
       } else if (inserted) {
         setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: (inserted as any).id } : m));
-        if (convTeamId) {
+        if (convType === 'team_group' && convTeamId) {
           sendTeamPush({
             teamId: convTeamId,
             title: profile?.full_name ?? 'New message',
             body: body.slice(0, 120),
             excludeProfileId: profile?.id,
+            data: { type: 'new_message', conversation_id: conversationId },
+          });
+        } else if (convType === 'direct' && dmParticipantIds.length > 0) {
+          sendProfilesPush({
+            profileIds: dmParticipantIds,
+            excludeProfileId: profile?.id,
+            title: profile?.full_name ?? 'New message',
+            body: body.slice(0, 120),
             data: { type: 'new_dm', conversation_id: conversationId },
           });
         }
@@ -284,6 +340,22 @@ export default function ConversationScreen() {
           data={messages.length > 0 ? messages : buildDemoMessages(profile?.id ?? '')}
           keyExtractor={(m) => m.id}
           contentContainerStyle={st.list}
+          initialNumToRender={20}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews
+          ListHeaderComponent={hasMore ? (
+            <TouchableOpacity
+              onPress={loadEarlier}
+              disabled={loadingMore}
+              style={st.loadEarlierBtn}
+              activeOpacity={0.7}
+            >
+              {loadingMore
+                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                : <Text style={st.loadEarlierText}>Load earlier messages</Text>}
+            </TouchableOpacity>
+          ) : null}
           ListEmptyComponent={
             <View style={st.empty}>
               <View style={st.emptyIcon}>
@@ -398,6 +470,13 @@ const st = StyleSheet.create({
 
   list: { padding: 16, paddingBottom: 8, flexGrow: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
+  loadEarlierBtn: {
+    alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 16,
+    marginTop: 8, marginBottom: 4,
+    borderRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    minWidth: 48, alignItems: 'center',
+  },
+  loadEarlierText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
   emptyIcon: {
     width: 56, height: 56, borderRadius: 18,
     backgroundColor: PULSE_COLORS.ui.surface,

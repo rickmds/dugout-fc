@@ -10,9 +10,14 @@ const adminSupabase = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+import { requireRole } from '@/lib/apiAuth';
+
 type CoachInput = { full_name: string; email: string; team_id: string | null; team_name: string };
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { coaches, club_id, clubName, clubColor } = await req.json() as {
     coaches: CoachInput[];
     club_id: string;
@@ -72,7 +77,7 @@ export async function POST(req: NextRequest) {
       // 5. Send branded email with setup link
       const teamLine = coach.team_name ? `for <strong>${coach.team_name}</strong> ` : '';
       await resend.emails.send({
-        from:    `${clubName} <info@pulse-fc.app>`,
+        from:    `${clubName} <support@pulse-fc.app>`,
         to:      coach.email,
         subject: `You've been added as a coach at ${clubName}`,
         html: `<!DOCTYPE html>

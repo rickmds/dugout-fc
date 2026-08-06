@@ -6,8 +6,8 @@ import { useRef, useEffect, useLayoutEffect } from 'react';
 import {
   LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut,
-  Layers, Shield, DollarSign, Target, LayoutGrid, Trophy,
-  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight,
+  Layers, DollarSign, Target, LayoutGrid,
+  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ShieldCheck, Trophy,
 } from 'lucide-react';
 import { useDashboard } from './DashboardContext';
 
@@ -29,15 +29,16 @@ const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard/fields',        icon: MapPin,        label: 'Fields' },
   { section: 'Schedule' },
   { href: '/dashboard/schedule',      icon: CalendarDays,  label: 'Schedule' },
+  { href: '/dashboard/games',         icon: Trophy,        label: 'Game Scheduler' },
   { section: 'Communicate' },
   { href: '/dashboard/announcements', icon: Megaphone,     label: 'Announcements' },
   { href: '/dashboard/email',         icon: Mail,          label: 'Email' },
   { section: 'Manage' },
-  { href: '/dashboard/fees',          icon: DollarSign,    label: 'Fees' },
+  { href: '/dashboard/fees',          icon: DollarSign,    label: 'Fees',           adminOnly: true },
   { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations' },
   { href: '/dashboard/waivers',       icon: FileLock2,     label: 'Waivers' },
   { href: '/dashboard/reports',       icon: BarChart2,     label: 'Reports' },
-  { href: '/dashboard/admin',         icon: Shield,        label: 'Administration', adminOnly: true },
+  { href: '/dashboard/certifications', icon: ShieldCheck,  label: 'Certifications', adminOnly: true },
   { section: 'Develop' },
   { href: '/dashboard/evaluations',   icon: Award,         label: 'Evaluations' },
 ];

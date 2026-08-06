@@ -183,27 +183,21 @@ export default function RosterPage() {
   async function savePanel() {
     if (!selectedPlayer || !panelForm.full_name.trim()) return;
     setPanelSaving(true);
-    await supabase.from('players').update({
-      full_name: panelForm.full_name.trim(),
-      jersey_number: panelForm.jersey_number ? parseInt(panelForm.jersey_number) : null,
-      position: panelForm.position || null,
-    }).eq('id', selectedPlayer.id);
-    // Update local state
-    setPlayers((prev) => prev.map((p) => p.id === selectedPlayer.id ? {
-      ...p,
-      full_name: panelForm.full_name.trim(),
-      jersey_number: panelForm.jersey_number ? parseInt(panelForm.jersey_number) : null,
-      position: panelForm.position || null,
-    } : p));
-    setSelectedPlayer((prev) => prev ? {
-      ...prev,
-      full_name: panelForm.full_name.trim(),
-      jersey_number: panelForm.jersey_number ? parseInt(panelForm.jersey_number) : null,
-      position: panelForm.position || null,
-    } : null);
-    setPanelSaving(false);
-    setPanelSaved(true);
-    setTimeout(() => setPanelSaved(false), 2500);
+    try {
+      const updates = {
+        full_name: panelForm.full_name.trim(),
+        jersey_number: panelForm.jersey_number ? parseInt(panelForm.jersey_number) : null,
+        position: panelForm.position || null,
+      };
+      const { error } = await supabase.from('players').update(updates).eq('id', selectedPlayer.id);
+      if (error) { alert(`Could not save player: ${error.message}`); return; }
+      setPlayers((prev) => prev.map((p) => p.id === selectedPlayer.id ? { ...p, ...updates } : p));
+      setSelectedPlayer((prev) => prev ? { ...prev, ...updates } : null);
+      setPanelSaved(true);
+      setTimeout(() => setPanelSaved(false), 2500);
+    } finally {
+      setPanelSaving(false);
+    }
   }
 
   async function sendInviteFromPanel() {
@@ -292,40 +286,45 @@ export default function RosterPage() {
   async function handleAddPlayer() {
     if (!form.full_name.trim()) return;
     setSaving(true);
-    const payload: Record<string, unknown> = {
-      full_name: form.full_name.trim(),
-      jersey_number: form.jersey_number ? parseInt(form.jersey_number) : null,
-      position: form.position || null,
-      team_id: form.team_id,
-    };
-    const { data } = await supabase.from('players').insert(payload).select('id').single();
-    if (form.parent_email.trim() && (data as { id: string } | null)?.id) {
-      const { data: inviteRow } = await supabase.from('invites').insert({
+    try {
+      const payload: Record<string, unknown> = {
+        full_name: form.full_name.trim(),
+        jersey_number: form.jersey_number ? parseInt(form.jersey_number) : null,
+        position: form.position || null,
         team_id: form.team_id,
-        player_id: (data as { id: string }).id,
-        email: form.parent_email.trim(),
-        created_by: profile?.id,
-      }).select('id').single();
-      if (inviteRow) {
-        fetch('/api/send-invite', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            invite_id: (inviteRow as { id: string }).id,
-            team_name: teams.find((t) => t.id === form.team_id)?.name ?? 'your team',
-            player_name: form.full_name.trim(),
-            club_name: club?.name ?? '',
-          }),
-        }).catch(() => {});
+      };
+      const { data, error } = await supabase.from('players').insert(payload).select('id').single();
+      if (error) { alert(`Could not add player: ${error.message}`); return; }
+      if (form.parent_email.trim() && (data as { id: string } | null)?.id) {
+        const { data: inviteRow } = await supabase.from('invites').insert({
+          team_id: form.team_id,
+          player_id: (data as { id: string }).id,
+          email: form.parent_email.trim(),
+          created_by: profile?.id,
+        }).select('id').single();
+        if (inviteRow) {
+          fetch('/api/send-invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              invite_id: (inviteRow as { id: string }).id,
+              team_name: teams.find((t) => t.id === form.team_id)?.name ?? 'your team',
+              player_name: form.full_name.trim(),
+              club_name: club?.name ?? '',
+            }),
+          }).catch(() => {});
+        }
       }
+      setShowAddModal(false);
+      loadPlayers();
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    setShowAddModal(false);
-    loadPlayers();
   }
 
   async function confirmDelete(player: Player) {
-    await supabase.from('players').delete().eq('id', player.id);
+    const { error } = await supabase.from('players').delete().eq('id', player.id);
+    if (error) { alert(`Could not delete player: ${error.message}`); return; }
     setPlayers((prev) => prev.filter((p) => p.id !== player.id));
     setDeleteModal(null);
     if (selectedPlayer?.id === player.id) setSelectedPlayer(null);

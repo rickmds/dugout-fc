@@ -5,7 +5,7 @@ const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -14,8 +14,9 @@ export async function GET(req: NextRequest) {
 
   const { data: events } = await supabase
     .from('events')
-    .select('id, title, type, team_id, event_time, location')
-    .eq('event_date', today);
+    .select('id, title, type, team_id, event_time, location, teams(clubs(slug))')
+    .eq('event_date', today)
+    .is('cancelled_at', null);
 
   if (!events?.length) return NextResponse.json({ sent: 0, reason: 'no_events_today' });
 
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
         type: 'event_day_reminder',
         title: pushTitle,
         body: pushBody,
-        data: { type: 'event_day_reminder', event_id: ev.id },
+        data: { type: 'event_day_reminder', event_id: ev.id, club_slug: (ev as any).teams?.clubs?.slug ?? '' },
       }))
     );
 

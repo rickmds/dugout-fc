@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
+import { requireRole } from '@/lib/apiAuth';
 
 const sb = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -159,6 +160,9 @@ function buildRosterHtml(players: PlayerRow[], teamName: string, role: string, c
 // POST /api/tryout/send-coach-packet
 // body: { coach_ids: string[], club_id: string, season_label: string }
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { coach_ids, club_id, season_label } = await req.json();
   if (!coach_ids?.length || !club_id) {
     return NextResponse.json({ error: 'coach_ids and club_id required' }, { status: 400 });
@@ -341,7 +345,7 @@ export async function POST(req: NextRequest) {
 
     try {
       await resend.emails.send({
-        from: `${clubName} <info@pulse-fc.app>`,
+        from: `${clubName} <support@pulse-fc.app>`,
         to: coach.email,
         subject: `${clubName} — Coach Packet ${season_label}`,
         html,

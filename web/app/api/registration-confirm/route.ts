@@ -143,7 +143,7 @@ export async function POST(req: Request) {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      from: `${clubLabel} <info@pulse-fc.app>`,
+      from: `${clubLabel} <support@pulse-fc.app>`,
       to: [to],
       subject: `Registration confirmed — ${form_title}`,
       html,

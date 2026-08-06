@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { mergeTokens } from '@/lib/mergeTokens';
+import { requireRole } from '@/lib/apiAuth';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -10,6 +11,9 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { player_id, club_id } = await req.json();
   if (!player_id || !club_id) return NextResponse.json({ error: 'player_id and club_id required' }, { status: 400 });
 
@@ -116,7 +120,7 @@ export async function POST(req: NextRequest) {
     decline_link:      declineLink,
   });
 
-  const from = `${settings.from_name ?? club?.name ?? 'Pulse FC'} <info@pulse-fc.app>`;
+  const from = `${settings.from_name ?? club?.name ?? 'Pulse FC'} <support@pulse-fc.app>`;
 
   await resend.emails.send({
     from,

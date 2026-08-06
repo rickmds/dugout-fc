@@ -151,12 +151,13 @@ export default function TeamsPage() {
       });
       if (error) { setFormError(error.message); setFormSaving(false); return; }
     } else {
-      await supabase.from('teams').update({
+      const { error } = await supabase.from('teams').update({
         name: form.name.trim(),
         age_group: form.age_group || null,
         gender: form.gender || null,
         season: form.season.trim() || null,
       }).eq('id', formModal!.teamId!);
+      if (error) { setFormError(error.message); setFormSaving(false); return; }
     }
 
     setFormSaving(false);
@@ -167,7 +168,8 @@ export default function TeamsPage() {
 
   // ── Delete ──────────────────────────────────────────────────────────────────
   async function confirmDelete(id: string) {
-    await supabase.from('teams').delete().eq('id', id);
+    const { error } = await supabase.from('teams').delete().eq('id', id);
+    if (error) { alert(`Could not delete team: ${error.message}`); return; }
     setDeleteConfirm(null);
     reload();
     loadTeams();
@@ -177,34 +179,44 @@ export default function TeamsPage() {
   async function doRollover() {
     if (!rollover || !club) return;
     setRollover((r) => r ? { ...r, saving: true } : null);
+    try {
+      const { data: newTeam, error: teamErr } = await supabase
+        .from('teams')
+        .insert({
+          club_id: club.id,
+          name: rollover.team.name,
+          age_group: rollover.team.age_group,
+          season: rollover.newSeason.trim() || null,
+        })
+        .select('id')
+        .single();
 
-    const { data: newTeam } = await supabase
-      .from('teams')
-      .insert({
-        club_id: club.id,
-        name: rollover.team.name,
-        age_group: rollover.team.age_group,
-        season: rollover.newSeason.trim() || null,
-      })
-      .select('id')
-      .single();
-
-    if (newTeam && rollover.copyRoster) {
-      const { data: players } = await supabase
-        .from('players')
-        .select('full_name, jersey_number, position')
-        .eq('team_id', rollover.team.id);
-
-      if (players?.length) {
-        await supabase.from('players').insert(
-          players.map((p) => ({ ...p, team_id: newTeam.id }))
-        );
+      if (teamErr || !newTeam) {
+        alert(`Could not create new season team: ${teamErr?.message ?? 'Unknown error'}`);
+        setRollover((r) => r ? { ...r, saving: false } : null);
+        return;
       }
-    }
 
-    setRollover(null);
-    reload();
-    loadTeams();
+      if (rollover.copyRoster) {
+        const { data: players } = await supabase
+          .from('players')
+          .select('full_name, jersey_number, position')
+          .eq('team_id', rollover.team.id);
+
+        if (players?.length) {
+          await supabase.from('players').insert(
+            players.map((p) => ({ ...p, team_id: newTeam.id }))
+          );
+        }
+      }
+
+      setRollover(null);
+      reload();
+      loadTeams();
+    } catch (e) {
+      alert(`Rollover failed: ${e instanceof Error ? e.message : String(e)}`);
+      setRollover((r) => r ? { ...r, saving: false } : null);
+    }
   }
 
   const totalPlayers    = teams.reduce((s, t) => s + t.player_count, 0);

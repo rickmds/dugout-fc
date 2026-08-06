@@ -7,12 +7,9 @@ const supabaseAdmin = () =>
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const token = searchParams.get('token');
-  const action = searchParams.get('action') as 'accept' | 'decline' | null;
-
   if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 });
 
   const sb = supabaseAdmin();
-
   const { data: a } = await sb
     .from('tryout_assignments')
     .select('*, tryout_players(*)')
@@ -21,22 +18,32 @@ export async function GET(req: NextRequest) {
 
   if (!a) return NextResponse.json({ error: 'Invalid or expired link' }, { status: 404 });
 
-  // If no action, just return the current state for the page to render
-  if (!action) {
-    const player = (a as { tryout_players: Record<string, string> }).tryout_players;
-    const { data: club } = await sb.from('clubs').select('name, logo_url').eq('id', (a as { club_id: string }).club_id).single();
-    return NextResponse.json({
-      player_name: player?.full_name,
-      team_name: (a as { team: string }).team,
-      club_name: club?.name,
-      club_logo: club?.logo_url,
-      current_status: (a as { offer_status: string }).offer_status,
-    });
-  }
+  const player = (a as { tryout_players: Record<string, string> }).tryout_players;
+  const { data: club } = await sb.from('clubs').select('name, logo_url').eq('id', (a as { club_id: string }).club_id).single();
+  return NextResponse.json({
+    player_name: player?.full_name,
+    team_name: (a as { team: string }).team,
+    club_name: club?.name,
+    club_logo: club?.logo_url,
+    current_status: (a as { offer_status: string }).offer_status,
+  });
+}
 
-  // Already responded?
+export async function POST(req: NextRequest) {
+  const { token, action } = await req.json() as { token: string; action: 'accept' | 'decline' };
+  if (!token || !action) return NextResponse.json({ error: 'token and action required' }, { status: 400 });
+
+  const sb = supabaseAdmin();
+  const { data: a } = await sb
+    .from('tryout_assignments')
+    .select('*, tryout_players(*)')
+    .eq('offer_token', token)
+    .single();
+
+  if (!a) return NextResponse.json({ error: 'Invalid or expired link' }, { status: 404 });
+
   const offerStatus = (a as { offer_status: string }).offer_status;
-  if (['Accepted','Declined'].includes(offerStatus)) {
+  if (['Accepted', 'Declined'].includes(offerStatus)) {
     return NextResponse.json({ already_responded: true, action: offerStatus.toLowerCase() });
   }
 

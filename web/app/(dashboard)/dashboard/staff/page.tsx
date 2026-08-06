@@ -119,10 +119,11 @@ export default function StaffPage() {
   async function handleInvite() {
     if (!inviteEmail.trim() || !club) return;
     setSending(true);
-    await supabase.functions.invoke('invite-staff', {
+    const { error } = await supabase.functions.invoke('invite-staff', {
       body: { email: inviteEmail.trim(), full_name: inviteName.trim() || null, role: inviteRole, club_id: club.id, team_ids: inviteTeams },
     });
     setSending(false);
+    if (error) { alert(`Invite failed: ${error.message}`); return; }
     setSent(true);
     setTimeout(() => {
       setSent(false); setShowInvite(false);

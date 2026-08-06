@@ -47,13 +47,13 @@ export default function SupportScreen() {
 
     const { error } = await supabase.functions.invoke('send-team-email', {
       body: {
-        to: [{ email: 'info@pulse-fc.app', name: 'Pulse FC Support' }],
+        to: [{ email: 'support@pulse-fc.app', name: 'Pulse FC Support' }],
         cc: [],
         subject: `[Support] ${topic}`,
         body,
         from_name: profile?.full_name ?? 'App User',
         team_name: 'Pulse FC',
-        from_email: 'info@pulse-fc.app',
+        from_email: 'support@pulse-fc.app',
         reply_to: user?.email ?? null,
         attachments: [],
       },
@@ -61,7 +61,7 @@ export default function SupportScreen() {
 
     setSending(false);
     if (error) {
-      Alert.alert('Could not send', 'Please email info@pulse-fc.app directly.');
+      Alert.alert('Could not send', 'Please email support@pulse-fc.app directly.');
       return;
     }
     setSent(true);

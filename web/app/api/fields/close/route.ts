@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
+import { requireRole } from '@/lib/apiAuth';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -10,6 +11,8 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  if (!auth.ok) return auth.response;
   const body = await req.json();
   const { club_id, field_names, closed_from, closed_until, duration_label, reason, notify_message } = body as {
     club_id: string;
@@ -30,7 +33,7 @@ export async function POST(req: NextRequest) {
   // ── 1. Fetch club for branding ────────────────────────────────────────────────
   const { data: club } = await sb
     .from('clubs')
-    .select('id, name, primary_color, logo_url')
+    .select('id, name, slug, primary_color, logo_url')
     .eq('id', club_id)
     .single();
 
@@ -80,25 +83,69 @@ export async function POST(req: NextRequest) {
   const slotsToCancel = (affectedSlots ?? []).filter(s => coveredDays.has(s.day_of_week));
   const affectedTeams = [...new Set(slotsToCancel.map(s => s.team).filter(Boolean))] as string[];
 
-  // ── 4. Also cancel dated events on affected fields ────────────────────────────
-  // events.location is a text field — match by field name substring
-  const { data: affectedEvents } = await sb
-    .from('events')
-    .select('id, title, event_date, team_id, location')
-    .gte('event_date', closureFrom.toISOString().slice(0, 10))
-    .lte('event_date', (closureUntil ?? limit).toISOString().slice(0, 10));
+  // ── 4. Find dated events on affected fields within closure window ─────────────
+  const closureFromDate = closureFrom.toISOString().slice(0, 10);
+  const closureUntilDate = (closureUntil ?? limit).toISOString().slice(0, 10);
 
-  const matchingEvents = (affectedEvents ?? []).filter(e =>
-    field_names.some(fn => e.location?.includes(fn))
+  const { data: allEvents } = await sb
+    .from('events')
+    .select('id, title, event_date, event_time, type, team_id, location')
+    .gte('event_date', closureFromDate)
+    .lte('event_date', closureUntilDate);
+
+  const matchingEvents = (allEvents ?? []).filter(e =>
+    field_names.some(fn => e.location?.toLowerCase().includes(fn.toLowerCase()))
   );
 
+  // Mark those events as cancelled
   if (matchingEvents.length > 0) {
-    await sb.from('events').update({
-      // Mark with a cancellation note in location field suffix — TODO: add cancellation_reason column in future
-    }).in('id', matchingEvents.map(e => e.id));
+    await sb.from('events')
+      .update({ cancelled_at: new Date().toISOString(), cancelled_reason: `Field closure: ${reason}` })
+      .in('id', matchingEvents.map(e => e.id));
   }
 
-  // ── 5. Collect coach emails from affected teams ───────────────────────────────
+  // ── 5. Get team members for affected event teams ───────────────────────────────
+  const affectedEventTeamIds = [...new Set(
+    matchingEvents.map(e => e.team_id).filter(Boolean)
+  )] as string[];
+
+  const { data: affectedTeamMembers } = affectedEventTeamIds.length ? await sb
+    .from('team_members')
+    .select('profile_id, team_id')
+    .in('team_id', affectedEventTeamIds) : { data: [] };
+
+  const affectedProfileIds = [...new Set(
+    (affectedTeamMembers ?? []).map(m => m.profile_id)
+  )];
+
+  // ── 6. Get emails for affected members via auth admin ─────────────────────────
+  type AffectedRecipient = { profileId: string; email: string; name: string; teamId: string };
+  const affectedEmailRecipients: AffectedRecipient[] = [];
+
+  if (affectedProfileIds.length > 0) {
+    const { data: { users } } = await sb.auth.admin.listUsers({ perPage: 1000 });
+    const profileEmailMap = new Map(users.map(u => [u.id, u.email ?? '']));
+
+    const { data: affectedProfiles } = await sb
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', affectedProfileIds);
+
+    for (const profile of (affectedProfiles ?? [])) {
+      const email = profileEmailMap.get(profile.id);
+      const membership = (affectedTeamMembers ?? []).find(m => m.profile_id === profile.id);
+      if (email && membership) {
+        affectedEmailRecipients.push({
+          profileId: profile.id,
+          email,
+          name: profile.full_name ?? 'Club Member',
+          teamId: membership.team_id,
+        });
+      }
+    }
+  }
+
+  // ── 7. Collect tryout coaches/parents from recurring slots ────────────────────
   const { data: coachAssignments } = await sb
     .from('tryout_coach_assignments')
     .select('coach_id, team, role')
@@ -112,7 +159,6 @@ export async function POST(req: NextRequest) {
     .select('id, full_name, email')
     .in('id', coachIds) : { data: [] };
 
-  // ── 6. Collect parent/player emails from affected teams ───────────────────────
   const { data: playerAssignments } = await sb
     .from('tryout_assignments')
     .select('player_id, team')
@@ -126,47 +172,42 @@ export async function POST(req: NextRequest) {
     .select('id, first_name, last_name, parent_name, email_primary, email_secondary')
     .in('id', playerIds) : { data: [] };
 
-  // ── 7. Also grab club team_members for regular season parents ─────────────────
-  const { data: teamMembers } = await sb
-    .from('team_members')
-    .select('profile_id, role')
-    .in('team_id', matchingEvents.map(e => e.team_id).filter(Boolean));
-
-  const memberProfileIds = [...new Set((teamMembers ?? []).map(m => m.profile_id))];
-  const { data: memberProfiles } = memberProfileIds.length ? await sb
-    .from('profiles')
-    .select('id, full_name, email: id')  // we use auth.users for email
-    .in('id', memberProfileIds) : { data: [] };
-
-  // ── 8. Build recipient list ───────────────────────────────────────────────────
-  type Recipient = { name: string; email: string; coachId?: string; isCoach?: boolean; closureId?: string };
+  // ── 8. Build full recipient list ──────────────────────────────────────────────
+  type Recipient = { name: string; email: string; coachId?: string; isCoach?: boolean; closureId?: string; affectedEvents?: typeof matchingEvents };
   const recipients: Recipient[] = [];
 
-  // Coaches
+  // Regular club members with affected events — include their specific events
+  const seen = new Set<string>();
+  for (const r of affectedEmailRecipients) {
+    const key = r.email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const memberEvents = matchingEvents.filter(e => e.team_id === r.teamId);
+    recipients.push({ name: r.name, email: r.email, affectedEvents: memberEvents });
+  }
+
+  // Tryout coaches
   for (const c of (coachRecords ?? [])) {
     if (c.email) {
+      const key = c.email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
       const closureId = insertedClosures?.[0]?.id;
       recipients.push({ name: c.full_name ?? 'Coach', email: c.email, coachId: c.id, isCoach: true, closureId });
     }
   }
 
-  // Parents via tryout_players
+  // Tryout parents
   for (const p of (players ?? [])) {
-    if (p.email_primary) {
-      recipients.push({ name: p.parent_name ?? `${p.first_name} ${p.last_name}`, email: p.email_primary });
-    }
-    if (p.email_secondary) {
-      recipients.push({ name: p.parent_name ?? `${p.first_name} ${p.last_name}`, email: p.email_secondary });
+    for (const email of [p.email_primary, p.email_secondary].filter(Boolean)) {
+      const key = email!.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      recipients.push({ name: p.parent_name ?? `${p.first_name} ${p.last_name}`, email: email! });
     }
   }
 
-  // Deduplicate by email
-  const seen = new Set<string>();
-  const uniqueRecipients = recipients.filter(r => {
-    const key = r.email.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  });
+  const uniqueRecipients = recipients;
 
   // ── 9. Send emails ────────────────────────────────────────────────────────────
   const fieldList = field_names.join(', ');
@@ -186,13 +227,17 @@ export async function POST(req: NextRequest) {
       clubName: club.name, clubColor: primary, logoUrl: club.logo_url,
       recipientName: r.name, fieldList, reason, durationText,
       message: notify_message, ackUrl, appUrl: APP_URL,
+      affectedEvents: r.affectedEvents,
     });
 
     try {
+      const hasSessionsCancelled = (r.affectedEvents?.length ?? 0) > 0;
       await resend.emails.send({
-        from: `${club.name} <info@pulse-fc.app>`,
+        from: `${club.name} <support@pulse-fc.app>`,
         to: r.email,
-        subject: `⚠️ Field Closure: ${fieldList} — ${club.name}`,
+        subject: hasSessionsCancelled
+          ? `❌ Session Cancelled + Field Closure: ${fieldList} — ${club.name}`
+          : `⚠️ Field Closure: ${fieldList} — ${club.name}`,
         html,
       });
       emailsSent.push(r.email);
@@ -201,24 +246,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── 10. Send push notifications to all club members ───────────────────────────
-  const { data: pushTokens } = await sb
+  // ── 10. Push only to members with cancelled sessions ──────────────────────────
+  const { data: pushTokens } = affectedProfileIds.length ? await sb
     .from('push_tokens')
-    .select('token')
-    .in('profile_id',
-      (await sb.from('profiles').select('id').eq('club_id', club_id)).data?.map(p => p.id) ?? []
-    );
+    .select('token, profile_id')
+    .in('profile_id', affectedProfileIds) : { data: [] };
 
   let pushSent = false;
   if (pushTokens?.length) {
     const messages = pushTokens.map(t => ({
       to: t.token,
-      title: `⚠️ Field Closure — ${club.name}`,
-      body: notify_message
-        ? notify_message.slice(0, 150)
-        : `${fieldList} is closed ${durationText}. ${reason ? `Reason: ${reason}.` : ''}`,
+      title: `❌ Session Cancelled — ${club.name}`,
+      body: `Your session at ${fieldList} has been cancelled. ${reason ? `Reason: ${reason}.` : ''}`,
       sound: 'default',
-      data: { type: 'field_closure', field_names, reason },
+      data: { type: 'field_closure', field_names, reason, club_slug: (club as any).slug ?? '' },
     }));
 
     for (let i = 0; i < messages.length; i += 100) {
@@ -242,6 +283,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     closures: insertedClosures?.length ?? 0,
     sessions_affected: slotsToCancel.length,
+    events_affected: matchingEvents.length,
     emails_sent: emailsSent.length,
     push_sent: pushSent,
   });
@@ -249,10 +291,11 @@ export async function POST(req: NextRequest) {
 
 // ── Email HTML builder ─────────────────────────────────────────────────────────
 
-function buildClosureEmail({ clubName, clubColor, logoUrl, recipientName, fieldList, reason, durationText, message, ackUrl, appUrl }: {
+function buildClosureEmail({ clubName, clubColor, logoUrl, recipientName, fieldList, reason, durationText, message, ackUrl, appUrl, affectedEvents }: {
   clubName: string; clubColor: string; logoUrl: string | null;
   recipientName: string; fieldList: string; reason: string; durationText: string;
   message: string | null; ackUrl: string | null; appUrl: string;
+  affectedEvents?: { title: string; event_date: string; event_time: string | null; type: string }[];
 }) {
   return `<!DOCTYPE html>
 <html>
@@ -286,7 +329,7 @@ function buildClosureEmail({ clubName, clubColor, logoUrl, recipientName, fieldL
         }
 
         <!-- Info card -->
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;margin-bottom:24px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;margin-bottom:${affectedEvents?.length ? '16px' : '24px'};">
           <tr><td style="padding:16px 20px;">
             <div style="font-size:12px;font-weight:800;color:#B91C1C;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Closure Details</div>
             <div style="font-size:13px;color:#374151;"><strong>Field(s):</strong> ${fieldList}</div>
@@ -294,6 +337,21 @@ function buildClosureEmail({ clubName, clubColor, logoUrl, recipientName, fieldL
             <div style="font-size:13px;color:#374151;margin-top:4px;"><strong>Duration:</strong> ${durationText.charAt(0).toUpperCase() + durationText.slice(1)}</div>
           </td></tr>
         </table>
+
+        ${affectedEvents?.length ? `
+        <!-- Affected sessions -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;margin-bottom:24px;">
+          <tr><td style="padding:16px 20px;">
+            <div style="font-size:12px;font-weight:800;color:#92400E;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">❌ Your Cancelled Sessions</div>
+            ${affectedEvents.map(e => {
+              const dateStr = new Date(e.event_date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+              const timeStr = e.event_time ? e.event_time.slice(0, 5) : '';
+              return `<div style="font-size:13px;color:#374151;padding:4px 0;border-bottom:1px solid #FDE68A;">
+                <strong>${e.title}</strong> — ${dateStr}${timeStr ? ` at ${timeStr}` : ''}
+              </div>`;
+            }).join('')}
+          </td></tr>
+        </table>` : ''}
 
         ${ackUrl ? `
         <div style="text-align:center;margin-bottom:24px;">

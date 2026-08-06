@@ -12,6 +12,7 @@ interface TargetedPushOptions {
   profileIds: string[];
   title: string;
   body: string;
+  excludeProfileId?: string;
   data?: Record<string, unknown>;
 }
 
@@ -38,6 +39,7 @@ export async function sendProfilesPush(opts: TargetedPushOptions) {
         profile_ids: opts.profileIds,
         title: opts.title,
         body: opts.body,
+        exclude_profile_id: opts.excludeProfileId,
         data: opts.data ?? {},
       },
     });

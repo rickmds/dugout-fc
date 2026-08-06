@@ -49,12 +49,16 @@ function contrastText(hex: string): string {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+type FallbackClub = { name: string; logo_url: string | null; primary_color: string | null };
+
 function JoinContent() {
   const params = useSearchParams();
   const token  = params.get('token') ?? '';
+  const clubSlugParam = params.get('club');
 
   const [step,          setStep]         = useState<Step>('loading');
   const [invite,        setInvite]       = useState<InviteDetails | null>(null);
+  const [fallbackClub,  setFallbackClub] = useState<FallbackClub | null>(null);
   const [successEmail,  setSuccessEmail] = useState('');
 
   // Form state
@@ -82,7 +86,19 @@ function JoinContent() {
       .catch(() => setStep('invalid'));
   }, [token]);
 
-  const accent     = resolveAccent(invite?.primary_color);
+  // Fetch fallback club branding for error states
+  useEffect(() => {
+    if (!clubSlugParam) return;
+    fetch(`/api/club-public?slug=${encodeURIComponent(clubSlugParam)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && !d.error) setFallbackClub(d); });
+  }, [clubSlugParam]);
+
+  const effectiveClub = invite
+    ? { name: invite.club_name, logo_url: invite.club_logo_url, primary_color: invite.primary_color }
+    : fallbackClub;
+
+  const accent     = resolveAccent(effectiveClub?.primary_color);
   const accentText = contrastText(accent);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -203,7 +219,19 @@ function JoinContent() {
         {/* ── Invalid ── */}
         {step === 'invalid' && (
           <div className="step" style={s.center}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔗</div>
+            {effectiveClub && (
+              <div style={{ marginBottom: 20 }}>
+                {effectiveClub.logo_url
+                  ? <img src={effectiveClub.logo_url} alt="" style={{ height: 52, borderRadius: 12, objectFit: 'contain' }} />
+                  : (
+                    <div style={{ width: 52, height: 52, borderRadius: 14, background: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: accentText, boxShadow: `0 0 0 3px ${accent}33` }}>
+                      {effectiveClub.name.split(' ').slice(0,2).map(w => w[0] ?? '').join('').toUpperCase()}
+                    </div>
+                  )}
+                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{effectiveClub.name}</div>
+              </div>
+            )}
+            <div style={{ fontSize: 40, marginBottom: 16 }}>🔗</div>
             <h1 style={s.heading}>Invalid invite link</h1>
             <p style={s.sub}>This link may have expired or already been used. Contact your coach for a new invite.</p>
           </div>
@@ -212,7 +240,19 @@ function JoinContent() {
         {/* ── Already accepted ── */}
         {step === 'already_accepted' && (
           <div className="step" style={s.center}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+            {effectiveClub && (
+              <div style={{ marginBottom: 20 }}>
+                {effectiveClub.logo_url
+                  ? <img src={effectiveClub.logo_url} alt="" style={{ height: 52, borderRadius: 12, objectFit: 'contain' }} />
+                  : (
+                    <div style={{ width: 52, height: 52, borderRadius: 14, background: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: accentText, boxShadow: `0 0 0 3px ${accent}33` }}>
+                      {effectiveClub.name.split(' ').slice(0,2).map(w => w[0] ?? '').join('').toUpperCase()}
+                    </div>
+                  )}
+                <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{effectiveClub.name}</div>
+              </div>
+            )}
+            <div style={{ fontSize: 40, marginBottom: 16 }}>✅</div>
             <h1 style={s.heading}>Already joined!</h1>
             <p style={s.sub}>This invite has already been accepted. Download the app and sign in to access your team.</p>
             <AppStoreButton accent={accent} accentText={accentText} />

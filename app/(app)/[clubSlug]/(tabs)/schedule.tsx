@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import type { ErrorBoundaryProps } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   RefreshControl,
   ScrollView,
@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -23,6 +24,7 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../components/ui/ClubHeader';
+import ScheduleSkeleton from '../../../../components/schedule/ScheduleSkeleton';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
 import { fetchDriveTimes } from '../../../../lib/drivetime';
 
@@ -146,7 +148,8 @@ export default function ScheduleScreen() {
   const [guestTeamNames, setGuestTeamNames] = useState<Record<string, string>>({});
   const [guestCountsMap, setGuestCountsMap] = useState<Record<string, number>>({});
 
-  const [activeTab, setActiveTab] = useState<Tab>('upcoming');
+  const [activeTab, setActiveTab]       = useState<Tab>('upcoming');
+  const [showAllTeams, setShowAllTeams] = useState(false);
 
   const todayDate = new Date();
   const [calYear, setCalYear] = useState(todayDate.getFullYear());
@@ -160,16 +163,21 @@ export default function ScheduleScreen() {
       if (teamLoading) return;
       if (!team) { setLoading(false); return; }
       load();
-    }, [team?.id, teamLoading])
+    }, [team?.id, teamLoading, profile?.id, showAllTeams])
   );
+
+  useEffect(() => {
+    if (!team?.id || teamLoading) return;
+    load();
+  }, [team?.id, teamLoading]);
 
   async function load() {
     if (!team) return;
     setLoading(true);
 
-    // Multi-team: non-coaches with >1 team see merged schedule
+    // Multi-team: parents with >1 team always merged; coaches can toggle
     const isMultiTeam = !isCoach && allTeams.length > 1;
-    const teamIds = isMultiTeam ? allTeams.map((t) => t.id) : [team.id];
+    const teamIds = (isMultiTeam || showAllTeams) ? allTeams.map((t) => t.id) : [team.id];
 
     const [eventsRes, playersRes, countRes] = await Promise.all([
       supabase.from('events')
@@ -352,15 +360,19 @@ export default function ScheduleScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const current = myRsvps[eventId];
-    if (current === status) {
-      await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', pid);
-    } else {
-      await supabase.from('event_rsvps').upsert(
-        { event_id: eventId, player_id: pid, responded_by: profile?.id, status },
-        { onConflict: 'event_id,player_id' }
-      );
+    try {
+      if (current === status) {
+        await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', pid);
+      } else {
+        await supabase.from('event_rsvps').upsert(
+          { event_id: eventId, player_id: pid, responded_by: profile?.id, status },
+          { onConflict: 'event_id,player_id' }
+        );
+      }
+      await fetchRsvpData(events, playerIdMap);
+    } catch (e) {
+      console.error('handleRsvp error', e);
     }
-    await fetchRsvpData(events, playerIdMap);
   }
 
   function openCreateEvent() {
@@ -442,6 +454,13 @@ export default function ScheduleScreen() {
           {/* Top row: badges (left) + drive time pill (right) */}
           <View style={styles.cardHeaderRow}>
             <View style={styles.badgeRow}>
+              {isMultiView && item.team_id !== team?.id && teamNameMap.has(item.team_id) && (
+                <View style={[styles.typeBadge, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
+                  <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]} numberOfLines={1}>
+                    {teamNameMap.get(item.team_id)}
+                  </Text>
+                </View>
+              )}
               {isCancelled ? (
                 <View style={styles.cancelledBadge}>
                   <Ionicons name="close-circle" size={11} color="#ef4444" />
@@ -663,11 +682,23 @@ export default function ScheduleScreen() {
     );
   }
 
+  const teamNameMap = useMemo(
+    () => new Map(allTeams.map((t) => [t.id, t.name])),
+    [allTeams]
+  );
+  const isMultiView = showAllTeams || (!isCoach && allTeams.length > 1);
+
   // ── Data splits ──
-  const upcomingEvents = events.filter((e) => isUpcoming(e.event_date));
-  const pastEvents = events.filter((e) => !isUpcoming(e.event_date)).reverse();
-  const upcomingSections = groupByMonth(upcomingEvents);
-  const pastSections = groupByMonth(pastEvents);
+  const upcomingEvents = useMemo(
+    () => events.filter((e) => isUpcoming(e.event_date)),
+    [events]
+  );
+  const pastEvents = useMemo(
+    () => events.filter((e) => !isUpcoming(e.event_date)).reverse(),
+    [events]
+  );
+  const upcomingSections = useMemo(() => groupByMonth(upcomingEvents), [upcomingEvents]);
+  const pastSections     = useMemo(() => groupByMonth(pastEvents), [pastEvents]);
 
   // Season W/L/D record
   let seasonWins = 0, seasonLosses = 0, seasonDraws = 0;
@@ -731,13 +762,7 @@ export default function ScheduleScreen() {
     );
   }
 
-  if (teamLoading || loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={primaryColor} size="large" />
-      </View>
-    );
-  }
+  if (teamLoading || loading) return <ScheduleSkeleton />;
 
   if (!team) {
     return (
@@ -776,6 +801,27 @@ export default function ScheduleScreen() {
         ) : undefined}
       />
 
+      {/* All-teams toggle — coaches with multiple teams */}
+      {isCoach && allTeams.length > 1 && (
+        <View style={styles.allTeamsBar}>
+          <TouchableOpacity
+            style={[styles.allTeamsBtn, !showAllTeams && [styles.allTeamsBtnActive, { backgroundColor: primaryColor }]]}
+            onPress={() => setShowAllTeams(false)}
+          >
+            <Text style={[styles.allTeamsBtnText, !showAllTeams && styles.allTeamsBtnTextActive]}>
+              {team?.name ?? 'This Team'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.allTeamsBtn, showAllTeams && [styles.allTeamsBtnActive, { backgroundColor: primaryColor }]]}
+            onPress={() => setShowAllTeams(true)}
+          >
+            <Ionicons name="layers-outline" size={12} color={showAllTeams ? '#000' : PULSE_COLORS.ui.muted} />
+            <Text style={[styles.allTeamsBtnText, showAllTeams && styles.allTeamsBtnTextActive]}>All Teams</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Tab bar */}
       <View style={styles.tabBar}>
         {([
@@ -804,7 +850,7 @@ export default function ScheduleScreen() {
       {activeTab === 'upcoming' && (
         upcomingEvents.length === 0 ? (
           <View style={styles.empty}>
-            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} resizeMode="contain" /> : null}
+            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} contentFit="contain" /> : null}
             <View style={[styles.emptyIconWrap, { backgroundColor: rgba(0.1) }]}>
               <Ionicons name="calendar-outline" size={26} color={PULSE_COLORS.ui.muted} />
             </View>
@@ -824,6 +870,10 @@ export default function ScheduleScreen() {
             keyExtractor={(e) => e.id}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
+            initialNumToRender={10}
+            maxToRenderPerBatch={8}
+            windowSize={5}
+            removeClippedSubviews
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
             ListHeaderComponent={
               <TouchableOpacity
@@ -872,6 +922,10 @@ export default function ScheduleScreen() {
             keyExtractor={(e) => e.id}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
+            initialNumToRender={10}
+            maxToRenderPerBatch={8}
+            windowSize={5}
+            removeClippedSubviews
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
             ListHeaderComponent={hasSeasonRecord ? (
               <View style={styles.seasonRecord}>
@@ -1045,6 +1099,19 @@ const styles = StyleSheet.create({
   addBtnText: { color: '#000', fontWeight: '700', fontSize: 13 },
 
   // Tab bar
+  allTeamsBar: {
+    flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
+  allTeamsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: PULSE_COLORS.ui.surface,
+  },
+  allTeamsBtnActive: { /* backgroundColor set inline */ },
+  allTeamsBtnText:       { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  allTeamsBtnTextActive: { color: '#000' },
+
   tabBar: {
     flexDirection: 'row',
     borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
@@ -1246,3 +1313,15 @@ const styles = StyleSheet.create({
   teamDot: { width: 6, height: 6, borderRadius: 3 },
   teamDotLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
 });
+
+export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16 }}>
+      <Ionicons name="calendar-outline" size={40} color={PULSE_COLORS.ui.muted} />
+      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600' }}>Schedule couldn't load</Text>
+      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
+        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}

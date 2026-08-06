@@ -59,7 +59,7 @@ serve(async (req) => {
     });
   }
 
-  const fromEmail   = (payload as any).from_email ?? 'info@pulse-fc.app';
+  const fromEmail   = (payload as any).from_email ?? 'support@pulse-fc.app';
   const senderName  = club_name || (from_name && team_name ? `${from_name} · ${team_name}` : from_name) || 'Pulse FC';
   const fromAddress = `${senderName} <${fromEmail}>`;
 

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -14,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
@@ -28,6 +28,9 @@ import { MatchTrackerContent } from '../admin/events/[eventId]/match-tracker';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
 import { fetchDriveTime } from '../../../../lib/drivetime';
 import { sendProfilesPush } from '../../../../lib/push';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import PollCard, { type Poll } from '../../../../components/home/PollCard';
+import CreatePollModal from '../../../../components/home/CreatePollModal';
 
 const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
@@ -82,7 +85,7 @@ function LocationMap({
       <Image
         source={{ uri: mapUrl }}
         style={[mapStyles.image, !imgLoaded && { opacity: 0 }]}
-        resizeMode="cover"
+        contentFit="cover"
         onLoad={() => setImgLoaded(true)}
         onError={() => setImgError(true)}
       />
@@ -347,6 +350,9 @@ export default function EventDetailScreen() {
   const [cancelEditMode, setCancelEditMode] = useState(false);
   const [isUncancel, setIsUncancel]         = useState(false);
 
+  const [eventPolls, setEventPolls] = useState<Poll[]>([]);
+  const [showEventPollModal, setShowEventPollModal] = useState(false);
+
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
   const mapApp = useMapApp();
 
@@ -357,6 +363,8 @@ export default function EventDetailScreen() {
 
   async function load() {
     if (!team || !profile || !eventId) return;
+    setLoading(true);
+    try {
 
     const [eventRes, playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
       supabase.from('events')
@@ -456,30 +464,70 @@ export default function EventDetailScreen() {
       }
     }
 
-    setLoading(false);
+    // Event-linked polls
+    const sb = supabase as any;
+    const { data: pollRows } = await sb
+      .from('team_polls')
+      .select('id, question, closes_at, is_anonymous, is_multiple_choice, result_visibility, rsvp_gated, event_id, created_by')
+      .eq('event_id', eventId)
+      .order('created_at', { ascending: false });
+
+    if (pollRows?.length > 0) {
+      const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
+      const [optRes, voteRes] = await Promise.all([
+        sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
+        sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
+      ]);
+      const totalPlayers = (playersRes.data ?? []).length;
+      setEventPolls((pollRows as any[]).map((p: any) => ({
+        id: p.id, question: p.question, closes_at: p.closes_at,
+        is_anonymous: p.is_anonymous, is_multiple_choice: p.is_multiple_choice,
+        result_visibility: p.result_visibility, rsvp_gated: p.rsvp_gated,
+        event_id: p.event_id, created_by: p.created_by,
+        options: (optRes.data ?? []).filter((o: any) => o.poll_id === p.id),
+        votes: (voteRes.data ?? []).filter((v: any) => v.poll_id === p.id),
+        totalParticipants: totalPlayers,
+      })));
+    } else {
+      setEventPolls([]);
+    }
+
+    } catch (e) {
+      console.error('load error', e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleRsvp(status: RsvpStatus) {
     if (!myPlayerId || !eventId) return;
     setRsvpSaving(true);
-
-    if (myStatus === status) {
-      await supabase.from('event_rsvps').delete()
-        .eq('event_id', eventId).eq('player_id', myPlayerId);
-      setMyStatus(null);
-      setRsvps((prev) => prev.filter((r) => r.player_id !== myPlayerId));
-    } else {
-      await supabase.from('event_rsvps').upsert(
-        { event_id: eventId, player_id: myPlayerId, responded_by: profile?.id, status },
-        { onConflict: 'event_id,player_id' }
-      );
-      setMyStatus(status);
-      setRsvps((prev) => {
-        const filtered = prev.filter((r) => r.player_id !== myPlayerId);
-        return [...filtered, { player_id: myPlayerId, status }];
-      });
+    try {
+      if (myStatus === status) {
+        const { error } = await supabase.from('event_rsvps').delete()
+          .eq('event_id', eventId).eq('player_id', myPlayerId);
+        if (!error) {
+          setMyStatus(null);
+          setRsvps((prev) => prev.filter((r) => r.player_id !== myPlayerId));
+        }
+      } else {
+        const { error } = await supabase.from('event_rsvps').upsert(
+          { event_id: eventId, player_id: myPlayerId, responded_by: profile?.id, status },
+          { onConflict: 'event_id,player_id' }
+        );
+        if (!error) {
+          setMyStatus(status);
+          setRsvps((prev) => {
+            const filtered = prev.filter((r) => r.player_id !== myPlayerId);
+            return [...filtered, { player_id: myPlayerId, status }];
+          });
+        }
+      }
+    } catch (e) {
+      console.error('handleRsvp error', e);
+    } finally {
+      setRsvpSaving(false);
     }
-    setRsvpSaving(false);
   }
 
   function handleCoachOverride(playerId: string, playerName: string, currentStatus: RsvpStatus | null) {
@@ -833,20 +881,20 @@ export default function EventDetailScreen() {
       );
     }
 
-    // Notify coaches on the event's team
+    // Notify coaches and org admins on the event's team
     if (team && event) {
-      const { data: coachRows } = await supabase
-        .from('team_members')
-        .select('profile_id')
-        .eq('team_id', team.id)
-        .eq('role', 'coach');
-      const coachIds = ((coachRows ?? []) as { profile_id: string }[])
-        .map(r => r.profile_id)
-        .filter(id => id !== profile?.id);
-      if (coachIds.length > 0) {
+      const [{ data: coachRows }, { data: adminRows }] = await Promise.all([
+        supabase.from('team_members').select('profile_id').eq('team_id', team.id).eq('role', 'coach'),
+        supabase.from('profiles').select('id').eq('club_id', profile!.club_id).in('role', ['org_admin', 'app_admin']),
+      ]);
+      const recipientIds = [
+        ...((coachRows ?? []) as { profile_id: string }[]).map(r => r.profile_id),
+        ...((adminRows ?? []) as { id: string }[]).map(r => r.id),
+      ].filter((id, i, arr) => id !== profile?.id && arr.indexOf(id) === i);
+      if (recipientIds.length > 0) {
         const guestName = g?.full_name ?? 'A guest';
         await sendProfilesPush({
-          profileIds: coachIds,
+          profileIds: recipientIds,
           title: newStatus === 'confirmed' ? 'Guest confirmed ✓' : 'Guest declined',
           body: newStatus === 'confirmed'
             ? `${guestName} confirmed for ${event.title}.`
@@ -863,8 +911,18 @@ export default function EventDetailScreen() {
     Alert.alert('Remove Guest', `Remove ${name} from this event?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: async () => {
+        const g = guests.find(x => x.id === guestId);
         await supabase.from('event_guests').delete().eq('id', guestId);
-        setGuests(prev => prev.filter(g => g.id !== guestId));
+        setGuests(prev => prev.filter(x => x.id !== guestId));
+        const parentId = g?.linked_profile_id;
+        if (parentId && event) {
+          sendProfilesPush({
+            profileIds: [parentId],
+            title: 'Guest spot removed',
+            body: `Your guest spot for ${event.title} has been removed by the coach.`,
+            data: { type: 'guest_removed', event_id: eventId, club_slug: clubSlug },
+          }).catch(() => {});
+        }
       }},
     ]);
   }
@@ -873,8 +931,29 @@ export default function EventDetailScreen() {
     Alert.alert('Cancel call out', `Cancel the call out to ${teamName}?`, [
       { text: 'Keep it', style: 'cancel' },
       { text: 'Cancel call out', style: 'destructive', onPress: async () => {
+        const callout = callouts.find(c => c.id === calloutId);
         await (supabase as any).from('guest_requests').update({ status: 'cancelled' }).eq('id', calloutId);
         setCallouts(prev => prev.filter(c => c.id !== calloutId));
+        // Notify volunteers from the target team who already confirmed
+        if (callout && eventId) {
+          const { data: confirmedGuests } = await supabase
+            .from('event_guests')
+            .select('player_id, players!inner(profile_id, team_id)')
+            .eq('event_id', eventId)
+            .eq('status', 'confirmed')
+            .eq('players.team_id', callout.target_team_id);
+          const volunteerProfileIds = ((confirmedGuests ?? []) as any[])
+            .map(g => g.players?.profile_id as string | null)
+            .filter((id): id is string => !!id);
+          if (volunteerProfileIds.length > 0) {
+            sendProfilesPush({
+              profileIds: volunteerProfileIds,
+              title: 'Guest request cancelled',
+              body: `The guest player request for ${event?.title ?? 'the event'} has been cancelled.`,
+              data: { type: 'guest_cancelled', event_id: eventId, club_slug: clubSlug },
+            }).catch(() => {});
+          }
+        }
       }},
     ]);
   }
@@ -983,6 +1062,19 @@ export default function EventDetailScreen() {
       Alert.alert('No linked accounts', `${nonResponders.length} player${nonResponders.length !== 1 ? 's' : ''} haven't responded, but their parents haven't linked accounts yet. Reach out directly.`);
       return;
     }
+
+    const COOLDOWN_MS = 30 * 60 * 1000;
+    const storageKey = `nudge_last_${event.id}`;
+    const lastStr = await AsyncStorage.getItem(storageKey);
+    if (lastStr) {
+      const elapsed = Date.now() - parseInt(lastStr, 10);
+      if (elapsed < COOLDOWN_MS) {
+        const remaining = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
+        Alert.alert('Too soon', `Wait ${remaining} more minute${remaining !== 1 ? 's' : ''} before nudging again.`);
+        return;
+      }
+    }
+
     setNudging(true);
     await sendProfilesPush({
       profileIds,
@@ -990,6 +1082,7 @@ export default function EventDetailScreen() {
       body: `Please respond to ${event.title} — your coach needs a headcount.`,
       data: { type: 'rsvp_reminder', event_id: event.id },
     });
+    await AsyncStorage.setItem(storageKey, String(Date.now()));
     setNudging(false);
     Alert.alert('Nudge sent', `Reminded ${profileIds.length} parent${profileIds.length !== 1 ? 's' : ''} to RSVP.`);
   }
@@ -1057,8 +1150,8 @@ export default function EventDetailScreen() {
         ) : undefined}
       />
 
-      {/* Main tab bar — coaches only */}
-      {isCoach && (
+      {/* Main tab bar — Details + Availability for everyone; Attendance coaches only */}
+      {(isCoach || players.length > 0) && (
         <View style={styles.mainTabBar}>
           <TouchableOpacity
             style={[styles.mainTab, activeMainTab === 'details' && [styles.mainTabActive, { borderBottomColor: primaryColor }]]}
@@ -1089,27 +1182,29 @@ export default function EventDetailScreen() {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.mainTab, activeMainTab === 'attendance' && [styles.mainTabActive, { borderBottomColor: primaryColor }]]}
-            onPress={() => setActiveMainTab('attendance')}
-          >
-            <Text style={[styles.mainTabText, activeMainTab === 'attendance' && [styles.mainTabTextActive, { color: primaryColor }]]}>
-              Attendance
-            </Text>
-            {attendanceMap.size > 0 && (
-              <View style={[
-                styles.mainTabBadge,
-                activeMainTab === 'attendance' && [styles.mainTabBadgeActive, { backgroundColor: rgba(0.15) }],
-              ]}>
-                <Text style={[
-                  styles.mainTabBadgeText,
-                  activeMainTab === 'attendance' && [styles.mainTabBadgeTextActive, { color: primaryColor }],
+          {isCoach && (
+            <TouchableOpacity
+              style={[styles.mainTab, activeMainTab === 'attendance' && [styles.mainTabActive, { borderBottomColor: primaryColor }]]}
+              onPress={() => setActiveMainTab('attendance')}
+            >
+              <Text style={[styles.mainTabText, activeMainTab === 'attendance' && [styles.mainTabTextActive, { color: primaryColor }]]}>
+                Attendance
+              </Text>
+              {attendanceMap.size > 0 && (
+                <View style={[
+                  styles.mainTabBadge,
+                  activeMainTab === 'attendance' && [styles.mainTabBadgeActive, { backgroundColor: rgba(0.15) }],
                 ]}>
-                  {attendanceMap.size}/{players.length}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+                  <Text style={[
+                    styles.mainTabBadgeText,
+                    activeMainTab === 'attendance' && [styles.mainTabBadgeTextActive, { color: primaryColor }],
+                  ]}>
+                    {attendanceMap.size}/{players.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -1437,6 +1532,24 @@ export default function EventDetailScreen() {
             )}
           </View>
 
+          {/* Guest notice — players only, game events, when guests are confirmed */}
+          {!isCoach && event.type === 'game' && confirmedGuestCount > 0 && (
+            <View style={[styles.metaDivider, { marginHorizontal: 0 }]} />
+          )}
+          {!isCoach && event.type === 'game' && confirmedGuestCount > 0 && (
+            <View style={[styles.metaRow, { paddingVertical: 12 }]}>
+              <View style={styles.metaIconWrap}>
+                <Ionicons name="people-outline" size={18} color="#f97316" />
+              </View>
+              <View style={styles.metaTextBlock}>
+                <Text style={styles.metaPrimary}>
+                  {confirmedGuestCount} guest player{confirmedGuestCount !== 1 ? 's' : ''} joining
+                </Text>
+                <Text style={styles.metaSecondary}>Extra players confirmed by your coach</Text>
+              </View>
+            </View>
+          )}
+
           {/* Recording */}
           {event.video_url && (
             <View style={styles.section}>
@@ -1728,6 +1841,61 @@ export default function EventDetailScreen() {
             </View>
           )}
 
+          {/* Event-linked polls */}
+          {(eventPolls.length > 0 || isCoach) && (
+            <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#818CF8' }} />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6 }}>POLLS</Text>
+                </View>
+                {isCoach && (
+                  <TouchableOpacity
+                    onPress={() => setShowEventPollModal(true)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: 'rgba(129,140,248,0.1)', borderWidth: 1, borderColor: 'rgba(129,140,248,0.25)' }}
+                  >
+                    <Ionicons name="add" size={13} color="#818CF8" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#818CF8' }}>Add poll</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {eventPolls.map(poll => (
+                <PollCard
+                  key={poll.id}
+                  poll={poll}
+                  myProfileId={profile?.id ?? ''}
+                  isCoach={isCoach}
+                  myRsvpEventIds={myStatus === 'attending' && myPlayerId ? new Set([eventId]) : new Set()}
+                  primaryColor={primaryColor}
+                  rgba={rgba}
+                  onDelete={async (pollId) => {
+                    const snap = eventPolls;
+                    setEventPolls(prev => prev.filter(p => p.id !== pollId));
+                    const { error } = await (supabase as any).from('team_polls').delete().eq('id', pollId);
+                    if (error) { setEventPolls(snap); Alert.alert('Error', 'Could not delete poll.'); }
+                  }}
+                  onVoteChange={(pollId, optionIds) => {
+                    if (!profile) return;
+                    setEventPolls(prev => prev.map(p => {
+                      if (p.id !== pollId) return p;
+                      const other = p.votes.filter(v => v.profile_id !== profile.id);
+                      return { ...p, votes: [...other, ...optionIds.map(oid => ({ poll_id: pollId, option_id: oid, profile_id: profile.id }))] };
+                    }));
+                  }}
+                />
+              ))}
+              {eventPolls.length === 0 && isCoach && (
+                <TouchableOpacity
+                  onPress={() => setShowEventPollModal(true)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderStyle: 'dashed' }}
+                >
+                  <Ionicons name="bar-chart-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                  <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted }}>Poll your squad about this event</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* Danger zone */}
           {isCoach && (
             <View style={styles.dangerSection}>
@@ -1975,7 +2143,7 @@ export default function EventDetailScreen() {
       )}
 
       {/* ── Availability tab (coaches only) ── */}
-      {activeMainTab === 'availability' && isCoach && (
+      {activeMainTab === 'availability' && (
         <View style={{ flex: 1 }}>
 
           {/* Stats header — tap a card to filter */}
@@ -2016,7 +2184,7 @@ export default function EventDetailScreen() {
           </View>
 
           {/* Nudge non-responders */}
-          {upcoming && !event.cancelled_at && noResponse.length > 0 && (
+          {isCoach && upcoming && !event.cancelled_at && noResponse.length > 0 && (
             <View style={styles.nudgeRow}>
               <TouchableOpacity
                 style={[styles.nudgeBtn, { borderColor: rgba(0.25), backgroundColor: rgba(0.07) }]}
@@ -2085,30 +2253,43 @@ export default function EventDetailScreen() {
                           <Text style={styles.playerPosition}>{p.position}</Text>
                         )}
                       </View>
-                      <TouchableOpacity
-                        onPress={() => handleCoachOverride(p.id, p.full_name, rsvps.find((r) => r.player_id === p.id)?.status ?? null)}
-                        style={styles.overrideBtn}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        {activeRsvpTab === 'attending' && (
-                          <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
-                        )}
-                        {activeRsvpTab === 'not_attending' && (
-                          <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />
-                        )}
-                        {activeRsvpTab === 'none' && (
-                          <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />
-                        )}
-                      </TouchableOpacity>
+                      {isCoach ? (
+                        <TouchableOpacity
+                          onPress={() => handleCoachOverride(p.id, p.full_name, rsvps.find((r) => r.player_id === p.id)?.status ?? null)}
+                          style={styles.overrideBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          {activeRsvpTab === 'attending' && (
+                            <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
+                          )}
+                          {activeRsvpTab === 'not_attending' && (
+                            <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />
+                          )}
+                          {activeRsvpTab === 'none' && (
+                            <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />
+                          )}
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.overrideBtn}>
+                          {activeRsvpTab === 'attending' && (
+                            <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
+                          )}
+                          {activeRsvpTab === 'not_attending' && (
+                            <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />
+                          )}
+                          {activeRsvpTab === 'none' && (
+                            <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />
+                          )}
+                        </View>
+                      )}
                     </View>
                   </View>
                 ))}
               </View>
             )}
-            {/* Confirmed guests — shown at bottom of Going list only */}
+            {/* Confirmed guests — bottom of Going list */}
             {activeRsvpTab === 'attending' && guestPlayers.filter(g => g.status === 'confirmed').length > 0 && (
               <View style={{ marginTop: 20 }}>
-                {/* Divider header */}
                 <View style={styles.guestListHeader}>
                   <View style={styles.guestListLine} />
                   <View style={styles.guestListLabelWrap}>
@@ -2117,24 +2298,35 @@ export default function EventDetailScreen() {
                   </View>
                   <View style={styles.guestListLine} />
                 </View>
-                {/* Guest card with orange left accent */}
-                <View style={[styles.playerCard, styles.guestPlayerCard]}>
-                  {guestPlayers.filter(g => g.status === 'confirmed').map((g, i) => (
-                    <View key={g.id}>
-                      {i > 0 && <View style={styles.playerDivider} />}
-                      <View style={styles.playerRow}>
-                        <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.15)' }]}>
-                          <Text style={[styles.jerseyNum, { color: '#f97316' }]}>G</Text>
+                {isCoach ? (
+                  <View style={[styles.playerCard, styles.guestPlayerCard]}>
+                    {guestPlayers.filter(g => g.status === 'confirmed').map((g, i) => (
+                      <View key={g.id}>
+                        {i > 0 && <View style={styles.playerDivider} />}
+                        <View style={styles.playerRow}>
+                          <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.15)' }]}>
+                            <Text style={[styles.jerseyNum, { color: '#f97316' }]}>G</Text>
+                          </View>
+                          <View style={styles.playerInfo}>
+                            <Text style={styles.playerName}>{g.full_name}</Text>
+                            {g.team_name && <Text style={[styles.playerPosition, { color: '#f97316' }]}>{g.team_name}</Text>}
+                          </View>
+                          <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
                         </View>
-                        <View style={styles.playerInfo}>
-                          <Text style={styles.playerName}>{g.full_name}</Text>
-                          {g.team_name && <Text style={[styles.playerPosition, { color: '#f97316' }]}>{g.team_name}</Text>}
-                        </View>
-                        <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
                       </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={[styles.playerCard, { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 10 }]}>
+                    <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.15)' }]}>
+                      <Text style={[styles.jerseyNum, { color: '#f97316' }]}>G</Text>
                     </View>
-                  ))}
-                </View>
+                    <Text style={[styles.playerName, { flex: 1 }]}>
+                      {guestPlayers.filter(g => g.status === 'confirmed').length} guest player{guestPlayers.filter(g => g.status === 'confirmed').length !== 1 ? 's' : ''} confirmed
+                    </Text>
+                    <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />
+                  </View>
+                )}
               </View>
             )}
 
@@ -2431,6 +2623,20 @@ export default function EventDetailScreen() {
           />
         )}
       </Modal>
+
+      {isCoach && team && profile && event && (
+        <CreatePollModal
+          visible={showEventPollModal}
+          teamId={team.id}
+          profileId={profile.id}
+          primaryColor={primaryColor}
+          rgba={rgba}
+          linkedEventId={event.id}
+          linkedEventTitle={event.title}
+          onClose={() => setShowEventPollModal(false)}
+          onCreated={() => { setShowEventPollModal(false); load(); }}
+        />
+      )}
     </View>
   );
 }

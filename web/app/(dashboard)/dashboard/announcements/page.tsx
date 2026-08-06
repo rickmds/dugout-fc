@@ -144,47 +144,43 @@ export default function AnnouncementsPage() {
     if (!form.title.trim() || !form.body.trim() || !form.team_ids.length) return;
     setSaving(true);
 
-    await supabase.from('announcements').insert(
-      form.team_ids.map((tid) => ({
-        title: form.title.trim(),
-        body: form.body.trim(),
-        team_id: tid,
-        pinned: form.pinned,
-        created_by: profile?.id,
-      }))
-    );
+    try {
+      const { error: insertError } = await supabase.from('announcements').insert(
+        form.team_ids.map((tid) => ({
+          title: form.title.trim(),
+          body: form.body.trim(),
+          team_id: tid,
+          pinned: form.pinned,
+          created_by: profile?.id,
+        }))
+      );
 
-    if (form.push_notify) {
-      for (const tid of form.team_ids) {
-        const tName = teams.find((t) => t.id === tid)?.name ?? club?.name ?? 'your team';
-        try {
-          await supabase.functions.invoke('send-push', {
-            body: {
-              team_id: tid,
-              type: 'new_announcement',
-              title: `📢 ${tName}`,
-              body: form.title.trim(),
-            },
-          });
-        } catch { /* non-critical */ }
+      if (insertError) {
+        alert('Failed to post announcement. Please try again.');
+        return;
       }
-    }
 
-    if (form.email_team) {
-      for (const tid of form.team_ids) {
-        try {
-          await fetch('/api/send-announcement-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ team_id: tid, title: form.title.trim(), body: form.body.trim() }),
-          });
-        } catch { /* non-critical */ }
+      if (form.push_notify) {
+        for (const tid of form.team_ids) {
+          const tName = teams.find((t) => t.id === tid)?.name ?? club?.name ?? 'your team';
+          try {
+            await supabase.functions.invoke('send-push', {
+              body: {
+                team_id: tid,
+                type: 'new_announcement',
+                title: `📢 ${tName}`,
+                body: form.title.trim(),
+              },
+            });
+          } catch { /* non-critical */ }
+        }
       }
-    }
 
-    setSaving(false);
-    setComposeMode(false);
-    load();
+      setComposeMode(false);
+      load();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function togglePin(a: Announcement) {

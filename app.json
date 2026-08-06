@@ -13,9 +13,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.pulsefc.mobile",
+      "bundleIdentifier": "com.pulsefc.mobile",
       "associatedDomains": [
-        "applinks:pulse-fc.app"
+        "applinks:pulse-fc.app",
+        "applinks:www.pulse-fc.app"
       ],
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Used to upload your profile photo and club logo.",

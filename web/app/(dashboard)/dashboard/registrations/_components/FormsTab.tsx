@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Plus, Copy, ExternalLink, Trash2, Pencil, Archive, ArchiveRestore,
-  Calendar, Users, Clock, CheckCircle, AlertCircle, ChevronDown, ChevronUp,
+  Plus, Copy, Link, ExternalLink, Trash2, Pencil, Archive, ArchiveRestore,
+  Calendar, Users, Clock, CheckCircle, AlertCircle, ChevronDown, ChevronUp, MoreHorizontal,
   RefreshCw, Mail, Lock, Unlock, Star, Tag, X, TrendingUp, RotateCcw,
   DollarSign, Percent,
 } from 'lucide-react';
@@ -375,18 +375,16 @@ export default function FormsTab() {
                         </button>
                       )}
                       <button onClick={() => copy(form.token)} title="Copy link" style={{ padding: '7px', background: copied === form.token ? '#DCFCE7' : '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: copied === form.token ? '#16A34A' : '#64748B', display: 'flex' }}>
-                        {copied === form.token ? <CheckCircle size={13} /> : <Copy size={13} />}
+                        {copied === form.token ? <CheckCircle size={13} /> : <Link size={13} />}
                       </button>
                       <button onClick={() => window.open(`/register/${form.token}`, '_blank')} title="Preview" style={{ padding: '7px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: '#64748B', display: 'flex' }}>
                         <ExternalLink size={13} />
-                      </button>
-                      <button onClick={() => duplicateForm(form)} title="Duplicate" style={{ padding: '7px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: '#64748B', display: 'flex' }}>
-                        <Copy size={13} />
                       </button>
                       {/* Dropdown actions */}
                       <FormActionsMenu
                         form={form}
                         onEdit={() => setEditingForm(form)}
+                        onDuplicate={() => duplicateForm(form)}
                         onSchedule={() => { setSchedulingForm(form); setSchedOpenAt(form.open_at?.slice(0,16) ?? ''); setSchedCloseAt(form.close_at?.slice(0,16) ?? ''); }}
                         onEarlyAccess={() => { setEarlyForm(form); setEarlyDate(form.early_access_ends_at?.slice(0,16) ?? ''); }}
                         onLateInvite={() => setLateInviteForm(form)}
@@ -756,15 +754,16 @@ function ArchiveView({ onBack }: { onBack: () => void }) {
 
 // ── FormActionsMenu ───────────────────────────────────────────────────────────
 
-function FormActionsMenu({ form, onEdit, onSchedule, onEarlyAccess, onLateInvite, onSetupChecklist, onPromoCodes, onArchive, onDelete, primary }: {
+function FormActionsMenu({ form, onEdit, onDuplicate, onSchedule, onEarlyAccess, onLateInvite, onSetupChecklist, onPromoCodes, onArchive, onDelete, primary }: {
   form: RegForm;
-  onEdit: () => void; onSchedule: () => void; onEarlyAccess: () => void;
+  onEdit: () => void; onDuplicate: () => void; onSchedule: () => void; onEarlyAccess: () => void;
   onLateInvite: () => void; onSetupChecklist: () => void; onPromoCodes: () => void;
   onArchive: () => void; onDelete: () => void; primary: string;
 }) {
   const [open, setOpen] = useState(false);
   const items = [
     { label: 'Edit form',          icon: <Pencil size={12} />,         action: onEdit },
+    { label: 'Duplicate',          icon: <Copy size={12} />,           action: onDuplicate },
     { label: 'Promo codes',        icon: <Tag size={12} />,            action: onPromoCodes },
     { label: 'Auto-schedule',      icon: <Calendar size={12} />,       action: onSchedule },
     { label: 'Early access',       icon: <Star size={12} />,           action: onEarlyAccess },
@@ -777,7 +776,7 @@ function FormActionsMenu({ form, onEdit, onSchedule, onEarlyAccess, onLateInvite
   return (
     <div style={{ position: 'relative' }}>
       <button onClick={() => setOpen((o) => !o)} style={{ padding: '7px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '7px', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center' }}>
-        <ChevronDown size={13} />
+        <MoreHorizontal size={14} />
       </button>
       {open && (
         <>

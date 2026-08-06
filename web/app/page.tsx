@@ -832,7 +832,7 @@ export default async function Home() {
               {[
                 { title: 'Zero risk setup', body: 'Free plan for 1 team, up to 12 players. No credit card needed to get started.' },
                 { title: 'Cancel any time', body: 'Month to month. No contracts. Leave whenever you want, keep your data.' },
-                { title: '30-day full refund', body: 'Not saving time in the first 30 days? Email info@pulse-fc.app. Refunded immediately.' },
+                { title: '30-day full refund', body: 'Not saving time in the first 30 days? Email support@pulse-fc.app. Refunded immediately.' },
                 { title: '20-minute setup', body: 'From signup to your whole club live in one evening. We\'ve timed it.' },
               ].map(({ title, body }) => (
                 <div key={title} className="flex items-start gap-4 p-5 rounded-2xl"

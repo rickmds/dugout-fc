@@ -254,6 +254,7 @@ export default function ClubCalendarScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={st.filterScroll}
           contentContainerStyle={st.filterRow}
         >
           <TouchableOpacity
@@ -391,7 +392,8 @@ const st = StyleSheet.create({
   },
   summaryChipText: { fontSize: 12, fontWeight: '600' },
 
-  filterRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
+  filterScroll: { flexGrow: 0, flexShrink: 0 },
+  filterRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8, alignItems: 'center' },
   filterPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     borderRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,

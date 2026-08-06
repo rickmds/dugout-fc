@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ErrorBoundaryProps } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -27,6 +28,7 @@ import { POSITION_COLORS, POSITION_DEFAULT } from '../../../../constants/positio
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../components/ui/ClubHeader';
+import RosterSkeleton from '../../../../components/roster/RosterSkeleton';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +78,7 @@ function splitName(full: string): [string, string] {
 
 // ─── Player card ─────────────────────────────────────────────────────────────
 
-function PlayerCard({
+const PlayerCard = memo(function PlayerCard({
   item, isCoach, myProfileId, onPress,
 }: {
   item: Player;
@@ -108,7 +110,9 @@ function PlayerCard({
           <Image
             source={{ uri: url! }}
             style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            contentFit="cover"
+            recyclingKey={item.id}
+            transition={200}
             onError={() => setImgErr(true)}
           />
         ) : (
@@ -162,7 +166,7 @@ function PlayerCard({
 
     </TouchableOpacity>
   );
-}
+});
 
 // ─── Coach avatar ─────────────────────────────────────────────────────────────
 
@@ -170,7 +174,7 @@ function CoachAvatar({ uri, name }: { uri: string | null; name: string }) {
   const { primaryColor, rgba } = useClub();
   const [err, setErr] = useState(false);
   if (uri && !err) {
-    return <Image source={{ uri }} style={st.coachImg} onError={() => setErr(true)} />;
+    return <Image source={{ uri }} style={st.coachImg} transition={200} onError={() => setErr(true)} />;
   }
   return (
     <View style={[st.coachImgFallback, { borderColor: 'rgba(255,255,255,0.15)', backgroundColor: primaryColor }]}>
@@ -259,10 +263,21 @@ export default function RosterScreen() {
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [saving, setSaving]     = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const listHeaderHeight = useRef(0);
+  const ITEM_H = 3 + PHOTO_H + 1 + 22 + 33; // stripe + photo + border + padding + 2-line text
+  const ROW_H  = ITEM_H + CARD_GAP;
 
-  const filteredPlayers = search.trim()
-    ? players.filter(p => p.full_name.toLowerCase().includes(search.toLowerCase()))
-    : players;
+  // Debounce search so filtering only runs 150ms after typing stops
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const filteredPlayers = useMemo(() => {
+    const q = debouncedSearch.trim().toLowerCase();
+    return q ? players.filter(p => p.full_name.toLowerCase().includes(q)) : players;
+  }, [players, debouncedSearch]);
 
   // Add modal flow: picker → player | coach → success
   type AddStep = 'picker' | 'player' | 'coach' | 'success' | null;
@@ -292,7 +307,7 @@ export default function RosterScreen() {
       return;
     }
     fetchData();
-  }, [team?.id, teamLoading]);
+  }, [team?.id, teamLoading, profile?.id]);
 
   async function fetchData() {
     if (!team) return;
@@ -334,10 +349,17 @@ export default function RosterScreen() {
       .eq('role', 'coach' as any)
       .is('accepted_at', null);
 
-    setPlayers((playersRes.data as unknown as Player[]) ?? []);
+    const newPlayers = (playersRes.data as unknown as Player[]) ?? [];
+    setPlayers(newPlayers);
     setCoaches((coachesRes.data as unknown as Coach[]) ?? []);
     setPendingCoaches((pendingRes.data as unknown as PendingCoach[]) ?? []);
     setLoading(false);
+
+    // Prefetch player photos in background so card opens are instant
+    newPlayers.forEach(p => {
+      const url = p.photo_url ?? (p as any).profiles?.avatar_url;
+      if (url) Image.prefetch(url);
+    });
   }
 
   async function handleRefresh() {
@@ -356,6 +378,13 @@ export default function RosterScreen() {
 
   async function handleAddPlayer() {
     if (!name.trim() || !team || !profile) return;
+
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim());
+    if (parentEmail.trim() && !emailOk) {
+      Alert.alert('Invalid email', 'Please enter a valid parent email address.');
+      return;
+    }
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSaving(true);
 
@@ -373,13 +402,6 @@ export default function RosterScreen() {
     if (playerError || !playerData?.id) {
       setSaving(false);
       Alert.alert('Error', 'Could not add player. Please try again.');
-      return;
-    }
-
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail.trim());
-    if (parentEmail.trim() && !emailOk) {
-      setSaving(false);
-      Alert.alert('Invalid email', 'Please enter a valid parent email address.');
       return;
     }
 
@@ -417,7 +439,7 @@ export default function RosterScreen() {
             body,
             from_name: profile.full_name ?? 'Your Coach',
             team_name: team.name,
-            from_email: 'info@pulse-fc.app',
+            from_email: 'support@pulse-fc.app',
             reply_to: null,
             attachments: [],
             club_logo_url: logoUrl,
@@ -475,7 +497,7 @@ export default function RosterScreen() {
           body,
           from_name: profile.full_name ?? clubName,
           team_name: team.name,
-          from_email: 'info@pulse-fc.app',
+          from_email: 'support@pulse-fc.app',
           reply_to: null,
           attachments: [],
           club_logo_url: logoUrl,
@@ -485,19 +507,17 @@ export default function RosterScreen() {
       });
     }
 
+    if (inviteData?.token) {
+      setSuccessInfo({ type: 'coach', firstName: coachName.trim().split(' ')[0], email: coachEmail.trim() });
+      setAddStep('success');
+      fetchData();
+    } else {
+      Alert.alert('Error', 'Could not create invite. Please try again.');
+    }
     setSaving(false);
-    setSuccessInfo({ type: 'coach', firstName: coachName.trim().split(' ')[0], email: coachEmail.trim() });
-    setAddStep('success');
-    fetchData();
   }
 
-  if (teamLoading || loading) {
-    return (
-      <View style={st.center}>
-        <ActivityIndicator color={primaryColor} size="large" />
-      </View>
-    );
-  }
+  if (teamLoading || loading) return <RosterSkeleton />;
 
   if (!team) {
     return (
@@ -561,20 +581,31 @@ export default function RosterScreen() {
         columnWrapperStyle={st.cardRow}
         contentContainerStyle={st.grid}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews
+        getItemLayout={(_, index) => ({
+          length: ITEM_H,
+          offset: listHeaderHeight.current + Math.floor(index / 2) * ROW_H,
+          index,
+        })}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
         ListHeaderComponent={
-          <ListHeader
-            coaches={coaches}
-            pendingCoaches={pendingCoaches}
-            count={filteredPlayers.length}
-            clubSlug={clubSlug ?? ''}
-            onCoachPress={(id) => router.push(`/(app)/${clubSlug}/coach/${id}?source=member` as any)}
-            onPendingCoachPress={(id) => router.push(`/(app)/${clubSlug}/coach/${id}?source=invite` as any)}
-          />
+          <View onLayout={(e) => { listHeaderHeight.current = e.nativeEvent.layout.height; }}>
+            <ListHeader
+              coaches={coaches}
+              pendingCoaches={pendingCoaches}
+              count={filteredPlayers.length}
+              clubSlug={clubSlug ?? ''}
+              onCoachPress={(id) => router.push(`/(app)/${clubSlug}/coach/${id}?source=member` as any)}
+              onPendingCoachPress={(id) => router.push(`/(app)/${clubSlug}/coach/${id}?source=invite` as any)}
+            />
+          </View>
         }
         ListEmptyComponent={
           <View style={st.empty}>
-            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} resizeMode="contain" /> : null}
+            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} contentFit="contain" /> : null}
             <View style={st.emptyIcon}>
               <Ionicons name="people-outline" size={30} color={PULSE_COLORS.ui.muted} />
             </View>
@@ -1144,3 +1175,15 @@ const st = StyleSheet.create({
   },
   saveText: { color: '#000', fontWeight: '800', fontSize: 15 },
 });
+
+export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16 }}>
+      <Ionicons name="people-outline" size={40} color={PULSE_COLORS.ui.muted} />
+      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600' }}>Roster couldn't load</Text>
+      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
+        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}

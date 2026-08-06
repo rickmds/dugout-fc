@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ErrorBoundaryProps } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -28,6 +29,7 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import ClubHeader from '../../../../components/ui/ClubHeader';
+import ChatSkeleton from '../../../../components/chat/ChatSkeleton';
 import type { Database } from '../../../../types/database';
 import { sendTeamPush } from '../../../../lib/push';
 
@@ -66,9 +68,7 @@ export default function ChatScreen() {
 
   const [activeTab, setActiveTab] = useState<Tab>('chats');
 
-  if (teamLoading) {
-    return <View style={st.center}><ActivityIndicator color={primaryColor} /></View>;
-  }
+  if (teamLoading) return <ChatSkeleton />;
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'chats', label: 'Chats' },
@@ -172,12 +172,23 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         .select('id, title')
         .single();
       if (error) {
-        console.error('[Chat] Could not create team_group conversation:', error.message);
-        Alert.alert('Chat setup failed', error.message);
-        setLoading(false);
-        return;
+        // Lost a race with another mount — re-fetch the row created by the winner
+        const { data: raceRows } = await supabase
+          .from('conversations')
+          .select('id, title')
+          .eq('team_id', team.id)
+          .eq('type', 'team_group')
+          .limit(1);
+        teamConv = raceRows?.[0] ?? null;
+        if (!teamConv) {
+          console.error('[Chat] Could not create team_group conversation:', error.message);
+          Alert.alert('Chat setup failed', error.message);
+          setLoading(false);
+          return;
+        }
+      } else {
+        teamConv = newTg;
       }
-      teamConv = newTg;
     }
 
     if (teamConv) {
@@ -409,9 +420,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
     );
   }
 
-  if (loading) {
-    return <View style={st.center}><ActivityIndicator color={primaryColor} /></View>;
-  }
+  if (loading) return <ChatSkeleton />;
 
   const teamConvo    = convos.find((c) => c.isTeam) ?? null;
   const directConvos = convos.filter((c) => !c.isTeam);
@@ -464,6 +473,10 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         data={directConvos}
         keyExtractor={(c) => c.id}
         contentContainerStyle={{ flexGrow: 1 }}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primaryColor} />}
         ListEmptyComponent={null}
         renderItem={({ item }) => {
@@ -599,17 +612,62 @@ type Announcement = {
   created_at: string; created_by: string | null; creator_name: string | null;
 };
 
+type AnnEmailRecipient = {
+  key: string;
+  player_name: string;
+  emails: string[];
+};
+
 function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; profile: Profile | null; coachEmail: string | null }) {
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
   const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading]             = useState(true);
+  const [refreshing, setRefreshing]       = useState(false);
   const [showCreate, setShowCreate]       = useState(false);
   const [editingAnn, setEditingAnn]       = useState<Announcement | null>(null);
   const [expanded, setExpanded]           = useState<string | null>(null);
   const [emailing, setEmailing]           = useState<string | null>(null);
+  const [emailModalVisible, setEmailModalVisible] = useState(false);
+  const [emailAnn, setEmailAnn]           = useState<Announcement | null>(null);
+  const [emailRecipients, setEmailRecipients] = useState<AnnEmailRecipient[]>([]);
+  const [emailSelectedKeys, setEmailSelectedKeys] = useState<Set<string>>(new Set());
+  const [emailSending, setEmailSending]   = useState(false);
 
   useEffect(() => { if (team) fetchAnnouncements(); }, [team?.id]);
+
+  // Realtime: announcements appear instantly for everyone when created/edited/deleted
+  useEffect(() => {
+    if (!team?.id) return;
+    const channel = supabase
+      .channel(`announcements-${team.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements', filter: `team_id=eq.${team.id}` }, (payload) => {
+        const a = payload.new as any;
+        setAnnouncements(prev => {
+          if (prev.some(x => x.id === a.id)) return prev; // already added via optimistic update
+          const next = [{ id: a.id, title: a.title, body: a.body, pinned: a.pinned, created_at: a.created_at, created_by: a.created_by, creator_name: null }, ...prev];
+          return next.sort((x, y) => Number(y.pinned) - Number(x.pinned));
+        });
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'announcements', filter: `team_id=eq.${team.id}` }, (payload) => {
+        const a = payload.new as any;
+        setAnnouncements(prev => {
+          const next = prev.map(x => x.id === a.id ? { ...x, title: a.title, body: a.body, pinned: a.pinned } : x);
+          return next.sort((x, y) => Number(y.pinned) - Number(x.pinned));
+        });
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'announcements', filter: `team_id=eq.${team.id}` }, (payload) => {
+        setAnnouncements(prev => prev.filter(x => x.id !== (payload.old as any).id));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [team?.id]);
+
+  async function onRefresh() {
+    setRefreshing(true);
+    await fetchAnnouncements();
+    setRefreshing(false);
+  }
 
   async function fetchAnnouncements() {
     if (!team) return;
@@ -639,38 +697,75 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
   }
 
   async function handleEmailTeam(ann: Announcement) {
-    if (!team || !coachEmail) return;
+    if (!team) return;
     setEmailing(ann.id);
 
-    const { data: players } = await supabase.from('players').select('id, full_name').eq('team_id', team.id);
-    const { data: invites } = await supabase.from('invites').select('player_id, email, guardian_name').eq('team_id', team.id).not('player_id', 'is', null);
-    const emailsMap: Record<string, { email: string; name: string }[]> = {};
-    for (const inv of invites ?? []) {
-      const pid = (inv as any).player_id;
-      if (!emailsMap[pid]) emailsMap[pid] = [];
-      emailsMap[pid].push({ email: (inv as any).email, name: (inv as any).guardian_name ?? '' });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? '';
+      const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
+      const res = await fetch(`${APP_BASE}/api/team/parent-emails`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ team_id: team.id }),
+      });
+      const json = await res.json();
+      const recipients: AnnEmailRecipient[] = json.recipients ?? [];
+
+      setEmailing(null);
+      if (recipients.length === 0) { Alert.alert('No parents', 'No parent emails on file.'); return; }
+
+      setEmailAnn(ann);
+      setEmailRecipients(recipients);
+      setEmailSelectedKeys(new Set(recipients.map(r => r.key)));
+      setEmailModalVisible(true);
+    } catch {
+      setEmailing(null);
+      Alert.alert('Error', 'Could not load parent emails. Please try again.');
     }
+  }
 
-    const playerMap: Record<string, string> = {};
-    for (const p of players ?? []) playerMap[(p as any).id] = (p as any).full_name;
+  async function handleSendEmailToSelected() {
+    if (!emailAnn || !team || !coachEmail) return;
+    const toSend = emailRecipients.filter(r => emailSelectedKeys.has(r.key));
+    if (toSend.length === 0) return;
+    setEmailSending(true);
+    const toAddresses = toSend.flatMap(r => r.emails.map(email => ({ email, name: r.player_name })));
+    const { error } = await supabase.functions.invoke('send-team-email', {
+      body: {
+        to: toAddresses,
+        cc: [],
+        subject: emailAnn.title,
+        body: emailAnn.body,
+        reply_to: coachEmail,
+        from_name: profile?.full_name ?? 'Coach',
+        team_name: team.name,
+        attachments: [],
+        club_logo_url: logoUrl,
+        club_name: clubName,
+        primary_color: primaryColor,
+      },
+    });
+    setEmailSending(false);
+    setEmailModalVisible(false);
+    if (error) Alert.alert('Failed', 'Email service not yet configured.');
+    else Alert.alert('Sent!', `Emailed to ${toAddresses.length} address${toAddresses.length !== 1 ? 'es' : ''}.`);
+  }
 
-    const to = Object.entries(emailsMap).flatMap(([pid, guardians]) =>
-      guardians.map(({ email, name }) => ({ email, name: name || playerMap[pid] || '' }))
-    );
+  function toggleEmailRecipient(key: string) {
+    setEmailSelectedKeys(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
-    if (to.length === 0) { Alert.alert('No parents', 'No parent emails on file.'); setEmailing(null); return; }
-
-    Alert.alert('Email team', `Send "${ann.title}" to ${to.length} guardian${to.length > 1 ? 's' : ''}?`, [
-      { text: 'Cancel', style: 'cancel', onPress: () => setEmailing(null) },
-      { text: 'Send', onPress: async () => {
-        const { error } = await supabase.functions.invoke('send-team-email', {
-          body: { to, cc: [], subject: ann.title, body: ann.body, reply_to: coachEmail, from_name: profile?.full_name ?? 'Coach', team_name: team.name, attachments: [], club_logo_url: logoUrl, club_name: clubName, primary_color: primaryColor },
-        });
-        setEmailing(null);
-        if (error) Alert.alert('Failed', 'Email service not yet configured.');
-        else Alert.alert('Sent!', `Emailed to ${to.length} guardian${to.length > 1 ? 's' : ''}.`);
-      }},
-    ]);
+  function toggleAllEmailRecipients() {
+    if (emailSelectedKeys.size === emailRecipients.length) {
+      setEmailSelectedKeys(new Set());
+    } else {
+      setEmailSelectedKeys(new Set(emailRecipients.map(r => r.key)));
+    }
   }
 
   if (loading) return <View style={st.center}><ActivityIndicator color={primaryColor} /></View>;
@@ -681,9 +776,14 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
         data={announcements}
         keyExtractor={(a) => a.id}
         contentContainerStyle={st.aList}
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primaryColor} />}
         ListEmptyComponent={
           <View style={st.empty}>
-            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} resizeMode="contain" /> : null}
+            {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} contentFit="contain" /> : null}
             <View style={st.emptyIcon}><Ionicons name="megaphone-outline" size={32} color={PULSE_COLORS.ui.muted} /></View>
             <Text style={st.emptyTitle}>No announcements yet</Text>
             <Text style={st.emptySub}>{isCoach ? 'Tap + to post your first announcement.' : "Your coach hasn't posted anything yet."}</Text>
@@ -736,6 +836,8 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
         visible={showCreate}
         teamId={team?.id ?? ''}
         profileId={profile?.id ?? ''}
+        teamName={team?.name ?? ''}
+        coachName={profile?.full_name ?? ''}
         onClose={() => setShowCreate(false)}
         onCreated={(a) => { setAnnouncements((prev) => [a, ...prev]); setShowCreate(false); }}
       />
@@ -743,6 +845,8 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
         visible={!!editingAnn}
         teamId={team?.id ?? ''}
         profileId={profile?.id ?? ''}
+        teamName={team?.name ?? ''}
+        coachName={profile?.full_name ?? ''}
         editing={editingAnn ?? undefined}
         onClose={() => setEditingAnn(null)}
         onCreated={() => {}}
@@ -751,27 +855,93 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
           setEditingAnn(null);
         }}
       />
+
+      {/* Email recipients picker modal */}
+      <Modal visible={emailModalVisible} animationType="slide" transparent presentationStyle="pageSheet">
+        <View style={st.sheet}>
+          <View style={st.sheetHandle} />
+          <View style={st.sheetHeader}>
+            <TouchableOpacity onPress={() => setEmailModalVisible(false)}>
+              <Text style={st.sheetCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={st.sheetTitle}>Email Team</Text>
+            <TouchableOpacity onPress={handleSendEmailToSelected} disabled={emailSending || emailSelectedKeys.size === 0}>
+              {emailSending
+                ? <ActivityIndicator size="small" color={primaryColor} />
+                : <Text style={[st.sheetSave, { color: primaryColor, opacity: emailSelectedKeys.size === 0 ? 0.4 : 1 }]}>
+                    Send ({emailSelectedKeys.size})
+                  </Text>}
+            </TouchableOpacity>
+          </View>
+
+          {emailAnn && (
+            <View style={st.emailSubjectBanner}>
+              <Text style={st.emailSubjectBannerLabel}>ANNOUNCEMENT</Text>
+              <Text style={st.emailSubjectBannerTitle} numberOfLines={1}>{emailAnn.title}</Text>
+            </View>
+          )}
+
+          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
+            {/* Select all */}
+            <TouchableOpacity style={st.emailPickerRow} onPress={toggleAllEmailRecipients}>
+              <View style={[st.checkBox, emailSelectedKeys.size === emailRecipients.length && emailRecipients.length > 0 && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
+                {emailSelectedKeys.size === emailRecipients.length && emailRecipients.length > 0 && <Ionicons name="checkmark" size={14} color="#000" />}
+              </View>
+              <Text style={[st.pickerName, { fontWeight: '700' }]}>Select all ({emailRecipients.length})</Text>
+            </TouchableOpacity>
+
+            {emailRecipients.map((r) => (
+              <TouchableOpacity key={r.key} style={st.emailPickerRow} onPress={() => toggleEmailRecipient(r.key)} activeOpacity={0.75}>
+                <View style={[st.checkBox, emailSelectedKeys.has(r.key) && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
+                  {emailSelectedKeys.has(r.key) && <Ionicons name="checkmark" size={14} color="#000" />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={st.pickerName}>{r.player_name}</Text>
+                  {r.emails.map((email) => (
+                    <Text key={email} style={st.pickerRole}>{email}</Text>
+                  ))}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-function CreateAnnouncementModal({ visible, teamId, profileId, editing, onClose, onCreated, onUpdated }: {
+const ANN_TONES = [
+  { key: 'friendly',     label: 'Friendly' },
+  { key: 'professional', label: 'Professional' },
+  { key: 'urgent',       label: 'Urgent' },
+  { key: 'encouraging',  label: 'Encouraging' },
+] as const;
+type AnnTone = typeof ANN_TONES[number]['key'];
+
+function CreateAnnouncementModal({ visible, teamId, profileId, teamName, coachName, editing, onClose, onCreated, onUpdated }: {
   visible: boolean; teamId: string; profileId: string;
+  teamName: string; coachName: string;
   editing?: Announcement;
   onClose: () => void;
   onCreated: (a: Announcement) => void;
   onUpdated?: (a: Announcement) => void;
 }) {
-  const { primaryColor } = useClub();
+  const { primaryColor, rgba } = useClub();
   const isEdit = !!editing;
-  const [title, setTitle]   = useState('');
-  const [body, setBody]     = useState('');
-  const [pinned, setPinned] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [title, setTitle]       = useState('');
+  const [body, setBody]         = useState('');
+  const [pinned, setPinned]     = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [showAi, setShowAi]     = useState(false);
+  const [aiBullets, setAiBullets] = useState('');
+  const [aiTone, setAiTone]     = useState<AnnTone>('friendly');
+  const [aiWriting, setAiWriting] = useState(false);
 
   useEffect(() => {
     if (editing) { setTitle(editing.title); setBody(editing.body); setPinned(editing.pinned); }
     else { setTitle(''); setBody(''); setPinned(false); }
+    setShowAi(false);
+    setAiBullets('');
   }, [editing, visible]);
 
   async function handleSave() {
@@ -800,6 +970,20 @@ function CreateAnnouncementModal({ visible, teamId, profileId, editing, onClose,
     }
   }
 
+  async function writeWithAI() {
+    if (!aiBullets.trim()) { Alert.alert('Add some points', 'Tell the AI what to include.'); return; }
+    setAiWriting(true);
+    const { data, error } = await supabase.functions.invoke('write-email', {
+      body: { bullets: aiBullets.trim(), tone: aiTone, team_name: teamName, coach_name: coachName },
+    });
+    setAiWriting(false);
+    if (error || !data?.subject) { Alert.alert('AI Error', 'Could not generate. Please try again.'); return; }
+    setTitle(data.subject);
+    setBody(data.body);
+    setShowAi(false);
+    setAiBullets('');
+  }
+
   return (
     <Modal visible={visible} animationType="slide" transparent presentationStyle="pageSheet">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -813,8 +997,58 @@ function CreateAnnouncementModal({ visible, teamId, profileId, editing, onClose,
             </TouchableOpacity>
           </View>
           <ScrollView style={st.sheetBody} keyboardShouldPersistTaps="handled">
-            <Text style={st.fieldLabel}>TITLE</Text>
-            <TextInput style={st.fieldInput} value={title} onChangeText={setTitle} placeholder="e.g. Game day reminder" placeholderTextColor={PULSE_COLORS.ui.muted} autoFocus />
+
+            {/* AI Write panel */}
+            <TouchableOpacity
+              style={[st.aiWriteToggle, { borderColor: rgba(0.3), backgroundColor: rgba(0.07) }]}
+              onPress={() => setShowAi(!showAi)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="sparkles-outline" size={15} color={primaryColor} />
+              <Text style={[st.aiWriteToggleText, { color: primaryColor }]}>
+                {showAi ? 'Hide AI Write' : 'AI Write'}
+              </Text>
+              <Ionicons name={showAi ? 'chevron-up' : 'chevron-down'} size={13} color={primaryColor} />
+            </TouchableOpacity>
+
+            {showAi && (
+              <View style={st.aiPanel}>
+                <Text style={st.fieldLabel}>TONE</Text>
+                <View style={st.toneRow}>
+                  {ANN_TONES.map(({ key, label }) => (
+                    <TouchableOpacity
+                      key={key}
+                      style={[st.toneBtn, aiTone === key && [st.toneBtnActive, { backgroundColor: rgba(0.1), borderColor: rgba(0.4) }]]}
+                      onPress={() => setAiTone(key)}
+                    >
+                      <Text style={[st.toneBtnText, aiTone === key && { color: primaryColor, fontWeight: '700' }]}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={[st.fieldLabel, { marginTop: 14 }]}>WHAT TO SAY</Text>
+                <TextInput
+                  style={[st.fieldInput, { height: 120, textAlignVertical: 'top' }]}
+                  value={aiBullets}
+                  onChangeText={setAiBullets}
+                  placeholder={'- Game moved to Saturday 10am\n- Bring red kit\n- Arrive 30 mins early'}
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  multiline
+                  textAlignVertical="top"
+                />
+                <TouchableOpacity
+                  style={[st.aiGenerateBtn, { backgroundColor: primaryColor, opacity: aiWriting || !aiBullets.trim() ? 0.5 : 1 }]}
+                  onPress={writeWithAI}
+                  disabled={aiWriting || !aiBullets.trim()}
+                >
+                  {aiWriting
+                    ? <ActivityIndicator size="small" color="#000" />
+                    : <><Ionicons name="sparkles" size={14} color="#000" /><Text style={st.aiGenerateBtnText}>Generate</Text></>}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <Text style={[st.fieldLabel, { marginTop: showAi ? 16 : 0 }]}>TITLE</Text>
+            <TextInput style={st.fieldInput} value={title} onChangeText={setTitle} placeholder="e.g. Game day reminder" placeholderTextColor={PULSE_COLORS.ui.muted} autoFocus={!showAi} />
             <Text style={[st.fieldLabel, { marginTop: 16 }]}>MESSAGE</Text>
             <TextInput style={[st.fieldInput, st.fieldTextarea]} value={body} onChangeText={setBody} placeholder="Write your announcement..." placeholderTextColor={PULSE_COLORS.ui.muted} multiline textAlignVertical="top" />
             <TouchableOpacity style={st.pinRow} onPress={() => setPinned(!pinned)}>
@@ -833,7 +1067,7 @@ function CreateAnnouncementModal({ visible, teamId, profileId, editing, onClose,
 type Recipient = {
   player_id: string;
   player_name: string;
-  parent_email: string | null;
+  parent_emails: string[];
 };
 
 type Attachment = {
@@ -907,11 +1141,11 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
     const list: Recipient[] = (players ?? []).map((p: any) => ({
       player_id: p.id,
       player_name: p.full_name ?? 'Unknown',
-      parent_email: emailsMap[p.id]?.[0] ?? null,
+      parent_emails: emailsMap[p.id] ?? [],
     }));
 
     setRecipients(list);
-    setSelected(new Set(list.filter((r) => r.parent_email).map((r) => r.player_id)));
+    setSelected(new Set(list.filter((r) => r.parent_emails.length > 0).map((r) => r.player_id)));
     setLoading(false);
   }
 
@@ -1011,7 +1245,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
       Alert.alert('Required', 'Please enter a subject and message.');
       return;
     }
-    const toSend = recipients.filter((r) => selected.has(r.player_id) && r.parent_email);
+    const toSend = recipients.filter((r) => selected.has(r.player_id) && r.parent_emails.length > 0);
     if (toSend.length === 0) {
       Alert.alert('No recipients', 'Select at least one parent with an email address.');
       return;
@@ -1034,7 +1268,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
           setSending(true);
           const { error } = await supabase.functions.invoke('send-team-email', {
             body: {
-              to: toSend.map((r) => ({ email: r.parent_email, name: r.player_name })),
+              to: toSend.flatMap((r) => r.parent_emails.map((email) => ({ email, name: r.player_name }))),
               cc: ccSelf && coachEmail ? [{ email: coachEmail, name: profile?.full_name ?? 'Coach' }] : [],
               subject: subject.trim(),
               body: body.trim(),
@@ -1066,9 +1300,9 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
     ]);
   }
 
-  const withEmail     = recipients.filter((r) => r.parent_email);
+  const withEmail     = recipients.filter((r) => r.parent_emails.length > 0);
   const allSelected   = withEmail.length > 0 && withEmail.every((r) => selected.has(r.player_id));
-  const selectedCount = recipients.filter((r) => selected.has(r.player_id) && r.parent_email).length;
+  const selectedCount = recipients.filter((r) => selected.has(r.player_id) && r.parent_emails.length > 0).length;
 
   if (loading) return <View style={st.center}><ActivityIndicator color={primaryColor} /></View>;
 
@@ -1091,7 +1325,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
               </Text>
               {!recipientsOpen && selectedCount > 0 && (
                 <Text style={st.recipientsPreview} numberOfLines={1}>
-                  {recipients.filter((r) => selected.has(r.player_id) && r.parent_email).map((r) => r.player_name.split(' ')[0]).join(', ')}
+                  {recipients.filter((r) => selected.has(r.player_id) && r.parent_emails.length > 0).map((r) => r.player_name.split(' ')[0]).join(', ')}
                 </Text>
               )}
             </View>
@@ -1112,27 +1346,33 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
                 <Text style={{ color: PULSE_COLORS.ui.muted, padding: 16 }}>No players on roster yet.</Text>
               )}
 
-              {recipients.map((r, i) => (
-                <View key={r.player_id}>
-                  <View style={st.divider} />
-                  <TouchableOpacity
-                    style={[st.emailRow, !r.parent_email && { opacity: 0.4 }]}
-                    onPress={() => r.parent_email && toggleRecipient(r.player_id)}
-                    disabled={!r.parent_email}
-                  >
-                    <View style={[st.checkBox, selected.has(r.player_id) && !!r.parent_email && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
-                      {selected.has(r.player_id) && r.parent_email && <Ionicons name="checkmark" size={14} color="#000" />}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={st.emailLabel}>{r.player_name}</Text>
-                      <Text style={st.emailMeta}>{r.parent_email ?? 'No parent email on file'}</Text>
-                    </View>
-                    {!r.parent_email && (
-                      <Ionicons name="alert-circle-outline" size={16} color={PULSE_COLORS.ui.muted} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {recipients.map((r, i) => {
+                const hasEmail = r.parent_emails.length > 0;
+                const emailLine = r.parent_emails.length === 0
+                  ? 'No parent email on file'
+                  : r.parent_emails.join('\n');
+                return (
+                  <View key={r.player_id}>
+                    <View style={st.divider} />
+                    <TouchableOpacity
+                      style={[st.emailRow, !hasEmail && { opacity: 0.4 }]}
+                      onPress={() => hasEmail && toggleRecipient(r.player_id)}
+                      disabled={!hasEmail}
+                    >
+                      <View style={[st.checkBox, selected.has(r.player_id) && hasEmail && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
+                        {selected.has(r.player_id) && hasEmail && <Ionicons name="checkmark" size={14} color="#000" />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={st.emailLabel}>{r.player_name}</Text>
+                        <Text style={st.emailMeta}>{emailLine}</Text>
+                      </View>
+                      {!hasEmail && (
+                        <Ionicons name="alert-circle-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>
@@ -1435,4 +1675,29 @@ const st = StyleSheet.create({
   toneBtnText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
   toneBtnTextActive: {},
   aiHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 10, lineHeight: 17 },
+
+  // AI Write in announcement modal
+  aiWriteToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 20, alignSelf: 'flex-start' },
+  aiWriteToggleText: { fontSize: 13, fontWeight: '700' },
+  aiPanel: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 14, padding: 14, marginBottom: 16, gap: 0 },
+  aiGenerateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 10, paddingVertical: 10, marginTop: 12 },
+  aiGenerateBtnText: { fontSize: 14, fontWeight: '700', color: '#000' },
+
+  // Email recipients picker
+  emailPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  emailSubjectBanner: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface },
+  emailSubjectBannerLabel: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 2 },
+  emailSubjectBannerTitle: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
 });
+
+export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16 }}>
+      <Ionicons name="chatbubble-outline" size={40} color={PULSE_COLORS.ui.muted} />
+      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600' }}>Chat couldn't load</Text>
+      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
+        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { invite_id, player_name } = await req.json();
 
   if (!invite_id) {
@@ -15,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   const { data: invite, error: invErr } = await supabase
     .from('invites')
-    .select('email, token, teams(name, age_group, clubs(name, logo_url, primary_color))')
+    .select('email, token, teams(id, name, age_group, club_id, clubs(name, logo_url, primary_color, slug))')
     .eq('id', invite_id)
     .single();
 
@@ -24,7 +28,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
   }
 
-  const team       = (invite as any).teams;
+  const team = (invite as any).teams;
+
+  // Verify the invite belongs to the auth user's club
+  if (auth.role !== 'app_admin' && team?.club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   const club       = team?.clubs;
   const teamName   = team?.name      ?? 'your team';
   const ageGroup   = team?.age_group ?? null;
@@ -35,7 +44,8 @@ export async function POST(req: NextRequest) {
   const btnText    = contrastText(accent);
   const year       = new Date().getFullYear();
   const initials   = clubName.split(' ').slice(0, 2).map((w: string) => (w[0] ?? '').toUpperCase()).join('');
-  const joinUrl    = `https://pulse-fc.app/join?token=${invite.token}`;
+  const clubSlug   = (club as any)?.slug ?? null;
+  const joinUrl    = `https://pulse-fc.app/join?token=${invite.token}${clubSlug ? `&club=${encodeURIComponent(clubSlug)}` : ''}`;
   const appStoreUrl = 'https://apps.apple.com/app/pulse-fc/id6740793498';
 
   // ── Logo block ──────────────────────────────────────────────────────────────
@@ -203,7 +213,7 @@ export async function POST(req: NextRequest) {
     : `You've been invited to join ${teamName} · ${clubName}`;
 
   const { error } = await resend.emails.send({
-    from: `${clubName} <info@pulse-fc.app>`,
+    from: `${clubName} <support@pulse-fc.app>`,
     to:   invite.email,
     subject,
     html,

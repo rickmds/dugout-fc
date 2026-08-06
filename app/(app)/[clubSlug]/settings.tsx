@@ -3,7 +3,6 @@ import Constants from 'expo-constants';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Linking,
   Modal,
   ScrollView,
@@ -15,10 +14,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Notifications from 'expo-notifications';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
@@ -142,10 +143,41 @@ export default function SettingsScreen() {
   const [patternPickerOpen, setPatternPickerOpen] = useState(false);
   const [savingPattern, setSavingPattern]     = useState(false);
 
-  const [showPwForm, setShowPwForm] = useState(false);
-  const [newPw, setNewPw]           = useState('');
-  const [confirmPw, setConfirmPw]   = useState('');
-  const [savingPw, setSavingPw]     = useState(false);
+  const [showPwForm, setShowPwForm]   = useState(false);
+  const [newPw, setNewPw]             = useState('');
+  const [confirmPw, setConfirmPw]     = useState('');
+  const [savingPw, setSavingPw]       = useState(false);
+
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [newEmailVal, setNewEmailVal]       = useState('');
+  const [confirmEmailVal, setConfirmEmailVal] = useState('');
+  const [emailPw, setEmailPw]               = useState('');
+  const [savingEmail, setSavingEmail]       = useState(false);
+  const [emailSent, setEmailSent]           = useState(false);
+
+  // Certifications
+  type MyCert = {
+    id: string;
+    cert_type: string;
+    license_level: string | null;
+    custom_label: string | null;
+    expiry_date: string | null;
+    doc_url: string | null;
+    status: 'pending' | 'verified' | 'rejected' | 'expired';
+    rejection_note: string | null;
+  };
+  const [myCerts, setMyCerts]               = useState<MyCert[]>([]);
+  const [certsLoaded, setCertsLoaded]       = useState(false);
+  const [showCertModal, setShowCertModal]   = useState(false);
+  const [certType, setCertType]             = useState('background_check');
+  const [certLevel, setCertLevel]           = useState('');
+  const [certCustomLabel, setCertCustomLabel] = useState('');
+  const [certExpiry, setCertExpiry]         = useState('');
+  const [certDocUri, setCertDocUri]         = useState('');
+  const [certDocName, setCertDocName]       = useState('');
+  const [uploadingCert, setUploadingCert]   = useState(false);
+  const [savingCert, setSavingCert]         = useState(false);
+  const [editingCertId, setEditingCertId]   = useState<string | null>(null);
 
   const [avatarUploading, setAvatarUploading] = useState(false);
 
@@ -403,9 +435,23 @@ export default function SettingsScreen() {
           text: 'Leave team', style: 'destructive',
           onPress: async () => {
             setLeavingTeamId(teamId);
-            await supabase.from('players').update({ profile_id: null }).eq('id', playerId);
-            await supabase.from('team_members').delete()
+            const { error: unlinkError } = await supabase
+              .from('players').update({ profile_id: null }).eq('id', playerId);
+            if (unlinkError) {
+              Alert.alert('Error', 'Could not leave the team. Please try again.');
+              setLeavingTeamId(null);
+              return;
+            }
+            const { error: memberError } = await supabase
+              .from('team_members').delete()
               .eq('team_id', teamId).eq('profile_id', profile!.id);
+            if (memberError) {
+              // First write succeeded — re-link the player so state is consistent
+              await supabase.from('players').update({ profile_id: profile!.id }).eq('id', playerId);
+              Alert.alert('Error', 'Could not leave the team. Please try again.');
+              setLeavingTeamId(null);
+              return;
+            }
             await refetchTeams();
             setLeavingTeamId(null);
             if (isLast) router.replace('/(auth)/find-team');
@@ -430,6 +476,131 @@ export default function SettingsScreen() {
         { text: 'Cancel', style: 'cancel' },
       ],
     );
+  }
+
+  async function handleChangeEmail() {
+    if (!newEmailVal.trim()) return;
+    if (newEmailVal !== confirmEmailVal) { Alert.alert('Mismatch', 'Email addresses do not match.'); return; }
+    if (!emailPw.trim()) { Alert.alert('Password required', 'Enter your current password to confirm the change.'); return; }
+    setSavingEmail(true);
+    // Verify current password before changing email — blocks account takeover from unattended sessions
+    const currentEmail = user?.email ?? '';
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: currentEmail, password: emailPw });
+    if (authError) {
+      setSavingEmail(false);
+      Alert.alert('Incorrect password', 'Please check your password and try again.');
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ email: newEmailVal.trim() });
+    setSavingEmail(false);
+    if (error) { Alert.alert('Error', error.message); return; }
+    setEmailSent(true);
+    setNewEmailVal(''); setConfirmEmailVal(''); setEmailPw('');
+  }
+
+  // ── Load my certs ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!profile || profile.role === 'player') return;
+    (supabase as any)
+      .from('staff_certifications')
+      .select('id,cert_type,license_level,custom_label,expiry_date,doc_url,status,rejection_note')
+      .eq('profile_id', profile.id)
+      .order('submitted_at', { ascending: false })
+      .then(({ data }: { data: MyCert[] | null }) => {
+        setMyCerts(data ?? []);
+        setCertsLoaded(true);
+      });
+  }, [profile?.id]);
+
+  function openAddCert() {
+    setEditingCertId(null);
+    setCertType('background_check'); setCertLevel(''); setCertCustomLabel('');
+    setCertExpiry(''); setCertDocUri(''); setCertDocName('');
+    setShowCertModal(true);
+  }
+
+  function openEditCert(cert: MyCert) {
+    setEditingCertId(cert.id);
+    setCertType(cert.cert_type); setCertLevel(cert.license_level ?? '');
+    setCertCustomLabel(cert.custom_label ?? ''); setCertExpiry(cert.expiry_date ?? '');
+    setCertDocUri(''); setCertDocName('');
+    setShowCertModal(true);
+  }
+
+  async function pickCertDoc() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['image/*', 'application/pdf'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    setCertDocUri(result.assets[0].uri);
+    setCertDocName(result.assets[0].name ?? 'document');
+  }
+
+  async function submitCert() {
+    if (!profile || !club) return;
+    if (certType === 'coaching_license' && !certLevel) {
+      Alert.alert('License level required', 'Please select a license level.'); return;
+    }
+    if (certType === 'custom' && !certCustomLabel.trim()) {
+      Alert.alert('Label required', 'Please enter a name for this certification.'); return;
+    }
+    setSavingCert(true);
+    try {
+      let docUrl: string | null = null;
+
+      if (certDocUri) {
+        setUploadingCert(true);
+        const response = await fetch(certDocUri);
+        const buffer = await response.arrayBuffer();
+        const ext = certDocName.split('.').pop() ?? 'jpg';
+        const mime = ext === 'pdf' ? 'application/pdf' : 'image/jpeg';
+        const path = `${club.id}/${profile.id}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from('cert-docs')
+          .upload(path, buffer, { contentType: mime, upsert: true });
+        if (upErr) { Alert.alert('Upload failed', upErr.message); setSavingCert(false); setUploadingCert(false); return; }
+        const { data: { publicUrl } } = supabase.storage.from('cert-docs').getPublicUrl(path);
+        docUrl = publicUrl;
+        setUploadingCert(false);
+      }
+
+      const payload: any = {
+        club_id: club.id,
+        profile_id: profile.id,
+        cert_type: certType,
+        license_level: certType === 'coaching_license' ? certLevel : null,
+        custom_label: certType === 'custom' ? certCustomLabel.trim() : null,
+        expiry_date: certExpiry || null,
+        status: 'pending',
+        submitted_at: new Date().toISOString(),
+        rejection_note: null,
+        verified_by: null,
+        verified_at: null,
+      };
+      if (docUrl) payload.doc_url = docUrl;
+
+      let error: any;
+      if (editingCertId) {
+        // Re-submit existing (pending or rejected)
+        ({ error } = await (supabase as any).from('staff_certifications').update(payload).eq('id', editingCertId));
+      } else {
+        ({ error } = await (supabase as any).from('staff_certifications').insert(payload));
+      }
+
+      if (error) { Alert.alert('Error', error.message); return; }
+
+      // Reload
+      const { data } = await (supabase as any)
+        .from('staff_certifications')
+        .select('id,cert_type,license_level,custom_label,expiry_date,doc_url,status,rejection_note')
+        .eq('profile_id', profile.id)
+        .order('submitted_at', { ascending: false });
+      setMyCerts(data ?? []);
+      setShowCertModal(false);
+    } finally {
+      setSavingCert(false);
+    }
   }
 
   async function handleChangePassword() {
@@ -638,7 +809,7 @@ export default function SettingsScreen() {
               {logoUploading ? (
                 <ActivityIndicator color={primaryColor} />
               ) : logoUrl ? (
-                <Image source={{ uri: logoUrl }} style={st.logoImg} resizeMode="contain" />
+                <Image source={{ uri: logoUrl }} style={st.logoImg} contentFit="contain" />
               ) : (
                 <Ionicons name="image-outline" size={28} color={PULSE_COLORS.ui.muted} />
               )}
@@ -908,6 +1079,26 @@ export default function SettingsScreen() {
 
       {/* ── Profile ── */}
       <Section label="PROFILE">
+        {/* Profile photo row */}
+        <TouchableOpacity style={st.row} onPress={handleAvatarUpload} activeOpacity={0.7}>
+          <IconCell name="camera-outline" color="#fff" bg="#EC4899" />
+          <Text style={st.rowLabel}>Profile Photo</Text>
+          <View style={{ flex: 1, alignItems: 'flex-end', marginRight: 6 }}>
+            {avatarUploading ? (
+              <ActivityIndicator size="small" color={primaryColor} />
+            ) : profile?.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={st.avatarThumb} />
+            ) : (
+              <View style={[st.avatarThumb, { backgroundColor: primaryColor, alignItems: 'center', justifyContent: 'center' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#000' }}>{initials}</Text>
+              </View>
+            )}
+          </View>
+          <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
+        </TouchableOpacity>
+
+        <View style={st.divider} />
+
         {/* Name row — inline edit */}
         <View style={st.row}>
           <IconCell name="person-outline" color="#fff" bg="#3B82F6" />
@@ -1022,8 +1213,83 @@ export default function SettingsScreen() {
         <SettingsRow
           icon="mail-outline" iconColor="#fff" iconBg="#8B5CF6"
           label="Email" value={user?.email ?? '—'}
+          onPress={isOAuthUser ? undefined : () => { setEmailSent(false); setShowEmailModal(true); }}
         />
       </Section>
+
+      {/* ── My Certifications (coaches + admins) ── */}
+      {profile?.role !== 'player' && (
+        <Section label="MY CERTIFICATIONS">
+          {!certsLoaded ? (
+            <View style={[st.row, { justifyContent: 'center' }]}>
+              <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+            </View>
+          ) : (
+            <>
+              {myCerts.map((cert, i) => {
+                const CERT_LABELS: Record<string, string> = {
+                  background_check: 'Background Check',
+                  safesport:        'SafeSport',
+                  coaching_license: 'Coaching License',
+                  first_aid_cpr:    'First Aid / CPR',
+                  custom:           cert.custom_label ?? 'Other',
+                };
+                const label = cert.cert_type === 'coaching_license' && cert.license_level
+                  ? `${cert.license_level} License`
+                  : CERT_LABELS[cert.cert_type] ?? cert.cert_type;
+
+                const STATUS_STYLE: Record<string, { bg: string; color: string; text: string }> = {
+                  pending:  { bg: '#FEF3C7', color: '#92400E', text: 'Pending' },
+                  verified: { bg: '#F0FDF4', color: '#166534', text: 'Verified' },
+                  rejected: { bg: '#FEF2F2', color: '#991B1B', text: 'Rejected' },
+                  expired:  { bg: '#F1F5F9', color: '#475569', text: 'Expired' },
+                };
+                const ss = STATUS_STYLE[cert.status];
+                const canResubmit = cert.status === 'rejected' || cert.status === 'expired';
+
+                return (
+                  <View key={cert.id}>
+                    {i > 0 && <View style={st.divider} />}
+                    <TouchableOpacity
+                      style={st.row}
+                      onPress={canResubmit ? () => openEditCert(cert) : undefined}
+                      activeOpacity={canResubmit ? 0.65 : 1}
+                    >
+                      <IconCell name="shield-checkmark-outline" color="#fff" bg={primaryColor} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={st.rowLabel}>{label}</Text>
+                        {cert.expiry_date && (
+                          <Text style={{ fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 }}>
+                            Expires {new Date(cert.expiry_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </Text>
+                        )}
+                        {cert.status === 'rejected' && cert.rejection_note && (
+                          <Text style={{ fontSize: 11, color: '#EF4444', marginTop: 2 }} numberOfLines={2}>{cert.rejection_note}</Text>
+                        )}
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <View style={{ backgroundColor: ss.bg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: ss.color }}>{ss.text}</Text>
+                        </View>
+                        {canResubmit && (
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: primaryColor }}>Re-submit →</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+
+              {myCerts.length > 0 && <View style={st.divider} />}
+              <TouchableOpacity style={st.row} onPress={openAddCert} activeOpacity={0.65}>
+                <IconCell name="add-circle-outline" color="#fff" bg="#22C55E" />
+                <Text style={[st.rowLabel, { color: '#22C55E', fontWeight: '600' }]}>Add certification</Text>
+                <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
+              </TouchableOpacity>
+            </>
+          )}
+        </Section>
+      )}
 
       {/* ── Security ── */}
       <Section label="SECURITY">
@@ -1191,6 +1457,217 @@ export default function SettingsScreen() {
       </Section>
 
       <Text style={st.version}>{`Pulse FC · v${Constants.expoConfig?.version ?? '1.0'}`}</Text>
+
+      {/* ── Certification upload modal ── */}
+      <Modal visible={showCertModal} animationType="slide" transparent onRequestClose={() => setShowCertModal(false)}>
+        <View style={cp.overlay}>
+          <View style={[cp.sheet, { maxHeight: '90%' }]}>
+            <View style={cp.handle} />
+            <Text style={cp.title}>{editingCertId ? 'Re-submit Certification' : 'Add Certification'}</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0 }}>
+
+              {/* Cert type */}
+              <Text style={st.pwLabel}>CERTIFICATION TYPE</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {([
+                  { key: 'background_check', label: 'Background Check' },
+                  { key: 'safesport',        label: 'SafeSport' },
+                  { key: 'coaching_license', label: 'Coaching License' },
+                  { key: 'first_aid_cpr',    label: 'First Aid / CPR' },
+                  { key: 'custom',           label: 'Other' },
+                ] as { key: string; label: string }[]).map(({ key, label }) => (
+                  <TouchableOpacity
+                    key={key}
+                    onPress={() => setCertType(key)}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+                      backgroundColor: certType === key ? primaryColor : PULSE_COLORS.ui.background,
+                      borderWidth: 1.5,
+                      borderColor: certType === key ? primaryColor : PULSE_COLORS.ui.border,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: certType === key ? '#fff' : PULSE_COLORS.ui.text }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* License level (coaching_license only) */}
+              {certType === 'coaching_license' && (
+                <>
+                  <Text style={st.pwLabel}>LICENSE LEVEL</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                    {['Grassroots', 'D', 'C', 'B', 'A'].map(level => (
+                      <TouchableOpacity
+                        key={level}
+                        onPress={() => setCertLevel(level)}
+                        style={{
+                          paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+                          backgroundColor: certLevel === level ? primaryColor : PULSE_COLORS.ui.background,
+                          borderWidth: 1.5, borderColor: certLevel === level ? primaryColor : PULSE_COLORS.ui.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: certLevel === level ? '#fff' : PULSE_COLORS.ui.text }}>{level}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* Custom label */}
+              {certType === 'custom' && (
+                <>
+                  <Text style={st.pwLabel}>CERTIFICATION NAME</Text>
+                  <TextInput
+                    style={[st.pwInput, { marginBottom: 16 }]}
+                    value={certCustomLabel}
+                    onChangeText={setCertCustomLabel}
+                    placeholder="e.g. State coaching certificate"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                  />
+                </>
+              )}
+
+              {/* Expiry date */}
+              <Text style={st.pwLabel}>EXPIRY DATE (YYYY-MM-DD)</Text>
+              <TextInput
+                style={[st.pwInput, { marginBottom: 16 }]}
+                value={certExpiry}
+                onChangeText={setCertExpiry}
+                placeholder="2027-06-30"
+                placeholderTextColor={PULSE_COLORS.ui.muted}
+                keyboardType="numbers-and-punctuation"
+                maxLength={10}
+              />
+
+              {/* Document upload */}
+              <Text style={st.pwLabel}>DOCUMENT (PHOTO OR PDF)</Text>
+              <TouchableOpacity
+                onPress={pickCertDoc}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 10,
+                  padding: 14, borderRadius: 10, marginBottom: 20,
+                  backgroundColor: PULSE_COLORS.ui.background,
+                  borderWidth: 1.5, borderColor: certDocUri ? primaryColor : PULSE_COLORS.ui.border,
+                  borderStyle: certDocUri ? 'solid' : 'dashed',
+                }}
+              >
+                <Ionicons name={certDocUri ? 'document-text' : 'cloud-upload-outline'} size={20} color={certDocUri ? primaryColor : PULSE_COLORS.ui.muted} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: certDocUri ? primaryColor : PULSE_COLORS.ui.muted }}>
+                    {certDocUri ? certDocName : 'Upload photo or PDF'}
+                  </Text>
+                  {!certDocUri && <Text style={{ fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 }}>Max 10MB · JPG, PNG, PDF</Text>}
+                </View>
+                {certDocUri && <Ionicons name="checkmark-circle" size={18} color={primaryColor} />}
+              </TouchableOpacity>
+
+              {/* Buttons */}
+              <View style={cp.btns}>
+                <TouchableOpacity style={cp.cancelBtn} onPress={() => setShowCertModal(false)} disabled={savingCert}>
+                  <Text style={cp.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[cp.applyBtn, { backgroundColor: primaryColor }, savingCert && { opacity: 0.5 }]}
+                  onPress={submitCert}
+                  disabled={savingCert}
+                >
+                  {savingCert
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={[cp.applyText, { color: '#fff' }]}>{editingCertId ? 'Re-submit' : 'Submit'}</Text>}
+                </TouchableOpacity>
+              </View>
+              <View style={{ height: 8 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Email change modal ── */}
+      <Modal visible={showEmailModal} animationType="slide" transparent onRequestClose={() => setShowEmailModal(false)}>
+        <View style={cp.overlay}>
+          <View style={cp.sheet}>
+            <View style={cp.handle} />
+            <Text style={cp.title}>Change Email</Text>
+
+            {emailSent ? (
+              <View style={{ alignItems: 'center', paddingVertical: 16, gap: 12 }}>
+                <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(34,197,94,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="checkmark-circle" size={32} color="#22C55E" />
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, textAlign: 'center' }}>Confirmation sent</Text>
+                <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 19 }}>
+                  Click the link sent to your new email address to complete the change. Your email stays the same until you confirm.
+                </Text>
+                <TouchableOpacity
+                  style={[cp.applyBtn, { backgroundColor: primaryColor, marginTop: 8 }]}
+                  onPress={() => { setShowEmailModal(false); setEmailSent(false); }}
+                >
+                  <Text style={cp.applyText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 10, padding: 12, marginBottom: 16, flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                  <Ionicons name="shield-checkmark-outline" size={16} color="#EF4444" style={{ marginTop: 1 }} />
+                  <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600', flex: 1, lineHeight: 17 }}>
+                    Your current password is required to confirm this change.
+                  </Text>
+                </View>
+
+                <Text style={st.pwLabel}>Current password</Text>
+                <TextInput
+                  style={[st.pwInput, { marginBottom: 16 }]}
+                  value={emailPw}
+                  onChangeText={setEmailPw}
+                  secureTextEntry
+                  placeholder="Your current password"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  autoCapitalize="none"
+                />
+
+                <Text style={st.pwLabel}>New email address</Text>
+                <TextInput
+                  style={[st.pwInput, { marginBottom: 16 }]}
+                  value={newEmailVal}
+                  onChangeText={setNewEmailVal}
+                  placeholder="new@email.com"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                <Text style={st.pwLabel}>Confirm new email</Text>
+                <TextInput
+                  style={[st.pwInput, { marginBottom: 24, borderColor: confirmEmailVal && confirmEmailVal !== newEmailVal ? '#EF4444' : undefined }]}
+                  value={confirmEmailVal}
+                  onChangeText={setConfirmEmailVal}
+                  placeholder="Repeat new email"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                <View style={cp.btns}>
+                  <TouchableOpacity style={cp.cancelBtn} onPress={() => { setShowEmailModal(false); setNewEmailVal(''); setConfirmEmailVal(''); setEmailPw(''); }}>
+                    <Text style={cp.cancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[cp.applyBtn, { backgroundColor: primaryColor }, (!newEmailVal || !confirmEmailVal || newEmailVal !== confirmEmailVal || !emailPw || savingEmail) && { opacity: 0.35 }]}
+                    onPress={handleChangeEmail}
+                    disabled={!newEmailVal || !confirmEmailVal || newEmailVal !== confirmEmailVal || !emailPw || savingEmail}
+                  >
+                    {savingEmail
+                      ? <ActivityIndicator color="#000" size="small" />
+                      : <Text style={cp.applyText}>Send confirmation</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <TeamEditModal
         visible={editingTeam !== null}
@@ -1671,6 +2148,7 @@ const st = StyleSheet.create({
     backgroundColor: PULSE_COLORS.brand.green,
     alignItems: 'center', justifyContent: 'center',
   },
+  avatarThumb: { width: 32, height: 32, borderRadius: 16 },
   avatarInitials: { fontSize: 26, fontWeight: '800', color: '#000' },
   identityName: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text, letterSpacing: -0.4 },
   rolePill: {

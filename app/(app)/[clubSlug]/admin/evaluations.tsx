@@ -61,12 +61,6 @@ export default function EvaluationsScreen() {
   const slug = clubSlug as string;
   const primary = primaryColor ?? '#22C55E';
 
-  useEffect(() => {
-    if (profile && !['coach', 'org_admin', 'app_admin'].includes(profile.role ?? '')) {
-      router.back();
-    }
-  }, [profile]);
-
   const load = useCallback(async () => {
     if (!team || !profile) return;
     setLoading(true);
@@ -174,6 +168,9 @@ export default function EvaluationsScreen() {
     if (s === 'approved' || s === 'published') return 'Done';
     return s;
   }
+
+  if (!profile) return <View style={st.screen}><View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color="#22C55E" size="large" /></View></View>;
+  if (!['coach', 'org_admin', 'app_admin'].includes(profile.role ?? '')) { router.back(); return null; }
 
   return (
     <View style={st.screen}>

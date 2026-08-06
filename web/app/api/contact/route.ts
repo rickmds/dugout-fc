@@ -129,8 +129,8 @@ export async function POST(req: NextRequest) {
 </html>`;
 
   const { error } = await resend.emails.send({
-    from: 'Pulse FC <info@pulse-fc.app>',
-    to: 'rick@mdssoccer.com',
+    from: 'Pulse FC <support@pulse-fc.app>',
+    to: 'support@pulse-fc.app',
     replyTo: email,
     subject: `New contact from ${name} — Pulse FC`,
     html,

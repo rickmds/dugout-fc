@@ -30,15 +30,18 @@ type Notif = {
 // ─── Config per notification type ─────────────────────────────────────────────
 
 const TYPE_CFG: Record<string, { icon: React.ComponentProps<typeof Ionicons>['name']; color: string }> = {
-  rsvp_reminder:     { icon: 'calendar-outline',     color: '#3B82F6' },
-  new_announcement:  { icon: 'megaphone-outline',    color: '#8B5CF6' },
-  new_dm:            { icon: 'chatbubble-outline',   color: PULSE_COLORS.brand.green },
-  schedule_change:   { icon: 'alert-circle-outline', color: '#F59E0B' },
-  invite_accepted:   { icon: 'person-add-outline',   color: PULSE_COLORS.brand.green },
-  guest_invite:      { icon: 'person-add-outline',   color: '#F97316' },
-  guest_coach_invite:{ icon: 'person-add-outline',   color: '#F97316' },
-  guest_accepted:    { icon: 'checkmark-circle-outline', color: PULSE_COLORS.brand.green },
-  guest_response:    { icon: 'checkmark-circle-outline', color: PULSE_COLORS.brand.green },
+  rsvp_reminder:      { icon: 'calendar-outline',          color: '#3B82F6' },
+  new_announcement:   { icon: 'megaphone-outline',         color: '#8B5CF6' },
+  new_dm:             { icon: 'chatbubble-outline',        color: PULSE_COLORS.brand.green },
+  new_message:        { icon: 'chatbubbles-outline',       color: PULSE_COLORS.brand.green },
+  new_event:          { icon: 'calendar-outline',          color: PULSE_COLORS.brand.green },
+  schedule_change:    { icon: 'alert-circle-outline',      color: '#F59E0B' },
+  attendance_absent:  { icon: 'close-circle-outline',      color: '#EF4444' },
+  invite_accepted:    { icon: 'person-add-outline',        color: PULSE_COLORS.brand.green },
+  guest_invite:       { icon: 'person-add-outline',        color: '#F97316' },
+  guest_coach_invite: { icon: 'person-add-outline',        color: '#F97316' },
+  guest_accepted:     { icon: 'checkmark-circle-outline',  color: PULSE_COLORS.brand.green },
+  guest_response:     { icon: 'checkmark-circle-outline',  color: PULSE_COLORS.brand.green },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,7 +77,11 @@ export default function NotificationsScreen() {
   const { profile } = useAuth();
 
   const [notifications, setNotifications] = useState<Notif[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]             = useState(true);
+  const [hasMore, setHasMore]             = useState(false);
+  const [loadingMore, setLoadingMore]     = useState(false);
+
+  const PAGE = 50;
 
   const load = useCallback(async () => {
     if (!profile) return;
@@ -85,11 +92,30 @@ export default function NotificationsScreen() {
       .select('id, type, title, body, read, data, created_at')
       .eq('profile_id', profile.id)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(PAGE + 1);
 
-    setNotifications((data ?? []) as unknown as Notif[]);
+    const rows = data ?? [];
+    setHasMore(rows.length > PAGE);
+    setNotifications(rows.slice(0, PAGE) as unknown as Notif[]);
     setLoading(false);
   }, [profile?.id]);
+
+  async function loadMore() {
+    if (!profile || !notifications.length || loadingMore) return;
+    setLoadingMore(true);
+    const oldest = notifications[notifications.length - 1].created_at;
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, type, title, body, read, data, created_at')
+      .eq('profile_id', profile.id)
+      .lt('created_at', oldest)
+      .order('created_at', { ascending: false })
+      .limit(PAGE + 1);
+    const rows = data ?? [];
+    setHasMore(rows.length > PAGE);
+    setNotifications((prev) => [...prev, ...(rows.slice(0, PAGE) as unknown as Notif[])]);
+    setLoadingMore(false);
+  }
 
   async function markAll() {
     const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
@@ -124,9 +150,15 @@ export default function NotificationsScreen() {
       case 'new_announcement':
         router.push(`/(app)/${slug}/(tabs)/chat` as any); break;
       case 'new_dm':
+      case 'new_message':
         d?.conversation_id
           ? router.push(`/(app)/${slug}/conversation/${d.conversation_id}` as any)
           : router.push(`/(app)/${slug}/(tabs)/chat` as any);
+        break;
+      case 'attendance_absent':
+        d?.event_id
+          ? router.push(`/(app)/${slug}/event/${d.event_id}` as any)
+          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
         break;
       case 'invite_accepted':
         (profile?.role === 'org_admin' || profile?.role === 'coach')
@@ -227,6 +259,18 @@ export default function NotificationsScreen() {
               </View>
             </View>
           ))}
+          {hasMore && (
+            <TouchableOpacity
+              onPress={loadMore}
+              disabled={loadingMore}
+              style={styles.loadMoreBtn}
+              activeOpacity={0.7}
+            >
+              {loadingMore
+                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                : <Text style={styles.loadMoreText}>Load more</Text>}
+            </TouchableOpacity>
+          )}
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
@@ -240,6 +284,13 @@ const styles = StyleSheet.create({
   root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: 24 },
+  loadMoreBtn: {
+    alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 24,
+    marginVertical: 8, borderRadius: 20,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    minWidth: 48, alignItems: 'center',
+  },
+  loadMoreText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   header: {
     flexDirection: 'row', alignItems: 'center',

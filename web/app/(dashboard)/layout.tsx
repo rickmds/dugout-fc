@@ -35,7 +35,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div id="dashboard" style={{ minHeight: '100vh', background: '#F0F2F5', display: 'flex', color: '#0F172A', alignItems: 'flex-start' }}>
+    <div id="dashboard" style={{ height: '100vh', background: '#F0F2F5', display: 'flex', color: '#0F172A', overflow: 'hidden' }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -91,7 +91,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       />
 
       <Sidebar />
-      <main id="dash-main" style={{ flex: 1, minWidth: 0 }}>
+      <main id="dash-main" style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto' }}>
         {children}
       </main>
     </div>

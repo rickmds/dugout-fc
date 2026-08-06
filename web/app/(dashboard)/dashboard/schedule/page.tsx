@@ -154,6 +154,7 @@ export default function SchedulePage() {
   const [saving, setSaving]         = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
   const [filterTeam, setFilterTeam] = useState<string>(searchParams.get('team') ?? 'all');
+  const [filterType, setFilterType] = useState<'all' | 'game' | 'training' | 'other'>('all');
   const [tab, setTab]               = useState<'upcoming' | 'past'>('upcoming');
   const [viewMode, setViewMode]     = useState<'list' | 'calendar'>('list');
 
@@ -163,6 +164,14 @@ export default function SchedulePage() {
   const [rsvpLoading, setRsvpLoading]             = useState(false);
   const [confirmedGuestCount, setConfirmedGuestCount] = useState(0);
   const [confirmedGuests, setConfirmedGuests] = useState<ConfirmedGuest[]>([]);
+
+  // Attendance panel (past events)
+  type AttStatus = 'present' | 'absent' | 'late';
+  type AttRecord = { id: string; status: AttStatus };
+  const [panelTab, setPanelTab]                   = useState<'rsvps' | 'attendance'>('rsvps');
+  const [attMarks, setAttMarks]                   = useState<Record<string, AttRecord | null>>({}); // player_id → record
+  const [attLoading, setAttLoading]               = useState(false);
+  const [attSaving, setAttSaving]                 = useState<string | null>(null); // player_id being saved
 
   // RSVP summary bars (eventId → counts)
   type RsvpSummary = { attending: number; not_attending: number; total: number };
@@ -236,17 +245,26 @@ export default function SchedulePage() {
 
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
-  // Reset guest count when event changes
-  useEffect(() => { setConfirmedGuestCount(0); setConfirmedGuests([]); }, [selectedEvent?.id]);
+  // Reset guest count + panel tab when event changes
+  useEffect(() => {
+    setConfirmedGuestCount(0);
+    setConfirmedGuests([]);
+    setPanelTab('rsvps');
+    setAttMarks({});
+  }, [selectedEvent?.id]);
 
-  // Load RSVP players when an event is selected
+  // Load RSVP players + attendance when an event is selected
   useEffect(() => {
     if (!selectedEvent) return;
     (async () => {
       setRsvpLoading(true);
-      const [playerRes, rsvpRes] = await Promise.all([
+      const isPast = selectedEvent.event_date < today;
+      const [playerRes, rsvpRes, attRes] = await Promise.all([
         supabase.from('players').select('id, full_name, jersey_number, position').eq('team_id', selectedEvent.team_id).order('full_name'),
         supabase.from('event_rsvps').select('id, player_id, status').eq('event_id', selectedEvent.id),
+        isPast
+          ? supabase.from('event_attendance').select('id, player_id, status').eq('event_id', selectedEvent.id)
+          : Promise.resolve({ data: [] }),
       ]);
       const rsvpMap = new Map<string, { id: string; status: 'attending' | 'not_attending' }>();
       for (const r of rsvpRes.data ?? []) rsvpMap.set(r.player_id, { id: r.id, status: r.status });
@@ -255,9 +273,13 @@ export default function SchedulePage() {
         const r = rsvpMap.get(p.id);
         return { ...p, status: r?.status ?? 'pending', rsvp_id: r?.id ?? null };
       }));
+
+      const marks: Record<string, AttRecord | null> = {};
+      for (const a of (attRes as any).data ?? []) marks[a.player_id] = { id: a.id, status: a.status as AttStatus };
+      setAttMarks(marks);
       setRsvpLoading(false);
     })();
-  }, [selectedEvent]);
+  }, [selectedEvent, today]);
 
   async function toggleRsvp(player: RsvpPlayer, newStatus: 'attending' | 'not_attending' | 'pending') {
     if (!selectedEvent) return;
@@ -276,6 +298,36 @@ export default function SchedulePage() {
       return;
     }
     setRsvpPlayers((p) => p.map((pl) => pl.id === player.id ? { ...pl, status: newStatus } : pl));
+  }
+
+  async function markAttendance(playerId: string, newStatus: AttStatus | null) {
+    if (!selectedEvent) return;
+    setAttSaving(playerId);
+    const existing = attMarks[playerId];
+    if (newStatus === null) {
+      // Clear
+      if (existing) await supabase.from('event_attendance').delete().eq('id', existing.id);
+      setAttMarks((prev) => { const n = { ...prev }; delete n[playerId]; return n; });
+    } else if (existing) {
+      await supabase.from('event_attendance').update({ status: newStatus, marked_by: profile?.id, marked_at: new Date().toISOString() }).eq('id', existing.id);
+      setAttMarks((prev) => ({ ...prev, [playerId]: { id: existing.id, status: newStatus } }));
+    } else {
+      const { data } = await supabase.from('event_attendance').insert({ event_id: selectedEvent.id, player_id: playerId, status: newStatus, marked_by: profile?.id }).select('id').single();
+      if (data) setAttMarks((prev) => ({ ...prev, [playerId]: { id: (data as any).id, status: newStatus } }));
+    }
+    setAttSaving(null);
+  }
+
+  async function markAllPresent() {
+    if (!selectedEvent) return;
+    setAttLoading(true);
+    const rows = rsvpPlayers.map((p) => ({ event_id: selectedEvent.id, player_id: p.id, status: 'present' as const, marked_by: profile?.id }));
+    await supabase.from('event_attendance').upsert(rows, { onConflict: 'event_id,player_id' });
+    const { data } = await supabase.from('event_attendance').select('id, player_id, status').eq('event_id', selectedEvent.id);
+    const marks: Record<string, AttRecord | null> = {};
+    for (const a of data ?? []) marks[a.player_id] = { id: a.id, status: a.status as AttStatus };
+    setAttMarks(marks);
+    setAttLoading(false);
   }
 
   function openCreate() {
@@ -315,14 +367,17 @@ export default function SchedulePage() {
 
   async function handleDelete(id: string) {
     const ev = events.find((e) => e.id === id);
-    await supabase.from('events').delete().eq('id', id);
+    const { error } = await supabase.from('events').delete().eq('id', id);
+    if (error) { alert(`Could not delete event: ${error.message}`); return; }
     setEvents((prev) => prev.filter((e) => e.id !== id));
     if (selectedEvent?.id === id) setSelectedEvent(null);
     setDeleteConfirm(null);
     if (ev) {
       const teamName = teams.find((t) => t.id === ev.team_id)?.name ?? 'your team';
-      supabase.functions.invoke('send-push', {
-        body: { team_id: ev.team_id, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } },
+      fetch('/api/push-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: ev.team_id, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }),
       }).catch(() => {});
     }
   }
@@ -361,35 +416,45 @@ export default function SchedulePage() {
       created_by: profile?.id,
     };
     let eventId = editId;
-    if (editId) {
-      await supabase.from('events').update(payload).eq('id', editId);
-    } else {
-      const { data } = await supabase.from('events').insert(payload).select('id').single();
-      eventId = (data as any)?.id ?? null;
+    try {
+      if (editId) {
+        const { error } = await supabase.from('events').update(payload).eq('id', editId);
+        if (error) { alert(`Could not save event: ${error.message}`); return; }
+      } else {
+        const { data, error } = await supabase.from('events').insert(payload).select('id').single();
+        if (error) { alert(`Could not create event: ${error.message}`); return; }
+        eventId = (data as any)?.id ?? null;
+      }
+    } finally {
+      setSaving(false);
     }
     if (form.push_notify && eventId) {
       const teamName = teams.find((t) => t.id === form.team_id)?.name ?? 'your team';
       const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
       const isEdit = !!editId;
       try {
-        await supabase.functions.invoke('send-push', {
-          body: {
+        await fetch('/api/push-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             team_id: form.team_id,
             exclude_profile_id: profile?.id,
             type: isEdit ? 'event_updated' : 'new_event',
             title: isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`,
             body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
             data: { event_id: eventId },
-          },
+          }),
         });
       } catch { /* non-critical */ }
     }
-    setSaving(false);
     setShowModal(false);
     loadEvents();
   }
 
-  const displayed = events.filter((e) => filterTeam === 'all' || e.team_id === filterTeam);
+  const displayed = events.filter((e) =>
+    (filterTeam === 'all' || e.team_id === filterTeam) &&
+    (filterType === 'all' || e.type === filterType)
+  );
 
   // List view grouping
   const grouped: Record<string, Event[]> = {};
@@ -477,6 +542,31 @@ export default function SchedulePage() {
             </div>
           )}
 
+          {/* Event type filter */}
+          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '10px', padding: '3px', gap: '2px' }}>
+            {([
+              ['all',      'All'],
+              ['game',     '⚽ Games'],
+              ['training', '🏃 Training'],
+              ['other',    '📌 Other'],
+            ] as const).map(([type, label]) => (
+              <button key={type} onClick={() => setFilterType(type)} style={{
+                padding: '6px 11px', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px',
+                fontWeight: filterType === type ? '700' : '500',
+                background: filterType === type
+                  ? (type === 'game' ? '#FEF2F2' : type === 'training' ? '#F0FDF4' : type === 'other' ? '#F5F3FF' : '#fff')
+                  : 'transparent',
+                color: filterType === type
+                  ? (type === 'game' ? '#DC2626' : type === 'training' ? '#16A34A' : type === 'other' ? '#7C3AED' : '#0F172A')
+                  : '#64748B',
+                boxShadow: filterType === type ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                whiteSpace: 'nowrap',
+              }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Team filter */}
           {teams.length > 1 && (
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -508,19 +598,55 @@ export default function SchedulePage() {
           {viewMode === 'calendar' && (
             <div className="cal-scroll"><div className="cal-inner" style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               {/* Month nav */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #F1F5F9' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #F1F5F9', gap: '12px' }}>
                 <button onClick={() => { setCalMonth(({ year, month }) => month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }); setSelectedCalDay(null); }}
                   style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', display: 'flex' }}>
                   <ChevronLeft size={16} color="#374151" />
                 </button>
-                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>
-                  {MONTH_NAMES[calMonth.month]} {calMonth.year}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, justifyContent: 'center' }}>
+                  <span style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', letterSpacing: '-0.3px' }}>
+                    {MONTH_NAMES[calMonth.month]} {calMonth.year}
+                  </span>
+                  {(calMonth.month !== todayDate.getMonth() || calMonth.year !== todayDate.getFullYear()) && (
+                    <button onClick={() => { setCalMonth({ year: todayDate.getFullYear(), month: todayDate.getMonth() }); setSelectedCalDay(null); }}
+                      style={{ fontSize: '11px', fontWeight: '700', color: primary, background: `${primary}12`, border: `1px solid ${primary}30`, borderRadius: '20px', padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Today
+                    </button>
+                  )}
                 </div>
                 <button onClick={() => { setCalMonth(({ year, month }) => month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 }); setSelectedCalDay(null); }}
                   style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', display: 'flex' }}>
                   <ChevronRight size={16} color="#374151" />
                 </button>
               </div>
+
+              {/* Month event summary */}
+              {(() => {
+                const gameCount     = displayed.filter((e) => e.type === 'game').length;
+                const trainingCount = displayed.filter((e) => e.type === 'training').length;
+                const otherCount    = displayed.filter((e) => e.type === 'other').length;
+                const total = gameCount + trainingCount + otherCount;
+                if (total === 0) return null;
+                return (
+                  <div style={{ display: 'flex', gap: '16px', padding: '8px 20px', borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
+                    {gameCount > 0 && (
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '13px' }}>⚽</span>{gameCount} game{gameCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {trainingCount > 0 && (
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#16A34A', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '13px' }}>🏃</span>{trainingCount} training{trainingCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {otherCount > 0 && (
+                      <span style={{ fontSize: '12px', fontWeight: '700', color: '#7C3AED', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '13px' }}>📌</span>{otherCount} other
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Team legend (multi-team only) */}
               {filterTeam === 'all' && teams.length > 1 && (
@@ -535,56 +661,86 @@ export default function SchedulePage() {
               )}
 
               {/* Day headers */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #F1F5F9' }}>
-                {DAY_NAMES.map((d) => (
-                  <div key={d} style={{ padding: '8px 0', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: '#94A3B8', letterSpacing: '0.05em' }}>{d}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #E2E8F0', borderLeft: '1px solid #E2E8F0' }}>
+                {DAY_NAMES.map((d, di) => (
+                  <div key={d} style={{ padding: '8px 0', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: di === 0 || di === 6 ? '#CBD5E1' : '#94A3B8', letterSpacing: '0.05em', borderRight: di === 6 ? '1px solid #E2E8F0' : 'none' }}>{d}</div>
                 ))}
               </div>
 
               {/* Calendar cells */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderLeft: '1px solid #E2E8F0' }}>
                 {calDays.map((day, i) => {
-                  const todayD    = todayDate.getDate();
-                  const isToday   = day === todayD && calMonth.month === todayDate.getMonth() && calMonth.year === todayDate.getFullYear();
+                  const todayD     = todayDate.getDate();
+                  const isToday    = day === todayD && calMonth.month === todayDate.getMonth() && calMonth.year === todayDate.getFullYear();
                   const isSelected = day === selectedCalDay;
-                  const dayEvents = day ? (eventsByDay[day] ?? []) : [];
-                  const isLast    = i >= calDays.length - 7;
-                  const multiTeam = filterTeam === 'all' && teams.length > 1;
+                  const isWeekend  = i % 7 === 0 || i % 7 === 6;
+                  const dayEvents  = day ? (eventsByDay[day] ?? []) : [];
+                  const isLast     = i >= calDays.length - 7;
+                  const multiTeam  = filterTeam === 'all' && teams.length > 1;
+                  const isSat = (i % 7) === 6;
                   return (
                     <div key={i}
                       onClick={() => day && setSelectedCalDay(isSelected ? null : day)}
                       style={{
-                        minHeight: '80px',
-                        border: '1px solid #E2E8F0',
-                        borderWidth: isLast ? '1px 1px 0 0' : (i + 1) % 7 !== 0 ? '1px 1px 1px 0' : '1px 0 1px 0',
-                        padding: '4px 6px',
-                        background: isSelected ? `${primary}08` : isToday ? `${primary}08` : day ? '#fff' : '#FAFAFA',
+                        minHeight: '90px',
+                        borderTop: '1px solid #E2E8F0',
+                        borderRight: isSat ? '1px solid #E2E8F0' : 'none',
+                        borderBottom: isLast ? 'none' : '1px solid #E2E8F0',
+                        borderLeft: 'none',
+                        padding: '6px',
+                        overflow: 'hidden',
+                        background: isSelected
+                          ? `${primary}10`
+                          : isToday
+                          ? `${primary}06`
+                          : day
+                          ? isWeekend ? '#FCFCFD' : '#fff'
+                          : '#F8FAFC',
                         cursor: day ? 'pointer' : 'default',
                         transition: 'background 0.1s',
-                        outline: isToday ? `1.5px solid ${primary}` : isSelected ? `2px solid ${primary}40` : 'none',
+                        outline: isToday ? `2px solid ${primary}` : isSelected ? `2px solid ${primary}50` : 'none',
                         outlineOffset: '-2px',
                         position: 'relative',
                       }}
+                      onMouseEnter={(e) => { if (day && !isSelected && !isToday) (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; }}
+                      onMouseLeave={(e) => { if (day && !isSelected && !isToday) (e.currentTarget as HTMLElement).style.background = isWeekend ? '#FCFCFD' : '#fff'; }}
                     >
                       {day && (
                         <>
-                          <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: isToday ? primary : isSelected ? `${primary}20` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '700', color: isToday ? '#fff' : isSelected ? primary : '#0F172A' }}>{day}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                            <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: isToday ? primary : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span style={{ fontSize: '12px', fontWeight: isToday ? '800' : '600', color: isToday ? '#fff' : isSelected ? primary : isWeekend ? '#94A3B8' : '#374151' }}>{day}</span>
+                            </div>
+                            {dayEvents.length > 0 && (
+                              <span style={{ fontSize: '9px', fontWeight: '700', color: '#94A3B8' }}>{dayEvents.length}</span>
+                            )}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                             {dayEvents.slice(0, 3).map((ev) => {
                               const teamColor = multiTeam ? teamColorMap[ev.team_id] : TYPE_COLORS[ev.type];
+                              const timeStr = ev.event_time
+                                ? (() => {
+                                    const [h, m] = ev.event_time.split(':').map(Number);
+                                    const suffix = h >= 12 ? 'p' : 'a';
+                                    return m ? `${h % 12 || 12}:${String(m).padStart(2,'0')}${suffix}` : `${h % 12 || 12}${suffix}`;
+                                  })()
+                                : null;
+                              const tooltip = [timeStr, ev.title, ev.location].filter(Boolean).join(' · ');
                               return (
                                 <button key={ev.id}
+                                  title={tooltip}
                                   onClick={(e) => { e.stopPropagation(); setSelectedCalDay(day); setSelectedEvent(ev); }}
-                                  style={{ display: 'flex', alignItems: 'center', gap: '0', background: TYPE_BG[ev.type], border: `1px solid ${TYPE_COLORS[ev.type]}25`, borderRadius: '5px', padding: '0', cursor: 'pointer', width: '100%', textAlign: 'left', overflow: 'hidden' }}>
+                                  style={{ display: 'flex', alignItems: 'center', gap: '0', background: TYPE_BG[ev.type], border: `1px solid ${TYPE_COLORS[ev.type]}30`, borderRadius: '5px', padding: '0', cursor: 'pointer', width: '100%', textAlign: 'left', overflow: 'hidden', transition: 'filter 0.1s' }}
+                                  onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.filter = 'brightness(0.96)'}
+                                  onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.filter = 'none'}
+                                >
                                   <div style={{ width: '3px', alignSelf: 'stretch', background: teamColor, flexShrink: 0 }} />
-                                  <div style={{ flex: 1, padding: '2px 4px', minWidth: 0 }}>
-                                    <div style={{ fontSize: '10px', fontWeight: '600', color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                      {ev.event_time ? fmtTime(ev.event_time).split(':')[0] + fmtTime(ev.event_time).split(' ')[1]?.toLowerCase().replace('m','') : ''} {ev.title}
+                                  <div style={{ flex: 1, padding: '3px 5px', minWidth: 0, overflow: 'hidden' }}>
+                                    <div style={{ fontSize: '10px', fontWeight: '700', color: '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
+                                      {timeStr && <span style={{ color: TYPE_COLORS[ev.type], marginRight: '3px', fontVariantNumeric: 'tabular-nums' }}>{timeStr}</span>}{ev.title}
                                     </div>
-                                    {ev.team_name && (
-                                      <div style={{ fontSize: '9px', fontWeight: '700', color: teamColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '1px', opacity: 0.85 }}>
+                                    {multiTeam && ev.team_name && (
+                                      <div style={{ fontSize: '9px', fontWeight: '700', color: teamColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: 0.8, lineHeight: 1.3 }}>
                                         {ev.team_name}
                                       </div>
                                     )}
@@ -593,7 +749,7 @@ export default function SchedulePage() {
                               );
                             })}
                             {dayEvents.length > 3 && (
-                              <span style={{ fontSize: '10px', color: '#94A3B8', paddingLeft: '4px' }}>+{dayEvents.length - 3} more</span>
+                              <span style={{ fontSize: '10px', fontWeight: '600', color: primary, paddingLeft: '4px', cursor: 'pointer' }}>+{dayEvents.length - 3} more</span>
                             )}
                           </div>
                         </>
@@ -761,8 +917,27 @@ export default function SchedulePage() {
               </button>
             </div>
 
-            {/* RSVP summary pills — pinned */}
-            {!rsvpLoading && (
+            {/* Tab switcher — pinned */}
+            {(() => {
+              const isPast = selectedEvent.event_date < today;
+              const markedCount = Object.keys(attMarks).length;
+              return isPast ? (
+                <div style={{ display: 'flex', padding: '10px 14px', gap: '6px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
+                  {([['rsvps', '📋 RSVPs'], ['attendance', '✅ Attendance']] as const).map(([t, label]) => (
+                    <button key={t} onClick={() => setPanelTab(t)}
+                      style={{ flex: 1, padding: '7px 10px', borderRadius: '9px', border: panelTab === t ? `2px solid ${primary}` : '2px solid #E2E8F0', background: panelTab === t ? `${primary}12` : '#F8FAFC', color: panelTab === t ? primary : '#64748B', fontWeight: '700', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit', position: 'relative' }}>
+                      {label}
+                      {t === 'attendance' && markedCount > 0 && (
+                        <span style={{ marginLeft: '5px', fontSize: '10px', fontWeight: '800', background: primary, color: '#fff', borderRadius: '10px', padding: '1px 6px' }}>{markedCount}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+
+            {/* RSVP summary pills — pinned (RSVPs tab or upcoming) */}
+            {!rsvpLoading && panelTab === 'rsvps' && (
               <div style={{ display: 'flex', gap: '8px', padding: '12px 18px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
                 <div style={{ flex: 1, textAlign: 'center', background: '#F0FDF4', borderRadius: '10px', padding: '8px 6px' }}>
                   <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{attending.length + confirmedGuestCount}</div>
@@ -782,6 +957,37 @@ export default function SchedulePage() {
               </div>
             )}
 
+            {/* Attendance summary pills — pinned (attendance tab) */}
+            {!rsvpLoading && panelTab === 'attendance' && (() => {
+              const presentCount = Object.values(attMarks).filter((a) => a?.status === 'present').length;
+              const lateCount    = Object.values(attMarks).filter((a) => a?.status === 'late').length;
+              const absentCount  = Object.values(attMarks).filter((a) => a?.status === 'absent').length;
+              return (
+                <div style={{ flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: '8px', padding: '12px 18px 10px', borderBottom: '1px solid #F1F5F9' }}>
+                    <div style={{ flex: 1, textAlign: 'center', background: '#F0FDF4', borderRadius: '10px', padding: '8px 6px' }}>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{presentCount}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#22C55E' }}>Present</div>
+                    </div>
+                    <div style={{ flex: 1, textAlign: 'center', background: '#FFFBEB', borderRadius: '10px', padding: '8px 6px' }}>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#D97706' }}>{lateCount}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#F59E0B' }}>Late</div>
+                    </div>
+                    <div style={{ flex: 1, textAlign: 'center', background: '#FEF2F2', borderRadius: '10px', padding: '8px 6px' }}>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#DC2626' }}>{absentCount}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#EF4444' }}>Absent</div>
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 18px 6px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={markAllPresent} disabled={attLoading}
+                      style={{ fontSize: '11px', fontWeight: '700', color: '#16A34A', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '7px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {attLoading ? 'Saving…' : '✓ Mark all present'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Scrollable body — players + guests + callouts */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {rsvpLoading ? (
@@ -792,6 +998,43 @@ export default function SchedulePage() {
                 <div style={{ padding: '32px 20px', textAlign: 'center' }}>
                   <Users size={28} color="#CBD5E1" style={{ marginBottom: '8px' }} />
                   <div style={{ fontSize: '13px', color: '#94A3B8' }}>No players on this team yet</div>
+                </div>
+              ) : panelTab === 'attendance' ? (
+                /* ── Attendance marking UI ── */
+                <div>
+                  <div style={{ padding: '8px 18px 4px', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', background: '#FAFAFA', borderBottom: '1px solid #F1F5F9' }}>
+                    Mark who actually showed up
+                  </div>
+                  {rsvpPlayers.map((p) => {
+                    const att = attMarks[p.id];
+                    const isSaving = attSaving === p.id;
+                    const rsvpColor = p.status === 'attending' ? '#16A34A' : p.status === 'not_attending' ? '#DC2626' : '#94A3B8';
+                    const rsvpLabel = p.status === 'attending' ? 'RSVPd Going' : p.status === 'not_attending' ? 'RSVPd Out' : 'No RSVP';
+                    return (
+                      <div key={p.id} style={{ padding: '10px 18px', borderBottom: '1px solid #F8FAFC', opacity: isSaving ? 0.6 : 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '7px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: '#64748B', flexShrink: 0 }}>
+                            {p.full_name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.full_name}</div>
+                            <div style={{ fontSize: '10px', fontWeight: '600', color: rsvpColor }}>{rsvpLabel}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {([['present', '✓ Present', '#16A34A', '#F0FDF4', '#BBF7D0'],
+                             ['late',    '⏰ Late',    '#D97706', '#FFFBEB', '#FDE68A'],
+                             ['absent',  '✗ Absent',  '#DC2626', '#FEF2F2', '#FECACA']] as const).map(([s, label, color, bg, border]) => (
+                            <button key={s} onClick={() => markAttendance(p.id, att?.status === s ? null : s)}
+                              disabled={isSaving}
+                              style={{ flex: 1, padding: '6px 4px', borderRadius: '8px', border: `1.5px solid ${att?.status === s ? border : '#E2E8F0'}`, background: att?.status === s ? bg : '#fff', color: att?.status === s ? color : '#94A3B8', fontWeight: '700', fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <>

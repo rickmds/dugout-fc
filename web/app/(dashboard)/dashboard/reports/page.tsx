@@ -378,10 +378,17 @@ export default function ReportsPage() {
             <span style={{ fontSize: '11px', color: '#CBD5E1', fontStyle: 'italic' }}>not marked</span>
           )}
         </td>
-        <td style={{ ...tdSt, fontSize: '12px', color: '#64748B' }}>
-          <span style={{ fontWeight: '700', color: '#16A34A' }}>{p.actual_present}</span>
-          {p.actual_late > 0 && <span style={{ color: '#D97706', marginLeft: '4px' }}>+{p.actual_late}L</span>}
-          {p.actual_absent > 0 && <span style={{ color: '#DC2626', marginLeft: '4px' }}>{p.actual_absent}✗</span>}
+        <td style={{ ...tdSt, fontSize: '12px' }}>
+          {p.actual_pct !== null ? (
+            <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+              <span style={{ fontWeight: '700', color: '#16A34A' }}>{p.actual_present + p.actual_late}</span>
+              <span style={{ color: '#CBD5E1', margin: '0 2px' }}>/</span>
+              <span style={{ fontWeight: '700', color: p.actual_absent > 0 ? '#DC2626' : '#CBD5E1' }}>{p.actual_absent}</span>
+              {p.actual_late > 0 && (
+                <span style={{ fontSize: '10px', fontWeight: '700', color: '#D97706', background: '#FEF3C7', borderRadius: '4px', padding: '1px 4px', marginLeft: '4px' }}>{p.actual_late}L</span>
+              )}
+            </span>
+          ) : <span style={{ color: '#CBD5E1' }}>—</span>}
         </td>
         <td style={{ ...tdSt, fontSize: '12px' }}>
           {p.ghost_count > 0 ? (
@@ -625,7 +632,10 @@ export default function ReportsPage() {
                       <th style={{ ...thSt, color: 'rgba(255,255,255,0.3)' }}>Pending</th>
                       <th style={{ ...thSt }} onClick={() => toggleSort('rsvp_pct')}>RSVP % {sortBy === 'rsvp_pct' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</th>
                       <th style={{ ...thSt, borderLeft: '3px solid rgba(255,255,255,0.15)', color: primary }} onClick={() => toggleSort('actual_pct')}>Actual % {sortBy === 'actual_pct' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</th>
-                      <th style={{ ...thSt, color: 'rgba(255,255,255,0.4)' }}>P / L / A</th>
+                      <th style={{ ...thSt, color: 'rgba(255,255,255,0.4)' }}>
+                        <span style={{ display: 'block' }}>Attended / Absent</span>
+                        <span style={{ display: 'block', fontSize: '8px', fontWeight: '600', color: '#D97706', letterSpacing: '0.5px', textTransform: 'none', marginTop: '2px' }}>L = arrived late</span>
+                      </th>
                       <th style={{ ...thSt, color: '#fbbf24' }} onClick={() => toggleSort('ghost_count')}>👻 Ghosts {sortBy === 'ghost_count' ? (sortDir === 'asc' ? '▲' : '▼') : ''}</th>
                       {hasGames && <>
                         <th style={{ ...thSt, borderLeft: '3px solid rgba(255,255,255,0.15)', color: '#a78bfa' }}>Games</th>
@@ -712,7 +722,7 @@ export default function ReportsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '1px', background: '#F1F5F9', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
                 {[
                   { label: '📋 RSVP rate', value: `${p.rsvp_pct}%`, sub: `${p.rsvp_going}/${p.total_events} events`, color: pctColor(p.rsvp_pct) },
-                  { label: '✅ Actual', value: p.actual_pct !== null ? `${p.actual_pct}%` : '—', sub: p.actual_pct !== null ? `${p.actual_present} present, ${p.actual_late} late, ${p.actual_absent} absent` : 'Not marked yet', color: p.actual_pct !== null ? pctColor(p.actual_pct) : '#CBD5E1' },
+                  { label: '✅ Actual', value: p.actual_pct !== null ? `${p.actual_pct}%` : '—', sub: p.actual_pct !== null ? `${p.actual_present + p.actual_late} attended · ${p.actual_absent} absent${p.actual_late > 0 ? ` · ${p.actual_late} late` : ''}` : 'Not marked yet', color: p.actual_pct !== null ? pctColor(p.actual_pct) : '#CBD5E1' },
                   { label: '👻 Ghost rate', value: p.ghost_count > 0 ? `${p.ghost_count}×` : '—', sub: p.ghost_count > 0 ? 'RSVPd Going, marked Absent' : 'No discrepancies', color: p.ghost_count >= 2 ? '#D97706' : '#16A34A' },
                   { label: '⚡ Surprises', value: p.surprise_count > 0 ? `${p.surprise_count}×` : '—', sub: p.surprise_count > 0 ? 'Showed up without RSVPing' : 'None', color: p.surprise_count > 0 ? '#7C3AED' : '#16A34A' },
                 ].map((s) => (
@@ -740,7 +750,7 @@ export default function ReportsPage() {
                       const rsvpLabel = h.rsvp === 'attending' ? 'Going' : h.rsvp === 'not_attending' ? 'Out' : 'No RSVP';
                       const rsvpBg    = h.rsvp === 'attending' ? '#F0FDF4' : h.rsvp === 'not_attending' ? '#FEF2F2' : '#F8FAFC';
                       const actColor  = h.actual === 'present' ? '#16A34A' : h.actual === 'late' ? '#D97706' : h.actual === 'absent' ? '#DC2626' : '#CBD5E1';
-                      const actLabel  = h.actual === 'present' ? '✓ Present' : h.actual === 'late' ? '⏰ Late' : h.actual === 'absent' ? '✗ Absent' : 'Not marked';
+                      const actLabel  = h.actual === 'present' ? '✓ Present' : h.actual === 'late' ? '✓ Late' : h.actual === 'absent' ? '✗ Absent' : 'Not marked';
                       const actBg     = h.actual === 'present' ? '#F0FDF4' : h.actual === 'late' ? '#FFFBEB' : h.actual === 'absent' ? '#FEF2F2' : '#F8FAFC';
                       // Ghost highlight
                       const isGhost = h.rsvp === 'attending' && h.actual === 'absent';

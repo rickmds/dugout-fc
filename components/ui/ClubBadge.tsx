@@ -1,4 +1,5 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useClub } from '../../hooks/useClub';
 
 export default function ClubBadge({ size = 48 }: { size?: number }) {
@@ -24,7 +25,7 @@ export default function ClubBadge({ size = 48 }: { size?: number }) {
         <Image
           source={{ uri: logoUrl }}
           style={{ width: size * 0.72, height: size * 0.72 }}
-          resizeMode="contain"
+          contentFit="contain"
         />
       ) : (
         <Text style={[styles.letters, { color: secondaryColor, fontSize: size * 0.3 }]}>

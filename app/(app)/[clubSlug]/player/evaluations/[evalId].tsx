@@ -3,13 +3,13 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -419,7 +419,7 @@ export default function EvalDetailScreen() {
           <View style={[st.headerBand, { backgroundColor: primary }]}>
             <View style={st.headerLeft}>
               {clubLogoUrl ? (
-                <Image source={{ uri: clubLogoUrl }} style={st.headerLogo} />
+                <Image source={{ uri: clubLogoUrl }} style={st.headerLogo} contentFit="contain" />
               ) : null}
               <View style={{ gap: 1 }}>
                 <Text style={st.headerReportType}>PLAYER DEVELOPMENT REPORT</Text>
@@ -625,7 +625,7 @@ const st = StyleSheet.create({
   // Branded header band
   headerBand:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14 },
   headerLeft:       { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  headerLogo:       { width: 40, height: 40, resizeMode: 'contain' },
+  headerLogo:       { width: 40, height: 40 },
   headerClubName:   { fontSize: 15, fontWeight: '900', color: '#fff', letterSpacing: 0.1 },
   headerReportType: { fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 1.8 },
   headerDate:       { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: 0.5 },

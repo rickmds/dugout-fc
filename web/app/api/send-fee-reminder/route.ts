@@ -7,8 +7,14 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function POST(req: NextRequest) {
-  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
-  if (!auth.ok) return auth.response;
+  const cronSecret = req.headers.get('x-cron-secret');
+  const isCron = cronSecret && cronSecret === process.env.CRON_SECRET;
+  let senderUserId: string | null = null;
+  if (!isCron) {
+    const auth = await requireRole(req, ['org_admin', 'app_admin']);
+    if (!auth.ok) return auth.response;
+    senderUserId = auth.userId;
+  }
 
   const { player_fee_id } = await req.json();
   if (!player_fee_id) return NextResponse.json({ error: 'player_fee_id required' }, { status: 400 });
@@ -18,7 +24,7 @@ export async function POST(req: NextRequest) {
   // Fetch fee + player + team + club
   const { data: fee, error: feeErr } = await supabase
     .from('player_fees')
-    .select('id, description, amount_due, discount, due_date, status, player_id, players(full_name), teams(id, name, club_id, clubs(name, slug, logo_url, primary_color))')
+    .select('id, payment_token, description, amount_due, discount, due_date, status, player_id, players(full_name), teams(id, name, club_id, clubs(name, slug, logo_url, primary_color))')
     .eq('id', player_fee_id)
     .single();
 
@@ -47,9 +53,11 @@ export async function POST(req: NextRequest) {
   const initials = clubName.split(' ').slice(0, 2).map((w: string) => (w[0] ?? '').toUpperCase()).join('');
   const year     = new Date().getFullYear();
 
-  const netAmount = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
-  const fmtAmount = `$${netAmount.toFixed(2)}`;
-  const isOverdue = fee.due_date ? new Date(fee.due_date) < new Date() : false;
+  const netAmount  = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
+  const fmtAmount  = `$${netAmount.toFixed(2)}`;
+  const isOverdue  = fee.due_date ? new Date(fee.due_date) < new Date() : false;
+  const baseUrl    = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.pulse-fc.app';
+  const payUrl     = (fee as any).payment_token ? `${baseUrl}/pay/${(fee as any).payment_token}` : null;
   const fmtDue = fee.due_date
     ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
@@ -135,10 +143,16 @@ export async function POST(req: NextRequest) {
                   </td>
                 </tr>
 
+                <!-- Pay Now button -->
+                ${payUrl ? `<tr><td style="padding:0 28px 20px;text-align:center;">
+                  <a href="${esc(payUrl)}" style="display:inline-block;padding:14px 32px;background:${urgencyColor};color:#fff;text-decoration:none;font-size:15px;font-weight:800;border-radius:12px;letter-spacing:-0.2px;">Pay now →</a>
+                  <p style="margin:10px 0 0;font-size:12px;color:#6b7280;">Secure payment · No login required · Powered by Stripe</p>
+                </td></tr>` : ''}
+
                 <tr>
                   <td style="padding:0 28px 24px;">
                     <p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">
-                      Please contact your coach or club administrator to arrange payment. Questions? Simply reply to this email.
+                      ${payUrl ? 'Click the button above to pay securely online. Alternatively, contact your coach or club administrator to arrange payment.' : 'Please contact your coach or club administrator to arrange payment.'} Questions? Simply reply to this email.
                     </p>
                   </td>
                 </tr>
@@ -164,7 +178,7 @@ export async function POST(req: NextRequest) {
 
   // Send email
   const { error: emailErr } = await resend.emails.send({
-    from: `${clubName} <info@pulse-fc.app>`,
+    from: `${clubName} <support@pulse-fc.app>`,
     to: invite.email,
     subject: `${isOverdue ? '⚠️ Overdue payment' : 'Payment reminder'}: ${fee.description} — ${fmtAmount}`,
     html,
@@ -177,7 +191,7 @@ export async function POST(req: NextRequest) {
     supabase.from('player_fees').update({ last_reminded_at: new Date().toISOString() }).eq('id', player_fee_id),
     supabase.from('fee_reminder_log').insert({
       player_fee_id,
-      sent_by:       auth.userId,
+      sent_by:       senderUserId,
       reminder_type: isOverdue ? 'overdue' : 'due_soon',
     }),
   ]);

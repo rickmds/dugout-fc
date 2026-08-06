@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { requireRole } from '@/lib/apiAuth';
 
 export const maxDuration = 120;
 
@@ -369,6 +370,9 @@ function merge(a: ParsedResult, b: ParsedResult): ParsedResult {
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   try {
     const { files } = await req.json() as { files: FileInput[] };
     if (!files?.length) return NextResponse.json({ error: 'No files provided.' }, { status: 400 });

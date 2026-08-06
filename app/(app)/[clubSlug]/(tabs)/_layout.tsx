@@ -6,6 +6,8 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useAuth } from '../../../../hooks/useAuth';
 import { supabase } from '../../../../lib/supabase';
+import { useNetworkStatus } from '../../../../hooks/useNetworkStatus';
+import OfflineBanner from '../../../../components/ui/OfflineBanner';
 
 const INACTIVE = '#555';
 
@@ -25,8 +27,10 @@ function TabIcon({ focused, primary, children }: { focused: boolean; primary: st
 
 export default function TabsLayout() {
   const { primaryColor } = useClub();
+  const { isConnected } = useNetworkStatus();
   const { profile } = useAuth();
   const [chatUnread, setChatUnread] = useState(0);
+  const [pendingGuestCount, setPendingGuestCount] = useState(0);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -56,7 +60,40 @@ export default function TabsLayout() {
     return () => { supabase.removeChannel(sub); };
   }, [profile?.id]);
 
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    async function fetchPendingGuests() {
+      const { data: playerRows } = await supabase
+        .from('players')
+        .select('id')
+        .eq('profile_id', profile!.id);
+      const playerIds = (playerRows ?? []).map((p: { id: string }) => p.id);
+      if (playerIds.length === 0) { setPendingGuestCount(0); return; }
+      const { count } = await supabase
+        .from('event_guests')
+        .select('*', { count: 'exact', head: true })
+        .in('player_id', playerIds)
+        .eq('status', 'pending');
+      setPendingGuestCount(count ?? 0);
+    }
+
+    fetchPendingGuests();
+
+    const sub = supabase
+      .channel(`guest-badge-${profile.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'event_guests',
+      }, fetchPendingGuests)
+      .subscribe();
+
+    return () => { supabase.removeChannel(sub); };
+  }, [profile?.id]);
+
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -93,6 +130,8 @@ export default function TabsLayout() {
         name="schedule"
         options={{
           title: 'Schedule',
+          tabBarBadge: pendingGuestCount > 0 ? (pendingGuestCount > 99 ? '99+' : pendingGuestCount) : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#F59E0B', fontSize: 10, minWidth: 18, height: 18 },
           tabBarIcon: ({ focused }) => (
             <TabIcon focused={focused} primary={primaryColor}>
               <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
@@ -125,5 +164,7 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    <OfflineBanner visible={!isConnected} />
+    </View>
   );
 }

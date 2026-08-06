@@ -1,5 +1,11 @@
 {
   "applinks": {
-    "details": []
+    "apps": [],
+    "details": [
+      {
+        "appID": "5U6J5AR2B4.com.pulsefc.mobile",
+        "paths": ["*"]
+      }
+    ]
   }
 }

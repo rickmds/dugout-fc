@@ -115,7 +115,7 @@ const TIERS = [
     playerLimit: 'Unlimited players',
     highlight: false,
     cta: 'Contact us',
-    ctaHref: 'mailto:info@pulse-fc.app?subject=Academy Plan',
+    ctaHref: 'mailto:support@pulse-fc.app?subject=Academy Plan',
     features: [
       'Everything in Club',
       'Unlimited teams',

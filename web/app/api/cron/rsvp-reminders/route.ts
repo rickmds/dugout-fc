@@ -5,7 +5,7 @@ const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -32,15 +32,22 @@ export async function GET(req: NextRequest) {
 
   let totalSent = 0;
 
-  // Resolve all auth users once (used in both windows)
-  const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  // Resolve all auth users once (paginated — listUsers caps at 1000 per page)
   const emailToUserId: Record<string, string> = {};
-  users.forEach((u) => { if (u.email) emailToUserId[u.email.toLowerCase()] = u.id; });
+  let page = 1;
+  while (true) {
+    const { data } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+    const users = data?.users ?? [];
+    users.forEach((u) => { if (u.email) emailToUserId[u.email.toLowerCase()] = u.id; });
+    const nextPage = (data as any)?.nextPage;
+    if (!nextPage) break;
+    page = nextPage;
+  }
 
   for (const window of windows) {
     const { data: events } = await supabase
       .from('events')
-      .select('id, title, team_id, rsvp_lock_at, event_time')
+      .select('id, title, team_id, rsvp_lock_at, event_time, teams(clubs(slug))')
       .gte('rsvp_lock_at', window.from.toISOString())
       .lte('rsvp_lock_at', window.to.toISOString());
 
@@ -79,7 +86,7 @@ export async function GET(req: NextRequest) {
           type: 'rsvp_reminder',
           title: pushTitle,
           body: pushBody,
-          data: { type: 'rsvp_reminder', event_id: ev.id },
+          data: { type: 'rsvp_reminder', event_id: ev.id, club_slug: (ev as any).teams?.clubs?.slug ?? '' },
         }))
       );
 

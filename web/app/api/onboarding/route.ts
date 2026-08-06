@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 
 // All wizard DB writes go through here using the service role key (bypasses RLS)
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const body = await req.json();
   const { action } = body;
   const db = supabaseAdmin();
@@ -41,21 +45,26 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Link profile to club and ensure org_admin role
-    await db.from('profiles').upsert({ id: user_id, club_id: data.id, role: 'org_admin' });
+    await db.from('profiles').upsert({ id: auth.userId, club_id: data.id, role: 'org_admin' });
 
     return NextResponse.json({ club: data });
   }
 
   if (action === 'create_team') {
-    const { club_id, name, age_group, season, user_id } = body;
+    const { club_id, name, age_group, season } = body;
+
+    // Verify the club belongs to the authenticated user
+    if (club_id !== auth.clubId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const { data, error } = await db.from('teams')
-      .insert({ club_id, name, age_group: age_group || null, season: season || null })
+      .insert({ club_id: auth.clubId, name, age_group: age_group || null, season: season || null })
       .select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Add coach as team member
-    await db.from('team_members').upsert({ team_id: data.id, profile_id: user_id, role: 'coach' });
+    await db.from('team_members').upsert({ team_id: data.id, profile_id: auth.userId, role: 'coach' });
 
     return NextResponse.json({ team: data });
   }
@@ -63,6 +72,12 @@ export async function POST(req: NextRequest) {
   if (action === 'add_players') {
     const { team_id, players } = body;
     if (!players?.length) return NextResponse.json({ ok: true });
+
+    // Verify the team belongs to the authenticated user's club
+    const { data: teamRow } = await db.from('teams').select('club_id').eq('id', team_id).single();
+    if (!teamRow || teamRow.club_id !== auth.clubId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const { error } = await db.from('players').insert(players.map((p: any) => ({
       team_id,

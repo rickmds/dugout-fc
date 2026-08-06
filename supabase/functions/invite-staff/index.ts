@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
       method:  'POST',
       headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from:    `${clubName} <info@pulse-fc.app>`,
+        from:    `${clubName} <support@pulse-fc.app>`,
         to:      [email],
         subject: `You've been invited to join ${clubName}`,
         html,

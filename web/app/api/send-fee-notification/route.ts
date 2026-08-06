@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { player_fee_id } = await req.json();
   if (!player_fee_id) return NextResponse.json({ error: 'player_fee_id required' }, { status: 400 });
 
@@ -13,7 +17,7 @@ export async function POST(req: NextRequest) {
   // Fetch fee + player + team + club in one query
   const { data: fee, error: feeErr } = await supabase
     .from('player_fees')
-    .select('id, description, amount_due, discount, due_date, player_id, players(full_name), teams(name, club_id, clubs(name, logo_url, primary_color))')
+    .select('id, payment_token, description, amount_due, discount, due_date, player_id, players(full_name), teams(name, club_id, clubs(name, slug, logo_url, primary_color))')
     .eq('id', player_fee_id)
     .single();
 
@@ -48,11 +52,13 @@ export async function POST(req: NextRequest) {
   const initials = clubName.split(' ').slice(0, 2).map((w: string) => (w[0] ?? '').toUpperCase()).join('');
   const year     = new Date().getFullYear();
 
-  const netAmount = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
-  const fmtAmount = `$${netAmount.toFixed(2)}`;
-  const fmtDue    = fee.due_date
+  const netAmount  = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
+  const fmtAmount  = `$${netAmount.toFixed(2)}`;
+  const fmtDue     = fee.due_date
     ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
+  const baseUrl    = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.pulse-fc.app';
+  const payUrl     = (fee as any).payment_token ? `${baseUrl}/pay/${(fee as any).payment_token}` : null;
 
   const isOverdue = fee.due_date ? new Date(fee.due_date) < new Date() : false;
   const urgencyColor = isOverdue ? '#EF4444' : fee.due_date ? '#F59E0B' : accent;
@@ -142,11 +148,17 @@ export async function POST(req: NextRequest) {
                   </td>
                 </tr>
 
+                <!-- Pay Now button -->
+                ${payUrl ? `<tr><td style="padding:0 28px 20px;text-align:center;">
+                  <a href="${esc(payUrl)}" style="display:inline-block;padding:14px 32px;background:${accent};color:${btnText};text-decoration:none;font-size:15px;font-weight:800;border-radius:12px;letter-spacing:-0.2px;">Pay now →</a>
+                  <p style="margin:10px 0 0;font-size:12px;color:#6b7280;">Secure payment · No login required · Powered by Stripe</p>
+                </td></tr>` : ''}
+
                 <!-- Body text -->
                 <tr>
                   <td style="padding:0 28px 24px;">
                     <p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">
-                      Please contact your coach or club administrator to arrange payment. Questions? Simply reply to this email.
+                      ${payUrl ? 'Click the button above to pay securely online. Alternatively, contact your coach or club administrator to arrange payment another way.' : 'Please contact your coach or club administrator to arrange payment.'} Questions? Simply reply to this email.
                     </p>
                   </td>
                 </tr>
@@ -174,7 +186,7 @@ export async function POST(req: NextRequest) {
 </html>`;
 
   const { error } = await resend.emails.send({
-    from: `${clubName} <info@pulse-fc.app>`,
+    from: `${clubName} <support@pulse-fc.app>`,
     to: invite.email,
     subject: `Fee notice: ${fee.description} — ${fmtAmount}${fmtDue ? ` due ${fmtDue}` : ''}`,
     html,
@@ -195,7 +207,7 @@ export async function POST(req: NextRequest) {
         type: 'fee_assigned',
         title: '💳 New fee assigned',
         body: `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}`,
-        data: { player_fee_id, type: 'fee_assigned' },
+        data: { player_fee_id, type: 'fee_assigned', club_slug: (fee as any).teams?.clubs?.slug ?? '' },
       });
       const { data: tokens } = await supabase.from('push_tokens').select('token').eq('profile_id', parentUser.id);
       if (tokens?.length) {
@@ -207,7 +219,7 @@ export async function POST(req: NextRequest) {
             title: '💳 New fee assigned',
             body: `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}`,
             sound: 'default',
-            data: { type: 'fee_assigned', player_fee_id },
+            data: { type: 'fee_assigned', player_fee_id, club_slug: (fee as any).teams?.clubs?.slug ?? '' },
           }))),
         });
       }

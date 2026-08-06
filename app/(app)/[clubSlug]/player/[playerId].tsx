@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -15,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -156,6 +156,7 @@ export default function PlayerProfileScreen() {
   const [editPhotoUri, setEditPhotoUri]               = useState<string | null>(null);
   const [photoEditorUri, setPhotoEditorUri]           = useState('');
   const [photoEditorVisible, setPhotoEditorVisible]   = useState(false);
+  const [reopenAfterPhoto, setReopenAfterPhoto]       = useState(false);
   const [editPrivate, setEditPrivate]                 = useState(false);
   const [saving, setSaving]                           = useState(false);
   const [deleting, setDeleting]                       = useState(false);
@@ -367,8 +368,15 @@ export default function PlayerProfileScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
     if (!result.canceled && result.assets[0]) {
-      setPhotoEditorUri(result.assets[0].uri);
-      setPhotoEditorVisible(true);
+      // iOS cannot show two RN Modals simultaneously — close edit sheet first,
+      // then open the fullScreen ImageEditor after the dismiss animation finishes.
+      setReopenAfterPhoto(true);
+      setShowEdit(false);
+      const pickedUri = result.assets[0].uri;
+      setTimeout(() => {
+        setPhotoEditorUri(pickedUri);
+        setPhotoEditorVisible(true);
+      }, 400);
     }
   }
 
@@ -447,12 +455,14 @@ export default function PlayerProfileScreen() {
         }
       }
 
-      // Always save the guaranteed-to-exist base columns
+      // Save base columns + DOB and photo which were added early on
       const { error: baseErr } = await (supabase.from('players') as any)
         .update({
           full_name: editName.trim(),
           jersey_number: editJersey ? parseInt(editJersey, 10) : null,
           position: editPosition || null,
+          date_of_birth: dobString,
+          photo_url: newPhotoUrl,
         })
         .eq('id', player.id);
       error = baseErr ?? null;
@@ -648,7 +658,7 @@ export default function PlayerProfileScreen() {
           return (
             <View style={[st.avatar, { borderColor: ringColor, shadowColor: ringColor }]}>
               {player.photo_url ? (
-                <Image source={{ uri: player.photo_url }} style={st.avatarPhoto} />
+                <Image source={{ uri: player.photo_url }} style={st.avatarPhoto} transition={200} />
               ) : (
                 <Text style={[st.avatarText, { color: ringColor }]}>{initials(player.full_name)}</Text>
               )}
@@ -1175,8 +1185,21 @@ export default function PlayerProfileScreen() {
         visible={photoEditorVisible}
         uri={photoEditorUri}
         primaryColor={primaryColor}
-        onSave={(uri) => { setPhotoEditorVisible(false); setEditPhotoUri(uri); }}
-        onCancel={() => setPhotoEditorVisible(false)}
+        onSave={(uri) => {
+          setPhotoEditorVisible(false);
+          setEditPhotoUri(uri);
+          if (reopenAfterPhoto) {
+            setReopenAfterPhoto(false);
+            setTimeout(() => setShowEdit(true), 350);
+          }
+        }}
+        onCancel={() => {
+          setPhotoEditorVisible(false);
+          if (reopenAfterPhoto) {
+            setReopenAfterPhoto(false);
+            setTimeout(() => setShowEdit(true), 350);
+          }
+        }}
       />
 
     </View>

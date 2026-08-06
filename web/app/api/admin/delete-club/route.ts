@@ -62,9 +62,14 @@ export async function DELETE(req: NextRequest) {
     await admin.from('teams').delete().eq('club_id', clubId);
   }
 
-  // Detach profiles
+  // Detach profiles and delete their notifications
+  const { data: clubProfiles } = await admin.from('profiles').select('id').eq('club_id', clubId);
+  const memberIds = (clubProfiles ?? []).map((p: { id: string }) => p.id);
+  if (memberIds.length > 0) {
+    await admin.from('push_tokens').delete().in('profile_id', memberIds);
+    await admin.from('notifications').delete().in('profile_id', memberIds);
+  }
   await admin.from('profiles').update({ club_id: null }).eq('club_id', clubId);
-  await admin.from('notifications').delete().eq('profile_id', user.id); // skip — notifications are per-user not per-club
 
   // Delete club
   const { error } = await admin.from('clubs').delete().eq('id', clubId);

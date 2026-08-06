@@ -2,12 +2,12 @@ import { useEffect, useRef } from 'react';
 import {
   Animated,
   Dimensions,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,7 +54,7 @@ export default function WelcomeScreen() {
       {/* Logo */}
       <Animated.View style={[styles.logoSection, { opacity: logoAnim, transform: [{ scale: logoScale }] }]}>
         <View style={styles.logoGlowRing}>
-          <Image source={require('../../assets/icon.png')} style={styles.logoImage} resizeMode="contain" />
+          <Image source={require('../../assets/icon.png')} style={styles.logoImage} contentFit="contain" />
         </View>
       </Animated.View>
 

@@ -25,7 +25,7 @@ export default function TermsPage() {
 
         <Section title="1. Acceptance of terms">
           <p>By creating an account or using the Pulse FC platform (the &ldquo;Service&rdquo;), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
-          <p>You can contact us at <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a>.</p>
+          <p>You can contact us at <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a>.</p>
         </Section>
 
         <Section title="2. Who can use Pulse FC">
@@ -34,7 +34,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="3. Your account">
-          <p>You are responsible for maintaining the security of your account credentials. You must notify us immediately at <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a> if you suspect unauthorised access to your account.</p>
+          <p>You are responsible for maintaining the security of your account credentials. You must notify us immediately at <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a> if you suspect unauthorised access to your account.</p>
           <p>You are responsible for all activity that occurs under your account. We are not liable for any loss or damage arising from your failure to keep your credentials secure.</p>
           <p>One account per person. You may not create multiple accounts or share your account with others.</p>
         </Section>
@@ -73,7 +73,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="9. Termination">
-          <p>You may close your account at any time via Settings → Delete Account in the app or by emailing <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a>.</p>
+          <p>You may close your account at any time via Settings → Delete Account in the app or by emailing <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a>.</p>
           <p>We may suspend or terminate your account if you breach these terms, with or without notice depending on the severity of the breach. Upon termination, your right to use the Service ends immediately.</p>
         </Section>
 
@@ -95,7 +95,7 @@ export default function TermsPage() {
           <p>Questions about these terms? Contact us at:</p>
           <p className="mt-2">
             <strong>Pulse FC</strong><br />
-            <a href="mailto:info@pulse-fc.app">info@pulse-fc.app</a>
+            <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a>
           </p>
         </Section>
       </main>

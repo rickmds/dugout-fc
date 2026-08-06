@@ -211,7 +211,7 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
               {[
                 { label: 'Create new form',           onClick: () => onNavigate('forms'),       color: primary },
                 { label: 'View all submissions',      onClick: () => onNavigate('submissions'), color: '#2563EB' },
-                { label: 'Chase outstanding payments', onClick: () => onNavigate('payments'),   color: '#D97706' },
+                { label: 'Chase outstanding payments', onClick: () => onNavigate('submissions'), color: '#D97706' },
                 { label: 'Export season report',       onClick: () => onNavigate('reports'),    color: '#7C3AED' },
               ].map((a) => (
                 <button key={a.label} onClick={a.onClick}

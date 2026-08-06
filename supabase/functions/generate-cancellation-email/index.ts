@@ -152,7 +152,7 @@ Write a short, professional, friendly cancellation email to the parents.
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: `${clubName} <info@pulse-fc.app>`,
+        from: `${clubName} <support@pulse-fc.app>`,
         to: emailList.map((r) => r.email),
         subject: email_subject,
         html,
@@ -195,7 +195,7 @@ Write a short, professional, friendly cancellation email to the parents.
         method: 'POST',
         headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          from: `${clubName} <info@pulse-fc.app>`,
+          from: `${clubName} <support@pulse-fc.app>`,
           to: emailList.map((r) => r.email),
           subject: email_subject,
           html,

@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
   }
 
   const { data: club } = await supabase.from('clubs')
-    .select('name, logo_url, primary_color')
+    .select('name, logo_url, primary_color, slug')
     .eq('id', team.club_id).single();
 
   if (!RESEND_KEY) {
@@ -84,7 +84,8 @@ Deno.serve(async (req) => {
     : `${player_name} has been invited to guest play — ${event.title}`;
 
   const APP_URL    = Deno.env.get('APP_URL') ?? 'https://pulse-fc.app';
-  const inviteUrl  = guest_id ? `${APP_URL}/guest-invite/${guest_id}` : null;
+  const clubSuffix = club?.slug ? `?club=${club.slug}` : '';
+  const inviteUrl  = guest_id ? `${APP_URL}/guest-invite/${guest_id}${clubSuffix}` : null;
 
   const html = buildHtml({
     clubName,
@@ -104,7 +105,7 @@ Deno.serve(async (req) => {
     method:  'POST',
     headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      from:    `${clubName} <info@pulse-fc.app>`,
+      from:    `${clubName} <support@pulse-fc.app>`,
       to:      [toEmail],
       subject,
       html,

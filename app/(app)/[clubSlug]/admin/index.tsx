@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -83,7 +83,7 @@ function SectionRow({ label, linkLabel, onLink, primaryColor }: {
   );
 }
 const secSt = StyleSheet.create({
-  row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 28, marginBottom: 10 },
+  row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 22, marginBottom: 8 },
   label: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1 },
   link:  { fontSize: 13, fontWeight: '600' },
 });
@@ -212,92 +212,7 @@ const nuSt = StyleSheet.create({
   secondaryBtnText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
 });
 
-// ─── Compact event card (upcoming list + past) ────────────────────────────────
 
-function EventCard({ ev, total, isPast, onPress, onEdit }: {
-  ev: EventRow; total: number; isPast: boolean;
-  onPress: () => void; onEdit: () => void;
-}) {
-  const cfg = TYPE_CFG[ev.type] ?? TYPE_CFG.other;
-  const goingPct   = total > 0 ? Math.min(100, Math.round((ev.attending      / total) * 100)) : 0;
-  const cantPct    = total > 0 ? Math.min(100 - goingPct, Math.round((ev.not_attending / total) * 100)) : 0;
-  const pendingPct = 100 - goingPct - cantPct;
-
-  return (
-    <TouchableOpacity
-      style={[ecSt.card, isPast && ecSt.cardPast]}
-      onPress={onPress}
-      activeOpacity={0.75}
-    >
-      <View style={[ecSt.stripe, { backgroundColor: cfg.color }]} />
-      <View style={ecSt.body}>
-        <View style={ecSt.topRow}>
-          <View style={[ecSt.typeBadge, { backgroundColor: `${cfg.color}18` }]}>
-            <Ionicons name={cfg.icon} size={10} color={cfg.color} />
-            <Text style={[ecSt.typeLabel, { color: cfg.color }]}>{cfg.label}</Text>
-          </View>
-        </View>
-        <Text style={ecSt.title} numberOfLines={1}>{ev.title}</Text>
-        <Text style={ecSt.meta}>
-          {formatDate(ev.event_date)}
-          {ev.event_time ? `  ·  ${formatTime(ev.event_time)}` : ''}
-          {ev.location ? `  ·  ${ev.location}` : ''}
-        </Text>
-        {total > 0 && (
-          <View style={ecSt.barTrack}>
-            {goingPct   > 0 && <View style={[ecSt.barSeg, { flex: goingPct,   backgroundColor: '#22C55E' }]} />}
-            {cantPct    > 0 && <View style={[ecSt.barSeg, { flex: cantPct,    backgroundColor: '#EF4444' }]} />}
-            {pendingPct > 0 && <View style={[ecSt.barSeg, { flex: pendingPct, backgroundColor: PULSE_COLORS.ui.border }]} />}
-          </View>
-        )}
-      </View>
-      <View style={ecSt.rsvpBadge}>
-        <Text style={ecSt.rsvpGoing}>{ev.attending}</Text>
-        <Text style={ecSt.rsvpOf}>/{total}</Text>
-      </View>
-      <TouchableOpacity style={ecSt.editBtn} onPress={onEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Ionicons name="create-outline" size={17} color={PULSE_COLORS.ui.muted} />
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
-}
-const ecSt = StyleSheet.create({
-  card:      { flexDirection: 'row', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, overflow: 'hidden' },
-  cardPast:  { opacity: 0.5 },
-  stripe:    { width: 4, alignSelf: 'stretch' },
-  body:      { flex: 1, paddingVertical: 10, paddingLeft: 12, paddingRight: 8, gap: 2 },
-  topRow:    { marginBottom: 2 },
-  typeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, alignSelf: 'flex-start' },
-  typeLabel: { fontSize: 9, fontWeight: '700' },
-  title:     { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  meta:      { fontSize: 11, color: PULSE_COLORS.ui.muted },
-  barTrack:  { height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row', marginTop: 6, backgroundColor: PULSE_COLORS.ui.border },
-  barSeg:    { height: '100%' },
-  rsvpBadge: { flexDirection: 'row', alignItems: 'baseline', paddingRight: 2 },
-  rsvpGoing: { fontSize: 14, fontWeight: '800', color: '#22C55E' },
-  rsvpOf:    { fontSize: 10, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
-  editBtn:   { padding: 11 },
-});
-
-// ─── 3-col manage cards ───────────────────────────────────────────────────────
-
-function ManageCard({ icon, label, color, bg, onPress }: {
-  icon: any; label: string; color: string; bg: string; onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={mcSt.card} onPress={onPress} activeOpacity={0.75}>
-      <View style={[mcSt.icon, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={22} color={color} />
-      </View>
-      <Text style={mcSt.label} numberOfLines={2}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-const mcSt = StyleSheet.create({
-  card:  { flex: 1, alignItems: 'center', backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingVertical: 18, gap: 8 },
-  icon:  { width: 46, height: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text, textAlign: 'center', paddingHorizontal: 4 },
-});
 
 // ─── AI tool row cards (grouped) ──────────────────────────────────────────────
 
@@ -339,9 +254,9 @@ export default function AdminPanel() {
   const { team, allTeams, selectTeam, loading: teamLoading, refetch } = useTeam();
 
   const [upcoming, setUpcoming] = useState<EventRow[]>([]);
-  const [past,     setPast]     = useState<EventRow[]>([]);
   const [total,    setTotal]    = useState(0);
   const [loading,  setLoading]  = useState(true);
+  const firstLoad = useRef(true);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [search, setSearch]               = useState('');
   const [editTeamOpen, setEditTeamOpen]   = useState(false);
@@ -363,20 +278,15 @@ export default function AdminPanel() {
       if (!teamLoading) setLoading(false);
       return;
     }
-    setLoading(true);
+    if (firstLoad.current) setLoading(true);
     const today = new Date().toISOString().split('T')[0];
 
-    const [upRes, pastRes, playerRes, pastEventsRes, rosterRes] = await Promise.all([
+    const [upRes, playerRes, pastEventsRes, rosterRes] = await Promise.all([
       supabase.from('events')
         .select('id, title, type, event_date, event_time, location')
         .eq('team_id', team.id).gte('event_date', today)
         .is('cancelled_at', null)
         .order('event_date').order('event_time').limit(20),
-      supabase.from('events')
-        .select('id, title, type, event_date, event_time, location')
-        .eq('team_id', team.id).lt('event_date', today)
-        .is('cancelled_at', null)
-        .order('event_date', { ascending: false }).limit(5),
       supabase.from('players')
         .select('*', { count: 'exact', head: true }).eq('team_id', team.id),
       supabase.from('events')
@@ -440,17 +350,16 @@ export default function AdminPanel() {
       }));
     }
 
-    const [upEnriched, pastEnriched, surfaceRes] = await Promise.all([
+    const [upEnriched, surfaceRes] = await Promise.all([
       enrich(upRes.data ?? []),
-      enrich(pastRes.data ?? []),
       supabase.from('events').select('*', { count: 'exact', head: true })
         .eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).is('field_type', null),
     ]);
 
     setUpcoming(upEnriched);
-    setPast(pastEnriched);
     setEventsWithoutSurface(surfaceRes.count ?? 0);
     setLoading(false);
+    firstLoad.current = false;
   }, [team?.id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load, teamLoading]));
@@ -613,19 +522,12 @@ export default function AdminPanel() {
           {/* Surface type nudge */}
           {!surfaceNudgeDismissed && eventsWithoutSurface > 0 && (
             <View style={st.nudgeBanner}>
-              <View style={st.nudgeIconWrap}>
-                <Ionicons name="layers-outline" size={18} color="#F59E0B" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={st.nudgeTitle}>
-                  {eventsWithoutSurface} upcoming {eventsWithoutSurface === 1 ? 'event' : 'events'} missing a surface type
-                </Text>
-                <Text style={st.nudgeSub}>
-                  Open Edit Event and add Grass, Turf or Indoor — it shows on players' home cards
-                </Text>
-              </View>
+              <Ionicons name="layers-outline" size={14} color="#F59E0B" />
+              <Text style={st.nudgeTitle} numberOfLines={1}>
+                {eventsWithoutSurface} {eventsWithoutSurface === 1 ? 'event' : 'events'} missing a surface type — add in Edit Event
+              </Text>
               <TouchableOpacity onPress={() => setSurfaceNudgeDismissed(true)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                <Ionicons name="close" size={18} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="close" size={14} color={PULSE_COLORS.ui.muted} />
               </TouchableOpacity>
             </View>
           )}
@@ -645,39 +547,15 @@ export default function AdminPanel() {
             </>
           )}
 
-          {/* Remaining upcoming */}
-          {upcoming.length > 1 && (
-            <>
-              <SectionRow
-                label="UPCOMING"
-                linkLabel="See all"
-                onLink={() => router.push(`/(app)/${slug}/(tabs)/schedule` as any)}
-                primaryColor={primaryColor}
-              />
-              <View style={st.eventList}>
-                {upcoming.slice(1, 5).map((ev) => (
-                  <EventCard
-                    key={ev.id} ev={ev} total={total} isPast={false}
-                    onPress={() => router.push(`/(app)/${slug}/event/${ev.id}` as any)}
-                    onEdit={() => router.push(`/(app)/${slug}/edit-event/${ev.id}` as any)}
-                  />
-                ))}
-              </View>
-            </>
-          )}
-
           {/* Empty schedule state */}
           {upcoming.length === 0 && (
-            <>
-              <SectionRow label="SCHEDULE" />
-              <View style={st.emptyCard}>
-                <Ionicons name="calendar-outline" size={28} color={PULSE_COLORS.ui.muted} />
-                <Text style={st.emptyTitle}>No upcoming events</Text>
-                <TouchableOpacity onPress={() => router.push(`/(app)/${slug}/create-event` as any)}>
-                  <Text style={[st.emptyLink, { color: primaryColor }]}>Create your first event →</Text>
-                </TouchableOpacity>
-              </View>
-            </>
+            <View style={st.emptyCard}>
+              <Ionicons name="calendar-outline" size={28} color={PULSE_COLORS.ui.muted} />
+              <Text style={st.emptyTitle}>No upcoming events</Text>
+              <TouchableOpacity onPress={() => router.push(`/(app)/${slug}/create-event` as any)}>
+                <Text style={[st.emptyLink, { color: primaryColor }]}>Create your first event →</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Attendance */}
@@ -730,78 +608,71 @@ export default function AdminPanel() {
             )}
           </View>
 
-          {/* Manage */}
-          <SectionRow label="MANAGE" />
-          <View style={st.manageGrid}>
-            <ManageCard
-              icon="add-circle-outline" label="Create Event"
-              color={primaryColor} bg={rgba(0.12)}
-              onPress={() => router.push(`/(app)/${slug}/create-event` as any)}
+
+          {/* Reports & Develop */}
+          <SectionRow label="REPORTS & TOOLS" />
+          <View style={st.aiGroup}>
+            <AiToolCard
+              icon="ribbon-outline" color="#A855F7" bg="rgba(168,85,247,0.12)"
+              label="Player Evaluations"
+              desc="Rate players and generate AI-powered report cards"
+              onPress={() => router.push(`/(app)/${slug}/admin/evaluations` as any)}
             />
-            <ManageCard
-              icon="people-outline" label="Roster"
-              color="#3B82F6" bg="rgba(59,130,246,0.12)"
-              onPress={() => router.push(`/(app)/${slug}/(tabs)/roster` as any)}
+            <AiToolCard
+              icon="bar-chart-outline" color="#22c55e" bg="rgba(34,197,94,0.12)"
+              label="Season Stats"
+              desc="Playing time ranking and percentage for every player"
+              onPress={() => router.push(`/(app)/${slug}/admin/season-stats` as any)}
+              showDivider
             />
-            <ManageCard
-              icon="megaphone-outline" label="Announce"
-              color="#8B5CF6" bg="rgba(139,92,246,0.12)"
-              onPress={() => router.push(`/(app)/${slug}/(tabs)/chat` as any)}
+            <AiToolCard
+              icon="videocam-outline" color="#8B5CF6" bg="rgba(139,92,246,0.12)"
+              label="Recordings"
+              desc="All game and training recordings linked to events"
+              onPress={() => router.push(`/(app)/${slug}/admin/recordings` as any)}
+              showDivider
+            />
+            <AiToolCard
+              icon="people-outline" color="#F59E0B" bg="rgba(245,158,11,0.12)"
+              label="Guest Activity"
+              desc="All cross-team guest appearances for your club"
+              onPress={() => router.push(`/(app)/${slug}/admin/guest-activity` as any)}
+              showDivider
+            />
+            <AiToolCard
+              icon="images-outline" color="#06B6D4" bg="rgba(6,182,212,0.12)"
+              label="Gallery"
+              desc="Browse and manage all team photos"
+              onPress={() => router.push(`/(app)/${slug}/gallery` as any)}
+              showDivider
             />
           </View>
-          {isOrgAdmin && (
-            <TouchableOpacity
-              style={[st.pendingInvitesBtn, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface, marginBottom: 0 }]}
-              onPress={() => router.push(`/(app)/${slug}/admin/club-calendar` as any)}
-              activeOpacity={0.8}
-            >
-              <View style={[st.pendingInvitesIcon, { backgroundColor: 'rgba(99,102,241,0.1)' }]}>
-                <Ionicons name="calendar-outline" size={18} color="#6366F1" />
-              </View>
-              <View style={st.pendingInvitesMeta}>
-                <Text style={st.pendingInvitesLabel}>Club Calendar</Text>
-                <Text style={st.pendingInvitesSub}>All teams' games and training, week by week</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[st.pendingInvitesBtn, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]}
-            onPress={() => router.push(`/(app)/${slug}/admin/pending-invites` as any)}
-            activeOpacity={0.8}
-          >
-            <View style={[st.pendingInvitesIcon, { backgroundColor: 'rgba(234,179,8,0.1)' }]}>
-              <Ionicons name="mail-outline" size={18} color="#EAB308" />
-            </View>
-            <View style={st.pendingInvitesMeta}>
-              <Text style={st.pendingInvitesLabel}>Pending Invites</Text>
-              <Text style={st.pendingInvitesSub}>Resend reminders to coaches and parents</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
-          </TouchableOpacity>
 
-          {team && (
-            <TouchableOpacity
-              style={[st.pendingInvitesBtn, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]}
-              onPress={() => setEditTeamOpen(true)}
-              activeOpacity={0.8}
-            >
-              <View style={[st.pendingInvitesIcon, { backgroundColor: rgba(0.1) }]}>
-                <Ionicons name="settings-outline" size={18} color={primaryColor} />
-              </View>
-              <View style={st.pendingInvitesMeta}>
-                <Text style={st.pendingInvitesLabel}>Team Settings</Text>
-                <Text style={st.pendingInvitesSub}>Edit team name, age group and season</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
-            </TouchableOpacity>
-          )}
-
-          {/* AI tools — org_admin only */}
+          {/* Club admin — org_admin only */}
           {isOrgAdmin && (
             <>
-              <SectionRow label="AI TOOLS" />
+              <SectionRow label="CLUB" />
               <View style={st.aiGroup}>
+                <AiToolCard
+                  icon="calendar-outline" color="#6366F1" bg="rgba(99,102,241,0.12)"
+                  label="Club Calendar"
+                  desc="All teams' games and training, week by week"
+                  onPress={() => router.push(`/(app)/${slug}/admin/club-calendar` as any)}
+                />
+                <AiToolCard
+                  icon="mail-outline" color="#EAB308" bg="rgba(234,179,8,0.10)"
+                  label="Pending Invites"
+                  desc="Resend reminders to coaches and parents"
+                  onPress={() => router.push(`/(app)/${slug}/admin/pending-invites` as any)}
+                  showDivider
+                />
+                <AiToolCard
+                  icon="settings-outline" color={primaryColor} bg={rgba(0.1)}
+                  label="Team Settings"
+                  desc="Edit team name, age group and season"
+                  onPress={() => setEditTeamOpen(true)}
+                  showDivider
+                />
                 <AiToolCard
                   icon="sparkles-outline" color="#8B5CF6" bg="rgba(139,92,246,0.12)"
                   label="Import Club"
@@ -810,61 +681,26 @@ export default function AdminPanel() {
                   showDivider
                 />
                 <AiToolCard
-                  icon="calendar-outline" color="#F97316" bg="rgba(249,115,22,0.12)"
-                  label="Club Schedule"
-                  desc="Import the full season schedule from the league"
+                  icon="cloud-upload-outline" color="#F97316" bg="rgba(249,115,22,0.12)"
+                  label="Import Schedule"
+                  desc="Upload the season schedule and AI creates all events"
                   onPress={() => router.push(`/(app)/${slug}/admin/club-schedule` as any)}
+                  showDivider
                 />
-              </View>
-            </>
-          )}
-
-          {/* Develop */}
-          <SectionRow label="DEVELOP" />
-          <View style={st.aiGroup}>
-            <AiToolCard
-              icon="ribbon-outline" color="#A855F7" bg="rgba(168,85,247,0.12)"
-              label="Player Evaluations"
-              desc="Rate players and generate AI-powered report cards"
-              onPress={() => router.push(`/(app)/${slug}/admin/evaluations` as any)}
-            />
-          </View>
-
-          {/* Reports */}
-          <SectionRow label="REPORTS" />
-          <View style={st.aiGroup}>
-            <AiToolCard
-              icon="bar-chart-outline" color="#22c55e" bg="rgba(34,197,94,0.12)"
-              label="Season Stats"
-              desc="Playing time ranking and percentage for every player"
-              onPress={() => router.push(`/(app)/${slug}/admin/season-stats` as any)}
-            />
-            <AiToolCard
-              icon="videocam-outline" color="#8B5CF6" bg="rgba(139,92,246,0.12)"
-              label="Recordings"
-              desc="All game and training recordings linked to events"
-              onPress={() => router.push(`/(app)/${slug}/admin/recordings` as any)}
-            />
-            <AiToolCard
-              icon="people-outline" color="#F59E0B" bg="rgba(245,158,11,0.12)"
-              label="Guest Activity"
-              desc="All cross-team guest appearances for your club"
-              onPress={() => router.push(`/(app)/${slug}/admin/guest-activity` as any)}
-            />
-          </View>
-
-          {/* Recent results */}
-          {past.length > 0 && (
-            <>
-              <SectionRow label="RECENT RESULTS" />
-              <View style={st.eventList}>
-                {past.map((ev) => (
-                  <EventCard
-                    key={ev.id} ev={ev} total={total} isPast
-                    onPress={() => router.push(`/(app)/${slug}/event/${ev.id}` as any)}
-                    onEdit={() => router.push(`/(app)/${slug}/edit-event/${ev.id}` as any)}
-                  />
-                ))}
+                <AiToolCard
+                  icon="close-circle-outline" color="#EF4444" bg="rgba(239,68,68,0.12)"
+                  label="Close a Field"
+                  desc="Notify all parents and coaches of a field closure"
+                  onPress={() => router.push(`/(app)/${slug}/admin/close-field` as any)}
+                  showDivider
+                />
+                <AiToolCard
+                  icon="megaphone-outline" color="#DC2626" bg="rgba(220,38,38,0.10)"
+                  label="Emergency Broadcast"
+                  desc="Send urgent push + email blast to your entire club"
+                  onPress={() => router.push(`/(app)/${slug}/admin/emergency-broadcast` as any)}
+                  showDivider
+                />
               </View>
             </>
           )}
@@ -893,17 +729,12 @@ const st = StyleSheet.create({
 
   // Surface type nudge
   nudgeBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-    marginHorizontal: 16, marginBottom: 16,
-    backgroundColor: 'rgba(245,158,11,0.08)', borderRadius: 14, borderWidth: 1,
-    borderColor: 'rgba(245,158,11,0.2)', padding: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginBottom: 4, marginTop: 8,
+    backgroundColor: 'rgba(245,158,11,0.06)', borderRadius: 8, borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.18)', paddingHorizontal: 10, paddingVertical: 7,
   },
-  nudgeIconWrap: {
-    width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(245,158,11,0.15)',
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1,
-  },
-  nudgeTitle:  { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 3 },
-  nudgeSub:    { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, lineHeight: 17 },
+  nudgeTitle: { flex: 1, fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 
   // Header
   header: {
@@ -935,9 +766,6 @@ const st = StyleSheet.create({
   statNum:     { fontSize: 22, fontWeight: '800' },
   statLabel:   { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
-  // Event list
-  eventList: { marginHorizontal: 16, gap: 8 },
-
   // Empty
   emptyCard: {
     alignItems: 'center', paddingVertical: 32,
@@ -948,20 +776,6 @@ const st = StyleSheet.create({
   emptyTitle: { fontSize: 15, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
   emptyLink:  { fontSize: 14, fontWeight: '600', marginTop: 4 },
 
-  // Manage 3-col grid
-  manageGrid: { flexDirection: 'row', gap: 10, marginHorizontal: 16 },
-  pendingInvitesBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    marginHorizontal: 16, marginTop: 10, padding: 14,
-    borderRadius: 14, borderWidth: 1,
-  },
-  pendingInvitesIcon: {
-    width: 40, height: 40, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  pendingInvitesMeta: { flex: 1 },
-  pendingInvitesLabel: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  pendingInvitesSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted },
 
   // AI tools grouped card
   aiGroup: {

@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
@@ -381,7 +381,7 @@ export default function GuestRequestScreen() {
                     <Image
                       source={{ uri: mapUrl }}
                       style={[st.mapImg, !mapImgLoaded && { opacity: 0 }]}
-                      resizeMode="cover"
+                      contentFit="cover"
                       onLoad={() => setMapImgLoaded(true)}
                       onError={() => setMapImgError(true)}
                     />

@@ -778,6 +778,95 @@ function IncomeCalculator({ clubs }: { clubs: Club[] }) {
 }
 
 // ── Platform overview ──────────────────────────────────────────────────────────
+// ── Payment volume widget ──────────────────────────────────────────────────────
+type PayVol = { total: number; thisMonth: number; platformFees: number; byClub: { name: string; amount: number }[] };
+
+function PaymentVolumeWidget() {
+  const [data, setData] = useState<PayVol | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+      const { data: rows } = await supabase
+        .from('fee_payments')
+        .select('amount, created_at, player_fees!inner(teams!inner(clubs!inner(id, name, stripe_connect_onboarded)))');
+
+      if (!rows) { setLoading(false); return; }
+
+      const pFeePct = 0; // STRIPE_PLATFORM_FEE_PCT — 0 during beta, matches env var
+      const byClubMap: Record<string, { name: string; amount: number }> = {};
+      let total = 0, thisMonth = 0, platformFees = 0;
+
+      for (const r of rows as any[]) {
+        const club = r.player_fees?.teams?.clubs;
+        const amt  = Number(r.amount ?? 0);
+        total += amt;
+        if (r.created_at >= monthStart) thisMonth += amt;
+        platformFees += amt * pFeePct;
+        if (club?.id) {
+          byClubMap[club.id] = { name: club.name, amount: (byClubMap[club.id]?.amount ?? 0) + amt };
+        }
+      }
+
+      const byClub = Object.values(byClubMap).sort((a, b) => b.amount - a.amount).slice(0, 6);
+      setData({ total, thisMonth, platformFees, byClub });
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+  return (
+    <div style={{ ...card, padding: 20 }}>
+      <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16 }}>Payment volume · Stripe</div>
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Spinner /></div>
+      ) : !data || data.total === 0 ? (
+        <div style={{ fontSize: 13, color: C.textMuted, textAlign: 'center', padding: '16px 0' }}>No payments collected yet</div>
+      ) : (
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', flex: 1 }}>
+            {[
+              { label: 'All time', val: fmt(data.total),       sub: 'total collected' },
+              { label: 'This month', val: fmt(data.thisMonth), sub: 'collected this month' },
+              { label: 'Platform fees', val: fmt(data.platformFees), sub: 'Pulse FC revenue' },
+            ].map(({ label, val, sub }) => (
+              <div key={label} style={{ background: C.inputBg, borderRadius: 8, padding: '12px 16px', minWidth: 140 }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: C.textDark }}>{val}</div>
+                <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>{label}</div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>{sub}</div>
+              </div>
+            ))}
+          </div>
+          {data.byClub.length > 0 && (
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8 }}>By club</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.byClub.map((c, i) => (
+                  <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: C.textMuted, width: 14, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                        <span style={{ fontSize: 12, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.textDark, flexShrink: 0 }}>{fmt(c.amount)}</span>
+                      </div>
+                      <div style={{ height: 3, background: C.border, borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${(c.amount / data.byClub[0].amount) * 100}%`, background: C.green, borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, liveConnected }: {
   stats: Stats | null; recentMembers: RecentMember[]; clubs: Club[]; loading: boolean;
   activityFeed: ActivityItem[]; liveConnected: boolean;
@@ -831,6 +920,11 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
 
       {/* Activity feed */}
       <ActivityFeed items={activityFeed} liveConnected={liveConnected} />
+
+      {/* Payment volume */}
+      <div style={{ marginBottom: 16 }}>
+        <PaymentVolumeWidget />
+      </div>
 
       {/* Income + Health */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>

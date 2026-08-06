@@ -25,7 +25,7 @@ export default function PrivacyPage() {
 
         <Section title="1. Who we are">
           <p>Pulse FC (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is a soccer club management platform. Our platform is available at pulse-fc.app and through our iOS mobile application.</p>
-          <p>You can contact us at <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>.</p>
+          <p>You can contact us at <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>.</p>
         </Section>
 
         <Section title="2. What data we collect">
@@ -69,12 +69,12 @@ export default function PrivacyPage() {
 
         <Section title="5. Data retention">
           <p>We retain your personal data for as long as your account is active. If you delete your account, your personal data is deleted within 30 days. Club and team data may be retained in anonymised form for analytics purposes.</p>
-          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a> or using the Delete Account option in the app settings.</p>
+          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a> or using the Delete Account option in the app settings.</p>
         </Section>
 
         <Section title="6. Children's privacy">
           <p>Our platform is designed for use by coaches and parents. We do not knowingly collect personal data directly from children under 13. Player roster entries (name, jersey number, position) are entered by coaches or parents, not by the players themselves.</p>
-          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>.</p>
+          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>.</p>
         </Section>
 
         <Section title="7. Your rights">
@@ -86,7 +86,7 @@ export default function PrivacyPage() {
             <li>Export your data in a portable format.</li>
             <li>Withdraw consent at any time (this will not affect the lawfulness of prior processing).</li>
           </ul>
-          <p>To exercise any of these rights, email <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>. We will respond within 30 days.</p>
+          <p>To exercise any of these rights, email <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>. We will respond within 30 days.</p>
         </Section>
 
         <Section title="8. Security">
@@ -105,7 +105,7 @@ export default function PrivacyPage() {
           <p>If you have any questions about this privacy policy or how we handle your data, please contact:</p>
           <p className="mt-2">
             <strong>Pulse FC</strong><br />
-            <a href="mailto:info@pulse-fc.app" className="text-[#22c55e] hover:underline">info@pulse-fc.app</a>
+            <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>
           </p>
         </Section>
       </main>

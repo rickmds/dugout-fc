@@ -8,8 +8,8 @@ import {
   Animated,
   ActivityIndicator,
   Alert,
-  Image,
   Dimensions,
+  Image,
   StyleSheet,
 } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';

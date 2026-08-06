@@ -1,47 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { requireRole } from '@/lib/apiAuth';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const SYSTEM = `You are a youth soccer coach writing a personal player evaluation report for a parent and their child.
-Write in a warm, professional, encouraging tone — specific enough to feel genuine, never generic.
-Output ONLY the report text, no headers, no bullet points, no markdown. 150–180 words maximum.
-Focus on concrete observations: what the player did well, one clear area to develop, and an encouraging closing message.`;
+const SYSTEM = `You are a youth soccer coach writing a personal summary paragraph for a player development report.
+Write in a warm, direct, encouraging tone — specific to this player, never generic.
+Output ONLY the paragraph. No headers, no bullet points, no markdown. 120–160 words maximum.
+Reference specific strengths, the main development priority, and close with genuine encouragement.`;
 
 type Body = {
   player_name: string;
+  position: string;
+  school: string;
   season_label: string;
   period_label: string;
   rating_technical: number;
   rating_tactical: number;
   rating_physical: number;
   rating_mental: number;
-  q1_improvement: string;
-  q2_focus: string;
-  q3_message: string;
+  super_strengths: string[];
+  areas_of_development: string[];
+  performance_goals: string[];
 };
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   try {
     const body: Body = await req.json();
 
-    const ratings = [
-      `Technical: ${body.rating_technical}/5`,
-      `Tactical: ${body.rating_tactical}/5`,
-      `Physical: ${body.rating_physical}/5`,
-      `Mental/attitude: ${body.rating_mental}/5`,
-    ].join(', ');
+    const list = (items: string[]) =>
+      items.filter(Boolean).map((s, i) => `${i + 1}. ${s}`).join('\n') || 'Not specified';
 
     const prompt = `Player: ${body.player_name}
-Season: ${body.season_label} — ${body.period_label}
-Ratings — ${ratings}
+Position: ${body.position || 'Not listed'}
+School: ${body.school || 'Not listed'}
+Season/Period: ${body.period_label} — ${body.season_label}
 
-Coach notes:
-1. Biggest improvement this period: ${body.q1_improvement}
-2. Main area to focus on next: ${body.q2_focus}
-3. Personal message to player and family: ${body.q3_message}
+Ratings — Technical: ${body.rating_technical}/5, Tactical: ${body.rating_tactical}/5, Physical: ${body.rating_physical}/5, Mental: ${body.rating_mental}/5
 
-Write the player evaluation report now.`;
+Super Strengths:
+${list(body.super_strengths)}
+
+Areas of Development:
+${list(body.areas_of_development)}
+
+Performance Goals this season:
+${list(body.performance_goals)}
+
+Write the coach summary now.`;
 
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',

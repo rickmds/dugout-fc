@@ -30,31 +30,32 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    let teams: Team[] = [];
+    let teams: Team[];
 
     if (profile.role === 'org_admin') {
-      const { data } = await supabase
-        .from('teams')
-        .select('*')
-        .eq('club_id', profile.club_id)
-        .order('created_at');
+      // Run DB query and AsyncStorage read in parallel
+      const [{ data }, saved] = await Promise.all([
+        supabase.from('teams').select('*').eq('club_id', profile.club_id).order('created_at'),
+        AsyncStorage.getItem(STORAGE_KEY),
+      ]);
       teams = (data as Team[]) ?? [];
+      setAllTeams(teams);
+      const valid = teams.find((t) => t.id === saved);
+      setSelectedTeamId(valid ? valid.id : (teams[0]?.id ?? null));
     } else {
-      const { data } = await supabase
-        .from('team_members')
-        .select('teams(*)')
-        .eq('profile_id', profile.id);
+      const [{ data }, saved] = await Promise.all([
+        supabase.from('team_members').select('teams(*)').eq('profile_id', profile.id),
+        AsyncStorage.getItem(STORAGE_KEY),
+      ]);
       teams = ((data ?? [])
         .map((r: any) => r.teams)
         .filter((t: any) => Boolean(t) && t.club_id === profile.club_id) as Team[])
         .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+      setAllTeams(teams);
+      const valid = teams.find((t) => t.id === saved);
+      setSelectedTeamId(valid ? valid.id : (teams[0]?.id ?? null));
     }
 
-    setAllTeams(teams);
-
-    const saved = await AsyncStorage.getItem(STORAGE_KEY);
-    const valid = teams.find((t) => t.id === saved);
-    setSelectedTeamId(valid ? valid.id : (teams[0]?.id ?? null));
     setLoading(false);
   }, [profile?.id, profile?.club_id, profile?.role]);
 
