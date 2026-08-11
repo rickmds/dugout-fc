@@ -502,7 +502,7 @@ function UploadStep({ onAnalyse, onSkip }: {
     <div>
       <h2 className="text-2xl font-extrabold text-white mb-1">Import your club data</h2>
       <p className="text-[#9ca3af] text-sm mb-6">
-        Drop your roster, schedule, team lists — any format, any number of files. Claude reads them all at once.
+        Drop your roster, schedule, team lists — any format, any number of files. Pulse FC reads them all at once.
       </p>
 
       <div
@@ -554,8 +554,8 @@ function UploadStep({ onAnalyse, onSkip }: {
           {converting
             ? 'Reading files…'
             : files.length > 0
-              ? `Analyse ${files.length} file${files.length > 1 ? 's' : ''} with Claude →`
-              : 'Analyse with Claude →'}
+              ? `Analyse ${files.length} file${files.length > 1 ? 's' : ''} with Pulse FC →`
+              : 'Analyse with Pulse FC →'}
         </Btn>
       </div>
     </div>
@@ -643,7 +643,7 @@ function ProcessingStep({ done, failed, counts, onComplete }: {
         <p className="text-sm text-[#555]">
           {phase === 'ready'
             ? 'Review everything before going live'
-            : 'Claude is reading your roster, schedule and coaches'}
+            : 'Pulse FC is reading your roster, schedule and coaches'}
         </p>
       </div>
 
@@ -704,12 +704,12 @@ function ProcessingStep({ done, failed, counts, onComplete }: {
                 ))}
               </div>
               <span className="text-[11px] text-[#2a2a2a]">
-                {phase === 'loading' ? 'Claude is working…' : 'Tallying up…'}
+                {phase === 'loading' ? 'Pulse FC is working…' : 'Tallying up…'}
               </span>
             </>
           ) : (
             <span className={`text-[11px] font-bold ${failed ? 'text-[#f97316]' : 'text-[#22c55e]'}`}>
-              {failed ? 'AI parse failed — fill in details manually' : 'Import complete — heading to review'}
+              {failed ? 'AI scouting failed — fill in details manually' : 'Import complete — heading to review'}
             </span>
           )}
         </div>
@@ -982,7 +982,7 @@ function ReviewStep({
       <div className="flex items-start justify-between mb-6">
         <div>
           <h2 className="text-2xl font-extrabold text-white">Review your club data</h2>
-          <p className="text-[#9ca3af] text-sm mt-1">Everything Claude extracted — edit anything before confirming</p>
+          <p className="text-[#9ca3af] text-sm mt-1">Everything Pulse FC found — edit anything before confirming</p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0 ml-4">
           {merging && <span className="text-xs text-[#22c55e] animate-pulse">Merging…</span>}
