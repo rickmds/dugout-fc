@@ -21,19 +21,21 @@ export default function NavBar() {
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-          {NAV_LINKS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              style={{
-                fontSize: '13px', fontWeight: '600', color: '#888',
-                textDecoration: 'none', transition: 'color 0.15s',
-              }}
-              className="hover:!text-white"
-            >
-              {label}
-            </Link>
-          ))}
+          <div className="hidden md:flex" style={{ alignItems: 'center', gap: '24px' }}>
+            {NAV_LINKS.map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                style={{
+                  fontSize: '13px', fontWeight: '600', color: '#888',
+                  textDecoration: 'none', transition: 'color 0.15s',
+                }}
+                className="hover:!text-white"
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
           <Link
             href="/onboarding"
             style={{
@@ -42,7 +44,7 @@ export default function NavBar() {
               textDecoration: 'none', whiteSpace: 'nowrap',
             }}
           >
-            Add your club
+            Set up tonight
           </Link>
         </div>
       </div>

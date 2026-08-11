@@ -289,10 +289,10 @@ const tabDefs = [
     checks: ['Live timer with real-time sub tracking', 'Equal time calculator — works offline', 'Log scores · season record auto-updates'],
     visual: (
       <div className="flex flex-col sm:flex-row gap-6">
-        <div style={{ flexShrink: 0 }}>
-          <div style={{ position: 'relative', width: 200 }}>
-            <div style={{ position: 'absolute', inset: -20, background: 'radial-gradient(ellipse at 50% 40%, rgba(34,197,94,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
-            <img src="/screenshots/match-trackerTB.png" alt="Match tracker" style={{ position: 'relative', width: '100%', display: 'block', filter: 'drop-shadow(0 16px 40px rgba(0,0,0,0.6))' }} />
+        <div className="mx-auto sm:mx-0" style={{ flexShrink: 0, width: 168 }}>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <div style={{ position: 'absolute', inset: -16, background: 'radial-gradient(ellipse at 50% 45%, rgba(34,197,94,0.14) 0%, transparent 70%)', pointerEvents: 'none' }} />
+            <img src="/screenshots/match-trackerTB-crop.png" alt="Match tracker" style={{ position: 'relative', width: '100%', display: 'block', filter: 'drop-shadow(0 16px 40px rgba(0,0,0,0.6))' }} />
           </div>
         </div>
         <div className="flex flex-col gap-3 flex-1 min-w-0">
