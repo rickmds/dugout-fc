@@ -781,8 +781,13 @@ function ReviewStep({
     const payloads: { base64?: string; mimeType?: string; text?: string; name: string }[] = [];
     for (const f of Array.from(fl)) payloads.push(await toPayload(f));
 
+    const { data: { session: mfSession } } = await supabase.auth.getSession();
     const res  = await fetch('/api/ai/parse-all', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(mfSession?.access_token ? { Authorization: `Bearer ${mfSession.access_token}` } : {}),
+      },
       body: JSON.stringify({ files: payloads }),
     });
     const data = await res.json();
@@ -1313,15 +1318,20 @@ function DoneStep({ clubName, slug, parentInvites, coachPayload }: {
 
   async function sendInvites() {
     setSending(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const authHeaders = {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    };
     for (const inv of parentInvites.filter(i => selected.has(i.inviteId))) {
       await fetch('/api/send-invite', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: authHeaders,
         body: JSON.stringify({ invite_id: inv.inviteId, player_name: inv.playerName }),
       });
     }
     if (coachPayload && coachCount > 0) {
       await fetch('/api/invite-coach', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: authHeaders,
         body: JSON.stringify(coachPayload),
       });
     }
@@ -1488,8 +1498,13 @@ export default function OnboardingPage() {
     setProcessingCounts(null);
     setStep('processing');
     try {
+      const { data: { session: analyseSession } } = await supabase.auth.getSession();
       const res  = await fetch('/api/ai/parse-all', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(analyseSession?.access_token ? { Authorization: `Bearer ${analyseSession.access_token}` } : {}),
+        },
         body: JSON.stringify({ files: uploadedFiles.map(f => f.payload) }),
         signal: controller.signal,
       });
