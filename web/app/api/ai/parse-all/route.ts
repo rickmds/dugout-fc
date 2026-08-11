@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import ExcelJS from 'exceljs';
 import { requireRole } from '@/lib/apiAuth';
 
-export const maxDuration = 120;
+// Matches the maxDuration for this route in vercel.json — was mismatched at
+// 120 here, which could silently cap the function short of what's configured.
+export const maxDuration = 300;
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -32,6 +35,50 @@ function parseCSV(text: string): string[][] {
     rows.push(fields);
   }
   return rows;
+}
+
+// ─── Excel (.xlsx/.xls) → CSV text ─────────────────────────────────────────────
+
+const EXCEL_MIMES = [
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+];
+function isExcelFile(f: FileInput): boolean {
+  return !!(f.mimeType && EXCEL_MIMES.includes(f.mimeType)) || /\.xlsx?$/i.test(f.name ?? '');
+}
+
+function csvCell(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+function excelCellToString(v: ExcelJS.CellValue): string {
+  if (v == null) return '';
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'object') {
+    if ('result' in v && v.result != null) return excelCellToString(v.result as ExcelJS.CellValue); // formula
+    if ('text' in v && typeof v.text === 'string') return v.text; // hyperlink
+    if ('richText' in v && Array.isArray(v.richText)) return v.richText.map(t => t.text).join('');
+  }
+  return String(v);
+}
+
+async function excelToCSV(base64: string): Promise<string> {
+  const workbook = new ExcelJS.Workbook();
+  // exceljs's nested dependencies (fast-csv) ship their own older @types/node,
+  // which TS auto-includes as an extra typeRoot and merges against our
+  // top-level one — the two ambient `Buffer` declarations conflict at the
+  // type level even though they're the same value at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await workbook.xlsx.load(Buffer.from(base64, 'base64') as any);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return '';
+  const lines: string[] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const values = row.values as ExcelJS.CellValue[]; // index 0 is unused by exceljs
+    const cells = values.slice(1).map(v => csvCell(excelCellToString(v)));
+    lines.push(cells.join(','));
+  });
+  return lines.join('\n');
 }
 
 function colIdx(headers: string[], ...names: string[]): number {
@@ -316,31 +363,7 @@ Rules:
 - coach_notes: any coach-only or internal notes (e.g. "Focus on set pieces", "Call-up players available"), empty string if none
 - confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain`;
 
-async function askClaude(files: FileInput[]): Promise<ParsedResult> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const content: any[] = [];
-  for (const file of files) {
-    content.push({ type: 'text', text: `--- ${file.name} ---` });
-    if (file.text) {
-      content.push({ type: 'text', text: file.text });
-    } else if (file.base64 && file.mimeType) {
-      if (isImageMime(file.mimeType)) {
-        content.push({ type: 'image', source: { type: 'base64', media_type: file.mimeType, data: file.base64 } });
-      } else if (file.mimeType === 'application/pdf') {
-        content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf' as const, data: file.base64 } });
-      }
-    }
-  }
-  content.push({ type: 'text', text: 'Extract all teams, players, events, and coaches.' });
-
-  const msg = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8192,
-    system: CLAUDE_SYSTEM,
-    messages: [{ role: 'user', content }],
-  });
-
-  const raw = (msg.content[0] as Anthropic.TextBlock).text ?? '';
+function parseClaudeJSON(raw: string): ParsedResult {
   try {
     const p = JSON.parse(raw);
     return { teams: p.teams ?? [], players: p.players ?? [], events: p.events ?? [], coaches: p.coaches ?? [] };
@@ -353,6 +376,51 @@ async function askClaude(files: FileInput[]): Promise<ParsedResult> {
     }
     return result;
   }
+}
+
+// Each file gets its own call with its own dedicated max_tokens budget —
+// a shared budget across a whole batch (the old behaviour) meant a single
+// large roster PDF could starve every other file's extraction of tokens.
+async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const content: any[] = [{ type: 'text', text: `--- ${file.name} ---` }];
+  if (file.text) {
+    content.push({ type: 'text', text: file.text });
+  } else if (file.base64 && file.mimeType) {
+    if (isImageMime(file.mimeType)) {
+      content.push({ type: 'image', source: { type: 'base64', media_type: file.mimeType, data: file.base64 } });
+    } else if (file.mimeType === 'application/pdf') {
+      content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf' as const, data: file.base64 } });
+    } else {
+      // No native Claude document type for this MIME — nothing to send.
+      return emptyResult();
+    }
+  } else {
+    return emptyResult();
+  }
+  content.push({ type: 'text', text: 'Extract all teams, players, events, and coaches.' });
+
+  // Streaming avoids the SDK's non-streaming HTTP timeout, required once
+  // max_tokens goes past ~16K.
+  const stream = client.messages.stream({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 32000,
+    system: CLAUDE_SYSTEM,
+    messages: [{ role: 'user', content }],
+  });
+  const msg = await stream.finalMessage();
+  const raw = (msg.content[0] as Anthropic.TextBlock).text ?? '';
+  return parseClaudeJSON(raw);
+}
+
+async function askClaude(files: FileInput[]): Promise<ParsedResult> {
+  const results = await Promise.all(files.map(file =>
+    askClaudeForFile(file).catch(err => {
+      console.error(`[parse-all] Claude extraction failed for "${file.name}":`, err);
+      return emptyResult();
+    })
+  ));
+  return results.reduce((acc, r) => merge(acc, r), emptyResult());
 }
 
 // ─── Merge two ParsedResults ──────────────────────────────────────────────────
@@ -381,16 +449,28 @@ export async function POST(req: NextRequest) {
     const forClaude: FileInput[] = [];
 
     for (const file of files) {
-      if (file.text) {
+      // Excel workbooks aren't a Claude-native document type (only PDF/images
+      // are) — convert to CSV text first so they go through the same path
+      // as an uploaded .csv instead of being silently dropped.
+      let normalized = file;
+      if (!file.text && file.base64 && isExcelFile(file)) {
+        try {
+          normalized = { text: await excelToCSV(file.base64), name: file.name };
+        } catch (err) {
+          console.error(`[parse-all] failed to read Excel file "${file.name}":`, err);
+        }
+      }
+
+      if (normalized.text) {
         // Try JS CSV parser first
-        const parsed = extractFromCSV(file.text);
+        const parsed = extractFromCSV(normalized.text);
         if (parsed) {
           result = merge(result, parsed);
         } else {
-          forClaude.push(file); // unrecognised text format → Claude
+          forClaude.push(normalized); // unrecognised text format → Claude
         }
       } else {
-        forClaude.push(file); // PDF / image → Claude
+        forClaude.push(normalized); // PDF / image → Claude
       }
     }
 
