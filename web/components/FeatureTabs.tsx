@@ -7,6 +7,14 @@ import LineupBuilder from '@/components/LineupBuilder';
 
 const INTERVAL = 5000;
 
+const scheduleGames = [
+  { date: 'Sat 5 Jul',  time: '10:00', opp: 'Riverside Utd', venue: 'Riverside Park',    type: 'Game'     },
+  { date: 'Sat 12 Jul', time: '11:30', opp: 'Northgate FC',  venue: 'Northgate Sports',  type: 'Game'     },
+  { date: 'Sat 19 Jul', time: '09:00', opp: 'Valley Eagles', venue: 'Valley Rec. Ctr',   type: 'Game'     },
+  { date: 'Sat 23 Jul', time: '17:00', opp: 'Training',      venue: 'Home Field',        type: 'Training' },
+  { date: 'Sat 26 Jul', time: '14:00', opp: 'Westfield SC',  venue: 'Main Street Field', type: 'Game'     },
+];
+
 const tabDefs = [
   {
     id: 'schedule',
@@ -35,19 +43,14 @@ const tabDefs = [
           </div>
           <span className="text-[10px] font-bold text-[#22c55e] px-2.5 py-1 rounded-lg" style={{ background: '#22c55e10', border: '1px solid #22c55e20' }}>Confirmed</span>
         </div>
-        <div className="grid px-4 py-2" style={{ gridTemplateColumns: '90px 48px 1fr 60px', gap: '0 8px', borderBottom: '1px solid #111' }}>
+        {/* Desktop / tablet — table */}
+        <div className="hidden sm:grid px-4 py-2" style={{ gridTemplateColumns: '90px 48px 1fr 60px', gap: '0 8px', borderBottom: '1px solid #111' }}>
           {['Date', 'Time', 'Opponent / Venue', 'Type'].map(h => (
             <span key={h} className="text-[9px] font-bold uppercase tracking-widest text-[#888]">{h}</span>
           ))}
         </div>
-        <div className="flex flex-col divide-y divide-[#111]">
-          {[
-            { date: 'Sat 5 Jul',  time: '10:00', opp: 'Riverside Utd', venue: 'Riverside Park',    type: 'Game'     },
-            { date: 'Sat 12 Jul', time: '11:30', opp: 'Northgate FC',  venue: 'Northgate Sports',  type: 'Game'     },
-            { date: 'Sat 19 Jul', time: '09:00', opp: 'Valley Eagles', venue: 'Valley Rec. Ctr',   type: 'Game'     },
-            { date: 'Sat 23 Jul', time: '17:00', opp: 'Training',      venue: 'Home Field',        type: 'Training' },
-            { date: 'Sat 26 Jul', time: '14:00', opp: 'Westfield SC',  venue: 'Main Street Field', type: 'Game'     },
-          ].map((g, i) => (
+        <div className="hidden sm:flex flex-col divide-y divide-[#111]">
+          {scheduleGames.map((g, i) => (
             <div key={i} className="grid items-center px-4 py-2.5" style={{ gridTemplateColumns: '90px 48px 1fr 60px', gap: '0 8px' }}>
               <span className="text-white text-[11px] font-semibold">{g.date}</span>
               <span className="text-[#888] text-[11px] font-mono">{g.time}</span>
@@ -56,6 +59,24 @@ const tabDefs = [
                 <p className="text-[#888] text-[9.5px] truncate">{g.venue}</p>
               </div>
               <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-md text-center"
+                style={g.type === 'Game'
+                  ? { background: '#0e1a0e', color: '#22c55e', border: '1px solid #22c55e18' }
+                  : { background: '#1a1209', color: '#f59e0b', border: '1px solid #f59e0b18' }}>
+                {g.type}
+              </span>
+            </div>
+          ))}
+        </div>
+        {/* Mobile — stacked cards */}
+        <div className="sm:hidden flex flex-col divide-y divide-[#111]">
+          {scheduleGames.map((g, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[#888] text-[10px] font-mono mb-1">{g.date} · {g.time}</p>
+                <p className="text-white text-[13px] font-semibold truncate leading-tight">{g.opp}</p>
+                <p className="text-[#888] text-[11px] truncate">{g.venue}</p>
+              </div>
+              <span className="text-[9.5px] font-bold px-2 py-1 rounded-md text-center flex-shrink-0"
                 style={g.type === 'Game'
                   ? { background: '#0e1a0e', color: '#22c55e', border: '1px solid #22c55e18' }
                   : { background: '#1a1209', color: '#f59e0b', border: '1px solid #f59e0b18' }}>
@@ -325,18 +346,16 @@ export default function FeatureTabs() {
 
   return (
     <section id="how" style={{ borderTop: '1px solid #111', position: 'relative', overflow: 'hidden' }}>
-      {/* Ambient section wash — blurred solid blobs, no gradient banding */}
-      <div style={{
-        position: 'absolute', top: -40, left: '6%', width: 340, height: 340, borderRadius: '50%',
-        background: '#22c55e', opacity: 0.14, filter: 'blur(120px)', pointerEvents: 'none', zIndex: 0,
+      {/* Ambient section wash — blurred solid blobs, no gradient banding. Smaller + softer on mobile so it doesn't wash out the text. */}
+      <div className="absolute rounded-full pointer-events-none w-[140px] h-[140px] opacity-[0.08] blur-[60px] sm:w-[340px] sm:h-[340px] sm:opacity-[0.14] sm:blur-[120px]" style={{
+        top: -20, left: '4%', background: '#22c55e', zIndex: 0,
         animation: 'ambientPulse 8s ease-in-out infinite',
       }} />
-      <div style={{
-        position: 'absolute', bottom: -60, right: '3%', width: 340, height: 340, borderRadius: '50%',
-        background: '#E879A0', opacity: 0.13, filter: 'blur(120px)', pointerEvents: 'none', zIndex: 0,
+      <div className="absolute rounded-full pointer-events-none w-[140px] h-[140px] opacity-[0.07] blur-[60px] sm:w-[340px] sm:h-[340px] sm:opacity-[0.13] sm:blur-[120px]" style={{
+        bottom: -20, right: '3%', background: '#E879A0', zIndex: 0,
         animation: 'ambientPulse 8s ease-in-out infinite 4s',
       }} />
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 py-24" style={{ position: 'relative', zIndex: 1 }}>
+      <div className="max-w-7xl mx-auto px-5 sm:px-10 py-16 sm:py-24" style={{ position: 'relative', zIndex: 1 }}>
 
         <div className="mb-14 max-w-2xl">
           <div className="inline-flex items-center gap-2.5 text-[#22c55e] text-[11px] font-bold border border-[#22c55e25] bg-[#22c55e0a] px-3.5 py-1.5 rounded-full mb-6 uppercase tracking-[0.16em]">
@@ -344,7 +363,7 @@ export default function FeatureTabs() {
             How it works
           </div>
           <h2 className="font-extrabold text-white leading-tight tracking-tight mb-4" style={{ fontSize: 'clamp(28px, 3.5vw, 48px)' }}>
-            Everything your club needs.<br />None of the <span style={{ color: '#22c55e' }}>chaos</span>.
+            Everything your club needs. <br className="hidden sm:inline" />None of the <span style={{ color: '#22c55e' }}>chaos</span>.
           </h2>
           <p className="text-[#888] text-[15px] leading-relaxed">
             Five tools, one app — <span style={{ color: '#E879A0', fontWeight: 700 }}>two of them powered by AI</span>. Tap through to see exactly what your coaches and parents will use every week.
@@ -362,9 +381,11 @@ export default function FeatureTabs() {
                 border: `1px solid ${active === i ? `${t.accent}40` : '#1e1e1e'}`,
               }}>
               <span>{t.icon}</span>
-              <span>{t.label}</span>
+              <span className="whitespace-nowrap">{t.label}</span>
               {t.ai && (
-                <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ background: active === i ? t.accent : '#E879A060' }} />
+                <span className="text-[8px] font-extrabold px-1 py-[2px] rounded flex-shrink-0 leading-none" style={{
+                  color: active === i ? t.accent : '#E879A0', background: active === i ? `${t.accent}20` : '#E879A01a',
+                }}>AI</span>
               )}
             </button>
           ))}
@@ -444,7 +465,7 @@ export default function FeatureTabs() {
               background: tab.accent, opacity: 0.28, filter: 'blur(90px)', pointerEvents: 'none', zIndex: 0,
               animation: 'tabFadeIn 0.4s ease',
             }} />
-            <div className="rounded-2xl p-6 lg:p-8 relative overflow-hidden" style={{
+            <div className="rounded-2xl p-3 sm:p-6 lg:p-8 relative overflow-hidden" style={{
               background: '#0a0a0a', border: `1px solid ${tab.accent}45`, minHeight: 480, zIndex: 1,
               boxShadow: `0 24px 60px -30px ${tab.accent}55`,
             }}>
