@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import { FlipBoard } from '@/components/FlipBoard';
+import LogoCropModal from '@/components/LogoCropModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -318,18 +319,37 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
   const [primary, setPrimary]     = useState('#22c55e');
   const [logoFile, setLogoFile]   = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [cropFile, setCropFile]   = useState<File | null>(null);
   const [error, setError]         = useState('');
   const [loading, setLoading]     = useState(false);
+  const eyedropperSupported = typeof window !== 'undefined' && 'EyeDropper' in window;
 
   useEffect(() => { if (!slugEdited) setSlug(slugify(name)); }, [name, slugEdited]);
 
   function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (file.size > 3 * 1024 * 1024) { setError('Logo must be under 3MB.'); return; }
-    setLogoFile(file);
-    setLogoPreview(URL.createObjectURL(file));
     setError('');
+    setCropFile(file);
+  }
+
+  function handleCropSave(blob: Blob, dataUrl: string) {
+    setLogoFile(new File([blob], 'logo.png', { type: 'image/png' }));
+    setLogoPreview(dataUrl);
+    setCropFile(null);
+  }
+
+  async function pickColorFromScreen() {
+    try {
+      // @ts-expect-error — EyeDropper isn't in TS's lib.dom yet
+      const eyeDropper = new window.EyeDropper();
+      const result = await eyeDropper.open();
+      if (result?.sRGBHex) setPrimary(result.sRGBHex);
+    } catch {
+      // user cancelled — no-op
+    }
   }
 
   async function submit() {
@@ -384,12 +404,16 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
             <div>
               <p className="text-white font-bold text-sm">{name || 'Your Club'}</p>
               <p className="text-[#555] text-xs mt-0.5">pulse-fc.app/{slug || 'your-club'}</p>
-              <p className="text-[#22c55e] text-xs mt-1 font-medium">Click logo to upload</p>
+              <p className="text-[#22c55e] text-xs mt-1 font-medium">{logoPreview ? 'Click logo to reposition or replace' : 'Click logo to upload'}</p>
             </div>
             <div className="ml-auto">
               <div className="w-6 h-6 rounded-full border border-[#333]" style={{ background: primary }} />
             </div>
           </div>
+
+          {cropFile && (
+            <LogoCropModal file={cropFile} onCancel={() => setCropFile(null)} onSave={handleCropSave} />
+          )}
 
           <div>
             <Label>Club name</Label>
@@ -407,12 +431,29 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
 
           <div>
             <Label>Primary colour</Label>
-            <div className="flex items-center gap-3">
-              <div className="relative w-10 h-10 flex-shrink-0">
-                <div className="w-10 h-10 rounded-lg border border-[#333]" style={{ background: primary }} />
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="relative w-10 h-10 flex-shrink-0 rounded-lg border border-[#333] hover:border-[#555] transition-colors cursor-pointer group" title="Open colour picker">
+                <div className="absolute inset-0 rounded-lg" style={{ background: primary }} />
+                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 group-hover:bg-black/20 transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="opacity-0 group-hover:opacity-90 transition-opacity">
+                    <path d="M12 22s7-6.5 7-12A7 7 0 1 0 5 10c0 5.5 7 12 7 12z" stroke="#fff" strokeWidth="2" strokeLinejoin="round"/>
+                    <circle cx="12" cy="10" r="2.5" stroke="#fff" strokeWidth="2"/>
+                  </svg>
+                </div>
                 <input type="color" value={primary} onChange={(e) => setPrimary(e.target.value)}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-              </div>
+              </label>
+
+              {eyedropperSupported && (
+                <button type="button" onClick={pickColorFromScreen} title="Pick exact colour from anywhere on screen"
+                  className="w-10 h-10 flex-shrink-0 rounded-lg border border-[#333] hover:border-[#22c55e] flex items-center justify-center transition-colors">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M19.5 4.5a2.5 2.5 0 0 1 0 3.54l-1.6 1.6-3.54-3.54 1.6-1.6a2.5 2.5 0 0 1 3.54 0Z" stroke="#9ca3af" strokeWidth="1.6" strokeLinejoin="round"/>
+                    <path d="M14.36 6.1 4 16.46 3 21l4.54-1L17.9 9.64" stroke="#9ca3af" strokeWidth="1.6" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              )}
+
               <input value={primary} onChange={(e) => setPrimary(e.target.value)} placeholder="#22c55e"
                 className="!w-32" />
               <div className="flex gap-2 flex-wrap">
@@ -422,6 +463,9 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
                 ))}
               </div>
             </div>
+            {eyedropperSupported && (
+              <p className="text-[#555] text-xs mt-2">Tip: use the eyedropper to pick a colour straight from your uploaded logo.</p>
+            )}
           </div>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
