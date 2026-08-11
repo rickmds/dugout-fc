@@ -396,7 +396,7 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0 border-2"
                 style={{ background: `${primary}18`, borderColor: primary }}>
                 {logoPreview
-                  ? <img src={logoPreview} alt="" className="w-full h-full object-cover" />
+                  ? <img src={logoPreview} alt="" className="w-full h-full object-contain" />
                   : <span className="text-base font-extrabold" style={{ color: primary }}>{initials}</span>}
               </div>
               <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
@@ -412,7 +412,7 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
           </div>
 
           {cropFile && (
-            <LogoCropModal file={cropFile} onCancel={() => setCropFile(null)} onSave={handleCropSave} />
+            <LogoCropModal file={cropFile} bgColor={`${primary}18`} onCancel={() => setCropFile(null)} onSave={handleCropSave} />
           )}
 
           <div>

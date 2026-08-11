@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from 'react';
 const VIEWPORT = 280;
 const OUTPUT = 512;
 
-export default function LogoCropModal({ file, onCancel, onSave }: {
+export default function LogoCropModal({ file, bgColor, onCancel, onSave }: {
   file: File;
+  bgColor?: string;
   onCancel: () => void;
   onSave: (blob: Blob, dataUrl: string) => void;
 }) {
@@ -27,10 +28,14 @@ export default function LogoCropModal({ file, onCancel, onSave }: {
   const dispW = natural.w * baseScale * zoom;
   const dispH = natural.h * baseScale * zoom;
 
+  // When the image is smaller than the viewport (zoomed out past "cover"), centre it —
+  // don't let it drag off, and don't pin it to the top-left corner.
+  function clampAxis(pos: number, size: number) {
+    if (size <= VIEWPORT) return (VIEWPORT - size) / 2;
+    return Math.max(VIEWPORT - size, Math.min(0, pos));
+  }
   function clamp(x: number, y: number, w: number, h: number) {
-    const minX = Math.min(0, VIEWPORT - w);
-    const minY = Math.min(0, VIEWPORT - h);
-    return { x: Math.max(minX, Math.min(0, x)), y: Math.max(minY, Math.min(0, y)) };
+    return { x: clampAxis(x, w), y: clampAxis(y, h) };
   }
 
   function onImgLoad() {
@@ -88,7 +93,7 @@ export default function LogoCropModal({ file, onCancel, onSave }: {
 
         <div
           className="relative mx-auto rounded-2xl overflow-hidden border-2 border-[#22c55e] touch-none select-none"
-          style={{ width: VIEWPORT, height: VIEWPORT, background: '#0a0a0a', cursor: dragRef.current ? 'grabbing' : 'grab' }}
+          style={{ width: VIEWPORT, height: VIEWPORT, background: bgColor ?? '#0a0a0a', cursor: dragRef.current ? 'grabbing' : 'grab' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -114,11 +119,12 @@ export default function LogoCropModal({ file, onCancel, onSave }: {
         <div className="flex items-center gap-3 mt-4">
           <span className="text-[#6b7280] text-xs flex-shrink-0">Zoom</span>
           <input
-            type="range" min={1} max={3} step={0.01} value={zoom}
+            type="range" min={0.3} max={3} step={0.01} value={zoom}
             onChange={(e) => onZoomChange(parseFloat(e.target.value))}
             className="flex-1"
           />
         </div>
+        <p className="text-[#444] text-[11px] mt-1.5">Zoom out to add breathing room around the logo.</p>
 
         <div className="flex gap-3 mt-6">
           <button onClick={onCancel}
