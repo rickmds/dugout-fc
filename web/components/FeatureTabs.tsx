@@ -324,16 +324,28 @@ export default function FeatureTabs() {
   const tab = tabDefs[active];
 
   return (
-    <section id="how" style={{ borderTop: '1px solid #111' }}>
-      <div className="max-w-7xl mx-auto px-6 sm:px-10 py-24">
+    <section id="how" style={{ borderTop: '1px solid #111', position: 'relative', overflow: 'hidden' }}>
+      {/* Ambient section wash */}
+      <div style={{
+        position: 'absolute', top: -100, left: '10%', width: 500, height: 400, pointerEvents: 'none', zIndex: 0,
+        background: 'radial-gradient(ellipse, rgba(34,197,94,0.07) 0%, transparent 70%)',
+      }} />
+      <div style={{
+        position: 'absolute', bottom: -120, right: '5%', width: 500, height: 400, pointerEvents: 'none', zIndex: 0,
+        background: 'radial-gradient(ellipse, rgba(232,121,160,0.06) 0%, transparent 70%)',
+      }} />
+      <div className="max-w-7xl mx-auto px-6 sm:px-10 py-24" style={{ position: 'relative', zIndex: 1 }}>
 
         <div className="mb-14 max-w-2xl">
-          <p className="text-[#888] text-[11px] font-bold uppercase tracking-[0.18em] mb-4">How it works</p>
+          <div className="inline-flex items-center gap-2.5 text-[#22c55e] text-[11px] font-bold border border-[#22c55e25] bg-[#22c55e0a] px-3.5 py-1.5 rounded-full mb-6 uppercase tracking-[0.16em]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse flex-shrink-0" />
+            How it works
+          </div>
           <h2 className="font-extrabold text-white leading-tight tracking-tight mb-4" style={{ fontSize: 'clamp(28px, 3.5vw, 48px)' }}>
             Everything your club needs.<br />None of the chaos.
           </h2>
           <p className="text-[#888] text-[15px] leading-relaxed">
-            Five tools, one app — two of them powered by AI. Tap through to see exactly what your coaches and parents will use every week.
+            Five tools, one app — <span style={{ color: '#E879A0', fontWeight: 700 }}>two of them powered by AI</span>. Tap through to see exactly what your coaches and parents will use every week.
           </p>
         </div>
 
@@ -359,48 +371,52 @@ export default function FeatureTabs() {
         <div className="grid lg:grid-cols-[280px_1fr] gap-6 items-start">
 
           {/* Left — sticky tab list (desktop) */}
-          <div className="hidden lg:flex flex-col gap-1.5 sticky top-24">
+          <div className="hidden lg:flex flex-col gap-2 sticky top-24">
             {tabDefs.map((t, i) => (
               <button key={t.id} onClick={() => select(i)}
-                className="text-left relative overflow-hidden rounded-2xl px-4 py-4 transition-all duration-200 group"
+                className={`text-left relative overflow-hidden rounded-2xl px-4 py-4 transition-all duration-200 ${active === i ? '' : 'hover:bg-white/[0.03]'}`}
                 style={{
-                  background: active === i ? `linear-gradient(135deg, ${t.accent}16, ${t.accent}05)` : 'transparent',
-                  border: `1px solid ${active === i ? `${t.accent}35` : '#161616'}`,
-                  boxShadow: active === i ? `0 8px 24px -12px ${t.accent}50` : 'none',
+                  background: active === i ? `linear-gradient(135deg, ${t.accent}22, ${t.accent}06)` : 'transparent',
+                  border: `1px solid ${active === i ? `${t.accent}55` : '#181818'}`,
+                  boxShadow: active === i ? `0 12px 32px -10px ${t.accent}70, inset 0 1px 0 ${t.accent}20` : 'none',
+                  transform: active === i ? 'translateX(3px)' : 'none',
                 }}>
                 {/* Left accent bar */}
                 <div style={{
-                  position: 'absolute', left: 0, top: 8, bottom: 8, width: 2, borderRadius: 1,
+                  position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2,
                   background: active === i ? t.accent : 'transparent',
-                  boxShadow: active === i ? `0 0 10px ${t.accent}` : 'none',
+                  boxShadow: active === i ? `0 0 14px ${t.accent}` : 'none',
                 }} />
                 <div className="flex items-center gap-3">
+                  <span className="font-mono font-bold text-[10px] flex-shrink-0 w-4 text-center" style={{ color: active === i ? t.accent : '#333' }}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
                     style={{
-                      background: active === i ? `${t.accent}18` : '#111',
-                      border: `1px solid ${active === i ? `${t.accent}35` : '#1e1e1e'}`,
+                      background: `${t.accent}${active === i ? '2a' : '14'}`,
+                      border: `1px solid ${t.accent}${active === i ? '55' : '2e'}`,
                     }}>
                     <span style={{ fontSize: 15 }}>{t.icon}</span>
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <p className="font-bold text-[13px] leading-none truncate" style={{ color: active === i ? '#fff' : '#888' }}>
+                      <p className="font-bold text-[13px] leading-none truncate" style={{ color: active === i ? '#fff' : '#aaa' }}>
                         {t.label}
                       </p>
                       {t.ai && (
                         <span className="text-[8px] font-extrabold px-1.5 py-[3px] rounded-md flex-shrink-0 leading-none" style={{
-                          color: '#E879A0', background: '#E879A016', border: '1px solid #E879A035', letterSpacing: '0.05em',
+                          color: '#E879A0', background: '#E879A01e', border: '1px solid #E879A045', letterSpacing: '0.05em',
                         }}>AI</span>
                       )}
                     </div>
-                    <p className="text-[11px] truncate" style={{ color: active === i ? '#999' : '#444' }}>{t.subtitle}</p>
+                    <p className="text-[11px] truncate" style={{ color: active === i ? '#aaa' : '#555' }}>{t.subtitle}</p>
                   </div>
                 </div>
                 {/* Expanded checks when active */}
                 {active === i && (
-                  <div className="mt-3 pl-12 flex flex-col gap-1.5" style={{ animation: 'tabFadeIn 0.25s ease' }}>
+                  <div className="mt-3 pl-16 flex flex-col gap-1.5" style={{ animation: 'tabFadeIn 0.25s ease' }}>
                     {t.checks.map(c => (
-                      <div key={c} className="flex items-start gap-2 text-[11px]" style={{ color: '#999' }}>
+                      <div key={c} className="flex items-start gap-2 text-[11px]" style={{ color: '#aaa' }}>
                         <span className="text-[9px] mt-0.5 flex-shrink-0" style={{ color: t.accent }}>✓</span>
                         {c}
                       </div>
@@ -411,7 +427,7 @@ export default function FeatureTabs() {
                 <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: 'transparent' }}>
                   {active === i && (
                     <div key={`${i}-${tick}`}
-                      style={{ height: '100%', background: t.accent, width: 0, animation: `tabProgress ${INTERVAL}ms linear forwards` }} />
+                      style={{ height: '100%', background: t.accent, width: 0, animation: `tabProgress ${INTERVAL}ms linear forwards`, boxShadow: `0 0 8px ${t.accent}` }} />
                   )}
                 </div>
               </button>
@@ -421,14 +437,19 @@ export default function FeatureTabs() {
           {/* Right — visual panel */}
           <div style={{ position: 'relative' }}>
             <div key={`glow-${active}`} style={{
-              position: 'absolute', inset: -40, pointerEvents: 'none', zIndex: 0,
-              background: `radial-gradient(ellipse 60% 50% at 30% 20%, ${tab.accent}1c 0%, transparent 70%)`,
+              position: 'absolute', inset: -60, pointerEvents: 'none', zIndex: 0,
+              background: `radial-gradient(ellipse 65% 55% at 25% 15%, ${tab.accent}38 0%, transparent 68%)`,
               animation: 'tabFadeIn 0.4s ease',
             }} />
             <div className="rounded-2xl p-6 lg:p-8 relative" style={{
-              background: '#0a0a0a', border: `1px solid ${tab.accent}25`, minHeight: 480, zIndex: 1,
-              boxShadow: `0 20px 60px -30px ${tab.accent}40`,
+              background: '#0a0a0a', border: `1px solid ${tab.accent}40`, minHeight: 480, zIndex: 1,
+              boxShadow: `0 24px 70px -28px ${tab.accent}60, inset 0 1px 0 ${tab.accent}18`,
             }}>
+              {/* Top beam */}
+              <div style={{
+                position: 'absolute', top: -1, left: 24, right: 24, height: 2, borderRadius: 2,
+                background: `linear-gradient(90deg, transparent, ${tab.accent}, transparent)`,
+              }} />
               <div key={active} style={{ animation: 'tabFadeIn 0.3s ease' }}>
                 {tab.visual}
               </div>
