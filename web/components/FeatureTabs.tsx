@@ -325,16 +325,16 @@ export default function FeatureTabs() {
 
   return (
     <section id="how" style={{ borderTop: '1px solid #111', position: 'relative', overflow: 'hidden' }}>
-      {/* Ambient section wash */}
+      {/* Ambient section wash — blurred solid blobs, no gradient banding */}
       <div style={{
-        position: 'absolute', top: -100, left: '10%', width: 500, height: 400, pointerEvents: 'none', zIndex: 0,
-        background: 'radial-gradient(ellipse, rgba(34,197,94,0.1) 0%, transparent 70%)',
-        animation: 'ambientPulse 6s ease-in-out infinite',
+        position: 'absolute', top: -40, left: '6%', width: 340, height: 340, borderRadius: '50%',
+        background: '#22c55e', opacity: 0.14, filter: 'blur(120px)', pointerEvents: 'none', zIndex: 0,
+        animation: 'ambientPulse 8s ease-in-out infinite',
       }} />
       <div style={{
-        position: 'absolute', bottom: -120, right: '5%', width: 500, height: 400, pointerEvents: 'none', zIndex: 0,
-        background: 'radial-gradient(ellipse, rgba(232,121,160,0.09) 0%, transparent 70%)',
-        animation: 'ambientPulse 6s ease-in-out infinite 3s',
+        position: 'absolute', bottom: -60, right: '3%', width: 340, height: 340, borderRadius: '50%',
+        background: '#E879A0', opacity: 0.13, filter: 'blur(120px)', pointerEvents: 'none', zIndex: 0,
+        animation: 'ambientPulse 8s ease-in-out infinite 4s',
       }} />
       <div className="max-w-7xl mx-auto px-6 sm:px-10 py-24" style={{ position: 'relative', zIndex: 1 }}>
 
@@ -438,26 +438,23 @@ export default function FeatureTabs() {
 
           {/* Right — visual panel */}
           <div style={{ position: 'relative' }}>
+            {/* Blurred solid blob — smooth falloff, no gradient banding */}
             <div key={`glow-${active}`} style={{
-              position: 'absolute', inset: -70, pointerEvents: 'none', zIndex: 0,
-              background: `radial-gradient(ellipse 65% 55% at 25% 15%, ${tab.accent}45 0%, transparent 68%)`,
+              position: 'absolute', top: '5%', left: '10%', width: '55%', height: '65%', borderRadius: '50%',
+              background: tab.accent, opacity: 0.28, filter: 'blur(90px)', pointerEvents: 'none', zIndex: 0,
               animation: 'tabFadeIn 0.4s ease',
             }} />
-            {/* Gradient ring border */}
-            <div className="rounded-2xl relative" style={{
-              padding: 1, zIndex: 1,
-              background: `linear-gradient(135deg, ${tab.accent}b0, ${tab.accent}20 35%, #22222220 55%, ${tab.accent}60 100%)`,
-              boxShadow: `0 28px 80px -26px ${tab.accent}70`,
+            <div className="rounded-2xl p-6 lg:p-8 relative overflow-hidden" style={{
+              background: '#0a0a0a', border: `1px solid ${tab.accent}45`, minHeight: 480, zIndex: 1,
+              boxShadow: `0 24px 60px -30px ${tab.accent}55`,
             }}>
-              <div className="rounded-2xl p-6 lg:p-8 relative overflow-hidden" style={{ background: '#0a0a0a', minHeight: 480 }}>
-                {/* Top beam */}
-                <div style={{
-                  position: 'absolute', top: 0, left: 24, right: 24, height: 2, borderRadius: 2,
-                  background: `linear-gradient(90deg, transparent, ${tab.accent}, transparent)`,
-                }} />
-                <div key={active} style={{ animation: 'tabFadeIn 0.3s ease' }}>
-                  {tab.visual}
-                </div>
+              {/* Top beam */}
+              <div style={{
+                position: 'absolute', top: 0, left: 24, right: 24, height: 2, borderRadius: 2,
+                background: `linear-gradient(90deg, transparent, ${tab.accent}, transparent)`,
+              }} />
+              <div key={active} style={{ animation: 'tabFadeIn 0.3s ease' }}>
+                {tab.visual}
               </div>
             </div>
           </div>
