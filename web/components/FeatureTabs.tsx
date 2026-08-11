@@ -133,7 +133,7 @@ const tabDefs = [
           </PhoneFrame>
         </div>
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Live headcount</p>
             <div className="flex items-baseline gap-1.5 mb-2">
               <span className="text-white font-extrabold text-[28px] leading-none">11</span>
@@ -144,7 +144,7 @@ const tabDefs = [
             </div>
             <p className="text-[#888] text-[10px]">10 going · 1 out · 3 no reply</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest">Auto-lock</p>
               <span className="text-[10px] font-bold text-[#22c55e]" style={{ background: '#22c55e10', border: '1px solid #22c55e20', padding: '1px 7px', borderRadius: 99 }}>Active</span>
@@ -152,7 +152,7 @@ const tabDefs = [
             <p className="text-white font-bold text-[13px] mb-0.5">Closes in 14h 23m</p>
             <p className="text-[#888] text-[11px]">Sat 5 Jul · 8:00am — 2 hrs before kickoff</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Push sent</p>
             <div className="flex items-start gap-2.5">
               <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#22c55e', fontSize: 12 }}>⚽</div>
@@ -178,12 +178,12 @@ const tabDefs = [
       <div className="flex flex-col sm:flex-row gap-6">
         <LineupBuilder />
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #E879A030' }}>
             <span className="text-[11px] font-bold" style={{ color: '#E879A0' }}>✦ AI Suggested</span>
             <p className="text-white font-bold text-[13px] mt-2 mb-1">4-3-3 Classic</p>
             <p className="text-[#888] text-[11px]">11 players placed from 13 confirmed RSVPs.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #E879A030' }}>
             <span className="text-[11px] font-bold text-[#888]">⏱ Equal Time</span>
             <div className="flex items-baseline gap-1.5 mt-2 mb-1">
               <span className="font-extrabold text-[26px] leading-none" style={{ color: '#E879A0' }}>18&prime;</span>
@@ -191,7 +191,7 @@ const tabDefs = [
             </div>
             <p className="text-[#888] text-[11px]">Sub every 9 min · 13 players · 80 min game</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #E879A030' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Availability</p>
             <div className="flex items-baseline gap-1 mb-2">
               <span className="text-white font-extrabold text-[22px] leading-none">13</span>
@@ -275,12 +275,12 @@ const tabDefs = [
           </div>
         </div>
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Live match timer</p>
             <span className="font-extrabold text-[32px] leading-none font-mono" style={{ color: '#22c55e' }}>63:54</span>
             <p className="text-[#888] text-[11px] mt-1">2nd half · 3 subs made · 2 remaining</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Equal playing time</p>
             <div className="flex items-baseline gap-1.5 mb-1">
               <span className="font-extrabold text-[26px] leading-none" style={{ color: '#E879A0' }}>18&prime;</span>
@@ -288,7 +288,7 @@ const tabDefs = [
             </div>
             <p className="text-[#888] text-[11px]">Sub every 9 min · 13 players · 80 min game</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #1e1e1e' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Season record</p>
             <div className="flex gap-5">
               {[{ v: '8', l: 'Won', c: '#22c55e' }, { v: '2', l: 'Lost', c: '#f87171' }, { v: '1', l: 'Drawn', c: '#888' }].map(({ v, l, c }) => (
@@ -328,11 +328,13 @@ export default function FeatureTabs() {
       {/* Ambient section wash */}
       <div style={{
         position: 'absolute', top: -100, left: '10%', width: 500, height: 400, pointerEvents: 'none', zIndex: 0,
-        background: 'radial-gradient(ellipse, rgba(34,197,94,0.07) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse, rgba(34,197,94,0.1) 0%, transparent 70%)',
+        animation: 'ambientPulse 6s ease-in-out infinite',
       }} />
       <div style={{
         position: 'absolute', bottom: -120, right: '5%', width: 500, height: 400, pointerEvents: 'none', zIndex: 0,
-        background: 'radial-gradient(ellipse, rgba(232,121,160,0.06) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse, rgba(232,121,160,0.09) 0%, transparent 70%)',
+        animation: 'ambientPulse 6s ease-in-out infinite 3s',
       }} />
       <div className="max-w-7xl mx-auto px-6 sm:px-10 py-24" style={{ position: 'relative', zIndex: 1 }}>
 
@@ -342,7 +344,7 @@ export default function FeatureTabs() {
             How it works
           </div>
           <h2 className="font-extrabold text-white leading-tight tracking-tight mb-4" style={{ fontSize: 'clamp(28px, 3.5vw, 48px)' }}>
-            Everything your club needs.<br />None of the chaos.
+            Everything your club needs.<br />None of the <span style={{ color: '#22c55e' }}>chaos</span>.
           </h2>
           <p className="text-[#888] text-[15px] leading-relaxed">
             Five tools, one app — <span style={{ color: '#E879A0', fontWeight: 700 }}>two of them powered by AI</span>. Tap through to see exactly what your coaches and parents will use every week.
@@ -437,21 +439,25 @@ export default function FeatureTabs() {
           {/* Right — visual panel */}
           <div style={{ position: 'relative' }}>
             <div key={`glow-${active}`} style={{
-              position: 'absolute', inset: -60, pointerEvents: 'none', zIndex: 0,
-              background: `radial-gradient(ellipse 65% 55% at 25% 15%, ${tab.accent}38 0%, transparent 68%)`,
+              position: 'absolute', inset: -70, pointerEvents: 'none', zIndex: 0,
+              background: `radial-gradient(ellipse 65% 55% at 25% 15%, ${tab.accent}45 0%, transparent 68%)`,
               animation: 'tabFadeIn 0.4s ease',
             }} />
-            <div className="rounded-2xl p-6 lg:p-8 relative" style={{
-              background: '#0a0a0a', border: `1px solid ${tab.accent}40`, minHeight: 480, zIndex: 1,
-              boxShadow: `0 24px 70px -28px ${tab.accent}60, inset 0 1px 0 ${tab.accent}18`,
+            {/* Gradient ring border */}
+            <div className="rounded-2xl relative" style={{
+              padding: 1, zIndex: 1,
+              background: `linear-gradient(135deg, ${tab.accent}b0, ${tab.accent}20 35%, #22222220 55%, ${tab.accent}60 100%)`,
+              boxShadow: `0 28px 80px -26px ${tab.accent}70`,
             }}>
-              {/* Top beam */}
-              <div style={{
-                position: 'absolute', top: -1, left: 24, right: 24, height: 2, borderRadius: 2,
-                background: `linear-gradient(90deg, transparent, ${tab.accent}, transparent)`,
-              }} />
-              <div key={active} style={{ animation: 'tabFadeIn 0.3s ease' }}>
-                {tab.visual}
+              <div className="rounded-2xl p-6 lg:p-8 relative overflow-hidden" style={{ background: '#0a0a0a', minHeight: 480 }}>
+                {/* Top beam */}
+                <div style={{
+                  position: 'absolute', top: 0, left: 24, right: 24, height: 2, borderRadius: 2,
+                  background: `linear-gradient(90deg, transparent, ${tab.accent}, transparent)`,
+                }} />
+                <div key={active} style={{ animation: 'tabFadeIn 0.3s ease' }}>
+                  {tab.visual}
+                </div>
               </div>
             </div>
           </div>
@@ -467,6 +473,10 @@ export default function FeatureTabs() {
         @keyframes tabFadeIn {
           from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes ambientPulse {
+          0%, 100% { opacity: 0.6; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.12); }
         }
       `}</style>
     </section>
