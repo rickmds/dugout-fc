@@ -461,26 +461,56 @@ export default async function ComparePage() {
         </div>
       </div>
 
+      {/* Deep dives */}
+      <div style={{ borderTop: '1px solid #111', padding: '48px 24px', textAlign: 'center' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#444', textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 20 }}>Want the deep dive?</p>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+          {[
+            { href: '/pulse-fc-vs-teamsnap', label: 'Pulse FC vs TeamSnap' },
+            { href: '/pulse-fc-vs-sportsengine', label: 'Pulse FC vs SportsEngine' },
+            { href: '/pulse-fc-vs-playmetrics', label: 'Pulse FC vs PlayMetrics' },
+          ].map(({ href, label }) => (
+            <Link key={href} href={href} style={{ fontSize: 13, fontWeight: 600, color: '#888', textDecoration: 'none', background: '#0d0d0d', border: '1px solid #1e1e1e', borderRadius: 10, padding: '10px 18px' }}>
+              {label} →
+            </Link>
+          ))}
+        </div>
+      </div>
+
       {/* CTA */}
       <div style={{ padding: '80px 24px', textAlign: 'center' }}>
-        <div style={{ maxWidth: 520, margin: '0 auto' }}>
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+
+          {/* Testimonial */}
+          <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 20, padding: '28px 32px', marginBottom: 48, textAlign: 'left' }}>
+            <div style={{ fontSize: 36, lineHeight: 0.75, color: '#22c55e', opacity: 0.5, fontWeight: 900, marginBottom: 12 }}>&ldquo;</div>
+            <p style={{ fontSize: 16, color: '#ddd', lineHeight: 1.8, fontWeight: 500, marginBottom: 20 }}>
+              We lost 11 families last season. Three said they felt &ldquo;out of the loop.&rdquo; That&rsquo;s <strong style={{ color: '#fff' }}>$16,000 in registration fees.</strong> Pulse FC paid for itself in the first month.
+            </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>J.O.</div>
+              <p style={{ fontSize: 12, color: '#555', margin: 0 }}>Director of Coaching · 280-player club</p>
+            </div>
+          </div>
+
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.18)', borderRadius: 100, padding: '5px 14px', fontSize: 11, fontWeight: 700, color: GREEN, marginBottom: 24, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: GREEN, display: 'inline-block' }} />
             Founding club offer · {remaining} spots remaining
           </div>
           <h2 style={{ fontSize: 'clamp(28px, 5vw, 44px)', fontWeight: 900, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1.1, marginBottom: 16 }}>
-            Ready to switch?
+            The math is simple.<br />Stop waiting.
           </h2>
           <p style={{ fontSize: 16, color: '#888', lineHeight: 1.7, marginBottom: 32 }}>
             Set up tonight. If it doesn&rsquo;t save you 3 hours a week, email us and we&rsquo;ll refund everything. No forms, no arguments.
           </p>
           <Link href="/onboarding" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: GREEN, color: '#000', fontWeight: 800, fontSize: 16, padding: '16px 36px', borderRadius: 14, textDecoration: 'none', boxShadow: '0 4px 32px rgba(34,197,94,0.3)' }}>
-            Add your club free →
+            Set up your club tonight →
           </Link>
           <p style={{ fontSize: 12, color: '#22c55e', marginTop: 16, opacity: 0.7, fontWeight: 600 }}>
             Founding club: 40% off any paid plan, forever · {remaining} spots remaining
           </p>
           <p style={{ fontSize: 12, color: '#444', marginTop: 6 }}>Free plan available · No credit card · Cancel anytime</p>
+          <p style={{ fontSize: 12, color: '#333', marginTop: 12 }}>Built by Rick Breheny · U14 head coach · still used every Saturday.</p>
         </div>
       </div>
 
