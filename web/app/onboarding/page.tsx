@@ -1506,6 +1506,36 @@ function ReviewStep({
         </div>
       </div>
 
+      {/* ── What Pulse FC figured out — visible reasoning, not a black box ── */}
+      {(() => {
+        const importedFiles = fileOutcomes.filter(f => f.ok);
+        const aliasedTeams = teams.filter(t => (t.alt_names ?? []).length > 0);
+        const totalCount = teams.length + players.length + coaches.length + events.length;
+        if (importedFiles.length === 0 && totalCount === 0) return null;
+        return (
+          <div className="mb-5 p-4 rounded-xl border border-[#1e2a1e] bg-[#0a120a] text-xs text-[#9ca3af] leading-relaxed">
+            {importedFiles.length > 0 && (
+              <p>
+                Imported from {importedFiles.length} file{importedFiles.length !== 1 ? 's' : ''}: {importedFiles.map(f => f.name).join(', ')} —{' '}
+                <span className="text-white font-semibold">{teams.length} teams</span>,{' '}
+                <span className="text-white font-semibold">{players.length} players</span>,{' '}
+                <span className="text-white font-semibold">{coaches.length} coaches</span>,{' '}
+                <span className="text-white font-semibold">{events.length} events</span>.
+              </p>
+            )}
+            {aliasedTeams.length > 0 && (
+              <p className="mt-1.5">
+                🔗 Matched <span className="text-white font-semibold">{aliasedTeams.length} team{aliasedTeams.length !== 1 ? 's' : ''}</span> that
+                went by two different names across your documents — look for &quot;Also known as&quot; on the team cards below.
+              </p>
+            )}
+            <p className="mt-1.5 text-[#666]">
+              Only your own teams get tracked as teams — opponents mentioned in a schedule become the other side of an event, not a new team.
+            </p>
+          </div>
+        );
+      })()}
+
       {/* ── Schedule defaults ──────────────────────────────────────────── */}
       <div className="mb-5 p-4 rounded-xl border border-[#1e2a1e] bg-[#0a120a]">
         <p className="text-[11px] font-bold text-[#22c55e] uppercase tracking-widest mb-3">Schedule defaults — applied to all events on confirm</p>
