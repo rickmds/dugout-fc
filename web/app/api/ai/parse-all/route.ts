@@ -565,10 +565,15 @@ function parseClaudeJSON(raw: string): ParsedResult {
   };
 }
 
+// Whether a file (or a document's whole extraction) ended up fully usable
+// — surfaced to the review UI so a failure is never just quietly fewer
+// results with no explanation.
+type FileOutcome = { name: string; ok: boolean; error?: string };
+
 // Each file gets its own call with its own dedicated max_tokens budget —
 // a shared budget across a whole batch (the old behaviour) meant a single
 // large roster PDF could starve every other file's extraction of tokens.
-async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
+async function askClaudeForFile(file: FileInput): Promise<{ parsed: ParsedResult; failed: boolean; error?: string }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const content: any[] = [{ type: 'text', text: `--- ${file.name} ---` }];
   if (file.text) {
@@ -580,10 +585,10 @@ async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
       content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf' as const, data: file.base64 } });
     } else {
       // No native Claude document type for this MIME — nothing to send.
-      return emptyResult();
+      return { parsed: emptyResult(), failed: true, error: `Unsupported file type (${file.mimeType})` };
     }
   } else {
-    return emptyResult();
+    return { parsed: emptyResult(), failed: true, error: 'File had no readable content' };
   }
   content.push({ type: 'text', text: 'Extract all teams, players, events, and coaches.' });
 
@@ -615,8 +620,9 @@ async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
   } catch (err) {
     console.error(`[parse-all] structured-output stream error for "${file.name}" — falling back to salvage parsing:`, err);
     Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'stream' }, extra: { fileName: file.name, capturedChars: raw.length } });
+    return { parsed: parseClaudeJSON(raw), failed: true, error: err instanceof Error ? err.message : String(err) };
   }
-  return parseClaudeJSON(raw);
+  return { parsed: parseClaudeJSON(raw), failed: false };
 }
 
 // A single big text file (e.g. a full-season schedule export, hundreds of
@@ -663,16 +669,35 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
-async function askClaude(files: FileInput[]): Promise<ParsedResult> {
-  const expanded = files.flatMap(chunkTextFile);
-  const results = await mapWithConcurrency(expanded, MAX_CONCURRENT_CLAUDE_CALLS, file =>
-    askClaudeForFile(file).catch(err => {
-      console.error(`[parse-all] Claude extraction failed for "${file.name}":`, err);
-      Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'askClaudeForFile' }, extra: { fileName: file.name } });
-      return emptyResult();
-    })
-  );
-  return results.reduce((acc, r) => merge(acc, r), emptyResult());
+async function askClaude(files: FileInput[]): Promise<{ result: ParsedResult; fileOutcomes: FileOutcome[] }> {
+  // Chunks are an internal detail — track which ORIGINAL uploaded file each
+  // one came from so a chunk failure is reported against the file the user
+  // actually uploaded, not some auto-generated "(rows 76-150)" fragment name.
+  const expanded = files.flatMap(file => chunkTextFile(file).map(chunk => ({ chunk, originalName: file.name })));
+
+  const chunkResults = await mapWithConcurrency(expanded, MAX_CONCURRENT_CLAUDE_CALLS, async ({ chunk, originalName }) => {
+    const outcome = await askClaudeForFile(chunk).catch(err => {
+      console.error(`[parse-all] Claude extraction failed for "${chunk.name}":`, err);
+      Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'askClaudeForFile' }, extra: { fileName: chunk.name } });
+      return { parsed: emptyResult(), failed: true, error: err instanceof Error ? err.message : String(err) };
+    });
+    return { originalName, ...outcome };
+  });
+
+  const result = chunkResults.reduce((acc, r) => merge(acc, r.parsed), emptyResult());
+
+  // A file with any failed chunk is reported as failed — partial results
+  // still get merged in above (better than nothing), but the user needs to
+  // know it wasn't a clean extraction.
+  const byFile = new Map<string, { failed: boolean; error?: string }>();
+  for (const r of chunkResults) {
+    const entry = byFile.get(r.originalName) ?? { failed: false };
+    if (r.failed) { entry.failed = true; entry.error = entry.error ?? r.error; }
+    byFile.set(r.originalName, entry);
+  }
+  const fileOutcomes: FileOutcome[] = [...byFile.entries()].map(([name, e]) => ({ name, ok: !e.failed, error: e.error }));
+
+  return { result, fileOutcomes };
 }
 
 // ─── Merge two ParsedResults ──────────────────────────────────────────────────
@@ -746,19 +771,30 @@ export async function POST(req: NextRequest) {
 
     let result = emptyResult();
     const forClaude: FileInput[] = [];
+    // Tracks every uploaded file's outcome, whichever path handled it —
+    // returned to the client so a failure is never just quietly fewer
+    // results with no explanation.
+    const fileOutcomes: FileOutcome[] = [];
 
     for (const file of files) {
       // Excel workbooks aren't a Claude-native document type (only PDF/images
       // are) — convert to CSV text first so they go through the same path
       // as an uploaded .csv instead of being silently dropped.
       let normalized = file;
+      let excelFailed = false;
       if (!file.text && file.base64 && isExcelFile(file)) {
         try {
           normalized = { text: await excelToCSV(file.base64), name: file.name };
         } catch (err) {
           console.error(`[parse-all] failed to read Excel file "${file.name}":`, err);
           Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'excelToCSV' }, extra: { fileName: file.name } });
+          excelFailed = true;
         }
+      }
+
+      if (excelFailed) {
+        fileOutcomes.push({ name: file.name, ok: false, error: 'Could not read this Excel file — it may be corrupted or in an unsupported format.' });
+        continue;
       }
 
       if (normalized.text) {
@@ -766,6 +802,7 @@ export async function POST(req: NextRequest) {
         const parsed = extractFromCSV(normalized.text);
         if (parsed) {
           result = merge(result, parsed);
+          fileOutcomes.push({ name: file.name, ok: true });
         } else {
           forClaude.push(normalized); // unrecognised text format → Claude
         }
@@ -776,8 +813,9 @@ export async function POST(req: NextRequest) {
 
     // Use Claude only for files that need it
     if (forClaude.length > 0) {
-      const claudeResult = await askClaude(forClaude);
+      const { result: claudeResult, fileOutcomes: claudeOutcomes } = await askClaude(forClaude);
       result = merge(result, claudeResult);
+      fileOutcomes.push(...claudeOutcomes);
     }
 
     // Deterministic CSV parsing has no idea about alt_names (a schedule file
@@ -788,7 +826,7 @@ export async function POST(req: NextRequest) {
     // alias is known.
     result.teams = mergeTeamsList([], result.teams);
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, fileOutcomes });
   } catch (err) {
     console.error('[parse-all] error:', err);
     Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'handler' } });

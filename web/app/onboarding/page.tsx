@@ -23,6 +23,8 @@ type UploadedFile = {
   payload: { base64?: string; mimeType?: string; text?: string; name: string };
 };
 
+type FileOutcome = { name: string; ok: boolean; error?: string };
+
 type ParentInvite = { inviteId: string; playerName: string; email: string };
 type CoachPayload = { club_id: string; clubName: string; clubColor: string; coaches: { full_name: string; email: string; team_id: string | null; team_name: string }[] };
 
@@ -736,6 +738,8 @@ function ReviewStep({
   players, setPlayers,
   events, setEvents,
   coaches, setCoaches,
+  fileOutcomes, setFileOutcomes,
+  filePayloads, setFilePayloads,
   onConfirm,
 }: {
   clubId: string; clubName: string; primaryColor: string;
@@ -743,6 +747,8 @@ function ReviewStep({
   players: PRow[]; setPlayers: React.Dispatch<React.SetStateAction<PRow[]>>;
   events: ERow[];  setEvents:  React.Dispatch<React.SetStateAction<ERow[]>>;
   coaches: CRow[]; setCoaches: React.Dispatch<React.SetStateAction<CRow[]>>;
+  fileOutcomes: FileOutcome[]; setFileOutcomes: React.Dispatch<React.SetStateAction<FileOutcome[]>>;
+  filePayloads: Record<string, UploadedFile['payload']>; setFilePayloads: React.Dispatch<React.SetStateAction<Record<string, UploadedFile['payload']>>>;
   onConfirm: (invites: ParentInvite[], coachPayload: CoachPayload | null) => void;
 }) {
   // Ids whose open/closed state has been manually toggled away from the
@@ -812,14 +818,10 @@ function ReviewStep({
     setTeams(prev => prev.filter(t => !froms.includes(t.id)));
   }
 
-  // ── Add more files (merge into existing data) ─────────────────────────────
+  // ── Add more files / retry a failed one (both merge into existing data) ───
 
-  async function handleMoreFiles(fl: FileList | null) {
-    if (!fl) return;
+  async function mergeParsedData(payloads: { base64?: string; mimeType?: string; text?: string; name: string }[]) {
     setMerging(true);
-    const payloads: { base64?: string; mimeType?: string; text?: string; name: string }[] = [];
-    for (const f of Array.from(fl)) payloads.push(await toPayload(f));
-
     const { data: { session: mfSession } } = await supabase.auth.getSession();
     const res  = await fetch('/api/ai/parse-all', {
       method: 'POST',
@@ -830,6 +832,15 @@ function ReviewStep({
       body: JSON.stringify({ files: payloads }),
     });
     const data = await res.json();
+
+    if (!res.ok) {
+      setFileOutcomes(prev => {
+        const retried = new Set(payloads.map(p => p.name));
+        return [...prev.filter(f => !retried.has(f.name)), ...payloads.map(p => ({ name: p.name, ok: false, error: 'Import failed' }))];
+      });
+      setMerging(false);
+      return;
+    }
 
     // Compute merged teams first so player/event matching uses the full set.
     // Match new teams against existing ones by name OR alt_name — never
@@ -895,7 +906,33 @@ function ReviewStep({
       ];
     });
 
+    // Record the new files' payloads (so they're retryable too) and fold in
+    // this response's per-file outcomes, replacing any prior outcome for the
+    // same file (a retry supersedes the failure it was retrying).
+    setFilePayloads(prev => ({ ...prev, ...Object.fromEntries(payloads.map(p => [p.name, p])) }));
+    const incomingOutcomes = Array.isArray(data.fileOutcomes) ? data.fileOutcomes as FileOutcome[] : [];
+    setFileOutcomes(prev => {
+      const incomingNames = new Set(incomingOutcomes.map(f => f.name));
+      return [...prev.filter(f => !incomingNames.has(f.name)), ...incomingOutcomes];
+    });
+
     setMerging(false);
+  }
+
+  async function handleMoreFiles(fl: FileList | null) {
+    if (!fl) return;
+    const payloads: { base64?: string; mimeType?: string; text?: string; name: string }[] = [];
+    for (const f of Array.from(fl)) payloads.push(await toPayload(f));
+    await mergeParsedData(payloads);
+  }
+
+  const [retryingFile, setRetryingFile] = useState<string | null>(null);
+  async function retryFile(name: string) {
+    const payload = filePayloads[name];
+    if (!payload) return;
+    setRetryingFile(name);
+    await mergeParsedData([payload]);
+    setRetryingFile(null);
   }
 
   // ── Confirm — write everything to DB ─────────────────────────────────────
@@ -1430,6 +1467,31 @@ function ReviewStep({
         </div>
       </div>
 
+      {/* ── Failed files — never just quietly fewer results ────────────── */}
+      {fileOutcomes.some(f => !f.ok) && (
+        <div className="mb-4 p-3 rounded-xl bg-red-950/30 border border-red-900/40">
+          <p className="text-red-300 text-xs font-bold mb-2">
+            ⚠ {fileOutcomes.filter(f => !f.ok).length} file{fileOutcomes.filter(f => !f.ok).length !== 1 ? 's' : ''} didn&apos;t fully import
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {fileOutcomes.filter(f => !f.ok).map(f => (
+              <div key={f.name} className="flex items-center gap-3 text-xs">
+                <span className="text-red-300 flex-1 truncate">{f.name}</span>
+                <span className="text-red-400/70">{f.error || 'Failed to process'}</span>
+                <button
+                  onClick={() => retryFile(f.name)}
+                  disabled={retryingFile === f.name || !filePayloads[f.name]}
+                  className="text-xs font-bold px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
+                >
+                  {retryingFile === f.name ? 'Retrying…' : 'Retry'}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-red-400/60 text-[11px] mt-2">Retrying adds whatever comes through this time — if some records already made it in, double-check for duplicates below.</p>
+        </div>
+      )}
+
       {/* ── Missing-address roll-up (per-row warning still shown below) ──── */}
       {(() => {
         const noAddr = events.filter(e => e.title.trim() && !e.address).length;
@@ -1612,6 +1674,11 @@ export default function OnboardingPage() {
   const [parentInvites, setParentInvites] = useState<ParentInvite[]>([]);
   const [pendingCoachPayload, setPendingCoachPayload] = useState<CoachPayload | null>(null);
 
+  // Per-uploaded-file success/failure, and the original payload for each —
+  // kept around so a failed file can be retried without re-uploading.
+  const [fileOutcomes, setFileOutcomes] = useState<FileOutcome[]>([]);
+  const [filePayloads, setFilePayloads] = useState<Record<string, UploadedFile['payload']>>({});
+
   const abortRef        = useRef<AbortController | null>(null);
   const [processingDone, setProcessingDone]         = useState(false);
   const [processingFailed, setProcessingFailed]     = useState(false);
@@ -1669,6 +1736,7 @@ export default function OnboardingPage() {
     abortRef.current = controller;
     setProcessingDone(false);
     setProcessingCounts(null);
+    setFilePayloads(Object.fromEntries(uploadedFiles.map(f => [f.name, f.payload])));
     setStep('processing');
     try {
       const { data: { session: analyseSession } } = await supabase.auth.getSession();
@@ -1686,11 +1754,13 @@ export default function OnboardingPage() {
         console.error('parse-all error:', data);
         setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
         setPlayers([]); setEvents([]); setCoaches([]);
+        setFileOutcomes(uploadedFiles.map(f => ({ name: f.name, ok: false, error: 'Import failed' })));
         setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
         setProcessingFailed(true);
       } else {
         populateFromAI(data);
         const d = data as Record<string, unknown[]>;
+        setFileOutcomes(Array.isArray(d.fileOutcomes) ? d.fileOutcomes as FileOutcome[] : []);
         setProcessingCounts({
           teams:   Array.isArray(d.teams)   ? d.teams.length   : 0,
           players: Array.isArray(d.players) ? d.players.length : 0,
@@ -1764,6 +1834,8 @@ export default function OnboardingPage() {
             players={players} setPlayers={setPlayers}
             events={events}  setEvents={setEvents}
             coaches={coaches} setCoaches={setCoaches}
+            fileOutcomes={fileOutcomes} setFileOutcomes={setFileOutcomes}
+            filePayloads={filePayloads} setFilePayloads={setFilePayloads}
             onConfirm={(invites, coachPayload) => { setParentInvites(invites); setPendingCoachPayload(coachPayload); setStep('done'); }}
           />
         )}
