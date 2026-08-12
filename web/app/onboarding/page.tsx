@@ -51,6 +51,67 @@ async function toPayload(file: File): Promise<{ base64?: string; mimeType?: stri
   });
 }
 
+// /api/ai/parse-all streams newline-delimited JSON progress as each file's
+// extraction finishes, ending with one {"type":"done",...} line — reads it
+// incrementally so callers can show real counts climbing instead of a
+// decorative animation with no relationship to actual work.
+async function streamParseAll(
+  payloads: { base64?: string; mimeType?: string; text?: string; name: string }[],
+  token: string | undefined,
+  signal: AbortSignal | undefined,
+  onProgress?: (counts: { teams: number; players: number; events: number; coaches: number }) => void,
+): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
+  const res = await fetch('/api/ai/parse-all', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ files: payloads }),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    let message = `Request failed (${res.status})`;
+    try { const body = await res.json(); if (body?.error) message = body.error; } catch { /* not JSON */ }
+    return { ok: false, error: message };
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalData: Record<string, unknown> | null = null;
+  let streamError: string | null = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newlineIdx;
+    while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newlineIdx);
+      buffer = buffer.slice(newlineIdx + 1);
+      if (!line.trim()) continue;
+      let msg: Record<string, unknown>;
+      try { msg = JSON.parse(line); } catch { continue; }
+      if (msg.type === 'progress') {
+        onProgress?.({
+          teams:   Number(msg.teams)   || 0, players: Number(msg.players) || 0,
+          events:  Number(msg.events)  || 0, coaches: Number(msg.coaches) || 0,
+        });
+      } else if (msg.type === 'done') {
+        finalData = msg;
+      } else if (msg.type === 'error') {
+        streamError = typeof msg.error === 'string' ? msg.error : 'Unknown error';
+      }
+    }
+  }
+
+  if (streamError) return { ok: false, error: streamError };
+  if (!finalData) return { ok: false, error: 'No response received' };
+  return { ok: true, data: finalData };
+}
+
 // Some teams have two names in play (e.g. a league's own schedule-export
 // name vs. the club's preferred display name) — a row's team_name might be
 // either one, so match against a team's primary name AND its alt_names.
@@ -574,62 +635,61 @@ function UploadStep({ onAnalyse, onSkip }: {
 
 type ProcessingCounts = { teams: number; players: number; events: number; coaches: number };
 
-function ProcessingStep({ done, failed, counts, onComplete }: {
+function ProcessingStep({ done, failed, counts, liveCounts, onComplete }: {
   done: boolean;
   failed?: boolean;
   counts: ProcessingCounts | null;
+  liveCounts: ProcessingCounts | null;
   onComplete: () => void;
 }) {
   const [phase, setPhase] = useState<'loading' | 'counting' | 'ready'>('loading');
   const [nums, setNums]   = useState<ProcessingCounts>({ teams: 0, players: 0, events: 0, coaches: 0 });
-  const startedRef        = useRef(Date.now());
   const onCompleteRef     = useRef(onComplete);
   useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
 
-  // Rapid random flip while loading — classic departure-board effect
-  useEffect(() => {
-    if (phase !== 'loading') return;
-    const id = setInterval(() => {
-      setNums({
-        teams:   Math.floor(Math.random() * 99),
-        players: Math.floor(Math.random() * 999),
-        events:  Math.floor(Math.random() * 999),
-        coaches: Math.floor(Math.random() * 99),
-      });
-    }, 110);
-    return () => clearInterval(id);
-  }, [phase]);
+  // While loading, the digits are the real extraction counts as they
+  // stream in (derived at render time — no need to copy into state) — the
+  // number climbs as each file/chunk actually finishes, not a decorative
+  // random-digit animation with no relationship to real progress.
+  const displayNums = phase === 'loading'
+    ? (liveCounts ?? { teams: 0, players: 0, events: 0, coaches: 0 })
+    : nums;
 
-  // When done + counts arrive: enforce min 2.5s of loading, then count up
+  // Once done + final counts arrive, tween from the live count up to the
+  // (possibly slightly different, e.g. after final team-alias
+  // consolidation) final total — no artificial minimum wait now that the
+  // numbers on screen are real throughout. Reacting to a server-data
+  // signal by kicking off a local timed animation is exactly what this
+  // effect is for; the phase/interval state it drives can't be computed
+  // during render.
   useEffect(() => {
     if (!done || !counts) return;
-    const elapsed = Date.now() - startedRef.current;
-    const wait    = Math.max(0, 2500 - elapsed);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPhase('counting');
+    const duration = 1200;
+    const t0 = Date.now();
+    // Tween from wherever the live count left off, not from zero.
+    const startNums = liveCounts ?? { teams: 0, players: 0, events: 0, coaches: 0 };
 
-    const timer = setTimeout(() => {
-      setPhase('counting');
-      const duration = 1200;
-      const t0 = Date.now();
+    const id = setInterval(() => {
+      const p = Math.min((Date.now() - t0) / duration, 1);
+      const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
+      setNums({
+        teams:   Math.round(startNums.teams   + (counts.teams   - startNums.teams)   * e),
+        players: Math.round(startNums.players + (counts.players - startNums.players) * e),
+        events:  Math.round(startNums.events  + (counts.events  - startNums.events)  * e),
+        coaches: Math.round(startNums.coaches + (counts.coaches - startNums.coaches) * e),
+      });
+      if (p >= 1) {
+        clearInterval(id);
+        setNums(counts);
+        setPhase('ready');
+        setTimeout(() => onCompleteRef.current(), 1200);
+      }
+    }, 16);
 
-      const id = setInterval(() => {
-        const p = Math.min((Date.now() - t0) / duration, 1);
-        const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
-        setNums({
-          teams:   Math.round(counts.teams   * e),
-          players: Math.round(counts.players * e),
-          events:  Math.round(counts.events  * e),
-          coaches: Math.round(counts.coaches * e),
-        });
-        if (p >= 1) {
-          clearInterval(id);
-          setNums(counts);
-          setPhase('ready');
-          setTimeout(() => onCompleteRef.current(), 1200);
-        }
-      }, 16);
-    }, wait);
-
-    return () => clearTimeout(timer);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [done, counts]);
 
   const ROWS: { label: string; key: keyof ProcessingCounts; pad: number }[] = [
@@ -672,7 +732,7 @@ function ProcessingStep({ done, failed, counts, onComplete }: {
         {/* Four digit counters */}
         <div className="grid grid-cols-4 divide-x divide-[#111]">
           {ROWS.map(({ label, key, pad }) => {
-            const val    = nums[key];
+            const val    = displayNums[key];
             const digits = String(val).padStart(pad, '0').slice(-pad).split('');
             return (
               <div key={label} className="flex flex-col items-center py-7 gap-3">
@@ -823,17 +883,9 @@ function ReviewStep({
   async function mergeParsedData(payloads: { base64?: string; mimeType?: string; text?: string; name: string }[]) {
     setMerging(true);
     const { data: { session: mfSession } } = await supabase.auth.getSession();
-    const res  = await fetch('/api/ai/parse-all', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(mfSession?.access_token ? { Authorization: `Bearer ${mfSession.access_token}` } : {}),
-      },
-      body: JSON.stringify({ files: payloads }),
-    });
-    const data = await res.json();
+    const outcome = await streamParseAll(payloads, mfSession?.access_token, undefined);
 
-    if (!res.ok) {
+    if (!outcome.ok) {
       setFileOutcomes(prev => {
         const retried = new Set(payloads.map(p => p.name));
         return [...prev.filter(f => !retried.has(f.name)), ...payloads.map(p => ({ name: p.name, ok: false, error: 'Import failed' }))];
@@ -841,6 +893,7 @@ function ReviewStep({
       setMerging(false);
       return;
     }
+    const data = outcome.data;
 
     // Compute merged teams first so player/event matching uses the full set.
     // Match new teams against existing ones by name OR alt_name — never
@@ -1711,6 +1764,9 @@ export default function OnboardingPage() {
   const [processingDone, setProcessingDone]         = useState(false);
   const [processingFailed, setProcessingFailed]     = useState(false);
   const [processingCounts, setProcessingCounts]     = useState<ProcessingCounts | null>(null);
+  // Real counts as they climb during extraction — ProcessingStep shows
+  // these instead of a random-number animation while work is in flight.
+  const [liveCounts, setLiveCounts] = useState<ProcessingCounts | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -1728,7 +1784,7 @@ export default function OnboardingPage() {
     setStep(target);
   }
 
-  function populateFromAI(data: Record<string, unknown[]>) {
+  function populateFromAI(data: Record<string, unknown>) {
     const teamRows: TRow[] = ((data.teams ?? []) as Record<string, unknown>[]).map(t => ({
       id: uid(),
       name: typeof t.name === 'string' ? t.name : '',
@@ -1764,28 +1820,26 @@ export default function OnboardingPage() {
     abortRef.current = controller;
     setProcessingDone(false);
     setProcessingCounts(null);
+    setLiveCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
     setFilePayloads(Object.fromEntries(uploadedFiles.map(f => [f.name, f.payload])));
     setStep('processing');
     try {
       const { data: { session: analyseSession } } = await supabase.auth.getSession();
-      const res  = await fetch('/api/ai/parse-all', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(analyseSession?.access_token ? { Authorization: `Bearer ${analyseSession.access_token}` } : {}),
-        },
-        body: JSON.stringify({ files: uploadedFiles.map(f => f.payload) }),
-        signal: controller.signal,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        console.error('parse-all error:', data);
+      const outcome = await streamParseAll(
+        uploadedFiles.map(f => f.payload),
+        analyseSession?.access_token,
+        controller.signal,
+        counts => setLiveCounts(counts),
+      );
+      if (!outcome.ok) {
+        console.error('parse-all error:', outcome.error);
         setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
         setPlayers([]); setEvents([]); setCoaches([]);
         setFileOutcomes(uploadedFiles.map(f => ({ name: f.name, ok: false, error: 'Import failed' })));
         setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
         setProcessingFailed(true);
       } else {
+        const data = outcome.data;
         populateFromAI(data);
         const d = data as Record<string, unknown[]>;
         setFileOutcomes(Array.isArray(d.fileOutcomes) ? d.fileOutcomes as FileOutcome[] : []);
@@ -1853,7 +1907,7 @@ export default function OnboardingPage() {
           <UploadStep onAnalyse={handleAnalyse} onSkip={skipUpload} />
         )}
         {step === 'processing' && (
-          <ProcessingStep done={processingDone} failed={processingFailed} counts={processingCounts} onComplete={() => setStep('review')} />
+          <ProcessingStep done={processingDone} failed={processingFailed} counts={processingCounts} liveCounts={liveCounts} onComplete={() => setStep('review')} />
         )}
         {step === 'review' && (
           <ReviewStep

@@ -669,7 +669,10 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
-async function askClaude(files: FileInput[]): Promise<{ result: ParsedResult; fileOutcomes: FileOutcome[] }> {
+// onChunkDone fires as EACH chunk finishes (in completion order, not
+// upload order) so the caller can stream live progress instead of the
+// client waiting on one big silent round-trip.
+async function askClaude(files: FileInput[], onChunkDone: (partial: ParsedResult) => void): Promise<{ fileOutcomes: FileOutcome[] }> {
   // Chunks are an internal detail — track which ORIGINAL uploaded file each
   // one came from so a chunk failure is reported against the file the user
   // actually uploaded, not some auto-generated "(rows 76-150)" fragment name.
@@ -681,14 +684,13 @@ async function askClaude(files: FileInput[]): Promise<{ result: ParsedResult; fi
       Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'askClaudeForFile' }, extra: { fileName: chunk.name } });
       return { parsed: emptyResult(), failed: true, error: err instanceof Error ? err.message : String(err) };
     });
+    onChunkDone(outcome.parsed);
     return { originalName, ...outcome };
   });
 
-  const result = chunkResults.reduce((acc, r) => merge(acc, r.parsed), emptyResult());
-
   // A file with any failed chunk is reported as failed — partial results
-  // still get merged in above (better than nothing), but the user needs to
-  // know it wasn't a clean extraction.
+  // still got merged in via onChunkDone above (better than nothing), but
+  // the user needs to know it wasn't a clean extraction.
   const byFile = new Map<string, { failed: boolean; error?: string }>();
   for (const r of chunkResults) {
     const entry = byFile.get(r.originalName) ?? { failed: false };
@@ -697,7 +699,7 @@ async function askClaude(files: FileInput[]): Promise<{ result: ParsedResult; fi
   }
   const fileOutcomes: FileOutcome[] = [...byFile.entries()].map(([name, e]) => ({ name, ok: !e.failed, error: e.error }));
 
-  return { result, fileOutcomes };
+  return { fileOutcomes };
 }
 
 // ─── Merge two ParsedResults ──────────────────────────────────────────────────
@@ -761,75 +763,100 @@ function merge(a: ParsedResult, b: ParsedResult): ParsedResult {
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
+// Streams newline-delimited JSON progress updates as each file/chunk
+// finishes, ending with one {"type":"done",...} line carrying the full
+// result — so the client can show real extraction counts climbing live
+// instead of a decorative animation with no relationship to actual work.
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['org_admin', 'app_admin']);
   if (!auth.ok) return auth.response;
 
+  let files: FileInput[];
   try {
-    const { files } = await req.json() as { files: FileInput[] };
-    if (!files?.length) return NextResponse.json({ error: 'No files provided.' }, { status: 400 });
-
-    let result = emptyResult();
-    const forClaude: FileInput[] = [];
-    // Tracks every uploaded file's outcome, whichever path handled it —
-    // returned to the client so a failure is never just quietly fewer
-    // results with no explanation.
-    const fileOutcomes: FileOutcome[] = [];
-
-    for (const file of files) {
-      // Excel workbooks aren't a Claude-native document type (only PDF/images
-      // are) — convert to CSV text first so they go through the same path
-      // as an uploaded .csv instead of being silently dropped.
-      let normalized = file;
-      let excelFailed = false;
-      if (!file.text && file.base64 && isExcelFile(file)) {
-        try {
-          normalized = { text: await excelToCSV(file.base64), name: file.name };
-        } catch (err) {
-          console.error(`[parse-all] failed to read Excel file "${file.name}":`, err);
-          Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'excelToCSV' }, extra: { fileName: file.name } });
-          excelFailed = true;
-        }
-      }
-
-      if (excelFailed) {
-        fileOutcomes.push({ name: file.name, ok: false, error: 'Could not read this Excel file — it may be corrupted or in an unsupported format.' });
-        continue;
-      }
-
-      if (normalized.text) {
-        // Try JS CSV parser first
-        const parsed = extractFromCSV(normalized.text);
-        if (parsed) {
-          result = merge(result, parsed);
-          fileOutcomes.push({ name: file.name, ok: true });
-        } else {
-          forClaude.push(normalized); // unrecognised text format → Claude
-        }
-      } else {
-        forClaude.push(normalized); // PDF / image → Claude
-      }
-    }
-
-    // Use Claude only for files that need it
-    if (forClaude.length > 0) {
-      const { result: claudeResult, fileOutcomes: claudeOutcomes } = await askClaude(forClaude);
-      result = merge(result, claudeResult);
-      fileOutcomes.push(...claudeOutcomes);
-    }
-
-    // Deterministic CSV parsing has no idea about alt_names (a schedule file
-    // parsed before an alias-aware file like a league/team-name mapping is
-    // merged in has already created its own bare team entry), so folding
-    // each file's teams in as it's processed isn't enough — do one final
-    // self-consolidation pass over the whole team list now that every
-    // alias is known.
-    result.teams = mergeTeamsList([], result.teams);
-
-    return NextResponse.json({ ...result, fileOutcomes });
-  } catch (err) {
-    console.error('[parse-all] error:', err);
-    Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'handler' } });
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    ({ files } = await req.json() as { files: FileInput[] });
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
+  if (!files?.length) return NextResponse.json({ error: 'No files provided.' }, { status: 400 });
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const emit = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+      try {
+        let result = emptyResult();
+        const forClaude: FileInput[] = [];
+        const fileOutcomes: FileOutcome[] = [];
+        const emitProgress = () => emit({
+          type: 'progress',
+          teams: result.teams.length, players: result.players.length,
+          events: result.events.length, coaches: result.coaches.length,
+        });
+
+        for (const file of files) {
+          // Excel workbooks aren't a Claude-native document type (only
+          // PDF/images are) — convert to CSV text first so they go through
+          // the same path as an uploaded .csv instead of being silently
+          // dropped.
+          let normalized = file;
+          let excelFailed = false;
+          if (!file.text && file.base64 && isExcelFile(file)) {
+            try {
+              normalized = { text: await excelToCSV(file.base64), name: file.name };
+            } catch (err) {
+              console.error(`[parse-all] failed to read Excel file "${file.name}":`, err);
+              Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'excelToCSV' }, extra: { fileName: file.name } });
+              excelFailed = true;
+            }
+          }
+
+          if (excelFailed) {
+            fileOutcomes.push({ name: file.name, ok: false, error: 'Could not read this Excel file — it may be corrupted or in an unsupported format.' });
+            continue;
+          }
+
+          if (normalized.text) {
+            const parsed = extractFromCSV(normalized.text);
+            if (parsed) {
+              result = merge(result, parsed);
+              fileOutcomes.push({ name: file.name, ok: true });
+              emitProgress();
+            } else {
+              forClaude.push(normalized); // unrecognised text format → Claude
+            }
+          } else {
+            forClaude.push(normalized); // PDF / image → Claude
+          }
+        }
+
+        // Use Claude only for files that need it — reports progress as
+        // each parallel chunk finishes, not just once at the very end.
+        if (forClaude.length > 0) {
+          const { fileOutcomes: claudeOutcomes } = await askClaude(forClaude, partial => {
+            result = merge(result, partial);
+            emitProgress();
+          });
+          fileOutcomes.push(...claudeOutcomes);
+        }
+
+        // Deterministic CSV parsing has no idea about alt_names (a schedule
+        // file parsed before an alias-aware file like a league/team-name
+        // mapping is merged in has already created its own bare team
+        // entry), so folding each file's teams in as it's processed isn't
+        // enough — do one final self-consolidation pass now that every
+        // alias is known.
+        result.teams = mergeTeamsList([], result.teams);
+
+        emit({ type: 'done', ...result, fileOutcomes });
+      } catch (err) {
+        console.error('[parse-all] error:', err);
+        Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'handler' } });
+        emit({ type: 'error', error: String(err) });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' } });
 }
