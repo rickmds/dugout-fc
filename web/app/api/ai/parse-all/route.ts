@@ -143,6 +143,14 @@ function isGeocodableAddress(s: string): boolean {
   return true;
 }
 
+// Some schedule exports split an address across separate Street/City/State/
+// Zip columns instead of one combined field — join whatever's present into
+// one geocodable string.
+function combineAddress(street: string, city: string, state: string, zip: string): string {
+  const cityStateZip = [city, [state, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return [street, cityStateZip].filter(Boolean).join(', ');
+}
+
 function emptyResult(): ParsedResult {
   return { teams: [], players: [], events: [], coaches: [] };
 }
@@ -198,12 +206,18 @@ function extractFromCSV(text: string): ParsedResult | null {
     const iDate     = colIdx(headers, 'Event Date', 'Game Date', 'Date');
     const iTime     = colIdx(headers, 'Event Time', 'Game Time', 'Time');
     const iOpp      = colIdx(headers, 'Opponent / Note', 'Opponent', 'Title');
-    const iLoc      = colIdx(headers, 'Location', 'Field', 'Venue');
+    const iLoc      = colIdx(headers, 'Location', 'Field Name', 'Venue', 'Field');
     const iAddr       = colIdx(headers, 'Address', 'Street Address', 'Venue Address', 'Full Address');
+    const iCity       = colIdx(headers, 'City', 'Town');
+    const iState      = colIdx(headers, 'State', 'Province');
+    const iZip        = colIdx(headers, 'Zip', 'Zip Code', 'Postal Code');
     const iDuration   = colIdx(headers, 'Duration', 'Duration (min)', 'Duration Minutes');
     const iArrival    = colIdx(headers, 'Arrival Buffer', 'Arrive Early', 'Arrive', 'Minutes Early', 'Pre-Game Arrival');
-    const iField      = colIdx(headers, 'Field Details', 'Pitch', 'Field Number', 'Sub Field', 'Field / Pitch');
-    const iSurface    = colIdx(headers, 'Surface', 'Field Type', 'Turf / Grass');
+    // If there's only one "field"-ish column, iLoc already claimed it above
+    // as the venue name — don't also echo it into field_notes.
+    const iFieldRaw   = colIdx(headers, 'Field', 'Field Details', 'Pitch', 'Field Number', 'Sub Field', 'Field / Pitch', 'Facility Code');
+    const iField      = iFieldRaw === iLoc ? -1 : iFieldRaw;
+    const iSurface    = colIdx(headers, 'Surface', 'Field Type', 'Turf / Grass', 'Turf Type');
     const iNotes      = colIdx(headers, 'Notes', 'Note', 'Event Notes', 'Comments', 'Team Message');
     const iCoachNotes = colIdx(headers, 'Coach Notes', 'Staff Notes', 'Internal Notes', 'Coach Only');
 
@@ -249,12 +263,16 @@ function extractFromCSV(text: string): ParsedResult | null {
         const arrival   = iArrival    >= 0 ? (row[iArrival]    ?? '').trim() : '';
         const field     = iField      >= 0 ? (row[iField]      ?? '').trim() : '';
         const surface   = iSurface    >= 0 ? (row[iSurface]    ?? '').trim().toLowerCase() : '';
+        const city      = iCity       >= 0 ? (row[iCity]       ?? '').trim() : '';
+        const state     = iState      >= 0 ? (row[iState]      ?? '').trim() : '';
+        const zip       = iZip        >= 0 ? (row[iZip]        ?? '').trim() : '';
         const notes     = iNotes      >= 0 ? (row[iNotes]      ?? '').trim() : '';
         const coachNotes= iCoachNotes >= 0 ? (row[iCoachNotes] ?? '').trim() : '';
         const homeAway  = type === 'game' ? (posVal === 'home' ? 'home' : posVal === 'away' ? 'away' : '') : '';
         const uniform   = type === 'training' ? 'training' : (homeAway || '');
-        const fieldType = surface.includes('turf') ? 'turf' : surface.includes('grass') ? 'grass' : '';
-        const address   = rawAddr || (isGeocodableAddress(rawLoc) ? rawLoc : '');
+        const fieldType = /turf|artificial|synthetic|astroturf/.test(surface) ? 'turf'
+          : /grass|natural|\bsod\b/.test(surface) ? 'grass' : '';
+        const address   = combineAddress(rawAddr, city, state, zip) || (isGeocodableAddress(rawLoc) ? rawLoc : '');
         // Build title: for games prefix with vs/@ based on venue
         const oppName   = opp.replace(/^(vs\s+|@\s+)/i, '').trim();
         const gameTitle = type === 'game' && oppName
@@ -398,13 +416,25 @@ Rules:
 - type: "game", "training", or "other"
 - home_away: "home" if the team plays at their own field, "away" if travelling to opponent's field, empty string for training/other
 - title: for games use "vs X" (home) or "@ X" (away) matching home_away; for training use "Team Training" or session description
-- location: venue name only — strip any "Away @ ", "Home @ ", or "@ " prefix (e.g. "Away @ Tri-County SC Field" → "Tri-County SC Field")
-- address: geocodable street address ONLY (e.g. "7000 Soccer Park Dr, St. Louis, MO 63129") — empty string if no real street address found
+- location: the venue/field's human-readable NAME (e.g. "Stevens Field - SS 1"), not an internal facility code — strip any "Away @ ", "Home @ ", or "@ " prefix (e.g. "Away @ Tri-County SC Field" → "Tri-County SC Field")
+- address: a single geocodable street address, ASSEMBLED even if the
+  document splits it across multiple columns (e.g. separate Street
+  Address / City / State / Zip columns, or Address / Town) — join them
+  into one string like "627 E Ridgewood Ave, Ridgewood, NJ 07450". Every
+  document is different: look across all columns on the row for anything
+  that looks like address components and combine what you find. Empty
+  string only if no real street-level address exists anywhere on the row
+  — a bare facility code or field nickname is not an address.
 - uniform: "home" or "away" for games, "training" for training sessions, empty string for other
 - duration_minutes: numeric string if duration mentioned (e.g. "90"), empty string if not stated
 - arrival_buffer_minutes: numeric string of minutes early players should arrive (e.g. "30" if document says "arrive 30 min early"), empty string if not stated
-- field_notes: specific field/pitch details if mentioned (e.g. "Field 1, Pitch B" or "East Complex"), empty string if none
-- field_type: "turf" or "grass" if surface mentioned, empty string if unknown
+- field_notes: an internal facility/field CODE if the document has one
+  separate from the readable venue name (e.g. "MAR-Stevens SS1" alongside
+  "Stevens Field - SS 1"), or specific sub-field details (e.g. "Field 1,
+  Pitch B"). Empty string if the document only gives one name for the venue.
+- field_type: "turf" or "grass" from any surface/turf-type column — treat
+  "Artificial", "Synthetic", "AstroTurf", "Turf" as "turf" and "Natural",
+  "Sod", "Grass" as "grass". Empty string if surface isn't stated.
 - notes: any team-facing notes or instructions visible to all (e.g. "Bring extra water", "Wear training kit"), empty string if none
 - coach_notes: any coach-only or internal notes (e.g. "Focus on set pieces", "Call-up players available"), empty string if none
 - confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain`;
