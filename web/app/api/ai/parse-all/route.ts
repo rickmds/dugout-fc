@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import ExcelJS from 'exceljs';
+import * as Sentry from '@sentry/nextjs';
 import { requireRole } from '@/lib/apiAuth';
 
 // Matches the maxDuration for this route in vercel.json — was mismatched at
@@ -613,6 +614,7 @@ async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
     await stream.done();
   } catch (err) {
     console.error(`[parse-all] structured-output stream error for "${file.name}" — falling back to salvage parsing:`, err);
+    Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'stream' }, extra: { fileName: file.name, capturedChars: raw.length } });
   }
   return parseClaudeJSON(raw);
 }
@@ -645,6 +647,7 @@ async function askClaude(files: FileInput[]): Promise<ParsedResult> {
   const results = await Promise.all(expanded.map(file =>
     askClaudeForFile(file).catch(err => {
       console.error(`[parse-all] Claude extraction failed for "${file.name}":`, err);
+      Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'askClaudeForFile' }, extra: { fileName: file.name } });
       return emptyResult();
     })
   ));
@@ -733,6 +736,7 @@ export async function POST(req: NextRequest) {
           normalized = { text: await excelToCSV(file.base64), name: file.name };
         } catch (err) {
           console.error(`[parse-all] failed to read Excel file "${file.name}":`, err);
+          Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'excelToCSV' }, extra: { fileName: file.name } });
         }
       }
 
@@ -766,6 +770,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (err) {
     console.error('[parse-all] error:', err);
+    Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'handler' } });
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
