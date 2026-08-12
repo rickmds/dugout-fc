@@ -160,14 +160,32 @@ function extractFromCSV(text: string): ParsedResult | null {
   const result = emptyResult();
   const teamSet = new Map<string, { age_group: string; gender: string }>();
 
-  // Detect format by columns present
-  const hasType     = colIdx(headers, 'Type') >= 0;
+  // Detect format by columns present. "Type" is checked by VALUE, not just
+  // presence — some real-world exports (e.g. a league's own schedule) have
+  // a "type" column that's always blank, which isn't Format 1 at all; a
+  // bare presence check would silently claim the file and drop everything.
+  const TYPE_VALUES = ['player', 'coach', 'game', 'training', 'other'];
+  const iTypeCheck = colIdx(headers, 'Type');
+  const hasType = iTypeCheck >= 0 && data.some(r => TYPE_VALUES.includes((r[iTypeCheck] ?? '').trim().toLowerCase()));
   const hasRole     = colIdx(headers, 'Role', 'Role / Position') >= 0;
   const hasHomeTeam = colIdx(headers, 'Home Team', 'HomeTeam') >= 0;
   const hasDate     = colIdx(headers, 'Date', 'Event Date', 'Game Date') >= 0;
+  // Format 3 needs a column that says which side is *our* team — a bare
+  // Home Team/Visitor Team schedule (e.g. a league's own export) doesn't
+  // tell us that, and guessing would silently mislabel every game as
+  // "away" with no team assigned. Route those to Claude instead, which can
+  // reason about it (e.g. matching a club name prefix across both sides).
+  const hasTeamCol = colIdx(headers, 'Team', 'Team Name') >= 0;
+
+  // Tracks whether a branch below actually processed this file — if none
+  // did (unrecognised header layout), we must return null so the caller
+  // falls back to Claude instead of silently treating it as "parsed, zero
+  // results."
+  let handled = false;
 
   // ── Format 1: "Type" column (test-full-club.csv style) ──────────────────
   if (hasType) {
+    handled = true;
     const iType   = colIdx(headers, 'Type');
     const iTeam   = colIdx(headers, 'Team', 'Team Name');
     const iAG     = colIdx(headers, 'Age Group', 'Age');
@@ -267,6 +285,7 @@ function extractFromCSV(text: string): ParsedResult | null {
 
   // ── Format 2: "Role" column (test-import.csv style) ─────────────────────
   else if (hasRole) {
+    handled = true;
     const iRole   = colIdx(headers, 'Role');
     const iTeam   = colIdx(headers, 'Team', 'Team Name');
     const iFirst  = colIdx(headers, 'First Name', 'FirstName');
@@ -301,7 +320,8 @@ function extractFromCSV(text: string): ParsedResult | null {
   }
 
   // ── Format 3: Schedule CSV (Home Team / Visitor Team columns) ────────────
-  else if (hasHomeTeam && hasDate) {
+  else if (hasHomeTeam && hasDate && hasTeamCol) {
+    handled = true;
     const iTeam    = colIdx(headers, 'Team', 'Team Name');
     const iDate    = colIdx(headers, 'Date', 'Game Date');
     const iTime    = colIdx(headers, 'Time', 'Game Time');
@@ -325,10 +345,11 @@ function extractFromCSV(text: string): ParsedResult | null {
     }
   }
 
-  // Format not recognised — return null so we fall back to Claude
-  else if (!hasType && !hasRole && !hasHomeTeam) {
-    return null;
-  }
+  // No branch above actually processed this file (unrecognised header
+  // layout, or a Home/Visitor schedule with no way to tell which side is
+  // ours) — return null so the caller falls back to Claude instead of
+  // treating this as "parsed, zero results."
+  if (!handled) return null;
 
   // Build teams from collected team names
   for (const [name, meta] of teamSet) {
@@ -361,6 +382,17 @@ Rules:
 - team_name (on players/events/coaches): use whatever name that specific
   document calls the team by — it doesn't need to match a team's primary
   "name" exactly, matching against alt_names happens downstream.
+- A game schedule lists two sides (e.g. "Home Team" and "Visitor Team"
+  columns) — only ONE of them is the club whose data is being imported; the
+  other is an opponent from a different club entirely. Figure out which
+  side is ours (it's the name that recurs constantly across the schedule,
+  often sharing one club-name prefix like "Maroons-", while the other side
+  is a different name on every row) and set the event's team_name to OUR
+  side only. Do NOT add an entry to the "teams" array for an opponent —
+  only include teams that are genuinely part of the club being imported
+  (established by a roster, coach list, or team-mapping document, or by
+  being the recurring side of every schedule row). A schedule alone is
+  never sufficient grounds to add a new team to the "teams" array.
 - event_date: YYYY-MM-DD format
 - event_time: HH:MM 24h format
 - type: "game", "training", or "other"
@@ -388,16 +420,53 @@ function normalizeTeams(teams: unknown): ParsedResult['teams'] {
   }));
 }
 
+// Walks a `"key": [ {...}, {...}, ... ]` array by hand, parsing one
+// balanced object at a time. Used when the response got cut off mid-array
+// (e.g. a large schedule hitting max_tokens) — a regex expecting the array
+// to actually close with `]` finds nothing at all in that case, losing
+// every record instead of just the ones after the cutoff.
+function extractArrayObjects(raw: string, key: string): unknown[] {
+  const marker = raw.indexOf(`"${key}"`);
+  if (marker < 0) return [];
+  const bracketStart = raw.indexOf('[', marker);
+  if (bracketStart < 0) return [];
+
+  const out: unknown[] = [];
+  let i = bracketStart + 1;
+  while (i < raw.length) {
+    while (i < raw.length && /[\s,]/.test(raw[i])) i++;
+    if (i >= raw.length || raw[i] === ']') break;
+    if (raw[i] !== '{') break;
+
+    let depth = 0, j = i, inStr = false, esc = false;
+    for (; j < raw.length; j++) {
+      const ch = raw[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+      } else if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) { j++; break; } }
+    }
+    if (depth !== 0) break; // truncated mid-object — stop, keep what we found so far
+
+    try { out.push(JSON.parse(raw.slice(i, j))); } catch { /* skip malformed object */ }
+    i = j;
+  }
+  return out;
+}
+
 function parseClaudeJSON(raw: string): ParsedResult {
   try {
     const p = JSON.parse(raw);
     return { teams: normalizeTeams(p.teams), players: p.players ?? [], events: p.events ?? [], coaches: p.coaches ?? [] };
   } catch {
-    // Partial JSON — extract what we can
+    // Truncated or otherwise malformed JSON — salvage whatever complete
+    // records we can rather than losing the whole file's extraction.
     const result = emptyResult();
     for (const key of ['teams', 'players', 'events', 'coaches'] as const) {
-      const m = raw.match(new RegExp(`"${key}":\\s*(\\[.*?\\])`, 's'));
-      if (m) { try { (result[key] as unknown[]) = JSON.parse(m[1]); } catch { /* skip */ } }
+      (result[key] as unknown[]) = extractArrayObjects(raw, key);
     }
     result.teams = normalizeTeams(result.teams);
     return result;
@@ -427,10 +496,12 @@ async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
   content.push({ type: 'text', text: 'Extract all teams, players, events, and coaches.' });
 
   // Streaming avoids the SDK's non-streaming HTTP timeout, required once
-  // max_tokens goes past ~16K.
+  // max_tokens goes past ~16K. Set high (Sonnet 4.6's actual ceiling) since
+  // a full-season schedule can run 400+ games — a truncated response loses
+  // every event after the cutoff, and this only caps length, not cost.
   const stream = client.messages.stream({
     model: 'claude-sonnet-4-6',
-    max_tokens: 32000,
+    max_tokens: 128000,
     system: CLAUDE_SYSTEM,
     messages: [{ role: 'user', content }],
   });
@@ -439,8 +510,32 @@ async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
   return parseClaudeJSON(raw);
 }
 
+// A single big text file (e.g. a full-season schedule export, hundreds of
+// rows) generates a proportionally long response — one 319-row schedule
+// took ~290s in testing, dangerously close to this route's 300s ceiling.
+// Splitting it into row-count chunks and running them in parallel bounds
+// wall-clock time by the slowest CHUNK instead of the whole file, and that
+// bound doesn't grow as a season gets bigger — more chunks in parallel,
+// not one ever-longer serial call.
+const MAX_ROWS_PER_TEXT_CHUNK = 75;
+
+function chunkTextFile(file: FileInput): FileInput[] {
+  if (!file.text) return [file];
+  const lines = file.text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length <= MAX_ROWS_PER_TEXT_CHUNK + 1) return [file]; // +1 for header
+  const header = lines[0];
+  const dataLines = lines.slice(1);
+  const chunks: FileInput[] = [];
+  for (let i = 0; i < dataLines.length; i += MAX_ROWS_PER_TEXT_CHUNK) {
+    const part = dataLines.slice(i, i + MAX_ROWS_PER_TEXT_CHUNK);
+    chunks.push({ name: `${file.name} (rows ${i + 1}-${i + part.length})`, text: [header, ...part].join('\n') });
+  }
+  return chunks;
+}
+
 async function askClaude(files: FileInput[]): Promise<ParsedResult> {
-  const results = await Promise.all(files.map(file =>
+  const expanded = files.flatMap(chunkTextFile);
+  const results = await Promise.all(expanded.map(file =>
     askClaudeForFile(file).catch(err => {
       console.error(`[parse-all] Claude extraction failed for "${file.name}":`, err);
       return emptyResult();
