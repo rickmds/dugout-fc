@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import { FlipBoard } from '@/components/FlipBoard';
@@ -57,6 +57,26 @@ function matchTeamId(name: string | null | undefined, rows: TRow[]): string {
     rows.find(t => t.name.toLowerCase().includes(n) || n.includes(t.name.toLowerCase()))?.id ??
     ''
   );
+}
+
+// ─── Fuzzy "is this the same team under a different name?" suggestion ─────────
+// Different source documents often name the same team inconsistently (e.g.
+// "Maroons 2014B" vs "U12 Boys Maroons"). We can't reliably tell for sure, so
+// this only ever *suggests* a merge for the coach to confirm or dismiss —
+// strip generic/age-group noise words and flag any pair that still shares a
+// distinctive token.
+const TEAM_NAME_STOPWORDS = new Set([
+  'sc', 'fc', 'ac', 'academy', 'club', 'team', 'boys', 'girls', 'soccer',
+  'the', 'and', 'united', 'youth', 'athletic', 'select', 'premier',
+]);
+function teamNameTokens(name: string): string[] {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ')
+    .filter(t => t && !TEAM_NAME_STOPWORDS.has(t) && !/^u\d{1,2}$/.test(t));
+}
+function looksLikeSameTeam(a: string, b: string): boolean {
+  const ta = teamNameTokens(a), tb = teamNameTokens(b);
+  if (!ta.length || !tb.length) return false;
+  return ta.some(t => tb.includes(t));
 }
 
 // ─── Step bar ─────────────────────────────────────────────────────────────────
@@ -739,10 +759,10 @@ function ReviewStep({
   coaches: CRow[]; setCoaches: React.Dispatch<React.SetStateAction<CRow[]>>;
   onConfirm: (invites: ParentInvite[], coachPayload: CoachPayload | null) => void;
 }) {
-  const [tOpen, setTOpen] = useState(true);
-  const [pOpen, setPOpen] = useState(true);
-  const [eOpen, setEOpen] = useState(true);
-  const [cOpen, setCOpen] = useState(true);
+  const [closedTeamIds, setClosedTeamIds]     = useState<Set<string>>(new Set());
+  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
+  const [dismissedPairs, setDismissedPairs]   = useState<Set<string>>(new Set());
+  const [unassignedOpen, setUnassignedOpen]   = useState(true);
   const [saving, setSaving]   = useState(false);
   const [merging, setMerging] = useState(false);
   const [error, setError]     = useState('');
@@ -757,8 +777,12 @@ function ReviewStep({
     setBulk(b => ({ ...b, [type]: { ...b[type], [field]: val } }));
   }
 
-  const unassigned  = players.filter(p => !p.local_team_id).length;
-  const teamOpts    = teams.filter(t => t.name.trim());
+  const teamOpts  = teams.filter(t => t.name.trim());
+  const teamIdSet = new Set(teamOpts.map(t => t.id));
+  // Covers both blank local_team_id and a stale id left behind by a deleted
+  // team — either way the row needs a human to re-point it somewhere.
+  const isUnassigned = (localTeamId: string) => !teamIdSet.has(localTeamId);
+  const unassigned = players.filter(p => isUnassigned(p.local_team_id)).length;
 
   function updateT(id: string, f: keyof TRow, v: string)  { setTeams(p   => p.map(r => r.id === id ? { ...r, [f]: v } : r)); }
   function updateP(id: string, f: keyof PRow, v: string)  { setPlayers(p => p.map(r => r.id === id ? { ...r, [f]: v } : r)); }
@@ -772,6 +796,49 @@ function ReviewStep({
     }));
   }
   function updateC(id: string, f: keyof CRow, v: string)  { setCoaches(p => p.map(r => r.id === id ? { ...r, [f]: v } : r)); }
+
+  // ── Team merge (manual + suggested) ────────────────────────────────────────
+
+  function toggleTeamSelect(id: string) {
+    setSelectedTeamIds(s => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  function toggleTeamOpen(id: string) {
+    setClosedTeamIds(s => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  // Re-points every player/event/coach on the merged-away teams onto the
+  // survivor, then drops the merged-away team rows. The survivor keeps its
+  // own name — rename it inline afterward if none of the originals were right.
+  function mergeTeams(intoId: string, fromIds: string[]) {
+    const froms = fromIds.filter(id => id !== intoId);
+    if (!froms.length) return;
+    setPlayers(prev => prev.map(p => froms.includes(p.local_team_id) ? { ...p, local_team_id: intoId } : p));
+    setEvents(prev  => prev.map(e => froms.includes(e.local_team_id) ? { ...e, local_team_id: intoId } : e));
+    setCoaches(prev => prev.map(c => froms.includes(c.local_team_id) ? { ...c, local_team_id: intoId } : c));
+    setTeams(prev => prev.filter(t => !froms.includes(t.id)));
+    setSelectedTeamIds(new Set());
+  }
+  const teamOptsKey = teamOpts.map(t => t.id + t.name).join(',');
+  const teamSuggestions = useMemo(() => {
+    const out: { a: TRow; b: TRow }[] = [];
+    for (let i = 0; i < teamOpts.length; i++) {
+      for (let j = i + 1; j < teamOpts.length; j++) {
+        const a = teamOpts[i], b = teamOpts[j];
+        const key = [a.id, b.id].sort().join('|');
+        if (dismissedPairs.has(key)) continue;
+        if (looksLikeSameTeam(a.name, b.name)) out.push({ a, b });
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamOptsKey, dismissedPairs]);
 
   // ── Add more files (merge into existing data) ─────────────────────────────
 
@@ -939,30 +1006,333 @@ function ReviewStep({
 
   // ── Section chrome ────────────────────────────────────────────────────────
 
-  function SectionWrap({ label, count, warning, open, onToggle, children }: {
-    label: string; count: number; warning?: string; open: boolean; onToggle: () => void; children: React.ReactNode;
-  }) {
+  const colHdr = (cols: string[], template: string) => (
+    <div className="grid text-[10px] font-bold text-[#444] uppercase tracking-wider mt-4 mb-2 px-1"
+      style={{ gridTemplateColumns: template }}>
+      {cols.map((h, i) => <span key={i}>{h}</span>)}
+    </div>
+  );
+
+  // ── Row renderers — plain functions (not JSX components) called directly,
+  // so re-grouping which array feeds them by team never remounts the inputs
+  // underneath a coach's fingers mid-keystroke. ─────────────────────────────
+
+  function renderCoachRow(c: CRow) {
     return (
-      <div className="bg-[#111] border border-[#222] rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 cursor-pointer select-none" onClick={onToggle}>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-white">{label}</span>
-            <span className="text-xs font-bold bg-[#22c55e20] text-[#22c55e] px-2 py-0.5 rounded-full">{count}</span>
-            {warning && <span className="text-xs text-amber-400">{warning}</span>}
-          </div>
-          <span className="text-[#444] text-xs">{open ? '▲' : '▼'}</span>
-        </div>
-        {open && <div className="px-5 pb-5 border-t border-[#1a1a1a]">{children}</div>}
+      <div key={c.id} className="grid gap-1.5 items-center p-1.5 rounded-lg border border-[#1e1e1e]"
+        style={{ gridTemplateColumns: '1fr 1fr 160px 32px' }}>
+        <input value={c.full_name} onChange={e => updateC(c.id, 'full_name', e.target.value)} placeholder="Full name" style={SI} />
+        <input value={c.email}     onChange={e => updateC(c.id, 'email', e.target.value)}     placeholder="Email" type="email" style={SI} />
+        <select value={c.local_team_id} onChange={e => updateC(c.id, 'local_team_id', e.target.value)} style={SI}>
+          <option value="">All teams</option>
+          {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button onClick={() => setCoaches(p => p.filter(x => x.id !== c.id))}
+          className="text-[#333] hover:text-red-400 transition-colors text-sm text-center">✕</button>
       </div>
     );
   }
 
-  const colHdr = (cols: string[], template: string) => (
-    <div className="grid text-[10px] font-bold text-[#444] uppercase tracking-wider mt-4 mb-2 px-1"
-      style={{ gridTemplateColumns: template }}>
-      {cols.map(h => <span key={h}>{h}</span>)}
-    </div>
-  );
+  function renderPlayerRow(p: PRow) {
+    return (
+      <div key={p.id} className={`grid gap-1.5 items-center p-1.5 rounded-lg border ${
+        p.conf === 'low' ? 'border-red-900/60 bg-red-950/20' : p.conf === 'medium' ? 'border-amber-900/60 bg-amber-950/20' : 'border-[#1e1e1e]'
+      }`} style={{ gridTemplateColumns: '48px 1fr 72px 120px 1fr 150px 32px' }}>
+        <input value={p.jersey_number} onChange={e => updateP(p.id, 'jersey_number', e.target.value)} placeholder="#" style={{ ...SI, textAlign: 'center' }} />
+        <input value={p.full_name}     onChange={e => updateP(p.id, 'full_name', e.target.value)}     placeholder="Full name" style={SI} />
+        <div className="flex justify-center items-center"><ConfBadge conf={p.conf} /></div>
+        <select value={p.position} onChange={e => updateP(p.id, 'position', e.target.value)} style={SI}>
+          {POSITIONS.map(pos => <option key={pos} value={pos}>{pos || '—'}</option>)}
+        </select>
+        <input value={p.parent_email} onChange={e => updateP(p.id, 'parent_email', e.target.value)} placeholder="Parent email" type="email" style={SI} />
+        <select value={p.local_team_id} onChange={e => updateP(p.id, 'local_team_id', e.target.value)}
+          style={{ ...SI, color: isUnassigned(p.local_team_id) ? '#f59e0b' : undefined }}>
+          <option value="">Unassigned</option>
+          {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button onClick={() => setPlayers(p2 => p2.filter(x => x.id !== p.id))}
+          className="text-[#333] hover:text-red-400 transition-colors text-sm text-center">✕</button>
+      </div>
+    );
+  }
+
+  function renderEventRow(e: ERow) {
+    return (
+      <div key={e.id} className={`rounded-xl border overflow-hidden ${
+        e.conf === 'low' ? 'border-red-900/60' : e.conf === 'medium' ? 'border-amber-900/60' : !e.address ? 'border-amber-900/40' : 'border-[#1e1e1e]'
+      }`}>
+        <div className={`grid gap-2 items-center px-2 py-2.5 ${
+          e.conf === 'low' ? 'bg-red-950/20' : e.conf === 'medium' ? 'bg-amber-950/20' : !e.address ? 'bg-amber-950/10' : ''
+        }`} style={{ gridTemplateColumns: '140px 100px 1fr 200px 1fr 140px 32px' }}>
+          <input type="date" value={e.event_date} onChange={ev => updateE(e.id, 'event_date', ev.target.value)} style={SI} />
+          <input type="time" value={e.event_time} onChange={ev => updateE(e.id, 'event_time', ev.target.value)} style={SI} />
+          <div className="flex items-center gap-1">
+            <input value={e.title} onChange={ev => updateE(e.id, 'title', ev.target.value)} placeholder="Title" style={SI} />
+            <ConfBadge conf={e.conf} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <select value={e.type} onChange={ev => {
+              const t = ev.target.value;
+              setEvents(prev => prev.map(r => r.id !== e.id ? r : {
+                ...r, type: t,
+                uniform: t === 'training' ? 'training' : (r.uniform === 'training' ? '' : r.uniform),
+                home_away: t === 'game' ? r.home_away : '',
+              }));
+            }} style={{ ...SI, flexShrink: 0 }}>
+              <option value="game">Game</option>
+              <option value="training">Training</option>
+              <option value="other">Other</option>
+            </select>
+            {e.type === 'game' && (
+              <div style={{ display: 'flex', gap: 3 }}>
+                {(['home', 'away'] as const).map(v => (
+                  <button key={v} onClick={() => updateVenue(e.id, v)}
+                    style={{ padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: e.home_away === v ? 700 : 500, border: `1.5px solid ${e.home_away === v ? '#22c55e' : '#333'}`, background: e.home_away === v ? 'rgba(34,197,94,0.15)' : 'transparent', color: e.home_away === v ? '#22c55e' : '#777', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {v === 'home' ? 'Home' : 'Away'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <input value={e.location} onChange={ev => updateE(e.id, 'location', ev.target.value)} placeholder="Venue name" style={SI} />
+          <select value={e.local_team_id} onChange={ev => updateE(e.id, 'local_team_id', ev.target.value)} style={SI}>
+            <option value="">—</option>
+            {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <button onClick={() => setEvents(p => p.filter(x => x.id !== e.id))}
+            className="text-[#333] hover:text-red-400 transition-colors text-sm text-center">✕</button>
+        </div>
+        {/* Row 2 — address + field details */}
+        <div className="grid gap-2 px-2 border-t border-[#1a1a1a]"
+          style={{ gridTemplateColumns: e.type === 'other' ? '2fr 1fr auto auto' : '2fr 1fr auto', paddingBottom: '8px', paddingTop: '8px' }}>
+          {/* Address with Places autocomplete */}
+          <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${!e.address ? 'bg-amber-950/30' : 'bg-[#0d0d0d]'}`}>
+            {!e.address && <span className="text-amber-400 text-[10px] font-bold flex-shrink-0">⚠</span>}
+            <PlacesInput
+              value={e.address}
+              onChange={v => updateE(e.id, 'address', v)}
+              onSelect={({ address, lat, lng }) => {
+                setEvents(prev => prev.map(ev => ev.id === e.id
+                  ? { ...ev, address, lat: String(lat), lng: String(lng) }
+                  : ev));
+              }}
+              placeholder={e.address ? e.address : 'Street address for map…'}
+            />
+          </div>
+          {/* Field notes */}
+          <input
+            value={e.field_notes}
+            onChange={ev => updateE(e.id, 'field_notes', ev.target.value)}
+            placeholder="Field / pitch…"
+            style={{ ...SI, fontSize: 12 }}
+          />
+          {/* Surface pills */}
+          <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+            {(['turf', 'grass'] as const).map(s => (
+              <button key={s} onClick={() => updateE(e.id, 'field_type', e.field_type === s ? '' : s)}
+                style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: e.field_type === s ? 700 : 500, border: `1.5px solid ${e.field_type === s ? '#22c55e' : '#333'}`, background: e.field_type === s ? 'rgba(34,197,94,0.15)' : 'transparent', color: e.field_type === s ? '#22c55e' : '#666', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {s === 'turf' ? 'Turf' : 'Grass'}
+              </button>
+            ))}
+          </div>
+          {/* Kit pills — only for "other" type; games use venue, training is always Tng */}
+          {e.type === 'other' && (
+            <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+              {(['home', 'away', 'training'] as const).map(u => (
+                <button key={u} onClick={() => updateE(e.id, 'uniform', e.uniform === u ? '' : u)}
+                  style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: e.uniform === u ? 700 : 500, border: `1.5px solid ${e.uniform === u ? '#22c55e' : '#333'}`, background: e.uniform === u ? 'rgba(34,197,94,0.15)' : 'transparent', color: e.uniform === u ? '#22c55e' : '#666', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {u === 'home' ? 'Home' : u === 'away' ? 'Away' : 'Tng'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* Row 3 — notes */}
+        <div className="grid gap-2 px-2 pb-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
+          <input
+            value={e.notes}
+            onChange={ev => updateE(e.id, 'notes', ev.target.value)}
+            placeholder="Team message (visible to all)…"
+            style={{ ...SI, fontSize: 12 }}
+          />
+          <input
+            value={e.coach_notes}
+            onChange={ev => updateE(e.id, 'coach_notes', ev.target.value)}
+            placeholder="Coach notes (coach only)…"
+            style={{ ...SI, fontSize: 12 }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // One card per team: its own coaches, roster, and events grouped together
+  // so it's obvious which events belong to which team at a glance.
+  function renderTeamCard(t: TRow) {
+    const teamCoaches = coaches.filter(c => c.local_team_id === t.id);
+    const teamPlayers = players.filter(p => p.local_team_id === t.id);
+    const teamEvents  = events.filter(e => e.local_team_id === t.id);
+    const open = !closedTeamIds.has(t.id);
+    const selected = selectedTeamIds.has(t.id);
+    return (
+      <div key={t.id} className={`rounded-2xl border overflow-hidden bg-[#111] ${selected ? 'border-[#22c55e]' : 'border-[#222]'}`}>
+        <div className="flex items-center gap-3 px-5 py-4">
+          <input type="checkbox" checked={selected} onChange={() => toggleTeamSelect(t.id)}
+            title="Select to merge with another team" className="w-4 h-4 accent-[#22c55e] cursor-pointer flex-shrink-0" />
+          <div className="flex-1 grid gap-2 items-center min-w-0" style={{ gridTemplateColumns: '1fr 110px 90px' }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <input value={t.name} onChange={e => updateT(t.id, 'name', e.target.value)} placeholder="Team name" style={{ ...SI, fontWeight: 700 }} />
+              <ConfBadge conf={t.conf} />
+            </div>
+            <select value={t.age_group} onChange={e => updateT(t.id, 'age_group', e.target.value)} style={SI}>
+              {AGE_GROUPS.map(a => <option key={a} value={a}>{a || '—'}</option>)}
+            </select>
+            <select value={t.gender} onChange={e => updateT(t.id, 'gender', e.target.value)} style={SI}>
+              <option value="">—</option><option>Boys</option><option>Girls</option><option>Mixed</option>
+            </select>
+          </div>
+          <span className="hidden sm:inline text-[11px] text-[#666] whitespace-nowrap flex-shrink-0">
+            {teamCoaches.length} coach{teamCoaches.length !== 1 ? 'es' : ''} · {teamPlayers.length} player{teamPlayers.length !== 1 ? 's' : ''} · {teamEvents.length} event{teamEvents.length !== 1 ? 's' : ''}
+          </span>
+          <button onClick={() => setTeams(p => p.filter(x => x.id !== t.id))}
+            className="text-[#333] hover:text-red-400 transition-colors text-sm flex-shrink-0">✕</button>
+          <button onClick={() => toggleTeamOpen(t.id)} className="text-[#444] text-xs flex-shrink-0 w-4 text-center">{open ? '▲' : '▼'}</button>
+        </div>
+        {open && (
+          <div className="px-5 pb-5 border-t border-[#1a1a1a] flex flex-col gap-5">
+            <div>
+              <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mt-4 mb-2">Coaches</p>
+              {teamCoaches.length > 0 && colHdr(['Name','Email','Team',''], '1fr 1fr 160px 32px')}
+              <div className="flex flex-col gap-1.5">{teamCoaches.map(renderCoachRow)}</div>
+              <button onClick={() => setCoaches(p => [...p, { id: uid(), full_name: '', email: '', local_team_id: t.id }])}
+                className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
+                + Add coach
+              </button>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mb-2">Roster</p>
+              <div className="overflow-x-auto">
+                {teamPlayers.length > 0 && colHdr(['#','Name','','Position','Parent email','Team',''], '48px 1fr 72px 120px 1fr 150px 32px')}
+                <div className="flex flex-col gap-1.5 min-w-[620px]">{teamPlayers.map(renderPlayerRow)}</div>
+              </div>
+              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: t.id, conf: 'high' }])}
+                className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
+                + Add player
+              </button>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mb-2">Events</p>
+              <div className="overflow-x-auto">
+                {teamEvents.length > 0 && colHdr(['Date','Time','Title','Type','Address · Field · Surface · Kit · Notes','Team',''], '140px 100px 1fr 200px 1fr 140px 32px')}
+                <div className="flex flex-col gap-3 min-w-[1000px]">{teamEvents.map(renderEventRow)}</div>
+              </div>
+              <button onClick={() => setEvents(p => [...p, { id: uid(), title: '', type: 'training', home_away: '', event_date: '', event_time: '', location: '', address: '', lat: '', lng: '', uniform: '', duration_minutes: '', arrival_buffer_minutes: '', field_notes: '', field_type: '', notes: '', coach_notes: '', local_team_id: t.id, conf: 'high' }])}
+                className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
+                + Add event
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Coaches intentionally left on "All teams" (blank local_team_id) — a DOC
+  // or director, not tied to one roster.
+  function renderClubWideCoaches() {
+    const clubWide = coaches.filter(c => c.local_team_id === '');
+    return (
+      <div className="rounded-2xl border border-[#222] bg-[#111] overflow-hidden">
+        <div className="px-5 py-4">
+          <p className="text-sm font-bold text-white">Club-wide staff</p>
+          <p className="text-[#555] text-xs mt-1">Coaches and directors with access to every team.</p>
+        </div>
+        <div className="px-5 pb-5">
+          {clubWide.length > 0 && colHdr(['Name','Email','Team',''], '1fr 1fr 160px 32px')}
+          <div className="flex flex-col gap-1.5">{clubWide.map(renderCoachRow)}</div>
+          <button onClick={() => setCoaches(p => [...p, { id: uid(), full_name: '', email: '', local_team_id: '' }])}
+            className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
+            + Add club-wide staff
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Players/events with no team, or pointing at a team that got deleted —
+  // needs a human decision, so it never just silently vanishes from view.
+  function renderUnassignedCard() {
+    const uPlayers = players.filter(p => isUnassigned(p.local_team_id));
+    const uEvents  = events.filter(e => isUnassigned(e.local_team_id));
+    const uCoaches = coaches.filter(c => c.local_team_id && isUnassigned(c.local_team_id));
+    const total = uPlayers.length + uEvents.length + uCoaches.length;
+    if (total === 0) return null;
+    return (
+      <div className="rounded-2xl border border-amber-900/40 bg-amber-950/10 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 cursor-pointer select-none" onClick={() => setUnassignedOpen(o => !o)}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-amber-300">Unassigned</span>
+            <span className="text-xs font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">{total}</span>
+          </div>
+          <span className="text-[#444] text-xs">{unassignedOpen ? '▲' : '▼'}</span>
+        </div>
+        {unassignedOpen && (
+          <div className="px-5 pb-5 border-t border-amber-900/30 flex flex-col gap-5">
+            {teamOpts.length > 0 && (uPlayers.length > 0 || uEvents.length > 0) && (
+              <div className="mt-4 flex items-center gap-3 p-3 rounded-xl bg-amber-950/30 border border-amber-900/40">
+                <span className="text-amber-400 text-xs font-bold flex-shrink-0">Bulk assign everything above to…</span>
+                <select onChange={e => {
+                  if (!e.target.value) return;
+                  const v = e.target.value;
+                  setPlayers(p => p.map(r => isUnassigned(r.local_team_id) ? { ...r, local_team_id: v } : r));
+                  setEvents(p  => p.map(r => isUnassigned(r.local_team_id) ? { ...r, local_team_id: v } : r));
+                  e.target.value = '';
+                }} style={{ ...SI, width: 'auto', flex: 1 }}>
+                  <option value="">Choose a team…</option>
+                  {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+            )}
+            {uCoaches.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mt-4 mb-2">Coaches</p>
+                {colHdr(['Name','Email','Team',''], '1fr 1fr 160px 32px')}
+                <div className="flex flex-col gap-1.5">{uCoaches.map(renderCoachRow)}</div>
+              </div>
+            )}
+            {uPlayers.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mb-2">Players</p>
+                <div className="overflow-x-auto">
+                  {colHdr(['#','Name','','Position','Parent email','Team',''], '48px 1fr 72px 120px 1fr 150px 32px')}
+                  <div className="flex flex-col gap-1.5 min-w-[620px]">{uPlayers.map(renderPlayerRow)}</div>
+                </div>
+              </div>
+            )}
+            {uEvents.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mb-2">Events</p>
+                <div className="overflow-x-auto">
+                  {colHdr(['Date','Time','Title','Type','Address · Field · Surface · Kit · Notes','Team',''], '140px 100px 1fr 200px 1fr 140px 32px')}
+                  <div className="flex flex-col gap-3 min-w-[1000px]">{uEvents.map(renderEventRow)}</div>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: '', conf: 'high' }])}
+                className="flex-1 py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
+                + Add player
+              </button>
+              <button onClick={() => setEvents(p => [...p, { id: uid(), title: '', type: 'training', home_away: '', event_date: '', event_time: '', location: '', address: '', lat: '', lng: '', uniform: '', duration_minutes: '', arrival_buffer_minutes: '', field_notes: '', field_type: '', notes: '', coach_notes: '', local_team_id: '', conf: 'high' }])}
+                className="flex-1 py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
+                + Add event
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (saving) return (
     <FlipBoard
@@ -1040,253 +1410,63 @@ function ReviewStep({
         </div>
       </div>
 
-      <div className="flex flex-col gap-4">
-
-        {/* Teams */}
-        <SectionWrap label="Teams" count={teamOpts.length} open={tOpen} onToggle={() => setTOpen(o => !o)}>
-          {colHdr(['Team name','Age group','Gender',''], '1fr 120px 100px 32px')}
-          <div className="flex flex-col gap-1.5">
-            {teams.map(t => (
-              <div key={t.id} className={`grid gap-2 items-center p-1.5 rounded-lg border ${
-                t.conf === 'low' ? 'border-red-900/60 bg-red-950/20' : t.conf === 'medium' ? 'border-amber-900/60 bg-amber-950/20' : 'border-[#1e1e1e]'
-              }`} style={{ gridTemplateColumns: '1fr 120px 100px 32px' }}>
-                <div className="flex items-center gap-2">
-                  <input value={t.name} onChange={e => updateT(t.id, 'name', e.target.value)} placeholder="Team name" style={SI} />
-                  <ConfBadge conf={t.conf} />
-                </div>
-                <select value={t.age_group} onChange={e => updateT(t.id, 'age_group', e.target.value)} style={SI}>
-                  {AGE_GROUPS.map(a => <option key={a} value={a}>{a || '—'}</option>)}
-                </select>
-                <select value={t.gender} onChange={e => updateT(t.id, 'gender', e.target.value)} style={SI}>
-                  <option value="">—</option><option>Boys</option><option>Girls</option><option>Mixed</option>
-                </select>
-                <button onClick={() => setTeams(p => p.filter(x => x.id !== t.id))}
-                  className="text-[#333] hover:text-red-400 transition-colors text-sm text-center">✕</button>
-              </div>
-            ))}
+      {/* ── Missing-address roll-up (per-row warning still shown below) ──── */}
+      {(() => {
+        const noAddr = events.filter(e => e.title.trim() && !e.address).length;
+        return noAddr > 0 ? (
+          <div className="mb-4 flex items-start gap-3 p-3 rounded-xl bg-amber-950/30 border border-amber-900/40">
+            <span className="text-amber-400 text-xs">⚠</span>
+            <p className="text-amber-300 text-xs leading-relaxed">
+              <strong>{noAddr} event{noAddr !== 1 ? 's' : ''}</strong> have no street address — satellite maps won&apos;t load for those events. Add addresses in the events below and Google will autocomplete.
+            </p>
           </div>
-          <button onClick={() => setTeams(p => [...p, { id: uid(), name: '', age_group: '', gender: '', conf: 'high' }])}
-            className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
-            + Add team
-          </button>
-        </SectionWrap>
+        ) : null;
+      })()}
 
-        {/* Players */}
-        <SectionWrap label="Players" count={players.filter(p => p.full_name.trim()).length}
-          warning={unassigned > 0 ? `${unassigned} unassigned` : undefined}
-          open={pOpen} onToggle={() => setPOpen(o => !o)}>
-          {unassigned > 0 && teamOpts.length > 0 && (
-            <div className="mt-4 mb-3 flex items-center gap-3 p-3 rounded-xl bg-amber-950/30 border border-amber-900/40">
-              <span className="text-amber-400 text-xs font-bold flex-shrink-0">{unassigned} unassigned</span>
-              <select onChange={e => {
-                if (!e.target.value) return;
-                const v = e.target.value;
-                setPlayers(p => p.map(r => !r.local_team_id ? { ...r, local_team_id: v } : r));
-                e.target.value = '';
-              }} style={{ ...SI, width: 'auto', flex: 1 }}>
-                <option value="">Bulk assign all to…</option>
-                {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="overflow-x-auto">
-            {colHdr(['#','Name','','Position','Parent email','Team',''], '48px 1fr 72px 120px 1fr 150px 32px')}
-            <div className="flex flex-col gap-1.5 min-w-[620px]">
-              {players.map(p => (
-                <div key={p.id} className={`grid gap-1.5 items-center p-1.5 rounded-lg border ${
-                  p.conf === 'low' ? 'border-red-900/60 bg-red-950/20' : p.conf === 'medium' ? 'border-amber-900/60 bg-amber-950/20' : 'border-[#1e1e1e]'
-                }`} style={{ gridTemplateColumns: '48px 1fr 72px 120px 1fr 150px 32px' }}>
-                  <input value={p.jersey_number} onChange={e => updateP(p.id, 'jersey_number', e.target.value)} placeholder="#" style={{ ...SI, textAlign: 'center' }} />
-                  <input value={p.full_name}     onChange={e => updateP(p.id, 'full_name', e.target.value)}     placeholder="Full name" style={SI} />
-                  <div className="flex justify-center items-center"><ConfBadge conf={p.conf} /></div>
-                  <select value={p.position} onChange={e => updateP(p.id, 'position', e.target.value)} style={SI}>
-                    {POSITIONS.map(pos => <option key={pos} value={pos}>{pos || '—'}</option>)}
-                  </select>
-                  <input value={p.parent_email} onChange={e => updateP(p.id, 'parent_email', e.target.value)} placeholder="Parent email" type="email" style={SI} />
-                  <select value={p.local_team_id} onChange={e => updateP(p.id, 'local_team_id', e.target.value)}
-                    style={{ ...SI, color: p.local_team_id ? undefined : '#f59e0b' }}>
-                    <option value="">Unassigned</option>
-                    {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                  <button onClick={() => setPlayers(p2 => p2.filter(x => x.id !== p.id))}
-                    className="text-[#333] hover:text-red-400 transition-colors text-sm text-center">✕</button>
-                </div>
-              ))}
-            </div>
-          </div>
-          <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: teamOpts[0]?.id ?? '', conf: 'high' }])}
-            className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
-            + Add player
-          </button>
-        </SectionWrap>
-
-        {/* Schedule */}
-        {(() => {
-          const noAddr = events.filter(e => e.title.trim() && !e.address).length;
-          return (
-            <SectionWrap label="Schedule" count={events.filter(e => e.title.trim()).length}
-              warning={noAddr > 0 ? `${noAddr} missing venue address` : undefined}
-              open={eOpen} onToggle={() => setEOpen(o => !o)}>
-
-              {(() => {
-                const noAddrInner = events.filter(e => e.title.trim() && !e.address).length;
-                return noAddrInner > 0 ? (
-                  <div className="mt-4 mb-3 flex items-start gap-3 p-3 rounded-xl bg-amber-950/30 border border-amber-900/40">
-                    <span className="text-amber-400 text-xs">⚠</span>
-                    <p className="text-amber-300 text-xs leading-relaxed">
-                      <strong>{noAddrInner} event{noAddrInner !== 1 ? 's' : ''}</strong> have no street address — satellite maps won&apos;t load for those events. Add addresses below and Google will autocomplete.
-                    </p>
-                  </div>
-                ) : null;
-              })()}
-
-              <div className="overflow-x-auto">
-                {colHdr(['Date','Time','Title','Type','Address · Field · Surface · Kit · Notes','Team',''], '140px 100px 1fr 200px 1fr 140px 32px')}
-                <div className="flex flex-col gap-3 min-w-[1000px]">
-                  {events.map(e => (
-                    <div key={e.id} className={`rounded-xl border overflow-hidden ${
-                      e.conf === 'low' ? 'border-red-900/60' : e.conf === 'medium' ? 'border-amber-900/60' : !e.address ? 'border-amber-900/40' : 'border-[#1e1e1e]'
-                    }`}>
-                      <div className={`grid gap-2 items-center px-2 py-2.5 ${
-                        e.conf === 'low' ? 'bg-red-950/20' : e.conf === 'medium' ? 'bg-amber-950/20' : !e.address ? 'bg-amber-950/10' : ''
-                      }`} style={{ gridTemplateColumns: '140px 100px 1fr 200px 1fr 140px 32px' }}>
-                        <input type="date" value={e.event_date} onChange={ev => updateE(e.id, 'event_date', ev.target.value)} style={SI} />
-                        <input type="time" value={e.event_time} onChange={ev => updateE(e.id, 'event_time', ev.target.value)} style={SI} />
-                        <div className="flex items-center gap-1">
-                          <input value={e.title} onChange={ev => updateE(e.id, 'title', ev.target.value)} placeholder="Title" style={SI} />
-                          <ConfBadge conf={e.conf} />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-                          <select value={e.type} onChange={ev => {
-                            const t = ev.target.value;
-                            setEvents(prev => prev.map(r => r.id !== e.id ? r : {
-                              ...r, type: t,
-                              uniform: t === 'training' ? 'training' : (r.uniform === 'training' ? '' : r.uniform),
-                              home_away: t === 'game' ? r.home_away : '',
-                            }));
-                          }} style={{ ...SI, flexShrink: 0 }}>
-                            <option value="game">Game</option>
-                            <option value="training">Training</option>
-                            <option value="other">Other</option>
-                          </select>
-                          {e.type === 'game' && (
-                            <div style={{ display: 'flex', gap: 3 }}>
-                              {(['home', 'away'] as const).map(v => (
-                                <button key={v} onClick={() => updateVenue(e.id, v)}
-                                  style={{ padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: e.home_away === v ? 700 : 500, border: `1.5px solid ${e.home_away === v ? '#22c55e' : '#333'}`, background: e.home_away === v ? 'rgba(34,197,94,0.15)' : 'transparent', color: e.home_away === v ? '#22c55e' : '#777', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                  {v === 'home' ? 'Home' : 'Away'}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <input value={e.location} onChange={ev => updateE(e.id, 'location', ev.target.value)} placeholder="Venue name" style={SI} />
-                        <select value={e.local_team_id} onChange={ev => updateE(e.id, 'local_team_id', ev.target.value)} style={SI}>
-                          <option value="">—</option>
-                          {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
-                        <button onClick={() => setEvents(p => p.filter(x => x.id !== e.id))}
-                          className="text-[#333] hover:text-red-400 transition-colors text-sm text-center">✕</button>
-                      </div>
-                      {/* Row 2 — address + field details */}
-                      <div className="grid gap-2 px-2 border-t border-[#1a1a1a]"
-                        style={{ gridTemplateColumns: e.type === 'other' ? '2fr 1fr auto auto' : '2fr 1fr auto', paddingBottom: '8px', paddingTop: '8px' }}>
-                        {/* Address with Places autocomplete */}
-                        <div className={`flex items-center gap-1.5 px-2 py-1 rounded ${!e.address ? 'bg-amber-950/30' : 'bg-[#0d0d0d]'}`}>
-                          {!e.address && <span className="text-amber-400 text-[10px] font-bold flex-shrink-0">⚠</span>}
-                          <PlacesInput
-                            value={e.address}
-                            onChange={v => updateE(e.id, 'address', v)}
-                            onSelect={({ address, lat, lng }) => {
-                              setEvents(prev => prev.map(ev => ev.id === e.id
-                                ? { ...ev, address, lat: String(lat), lng: String(lng) }
-                                : ev));
-                            }}
-                            placeholder={e.address ? e.address : 'Street address for map…'}
-                          />
-                        </div>
-                        {/* Field notes */}
-                        <input
-                          value={e.field_notes}
-                          onChange={ev => updateE(e.id, 'field_notes', ev.target.value)}
-                          placeholder="Field / pitch…"
-                          style={{ ...SI, fontSize: 12 }}
-                        />
-                        {/* Surface pills */}
-                        <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                          {(['turf', 'grass'] as const).map(s => (
-                            <button key={s} onClick={() => updateE(e.id, 'field_type', e.field_type === s ? '' : s)}
-                              style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: e.field_type === s ? 700 : 500, border: `1.5px solid ${e.field_type === s ? '#22c55e' : '#333'}`, background: e.field_type === s ? 'rgba(34,197,94,0.15)' : 'transparent', color: e.field_type === s ? '#22c55e' : '#666', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                              {s === 'turf' ? 'Turf' : 'Grass'}
-                            </button>
-                          ))}
-                        </div>
-                        {/* Kit pills — only for "other" type; games use venue, training is always Tng */}
-                        {e.type === 'other' && (
-                          <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                            {(['home', 'away', 'training'] as const).map(u => (
-                              <button key={u} onClick={() => updateE(e.id, 'uniform', e.uniform === u ? '' : u)}
-                                style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: e.uniform === u ? 700 : 500, border: `1.5px solid ${e.uniform === u ? '#22c55e' : '#333'}`, background: e.uniform === u ? 'rgba(34,197,94,0.15)' : 'transparent', color: e.uniform === u ? '#22c55e' : '#666', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                {u === 'home' ? 'Home' : u === 'away' ? 'Away' : 'Tng'}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {/* Row 3 — notes */}
-                      <div className="grid gap-2 px-2 pb-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                        <input
-                          value={e.notes}
-                          onChange={ev => updateE(e.id, 'notes', ev.target.value)}
-                          placeholder="Team message (visible to all)…"
-                          style={{ ...SI, fontSize: 12 }}
-                        />
-                        <input
-                          value={e.coach_notes}
-                          onChange={ev => updateE(e.id, 'coach_notes', ev.target.value)}
-                          placeholder="Coach notes (coach only)…"
-                          style={{ ...SI, fontSize: 12 }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <button onClick={() => setEvents(p => [...p, { id: uid(), title: '', type: 'training', home_away: '', event_date: '', event_time: '', location: '', address: '', lat: '', lng: '', uniform: '', duration_minutes: '', arrival_buffer_minutes: '', field_notes: '', field_type: '', notes: '', coach_notes: '', local_team_id: teamOpts[0]?.id ?? '', conf: 'high' }])}
-                className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
-                + Add event
-              </button>
-            </SectionWrap>
-          );
-        })()}
-
-        {/* Coaches */}
-        <SectionWrap label="Coaches" count={coaches.filter(c => c.full_name.trim()).length} open={cOpen} onToggle={() => setCOpen(o => !o)}>
-          <p className="text-[#555] text-xs mt-4 mb-3">
-            We&apos;ll email coaches with sign-up instructions so they can access their team.
+      {/* ── Suggested team merges ──────────────────────────────────────── */}
+      {teamSuggestions.map(({ a, b }) => (
+        <div key={`${a.id}-${b.id}`} className="mb-3 flex flex-wrap items-center gap-3 p-3 rounded-xl bg-emerald-950/20 border border-emerald-900/40">
+          <span className="text-emerald-400 text-xs flex-shrink-0">🔗</span>
+          <p className="text-emerald-300 text-xs flex-1 min-w-[200px]">
+            <strong>{a.name}</strong> and <strong>{b.name}</strong> look like the same team — merge them?
           </p>
-          {colHdr(['Name','Email','Team',''], '1fr 1fr 160px 32px')}
-          <div className="flex flex-col gap-1.5">
-            {coaches.map(c => (
-              <div key={c.id} className="grid gap-1.5 items-center p-1.5 rounded-lg border border-[#1e1e1e]"
-                style={{ gridTemplateColumns: '1fr 1fr 160px 32px' }}>
-                <input value={c.full_name} onChange={e => updateC(c.id, 'full_name', e.target.value)} placeholder="Full name" style={SI} />
-                <input value={c.email}     onChange={e => updateC(c.id, 'email', e.target.value)}     placeholder="Email" type="email" style={SI} />
-                <select value={c.local_team_id} onChange={e => updateC(c.id, 'local_team_id', e.target.value)} style={SI}>
-                  <option value="">All teams</option>
-                  {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                <button onClick={() => setCoaches(p => p.filter(x => x.id !== c.id))}
-                  className="text-[#333] hover:text-red-400 transition-colors text-sm text-center">✕</button>
-              </div>
-            ))}
-          </div>
-          <button onClick={() => setCoaches(p => [...p, { id: uid(), full_name: '', email: '', local_team_id: '' }])}
-            className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
-            + Add coach
+          <button onClick={() => mergeTeams(a.id, [b.id])}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all">
+            Merge
           </button>
-        </SectionWrap>
+          <button onClick={() => setDismissedPairs(s => new Set(s).add([a.id, b.id].sort().join('|')))}
+            className="text-xs text-[#666] hover:text-[#999] transition-colors">
+            Not the same
+          </button>
+        </div>
+      ))}
 
+      {/* ── Manual merge action bar ────────────────────────────────────── */}
+      {selectedTeamIds.size >= 2 && (() => {
+        const ids = [...selectedTeamIds];
+        const survivor = teams.find(x => x.id === ids[0]);
+        return (
+          <div className="mb-3 flex items-center gap-3 p-3 rounded-xl bg-[#111] border border-[#22c55e]/40">
+            <span className="text-xs text-[#999] flex-shrink-0">{ids.length} teams selected</span>
+            <button onClick={() => mergeTeams(ids[0], ids.slice(1))}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#22c55e] text-black hover:bg-[#1ea34e] transition-all">
+              Merge into &quot;{survivor?.name || 'first selected'}&quot; →
+            </button>
+            <button onClick={() => setSelectedTeamIds(new Set())} className="text-xs text-[#666] hover:text-[#999] transition-colors">Cancel</button>
+          </div>
+        );
+      })()}
+
+      <div className="flex flex-col gap-4">
+        {teamOpts.map(renderTeamCard)}
+
+        <button onClick={() => setTeams(p => [...p, { id: uid(), name: '', age_group: '', gender: '', conf: 'high' }])}
+          className="w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
+          + Add team
+        </button>
+
+        {renderClubWideCoaches()}
+        {renderUnassignedCard()}
       </div>
 
       {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
