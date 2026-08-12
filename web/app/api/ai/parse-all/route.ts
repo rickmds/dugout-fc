@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { z } from 'zod';
 import ExcelJS from 'exceljs';
 import { requireRole } from '@/lib/apiAuth';
 
@@ -121,12 +123,60 @@ function to24h(raw: string): string {
 const COACH_ROLES = ['coach', 'headcoach', 'head coach', 'manager', 'director', 'trainer', 'staff', 'assistant', 'assistantcoach'];
 function isCoachRole(role: string) { return COACH_ROLES.some(r => role.toLowerCase().replace(/\s+/g, '').includes(r.replace(/\s+/g, ''))); }
 
-type ParsedResult = {
-  teams:   { name: string; alt_names: string[]; age_group: string; gender: string; confidence: string }[];
-  players: { full_name: string; jersey_number: string; position: string; parent_email: string; team_name: string; confidence: string }[];
-  events:  { title: string; type: string; home_away: string; event_date: string; event_time: string; location: string; address: string; uniform: string; duration_minutes: string; arrival_buffer_minutes: string; field_notes: string; field_type: string; notes: string; coach_notes: string; team_name: string; confidence: string }[];
-  coaches: { full_name: string; email: string; team_name: string; confidence: string }[];
-};
+// ─── Extraction schema — drives Claude's structured output AND validates
+// every record before it reaches the merge/DB pipeline, whether it came
+// from the primary structured-output path or the truncation-salvage
+// fallback below. Nothing downstream ever sees an unvalidated record. ──────
+
+const ConfidenceSchema = z.enum(['high', 'medium', 'low']);
+
+const TeamSchema = z.object({
+  name: z.string(),
+  alt_names: z.array(z.string()),
+  age_group: z.string(),
+  gender: z.string(),
+  confidence: ConfidenceSchema,
+});
+const PlayerSchema = z.object({
+  full_name: z.string(),
+  jersey_number: z.string(),
+  position: z.string(),
+  parent_email: z.string(),
+  team_name: z.string(),
+  confidence: ConfidenceSchema,
+});
+const EventSchema = z.object({
+  title: z.string(),
+  type: z.enum(['game', 'training', 'other']),
+  home_away: z.string(),
+  event_date: z.string(),
+  event_time: z.string(),
+  location: z.string(),
+  address: z.string(),
+  uniform: z.string(),
+  duration_minutes: z.string(),
+  arrival_buffer_minutes: z.string(),
+  field_notes: z.string(),
+  field_type: z.string(),
+  notes: z.string(),
+  coach_notes: z.string(),
+  team_name: z.string(),
+  confidence: ConfidenceSchema,
+});
+const CoachSchema = z.object({
+  full_name: z.string(),
+  email: z.string(),
+  team_name: z.string(),
+  confidence: ConfidenceSchema,
+});
+const ExtractionSchema = z.object({
+  teams: z.array(TeamSchema),
+  players: z.array(PlayerSchema),
+  events: z.array(EventSchema),
+  coaches: z.array(CoachSchema),
+});
+
+type ParsedResult = z.infer<typeof ExtractionSchema>;
 
 function cleanLocation(loc: string): string {
   // Strip "Away @ " / "Home @ " / "@ " prefixes — uniform field already captures home/away
@@ -403,14 +453,20 @@ Rules:
 - A game schedule lists two sides (e.g. "Home Team" and "Visitor Team"
   columns) — only ONE of them is the club whose data is being imported; the
   other is an opponent from a different club entirely. Figure out which
-  side is ours (it's the name that recurs constantly across the schedule,
-  often sharing one club-name prefix like "Maroons-", while the other side
-  is a different name on every row) and set the event's team_name to OUR
-  side only. Do NOT add an entry to the "teams" array for an opponent —
-  only include teams that are genuinely part of the club being imported
-  (established by a roster, coach list, or team-mapping document, or by
-  being the recurring side of every schedule row). A schedule alone is
-  never sufficient grounds to add a new team to the "teams" array.
+  side is ours: usually one side shares a distinctive recurring element
+  (e.g. a common club-name prefix like "Maroons-") across most rows even
+  though the full name differs row to row (each is a different division),
+  while the opponent side is a different, unrelated name with no shared
+  pattern and appears on only a handful of rows (just the games against
+  that one specific team). Set the event's team_name to OUR side only.
+- Only add a team to the "teams" array when it's genuinely part of the
+  club being imported: either directly established by a roster, coach
+  list, or team-mapping document, OR — when no such document is present
+  for that team — because it's "our side" of a schedule per the rule
+  above. Never add a team just because it shows up as an opponent on a
+  handful of rows; a name that recurs across many different rows/divisions
+  sharing the club's pattern, on the other hand, belongs in "teams" even
+  if a schedule is the only document that mentions it.
 - event_date: YYYY-MM-DD format
 - event_time: HH:MM 24h format
 - type: "game", "training", or "other"
@@ -438,17 +494,6 @@ Rules:
 - notes: any team-facing notes or instructions visible to all (e.g. "Bring extra water", "Wear training kit"), empty string if none
 - coach_notes: any coach-only or internal notes (e.g. "Focus on set pieces", "Call-up players available"), empty string if none
 - confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain`;
-
-function normalizeTeams(teams: unknown): ParsedResult['teams'] {
-  if (!Array.isArray(teams)) return [];
-  return teams.map((t: Record<string, unknown>) => ({
-    name: typeof t.name === 'string' ? t.name : '',
-    alt_names: Array.isArray(t.alt_names) ? t.alt_names.filter((n): n is string => typeof n === 'string') : [],
-    age_group: typeof t.age_group === 'string' ? t.age_group : '',
-    gender: typeof t.gender === 'string' ? t.gender : '',
-    confidence: typeof t.confidence === 'string' ? t.confidence : 'high',
-  }));
-}
 
 // Walks a `"key": [ {...}, {...}, ... ]` array by hand, parsing one
 // balanced object at a time. Used when the response got cut off mid-array
@@ -487,20 +532,36 @@ function extractArrayObjects(raw: string, key: string): unknown[] {
   return out;
 }
 
-function parseClaudeJSON(raw: string): ParsedResult {
-  try {
-    const p = JSON.parse(raw);
-    return { teams: normalizeTeams(p.teams), players: p.players ?? [], events: p.events ?? [], coaches: p.coaches ?? [] };
-  } catch {
-    // Truncated or otherwise malformed JSON — salvage whatever complete
-    // records we can rather than losing the whole file's extraction.
-    const result = emptyResult();
-    for (const key of ['teams', 'players', 'events', 'coaches'] as const) {
-      (result[key] as unknown[]) = extractArrayObjects(raw, key);
-    }
-    result.teams = normalizeTeams(result.teams);
-    return result;
+// Validates each salvaged record against its schema and drops anything that
+// doesn't conform — every record that reaches the merge/DB pipeline has
+// been schema-validated, whether it came from the happy-path structured
+// output or this truncation-salvage fallback.
+function validateRecords<T>(schema: z.ZodType<T>, items: unknown[]): T[] {
+  const out: T[] = [];
+  for (const item of items) {
+    const result = schema.safeParse(item);
+    if (result.success) out.push(result.data);
   }
+  return out;
+}
+
+function parseClaudeJSON(raw: string): ParsedResult {
+  const wholeDocument = (() => {
+    try { return JSON.parse(raw); } catch { return null; }
+  })();
+  const wholeParsed = wholeDocument !== null ? ExtractionSchema.safeParse(wholeDocument) : null;
+  if (wholeParsed?.success) return wholeParsed.data;
+
+  // Either the whole document didn't parse as JSON (truncated response) or
+  // it parsed but failed schema validation somewhere — salvage whatever
+  // complete, individually-valid records we can find rather than losing
+  // the entire file's extraction over one bad or missing record.
+  return {
+    teams:   validateRecords(TeamSchema,   extractArrayObjects(raw, 'teams')),
+    players: validateRecords(PlayerSchema, extractArrayObjects(raw, 'players')),
+    events:  validateRecords(EventSchema,  extractArrayObjects(raw, 'events')),
+    coaches: validateRecords(CoachSchema,  extractArrayObjects(raw, 'coaches')),
+  };
 }
 
 // Each file gets its own call with its own dedicated max_tokens budget —
@@ -529,14 +590,30 @@ async function askClaudeForFile(file: FileInput): Promise<ParsedResult> {
   // max_tokens goes past ~16K. Set high (Sonnet 4.6's actual ceiling) since
   // a full-season schedule can run 400+ games — a truncated response loses
   // every event after the cutoff, and this only caps length, not cost.
+  //
+  // output_config.format constrains generation to the schema, which is a
+  // real quality improvement (the model can't drift from the shape) — but
+  // the SDK throws if the FINAL text fails schema validation (e.g. still
+  // truncated despite the budget above), which would make the whole call
+  // unrecoverable via .finalMessage()/.parsed_output. So we capture the raw
+  // text ourselves via the 'text' stream event as it arrives, and always
+  // parse it ourselves through parseClaudeJSON (which has its own
+  // salvage-and-validate fallback) rather than depending on the SDK's
+  // auto-parse succeeding.
   const stream = client.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 128000,
     system: CLAUDE_SYSTEM,
     messages: [{ role: 'user', content }],
+    output_config: { format: zodOutputFormat(ExtractionSchema) },
   });
-  const msg = await stream.finalMessage();
-  const raw = (msg.content[0] as Anthropic.TextBlock).text ?? '';
+  let raw = '';
+  stream.on('text', (_delta, snapshot) => { raw = snapshot; });
+  try {
+    await stream.done();
+  } catch (err) {
+    console.error(`[parse-all] structured-output stream error for "${file.name}" — falling back to salvage parsing:`, err);
+  }
   return parseClaudeJSON(raw);
 }
 
