@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import { FlipBoard } from '@/components/FlipBoard';
@@ -59,25 +59,6 @@ function matchTeamId(name: string | null | undefined, rows: TRow[]): string {
   );
 }
 
-// ─── Fuzzy "is this the same team under a different name?" suggestion ─────────
-// Different source documents often name the same team inconsistently (e.g.
-// "Maroons 2014B" vs "U12 Boys Maroons"). We can't reliably tell for sure, so
-// this only ever *suggests* a merge for the coach to confirm or dismiss —
-// strip generic/age-group noise words and flag any pair that still shares a
-// distinctive token.
-const TEAM_NAME_STOPWORDS = new Set([
-  'sc', 'fc', 'ac', 'academy', 'club', 'team', 'boys', 'girls', 'soccer',
-  'the', 'and', 'united', 'youth', 'athletic', 'select', 'premier',
-]);
-function teamNameTokens(name: string): string[] {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ')
-    .filter(t => t && !TEAM_NAME_STOPWORDS.has(t) && !/^u\d{1,2}$/.test(t));
-}
-function looksLikeSameTeam(a: string, b: string): boolean {
-  const ta = teamNameTokens(a), tb = teamNameTokens(b);
-  if (!ta.length || !tb.length) return false;
-  return ta.some(t => tb.includes(t));
-}
 
 // ─── Step bar ─────────────────────────────────────────────────────────────────
 
@@ -759,9 +740,13 @@ function ReviewStep({
   coaches: CRow[]; setCoaches: React.Dispatch<React.SetStateAction<CRow[]>>;
   onConfirm: (invites: ParentInvite[], coachPayload: CoachPayload | null) => void;
 }) {
-  const [closedTeamIds, setClosedTeamIds]     = useState<Set<string>>(new Set());
-  const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(new Set());
-  const [dismissedPairs, setDismissedPairs]   = useState<Set<string>>(new Set());
+  // Ids whose open/closed state has been manually toggled away from the
+  // default. Below 5 teams every card defaults open; at 5+ they default
+  // closed so a big club's team list is scannable instead of a wall of
+  // expanded rosters.
+  const [teamOpenOverrides, setTeamOpenOverrides] = useState<Set<string>>(new Set());
+  const [mergeFromId, setMergeFromId] = useState('');
+  const [mergeToId, setMergeToId]     = useState('');
   const [unassignedOpen, setUnassignedOpen]   = useState(true);
   const [saving, setSaving]   = useState(false);
   const [merging, setMerging] = useState(false);
@@ -797,25 +782,22 @@ function ReviewStep({
   }
   function updateC(id: string, f: keyof CRow, v: string)  { setCoaches(p => p.map(r => r.id === id ? { ...r, [f]: v } : r)); }
 
-  // ── Team merge (manual + suggested) ────────────────────────────────────────
+  // ── Team merge ──────────────────────────────────────────────────────────────
 
-  function toggleTeamSelect(id: string) {
-    setSelectedTeamIds(s => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id); else n.add(id);
-      return n;
-    });
+  const teamCardDefaultOpen = teamOpts.length <= 4;
+  function isTeamOpen(id: string) {
+    return teamOpenOverrides.has(id) ? !teamCardDefaultOpen : teamCardDefaultOpen;
   }
   function toggleTeamOpen(id: string) {
-    setClosedTeamIds(s => {
+    setTeamOpenOverrides(s => {
       const n = new Set(s);
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
     });
   }
-  // Re-points every player/event/coach on the merged-away teams onto the
-  // survivor, then drops the merged-away team rows. The survivor keeps its
-  // own name — rename it inline afterward if none of the originals were right.
+  // Re-points every player/event/coach on the merged-away team onto the
+  // survivor, then drops the merged-away team row. The survivor keeps its
+  // own name — rename it inline afterward if neither original name was right.
   function mergeTeams(intoId: string, fromIds: string[]) {
     const froms = fromIds.filter(id => id !== intoId);
     if (!froms.length) return;
@@ -823,22 +805,7 @@ function ReviewStep({
     setEvents(prev  => prev.map(e => froms.includes(e.local_team_id) ? { ...e, local_team_id: intoId } : e));
     setCoaches(prev => prev.map(c => froms.includes(c.local_team_id) ? { ...c, local_team_id: intoId } : c));
     setTeams(prev => prev.filter(t => !froms.includes(t.id)));
-    setSelectedTeamIds(new Set());
   }
-  const teamOptsKey = teamOpts.map(t => t.id + t.name).join(',');
-  const teamSuggestions = useMemo(() => {
-    const out: { a: TRow; b: TRow }[] = [];
-    for (let i = 0; i < teamOpts.length; i++) {
-      for (let j = i + 1; j < teamOpts.length; j++) {
-        const a = teamOpts[i], b = teamOpts[j];
-        const key = [a.id, b.id].sort().join('|');
-        if (dismissedPairs.has(key)) continue;
-        if (looksLikeSameTeam(a.name, b.name)) out.push({ a, b });
-      }
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamOptsKey, dismissedPairs]);
 
   // ── Add more files (merge into existing data) ─────────────────────────────
 
@@ -1166,19 +1133,44 @@ function ReviewStep({
     );
   }
 
+  // Compact source→destination picker so merging doesn't require scrolling
+  // through and expanding team cards to find and select the right pair —
+  // matters once a club has dozens of teams.
+  function renderMergeTool() {
+    if (teamOpts.length < 2) return null;
+    return (
+      <div className="rounded-2xl border border-[#222] bg-[#111] p-4 flex flex-wrap items-center gap-3">
+        <span className="text-xs font-bold text-[#999] flex-shrink-0">Merge duplicate teams</span>
+        <select value={mergeFromId} onChange={e => setMergeFromId(e.target.value)} style={{ ...SI, width: 'auto', minWidth: 170 }}>
+          <option value="">Choose a team…</option>
+          {teamOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <span className="text-xs text-[#555] flex-shrink-0">into</span>
+        <select value={mergeToId} onChange={e => setMergeToId(e.target.value)} style={{ ...SI, width: 'auto', minWidth: 170 }}>
+          <option value="">Choose a team…</option>
+          {teamOpts.filter(t => t.id !== mergeFromId).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button
+          disabled={!mergeFromId || !mergeToId}
+          onClick={() => { mergeTeams(mergeToId, [mergeFromId]); setMergeFromId(''); setMergeToId(''); }}
+          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#22c55e] text-black hover:bg-[#1ea34e] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex-shrink-0">
+          Merge →
+        </button>
+        <span className="text-[#555] text-[11px] w-full">Everyone and everything on the first team moves onto the second, and the first team is removed.</span>
+      </div>
+    );
+  }
+
   // One card per team: its own coaches, roster, and events grouped together
   // so it's obvious which events belong to which team at a glance.
   function renderTeamCard(t: TRow) {
     const teamCoaches = coaches.filter(c => c.local_team_id === t.id);
     const teamPlayers = players.filter(p => p.local_team_id === t.id);
     const teamEvents  = events.filter(e => e.local_team_id === t.id);
-    const open = !closedTeamIds.has(t.id);
-    const selected = selectedTeamIds.has(t.id);
+    const open = isTeamOpen(t.id);
     return (
-      <div key={t.id} className={`rounded-2xl border overflow-hidden bg-[#111] ${selected ? 'border-[#22c55e]' : 'border-[#222]'}`}>
+      <div key={t.id} className="rounded-2xl border overflow-hidden bg-[#111] border-[#222]">
         <div className="flex items-center gap-3 px-5 py-4">
-          <input type="checkbox" checked={selected} onChange={() => toggleTeamSelect(t.id)}
-            title="Select to merge with another team" className="w-4 h-4 accent-[#22c55e] cursor-pointer flex-shrink-0" />
           <div className="flex-1 grid gap-2 items-center min-w-0" style={{ gridTemplateColumns: '1fr 110px 90px' }}>
             <div className="flex items-center gap-2 min-w-0">
               <input value={t.name} onChange={e => updateT(t.id, 'name', e.target.value)} placeholder="Team name" style={{ ...SI, fontWeight: 700 }} />
@@ -1423,39 +1415,7 @@ function ReviewStep({
         ) : null;
       })()}
 
-      {/* ── Suggested team merges ──────────────────────────────────────── */}
-      {teamSuggestions.map(({ a, b }) => (
-        <div key={`${a.id}-${b.id}`} className="mb-3 flex flex-wrap items-center gap-3 p-3 rounded-xl bg-emerald-950/20 border border-emerald-900/40">
-          <span className="text-emerald-400 text-xs flex-shrink-0">🔗</span>
-          <p className="text-emerald-300 text-xs flex-1 min-w-[200px]">
-            <strong>{a.name}</strong> and <strong>{b.name}</strong> look like the same team — merge them?
-          </p>
-          <button onClick={() => mergeTeams(a.id, [b.id])}
-            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 transition-all">
-            Merge
-          </button>
-          <button onClick={() => setDismissedPairs(s => new Set(s).add([a.id, b.id].sort().join('|')))}
-            className="text-xs text-[#666] hover:text-[#999] transition-colors">
-            Not the same
-          </button>
-        </div>
-      ))}
-
-      {/* ── Manual merge action bar ────────────────────────────────────── */}
-      {selectedTeamIds.size >= 2 && (() => {
-        const ids = [...selectedTeamIds];
-        const survivor = teams.find(x => x.id === ids[0]);
-        return (
-          <div className="mb-3 flex items-center gap-3 p-3 rounded-xl bg-[#111] border border-[#22c55e]/40">
-            <span className="text-xs text-[#999] flex-shrink-0">{ids.length} teams selected</span>
-            <button onClick={() => mergeTeams(ids[0], ids.slice(1))}
-              className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#22c55e] text-black hover:bg-[#1ea34e] transition-all">
-              Merge into &quot;{survivor?.name || 'first selected'}&quot; →
-            </button>
-            <button onClick={() => setSelectedTeamIds(new Set())} className="text-xs text-[#666] hover:text-[#999] transition-colors">Cancel</button>
-          </div>
-        );
-      })()}
+      <div className="mb-4">{renderMergeTool()}</div>
 
       <div className="flex flex-col gap-4">
         {teamOpts.map(renderTeamCard)}
