@@ -122,7 +122,7 @@ const COACH_ROLES = ['coach', 'headcoach', 'head coach', 'manager', 'director', 
 function isCoachRole(role: string) { return COACH_ROLES.some(r => role.toLowerCase().replace(/\s+/g, '').includes(r.replace(/\s+/g, ''))); }
 
 type ParsedResult = {
-  teams:   { name: string; age_group: string; gender: string; confidence: string }[];
+  teams:   { name: string; alt_names: string[]; age_group: string; gender: string; confidence: string }[];
   players: { full_name: string; jersey_number: string; position: string; parent_email: string; team_name: string; confidence: string }[];
   events:  { title: string; type: string; home_away: string; event_date: string; event_time: string; location: string; address: string; uniform: string; duration_minutes: string; arrival_buffer_minutes: string; field_notes: string; field_type: string; notes: string; coach_notes: string; team_name: string; confidence: string }[];
   coaches: { full_name: string; email: string; team_name: string; confidence: string }[];
@@ -152,7 +152,7 @@ function extractFromCSV(text: string): ParsedResult | null {
   if (rows.length < 2) return null;
 
   // Skip comment rows (start with #) to find header
-  let headerIdx = rows.findIndex(r => r.length > 2 && !r[0].startsWith('#') && /[a-zA-Z]/.test(r[0]));
+  const headerIdx = rows.findIndex(r => r.length > 2 && !r[0].startsWith('#') && /[a-zA-Z]/.test(r[0]));
   if (headerIdx < 0) return null;
   const headers = rows[headerIdx];
   const data = rows.slice(headerIdx + 1).filter(r => !r[0].startsWith('#') && r.some(f => f));
@@ -332,7 +332,7 @@ function extractFromCSV(text: string): ParsedResult | null {
 
   // Build teams from collected team names
   for (const [name, meta] of teamSet) {
-    result.teams.push({ name, age_group: meta.age_group, gender: meta.gender, confidence: 'high' });
+    result.teams.push({ name, alt_names: [], age_group: meta.age_group, gender: meta.gender, confidence: 'high' });
   }
 
   return result;
@@ -342,11 +342,25 @@ function extractFromCSV(text: string): ParsedResult | null {
 
 const CLAUDE_SYSTEM = `You are analysing soccer club documents to extract structured data.
 Return ONLY valid minified JSON with exactly these 4 keys, no markdown, no explanation:
-{"teams":[{"name":"","age_group":"","gender":"","confidence":"high"}],
+{"teams":[{"name":"","alt_names":[],"age_group":"","gender":"","confidence":"high"}],
  "players":[{"full_name":"","jersey_number":"","position":"","parent_email":"","team_name":"","confidence":"high"}],
  "events":[{"title":"","type":"game","home_away":"","event_date":"YYYY-MM-DD","event_time":"HH:MM","location":"","address":"","uniform":"","duration_minutes":"","arrival_buffer_minutes":"","field_notes":"","field_type":"","notes":"","coach_notes":"","team_name":"","confidence":"high"}],
  "coaches":[{"full_name":"","email":"","team_name":"","confidence":"high"}]}
 Rules:
+- Some documents give a team TWO names — e.g. a roster mapping table with a
+  "League Schedule Name" or "Division" column (the name a league's game
+  schedule uses, often like "ClubName-Division-CoachSurname") alongside a
+  "Team Name" column (the friendly name the club wants to use). When you see
+  this pattern, extract ONE team per row: name = the friendly/display name
+  (e.g. "Team Name" column), alt_names = [the league/schedule name]. Never
+  create two separate teams for the same row.
+- alt_names: other names this exact team is known by elsewhere in the
+  document set (e.g. the league's schedule-matching name) — empty array if
+  the team only has one name. Do not put age group or division codes here
+  unless they function as the team's alternate name.
+- team_name (on players/events/coaches): use whatever name that specific
+  document calls the team by — it doesn't need to match a team's primary
+  "name" exactly, matching against alt_names happens downstream.
 - event_date: YYYY-MM-DD format
 - event_time: HH:MM 24h format
 - type: "game", "training", or "other"
@@ -363,10 +377,21 @@ Rules:
 - coach_notes: any coach-only or internal notes (e.g. "Focus on set pieces", "Call-up players available"), empty string if none
 - confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain`;
 
+function normalizeTeams(teams: unknown): ParsedResult['teams'] {
+  if (!Array.isArray(teams)) return [];
+  return teams.map((t: Record<string, unknown>) => ({
+    name: typeof t.name === 'string' ? t.name : '',
+    alt_names: Array.isArray(t.alt_names) ? t.alt_names.filter((n): n is string => typeof n === 'string') : [],
+    age_group: typeof t.age_group === 'string' ? t.age_group : '',
+    gender: typeof t.gender === 'string' ? t.gender : '',
+    confidence: typeof t.confidence === 'string' ? t.confidence : 'high',
+  }));
+}
+
 function parseClaudeJSON(raw: string): ParsedResult {
   try {
     const p = JSON.parse(raw);
-    return { teams: p.teams ?? [], players: p.players ?? [], events: p.events ?? [], coaches: p.coaches ?? [] };
+    return { teams: normalizeTeams(p.teams), players: p.players ?? [], events: p.events ?? [], coaches: p.coaches ?? [] };
   } catch {
     // Partial JSON — extract what we can
     const result = emptyResult();
@@ -374,6 +399,7 @@ function parseClaudeJSON(raw: string): ParsedResult {
       const m = raw.match(new RegExp(`"${key}":\\s*(\\[.*?\\])`, 's'));
       if (m) { try { (result[key] as unknown[]) = JSON.parse(m[1]); } catch { /* skip */ } }
     }
+    result.teams = normalizeTeams(result.teams);
     return result;
   }
 }
@@ -424,11 +450,58 @@ async function askClaude(files: FileInput[]): Promise<ParsedResult> {
 }
 
 // ─── Merge two ParsedResults ──────────────────────────────────────────────────
+// Teams can be named differently across documents (e.g. a league's schedule
+// export vs. a roster mapping table) — match on name OR any alt_name rather
+// than exact name equality, so the same team from two files consolidates
+// into one entry instead of two.
+
+type Team = ParsedResult['teams'][number];
+
+function normName(s: string): string { return s.toLowerCase().trim(); }
+function teamAllNames(t: Team): string[] { return [t.name, ...(t.alt_names ?? [])].filter(Boolean); }
+
+function addAltName(t: Team, candidate: string) {
+  const cand = candidate.trim();
+  if (!cand) return;
+  if (teamAllNames(t).some(n => normName(n) === normName(cand))) return;
+  t.alt_names.push(cand);
+}
+
+// A document that supplied alt_names had an explicit opinion about which
+// name is the "real" one (e.g. Teams.pdf mapping league name → team name).
+// A bare single-name reference from another file (roster row, schedule row)
+// has no such opinion, so when the two disagree, trust the one with alias
+// info rather than whichever happened to be seen first.
+function mergeOneTeam(existing: Team, incoming: Team) {
+  const incomingHasOpinion = (incoming.alt_names ?? []).length > 0;
+  const existingHasOpinion = (existing.alt_names ?? []).length > 0;
+  if (incomingHasOpinion && !existingHasOpinion) {
+    const oldName = existing.name;
+    existing.name = incoming.name;
+    addAltName(existing, oldName);
+    for (const alt of incoming.alt_names) addAltName(existing, alt);
+  } else {
+    addAltName(existing, incoming.name);
+    for (const alt of (incoming.alt_names ?? [])) addAltName(existing, alt);
+  }
+  existing.age_group = existing.age_group || incoming.age_group;
+  existing.gender     = existing.gender     || incoming.gender;
+}
+
+function mergeTeamsList(a: Team[], b: Team[]): Team[] {
+  const teams = a.map(t => ({ ...t, alt_names: [...(t.alt_names ?? [])] }));
+  for (const bt of b) {
+    const bNames = teamAllNames(bt).map(normName);
+    const existing = teams.find(at => teamAllNames(at).map(normName).some(n => bNames.includes(n)));
+    if (existing) mergeOneTeam(existing, bt);
+    else teams.push({ ...bt, alt_names: [...(bt.alt_names ?? [])] });
+  }
+  return teams;
+}
 
 function merge(a: ParsedResult, b: ParsedResult): ParsedResult {
-  const teamNames = new Set(a.teams.map(t => t.name.toLowerCase()));
   return {
-    teams:   [...a.teams,   ...b.teams.filter(t => !teamNames.has(t.name.toLowerCase()))],
+    teams:   mergeTeamsList(a.teams, b.teams),
     players: [...a.players, ...b.players],
     events:  [...a.events,  ...b.events],
     coaches: [...a.coaches, ...b.coaches],
@@ -479,6 +552,14 @@ export async function POST(req: NextRequest) {
       const claudeResult = await askClaude(forClaude);
       result = merge(result, claudeResult);
     }
+
+    // Deterministic CSV parsing has no idea about alt_names (a schedule file
+    // parsed before an alias-aware file like a league/team-name mapping is
+    // merged in has already created its own bare team entry), so folding
+    // each file's teams in as it's processed isn't enough — do one final
+    // self-consolidation pass over the whole team list now that every
+    // alias is known.
+    result.teams = mergeTeamsList([], result.teams);
 
     return NextResponse.json(result);
   } catch (err) {

@@ -11,7 +11,7 @@ import LogoCropModal from '@/components/LogoCropModal';
 type Step = 'auth' | 'club' | 'upload' | 'processing' | 'review' | 'done';
 type Conf = 'high' | 'medium' | 'low';
 
-type TRow = { id: string; name: string; age_group: string; gender: string; conf: Conf };
+type TRow = { id: string; name: string; alt_names: string[]; age_group: string; gender: string; conf: Conf };
 type PRow = { id: string; full_name: string; jersey_number: string; position: string; parent_email: string; local_team_id: string; conf: Conf };
 type ERow = { id: string; title: string; type: string; home_away: string; event_date: string; event_time: string; location: string; address: string; lat: string; lng: string; uniform: string; duration_minutes: string; arrival_buffer_minutes: string; field_notes: string; field_type: string; notes: string; coach_notes: string; local_team_id: string; conf: Conf };
 type CRow = { id: string; full_name: string; email: string; local_team_id: string };
@@ -49,12 +49,17 @@ async function toPayload(file: File): Promise<{ base64?: string; mimeType?: stri
   });
 }
 
+// Some teams have two names in play (e.g. a league's own schedule-export
+// name vs. the club's preferred display name) — a row's team_name might be
+// either one, so match against a team's primary name AND its alt_names.
+function teamNames(t: TRow): string[] { return [t.name, ...(t.alt_names ?? [])].filter(Boolean); }
+
 function matchTeamId(name: string | null | undefined, rows: TRow[]): string {
   if (!name) return '';
   const n = name.toLowerCase().trim();
   return (
-    rows.find(t => t.name.toLowerCase().trim() === n)?.id ??
-    rows.find(t => t.name.toLowerCase().includes(n) || n.includes(t.name.toLowerCase()))?.id ??
+    rows.find(t => teamNames(t).some(x => x.toLowerCase().trim() === n))?.id ??
+    rows.find(t => teamNames(t).some(x => x.toLowerCase().includes(n) || n.includes(x.toLowerCase())))?.id ??
     ''
   );
 }
@@ -826,11 +831,29 @@ function ReviewStep({
     });
     const data = await res.json();
 
-    // Compute merged teams first so player/event matching uses the full set
-    const mergedTeams = [...teams];
-    for (const t of (data.teams ?? [])) {
-      if (!mergedTeams.some(x => x.name.toLowerCase().trim() === (t.name ?? '').toLowerCase().trim())) {
-        mergedTeams.push({ id: uid(), name: t.name ?? '', age_group: t.age_group ?? '', gender: t.gender ?? '', conf: (t.confidence ?? 'high') as Conf });
+    // Compute merged teams first so player/event matching uses the full set.
+    // Match new teams against existing ones by name OR alt_name — never
+    // overwrite an existing team's name (the coach may have already edited
+    // it), just fold in any new alias so future matching still resolves.
+    const mergedTeams = teams.map(t => ({ ...t, alt_names: [...(t.alt_names ?? [])] }));
+    for (const t of (data.teams ?? []) as Record<string, unknown>[]) {
+      const incomingName = typeof t.name === 'string' ? t.name : '';
+      const incomingAlts = Array.isArray(t.alt_names) ? t.alt_names.filter((n): n is string => typeof n === 'string') : [];
+      const incomingAll = [incomingName, ...incomingAlts].filter(Boolean);
+      const existing = mergedTeams.find(x => teamNames(x).some(n =>
+        incomingAll.some(inc => inc.toLowerCase().trim() === n.toLowerCase().trim())
+      ));
+      if (existing) {
+        for (const alt of incomingAll) {
+          if (!teamNames(existing).some(n => n.toLowerCase().trim() === alt.toLowerCase().trim())) existing.alt_names.push(alt);
+        }
+      } else {
+        mergedTeams.push({
+          id: uid(), name: incomingName, alt_names: incomingAlts,
+          age_group: typeof t.age_group === 'string' ? t.age_group : '',
+          gender: typeof t.gender === 'string' ? t.gender : '',
+          conf: (typeof t.confidence === 'string' ? t.confidence : 'high') as Conf,
+        });
       }
     }
     setTeams(mergedTeams);
@@ -1190,6 +1213,11 @@ function ReviewStep({
             className="text-[#333] hover:text-red-400 transition-colors text-sm flex-shrink-0">✕</button>
           <button onClick={() => toggleTeamOpen(t.id)} className="text-[#444] text-xs flex-shrink-0 w-4 text-center">{open ? '▲' : '▼'}</button>
         </div>
+        {t.alt_names.length > 0 && (
+          <p className="px-5 -mt-2 pb-3 text-[11px] text-[#555]">
+            Also known as {t.alt_names.join(', ')} — schedule/roster rows using either name will land here.
+          </p>
+        )}
         {open && (
           <div className="px-5 pb-5 border-t border-[#1a1a1a] flex flex-col gap-5">
             <div>
@@ -1420,7 +1448,7 @@ function ReviewStep({
       <div className="flex flex-col gap-4">
         {teamOpts.map(renderTeamCard)}
 
-        <button onClick={() => setTeams(p => [...p, { id: uid(), name: '', age_group: '', gender: '', conf: 'high' }])}
+        <button onClick={() => setTeams(p => [...p, { id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }])}
           className="w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
           + Add team
         </button>
@@ -1606,8 +1634,13 @@ export default function OnboardingPage() {
   }
 
   function populateFromAI(data: Record<string, unknown[]>) {
-    const teamRows: TRow[] = ((data.teams ?? []) as Record<string, string>[]).map(t => ({
-      id: uid(), name: t.name ?? '', age_group: t.age_group ?? '', gender: t.gender ?? '', conf: (t.confidence ?? 'high') as Conf,
+    const teamRows: TRow[] = ((data.teams ?? []) as Record<string, unknown>[]).map(t => ({
+      id: uid(),
+      name: typeof t.name === 'string' ? t.name : '',
+      alt_names: Array.isArray(t.alt_names) ? t.alt_names.filter((n): n is string => typeof n === 'string') : [],
+      age_group: typeof t.age_group === 'string' ? t.age_group : '',
+      gender: typeof t.gender === 'string' ? t.gender : '',
+      conf: (typeof t.confidence === 'string' ? t.confidence : 'high') as Conf,
     }));
     setTeams(teamRows);
     setPlayers(((data.players ?? []) as Record<string, string>[]).map(p => ({
@@ -1651,7 +1684,7 @@ export default function OnboardingPage() {
       const data = await res.json();
       if (!res.ok) {
         console.error('parse-all error:', data);
-        setTeams([{ id: uid(), name: '', age_group: '', gender: '', conf: 'high' }]);
+        setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
         setPlayers([]); setEvents([]); setCoaches([]);
         setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
         setProcessingFailed(true);
@@ -1669,7 +1702,7 @@ export default function OnboardingPage() {
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') return;
       console.error('parse-all fetch failed:', err);
-      setTeams([{ id: uid(), name: '', age_group: '', gender: '', conf: 'high' }]);
+      setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
       setPlayers([]); setEvents([]); setCoaches([]);
       setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
       setProcessingFailed(true);
@@ -1680,7 +1713,7 @@ export default function OnboardingPage() {
   }
 
   function skipUpload() {
-    setTeams([{ id: uid(), name: '', age_group: '', gender: '', conf: 'high' }]);
+    setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
     setPlayers([]); setEvents([]); setCoaches([]);
     setStep('review');
   }
