@@ -869,41 +869,69 @@ function ReviewStep({
     }
     setTeams(mergedTeams);
 
+    // A retry or an overlapping "+ Upload more files" run can hand back
+    // data that's already in the review list (a retry that partially
+    // succeeded before failing, or two files covering the same roster).
+    // Skip exact repeats — same person/game on the same team — rather than
+    // silently stacking duplicates the coach would have to spot by hand.
     setPlayers(prev => {
-      const existingNames = new Set(prev.map(p => p.full_name.toLowerCase().trim()));
-      const newRows: PRow[] = (data.players ?? []).map((p: Record<string, string>) => ({
-        id: uid(), full_name: p.full_name ?? '', jersey_number: p.jersey_number ?? '',
-        position: p.position ?? '', parent_email: p.parent_email ?? '',
-        local_team_id: matchTeamId(p.team_name, mergedTeams),
-        conf: existingNames.has((p.full_name ?? '').toLowerCase().trim()) ? 'medium' : (p.confidence ?? 'high') as Conf,
-      }));
+      const existingKeys = new Set(prev.map(p => `${p.local_team_id}|${p.full_name.toLowerCase().trim()}`));
+      const newRows: PRow[] = [];
+      for (const p of (data.players ?? []) as Record<string, string>[]) {
+        const local_team_id = matchTeamId(p.team_name, mergedTeams);
+        const key = `${local_team_id}|${(p.full_name ?? '').toLowerCase().trim()}`;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        newRows.push({
+          id: uid(), full_name: p.full_name ?? '', jersey_number: p.jersey_number ?? '',
+          position: p.position ?? '', parent_email: p.parent_email ?? '',
+          local_team_id, conf: (p.confidence ?? 'high') as Conf,
+        });
+      }
       return [...prev, ...newRows];
     });
 
-    setEvents(prev => [
-      ...prev,
-      ...(data.events ?? []).map((e: Record<string, string>) => ({
-        id: uid(), title: e.title ?? '', type: e.type ?? 'training',
-        home_away: e.home_away ?? '',
-        event_date: e.event_date ?? '', event_time: e.event_time ?? '',
-        location: e.location ?? '', address: e.address ?? '', lat: '', lng: '',
-        uniform: e.uniform ?? '', duration_minutes: e.duration_minutes ?? '',
-        arrival_buffer_minutes: e.arrival_buffer_minutes ?? '',
-        field_notes: e.field_notes ?? '', field_type: e.field_type ?? '',
-        notes: e.notes ?? '', coach_notes: e.coach_notes ?? '',
-        local_team_id: matchTeamId(e.team_name, mergedTeams),
-        conf: (e.confidence ?? 'high') as Conf,
-      })),
-    ]);
+    setEvents(prev => {
+      const existingKeys = new Set(prev.map(e => `${e.local_team_id}|${e.event_date}|${e.event_time}|${e.title.toLowerCase().trim()}`));
+      const newRows: ERow[] = [];
+      for (const e of (data.events ?? []) as Record<string, string>[]) {
+        const local_team_id = matchTeamId(e.team_name, mergedTeams);
+        const key = `${local_team_id}|${e.event_date ?? ''}|${e.event_time ?? ''}|${(e.title ?? '').toLowerCase().trim()}`;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        newRows.push({
+          id: uid(), title: e.title ?? '', type: e.type ?? 'training',
+          home_away: e.home_away ?? '',
+          event_date: e.event_date ?? '', event_time: e.event_time ?? '',
+          location: e.location ?? '', address: e.address ?? '', lat: '', lng: '',
+          uniform: e.uniform ?? '', duration_minutes: e.duration_minutes ?? '',
+          arrival_buffer_minutes: e.arrival_buffer_minutes ?? '',
+          field_notes: e.field_notes ?? '', field_type: e.field_type ?? '',
+          notes: e.notes ?? '', coach_notes: e.coach_notes ?? '',
+          local_team_id, conf: (e.confidence ?? 'high') as Conf,
+        });
+      }
+      return [...prev, ...newRows];
+    });
 
     setCoaches(prev => {
-      const existingEmails = new Set(prev.map(c => c.email.toLowerCase().trim()));
-      return [
-        ...prev,
-        ...(data.coaches ?? [])
-          .filter((c: Record<string, string>) => c.email && !existingEmails.has(c.email.toLowerCase().trim()))
-          .map((c: Record<string, string>) => ({ id: uid(), full_name: c.full_name ?? '', email: c.email ?? '', local_team_id: matchTeamId(c.team_name, mergedTeams) })),
-      ];
+      const existingEmails = new Set(prev.filter(c => c.email).map(c => c.email.toLowerCase().trim()));
+      const existingNameKeys = new Set(prev.filter(c => !c.email).map(c => `${c.local_team_id}|${c.full_name.toLowerCase().trim()}`));
+      const newRows: CRow[] = [];
+      for (const c of (data.coaches ?? []) as Record<string, string>[]) {
+        const local_team_id = matchTeamId(c.team_name, mergedTeams);
+        const email = (c.email ?? '').toLowerCase().trim();
+        if (email) {
+          if (existingEmails.has(email)) continue;
+          existingEmails.add(email);
+        } else {
+          const key = `${local_team_id}|${(c.full_name ?? '').toLowerCase().trim()}`;
+          if (existingNameKeys.has(key)) continue;
+          existingNameKeys.add(key);
+        }
+        newRows.push({ id: uid(), full_name: c.full_name ?? '', email: c.email ?? '', local_team_id });
+      }
+      return [...prev, ...newRows];
     });
 
     // Record the new files' payloads (so they're retryable too) and fold in
