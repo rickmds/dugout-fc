@@ -642,15 +642,36 @@ function chunkTextFile(file: FileInput): FileInput[] {
   return chunks;
 }
 
+// Chunking bounds wall-clock time per call, but nothing bounded how many
+// calls could fire AT ONCE — a big enough file (or several large files in
+// one upload) could fire dozens of simultaneous Claude requests, risking
+// Anthropic rate limits under real load. A worker-pool limiter caps
+// concurrency without capping how many chunks total can be processed.
+const MAX_CONCURRENT_CLAUDE_CALLS = 8;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    for (;;) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 async function askClaude(files: FileInput[]): Promise<ParsedResult> {
   const expanded = files.flatMap(chunkTextFile);
-  const results = await Promise.all(expanded.map(file =>
+  const results = await mapWithConcurrency(expanded, MAX_CONCURRENT_CLAUDE_CALLS, file =>
     askClaudeForFile(file).catch(err => {
       console.error(`[parse-all] Claude extraction failed for "${file.name}":`, err);
       Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'askClaudeForFile' }, extra: { fileName: file.name } });
       return emptyResult();
     })
-  ));
+  );
   return results.reduce((acc, r) => merge(acc, r), emptyResult());
 }
 
