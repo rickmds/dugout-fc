@@ -3,9 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 export type RoleKey = 'org_admin' | 'coach' | 'player';
 
-// Shared between role-benefits.tsx (shown once, right after picking a role)
-// and welcome-tour.tsx (shown once, right after landing in the app) —
-// same underlying pitch, reused rather than maintained twice.
+// Used by role-benefits.tsx, shown once right after picking a role.
 export const ROLE_CONTENT: Record<RoleKey, {
   title: string;
   icon: ComponentProps<typeof Ionicons>['name'];

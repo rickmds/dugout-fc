@@ -84,7 +84,18 @@ type Invite = {
   address: string | null;
   relationship: string | null;
   accepted_at: string | null;
+  accepted_by: string | null;
   created_at: string;
+};
+
+// Source of truth for who actually has access right now — a
+// player_guardians row, independent of whether the invite record that
+// originally granted it still exists (deleting an invite under the old
+// behavior never touched this table, leaving permanent invisible access).
+type GuardianAccess = {
+  profileId: string;
+  fullName: string | null;
+  avatarUrl: string | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -146,6 +157,7 @@ export default function PlayerProfileScreen() {
   // Guardian data
   const [guardianProfile, setGuardianProfile]   = useState<GuardianProfile | null>(null);
   const [invites, setInvites]                   = useState<Invite[]>([]);
+  const [guardianAccess, setGuardianAccess]     = useState<GuardianAccess[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
 
   // Edit player modal
@@ -349,7 +361,7 @@ export default function PlayerProfileScreen() {
     if (!player || !team) return;
     setGuardiansLoading(true);
 
-    const [profileRes, inviteRes] = await Promise.all([
+    const [profileRes, inviteRes, accessRes] = await Promise.all([
       player.profile_id
         ? supabase
             .from('profiles')
@@ -359,12 +371,23 @@ export default function PlayerProfileScreen() {
         : Promise.resolve({ data: null, error: null }),
       (supabase as any)
         .from('invites')
-        .select('id, email, token, guardian_name, phone, address, relationship, accepted_at, created_at')
+        .select('id, email, token, guardian_name, phone, address, relationship, accepted_at, accepted_by, created_at')
         .eq('player_id', player.id)
         .order('created_at', { ascending: false }),
+      // player_guardians is the actual source of truth for who has access
+      // right now — an invite record can be missing entirely (deleted
+      // under the old behavior, or never existed) while access persists.
+      (supabase as any)
+        .from('player_guardians')
+        .select('profile_id, profiles(id, full_name, avatar_url)')
+        .eq('player_id', player.id),
     ]);
 
     setGuardianProfile((profileRes.data as GuardianProfile | null) ?? null);
+    setGuardianAccess(
+      (((accessRes as any).data ?? []) as { profile_id: string; profiles: { id: string; full_name: string | null; avatar_url: string | null } | null }[])
+        .map((g) => ({ profileId: g.profile_id, fullName: g.profiles?.full_name ?? null, avatarUrl: g.profiles?.avatar_url ?? null }))
+    );
     setInvites(((inviteRes as any).data as Invite[]) ?? []);
     setGuardiansLoading(false);
   }
@@ -609,7 +632,16 @@ export default function PlayerProfileScreen() {
         Alert.alert('Error', 'Could not save guardian. Please try again.');
         return;
       }
-      if (inviteData?.id) await sendParentInviteEmail(inviteData.id, player.full_name);
+      if (inviteData?.id) {
+        const emailSent = await sendParentInviteEmail(inviteData.id, player.full_name);
+        if (!emailSent) {
+          setSavingInvite(false);
+          setShowAddGuardian(false);
+          loadGuardians();
+          Alert.alert('Guardian added', "They're linked, but the invite email couldn't be sent — try Resend from the guardians list.");
+          return;
+        }
+      }
     }
 
     setSavingInvite(false);
@@ -617,14 +649,46 @@ export default function PlayerProfileScreen() {
     loadGuardians();
   }
 
-  function confirmRevokeInvite(invite: Invite) {
+  // Real, currently-active access — a player_guardians row. Goes through
+  // the revoke_guardian_access RPC, which resolves and removes the grant
+  // server-side regardless of whether a matching invite record still
+  // exists (it often doesn't — that's the exact bug this replaced).
+  function confirmRevokeAccess(access: GuardianAccess) {
+    if (!player) return;
     Alert.alert(
       'Remove Guardian',
-      `Remove ${invite.guardian_name ?? invite.email} from this player's guardians?`,
+      `${access.fullName ?? 'This guardian'} will lose access to this player's info, RSVPs, and chat.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove', style: 'destructive',
+          onPress: async () => {
+            const { data, error } = await (supabase as any).rpc('revoke_guardian_access', {
+              p_player_id: player.id,
+              p_profile_id: access.profileId,
+            });
+            const result = data as { success?: boolean; error?: string } | null;
+            if (error || result?.error) {
+              Alert.alert('Error', result?.error ?? 'Could not remove guardian. Please try again.');
+              return;
+            }
+            loadGuardians();
+          },
+        },
+      ]
+    );
+  }
+
+  // A not-yet-accepted invite has no player_guardians row at all — cancelling
+  // it is just deleting the historical record, nothing to revoke access-wise.
+  function confirmCancelInvite(invite: Invite) {
+    Alert.alert(
+      'Cancel Invite',
+      `Cancel the pending invite to ${invite.guardian_name ?? invite.email}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Cancel Invite', style: 'destructive',
           onPress: async () => {
             await (supabase as any).from('invites').delete().eq('id', invite.id);
             loadGuardians();
@@ -846,12 +910,14 @@ export default function PlayerProfileScreen() {
           isMyPlayer={isMyPlayer}
           loading={guardiansLoading}
           guardianProfile={guardianProfile}
+          guardianAccess={guardianAccess}
           invites={invites}
           playerName={player.full_name}
           teamName={team?.name ?? ''}
           onAddGuardian={openAddGuardian}
           onEditInvite={openEditGuardian}
-          onRevokeInvite={confirmRevokeInvite}
+          onRevokeAccess={confirmRevokeAccess}
+          onCancelInvite={confirmCancelInvite}
           onResendInvite={handleResendInvite}
         />
       )}
@@ -1584,34 +1650,50 @@ function PlayerTab({
 
 // ─── Guardians tab ────────────────────────────────────────────────────────────
 
+type GuardianRow = {
+  key: string;
+  displayName: string;
+  email: string | null;
+  phone: string | null;
+  relationship: string | null;
+  isAccepted: boolean;
+  dateLabel: string;
+  invite: Invite | null;          // backing invite record, if one still exists — needed for edit/contact/resend
+  accessProfileId: string | null; // backing player_guardians row, if accepted — needed for revoke
+};
+
 function GuardiansTab({
   isCoach,
   isMyPlayer,
   loading,
   guardianProfile,
+  guardianAccess,
   invites,
   playerName,
   teamName,
   onAddGuardian,
   onEditInvite,
-  onRevokeInvite,
+  onRevokeAccess,
+  onCancelInvite,
   onResendInvite,
 }: {
   isCoach: boolean;
   isMyPlayer: boolean;
   loading: boolean;
   guardianProfile: GuardianProfile | null;
+  guardianAccess: GuardianAccess[];
   invites: Invite[];
   playerName: string;
   teamName: string;
   onAddGuardian: () => void;
   onEditInvite: (invite: Invite) => void;
-  onRevokeInvite: (invite: Invite) => void;
+  onRevokeAccess: (access: GuardianAccess) => void;
+  onCancelInvite: (invite: Invite) => void;
   onResendInvite: (invite: Invite) => void;
 }) {
   const { primaryColor, rgba } = useClub();
   const canManage = isCoach || isMyPlayer;
-  const hasAny = guardianProfile || invites.length > 0;
+  const hasAny = guardianProfile || guardianAccess.length > 0 || invites.some(i => !i.accepted_at);
 
   if (loading) {
     return (
@@ -1621,10 +1703,41 @@ function GuardiansTab({
     );
   }
 
-  // All invites sorted: accepted first, then pending
-  const sorted = [...invites].sort((a, b) =>
-    (b.accepted_at ? 1 : 0) - (a.accepted_at ? 1 : 0)
-  );
+  // guardianAccess (player_guardians) is the source of truth for who
+  // actually has access — an invite record is only ever used here to
+  // enrich the card with contact details/edit, and may not exist at all
+  // (deleted under the old behavior, or never created). The primary
+  // guardian is already shown separately above, so excluded here.
+  const secondaryAccess = guardianAccess.filter((a) => a.profileId !== guardianProfile?.id);
+  const pendingInvites = invites.filter((i) => !i.accepted_at);
+
+  const sorted: GuardianRow[] = [
+    ...secondaryAccess.map((a): GuardianRow => {
+      const inv = invites.find((i) => i.accepted_by === a.profileId) ?? null;
+      return {
+        key: `access-${a.profileId}`,
+        displayName: inv?.guardian_name || a.fullName || inv?.email || 'Guardian',
+        email: inv?.email ?? null,
+        phone: inv?.phone ?? null,
+        relationship: inv?.relationship ?? null,
+        isAccepted: true,
+        dateLabel: inv?.accepted_at ? formatShortDate(inv.accepted_at) : '',
+        invite: inv,
+        accessProfileId: a.profileId,
+      };
+    }),
+    ...pendingInvites.map((inv): GuardianRow => ({
+      key: `invite-${inv.id}`,
+      displayName: inv.guardian_name || inv.email,
+      email: inv.email,
+      phone: inv.phone,
+      relationship: inv.relationship,
+      isAccepted: false,
+      dateLabel: formatShortDate(inv.created_at),
+      invite: inv,
+      accessProfileId: null,
+    })),
+  ];
 
   return (
     <ScrollView contentContainerStyle={st.scrollContent} showsVerticalScrollIndicator={false}>
@@ -1657,95 +1770,103 @@ function GuardiansTab({
       {sorted.length > 0 && (
         <>
           <Text style={[st.sectionLabel, guardianProfile && { marginTop: 24 }]}>GUARDIANS</Text>
-          {sorted.map((invite, i) => {
-            const displayName = invite.guardian_name || invite.email;
-            const isAccepted  = !!invite.accepted_at;
-
+          {sorted.map((row, i) => {
             return (
-              <View key={invite.id} style={[st.guardianCard, i > 0 && { marginTop: 10 }]}>
+              <View key={row.key} style={[st.guardianCard, i > 0 && { marginTop: 10 }]}>
 
                 {/* Top row: avatar + name + status + actions */}
                 <View style={st.guardianCardTop}>
-                  <View style={[st.guardianAvatar, isAccepted && { borderColor: rgba(0.3) }, { borderColor: rgba(0.25) }]}>
+                  <View style={[st.guardianAvatar, row.isAccepted && { borderColor: rgba(0.3) }, { borderColor: rgba(0.25) }]}>
                     <Text style={[st.guardianAvatarText, { color: primaryColor }]}>
-                      {initials(invite.guardian_name || invite.email)}
+                      {initials(row.displayName)}
                     </Text>
                   </View>
                   <View style={st.guardianMeta}>
                     <View style={st.guardianNameRow}>
-                      <Text style={st.guardianName} numberOfLines={1}>{displayName}</Text>
-                      {invite.relationship && (
+                      <Text style={st.guardianName} numberOfLines={1}>{row.displayName}</Text>
+                      {row.relationship && (
                         <View style={st.relBadge}>
-                          <Text style={st.relBadgeText}>{invite.relationship}</Text>
+                          <Text style={st.relBadgeText}>{row.relationship}</Text>
                         </View>
                       )}
                     </View>
-                    {isAccepted ? (
+                    {row.isAccepted ? (
                       <Text style={[st.guardianSub, { color: primaryColor }]}>
-                        Joined {formatShortDate(invite.accepted_at!)}
+                        {row.dateLabel ? `Joined ${row.dateLabel}` : 'Has access'}
                       </Text>
                     ) : (
                       <Text style={st.guardianSub}>
-                        Invite pending · {formatShortDate(invite.created_at)}
+                        Invite pending · {row.dateLabel}
                       </Text>
                     )}
                   </View>
                   {canManage && (
                     <View style={st.guardianCardActions}>
-                      {!isAccepted && (
-                        <TouchableOpacity style={st.resendBtn} onPress={() => onResendInvite(invite)}>
+                      {!row.isAccepted && row.invite && (
+                        <TouchableOpacity style={st.resendBtn} onPress={() => onResendInvite(row.invite!)}>
                           <Ionicons name="send-outline" size={13} color={primaryColor} />
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity style={st.editGuardianBtn} onPress={() => onEditInvite(invite)}>
-                        <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
-                      </TouchableOpacity>
-                      <TouchableOpacity style={st.revokeBtn} onPress={() => onRevokeInvite(invite)}>
+                      {row.invite && (
+                        <TouchableOpacity style={st.editGuardianBtn} onPress={() => onEditInvite(row.invite!)}>
+                          <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        style={st.revokeBtn}
+                        onPress={() => (row.isAccepted
+                          ? onRevokeAccess({ profileId: row.accessProfileId!, fullName: row.displayName, avatarUrl: null })
+                          : onCancelInvite(row.invite!))}
+                      >
                         <Ionicons name="close" size={13} color={PULSE_COLORS.ui.muted} />
                       </TouchableOpacity>
                     </View>
                   )}
                 </View>
 
-                {/* Contact details */}
-                {canManage && (
+                {/* Contact details — only known if a backing invite record
+                    still exists; an accepted guardian with none just shows
+                    their name and can still be removed above. */}
+                {canManage && (row.email || row.phone || row.invite) && (
                   <View style={st.contactRows}>
                     {/* Email */}
-                    <View style={st.contactRow}>
-                      <Ionicons name="mail-outline" size={15} color={PULSE_COLORS.ui.muted} />
-                      <Text style={st.contactText} numberOfLines={1}>{invite.email}</Text>
-                      <TouchableOpacity
-                        style={st.contactBtn}
-                        onPress={() => Linking.openURL(`mailto:${invite.email}`)}
-                      >
-                        <Text style={st.contactBtnText}>Email</Text>
-                      </TouchableOpacity>
-                    </View>
+                    {row.email && (
+                      <View style={st.contactRow}>
+                        <Ionicons name="mail-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                        <Text style={st.contactText} numberOfLines={1}>{row.email}</Text>
+                        <TouchableOpacity
+                          style={st.contactBtn}
+                          onPress={() => Linking.openURL(`mailto:${row.email}`)}
+                        >
+                          <Text style={st.contactBtnText}>Email</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
 
                     {/* Phone */}
-                    {invite.phone ? (
+                    {row.phone ? (
                       <View style={[st.contactRow, st.contactRowTop]}>
                         <Ionicons name="call-outline" size={15} color={PULSE_COLORS.ui.muted} />
-                        <Text style={st.contactText}>{invite.phone}</Text>
+                        <Text style={st.contactText}>{row.phone}</Text>
                         <View style={st.contactBtns}>
                           <TouchableOpacity
                             style={st.contactBtn}
-                            onPress={() => Linking.openURL(`tel:${invite.phone}`)}
+                            onPress={() => Linking.openURL(`tel:${row.phone}`)}
                           >
                             <Text style={st.contactBtnText}>Call</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={[st.contactBtn, { marginLeft: 6 }]}
-                            onPress={() => Linking.openURL(`sms:${invite.phone}`)}
+                            onPress={() => Linking.openURL(`sms:${row.phone}`)}
                           >
                             <Text style={st.contactBtnText}>Text</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
-                    ) : canManage ? (
+                    ) : (canManage && row.invite) ? (
                       <TouchableOpacity
                         style={[st.contactRow, st.contactRowTop]}
-                        onPress={() => onEditInvite(invite)}
+                        onPress={() => onEditInvite(row.invite!)}
                       >
                         <Ionicons name="call-outline" size={15} color={PULSE_COLORS.ui.border} />
                         <Text style={[st.contactText, { color: PULSE_COLORS.ui.border }]}>

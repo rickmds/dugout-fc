@@ -65,10 +65,11 @@ export default function TabsLayout() {
     if (!profile?.id) return;
 
     async function fetchPendingGuests() {
-      const { data: playerRows } = await supabase
-        .from('players')
-        .select('id')
-        .eq('profile_id', profile!.id);
+      // get_my_guarded_players() also checks player_guardians — otherwise a
+      // second guardian's own kid never counted toward this badge.
+      const { data: playerRows } = await (supabase as any)
+        .rpc('get_my_guarded_players')
+        .select('id');
       const playerIds = (playerRows ?? []).map((p: { id: string }) => p.id);
       if (playerIds.length === 0) { setPendingGuestCount(0); return; }
       const { count } = await supabase

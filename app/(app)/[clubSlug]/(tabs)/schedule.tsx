@@ -192,8 +192,12 @@ export default function ScheduleScreen() {
       supabase.from('events')
         .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at, video_url')
         .in('team_id', teamIds).order('event_date').order('event_time'),
+      // get_my_guarded_players() checks player_guardians as well as the
+      // legacy players.profile_id column — a direct .eq('profile_id', ...)
+      // query here missed a second (or later) guardian's own kid entirely,
+      // silently hiding their RSVP controls for every one of that child's games.
       profile?.id
-        ? supabase.from('players').select('id, team_id').in('team_id', teamIds).eq('profile_id', profile.id)
+        ? (supabase as any).rpc('get_my_guarded_players').select('id, team_id').in('team_id', teamIds)
         : Promise.resolve({ data: [] }),
       supabase.from('players').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
     ]);

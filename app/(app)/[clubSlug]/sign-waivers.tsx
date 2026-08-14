@@ -69,15 +69,16 @@ export default function SignWaiversScreen() {
 
     const clubTeamIds = clubTeams.map(t => t.id);
 
-    const { data: players } = await supabase
-      .from('players')
+    // get_my_guarded_players() also checks player_guardians — otherwise a
+    // second guardian could never sign their own kid's required waivers.
+    const { data: players } = await (supabase as any)
+      .rpc('get_my_guarded_players')
       .select('id, full_name, team_id')
-      .eq('profile_id', profile!.id)
       .in('team_id', clubTeamIds);
 
     if (!players?.length) { goToHome(); return; }
 
-    const playerIds = players.map(p => p.id);
+    const playerIds = players.map((p: { id: string }) => p.id);
 
     const { data: assignments } = await supabase
       .from('waiver_assignments')
@@ -99,13 +100,13 @@ export default function SignWaiversScreen() {
       const w = a.waivers as { id: string; title: string; body: string } | null;
       if (!w) continue;
 
-      const teamPlayers = players.filter(p => p.team_id === a.team_id);
-      const unsigned = teamPlayers.filter(p => !signed.has(`${w.id}:${p.id}`));
+      const teamPlayers = players.filter((p: { team_id: string }) => p.team_id === a.team_id);
+      const unsigned = teamPlayers.filter((p: { id: string }) => !signed.has(`${w.id}:${p.id}`));
       if (!unsigned.length) continue;
 
       if (waiverMap.has(w.id)) {
         const ex = waiverMap.get(w.id)!;
-        unsigned.forEach(p => {
+        unsigned.forEach((p: { id: string; full_name: string }) => {
           if (!ex.playerIds.includes(p.id)) {
             ex.playerIds.push(p.id);
             ex.playerNames.push(p.full_name);
@@ -116,8 +117,8 @@ export default function SignWaiversScreen() {
           id: w.id,
           title: w.title,
           body: w.body,
-          playerIds: unsigned.map(p => p.id),
-          playerNames: unsigned.map(p => p.full_name),
+          playerIds: unsigned.map((p: { id: string }) => p.id),
+          playerNames: unsigned.map((p: { full_name: string }) => p.full_name),
         });
       }
     }

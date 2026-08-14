@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { PULSE_COLORS } from '../../constants/colors';
 
@@ -9,7 +9,11 @@ interface PrimaryButtonProps {
   variant?: 'solid' | 'outline';
   loading?: boolean;
   disabled?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
+  /** Overrides the default Pulse green — e.g. a club's brand color. */
+  color?: string;
+  /** Text color to pair with a custom `color` (solid variant only). Defaults to black. */
+  textColor?: string;
 }
 
 export default function PrimaryButton({
@@ -19,6 +23,8 @@ export default function PrimaryButton({
   loading = false,
   disabled = false,
   style,
+  color,
+  textColor,
 }: PrimaryButtonProps) {
   const isOutline = variant === 'outline';
   const isDisabled = disabled || loading;
@@ -48,15 +54,26 @@ export default function PrimaryButton({
         style={[
           styles.button,
           isOutline ? styles.outline : styles.solid,
+          isOutline && color ? { borderColor: color } : null,
+          !isOutline && color ? { backgroundColor: color } : null,
           isDisabled && styles.disabled,
           { transform: [{ scale }] },
           style,
         ]}
       >
         {loading ? (
-          <ActivityIndicator color={isOutline ? PULSE_COLORS.brand.green : PULSE_COLORS.brand.black} />
+          <ActivityIndicator color={isOutline ? (color ?? PULSE_COLORS.brand.green) : (textColor ?? PULSE_COLORS.brand.black)} />
         ) : (
-          <Text style={[styles.text, isOutline ? styles.outlineText : styles.solidText]}>{title}</Text>
+          <Text
+            style={[
+              styles.text,
+              isOutline ? styles.outlineText : styles.solidText,
+              isOutline && color ? { color } : null,
+              !isOutline && textColor ? { color: textColor } : null,
+            ]}
+          >
+            {title}
+          </Text>
         )}
       </Animated.View>
     </Pressable>

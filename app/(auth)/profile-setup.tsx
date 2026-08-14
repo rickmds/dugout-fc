@@ -19,6 +19,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { addGuardianInvite } from '../../lib/inviteApi';
 import { posthog } from '../../lib/posthog';
 import { PULSE_COLORS } from '../../constants/colors';
+import { resolveAccent, contrastText } from '../../lib/brandColor';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
@@ -40,6 +41,7 @@ export default function ProfileSetupScreen() {
   const router = useRouter();
   const { user, profile, club, refreshProfile, signOut } = useAuth();
   const isCoachOrAdmin = profile?.role === 'coach' || profile?.role === 'org_admin';
+  const accent = resolveAccent(club?.primary_color);
 
   const [fullName, setFullName]         = useState(profile?.full_name ?? '');
   const [phone, setPhone]               = useState(profile?.phone ?? '');
@@ -63,6 +65,7 @@ export default function ProfileSetupScreen() {
   const [guardianEmail, setGuardianEmail] = useState('');
   const [guardianSaving, setGuardianSaving] = useState(false);
   const [guardianSent, setGuardianSent]   = useState(false);
+  const [guardianSentTo, setGuardianSentTo] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -115,7 +118,10 @@ export default function ProfileSetupScreen() {
     try {
       const response = await fetch(uri);
       const buffer = await response.arrayBuffer();
-      const path = `${user.id}-${Date.now()}.png`;
+      // Storage RLS (profile_avatar_upload) requires the uid as an actual
+      // folder segment, not just a filename prefix — `${uid}-x` never
+      // matches `starts_with(name, uid || '/')`, only `${uid}/x` does.
+      const path = `${user.id}/${Date.now()}.png`;
       const { error: upErr } = await supabase.storage.from('avatars').upload(path, buffer, { contentType: 'image/png', upsert: true });
       if (upErr) { Alert.alert('Upload failed', upErr.message); return; }
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
@@ -130,16 +136,35 @@ export default function ProfileSetupScreen() {
   async function handleSendGuardian() {
     const target = players[0];
     if (!target || !guardianEmail.trim() || !user) return;
+    const email = guardianEmail.trim();
     setGuardianSaving(true);
+
+    // Diagnostic: confirm the session actually attached to this request
+    // matches the cached `user` this screen thinks is signed in — the
+    // guardian check has verified correct against the DB directly every
+    // time this has been debugged, so a live session/context mismatch is
+    // the remaining suspect. Temporary until we see it fire (or don't).
+    const { data: { user: liveUser } } = await supabase.auth.getUser();
+    if (liveUser?.id !== user.id) {
+      console.warn('[guardian-invite] session mismatch', { cachedUserId: user.id, liveUserId: liveUser?.id });
+      Alert.alert('Session out of sync', `App had ${user.id.slice(0, 8)}… but the server session is ${liveUser?.id?.slice(0, 8) ?? 'none'}…. Please sign out and back in, then try again.`);
+      setGuardianSaving(false);
+      return;
+    }
+
     const result = await addGuardianInvite({
       teamId: target.team_id,
       playerId: target.id,
-      email: guardianEmail.trim(),
+      email,
       createdBy: user.id,
       playerName: target.full_name,
     });
     setGuardianSaving(false);
-    if (!result.ok) { Alert.alert('Error', result.error); return; }
+    if (!result.ok) { Alert.alert("Couldn't send invite", result.error); return; }
+    if (!result.emailSent) {
+      Alert.alert('Guardian added', "They're linked, but the invite email couldn't be sent — you can resend it from the player's Guardians tab.");
+    }
+    setGuardianSentTo(email);
     setGuardianSent(true);
     setGuardianEmail('');
   }
@@ -224,7 +249,7 @@ export default function ProfileSetupScreen() {
               <Ionicons name="camera-outline" size={26} color={PULSE_COLORS.ui.muted} />
             </View>
           )}
-          <Text style={styles.avatarLabel}>{avatarUploading ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Add a photo'}</Text>
+          <Text style={[styles.avatarLabel, { color: accent }]}>{avatarUploading ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Add a photo'}</Text>
         </TouchableOpacity>
 
         <AuthInput label="Full name" value={fullName} onChangeText={setFullName} placeholder="Jane Smith" />
@@ -239,8 +264,8 @@ export default function ProfileSetupScreen() {
           <Switch
             value={shareContact}
             onValueChange={setShareContact}
-            trackColor={{ false: PULSE_COLORS.ui.border, true: 'rgba(34,197,94,0.5)' }}
-            thumbColor={shareContact ? PULSE_COLORS.brand.green : undefined}
+            trackColor={{ false: PULSE_COLORS.ui.border, true: `${accent}80` }}
+            thumbColor={shareContact ? accent : undefined}
           />
         </View>
 
@@ -279,8 +304,8 @@ export default function ProfileSetupScreen() {
             <Text style={styles.sectionSub}>Invite a co-parent or guardian for {players[0].full_name} — they'll get their own account and access.</Text>
             {guardianSent ? (
               <View style={styles.guardianSentBanner}>
-                <Ionicons name="checkmark-circle" size={16} color={PULSE_COLORS.brand.green} />
-                <Text style={styles.guardianSentText}>Invite sent!</Text>
+                <Ionicons name="checkmark-circle" size={16} color={accent} />
+                <Text style={[styles.guardianSentText, { color: accent }]}>Invite sent to {guardianSentTo}</Text>
               </View>
             ) : (
               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
@@ -290,16 +315,16 @@ export default function ProfileSetupScreen() {
                 <TouchableOpacity
                   onPress={handleSendGuardian}
                   disabled={!guardianEmail.trim() || guardianSaving}
-                  style={[styles.sendGuardianBtn, (!guardianEmail.trim() || guardianSaving) && { opacity: 0.5 }]}
+                  style={[styles.sendGuardianBtn, { backgroundColor: accent }, (!guardianEmail.trim() || guardianSaving) && { opacity: 0.5 }]}
                 >
-                  <Text style={styles.sendGuardianText}>{guardianSaving ? '…' : 'Send'}</Text>
+                  <Text style={[styles.sendGuardianText, { color: contrastText(accent) }]}>{guardianSaving ? '…' : 'Send'}</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
         )}
 
-        <PrimaryButton title="Let's go" onPress={handleContinue} loading={loading} style={styles.continueButton} />
+        <PrimaryButton title="Let's go" onPress={handleContinue} loading={loading} color={accent} textColor={contrastText(accent)} style={styles.continueButton} />
 
         <TouchableOpacity onPress={handleSkip} style={styles.skipLink}>
           <Text style={styles.skipText}>Skip for now</Text>
@@ -309,7 +334,7 @@ export default function ProfileSetupScreen() {
       <ImageEditor
         visible={avatarEditorVisible}
         uri={avatarEditorUri}
-        primaryColor={PULSE_COLORS.brand.green}
+        primaryColor={accent}
         onSave={handleAvatarEditorSave}
         onCancel={() => setAvatarEditorVisible(false)}
       />

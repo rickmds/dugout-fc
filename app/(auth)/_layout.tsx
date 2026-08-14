@@ -4,10 +4,8 @@ import { useAuth } from '../../hooks/useAuth';
 export default function AuthLayout() {
   const { session, profile, club, loading } = useAuth();
 
-  // Only bounce a fully-onboarded user back into the app — otherwise this
-  // would immediately redirect someone away from welcome-tour/profile-setup
-  // right back into (app)/_layout's own redirect into this same group,
-  // an infinite loop between the two layouts.
+  // Only bounce a fully-onboarded user back into the app — e.g. if they
+  // navigate back to /(auth)/profile-setup after already finishing it.
   if (!loading && session && club && profile?.onboarded_at) {
     return <Redirect href={`/(app)/${club.slug}/(tabs)`} />;
   }

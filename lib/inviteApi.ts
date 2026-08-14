@@ -68,15 +68,50 @@ export async function addGuardianInvite(opts: {
   createdBy: string;
   guardianName?: string;
   playerName?: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { data: inviteData, error } = await supabase.from('invites').insert({
+}): Promise<{ ok: true; emailSent: boolean } | { ok: false; error: string }> {
+  const row = {
     team_id: opts.teamId,
     player_id: opts.playerId,
     email: opts.email.trim().toLowerCase(),
     guardian_name: opts.guardianName?.trim() || null,
     created_by: opts.createdBy,
-  }).select('id').single();
-  if (error || !inviteData?.id) return { ok: false, error: error?.message ?? 'Could not create invite' };
-  await sendParentInviteEmail(inviteData.id, opts.playerName);
-  return { ok: true };
+  };
+
+  let { data: inviteData, error } = await supabase.from('invites').insert(row).select('id').single();
+
+  // An RLS failure here is most often a stale access token (this screen can
+  // sit open a while during first-run profile setup) rather than a real
+  // permissions gap — one silent session refresh + retry before giving up.
+  if (error?.code === '42501') {
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    if (refreshed?.session) {
+      ({ data: inviteData, error } = await supabase.from('invites').insert(row).select('id').single());
+    }
+  }
+
+  if (error || !inviteData?.id) {
+    // Server-side simulation of this exact check has passed every time this
+    // has been investigated, so the remaining suspect is what's actually on
+    // the wire — decode the real access token's own claims (zero reliance
+    // on any local simulation) to settle it definitively next time.
+    const { data: { session } } = await supabase.auth.getSession();
+    let tokenClaims: unknown = null;
+    try {
+      const payload = session?.access_token?.split('.')[1];
+      tokenClaims = payload ? JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) : null;
+    } catch { /* best-effort only */ }
+    console.error('[addGuardianInvite] failed', { row, error, tokenClaims });
+    return {
+      ok: false,
+      error: error?.code === '42501'
+        ? "Couldn't send that invite — please try again in a moment."
+        : (error?.message ?? 'Could not create invite'),
+    };
+  }
+  // The invite row exists either way — worth telling the caller apart from
+  // "email actually went out" so the UI doesn't claim success when the
+  // other guardian was never actually notified.
+  const emailSent = await sendParentInviteEmail(inviteData.id, opts.playerName);
+  if (!emailSent) console.error('[addGuardianInvite] invite created but email failed to send', { inviteId: inviteData.id });
+  return { ok: true, emailSent };
 }

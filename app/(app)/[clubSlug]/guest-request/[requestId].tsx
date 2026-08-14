@@ -124,9 +124,11 @@ export default function GuestRequestScreen() {
     const targetTeamIds = ((targetsRes.data ?? []) as any[]).map(t => t.team_id as string);
     setSpotsLeft(Math.max(0, r.spots_needed - (fillRes.data?.filled_count ?? 0)));
 
+    // get_my_guarded_players() also checks player_guardians — otherwise a
+    // second guardian couldn't respond to a guest request for their own kid.
     const myPlayerRes = targetTeamIds.length > 0
-      ? await supabase.from('players').select('id,full_name')
-          .in('team_id', targetTeamIds).eq('profile_id', profile.id).limit(1).maybeSingle()
+      ? await (supabase as any).rpc('get_my_guarded_players').select('id,full_name')
+          .in('team_id', targetTeamIds).limit(1).maybeSingle()
       : { data: null };
 
     const myPlayer = myPlayerRes.data as any;

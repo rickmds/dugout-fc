@@ -441,17 +441,19 @@ export default function HomeScreen() {
     const { data: clubTeams } = await supabase.from('teams').select('id').eq('club_id', clubRow.id).in('id', memberRows.map(r => r.team_id));
     if (!clubTeams?.length) return;
     const clubTeamIds = clubTeams.map(t => t.id);
-    const { data: players } = await supabase.from('players').select('id, team_id').eq('profile_id', profile.id).in('team_id', clubTeamIds);
+    // get_my_guarded_players() also checks player_guardians — a second
+    // guardian's own kid was silently invisible to their waiver check otherwise.
+    const { data: players } = await (supabase as any).rpc('get_my_guarded_players').select('id, team_id').in('team_id', clubTeamIds);
     if (!players?.length) return;
-    const playerIds = players.map(p => p.id);
+    const playerIds = players.map((p: { id: string }) => p.id);
     const { data: assignments } = await supabase.from('waiver_assignments').select('waiver_id, team_id').in('team_id', clubTeamIds);
     if (!assignments?.length) { setUnsignedWaiverCount(0); return; }
     const { data: sigs } = await supabase.from('waiver_signatures').select('waiver_id, player_id').in('player_id', playerIds);
     const signed = new Set((sigs ?? []).map(s => `${s.waiver_id}:${s.player_id}`));
     const unsignedSet = new Set<string>();
     for (const a of assignments) {
-      const teamPlayers = players.filter(p => p.team_id === a.team_id);
-      const hasUnsigned = teamPlayers.some(p => !signed.has(`${a.waiver_id}:${p.id}`));
+      const teamPlayers = players.filter((p: { team_id: string }) => p.team_id === a.team_id);
+      const hasUnsigned = teamPlayers.some((p: { id: string }) => !signed.has(`${a.waiver_id}:${p.id}`));
       if (hasUnsigned) unsignedSet.add(a.waiver_id);
     }
     setUnsignedWaiverCount(unsignedSet.size);
@@ -501,7 +503,9 @@ export default function HomeScreen() {
       supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
       supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
+      // get_my_guarded_players() also checks player_guardians — a second
+      // guardian otherwise never saw their own kid's card/RSVP on Home at all.
+      (supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).maybeSingle(),
       sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
     ]);
 
@@ -600,7 +604,9 @@ export default function HomeScreen() {
     }
 
     if (!isCoach && profile?.id) {
-      const { data: allPlayerRows } = await supabase.from('players').select('id').eq('profile_id', profile.id);
+      // get_my_guarded_players() also checks player_guardians — otherwise
+      // a second guardian's guest-RSVP requests for their own kid never matched.
+      const { data: allPlayerRows } = await (supabase as any).rpc('get_my_guarded_players').select('id');
       const allPlayerIds = (allPlayerRows ?? []).map((p: { id: string }) => p.id);
       if (allPlayerIds.length > 0) {
         const { data: guestRows } = await supabase

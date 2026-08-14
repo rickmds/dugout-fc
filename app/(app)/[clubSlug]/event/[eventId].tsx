@@ -399,8 +399,9 @@ export default function EventDetailScreen() {
       supabase.from('players').select('id,full_name,jersey_number,position,profile_id')
         .eq('team_id', team.id).order('jersey_number'),
       supabase.from('event_rsvps').select('player_id,status').eq('event_id', eventId),
-      supabase.from('players').select('id').eq('team_id', team.id)
-        .eq('profile_id', profile.id).maybeSingle(),
+      // get_my_guarded_players() also checks player_guardians — otherwise a
+      // second guardian never saw their own kid's RSVP controls on this screen.
+      (supabase as any).rpc('get_my_guarded_players').select('id').eq('team_id', team.id).maybeSingle(),
       supabase.from('game_sessions').select('id')
         .eq('event_id', eventId).eq('status', 'full_time').maybeSingle(),
       supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId),

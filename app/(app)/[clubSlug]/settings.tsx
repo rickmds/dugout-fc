@@ -218,10 +218,13 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     if (isParent && profile?.id) {
+      // get_my_guarded_players() checks player_guardians as well as the
+      // legacy players.profile_id column — a direct .eq('profile_id', ...)
+      // query here only ever found the first (primary) guardian and always
+      // showed "No players linked" for a second guardian, even though
+      // they have real access.
       (supabase as any)
-        .from('players')
-        .select('id, full_name, jersey_number, position, photo_url, team_id')
-        .eq('profile_id', profile.id)
+        .rpc('get_my_guarded_players')
         .then(({ data }: { data: LinkedPlayer[] | null }) => {
           setMyPlayers(data ?? []);
           setPlayersLoaded(true);
@@ -347,7 +350,10 @@ export default function SettingsScreen() {
     try {
       const response = await fetch(uri);
       const buffer = await response.arrayBuffer();
-      const path = `${profile.id}-${Date.now()}.png`;
+      // Storage RLS (profile_avatar_upload) requires the uid as an actual
+      // folder segment, not just a filename prefix — `${uid}-x` never
+      // matches `starts_with(name, uid || '/')`, only `${uid}/x` does.
+      const path = `${profile.id}/${Date.now()}.png`;
       const { error } = await supabase.storage
         .from('avatars')
         .upload(path, buffer, { contentType: 'image/png', upsert: true });
