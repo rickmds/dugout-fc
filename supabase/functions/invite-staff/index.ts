@@ -57,6 +57,10 @@ Deno.serve(async (req) => {
   }
 
   // ── Generate invite link (no Supabase default email sent) ───────────────
+  // `type: 'invite'` is documented for brand-new users only. If this email
+  // already has an account (possibly at another club), it errors instead of
+  // silently doing the right thing — fall back to looking the user up so we
+  // can grant them access here without touching their existing identity.
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
     type: 'invite',
     email,
@@ -66,20 +70,54 @@ Deno.serve(async (req) => {
     },
   });
 
-  if (linkError || !linkData?.user) {
-    return new Response(JSON.stringify({ error: linkError?.message ?? 'Failed to generate invite link' }), {
-      status: 500, headers: { ...CORS, 'Content-Type': 'application/json' },
-    });
+  let userId: string;
+  let inviteLink: string | undefined;
+  let isNewUser: boolean;
+
+  if (!linkError && linkData?.user) {
+    userId = linkData.user.id;
+    inviteLink = (linkData.properties as any)?.action_link as string | undefined;
+    isNewUser = true;
+  } else {
+    let found: { id: string } | undefined;
+    let page = 1;
+    while (!found && page < 20) {
+      const { data } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+      if (!data?.users?.length) break;
+      found = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+      if (data.users.length < 200) break;
+      page++;
+    }
+    if (!found) {
+      return new Response(JSON.stringify({ error: linkError?.message ?? 'Failed to generate invite link' }), {
+        status: 500, headers: { ...CORS, 'Content-Type': 'application/json' },
+      });
+    }
+    userId = found.id;
+    isNewUser = false;
   }
 
-  const userId     = linkData.user.id;
-  const inviteLink = (linkData.properties as any)?.action_link as string | undefined;
-
-  // ── Pre-create profile ───────────────────────────────────────────────────
-  await supabase.from('profiles').upsert(
-    { id: userId, club_id, full_name: full_name ?? null, role },
-    { onConflict: 'id' },
-  );
+  if (isNewUser) {
+    // Fresh auth user — fill in this club's identity fields on the
+    // trigger-created profiles row.
+    await supabase.from('profiles').upsert(
+      { id: userId, club_id, full_name: full_name ?? null, role },
+      { onConflict: 'id' },
+    );
+  } else {
+    // Existing user: never touch club_id — they may already belong to a
+    // different club, and relocating their home club here would be wrong.
+    // But DO raise their global role if they've never been elevated before
+    // (e.g. they were only ever a parent) — team_members access alone isn't
+    // enough, since a few things (editing a team's own details, the "My
+    // Teams" list in Settings) still key off profiles.role directly. Never
+    // downgrade someone who's already coach/org_admin/app_admin.
+    const { data: existing } = await supabase.from('profiles').select('role').eq('id', userId).single();
+    const currentRole = existing?.role ?? 'player';
+    if (!['coach', 'org_admin', 'app_admin'].includes(currentRole)) {
+      await supabase.from('profiles').update({ role }).eq('id', userId);
+    }
+  }
 
   // ── Pre-assign teams ─────────────────────────────────────────────────────
   if (team_ids?.length) {
@@ -89,36 +127,62 @@ Deno.serve(async (req) => {
     );
   }
 
-  // ── Send branded invite email via Resend ─────────────────────────────────
-  if (RESEND_KEY && inviteLink) {
+  // ── Send branded email via Resend ────────────────────────────────────────
+  if (RESEND_KEY) {
     const clubName  = club?.name ?? 'Your Club';
     const roleLabel = role === 'org_admin' ? 'Club Admin' : 'Coach';
     const teamList  = teamNames.length > 0 ? teamNames.join(', ') : null;
 
-    const html = buildInviteHtml({
-      clubName,
-      roleLabel,
-      teamList,
-      inviteLink,
-      logoUrl:      club?.logo_url      ?? null,
-      primaryColor: club?.primary_color ?? null,
-    });
+    if (isNewUser && inviteLink) {
+      const html = buildInviteHtml({
+        clubName,
+        roleLabel,
+        teamList,
+        inviteLink,
+        logoUrl:      club?.logo_url      ?? null,
+        primaryColor: club?.primary_color ?? null,
+      });
 
-    await fetch('https://api.resend.com/emails', {
-      method:  'POST',
-      headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from:    `${clubName} <support@pulse-fc.app>`,
-        to:      [email],
-        subject: `You've been invited to join ${clubName}`,
-        html,
-        text: [
-          `You've been invited to join ${clubName} on Pulse FC as ${roleLabel === 'Club Admin' ? 'a Club Admin' : 'a Coach'}.`,
-          teamList ? `Teams: ${teamList}` : null,
-          `Accept your invite (expires in 24 hours): ${inviteLink}`,
-        ].filter(Boolean).join('\n\n'),
-      }),
-    });
+      await fetch('https://api.resend.com/emails', {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from:    `${clubName} <support@pulse-fc.app>`,
+          to:      [email],
+          subject: `You've been invited to join ${clubName}`,
+          html,
+          text: [
+            `You've been invited to join ${clubName} on Pulse FC as ${roleLabel === 'Club Admin' ? 'a Club Admin' : 'a Coach'}.`,
+            teamList ? `Teams: ${teamList}` : null,
+            `Accept your invite (expires in 24 hours): ${inviteLink}`,
+          ].filter(Boolean).join('\n\n'),
+        }),
+      });
+    } else if (!isNewUser) {
+      const html = buildAddedHtml({
+        clubName,
+        roleLabel,
+        teamList,
+        logoUrl:      club?.logo_url      ?? null,
+        primaryColor: club?.primary_color ?? null,
+      });
+
+      await fetch('https://api.resend.com/emails', {
+        method:  'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from:    `${clubName} <support@pulse-fc.app>`,
+          to:      [email],
+          subject: `You've been added at ${clubName}`,
+          html,
+          text: [
+            `You've been added at ${clubName} on Pulse FC as ${roleLabel === 'Club Admin' ? 'a Club Admin' : 'a Coach'}, using your existing account.`,
+            teamList ? `Teams: ${teamList}` : null,
+            `Sign in as usual and switch teams to see it: ${APP_URL}/login`,
+          ].filter(Boolean).join('\n\n'),
+        }),
+      });
+    }
   }
 
   return new Response(JSON.stringify({ ok: true, user_id: userId }), {
@@ -287,6 +351,138 @@ function buildInviteHtml({ clubName, roleLabel, teamList, inviteLink, logoUrl, p
                       for club management.
                       &nbsp;&middot;&nbsp;
                       If you weren't expecting this, you can safely ignore it.
+                      &nbsp;&middot;&nbsp; &copy; ${year} ${esc(clubName)}
+                    </p>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+// Same shell as buildInviteHtml, but for someone who already has an
+// account (possibly at another club) — no magic link, just a heads-up
+// and a link to the regular login page.
+function buildAddedHtml({ clubName, roleLabel, teamList, logoUrl, primaryColor }: {
+  clubName:     string;
+  roleLabel:    string;
+  teamList:     string | null;
+  logoUrl:      string | null;
+  primaryColor: string | null;
+}): string {
+  const accent   = resolveAccent(primaryColor);
+  const btnText  = contrastText(accent);
+  const year     = new Date().getFullYear();
+  const initials = clubName.split(' ').slice(0, 2).map((w) => (w[0] ?? '').toUpperCase()).join('');
+
+  const logoHtml = logoUrl
+    ? `<img src="${esc(logoUrl)}" width="60" height="60" alt="${esc(clubName)}"
+         style="display:inline-block;border-radius:14px;" />`
+    : `<div style="display:inline-block;width:60px;height:60px;line-height:60px;text-align:center;
+                   border-radius:14px;background:${accent};vertical-align:middle;">
+         <span style="font-size:22px;font-weight:900;color:${btnText};">${esc(initials)}</span>
+       </div>`;
+
+  const teamsRow = teamList
+    ? `<tr>
+         <td style="padding:0 28px 20px;">
+           <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:14px 18px;">
+             <table cellpadding="0" cellspacing="0" width="100%">
+               <tr>
+                 <td style="width:28px;vertical-align:top;font-size:18px;line-height:1.4;">🏟️</td>
+                 <td style="vertical-align:top;padding-left:10px;">
+                   <p style="margin:0 0 2px;font-size:11px;font-weight:700;color:#6b7280;
+                              text-transform:uppercase;letter-spacing:1.2px;">Teams assigned</p>
+                   <p style="margin:0;font-size:14px;color:#d1d5db;font-weight:600;">${esc(teamList)}</p>
+                 </td>
+               </tr>
+             </table>
+           </div>
+         </td>
+       </tr>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>You've been added at ${esc(clubName)}</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;
+             font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;">
+    <tr>
+      <td align="center" style="padding:48px 20px 64px;">
+        <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+          <tr>
+            <td style="text-align:center;padding-bottom:28px;">
+              ${logoHtml}
+              <p style="margin:12px 0 0;font-size:18px;font-weight:800;color:#f9fafb;
+                         letter-spacing:-0.3px;">${esc(clubName)}</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background:#111111;border:1px solid #222222;border-radius:20px;
+                       overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+
+              <div style="height:3px;background:${accent};"></div>
+
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:32px 28px 24px;">
+                    <p style="margin:0 0 10px;font-size:11px;font-weight:700;color:#6b7280;
+                               text-transform:uppercase;letter-spacing:1.5px;">You've been added</p>
+                    <h1 style="margin:0;font-size:24px;font-weight:800;color:#f9fafb;line-height:1.25;
+                                letter-spacing:-0.5px;">
+                      ${esc(clubName)}<br>as a ${esc(roleLabel)}
+                    </h1>
+                  </td>
+                </tr>
+
+                <tr><td style="padding:0 28px;"><div style="height:1px;background:#1e1e1e;"></div></td></tr>
+
+                <tr>
+                  <td style="padding:24px 28px 20px;">
+                    <p style="margin:0 0 14px;font-size:15px;color:#d1d5db;line-height:1.7;">
+                      You've been added at <strong style="color:#f9fafb;">${esc(clubName)}</strong>
+                      on <strong style="color:${accent};">Pulse FC</strong>, using your existing account.
+                    </p>
+                    <p style="margin:0;font-size:15px;color:#d1d5db;line-height:1.7;">
+                      Sign in as usual and switch teams to see ${esc(clubName)}'s roster, schedule, and chat.
+                    </p>
+                  </td>
+                </tr>
+
+                ${teamsRow}
+
+                <tr>
+                  <td style="padding:4px 28px 32px;text-align:center;">
+                    <a href="https://pulse-fc.app/login"
+                       style="display:inline-block;background:${accent};color:${btnText};
+                              text-decoration:none;font-size:16px;font-weight:800;
+                              padding:16px 48px;border-radius:12px;letter-spacing:0.2px;line-height:1;">
+                      Open Pulse FC &rarr;
+                    </a>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
+                    <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
+                      ${esc(clubName)} uses
+                      <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
+                      for club management.
                       &nbsp;&middot;&nbsp; &copy; ${year} ${esc(clubName)}
                     </p>
                   </td>
