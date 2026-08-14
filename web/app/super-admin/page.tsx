@@ -73,7 +73,6 @@ const healthOf = (c: Club): 'active' | 'quiet' | 'new' => {
 const scoreColor = (s: number) => s >= 80 ? '#16a34a' : s >= 40 ? '#d97706' : s > 0 ? '#dc2626' : '#94A3B8';
 const scoreBg    = (s: number) => s >= 80 ? '#F0FDF4'  : s >= 40 ? '#FFFBEB'  : s > 0 ? '#FFF5F5'  : C.inputBg;
 
-const HEALTH_COLOR: Record<string, string> = { active: '#22c55e', quiet: '#f59e0b', new: '#38bdf8' };
 const ROLE_CLR: Record<string, string> = { org_admin: '#7c3aed', coach: '#0284c7', player: '#16a34a', app_admin: '#d97706' };
 
 const PLAN_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -246,8 +245,9 @@ function App({ user }: { user: User }) {
 
   const clubNameRef   = useRef<Record<string, string>>({});
   const teamToClubRef = useRef<Record<string, string>>({});
-  const addActivityRef = useRef<(item: ActivityItem) => void>(() => {});
-  addActivityRef.current = (item) => setActivityFeed(prev => [item, ...prev.filter(x => x.id !== item.id)].slice(0, 25));
+  const addActivity = useCallback((item: ActivityItem) => {
+    setActivityFeed(prev => [item, ...prev.filter(x => x.id !== item.id)].slice(0, 25));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -376,6 +376,7 @@ function App({ user }: { user: User }) {
     setLoading(false);
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   // Realtime subscription
@@ -384,21 +385,21 @@ function App({ user }: { user: User }) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, payload => {
         const ev = payload.new as { id: string; team_id: string; title: string; type: string; created_at: string };
         const cid = teamToClubRef.current[ev.team_id];
-        addActivityRef.current({ id: `ev-${ev.id}`, icon: ev.type === 'game' ? '⚽' : '🏃', text: `New ${ev.type}: ${ev.title}`, club: cid ? (clubNameRef.current[cid] ?? '?') : '?', ts: new Date(), isLive: true });
+        addActivity({ id: `ev-${ev.id}`, icon: ev.type === 'game' ? '⚽' : '🏃', text: `New ${ev.type}: ${ev.title}`, club: cid ? (clubNameRef.current[cid] ?? '?') : '?', ts: new Date(), isLive: true });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, payload => {
         const p = payload.new as { id: string; club_id: string | null; full_name: string | null; role: string | null };
         if (!p.club_id) return;
-        addActivityRef.current({ id: `pr-${p.id}`, icon: p.role === 'org_admin' ? '🏢' : '👤', text: `${p.full_name ?? 'New user'} joined as ${p.role}`, club: clubNameRef.current[p.club_id] ?? '?', ts: new Date(), isLive: true });
+        addActivity({ id: `pr-${p.id}`, icon: p.role === 'org_admin' ? '🏢' : '👤', text: `${p.full_name ?? 'New user'} joined as ${p.role}`, club: clubNameRef.current[p.club_id] ?? '?', ts: new Date(), isLive: true });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'players' }, payload => {
         const p = payload.new as { id: string; team_id: string; full_name: string };
         const cid = teamToClubRef.current[p.team_id];
-        addActivityRef.current({ id: `pl-${p.id}`, icon: '🎽', text: `${p.full_name} added to roster`, club: cid ? (clubNameRef.current[cid] ?? '?') : '?', ts: new Date(), isLive: true });
+        addActivity({ id: `pl-${p.id}`, icon: '🎽', text: `${p.full_name} added to roster`, club: cid ? (clubNameRef.current[cid] ?? '?') : '?', ts: new Date(), isLive: true });
       })
       .subscribe(status => setLiveConnected(status === 'SUBSCRIBED'));
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [addActivity]);
 
   async function handleSuspend(club: Club) {
     if (!confirm(`${club.suspended_at ? 'Unsuspend' : 'Suspend'} "${club.name}"?`)) return;
@@ -520,6 +521,7 @@ function ClubListItem({ club, selected, acting, onClick, onMarkContacted }: {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.border}`, background: selected ? C.selectedBg : C.cardBg, borderLeft: `3px solid ${selected ? C.green : 'transparent'}` }}>
       <div style={{ width: 34, height: 34, borderRadius: 8, background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
         {club.logo_url ? <img src={club.logo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : club.name.slice(0, 2).toUpperCase()}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -599,8 +601,10 @@ function GrowthChart({ clubs }: { clubs: Club[] }) {
     monthMap[key] = (monthMap[key] ?? 0) + 1;
   }
   const sorted = Object.entries(monthMap).sort();
-  let cum = 0;
-  const data = sorted.map(([month, n]) => { cum += n; return { month, n, total: cum }; });
+  const data = sorted.reduce<{ month: string; n: number; total: number }[]>((acc, [month, n]) => {
+    acc.push({ month, n, total: (acc[acc.length - 1]?.total ?? 0) + n });
+    return acc;
+  }, []);
   if (data.length < 2) return <p style={{ color: C.textMuted, fontSize: 12, margin: 0 }}>More data soon</p>;
 
   const W = 500, H = 80, pL = 6, pR = 6, pT = 16, pB = 18;
@@ -788,17 +792,24 @@ function PaymentVolumeWidget() {
   useEffect(() => {
     async function load() {
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-      const { data: rows } = await supabase
-        .from('fee_payments')
-        .select('amount, created_at, player_fees!inner(teams!inner(clubs!inner(id, name, stripe_connect_onboarded)))');
+      const { data: { session } } = await supabase.auth.getSession();
+      const [rowsRes, pctRes] = await Promise.all([
+        supabase
+          .from('fee_payments')
+          .select('amount, created_at, player_fees!inner(teams!inner(clubs!inner(id, name, stripe_connect_onboarded)))'),
+        fetch('/api/admin/platform-fee-pct', { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } })
+          .then(r => r.ok ? r.json() : { pct: 0 })
+          .catch(() => ({ pct: 0 })),
+      ]);
+      const rows = rowsRes.data;
 
       if (!rows) { setLoading(false); return; }
 
-      const pFeePct = 0; // STRIPE_PLATFORM_FEE_PCT — 0 during beta, matches env var
+      const pFeePct = (pctRes.pct ?? 0) / 100;
       const byClubMap: Record<string, { name: string; amount: number }> = {};
       let total = 0, thisMonth = 0, platformFees = 0;
 
-      for (const r of rows as any[]) {
+      for (const r of rows as unknown as { amount: number; created_at: string; player_fees: { teams: { clubs: { id: string; name: string; stripe_connect_onboarded: boolean | null } | null } | null } | null }[]) {
         const club = r.player_fees?.teams?.clubs;
         const amt  = Number(r.amount ?? 0);
         total += amt;
@@ -914,7 +925,7 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
         <div style={{ marginBottom: 16, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
           <span style={{ fontSize: 13, color: '#92400e', fontWeight: 600 }}>{quietCount} quiet club{quietCount !== 1 ? 's' : ''}</span>
-          <span style={{ fontSize: 12, color: '#b45309' }}>— signed up 7d+ ago with no teams or members. Click "Quiet" filter to focus them.</span>
+          <span style={{ fontSize: 12, color: '#b45309' }}>— signed up 7d+ ago with no teams or members. Click &quot;Quiet&quot; filter to focus them.</span>
         </div>
       )}
 
@@ -973,6 +984,7 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 11, color: C.textMuted, width: 14, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                   <div style={{ width: 26, height: 26, borderRadius: 6, background: accentOf(c), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 900, color: '#fff', overflow: 'hidden', flexShrink: 0 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
                     {c.logo_url ? <img src={c.logo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : c.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -1035,6 +1047,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
   const col = accentOf(club);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     setDeleteConfirm(false); setNotes('');
     let cancelled = false;
     async function load() {
@@ -1097,6 +1110,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
         <div style={{ height: 5, background: col }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '20px 24px' }}>
           <div style={{ width: 56, height: 56, borderRadius: 12, background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: '#fff', overflow: 'hidden', flexShrink: 0 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
             {club.logo_url ? <img src={club.logo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : club.name.slice(0, 2).toUpperCase()}
           </div>
           <div style={{ flex: 1 }}>
@@ -1215,7 +1229,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
           <div style={{ background: '#fff', borderRadius: 16, width: 460, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
             {/* Red header bar */}
             <div style={{ background: '#dc2626', padding: '20px 24px' }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>Delete "{club.name}"?</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>Delete &quot;{club.name}&quot;?</div>
               <div style={{ fontSize: 13, color: '#FECACA' }}>This is permanent and cannot be undone.</div>
             </div>
 

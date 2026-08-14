@@ -84,7 +84,7 @@ export default function SettingsPanel({ onClose }: Props) {
   // Late invites
   const [invites, setInvites]               = useState<(LateInvite & { form_title: string })[]>([]);
   const [invitesLoading, setInvitesLoading] = useState(true);
-  const [forms, setForms]                   = useState<RegForm[]>([]);
+  const [_forms, setForms]                   = useState<RegForm[]>([]);
 
   // Privacy
   const [retention, setRetention]           = useState('never');
@@ -160,6 +160,7 @@ export default function SettingsPanel({ onClose }: Props) {
   }, [club]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     loadTemplates();
     loadLateInvites();
   }, [loadTemplates, loadLateInvites]);
@@ -697,27 +698,34 @@ export default function SettingsPanel({ onClose }: Props) {
                     <div style={{ fontSize: '13px', color: '#64748B' }}>Accept card payments and payment plans online</div>
                   </div>
                 </div>
-                <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '10px', padding: '12px 14px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '15px', flexShrink: 0 }}>⚠️</span>
-                  <div style={{ fontSize: '13px', color: '#92400E', lineHeight: '1.5' }}>
-                    Stripe is not yet connected. Registration payments are tracked manually in Submissions. Connect Stripe to enable online card payments.
+                {club?.stripe_connect_onboarded ? (
+                  <div style={{ background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: '10px', padding: '12px 14px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <CheckCircle size={15} color="#16A34A" style={{ flexShrink: 0, marginTop: '1px' }} />
+                    <div style={{ fontSize: '13px', color: '#166534', lineHeight: '1.5' }}>
+                      Stripe is connected — this club can accept online card payments for registrations.
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div style={{ background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '10px', padding: '12px 14px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '15px', flexShrink: 0 }}>⚠️</span>
+                    <div style={{ fontSize: '13px', color: '#92400E', lineHeight: '1.5' }}>
+                      Stripe is not yet connected. Registration payments are tracked manually in Submissions. Connect Stripe to enable online card payments.
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
                   {[
-                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'One-time and recurring payment plans' },
                     { icon: <CheckCircle size={15} color="#16A34A" />, text: 'Automatic receipts emailed to parents' },
-                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'Refunds processed directly from dashboard' },
-                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'Stripe fees: 1.4% + 20p (EU cards), 2.9% + 30¢ (US cards)' },
+                    { icon: <CheckCircle size={15} color="#16A34A" />, text: 'Stripe fees: 2.9% + 30¢ per card charge (configurable in Settings → Payments)' },
                   ].map((item, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#374151' }}>
                       {item.icon} {item.text}
                     </div>
                   ))}
                 </div>
-                <a href="https://dashboard.stripe.com/register" target="_blank" rel="noopener noreferrer"
+                <a href="/dashboard/settings?tab=payments"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 22px', background: '#5850EC', color: '#fff', borderRadius: '10px', fontSize: '14px', fontWeight: '700', textDecoration: 'none' }}>
-                  <ExternalLink size={14} /> Connect Stripe account
+                  <ExternalLink size={14} /> {club?.stripe_connect_onboarded ? 'Manage in Settings' : 'Connect Stripe account'}
                 </a>
               </div>
               <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px 20px' }}>
@@ -774,7 +782,7 @@ export default function SettingsPanel({ onClose }: Props) {
                   GDPR erasure request
                 </div>
                 <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748B', lineHeight: '1.5' }}>
-                  Search by email or name to locate and permanently delete a person's records.
+                  Search by email or name to locate and permanently delete a person&apos;s records.
                 </p>
 
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   X, Check, Trash2, Mail, Send, AlertCircle, Hash,
-  CalendarCheck, CalendarX, Clock, RotateCcw, Plus, TrendingUp,
+  Clock, RotateCcw, Plus, TrendingUp,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -93,6 +93,7 @@ export default function PlayerPanel({ player, teamName, clubName, primary, profi
   const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: '9px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     setPanelForm({ full_name: player.full_name, jersey_number: player.jersey_number?.toString() ?? '', position: player.position ?? '' });
     setSaved(false); setInviteSent(false); setInviteEmail(''); setInviteError('');
     setEditingInviteId(null); setShowAddGuardian(false);
@@ -108,6 +109,7 @@ export default function PlayerPanel({ player, teamName, clubName, primary, profi
         for (const row of data ?? []) { if (row.status === 'attending') s.attending++; else if (row.status === 'not_attending') s.not_attending++; }
         setRsvpStats(s); setRsvpLoading(false);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- this should only reset local form state when switching to a different player, not on every field edit
   }, [player.id]);
 
   useEffect(() => { panelRef.current?.showModal(); }, []);
@@ -132,8 +134,13 @@ export default function PlayerPanel({ player, teamName, clubName, primary, profi
       .insert({ team_id: player.team_id, player_id: player.id, email: inviteEmail.trim(), created_by: profileId })
       .select('id,token,email,guardian_name,phone,relationship,accepted_at,created_at').single();
     if (dbErr) { setInviteError('Could not save invite: ' + dbErr.message); setSendingInvite(false); return; }
+    const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch('/api/send-invite', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify({ invite_id: (newRow as Invite).id, team_name: teamName, player_name: player.full_name, club_name: clubName }),
     });
     if (!res.ok) { const e = await res.json().catch(() => ({})); setInviteError('Saved but email failed: ' + (e.error ?? res.statusText)); }
@@ -152,12 +159,23 @@ export default function PlayerPanel({ player, teamName, clubName, primary, profi
   }
 
   async function resendInvite(inv: Invite) {
-    setSendingInvite(true);
-    await fetch('/api/send-invite', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    setSendingInvite(true); setInviteError('');
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/send-invite', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify({ invite_id: inv.id, team_name: teamName, player_name: player.full_name, club_name: clubName }),
     });
-    setSendingInvite(false); setInviteSent(true); setTimeout(() => setInviteSent(false), 3000);
+    setSendingInvite(false);
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setInviteError('Resend failed: ' + (e.error ?? res.statusText));
+      return;
+    }
+    setInviteSent(true); setTimeout(() => setInviteSent(false), 3000);
   }
 
   async function deleteInvite(id: string) {
@@ -399,6 +417,12 @@ export default function PlayerPanel({ player, teamName, clubName, primary, profi
                   </div>
                 )}
 
+                {inviteError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '9px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '9px', fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
+                    <AlertCircle size={12} />{inviteError}
+                  </div>
+                )}
+
                 {showAddGuardian ? (
                   <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div>
@@ -409,7 +433,6 @@ export default function PlayerPanel({ player, teamName, clubName, primary, profi
                           placeholder="parent@example.com" style={{ ...inputStyle, paddingLeft: '32px' }} />
                       </div>
                     </div>
-                    {inviteError && <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#DC2626' }}><AlertCircle size={12} />{inviteError}</div>}
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button onClick={() => { setShowAddGuardian(false); setInviteEmail(''); setInviteError(''); }} style={{ flex: 1, padding: '8px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
                       <button onClick={sendInviteFromPanel} disabled={sendingInvite || !inviteEmail.trim()}

@@ -97,6 +97,7 @@ export default function PracticeSchedulePage() {
     setClosures((cl??[]) as {id:string;field_name:string;closed_from:string;closed_until:string|null;reason:string|null}[]);
     setLoading(false);
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club, season]);
 
   // Conflict detection
@@ -499,6 +500,7 @@ export default function PracticeSchedulePage() {
                                   <td key={day}
                                     onDragOver={e=>{e.preventDefault();(e.currentTarget as HTMLElement).style.background=`${primary}10`;}}
                                     onDragLeave={e=>{(e.currentTarget as HTMLElement).style.background='';}}
+                                    // eslint-disable-next-line react-hooks/refs -- handleDrop is only ever invoked from onDrop handlers (never during render), so reading dragTeamRef.current here is safe
                                     onDrop={e=>{e.preventDefault();(e.currentTarget as HTMLElement).style.background='';handleDrop(field.name,zone??null,day as Day);}}
                                     style={{ padding:'4px 5px', borderRight:'1px solid #F1F5F9', verticalAlign:'top', minHeight:'48px', transition:'background 0.1s' }}>
                                     {cell.map(s=><SessionChip key={s.id} slot={s} compact />)}

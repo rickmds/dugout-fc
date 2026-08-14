@@ -3,6 +3,10 @@
 import { useRef, useState } from 'react';
 import { X, Upload, AlertTriangle, CheckSquare, Square, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import {
+  toParseAllPayload, streamParseAll, matchExtractedTeam, confToUncertain,
+  type ExtractedTeam, type ExtractedEvent,
+} from '@/lib/parseAllClient';
 import { useDashboard } from './DashboardContext';
 import type { Team } from './DashboardContext';
 
@@ -25,15 +29,6 @@ type ReviewEvent = {
   uncertain: boolean;
   uncertaintyReason: string | null;
   selected: boolean;
-};
-
-type UnmatchedEvent = {
-  date: string | null;
-  time: string | null;
-  title: string;
-  type: EventType;
-  raw_team_name: string;
-  uncertaintyReason: string | null;
 };
 
 const TYPE_COLORS: Record<EventType, string> = { game: '#EF4444', training: '#22C55E', other: '#8B5CF6' };
@@ -62,15 +57,6 @@ function fmtTime(t: string | null): string {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
-async function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => { const r = reader.result as string; resolve(r.split(',')[1]); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 function uid() { return Math.random().toString(36).slice(2); }
 
 function matchTeam(name: string, teams: Team[]): Team | null {
@@ -90,7 +76,6 @@ export default function AIScheduleImport({ onClose, onDone }: { onClose: () => v
   const [mode, setMode]         = useState<ImportMode>(profile?.role === 'org_admin' && teams.length > 1 ? 'club' : 'single');
   const [teamId, setTeamId]     = useState(teams[0]?.id ?? '');
   const [events, setEvents]     = useState<ReviewEvent[]>([]);
-  const [unmatched, setUnmatched] = useState<UnmatchedEvent[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [procStep, setProcStep] = useState(0);
   const [doneCount, setDoneCount] = useState(0);
@@ -109,14 +94,23 @@ export default function AIScheduleImport({ onClose, onDone }: { onClose: () => v
     startProcessing();
 
     try {
-      const base64 = await fileToBase64(file);
-      const file_type = file.type || 'text/plain';
+      const payload = await toParseAllPayload(file);
+      const { data: { session } } = await supabase.auth.getSession();
+      const outcome = await streamParseAll([payload], session?.access_token);
+      stopProcessing();
 
-      if (mode === 'club') {
-        await runClubSchedule(base64, file_type);
-      } else {
-        await runSingleSchedule(base64, file_type);
+      if (!outcome.ok) {
+        alert(outcome.error);
+        setPhase('idle'); return;
       }
+      const data = outcome.data as {
+        teams: ExtractedTeam[]; events: ExtractedEvent[];
+        fileOutcomes: { name: string; ok: boolean; error?: string }[];
+      };
+      const failed = (data.fileOutcomes ?? []).filter((f) => !f.ok);
+
+      if (mode === 'club') runClubSchedule(data, failed);
+      else                 runSingleSchedule(data, failed);
     } catch (e) {
       stopProcessing();
       alert(`Could not read file: ${e instanceof Error ? e.message : 'Unknown error'}`);
@@ -124,70 +118,58 @@ export default function AIScheduleImport({ onClose, onDone }: { onClose: () => v
     }
   }
 
-  async function runSingleSchedule(base64: string, file_type: string) {
-    const { data, error } = await supabase.functions.invoke('parse-schedule', {
-      body: { file_base64: base64, file_type },
-    });
-    stopProcessing();
-
-    if (error || !data?.events) {
-      alert(data?.error ?? error?.message ?? 'Failed to parse schedule.');
+  function runSingleSchedule(
+    data: { events: ExtractedEvent[] },
+    failed: { name: string; error?: string }[],
+  ) {
+    if (!data.events.length) {
+      alert(failed.length ? (failed[0].error ?? 'Failed to parse schedule.') : 'No events found in this file. Try a different format.');
       setPhase('idle'); return;
     }
-    if (!data.events.length) {
-      alert('No events found in this file. Try a different format.'); setPhase('idle'); return;
-    }
 
-    setEvents(data.events.map((e: any) => ({
-      _id: uid(), teamId, teamName: teams.find((t) => t.id === teamId)?.name ?? null,
-      date: e.date, time: e.time, title: e.title, type: e.type,
-      location: e.location, address: e.address,
-      uncertain: !!e.uncertain, uncertaintyReason: e.uncertainty_reason ?? null,
-      selected: !e.uncertain,
-    })));
-    setWarnings(data.warnings ?? []);
+    setEvents(data.events.map((e) => {
+      const { uncertain, reason } = confToUncertain(e.confidence);
+      return {
+        _id: uid(), teamId, teamName: teams.find((t) => t.id === teamId)?.name ?? null,
+        date: e.event_date || null, time: e.event_time || null, title: e.title,
+        type: (e.type as EventType) || 'other',
+        location: e.location || null, address: e.address || null,
+        uncertain, uncertaintyReason: reason,
+        selected: !uncertain,
+      };
+    }));
+    setWarnings(failed.map((f) => `${f.name}: ${f.error ?? 'failed to import'}`));
     setPhase('review');
   }
 
-  async function runClubSchedule(base64: string, file_type: string) {
-    const { data, error } = await supabase.functions.invoke('parse-club-schedule', {
-      body: {
-        file_base64: base64,
-        file_type,
-        existing_teams: teams.map((t) => ({ id: t.id, name: t.name })),
-      },
-    });
-    stopProcessing();
-
-    if (error || !data) {
-      alert(data?.error ?? error?.message ?? 'Failed to parse schedule.');
+  function runClubSchedule(
+    data: { teams: ExtractedTeam[]; events: ExtractedEvent[] },
+    failed: { name: string; error?: string }[],
+  ) {
+    if (!data.events.length) {
+      alert(failed.length ? (failed[0].error ?? 'Failed to parse schedule.') : 'No events found in this file.');
       setPhase('idle'); return;
     }
 
-    const allEvents: ReviewEvent[] = [];
-    for (const te of data.team_events ?? []) {
-      const matched = matchTeam(te.team_name, teams);
-      for (const e of te.events ?? []) {
-        allEvents.push({
-          _id: uid(),
-          teamId: matched?.id ?? null,
-          teamName: te.team_name,
-          date: e.date, time: e.time, title: e.title, type: e.type,
-          location: e.location, address: e.address,
-          uncertain: !!e.uncertain || !matched || !!te.uncertain,
-          uncertaintyReason: !matched ? `Team "${te.team_name}" not matched` : (e.uncertainty_reason ?? null),
-          selected: !e.uncertain && !!matched && !te.uncertain,
-        });
-      }
-    }
-
-    if (!allEvents.length && !(data.unmatched_events ?? []).length) {
-      alert('No events found in this file.'); setPhase('idle'); return;
-    }
+    const allEvents: ReviewEvent[] = data.events.map((e) => {
+      const extractedTeam = matchExtractedTeam(e.team_name, data.teams);
+      const matched = extractedTeam ? matchTeam(extractedTeam.name, teams) : null;
+      const { uncertain: aiUncertain, reason: aiReason } = confToUncertain(e.confidence);
+      return {
+        _id: uid(),
+        teamId: matched?.id ?? null,
+        teamName: extractedTeam?.name ?? e.team_name ?? null,
+        date: e.event_date || null, time: e.event_time || null, title: e.title,
+        type: (e.type as EventType) || 'other',
+        location: e.location || null, address: e.address || null,
+        uncertain: aiUncertain || !matched,
+        uncertaintyReason: !matched ? `Team "${e.team_name}" not matched` : aiReason,
+        selected: !aiUncertain && !!matched,
+      };
+    });
 
     setEvents(allEvents);
-    setUnmatched(data.unmatched_events ?? []);
-    setWarnings(data.warnings ?? []);
+    setWarnings(failed.map((f) => `${f.name}: ${f.error ?? 'failed to import'}`));
 
     // Expand all team groups by default
     const teamNames = new Set(allEvents.map((e) => e.teamName ?? ''));
@@ -237,7 +219,7 @@ export default function AIScheduleImport({ onClose, onDone }: { onClose: () => v
   function selectAll()    { setEvents((p) => p.map((e) => ({ ...e, selected: !!e.teamId }))); }
   function deselectAll()  { setEvents((p) => p.map((e) => ({ ...e, selected: false }))); }
   function toggleTeamGroup(name: string) {
-    setExpandedTeams((prev) => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
+    setExpandedTeams((prev) => { const n = new Set(prev); if (n.has(name)) n.delete(name); else n.add(name); return n; });
   }
 
   const selectedCount  = events.filter((e) => e.selected).length;
@@ -426,25 +408,11 @@ export default function AIScheduleImport({ onClose, onDone }: { onClose: () => v
                     );
                   })}
 
-                  {/* Unmatched events */}
-                  {unmatched.length > 0 && (
-                    <div style={{ background: '#FEF2F2', borderRadius: '12px', padding: '14px', border: '1px solid rgba(239,68,68,0.2)' }}>
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: '#DC2626', marginBottom: '8px' }}>
-                        {unmatched.length} events couldn't be matched to a team
-                      </div>
-                      {unmatched.map((u, i) => (
-                        <div key={i} style={{ fontSize: '12px', color: '#7F1D1D', padding: '4px 0', borderBottom: i < unmatched.length - 1 ? '1px solid rgba(239,68,68,0.15)' : 'none' }}>
-                          {u.title} · {fmtDate(u.date)} · <em>Team: {u.raw_team_name}</em>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
                   {/* Unmatched warning */}
                   {unmatchedCount > 0 && (
                     <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px', padding: '12px 14px', fontSize: '13px', color: '#92400E' }}>
                       <AlertTriangle size={13} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                      {unmatchedCount} selected event{unmatchedCount !== 1 ? 's' : ''} can't be imported because their team couldn't be matched. Deselect them or fix the team names first.
+                      {unmatchedCount} selected event{unmatchedCount !== 1 ? 's' : ''} can&apos;t be imported because their team couldn&apos;t be matched. Deselect them or fix the team names first.
                     </div>
                   )}
                 </div>
@@ -479,7 +447,7 @@ export default function AIScheduleImport({ onClose, onDone }: { onClose: () => v
         {/* Footer */}
         {phase === 'review' && (
           <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', flexShrink: 0 }}>
-            <button onClick={() => { setEvents([]); setUnmatched([]); setWarnings([]); setPhase('idle'); }} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => { setEvents([]); setWarnings([]); setPhase('idle'); }} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
               Try another file
             </button>
             <button onClick={handleImport} disabled={!canImport} style={{ flex: 2, padding: '11px', background: canImport ? primary : '#CBD5E1', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: canImport ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>

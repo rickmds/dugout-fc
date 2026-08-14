@@ -15,11 +15,14 @@ export default function LogoCropModal({ file, bgColor, onCancel, onSave }: {
   const [natural, setNatural] = useState({ w: 0, h: 0 });
   const [zoom, setZoom] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     setSrc(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
@@ -56,6 +59,7 @@ export default function LogoCropModal({ file, bgColor, onCancel, onSave }: {
   function onPointerDown(e: React.PointerEvent) {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
+    setDragging(true);
   }
   function onPointerMove(e: React.PointerEvent) {
     if (!dragRef.current) return;
@@ -63,11 +67,11 @@ export default function LogoCropModal({ file, bgColor, onCancel, onSave }: {
     const dy = e.clientY - dragRef.current.startY;
     setPos(clamp(dragRef.current.origX + dx, dragRef.current.origY + dy, dispW, dispH));
   }
-  function onPointerUp() { dragRef.current = null; }
+  function onPointerUp() { dragRef.current = null; setDragging(false); }
 
   function save() {
     const img = imgRef.current;
-    if (!img || !natural.w) return;
+    if (!img || !natural.w) { setError('This image could not be loaded. Please choose a different file.'); return; }
     const scale = baseScale * zoom;
     const sourceX = -pos.x / scale;
     const sourceY = -pos.y / scale;
@@ -77,10 +81,10 @@ export default function LogoCropModal({ file, bgColor, onCancel, onSave }: {
     canvas.width = OUTPUT;
     canvas.height = OUTPUT;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) { setError('Your browser could not process this image. Please try a different file or browser.'); return; }
     ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, OUTPUT, OUTPUT);
     canvas.toBlob((blob) => {
-      if (!blob) return;
+      if (!blob) { setError('Could not save this image. Please try a different file.'); return; }
       onSave(blob, canvas.toDataURL('image/png'));
     }, 'image/png');
   }
@@ -93,18 +97,20 @@ export default function LogoCropModal({ file, bgColor, onCancel, onSave }: {
 
         <div
           className="relative mx-auto rounded-2xl overflow-hidden border-2 border-[#22c55e] touch-none select-none"
-          style={{ width: VIEWPORT, height: VIEWPORT, background: bgColor ?? '#0a0a0a', cursor: dragRef.current ? 'grabbing' : 'grab' }}
+          style={{ width: VIEWPORT, height: VIEWPORT, background: bgColor ?? '#0a0a0a', cursor: dragging ? 'grabbing' : 'grab' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
         >
           {src && (
+            // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
             <img
               ref={imgRef}
               src={src}
               alt=""
               draggable={false}
               onLoad={onImgLoad}
+              onError={() => setError('This file could not be read as an image. Please choose a different file.')}
               style={{
                 position: 'absolute',
                 left: pos.x, top: pos.y,
@@ -125,6 +131,10 @@ export default function LogoCropModal({ file, bgColor, onCancel, onSave }: {
           />
         </div>
         <p className="text-[#444] text-[11px] mt-1.5">Zoom out to add breathing room around the logo.</p>
+
+        {error && (
+          <p className="text-red-400 text-xs mt-3 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">{error}</p>
+        )}
 
         <div className="flex gap-3 mt-6">
           <button onClick={onCancel}

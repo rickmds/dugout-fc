@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
 
   if (action === 'create_club') {
-    const { name, slug, primary_color, secondary_color, tagline, user_id, logo_base64, logo_mime, logo_name } = body;
+    const { name, slug, primary_color, secondary_color, tagline, logo_base64, logo_mime, logo_name } = body;
 
     // Check slug is available
     const { data: existing } = await db.from('clubs').select('id').eq('slug', slug).maybeSingle();
@@ -42,7 +42,16 @@ export async function POST(req: NextRequest) {
     const { data, error } = await db.from('clubs')
       .insert({ name, slug, primary_color, secondary_color, logo_url, tagline: tagline || null })
       .select().single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      // The pre-check above and this insert are two separate round-trips,
+      // so two concurrent signups with the same slug can both pass the
+      // pre-check and race here — catch the unique-violation and return the
+      // same friendly message instead of the raw Postgres error text.
+      if (error.code === '23505') {
+        return NextResponse.json({ error: 'That URL slug is already taken.' }, { status: 409 });
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
     // Link profile to club and ensure org_admin role
     await db.from('profiles').upsert({ id: auth.userId, club_id: data.id, role: 'org_admin' });
@@ -79,7 +88,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { error } = await db.from('players').insert(players.map((p: any) => ({
+    const { error } = await db.from('players').insert(players.map((p: { full_name: string; jersey_number?: string; position?: string }) => ({
       team_id,
       full_name: p.full_name,
       jersey_number: p.jersey_number ? parseInt(p.jersey_number) : null,

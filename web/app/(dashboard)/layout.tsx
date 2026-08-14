@@ -14,9 +14,11 @@ function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Close sidebar on every navigation
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
   // Track when we've loaded at least once so reload() never unmounts sidebar
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { if (!loading) setInitialLoaded(true); }, [loading]);
 
   if (loading && !initialLoaded) {
@@ -75,6 +77,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         >
           {sidebarOpen ? <X size={20} color="rgba(255,255,255,0.7)" /> : <Menu size={20} color="rgba(255,255,255,0.7)" />}
         </button>
+        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
         <img src="/logo.png" alt="Pulse FC" style={{ height: '28px', width: 'auto', filter: 'brightness(0) invert(1)' }} />
       </div>
 

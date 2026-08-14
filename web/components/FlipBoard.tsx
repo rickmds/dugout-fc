@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { safeAccent } from '@/lib/colorContrast';
 
 export type FlipRow = { label: string; pad?: number };
 
@@ -11,15 +12,20 @@ const DEFAULT_ROWS: FlipRow[] = [
   { label: 'Coaches', pad: 2 },
 ];
 
+const PANEL_BG = '#080E1A';
+
 export function FlipBoard({
   rows = DEFAULT_ROWS,
   title = 'Loading…',
   fullPage = false,
+  accentColor = '#22C55E',
 }: {
   rows?: FlipRow[];
   title?: string;
   fullPage?: boolean;
+  accentColor?: string;
 }) {
+  const accent = safeAccent(accentColor, PANEL_BG);
   const [nums, setNums] = useState<number[]>(() => rows.map(() => 0));
 
   useEffect(() => {
@@ -51,8 +57,8 @@ export function FlipBoard({
 
         {/* Header bar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: '#080E1A', borderBottom: '1px solid #1E293B' }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E', boxShadow: '0 0 6px #22C55E' }} />
-          <span style={{ fontSize: 9, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '3px' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: accent, boxShadow: `0 0 6px ${accent}` }} />
+          <span style={{ fontSize: 9, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '3px' }}>
             Live · Scanning
           </span>
         </div>
@@ -70,14 +76,14 @@ export function FlipBoard({
                     <div key={i} style={{ position: 'relative', width: 26, height: 36, background: '#080E1A', border: '1px solid #1E293B', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                       {/* Split-flap seam */}
                       <div style={{ position: 'absolute', left: 0, right: 0, height: 1, background: '#000', top: '50%' }} />
-                      <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 17, fontWeight: 900, lineHeight: 1, color: '#1E3A2E', position: 'relative', zIndex: 1, userSelect: 'none' }}>
+                      <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 17, fontWeight: 900, lineHeight: 1, color: accent, position: 'relative', zIndex: 1, userSelect: 'none' }}>
                         {d}
                       </span>
                     </div>
                   ))}
                 </div>
                 {/* Label */}
-                <span style={{ fontSize: 8, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '2px' }}>
+                <span style={{ fontSize: 8, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '2px' }}>
                   {label}
                 </span>
               </div>
@@ -89,11 +95,11 @@ export function FlipBoard({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px' }}>
           {[0, 1, 2].map(i => (
             <div key={i} style={{
-              width: 4, height: 4, borderRadius: '50%', background: '#22C55E33',
+              width: 4, height: 4, borderRadius: '50%', background: `${accent}66`,
               animation: `flipBoardBounce 0.9s ${i * 0.15}s ease-in-out infinite`,
             }} />
           ))}
-          <span style={{ fontSize: 11, color: '#1E293B' }}>Loading…</span>
+          <span style={{ fontSize: 11, color: '#64748B' }}>Loading…</span>
         </div>
       </div>
 

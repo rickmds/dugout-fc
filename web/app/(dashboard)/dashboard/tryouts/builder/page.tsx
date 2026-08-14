@@ -42,17 +42,6 @@ function prevSeasonLabel(s: string): string {
   return `${y - 1}-${String(y).slice(-2)}`;
 }
 
-function getOfferBadge(a: Assignment | undefined, inTeam: boolean): { label: string; bg: string; color: string; dot?: string } | null {
-  if (!inTeam) return null;
-  const os = a?.offer_status ?? 'NotSent';
-  const st = a?.status ?? 'Unassigned';
-  if (os === 'Accepted') return { label: 'Accepted ✓', bg: '#DCFCE7', color: '#15803D', dot: '#22C55E' };
-  if (os === 'Sent')     return { label: 'Resend ⚠',  bg: '#FEF3C7', color: '#D97706', dot: '#F59E0B' };
-  if (os === 'Declined') return { label: 'Declined',   bg: '#FEE2E2', color: '#DC2626', dot: '#EF4444' };
-  if (st === 'Waitlist') return { label: 'Waitlist',   bg: '#F1F5F9', color: '#64748B', dot: '#94A3B8' };
-  return null;
-}
-
 function fmtDob(dob: string | null) {
   if (!dob) return '—';
   return dob; // already yyyy-mm-dd from Supabase date
@@ -92,7 +81,7 @@ export default function TeamBuilderPage() {
   function toggleField(f: string) {
     setCardFields(prev => {
       const next = new Set(prev);
-      next.has(f) ? next.delete(f) : next.add(f);
+      if (next.has(f)) next.delete(f); else next.add(f);
       return next;
     });
   }
@@ -158,6 +147,7 @@ export default function TeamBuilderPage() {
     setGhostsByTeam(ghosts);
     setLoading(false);
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club, season]);
 
   const agTabs = AGE_GROUPS.filter(ag => players.some(p => getAg(p) === ag));
@@ -266,6 +256,7 @@ export default function TeamBuilderPage() {
     });
     const { error } = await supabase.from('tryout_assignments').upsert({ club_id: club.id, player_id: draggableId, team: newTeam }, { onConflict: 'club_id,player_id' });
     if (error) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load is a plain function redefined each render; its real reactive inputs are already covered by [club, teams]
   }, [club, teams]);
 
   async function toggleLock(team: TryoutTeam) {
@@ -674,7 +665,6 @@ export default function TeamBuilderPage() {
                           const a   = assigns.get(pid);
                           const r   = rankings.get(pid);
                           if (!p) return null;
-                          const offerBadge       = getOfferBadge(a, isTeam);
                           const tRank            = r?.tryout_rank;
                           const isAccepted       = a?.offer_status === 'Accepted';
                           const isDeclinedOffer  = a?.offer_status === 'Declined';
@@ -944,11 +934,11 @@ export default function TeamBuilderPage() {
             )}
             <button onClick={() => setOfferStatus(overridePopup.pid, 'Sent')}
               style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', fontSize: '13px', color: '#92400E', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}>
-              ↺ Reset to "Sent" (awaiting)
+              ↺ Reset to &quot;Sent&quot; (awaiting)
             </button>
             <button onClick={() => setOfferStatus(overridePopup.pid, 'NotSent')}
               style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderTop: '1px solid #F1F5F9', fontSize: '13px', color: '#64748B', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}>
-              Reset to "Not Sent"
+              Reset to &quot;Not Sent&quot;
             </button>
           </div>
         </>,
@@ -1159,6 +1149,7 @@ function SendOfferModal({ colLabel, playerIds, players, assigns, club, season, p
       if (s) setSettings(s as OfferSettings);
       if (d) setDetailMap(new Map((d as PlayerDetail[]).map(r => [r.id, r])));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- modal is mounted fresh per open with a fixed colId; fetch-once-on-mount is intentional
   }, []);
 
   const selectedPlayer = colPlayers.find(p => p.id === selectedPid);

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ChevronDown, ChevronUp, Users, CheckCircle, Mail, Search,
-  AlertCircle, FileText,
+  FileText,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -88,7 +88,10 @@ export default function FamiliesTab() {
       .from('players')
       .select('id,full_name,team_id,profile_id,profiles(id,full_name)')
       .in('team_id', teamIds);
-    const players = (playersData ?? []) as any[];
+    const players = (playersData ?? []) as unknown as {
+      id: string; full_name: string; team_id: string; profile_id: string | null;
+      profiles: { id: string; full_name: string | null } | null;
+    }[];
     const playerIds = players.map(p => p.id);
     if (!playerIds.length) { setLoading(false); return; }
 
@@ -105,7 +108,10 @@ export default function FamiliesTab() {
       .from('player_fees')
       .select('id,player_id,description,amount_due,amount_paid,discount,status,due_date')
       .in('player_id', playerIds);
-    const rawFees = (feesData ?? []) as any[];
+    const rawFees = (feesData ?? []) as {
+      id: string; player_id: string; description: string; amount_due: number;
+      amount_paid: number; discount: number | null; status: string; due_date: string | null;
+    }[];
     const feeIds  = rawFees.map(f => f.id);
 
     const normFees = rawFees.map(f => ({
@@ -138,13 +144,14 @@ export default function FamiliesTab() {
         .from('registration_submissions')
         .select('id,player_id,status,created_at,registration_forms(title)')
         .in('player_id', playerIds)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .returns<{ id: string; player_id: string; status: string; created_at: string; registration_forms: { title: string } | null }[]>();
       for (const r of (regsData ?? [])) {
         const pid = r.player_id;
         if (!regsMap[pid]) regsMap[pid] = [];
         regsMap[pid].push({
           id:         r.id,
-          form_title: (r as any).registration_forms?.title ?? 'Registration',
+          form_title: r.registration_forms?.title ?? 'Registration',
           status:     r.status,
           created_at: r.created_at,
         });
@@ -155,14 +162,14 @@ export default function FamiliesTab() {
 
     // 7. Group players into families
     const familyMap: Record<string, {
-      profile_id: string | null; parent_name: string; parent_email: string | null; playerList: any[];
+      profile_id: string | null; parent_name: string; parent_email: string | null; playerList: typeof players;
     }> = {};
 
     for (const player of players) {
-      const profileId   = player.profile_id as string | null;
+      const profileId   = player.profile_id;
       const email       = inviteMap[player.id] ?? null;
       const key         = profileId ?? email ?? `solo_${player.id}`;
-      const profileName = (player as any).profiles?.full_name ?? null;
+      const profileName = player.profiles?.full_name ?? null;
       const parentName  = profileName ?? (email ? email.split('@')[0].replace(/[._]/g, ' ') : 'No contact info');
 
       if (!familyMap[key]) {
@@ -205,6 +212,7 @@ export default function FamiliesTab() {
     setLoading(false);
   }, [club, today]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; load sets state from a real network call, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const filtered = useMemo(() => {

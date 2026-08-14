@@ -167,7 +167,7 @@ function ResetContent() {
       <div style={{ fontSize: '14px', color: '#6b7280', lineHeight: '1.65', maxWidth: '300px', margin: '0 auto 24px' }}>
         This password reset link has expired or already been used. Links are valid for 1 hour.
       </div>
-      <a href="https://apps.apple.com/app/pulse-fc/id6740793498"
+      <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659"
         style={{ display: 'inline-block', fontSize: '14px', fontWeight: '600', color: ACCENT, textDecoration: 'none' }}>
         Open the app to request a new link →
       </a>
@@ -191,7 +191,7 @@ function ResetContent() {
         Your password has been changed and all other sessions have been signed out. Open the app to log in.
       </div>
       <a
-        href="https://apps.apple.com/app/pulse-fc/id6740793498"
+        href="https://apps.apple.com/us/app/pulse-fc/id6797330659"
         target="_blank" rel="noreferrer"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: '8px',
@@ -219,7 +219,7 @@ function ResetContent() {
         Set a new password
       </div>
       <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: '1.6', marginBottom: '28px' }}>
-        Choose something strong. We'll sign out any other devices for you.
+        Choose something strong. We&apos;ll sign out any other devices for you.
       </div>
 
       {error && (

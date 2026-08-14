@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Check, ChevronRight, Archive, Copy, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { uid, labelSt, inputSt, backBtnSt } from './shared';
+import { labelSt, inputSt, backBtnSt } from './shared';
 import type { RegForm } from './shared';
 
 type Step = 'select' | 'configure' | 'archive' | 'confirm';

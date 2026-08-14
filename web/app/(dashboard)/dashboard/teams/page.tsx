@@ -2,11 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Plus, X, Check, Trash2, AlertTriangle, Users, Calendar,
-  Search, Pencil, RefreshCw, ChevronRight, ChevronUp, ChevronDown,
-  Shield, TrendingUp,
+  Plus, X, Trash2, AlertTriangle, Users,
+  Search, Pencil, RefreshCw, ChevronUp, ChevronDown,
+  Shield,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -114,13 +113,14 @@ export default function TeamsPage() {
       if (coaches === 0) warnings.push('no_coach');
       if (players === 0) warnings.push('no_players');
       if (!next) warnings.push('no_schedule');
-      return { ...t, gender: (t as any).gender ?? null, player_count: players, coach_count: coaches, next_event_date: next?.date ?? null, next_event_title: next?.title ?? null, warnings };
+      return { ...t, gender: t.gender ?? null, player_count: players, coach_count: coaches, next_event_date: next?.date ?? null, next_event_title: next?.title ?? null, warnings };
     });
 
     setTeams(withStats);
     setLoading(false);
   }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadTeams(); }, [loadTeams]);
 
   // ── Create / Edit ───────────────────────────────────────────────────────────

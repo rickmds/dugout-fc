@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 import { Resend } from 'resend';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 const resend = new Resend(process.env.RESEND_API_KEY!);
 
 const EXPIRY_HOURS = 48;
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { form_id, emails, sent_by } = await req.json() as {
     form_id: string;
     emails: string[];
@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'form_id, emails, and sent_by are required' }, { status: 400 });
   }
 
+  const supabase = supabaseAdmin();
+
   const { data: form, error: formErr } = await supabase
     .from('registration_forms')
     .select('id, title, club_id, token, clubs(name, slug)')
@@ -29,6 +31,10 @@ export async function POST(req: NextRequest) {
 
   if (formErr || !form) {
     return NextResponse.json({ error: 'Form not found' }, { status: 404 });
+  }
+
+  if (auth.role !== 'app_admin' && form.club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const club    = (form as unknown as { clubs: { name: string; slug: string } }).clubs;

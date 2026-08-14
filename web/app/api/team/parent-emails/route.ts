@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('authorization') ?? '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
 
   const { team_id } = await req.json();
   if (!team_id) return NextResponse.json({ error: 'team_id required' }, { status: 400 });
 
-  const sb = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  const sb = supabaseAdmin();
+
+  const { data: team } = await sb.from('teams').select('club_id').eq('id', team_id).single();
+  if (!team || (auth.role !== 'app_admin' && team.club_id !== auth.clubId)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const [playersRes, invitesRes, membersRes] = await Promise.all([
     sb.from('players').select('id, full_name, profile_id').eq('team_id', team_id),
@@ -24,9 +25,9 @@ export async function POST(req: NextRequest) {
       .eq('role', 'parent'),
   ]);
 
-  const players: any[] = playersRes.data ?? [];
-  const invites: any[] = invitesRes.data ?? [];
-  const members: any[] = membersRes.data ?? [];
+  const players = playersRes.data ?? [];
+  const invites = invitesRes.data ?? [];
+  const members = (membersRes.data ?? []) as unknown as { profile_id: string | null; profiles: { full_name: string | null } | null }[];
 
   // Build lookup maps
   const playerById: Record<string, string> = {};

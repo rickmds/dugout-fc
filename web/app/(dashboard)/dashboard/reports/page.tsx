@@ -125,7 +125,7 @@ export default function ReportsPage() {
 
     // Lineup → event map
     const lineupEventMap: Record<string, string> = {};
-    for (const l of (lineupRes as any).data ?? []) lineupEventMap[l.id] = l.event_id;
+    for (const l of lineupRes.data ?? []) lineupEventMap[l.id] = l.event_id;
     const lineupIds = Object.keys(lineupEventMap);
     const startedEventsByPlayer: Record<string, Set<string>> = {};
     if (lineupIds.length) {
@@ -169,15 +169,15 @@ export default function ReportsPage() {
     for (const e of events) {
       for (const p of playerRes.data ?? []) {
         if (p.team_id !== e.team_id) continue;
-        if (!rsvpGoingEvents[p.id]?.has(e.id) && !(rsvpRes.data ?? []).some((r: any) => r.player_id === p.id && r.event_id === e.id && r.status === 'not_attending')) {
+        if (!rsvpGoingEvents[p.id]?.has(e.id) && !(rsvpRes.data ?? []).some(r => r.player_id === p.id && r.event_id === e.id && r.status === 'not_attending')) {
           if (!rsvpPendingEvents[p.id]) rsvpPendingEvents[p.id] = new Set();
           rsvpPendingEvents[p.id].add(e.id);
         }
       }
     }
 
-    let ghostCountByPlayer: Record<string, number> = {};
-    let surpriseCountByPlayer: Record<string, number> = {};
+    const ghostCountByPlayer: Record<string, number> = {};
+    const surpriseCountByPlayer: Record<string, number> = {};
     for (const a of attRes.data ?? []) {
       if (!attByPlayer[a.player_id]) attByPlayer[a.player_id] = { present: 0, late: 0, absent: 0 };
       attByPlayer[a.player_id][a.status as 'present' | 'late' | 'absent']++;
@@ -241,6 +241,7 @@ export default function ReportsPage() {
     setLoading(false);
   }, [teams, dateFrom, dateTo]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadStats(); }, [loadStats]);
 
   const openPlayer = useCallback(async (p: PlayerStat) => {
@@ -250,7 +251,7 @@ export default function ReportsPage() {
     const { data: evData } = await supabase
       .from('events').select('id, title, type, event_date')
       .eq('team_id', p.team_id).order('event_date', { ascending: false }).limit(20);
-    const evIds = (evData ?? []).map((e: any) => e.id);
+    const evIds = (evData ?? []).map(e => e.id);
     const [rsvpData, attData] = evIds.length ? await Promise.all([
       supabase.from('event_rsvps').select('event_id, status').eq('player_id', p.id).in('event_id', evIds),
       supabase.from('event_attendance').select('event_id, status').eq('player_id', p.id).in('event_id', evIds),
@@ -259,7 +260,7 @@ export default function ReportsPage() {
     for (const r of rsvpData.data ?? []) rsvpMap.set(r.event_id, r.status);
     const attMap = new Map<string, string>();
     for (const a of attData.data ?? []) attMap.set(a.event_id, a.status);
-    setPlayerHistory((evData ?? []).map((e: any) => ({
+    setPlayerHistory((evData ?? []).map(e => ({
       title: e.title, type: e.type, event_date: e.event_date,
       rsvp: (rsvpMap.get(e.id) ?? 'pending') as 'attending' | 'not_attending' | 'pending',
       actual: (attMap.get(e.id) ?? null) as 'present' | 'absent' | 'late' | null,
@@ -302,7 +303,6 @@ export default function ReportsPage() {
     a.click();
   }
 
-  const hasActual  = playerStats.some((p) => p.actual_pct !== null);
   const hasGames   = playerStats.some((p) => p.games_attended > 0);
 
   // Alert conditions

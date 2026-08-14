@@ -5,15 +5,18 @@ import { supabase } from '@/lib/supabase';
 import type { User } from '@supabase/supabase-js';
 import { FlipBoard } from '@/components/FlipBoard';
 import LogoCropModal from '@/components/LogoCropModal';
+import { toParseAllPayload, streamParseAll } from '@/lib/parseAllClient';
+import { sameCoachName } from '@/lib/nameMatch';
+import { safeAccent, contrastText } from '@/lib/colorContrast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Step = 'auth' | 'club' | 'upload' | 'processing' | 'review' | 'done';
 type Conf = 'high' | 'medium' | 'low';
 
-type TRow = { id: string; name: string; alt_names: string[]; age_group: string; gender: string; conf: Conf };
-type PRow = { id: string; full_name: string; jersey_number: string; position: string; parent_email: string; local_team_id: string; conf: Conf };
-type ERow = { id: string; title: string; type: string; home_away: string; event_date: string; event_time: string; location: string; address: string; lat: string; lng: string; uniform: string; duration_minutes: string; arrival_buffer_minutes: string; field_notes: string; field_type: string; notes: string; coach_notes: string; local_team_id: string; conf: Conf };
+type TRow = { id: string; name: string; alt_names: string[]; age_group: string; gender: string; conf: Conf; reason: string };
+type PRow = { id: string; full_name: string; jersey_number: string; position: string; parent_email: string; local_team_id: string; conf: Conf; reason: string };
+type ERow = { id: string; title: string; type: string; home_away: string; event_date: string; event_time: string; location: string; address: string; lat: string; lng: string; uniform: string; duration_minutes: string; arrival_buffer_minutes: string; field_notes: string; field_type: string; notes: string; coach_notes: string; local_team_id: string; conf: Conf; reason: string };
 type CRow = { id: string; full_name: string; email: string; local_team_id: string };
 
 type UploadedFile = {
@@ -26,9 +29,9 @@ type UploadedFile = {
 type FileOutcome = { name: string; ok: boolean; error?: string };
 
 type ParentInvite = { inviteId: string; playerName: string; email: string };
-type CoachPayload = { club_id: string; clubName: string; clubColor: string; coaches: { full_name: string; email: string; team_id: string | null; team_name: string }[] };
+type CoachPayload = { club_id: string; clubName: string; clubColor: string; coaches: { full_name: string; email: string; team_ids: string[] }[] };
 
-type ClubResult = { id: string; name: string; slug: string; primaryColor: string };
+type ClubResult = { id: string; name: string; slug: string; primaryColor: string; logoUrl: string | null };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,78 +41,14 @@ function slugify(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-async function toPayload(file: File): Promise<{ base64?: string; mimeType?: string; text?: string; name: string }> {
-  const mimeType = file.type || 'text/plain';
-  if (mimeType === 'text/csv' || mimeType === 'text/plain' || file.name.endsWith('.csv')) {
-    return { text: await file.text(), name: file.name };
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload  = () => { const r = reader.result as string; resolve({ base64: r.split(',')[1], mimeType, name: file.name }); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// /api/ai/parse-all streams newline-delimited JSON progress as each file's
-// extraction finishes, ending with one {"type":"done",...} line — reads it
-// incrementally so callers can show real counts climbing instead of a
-// decorative animation with no relationship to actual work.
-async function streamParseAll(
-  payloads: { base64?: string; mimeType?: string; text?: string; name: string }[],
-  token: string | undefined,
-  signal: AbortSignal | undefined,
-  onProgress?: (counts: { teams: number; players: number; events: number; coaches: number }) => void,
-): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
-  const res = await fetch('/api/ai/parse-all', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ files: payloads }),
-    signal,
-  });
-
-  if (!res.ok || !res.body) {
-    let message = `Request failed (${res.status})`;
-    try { const body = await res.json(); if (body?.error) message = body.error; } catch { /* not JSON */ }
-    return { ok: false, error: message };
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let finalData: Record<string, unknown> | null = null;
-  let streamError: string | null = null;
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newlineIdx;
-    while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, newlineIdx);
-      buffer = buffer.slice(newlineIdx + 1);
-      if (!line.trim()) continue;
-      let msg: Record<string, unknown>;
-      try { msg = JSON.parse(line); } catch { continue; }
-      if (msg.type === 'progress') {
-        onProgress?.({
-          teams:   Number(msg.teams)   || 0, players: Number(msg.players) || 0,
-          events:  Number(msg.events)  || 0, coaches: Number(msg.coaches) || 0,
-        });
-      } else if (msg.type === 'done') {
-        finalData = msg;
-      } else if (msg.type === 'error') {
-        streamError = typeof msg.error === 'string' ? msg.error : 'Unknown error';
-      }
-    }
-  }
-
-  if (streamError) return { ok: false, error: streamError };
-  if (!finalData) return { ok: false, error: 'No response received' };
-  return { ok: true, data: finalData };
+// Garbage/negative jersey numbers are never valid — fall back to null
+// instead of letting NaN silently serialize as null with no distinction
+// from "left blank", or letting a negative number reach the insert as-is.
+function parseJersey(v: string): number | null {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 // Some teams have two names in play (e.g. a league's own schedule-export
@@ -125,6 +64,36 @@ function matchTeamId(name: string | null | undefined, rows: TRow[]): string {
     rows.find(t => teamNames(t).some(x => x.toLowerCase().includes(n) || n.includes(x.toLowerCase())))?.id ??
     ''
   );
+}
+
+// Boys first (youngest to oldest), then Girls, then anything else — matches
+// how clubs think about their team list, not alphabetical/upload order.
+function genderRank(gender: string): number {
+  const g = gender.trim().toLowerCase();
+  if (g === 'boys') return 0;
+  if (g === 'girls') return 1;
+  if (g === 'mixed') return 2;
+  return 3;
+}
+function ageRank(ageGroup: string): number {
+  const m = ageGroup.match(/\d+/);
+  return m ? parseInt(m[0], 10) : 999;
+}
+function compareTeams(a: TRow, b: TRow): number {
+  const g = genderRank(a.gender) - genderRank(b.gender);
+  if (g !== 0) return g;
+  return ageRank(a.age_group) - ageRank(b.age_group);
+}
+
+// Chronological — blank/unparseable dates sink to the end instead of the
+// top so a handful of "TBD" rows don't push the real schedule down.
+function compareEvents(a: ERow, b: ERow): number {
+  const ad = a.event_date || '9999-99-99';
+  const bd = b.event_date || '9999-99-99';
+  if (ad !== bd) return ad < bd ? -1 : 1;
+  const at = a.event_time || '99:99';
+  const bt = b.event_time || '99:99';
+  return at < bt ? -1 : at > bt ? 1 : 0;
 }
 
 
@@ -181,21 +150,23 @@ function Label({ children }: { children: React.ReactNode }) {
   return <label className="block text-[11px] font-bold text-[#6b7280] uppercase tracking-widest mb-2">{children}</label>;
 }
 
-function Btn({ children, onClick, disabled, variant = 'primary', type = 'button' }: {
+function Btn({ children, onClick, disabled, variant = 'primary', type = 'button', accent }: {
   children: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   variant?: 'primary' | 'ghost';
   type?: 'button' | 'submit';
+  accent?: string;
 }) {
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
+      style={variant === 'primary' && accent ? { background: accent, color: contrastText(accent) } : undefined}
       className={`flex items-center justify-center gap-2 rounded-xl px-6 py-3 font-bold text-sm transition-all disabled:cursor-not-allowed
         ${variant === 'primary'
-          ? 'bg-[#22c55e] text-black hover:bg-[#16a34a] disabled:opacity-40'
+          ? accent ? 'disabled:opacity-40 hover:opacity-90' : 'bg-[#22c55e] text-black hover:bg-[#16a34a] disabled:opacity-40'
           : 'border border-[#333] text-[#9ca3af] hover:border-[#444] hover:text-white disabled:opacity-40'}`}
     >
       {children}
@@ -203,14 +174,55 @@ function Btn({ children, onClick, disabled, variant = 'primary', type = 'button'
   );
 }
 
-function ConfBadge({ conf }: { conf?: Conf }) {
+// Clicking the badge shows exactly what the AI wasn't sure about, instead
+// of leaving the coach to guess why a row got flagged. Positioned via
+// getBoundingClientRect + `fixed` so it always escapes ancestor
+// `overflow-hidden` (team cards clip their contents for rounded corners).
+function ConfBadge({ conf, reason }: { conf?: Conf; reason?: string }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
   if (!conf || conf === 'high') return null;
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 300) });
+    }
+    setOpen(o => !o);
+  };
+
+  const color = conf === 'medium' ? 'amber' : 'red';
   return (
-    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
-      conf === 'medium' ? 'bg-amber-900/40 text-amber-400' : 'bg-red-900/40 text-red-400'
-    }`}>
-      {conf === 'medium' ? 'Review' : 'Check'}
-    </span>
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 cursor-pointer transition-colors ${
+          color === 'amber' ? 'bg-amber-900/40 text-amber-400 hover:bg-amber-900/60' : 'bg-red-900/40 text-red-400 hover:bg-red-900/60'
+        }`}
+      >
+        {conf === 'medium' ? 'Review' : 'Check'}
+      </button>
+      {open && pos && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-50 w-72 rounded-xl border px-3.5 py-3 shadow-2xl"
+            style={{ top: pos.top, left: pos.left, background: '#161616', borderColor: color === 'amber' ? '#78350f88' : '#7f1d1d88' }}
+          >
+            <p className={`mb-1.5 text-[10px] font-bold uppercase tracking-wide ${color === 'amber' ? 'text-amber-400' : 'text-red-400'}`}>
+              {conf === 'medium' ? 'Worth reviewing' : 'Needs a closer look'}
+            </p>
+            <p className="text-[12px] leading-relaxed text-[#ccc]">
+              {reason?.trim() || "The AI wasn't fully confident about this row — double-check the details before continuing."}
+            </p>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -316,6 +328,11 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
   const [name, setName]     = useState('');
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
+  // Supabase can require email confirmation before a session exists — in
+  // that case signUp() returns a user but no session, so there's nothing
+  // to advance into. Rather than proceed and hit RLS failures, park the
+  // user here with instructions instead of leaving them stuck downstream.
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -324,7 +341,13 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
     if (mode === 'signup') {
       const { data, error: err } = await supabase.auth.signUp({ email, password: pw });
       if (err || !data.user) { setError(err?.message ?? 'Sign up failed'); setLoading(false); return; }
-      await supabase.from('profiles').upsert({ id: data.user.id, full_name: name, role: 'org_admin' });
+      if (!data.session) {
+        setAwaitingConfirmation(true);
+        setLoading(false);
+        return;
+      }
+      const { error: profErr } = await supabase.from('profiles').upsert({ id: data.user.id, full_name: name, role: 'org_admin' });
+      if (profErr) { setError(profErr.message); setLoading(false); return; }
       onDone(data.user);
     } else {
       const { data, error: err } = await supabase.auth.signInWithPassword({ email, password: pw });
@@ -334,10 +357,33 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
     setLoading(false);
   }
 
+  if (awaitingConfirmation) {
+    return (
+      <div className="max-w-md mx-auto">
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-4">
+            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+            <img src="/logo.png" alt="Pulse FC" style={{ height: '48px', width: 'auto' }} />
+          </div>
+          <h1 className="text-2xl font-extrabold text-white mb-1">Check your email</h1>
+        </div>
+        <Card>
+          <p className="text-[#9ca3af] text-sm text-center">
+            We sent a confirmation link to <span className="text-white font-semibold">{email}</span>. Click it, then come back here and log in to continue setting up your club.
+          </p>
+          <div className="mt-6">
+            <Btn onClick={() => { setAwaitingConfirmation(false); setMode('login'); setError(''); }}>Back to log in</Btn>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-md mx-auto">
       <div className="text-center mb-8">
         <div className="flex justify-center mb-4">
+          {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
           <img src="/logo.png" alt="Pulse FC" style={{ height: '48px', width: 'auto' }} />
           
         </div>
@@ -393,6 +439,7 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
   const [loading, setLoading]     = useState(false);
   const eyedropperSupported = typeof window !== 'undefined' && 'EyeDropper' in window;
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps the editable slug field in sync with the club name until the admin types into it directly (slugEdited flips that off)
   useEffect(() => { if (!slugEdited) setSlug(slugify(name)); }, [name, slugEdited]);
 
   function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -435,19 +482,25 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
       logoMime = logoFile.type;
       logoName = logoFile.name;
     }
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch('/api/onboarding', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({ action: 'create_club', name: name.trim(), slug: slug.trim(), primary_color: primary, user_id: session?.user?.id, logo_base64: logoBase64, logo_mime: logoMime, logo_name: logoName }),
-    });
-    const json = await res.json();
-    if (!res.ok) { setError(json.error ?? 'Failed to create club'); setLoading(false); return; }
-    onDone({ id: json.club.id, name: name.trim(), slug: slug.trim(), primaryColor: primary });
-    setLoading(false);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/onboarding', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ action: 'create_club', name: name.trim(), slug: slug.trim(), primary_color: primary, user_id: session?.user?.id, logo_base64: logoBase64, logo_mime: logoMime, logo_name: logoName }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error ?? 'Failed to create club'); setLoading(false); return; }
+      onDone({ id: json.club.id, name: name.trim(), slug: slug.trim(), primaryColor: primary, logoUrl: logoPreview });
+      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setError('Something went wrong. Please check your connection and try again.');
+      setLoading(false);
+    }
   }
 
   const initials = name.split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2) || 'FC';
@@ -465,6 +518,7 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0 border-2"
                 style={{ background: `${primary}18`, borderColor: primary }}>
                 {logoPreview
+                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
                   ? <img src={logoPreview} alt="" className="w-full h-full object-contain" />
                   : <span className="text-base font-extrabold" style={{ color: primary }}>{initials}</span>}
               </div>
@@ -547,9 +601,10 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
 
 // ─── Step 3: Upload ───────────────────────────────────────────────────────────
 
-function UploadStep({ onAnalyse, onSkip }: {
+function UploadStep({ onAnalyse, onSkip, accent = '#22c55e' }: {
   onAnalyse: (files: UploadedFile[]) => void;
   onSkip: () => void;
+  accent?: string;
 }) {
   const [files, setFiles]       = useState<UploadedFile[]>([]);
   const [converting, setConverting] = useState(false);
@@ -561,7 +616,7 @@ function UploadStep({ onAnalyse, onSkip }: {
     setConverting(true);
     const added: UploadedFile[] = [];
     for (const f of Array.from(fl)) {
-      added.push({ id: uid(), name: f.name, size: f.size, payload: await toPayload(f) });
+      added.push({ id: uid(), name: f.name, size: f.size, payload: await toParseAllPayload(f) });
     }
     setFiles(p => [...p, ...added]);
     setConverting(false);
@@ -579,24 +634,25 @@ function UploadStep({ onAnalyse, onSkip }: {
         onDragLeave={() => setOver(false)}
         onDrop={async (e) => { e.preventDefault(); setOver(false); await addFiles(e.dataTransfer.files); }}
         onClick={() => ref.current?.click()}
+        style={{ borderColor: over ? accent : undefined }}
         className={`flex flex-col items-center justify-center gap-3 p-12 rounded-2xl border-2 border-dashed cursor-pointer transition-all mb-4
-          ${over ? 'border-[#22c55e] bg-[#22c55e08]' : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#22c55e44]'}`}
+          ${over ? 'bg-[#22c55e08]' : 'border-[#2a2a2a] bg-[#0d0d0d] hover:border-[#22c55e44]'}`}
       >
         <div className="w-14 h-14 rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M12 16V8M12 8L9 11M12 8l3 3" stroke={over ? '#22c55e' : '#444'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            <path d="M4 18h16" stroke={over ? '#22c55e' : '#444'} strokeWidth="1.5" strokeLinecap="round"/>
+            <path d="M12 16V8M12 8L9 11M12 8l3 3" stroke={over ? accent : '#444'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M4 18h16" stroke={over ? accent : '#444'} strokeWidth="1.5" strokeLinecap="round"/>
           </svg>
         </div>
         <div className="text-center">
-          <p className={`font-semibold transition-colors ${over ? 'text-[#22c55e]' : 'text-[#888]'}`}>
+          <p className="font-semibold transition-colors" style={{ color: over ? accent : '#888' }}>
             Drop your files here
           </p>
           <p className="text-xs text-[#3a3a3a] mt-1">
             Roster spreadsheets · Season schedules · Team lists · Any format
           </p>
         </div>
-        <div className="px-6 py-2.5 rounded-xl bg-[#22c55e] text-black text-sm font-bold">Browse files</div>
+        <div className="px-6 py-2.5 rounded-xl text-sm font-bold" style={{ background: accent, color: contrastText(accent) }}>Browse files</div>
         <input ref={ref} type="file" multiple className="hidden"
           accept=".csv,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,image/*,text/csv,application/pdf"
           onChange={(e) => { addFiles(e.target.files); e.currentTarget.value = ''; }} />
@@ -635,12 +691,13 @@ function UploadStep({ onAnalyse, onSkip }: {
 
 type ProcessingCounts = { teams: number; players: number; events: number; coaches: number };
 
-function ProcessingStep({ done, failed, counts, liveCounts, onComplete }: {
+function ProcessingStep({ done, failed, counts, liveCounts, onComplete, accent = '#22c55e' }: {
   done: boolean;
   failed?: boolean;
   counts: ProcessingCounts | null;
   liveCounts: ProcessingCounts | null;
   onComplete: () => void;
+  accent?: string;
 }) {
   const [phase, setPhase] = useState<'loading' | 'counting' | 'ready'>('loading');
   const [nums, setNums]   = useState<ProcessingCounts>({ teams: 0, players: 0, events: 0, coaches: 0 });
@@ -699,6 +756,11 @@ function ProcessingStep({ done, failed, counts, liveCounts, onComplete }: {
     { label: 'Coaches', key: 'coaches', pad: 2 },
   ];
 
+  // The scoreboard panel is fixed near-black regardless of a club's brand
+  // color — fall back to the default green if their color wouldn't read
+  // against it (same reasoning as the dashboard sidebar).
+  const safe = safeAccent(accent, '#080808');
+
   return (
     <div className="flex flex-col items-center gap-8 py-10">
 
@@ -720,12 +782,12 @@ function ProcessingStep({ done, failed, counts, liveCounts, onComplete }: {
 
         {/* Header bar */}
         <div className="flex items-center gap-2.5 px-5 py-3 bg-[#0d0d0d] border-b border-[#151515]">
-          <div className={`w-2 h-2 rounded-full flex-shrink-0 bg-[#22c55e] ${phase !== 'ready' ? 'animate-pulse' : ''}`} />
-          <span className="text-[10px] font-bold text-[#333] uppercase tracking-[3px]">
+          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${phase !== 'ready' ? 'animate-pulse' : ''}`} style={{ background: safe }} />
+          <span className="text-[10px] font-bold text-[#6b7280] uppercase tracking-[3px]">
             {phase === 'loading' ? 'Scanning · Live' : phase === 'counting' ? 'Counting · Live' : 'Full time · Complete'}
           </span>
           {phase === 'ready' && (
-            <span className="ml-auto text-[10px] font-bold text-[#22c55e]">✓</span>
+            <span className="ml-auto text-[10px] font-bold" style={{ color: safe }}>✓</span>
           )}
         </div>
 
@@ -743,19 +805,18 @@ function ProcessingStep({ done, failed, counts, liveCounts, onComplete }: {
                       {/* Split-flap seam */}
                       <div className="absolute left-0 right-0 h-px bg-[#000] top-1/2" />
                       <span
-                        className={`relative z-10 text-xl font-black tabular-nums leading-none select-none ${
-                          phase === 'loading'  ? 'text-[#1e1e1e]'  :
-                          phase === 'counting' ? 'text-[#22c55e]'  :
-                                                'text-white'
-                        }`}
-                        style={{ fontFamily: 'ui-monospace, monospace' }}
+                        className="relative z-10 text-xl font-black tabular-nums leading-none select-none"
+                        style={{
+                          fontFamily: 'ui-monospace, monospace',
+                          color: phase === 'loading' ? `${safe}99` : phase === 'counting' ? safe : '#fff',
+                        }}
                       >
                         {d}
                       </span>
                     </div>
                   ))}
                 </div>
-                <span className="text-[9px] font-bold uppercase tracking-[2px] text-[#333]">{label}</span>
+                <span className="text-[9px] font-bold uppercase tracking-[2px] text-[#6b7280]">{label}</span>
               </div>
             );
           })}
@@ -767,16 +828,16 @@ function ProcessingStep({ done, failed, counts, liveCounts, onComplete }: {
             <>
               <div className="flex gap-1">
                 {[0, 1, 2].map(i => (
-                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#22c55e33] animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s` }} />
+                  <div key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
+                    style={{ background: `${safe}55`, animationDelay: `${i * 0.15}s` }} />
                 ))}
               </div>
-              <span className="text-[11px] text-[#2a2a2a]">
+              <span className="text-[11px] text-[#6b7280]">
                 {phase === 'loading' ? 'Pulse FC is working…' : 'Tallying up…'}
               </span>
             </>
           ) : (
-            <span className={`text-[11px] font-bold ${failed ? 'text-[#f97316]' : 'text-[#22c55e]'}`}>
+            <span className="text-[11px] font-bold" style={{ color: failed ? '#f97316' : safe }}>
               {failed ? 'AI scouting failed — fill in details manually' : 'Import complete — heading to review'}
             </span>
           )}
@@ -809,7 +870,7 @@ function ReviewStep({
   coaches: CRow[]; setCoaches: React.Dispatch<React.SetStateAction<CRow[]>>;
   fileOutcomes: FileOutcome[]; setFileOutcomes: React.Dispatch<React.SetStateAction<FileOutcome[]>>;
   filePayloads: Record<string, UploadedFile['payload']>; setFilePayloads: React.Dispatch<React.SetStateAction<Record<string, UploadedFile['payload']>>>;
-  onConfirm: (invites: ParentInvite[], coachPayload: CoachPayload | null) => void;
+  onConfirm: (invites: ParentInvite[], coachPayload: CoachPayload | null, skippedCoachNames: string[]) => void;
 }) {
   // Ids whose open/closed state has been manually toggled away from the
   // default. Below 5 teams every card defaults open; at 5+ they default
@@ -833,7 +894,7 @@ function ReviewStep({
     setBulk(b => ({ ...b, [type]: { ...b[type], [field]: val } }));
   }
 
-  const teamOpts  = teams.filter(t => t.name.trim());
+  const teamOpts  = teams.filter(t => t.name.trim()).sort(compareTeams);
   const teamIdSet = new Set(teamOpts.map(t => t.id));
   // Covers both blank local_team_id and a stale id left behind by a deleted
   // team — either way the row needs a human to re-point it somewhere.
@@ -917,6 +978,7 @@ function ReviewStep({
           age_group: typeof t.age_group === 'string' ? t.age_group : '',
           gender: typeof t.gender === 'string' ? t.gender : '',
           conf: (typeof t.confidence === 'string' ? t.confidence : 'high') as Conf,
+          reason: typeof t.reason === 'string' ? t.reason : '',
         });
       }
     }
@@ -939,6 +1001,7 @@ function ReviewStep({
           id: uid(), full_name: p.full_name ?? '', jersey_number: p.jersey_number ?? '',
           position: p.position ?? '', parent_email: p.parent_email ?? '',
           local_team_id, conf: (p.confidence ?? 'high') as Conf,
+          reason: p.reason ?? '',
         });
       }
       return [...prev, ...newRows];
@@ -962,6 +1025,7 @@ function ReviewStep({
           field_notes: e.field_notes ?? '', field_type: e.field_type ?? '',
           notes: e.notes ?? '', coach_notes: e.coach_notes ?? '',
           local_team_id, conf: (e.confidence ?? 'high') as Conf,
+          reason: e.reason ?? '',
         });
       }
       return [...prev, ...newRows];
@@ -969,20 +1033,23 @@ function ReviewStep({
 
     setCoaches(prev => {
       const existingEmails = new Set(prev.filter(c => c.email).map(c => c.email.toLowerCase().trim()));
-      const existingNameKeys = new Set(prev.filter(c => !c.email).map(c => `${c.local_team_id}|${c.full_name.toLowerCase().trim()}`));
+      const noEmailRows = prev.filter(c => !c.email);
       const newRows: CRow[] = [];
       for (const c of (data.coaches ?? []) as Record<string, string>[]) {
         const local_team_id = matchTeamId(c.team_name, mergedTeams);
+        const full_name = (c.full_name ?? '').trim();
         const email = (c.email ?? '').toLowerCase().trim();
         if (email) {
           if (existingEmails.has(email)) continue;
           existingEmails.add(email);
         } else {
-          const key = `${local_team_id}|${(c.full_name ?? '').toLowerCase().trim()}`;
-          if (existingNameKeys.has(key)) continue;
-          existingNameKeys.add(key);
+          // Nickname-aware — a team-mapping doc's "Richard Breheny" and a
+          // roster doc's "Head Coach: Rick Breheny" are the same person.
+          const dup = noEmailRows.some(x => x.local_team_id === local_team_id && sameCoachName(x.full_name, full_name))
+            || newRows.some(x => !x.email && x.local_team_id === local_team_id && sameCoachName(x.full_name, full_name));
+          if (dup) continue;
         }
-        newRows.push({ id: uid(), full_name: c.full_name ?? '', email: c.email ?? '', local_team_id });
+        newRows.push({ id: uid(), full_name, email: c.email ?? '', local_team_id });
       }
       return [...prev, ...newRows];
     });
@@ -1003,7 +1070,7 @@ function ReviewStep({
   async function handleMoreFiles(fl: FileList | null) {
     if (!fl) return;
     const payloads: { base64?: string; mimeType?: string; text?: string; name: string }[] = [];
-    for (const f of Array.from(fl)) payloads.push(await toPayload(f));
+    for (const f of Array.from(fl)) payloads.push(await toParseAllPayload(f));
     await mergeParsedData(payloads);
   }
 
@@ -1019,34 +1086,62 @@ function ReviewStep({
   // ── Confirm — write everything to DB ─────────────────────────────────────
 
   async function confirm() {
-    setSaving(true);
     setError('');
+
+    // Validate every non-empty parent/coach email before writing anything —
+    // there's no <form onSubmit> here, so the browser's native type="email"
+    // constraint never fires on these inputs, and garbage strings would
+    // otherwise flow straight into invites.email and on to Resend.
+    const badEmails: string[] = [];
+    for (const p of players) {
+      const email = p.parent_email.trim();
+      if (email && !EMAIL_RE.test(email)) badEmails.push(`${p.full_name.trim() || 'Player'}: "${email}"`);
+    }
+    for (const c of coaches) {
+      const email = c.email.trim();
+      if (email && !EMAIL_RE.test(email)) badEmails.push(`${c.full_name.trim() || 'Coach'}: "${email}"`);
+    }
+    if (badEmails.length) {
+      setError(`Fix these email addresses before continuing — ${badEmails.join(', ')}`);
+      return;
+    }
+
+    setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
       // 1. Teams
       const created: { localId: string; dbId: string }[] = [];
+      const failedTeams: string[] = [];
       for (const t of teams.filter(r => r.name.trim())) {
-        const { data } = await supabase.from('teams')
+        const { data, error: teamErr } = await supabase.from('teams')
           .insert({ club_id: clubId, name: t.name.trim(), age_group: t.age_group.trim() || null })
           .select('id').single();
-        if (data) created.push({ localId: t.id, dbId: (data as { id: string }).id });
+        if (teamErr || !data) { failedTeams.push(t.name.trim()); continue; }
+        created.push({ localId: t.id, dbId: (data as { id: string }).id });
       }
       const dbId = (lid: string) => created.find(c => c.localId === lid)?.dbId;
 
       // 2. Players + invite records
       const invites: ParentInvite[] = [];
+      const failedPlayers: string[] = [];
+      const failedInvites: string[] = [];
       for (const p of players.filter(r => r.full_name.trim())) {
         const tId = dbId(p.local_team_id);
+        // Unassigned (or pointing at a team that itself failed above) —
+        // already surfaced via the "N players have no team assigned" banner,
+        // not a DB failure in its own right.
         if (!tId) continue;
-        const { data: pd } = await supabase.from('players')
-          .insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: p.jersey_number ? parseInt(p.jersey_number) : null, position: p.position || null })
+        const { data: pd, error: playerErr } = await supabase.from('players')
+          .insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: parseJersey(p.jersey_number), position: p.position || null })
           .select('id').single();
-        if (pd && p.parent_email.trim()) {
-          const { data: inv } = await supabase.from('invites')
+        if (playerErr || !pd) { failedPlayers.push(p.full_name.trim()); continue; }
+        if (p.parent_email.trim()) {
+          const { data: inv, error: inviteErr } = await supabase.from('invites')
             .insert({ team_id: tId, player_id: (pd as { id: string }).id, email: p.parent_email.trim(), created_by: user?.id })
             .select('id').single();
-          if (inv) invites.push({ inviteId: (inv as { id: string }).id, playerName: p.full_name.trim(), email: p.parent_email.trim() });
+          if (inviteErr || !inv) { failedInvites.push(`${p.full_name.trim()} (${p.parent_email.trim()})`); continue; }
+          invites.push({ inviteId: (inv as { id: string }).id, playerName: p.full_name.trim(), email: p.parent_email.trim() });
         }
       }
 
@@ -1061,9 +1156,10 @@ function ReviewStep({
         return dt.toISOString();
       };
 
+      const failedEvents: string[] = [];
       for (const e of events.filter(r => r.title.trim() && r.event_date)) {
         const tId = dbId(e.local_team_id);
-        if (!tId) continue;
+        if (!tId) continue; // unassigned — same reasoning as players above
         const d = bulkFor(e.type);
         // Ensure game title has correct vs/@ prefix based on home_away
         let savedTitle = e.title.trim();
@@ -1073,7 +1169,7 @@ function ReviewStep({
         }
         // Default uniform: training→training, game→home_away, other→null
         const savedUniform = e.uniform || (e.type === 'training' ? 'training' : e.type === 'game' ? e.home_away || null : null);
-        await supabase.from('events').insert({
+        const { error: eventErr } = await supabase.from('events').insert({
           team_id: tId, title: savedTitle, type: e.type,
           event_date: e.event_date, event_time: e.event_time || null,
           location: e.location || null,
@@ -1090,21 +1186,40 @@ function ReviewStep({
           arrival_buffer_minutes: d ? d.arriveEarly : null,
           rsvp_lock_at:           d ? calcRsvpLock(e.event_date, e.event_time, d.rsvpLockHours) : null,
         });
+        if (eventErr) failedEvents.push(savedTitle);
       }
 
-      // 4. Prepare coach payload — emails sent on Done screen, not here
+      // If anything failed to save, stop here and tell the coach exactly
+      // what didn't make it in — instead of silently proceeding to "you're
+      // live" as if the whole import succeeded.
+      const failures: string[] = [];
+      if (failedTeams.length)   failures.push(`${failedTeams.length} team${failedTeams.length !== 1 ? 's' : ''} (${failedTeams.join(', ')})`);
+      if (failedPlayers.length) failures.push(`${failedPlayers.length} player${failedPlayers.length !== 1 ? 's' : ''} (${failedPlayers.join(', ')})`);
+      if (failedInvites.length) failures.push(`${failedInvites.length} parent invite${failedInvites.length !== 1 ? 's' : ''} (${failedInvites.join(', ')})`);
+      if (failedEvents.length)  failures.push(`${failedEvents.length} event${failedEvents.length !== 1 ? 's' : ''} (${failedEvents.join(', ')})`);
+      if (failures.length) {
+        setError(`Some of your club data couldn't be saved — please try again: ${failures.join('; ')}`);
+        setSaving(false);
+        return;
+      }
+
+      // 4. Prepare coach payload — emails sent on Done screen, not here.
+      // A coach can't be invited without an email (Supabase Auth needs an
+      // identifier to create the account), but that's still a real coach
+      // the club needs to know is missing — surface it instead of just
+      // dropping the row with no trace.
       const validCoaches = coaches.filter(c => c.full_name.trim() && c.email.trim());
+      const skippedCoachNames = coaches.filter(c => c.full_name.trim() && !c.email.trim()).map(c => c.full_name.trim());
       const coachPayload: CoachPayload | null = validCoaches.length ? {
         club_id: clubId, clubName, clubColor: primaryColor,
         coaches: validCoaches.map(c => ({
           full_name: c.full_name.trim(),
           email:     c.email.trim(),
-          team_id:   c.local_team_id ? (dbId(c.local_team_id) ?? null) : null,
-          team_name: c.local_team_id ? (teams.find(t => t.id === c.local_team_id)?.name ?? '') : '',
+          team_ids:  c.local_team_id && dbId(c.local_team_id) ? [dbId(c.local_team_id)!] : [],
         })),
       } : null;
 
-      onConfirm(invites, coachPayload);
+      onConfirm(invites, coachPayload, skippedCoachNames);
     } catch (err) {
       console.error(err);
       setError('Something went wrong. Please try again.');
@@ -1148,7 +1263,7 @@ function ReviewStep({
       }`} style={{ gridTemplateColumns: '48px 1fr 72px 120px 1fr 150px 32px' }}>
         <input value={p.jersey_number} onChange={e => updateP(p.id, 'jersey_number', e.target.value)} placeholder="#" style={{ ...SI, textAlign: 'center' }} />
         <input value={p.full_name}     onChange={e => updateP(p.id, 'full_name', e.target.value)}     placeholder="Full name" style={SI} />
-        <div className="flex justify-center items-center"><ConfBadge conf={p.conf} /></div>
+        <div className="flex justify-center items-center"><ConfBadge conf={p.conf} reason={p.reason} /></div>
         <select value={p.position} onChange={e => updateP(p.id, 'position', e.target.value)} style={SI}>
           {POSITIONS.map(pos => <option key={pos} value={pos}>{pos || '—'}</option>)}
         </select>
@@ -1176,7 +1291,7 @@ function ReviewStep({
           <input type="time" value={e.event_time} onChange={ev => updateE(e.id, 'event_time', ev.target.value)} style={SI} />
           <div className="flex items-center gap-1">
             <input value={e.title} onChange={ev => updateE(e.id, 'title', ev.target.value)} placeholder="Title" style={SI} />
-            <ConfBadge conf={e.conf} />
+            <ConfBadge conf={e.conf} reason={e.reason} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
             <select value={e.type} onChange={ev => {
@@ -1294,7 +1409,8 @@ function ReviewStep({
         <button
           disabled={!mergeFromId || !mergeToId}
           onClick={() => { mergeTeams(mergeToId, [mergeFromId]); setMergeFromId(''); setMergeToId(''); }}
-          className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#22c55e] text-black hover:bg-[#1ea34e] disabled:opacity-30 disabled:cursor-not-allowed transition-all flex-shrink-0">
+          style={{ background: primaryColor, color: contrastText(primaryColor) }}
+          className="text-xs font-bold px-3 py-1.5 rounded-lg hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex-shrink-0">
           Merge →
         </button>
         <span className="text-[#555] text-[11px] w-full">Everyone and everything on the first team moves onto the second, and the first team is removed.</span>
@@ -1307,7 +1423,7 @@ function ReviewStep({
   function renderTeamCard(t: TRow) {
     const teamCoaches = coaches.filter(c => c.local_team_id === t.id);
     const teamPlayers = players.filter(p => p.local_team_id === t.id);
-    const teamEvents  = events.filter(e => e.local_team_id === t.id);
+    const teamEvents  = events.filter(e => e.local_team_id === t.id).sort(compareEvents);
     const open = isTeamOpen(t.id);
     return (
       <div key={t.id} className="rounded-2xl border overflow-hidden bg-[#111] border-[#222]">
@@ -1315,7 +1431,7 @@ function ReviewStep({
           <div className="flex-1 grid gap-2 items-center min-w-0" style={{ gridTemplateColumns: '1fr 110px 90px' }}>
             <div className="flex items-center gap-2 min-w-0">
               <input value={t.name} onChange={e => updateT(t.id, 'name', e.target.value)} placeholder="Team name" style={{ ...SI, fontWeight: 700 }} />
-              <ConfBadge conf={t.conf} />
+              <ConfBadge conf={t.conf} reason={t.reason} />
             </div>
             <select value={t.age_group} onChange={e => updateT(t.id, 'age_group', e.target.value)} style={SI}>
               {AGE_GROUPS.map(a => <option key={a} value={a}>{a || '—'}</option>)}
@@ -1353,7 +1469,7 @@ function ReviewStep({
                 {teamPlayers.length > 0 && colHdr(['#','Name','','Position','Parent email','Team',''], '48px 1fr 72px 120px 1fr 150px 32px')}
                 <div className="flex flex-col gap-1.5 min-w-[620px]">{teamPlayers.map(renderPlayerRow)}</div>
               </div>
-              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: t.id, conf: 'high' }])}
+              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: t.id, conf: 'high', reason: '' }])}
                 className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
                 + Add player
               </button>
@@ -1364,7 +1480,7 @@ function ReviewStep({
                 {teamEvents.length > 0 && colHdr(['Date','Time','Title','Type','Address · Field · Surface · Kit · Notes','Team',''], '140px 100px 1fr 200px 1fr 140px 32px')}
                 <div className="flex flex-col gap-3 min-w-[1000px]">{teamEvents.map(renderEventRow)}</div>
               </div>
-              <button onClick={() => setEvents(p => [...p, { id: uid(), title: '', type: 'training', home_away: '', event_date: '', event_time: '', location: '', address: '', lat: '', lng: '', uniform: '', duration_minutes: '', arrival_buffer_minutes: '', field_notes: '', field_type: '', notes: '', coach_notes: '', local_team_id: t.id, conf: 'high' }])}
+              <button onClick={() => setEvents(p => [...p, { id: uid(), title: '', type: 'training', home_away: '', event_date: '', event_time: '', location: '', address: '', lat: '', lng: '', uniform: '', duration_minutes: '', arrival_buffer_minutes: '', field_notes: '', field_type: '', notes: '', coach_notes: '', local_team_id: t.id, conf: 'high', reason: '' }])}
                 className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
                 + Add event
               </button>
@@ -1401,7 +1517,7 @@ function ReviewStep({
   // needs a human decision, so it never just silently vanishes from view.
   function renderUnassignedCard() {
     const uPlayers = players.filter(p => isUnassigned(p.local_team_id));
-    const uEvents  = events.filter(e => isUnassigned(e.local_team_id));
+    const uEvents  = events.filter(e => isUnassigned(e.local_team_id)).sort(compareEvents);
     const uCoaches = coaches.filter(c => c.local_team_id && isUnassigned(c.local_team_id));
     const total = uPlayers.length + uEvents.length + uCoaches.length;
     if (total === 0) return null;
@@ -1457,11 +1573,11 @@ function ReviewStep({
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: '', conf: 'high' }])}
+              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: '', conf: 'high', reason: '' }])}
                 className="flex-1 py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
                 + Add player
               </button>
-              <button onClick={() => setEvents(p => [...p, { id: uid(), title: '', type: 'training', home_away: '', event_date: '', event_time: '', location: '', address: '', lat: '', lng: '', uniform: '', duration_minutes: '', arrival_buffer_minutes: '', field_notes: '', field_type: '', notes: '', coach_notes: '', local_team_id: '', conf: 'high' }])}
+              <button onClick={() => setEvents(p => [...p, { id: uid(), title: '', type: 'training', home_away: '', event_date: '', event_time: '', location: '', address: '', lat: '', lng: '', uniform: '', duration_minutes: '', arrival_buffer_minutes: '', field_notes: '', field_type: '', notes: '', coach_notes: '', local_team_id: '', conf: 'high', reason: '' }])}
                 className="flex-1 py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
                 + Add event
               </button>
@@ -1475,6 +1591,7 @@ function ReviewStep({
   if (saving) return (
     <FlipBoard
       title="Setting up your club…"
+      accentColor={primaryColor}
       rows={[
         { label: 'Teams',   pad: 2 },
         { label: 'Players', pad: 3 },
@@ -1621,7 +1738,7 @@ function ReviewStep({
       <div className="flex flex-col gap-4">
         {teamOpts.map(renderTeamCard)}
 
-        <button onClick={() => setTeams(p => [...p, { id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }])}
+        <button onClick={() => setTeams(p => [...p, { id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high', reason: '' }])}
           className="w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
           + Add team
         </button>
@@ -1638,7 +1755,7 @@ function ReviewStep({
       )}
 
       <div className="mt-6">
-        <Btn onClick={confirm} disabled={saving}>
+        <Btn onClick={confirm} disabled={saving} accent={primaryColor}>
           {saving ? 'Setting up your club…' : 'Confirm & go live →'}
         </Btn>
       </div>
@@ -1648,14 +1765,23 @@ function ReviewStep({
 
 // ─── Done ─────────────────────────────────────────────────────────────────────
 
-function DoneStep({ clubName, slug, parentInvites, coachPayload }: {
-  clubName: string; slug: string; parentInvites: ParentInvite[]; coachPayload: CoachPayload | null;
+function DoneStep({ clubName, slug, logoUrl, primaryColor, parentInvites, coachPayload, skippedCoachNames, teamCount, playerCount, eventCount }: {
+  clubName: string; slug: string; logoUrl: string | null; primaryColor: string;
+  parentInvites: ParentInvite[]; coachPayload: CoachPayload | null; skippedCoachNames: string[];
+  teamCount: number; playerCount: number; eventCount: number;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(parentInvites.map(i => i.inviteId)));
   const [sending, setSending]   = useState(false);
   const [sent, setSent]         = useState(false);
+  // How many of the attempted sends actually succeeded — null means "sent"
+  // was set without ever calling sendInvites (the "Skip for now" path).
+  const [sendStats, setSendStats] = useState<{ succeeded: number; failed: number } | null>(null);
 
   const coachCount = coachPayload?.coaches.length ?? 0;
+  // The page behind every card here is solid black — check against that,
+  // not the cards' own slightly-lighter dark gray, so the fallback only
+  // kicks in when it genuinely needs to.
+  const accent = safeAccent(primaryColor, '#000000');
 
   async function sendInvites() {
     setSending(true);
@@ -1664,19 +1790,32 @@ function DoneStep({ clubName, slug, parentInvites, coachPayload }: {
       'Content-Type': 'application/json',
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
     };
+    let succeeded = 0;
+    let failed = 0;
     for (const inv of parentInvites.filter(i => selected.has(i.inviteId))) {
-      await fetch('/api/send-invite', {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify({ invite_id: inv.inviteId, player_name: inv.playerName }),
-      });
+      try {
+        const res = await fetch('/api/send-invite', {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify({ invite_id: inv.inviteId, player_name: inv.playerName }),
+        });
+        if (res.ok) succeeded++; else failed++;
+      } catch {
+        failed++;
+      }
     }
     if (coachPayload && coachCount > 0) {
-      await fetch('/api/invite-coach', {
-        method: 'POST', headers: authHeaders,
-        body: JSON.stringify(coachPayload),
-      });
+      try {
+        const res = await fetch('/api/invite-coach', {
+          method: 'POST', headers: authHeaders,
+          body: JSON.stringify(coachPayload),
+        });
+        if (res.ok) succeeded += coachCount; else failed += coachCount;
+      } catch {
+        failed += coachCount;
+      }
     }
     setSending(false);
+    setSendStats({ succeeded, failed });
     setSent(true);
   }
 
@@ -1687,65 +1826,123 @@ function DoneStep({ clubName, slug, parentInvites, coachPayload }: {
 
   return (
     <div className="text-center">
-      <div className="w-20 h-20 rounded-3xl bg-[#22c55e1a] border border-[#22c55e33] flex items-center justify-center text-4xl mx-auto mb-6">🎉</div>
+      <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl mx-auto mb-6 overflow-hidden"
+        style={{ background: `${accent}1a`, border: `1px solid ${accent}33` }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+        {logoUrl ? <img src={logoUrl} alt={clubName} className="w-full h-full object-contain" /> : '🎉'}
+      </div>
       <h2 className="text-2xl font-extrabold text-white mb-2">{clubName} is live!</h2>
-      <p className="text-[#9ca3af] mb-8">Your teams, roster, and schedule are all set up. Download the app to manage everything.</p>
+      <p className="text-[#9ca3af] mb-3">Your teams, roster, and schedule are all set up. Download the app to manage everything.</p>
+      <p className="text-xs text-[#555] mb-8">
+        <span className="text-white font-semibold">{teamCount}</span> team{teamCount !== 1 ? 's' : ''} · <span className="text-white font-semibold">{playerCount}</span> player{playerCount !== 1 ? 's' : ''} · <span className="text-white font-semibold">{eventCount}</span> event{eventCount !== 1 ? 's' : ''}
+      </p>
 
-      {parentInvites.length > 0 && !sent && (
+      {(parentInvites.length > 0 || coachCount > 0) && !sent && (
         <div className="bg-[#111] border border-[#222] rounded-2xl p-6 mb-6 text-left">
           <div className="flex items-center justify-between mb-1">
-            <p className="text-sm font-bold text-white">Send parent invites</p>
-            <button onClick={toggleAll} className="text-xs text-[#555] hover:text-[#22c55e] transition-colors">
-              {selected.size === parentInvites.length ? 'Deselect all' : 'Select all'}
-            </button>
-          </div>
-          <p className="text-xs text-[#6b7280] mb-4">
-            Parents get an email with a link to download the app and join their child&apos;s team.
-          </p>
-          <div className="flex flex-col gap-2 max-h-56 overflow-y-auto mb-4">
-            {parentInvites.map(inv => (
-              <div key={inv.inviteId}
-                onClick={() => setSelected(prev => { const n = new Set(prev); n.has(inv.inviteId) ? n.delete(inv.inviteId) : n.add(inv.inviteId); return n; })}
-                className={`flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition-all ${
-                  selected.has(inv.inviteId) ? 'border-[#22c55e33] bg-[#22c55e08]' : 'border-[#222]'
-                }`}>
-                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all ${
-                  selected.has(inv.inviteId) ? 'bg-[#22c55e] border-[#22c55e]' : 'border-[#444]'
-                }`}>
-                  {selected.has(inv.inviteId) && <span className="text-black text-[9px] font-black">✓</span>}
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-white leading-none">{inv.playerName}</p>
-                  <p className="text-xs text-[#6b7280] mt-0.5">{inv.email}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          {coachCount > 0 && (
-            <p className="text-xs text-[#6b7280] mb-3">
-              + {coachCount} coach invite{coachCount !== 1 ? 's' : ''} ({coachPayload!.coaches.map(c => c.full_name).join(', ')})
+            <p className="text-sm font-bold text-white">
+              {parentInvites.length > 0 ? 'Send parent invites' : 'Send coach invites'}
             </p>
+            {parentInvites.length > 0 && (
+              <button onClick={toggleAll} className="text-xs text-[#555] transition-colors"
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = accent}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = ''}>
+                {selected.size === parentInvites.length ? 'Deselect all' : 'Select all'}
+              </button>
+            )}
+          </div>
+          {parentInvites.length > 0 && (
+            <>
+              <p className="text-xs text-[#6b7280] mb-4">
+                Parents get an email with a link to download the app and join their child&apos;s team.
+              </p>
+              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto mb-4">
+                {parentInvites.map(inv => {
+                  const isSelected = selected.has(inv.inviteId);
+                  return (
+                    <div key={inv.inviteId}
+                      onClick={() => setSelected(prev => {
+                        const n = new Set(prev);
+                        if (n.has(inv.inviteId)) n.delete(inv.inviteId); else n.add(inv.inviteId);
+                        return n;
+                      })}
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition-all"
+                      style={isSelected ? { borderColor: `${accent}33`, background: `${accent}08` } : { borderColor: '#222' }}>
+                      <div className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all"
+                        style={isSelected ? { background: accent, borderColor: accent } : { borderColor: '#444' }}>
+                        {isSelected && <span className="text-[9px] font-black" style={{ color: contrastText(accent) }}>✓</span>}
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-semibold text-white leading-none">{inv.playerName}</p>
+                        <p className="text-xs text-[#6b7280] mt-0.5">{inv.email}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {coachCount > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-[#6b7280] mb-2">
+                {parentInvites.length > 0 ? '+ ' : ''}{coachCount} coach invite{coachCount !== 1 ? 's' : ''}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {coachPayload!.coaches.map(c => (
+                  <span key={c.email} className="text-xs font-medium px-2.5 py-1 rounded-full"
+                    style={{ background: `${accent}14`, color: accent, border: `1px solid ${accent}30` }}>
+                    {c.full_name}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
           <div className="flex gap-3">
             <Btn onClick={() => setSent(true)} variant="ghost">Skip for now</Btn>
-            <Btn onClick={sendInvites} disabled={sending || (selected.size === 0 && coachCount === 0)}>
+            <Btn onClick={sendInvites} disabled={sending || (selected.size === 0 && coachCount === 0)} accent={accent}>
               {sending ? 'Sending…' : `Send ${selected.size + coachCount} invite${selected.size + coachCount !== 1 ? 's' : ''} →`}
             </Btn>
           </div>
-          <p className="text-[11px] text-[#444] mt-2">You can send or resend invites anytime from the dashboard → Staff &amp; Roster.</p>
+          <p className="text-[11px] text-[#444] mt-2">You can invite anyone you skip here later from the dashboard → Staff.</p>
+        </div>
+      )}
+
+      {skippedCoachNames.length > 0 && (
+        <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl px-4 py-3 mb-6 text-left">
+          <p className="text-amber-400 text-sm font-bold mb-2">⚠ {skippedCoachNames.length} coach{skippedCoachNames.length !== 1 ? 'es' : ''} need an email to be invited</p>
+          <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto mb-2">
+            {skippedCoachNames.map((name, i) => (
+              <span key={`${name}-${i}`} className="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-900/25 text-amber-300 border border-amber-800/40">
+                {name}
+              </span>
+            ))}
+          </div>
+          <p className="text-amber-400/70 text-xs">
+            No email was found in your uploaded documents. Add {skippedCoachNames.length !== 1 ? 'them' : 'one'} from the dashboard → Staff → Invite staff.
+          </p>
         </div>
       )}
 
       {sent && (parentInvites.length > 0 || coachCount > 0) && (
-        <div className="bg-[#22c55e12] border border-[#22c55e33] rounded-xl px-4 py-3 mb-6 text-left">
-          <p className="text-[#22c55e] text-sm font-bold">✓ Invites sent</p>
-          <p className="text-[#22c55e99] text-xs mt-0.5">Resend anytime from dashboard → Staff &amp; Roster.</p>
-        </div>
+        sendStats && sendStats.failed > 0 ? (
+          <div className="rounded-xl px-4 py-3 mb-6 text-left bg-amber-950/20 border border-amber-900/40">
+            <p className="text-sm font-bold text-amber-400">
+              Sent {sendStats.succeeded} of {sendStats.succeeded + sendStats.failed} invites — some failed
+            </p>
+            <p className="text-xs mt-0.5 text-amber-400/70">You can resend the rest anytime from the dashboard → Staff.</p>
+          </div>
+        ) : (
+          <div className="rounded-xl px-4 py-3 mb-6 text-left" style={{ background: `${accent}12`, border: `1px solid ${accent}33` }}>
+            <p className="text-sm font-bold" style={{ color: accent }}>✓ Invites sent</p>
+            <p className="text-xs mt-0.5" style={{ color: `${accent}99` }}>Manage or invite more anytime from the dashboard → Staff.</p>
+          </div>
+        )
       )}
 
       <div className="bg-[#111] border border-[#222] rounded-2xl p-6 flex flex-col gap-4">
-        <a href="https://apps.apple.com/app/pulse-fc"
-          className="flex items-center justify-center gap-3 py-4 rounded-xl bg-[#22c55e] text-black font-bold text-base hover:bg-[#16a34a] transition-all">
+        <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659"
+          className="flex items-center justify-center gap-3 py-4 rounded-xl font-bold text-base transition-all hover:opacity-90"
+          style={{ background: accent, color: contrastText(accent) }}>
           <span className="text-xl">📱</span>
           Download Pulse FC on the App Store
         </a>
@@ -1755,7 +1952,7 @@ function DoneStep({ clubName, slug, parentInvites, coachPayload }: {
         </a>
         <div className="py-2 px-4 rounded-xl bg-[#0d0d0d] border border-[#1a1a1a] text-left">
           <p className="text-xs text-[#555] mb-0.5">Your club URL</p>
-          <p className="text-sm font-mono text-[#22c55e]">pulse-fc.app/{slug}</p>
+          <p className="text-sm font-mono" style={{ color: accent }}>pulse-fc.app/{slug}</p>
         </div>
       </div>
     </div>
@@ -1777,6 +1974,7 @@ export default function OnboardingPage() {
   const [clubName, setClubName]     = useState('');
   const [clubSlug, setClubSlug]     = useState('');
   const [primaryColor, setPrimaryColor] = useState('#22c55e');
+  const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(null);
 
   const [teams,   setTeams]   = useState<TRow[]>([]);
   const [players, setPlayers] = useState<PRow[]>([]);
@@ -1784,6 +1982,7 @@ export default function OnboardingPage() {
   const [coaches, setCoaches] = useState<CRow[]>([]);
   const [parentInvites, setParentInvites] = useState<ParentInvite[]>([]);
   const [pendingCoachPayload, setPendingCoachPayload] = useState<CoachPayload | null>(null);
+  const [skippedCoachNames, setSkippedCoachNames] = useState<string[]>([]);
 
   // Per-uploaded-file success/failure, and the original payload for each —
   // kept around so a failed file can be retried without re-uploading.
@@ -1799,9 +1998,54 @@ export default function OnboardingPage() {
   const [liveCounts, setLiveCounts] = useState<ProcessingCounts | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) setStep('club');
-    });
+    async function resume() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return; // stay on 'auth' — not logged in yet
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, club_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profile?.club_id) {
+        const [{ data: club }, { count: teamCount }] = await Promise.all([
+          supabase.from('clubs').select('id, name, slug, primary_color, logo_url').eq('id', profile.club_id).single(),
+          supabase.from('teams').select('id', { count: 'exact', head: true }).eq('club_id', profile.club_id),
+        ]);
+
+        if (club) {
+          setClubId(club.id); setClubName(club.name); setClubSlug(club.slug);
+          setPrimaryColor(club.primary_color ?? '#22c55e'); setClubLogoUrl(club.logo_url ?? null);
+        }
+
+        if ((teamCount ?? 0) > 0) {
+          // This club already has at least one team — it's not an orphan
+          // from an abandoned session, it's a club that's live or far
+          // enough along that re-running the wizard would create
+          // duplicates. Send them to the real dashboard instead.
+          window.location.href = '/dashboard';
+          return;
+        }
+
+        // Club exists but has zero teams — the previous session was
+        // abandoned right after Step 1. Resume into Step 2 rather than
+        // creating a second club for the same user.
+        setStep('upload');
+        return;
+      }
+
+      // Authenticated with no profiles row at all yet — e.g. a first-time
+      // Google/Apple sign-in that landed here with nothing set up. Mark
+      // them org_admin now so the create-club call in ClubStep is
+      // authorized (the email/password path does this in AuthStep before
+      // advancing; this covers the OAuth path, which skips AuthStep).
+      if (!profile) {
+        await supabase.from('profiles').upsert({ id: user.id, role: 'org_admin' });
+      }
+      setStep('club');
+    }
+    resume();
   }, []);
 
   function goBack() {
@@ -1822,12 +2066,14 @@ export default function OnboardingPage() {
       age_group: typeof t.age_group === 'string' ? t.age_group : '',
       gender: typeof t.gender === 'string' ? t.gender : '',
       conf: (typeof t.confidence === 'string' ? t.confidence : 'high') as Conf,
+      reason: typeof t.reason === 'string' ? t.reason : '',
     }));
     setTeams(teamRows);
     setPlayers(((data.players ?? []) as Record<string, string>[]).map(p => ({
       id: uid(), full_name: p.full_name ?? '', jersey_number: p.jersey_number ?? '',
       position: p.position ?? '', parent_email: p.parent_email ?? '',
       local_team_id: matchTeamId(p.team_name, teamRows), conf: (p.confidence ?? 'high') as Conf,
+      reason: p.reason ?? '',
     })));
     setEvents(((data.events ?? []) as Record<string, string>[]).map(e => ({
       id: uid(), title: e.title ?? '', type: e.type ?? 'training',
@@ -1839,10 +2085,29 @@ export default function OnboardingPage() {
       field_notes: e.field_notes ?? '', field_type: e.field_type ?? '',
       notes: e.notes ?? '', coach_notes: e.coach_notes ?? '',
       local_team_id: matchTeamId(e.team_name, teamRows), conf: (e.confidence ?? 'high') as Conf,
+      reason: e.reason ?? '',
     })));
-    setCoaches(((data.coaches ?? []) as Record<string, string>[]).map(c => ({
-      id: uid(), full_name: c.full_name ?? '', email: c.email ?? '', local_team_id: matchTeamId(c.team_name, teamRows),
-    })));
+    // The server already dedupes coaches within one parse-all response
+    // (same reasoning as team alt_names — different files/chunks can each
+    // extract the same person under a different name), but this is cheap
+    // insurance against anything that slips through.
+    {
+      const rows: CRow[] = [];
+      const emails = new Set<string>();
+      for (const c of (data.coaches ?? []) as Record<string, string>[]) {
+        const local_team_id = matchTeamId(c.team_name, teamRows);
+        const full_name = (c.full_name ?? '').trim();
+        const email = (c.email ?? '').toLowerCase().trim();
+        if (email) {
+          if (emails.has(email)) continue;
+          emails.add(email);
+        } else if (rows.some(x => !x.email && x.local_team_id === local_team_id && sameCoachName(x.full_name, full_name))) {
+          continue;
+        }
+        rows.push({ id: uid(), full_name, email: c.email ?? '', local_team_id });
+      }
+      setCoaches(rows);
+    }
   }
 
   async function handleAnalyse(uploadedFiles: UploadedFile[]) {
@@ -1863,7 +2128,7 @@ export default function OnboardingPage() {
       );
       if (!outcome.ok) {
         console.error('parse-all error:', outcome.error);
-        setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
+        setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high', reason: '' }]);
         setPlayers([]); setEvents([]); setCoaches([]);
         setFileOutcomes(uploadedFiles.map(f => ({ name: f.name, ok: false, error: 'Import failed' })));
         setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
@@ -1884,7 +2149,7 @@ export default function OnboardingPage() {
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') return;
       console.error('parse-all fetch failed:', err);
-      setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
+      setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high', reason: '' }]);
       setPlayers([]); setEvents([]); setCoaches([]);
       setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
       setProcessingFailed(true);
@@ -1895,7 +2160,7 @@ export default function OnboardingPage() {
   }
 
   function skipUpload() {
-    setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high' }]);
+    setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high', reason: '' }]);
     setPlayers([]); setEvents([]); setCoaches([]);
     setStep('review');
   }
@@ -1929,15 +2194,15 @@ export default function OnboardingPage() {
         )}
         {step === 'club' && (
           <ClubStep onDone={(d) => {
-            setClubId(d.id); setClubName(d.name); setClubSlug(d.slug); setPrimaryColor(d.primaryColor);
+            setClubId(d.id); setClubName(d.name); setClubSlug(d.slug); setPrimaryColor(d.primaryColor); setClubLogoUrl(d.logoUrl);
             setStep('upload');
           }} />
         )}
         {step === 'upload' && (
-          <UploadStep onAnalyse={handleAnalyse} onSkip={skipUpload} />
+          <UploadStep onAnalyse={handleAnalyse} onSkip={skipUpload} accent={primaryColor} />
         )}
         {step === 'processing' && (
-          <ProcessingStep done={processingDone} failed={processingFailed} counts={processingCounts} liveCounts={liveCounts} onComplete={() => setStep('review')} />
+          <ProcessingStep done={processingDone} failed={processingFailed} counts={processingCounts} liveCounts={liveCounts} onComplete={() => setStep('review')} accent={primaryColor} />
         )}
         {step === 'review' && (
           <ReviewStep
@@ -1948,11 +2213,15 @@ export default function OnboardingPage() {
             coaches={coaches} setCoaches={setCoaches}
             fileOutcomes={fileOutcomes} setFileOutcomes={setFileOutcomes}
             filePayloads={filePayloads} setFilePayloads={setFilePayloads}
-            onConfirm={(invites, coachPayload) => { setParentInvites(invites); setPendingCoachPayload(coachPayload); setStep('done'); }}
+            onConfirm={(invites, coachPayload, skipped) => { setParentInvites(invites); setPendingCoachPayload(coachPayload); setSkippedCoachNames(skipped); setStep('done'); }}
           />
         )}
         {step === 'done' && (
-          <DoneStep clubName={clubName} slug={clubSlug} parentInvites={parentInvites} coachPayload={pendingCoachPayload} />
+          <DoneStep
+            clubName={clubName} slug={clubSlug} logoUrl={clubLogoUrl} primaryColor={primaryColor}
+            parentInvites={parentInvites} coachPayload={pendingCoachPayload} skippedCoachNames={skippedCoachNames}
+            teamCount={teams.length} playerCount={players.length} eventCount={events.length}
+          />
         )}
 
       </div>

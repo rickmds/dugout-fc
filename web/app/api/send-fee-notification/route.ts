@@ -5,8 +5,22 @@ import { requireRole } from '@/lib/apiAuth';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+type FeeDetail = {
+  id: string;
+  payment_token: string | null;
+  description: string;
+  amount_due: number;
+  discount: number | null;
+  due_date: string | null;
+  player_id: string;
+  payee_type: 'club' | 'coach';
+  payment_instructions: string | null;
+  players: { full_name: string } | null;
+  teams: { name: string; club_id: string; clubs: { name: string; slug: string; logo_url: string | null; primary_color: string | null } | null } | null;
+};
+
 export async function POST(req: NextRequest) {
-  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  const auth = await requireRole(req, ['org_admin', 'app_admin', 'coach']);
   if (!auth.ok) return auth.response;
 
   const { player_fee_id } = await req.json();
@@ -17,9 +31,9 @@ export async function POST(req: NextRequest) {
   // Fetch fee + player + team + club in one query
   const { data: fee, error: feeErr } = await supabase
     .from('player_fees')
-    .select('id, payment_token, description, amount_due, discount, due_date, player_id, players(full_name), teams(name, club_id, clubs(name, slug, logo_url, primary_color))')
+    .select('id, payment_token, description, amount_due, discount, due_date, player_id, payee_type, payment_instructions, players(full_name), teams(name, club_id, clubs(name, slug, logo_url, primary_color))')
     .eq('id', player_fee_id)
-    .single();
+    .single<FeeDetail>();
 
   if (feeErr || !fee) {
     console.error('fee lookup failed', feeErr);
@@ -40,8 +54,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true, reason: 'no_parent_email' });
   }
 
-  const player   = (fee as any).players;
-  const team     = (fee as any).teams;
+  const player   = fee.players;
+  const team     = fee.teams;
   const club     = team?.clubs;
   const clubName = club?.name  ?? 'Your club';
   const teamName = team?.name  ?? 'your team';
@@ -58,7 +72,8 @@ export async function POST(req: NextRequest) {
     ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
   const baseUrl    = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.pulse-fc.app';
-  const payUrl     = (fee as any).payment_token ? `${baseUrl}/pay/${(fee as any).payment_token}` : null;
+  const isCoachCollected = fee.payee_type === 'coach';
+  const payUrl     = (!isCoachCollected && fee.payment_token) ? `${baseUrl}/pay/${fee.payment_token}` : null;
 
   const isOverdue = fee.due_date ? new Date(fee.due_date) < new Date() : false;
   const urgencyColor = isOverdue ? '#EF4444' : fee.due_date ? '#F59E0B' : accent;
@@ -148,17 +163,22 @@ export async function POST(req: NextRequest) {
                   </td>
                 </tr>
 
-                <!-- Pay Now button -->
+                <!-- Pay Now button / coach payment instructions -->
                 ${payUrl ? `<tr><td style="padding:0 28px 20px;text-align:center;">
                   <a href="${esc(payUrl)}" style="display:inline-block;padding:14px 32px;background:${accent};color:${btnText};text-decoration:none;font-size:15px;font-weight:800;border-radius:12px;letter-spacing:-0.2px;">Pay now →</a>
                   <p style="margin:10px 0 0;font-size:12px;color:#6b7280;">Secure payment · No login required · Powered by Stripe</p>
+                </td></tr>` : isCoachCollected ? `<tr><td style="padding:0 28px 20px;">
+                  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;padding:16px 18px;">
+                    <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">This fee is collected directly by your coach</p>
+                    <p style="margin:0;font-size:14px;color:#f9fafb;line-height:1.6;">${esc(fee.payment_instructions ?? 'Contact your coach for payment details.')}</p>
+                  </div>
                 </td></tr>` : ''}
 
                 <!-- Body text -->
                 <tr>
                   <td style="padding:0 28px 24px;">
                     <p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">
-                      ${payUrl ? 'Click the button above to pay securely online. Alternatively, contact your coach or club administrator to arrange payment another way.' : 'Please contact your coach or club administrator to arrange payment.'} Questions? Simply reply to this email.
+                      ${payUrl ? 'Click the button above to pay securely online. Alternatively, contact your coach or club administrator to arrange payment another way.' : isCoachCollected ? 'This fee does not go through the club — please pay your coach directly using the instructions above.' : 'Please contact your coach or club administrator to arrange payment.'} Questions? Simply reply to this email.
                     </p>
                   </td>
                 </tr>
@@ -202,24 +222,27 @@ export async function POST(req: NextRequest) {
     const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
     const parentUser = users.find((u) => u.email?.toLowerCase() === invite.email.toLowerCase());
     if (parentUser) {
+      const notifBody = isCoachCollected
+        ? `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''} — pay your coach directly`
+        : `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}`;
       await supabase.from('notifications').insert({
         profile_id: parentUser.id,
         type: 'fee_assigned',
         title: '💳 New fee assigned',
-        body: `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}`,
-        data: { player_fee_id, type: 'fee_assigned', club_slug: (fee as any).teams?.clubs?.slug ?? '' },
+        body: notifBody,
+        data: { player_fee_id, type: 'fee_assigned', club_slug: fee.teams?.clubs?.slug ?? '' },
       });
       const { data: tokens } = await supabase.from('push_tokens').select('token').eq('profile_id', parentUser.id);
       if (tokens?.length) {
         await fetch('https://exp.host/--/api/v2/push/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(tokens.map((t: any) => ({
+          body: JSON.stringify(tokens.map(t => ({
             to: t.token,
             title: '💳 New fee assigned',
-            body: `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}`,
+            body: notifBody,
             sound: 'default',
-            data: { type: 'fee_assigned', player_fee_id, club_slug: (fee as any).teams?.clubs?.slug ?? '' },
+            data: { type: 'fee_assigned', player_fee_id, club_slug: fee.teams?.clubs?.slug ?? '' },
           }))),
         });
       }

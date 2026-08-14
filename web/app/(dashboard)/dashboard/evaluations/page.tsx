@@ -59,7 +59,7 @@ function ProgressBar({ completed, total, primary }: { completed: number; total: 
 }
 
 export default function EvaluationsPage() {
-  const { profile, club, teams } = useDashboard();
+  const { profile, club } = useDashboard();
   const router = useRouter();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const isAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
@@ -80,6 +80,7 @@ export default function EvaluationsPage() {
     setLoading(false);
   }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   // Summary stats

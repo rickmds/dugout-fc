@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Mail, Sparkles, Send, ChevronDown, Users, Check, RefreshCw, Search, X, Clock } from 'lucide-react';
+import { Mail, Sparkles, Send, ChevronDown, Users, Check, RefreshCw, Search, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -79,7 +79,7 @@ export default function EmailPage() {
       .map((inv) => ({
         email: inv.email as string,
         name: '',
-        player_name: (inv.players as any)?.full_name ?? null,
+        player_name: (inv.players as unknown as { full_name: string } | null)?.full_name ?? null,
         team_id: inv.team_id as string,
         selected: true,
       }));
@@ -88,6 +88,7 @@ export default function EmailPage() {
     setLoadingRec(false);
   }, [activeTeamIds]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadRecipients(); }, [loadRecipients]);
 
   const loadLogs = useCallback(async () => {
@@ -101,8 +102,9 @@ export default function EmailPage() {
       .limit(50);
     setLogs(data ?? []);
     setLogsLoading(false);
-  }, [club?.id]);
+  }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { if (pageTab === 'sent') loadLogs(); }, [pageTab, loadLogs]);
 
   function toggleRecipient(email: string) {
@@ -527,7 +529,7 @@ export default function EmailPage() {
           {recipients.length > 0 && (
             <div style={{ padding: '12px 18px', borderTop: '1px solid #F1F5F9', background: '#F8FAFC' }}>
               <p style={{ fontSize: '11px', color: '#94A3B8', margin: 0 }}>
-                Emails are sent individually — parents won't see each other's addresses.
+                Emails are sent individually — parents won&apos;t see each other&apos;s addresses.
               </p>
             </div>
           )}

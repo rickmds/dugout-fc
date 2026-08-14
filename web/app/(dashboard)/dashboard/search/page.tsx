@@ -32,6 +32,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     if (!query.trim() || query.trim().length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
       setResults([]);
       setSearched(false);
       return;

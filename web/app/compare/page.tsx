@@ -434,7 +434,7 @@ export default async function ComparePage() {
         ))}
 
         <p style={{ fontSize: 11, color: '#333', textAlign: 'center', margin: '16px 0 0', lineHeight: 1.6, minWidth: 880 }}>
-          PlayMetrics features sourced from their public site as of 2026 — this comparison is about fit, not quality. They're a well-reviewed platform.
+          PlayMetrics features sourced from their public site as of 2026 — this comparison is about fit, not quality. They&apos;re a well-reviewed platform.
         </p>
 
         {/* Legend */}
@@ -589,6 +589,7 @@ export default async function ComparePage() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #111', padding: '24px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
         <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
         
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>

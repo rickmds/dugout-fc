@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
@@ -20,6 +19,8 @@ type FeeData = {
   hardship_fund_enabled: boolean;
   installment_number: number | null;
   installment_total: number | null;
+  payee_type: 'club' | 'coach';
+  payment_instructions: string | null;
   player_name: string;
   team_name: string;
   club_name: string;
@@ -131,40 +132,14 @@ export default function PayPage() {
 
   useEffect(() => {
     async function load() {
-      const { data, error } = await supabase
-        .from('player_fees')
-        .select(`
-          id, payment_token, description, amount_due, amount_paid, discount, due_date, status, installment_number, installment_total,
-          players!inner(full_name),
-          teams!inner(name, clubs!inner(name, logo_url, primary_color, slug, stripe_fee_handling, allow_partial_payments, hardship_fund_enabled))
-        `)
-        .eq('payment_token', token)
-        .single();
-
-      if (error || !data) { setNotFound(true); setLoading(false); return; }
-
-      const club = (data as any).teams?.clubs;
-      setFee({
-        id:                    data.id,
-        payment_token:         data.payment_token,
-        description:           data.description,
-        amount_due:            data.amount_due,
-        amount_paid:           data.amount_paid,
-        discount:              data.discount,
-        due_date:              data.due_date,
-        status:                data.status,
-        allow_partial_payments: club?.allow_partial_payments ?? false,
-        stripe_fee_handling:   club?.stripe_fee_handling ?? 'absorb',
-        hardship_fund_enabled: club?.hardship_fund_enabled ?? false,
-        installment_number:    data.installment_number ?? null,
-        installment_total:     data.installment_total ?? null,
-        player_name:           (data as any).players?.full_name ?? 'Player',
-        team_name:             (data as any).teams?.name ?? 'Team',
-        club_name:             club?.name ?? 'Club',
-        club_logo:             club?.logo_url ?? null,
-        club_color:            club?.primary_color ?? '#22C55E',
-        club_slug:             club?.slug ?? '',
-      });
+      try {
+        const res = await fetch(`/api/pay/fee?token=${encodeURIComponent(token)}`);
+        if (!res.ok) { setNotFound(true); setLoading(false); return; }
+        const data = await res.json();
+        setFee(data as FeeData);
+      } catch {
+        setNotFound(true);
+      }
       setLoading(false);
     }
     load();
@@ -208,7 +183,7 @@ export default function PayPage() {
       setInitError('Something went wrong. Please try again.');
       setCheckoutState('idle');
     }
-  }, [fee, checkoutState, partialAmount]);
+  }, [fee, checkoutState, partialAmount, effectiveDonation]);
 
   // ── Loading / not found ──────────────────────────────────────────────────────
   if (loading) return (
@@ -261,6 +236,7 @@ export default function PayPage() {
       {/* Club header */}
       <div style={{ textAlign: 'center', marginBottom: '28px' }}>
         {fee.club_logo
+          // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
           ? <img src={fee.club_logo} alt={fee.club_name} style={{ width: '64px', height: '64px', borderRadius: '16px', objectFit: 'cover', display: 'block', margin: '0 auto 10px' }} />
           : <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: '22px', fontWeight: '900', color: '#fff' }}>{initials}</div>
         }
@@ -343,6 +319,20 @@ export default function PayPage() {
                 </div>
               </div>
 
+              {fee.payee_type === 'coach' ? (
+                <div style={{ background: '#1C1C1E', border: '1px solid #2A2A2A', borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+                    Collected directly by your coach
+                  </div>
+                  <div style={{ fontSize: '15px', color: '#F9FAFB', lineHeight: 1.6 }}>
+                    {fee.payment_instructions ?? 'Contact your coach for payment details.'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '14px' }}>
+                    This fee does not go through the club — online payment isn&apos;t available for it.
+                  </div>
+                </div>
+              ) : (
+              <>
               {/* Partial amount input — only shown before checkout is ready */}
               {fee.allow_partial_payments && checkoutState === 'idle' && (
                 <div style={{ marginBottom: '16px' }}>
@@ -455,6 +445,8 @@ export default function PayPage() {
                   <svg width="12" height="14" viewBox="0 0 12 14" fill="none"><path d="M10 6H2V4a4 4 0 0 1 8 0v2zm1 0V4A5 5 0 0 0 1 4v2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1z" fill="#6B7280"/></svg>
                   Secure payment · No account required
                 </div>
+              )}
+              </>
               )}
             </>
           )}

@@ -16,6 +16,52 @@ const TONES: { value: Tone; label: string }[] = [
   { value: 'encouraging',  label: '💪 Encouraging' },
 ];
 
+const inputSt: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' };
+const labelSt: React.CSSProperties = { fontSize: '11px', fontWeight: '700', color: '#64748B', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' };
+
+function AIPanel({ bullets, setBullets, tone, setTone, writing, onDraft, error, done, primary }: {
+  bullets: string; setBullets: (v: string) => void;
+  tone: Tone; setTone: (v: Tone) => void;
+  writing: boolean; onDraft: () => void; error: string; done: boolean; primary: string;
+}) {
+  return (
+    <div style={{ background: `${primary}06`, border: `1.5px solid ${primary}20`, borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+      <div style={{ fontSize: '11px', fontWeight: '800', color: primary, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <Sparkles size={12} /> AI Draft
+      </div>
+      <div style={{ marginBottom: '10px' }}>
+        <label style={labelSt}>Key points (bullet list)</label>
+        <textarea
+          value={bullets} onChange={e => setBullets(e.target.value)}
+          placeholder={'- Training cancelled Thursday\n- Moved to Saturday 10am\n- Bring red kit'}
+          rows={4}
+          style={{ ...inputSt, resize: 'vertical', lineHeight: 1.6, background: '#fff' }}
+        />
+      </div>
+      <div style={{ marginBottom: '12px' }}>
+        <label style={labelSt}>Tone</label>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {TONES.map(t => (
+            <button key={t.value} onClick={() => setTone(t.value)}
+              style={{ padding: '6px 12px', borderRadius: '20px', border: `1.5px solid ${tone === t.value ? primary : '#E2E8F0'}`, background: tone === t.value ? `${primary}12` : '#fff', color: tone === t.value ? primary : '#64748B', fontWeight: tone === t.value ? '700' : '500', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && <p style={{ fontSize: '12px', color: '#EF4444', margin: '0 0 10px' }}>{error}</p>}
+      <button onClick={onDraft} disabled={writing || !bullets.trim()}
+        style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '8px', border: 'none', background: writing || !bullets.trim() ? '#E2E8F0' : primary, color: writing || !bullets.trim() ? '#94A3B8' : '#fff', fontWeight: '700', fontSize: '13px', cursor: writing || !bullets.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+        {writing
+          ? <><RefreshCw size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Writing…</>
+          : <><Sparkles size={13} /> Draft with AI</>}
+      </button>
+      {done && <p style={{ fontSize: '11px', color: primary, marginTop: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}><Sparkles size={11} /> AI drafted — edit freely before sending</p>}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 export default function TeamContactPage() {
   const { teamId } = useParams<{ teamId: string }>();
   const { club, profile } = useDashboard();
@@ -64,6 +110,7 @@ export default function TeamContactPage() {
     setLoading(false);
   }, [teamId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   async function saveAnnouncement() {
@@ -133,52 +180,6 @@ export default function TeamContactPage() {
     if (error || !data?.subject) { setEmailAiError(data?.error ?? 'AI failed. Try again.'); return; }
     setEmailForm({ subject: data.subject, body: data.body });
     setEmailAiDone(true);
-  }
-
-  const inputSt: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' };
-  const labelSt: React.CSSProperties = { fontSize: '11px', fontWeight: '700', color: '#64748B', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' };
-
-  function AIPanel({ bullets, setBullets, tone, setTone, writing, onDraft, error, done }: {
-    bullets: string; setBullets: (v: string) => void;
-    tone: Tone; setTone: (v: Tone) => void;
-    writing: boolean; onDraft: () => void; error: string; done: boolean;
-  }) {
-    return (
-      <div style={{ background: `${primary}06`, border: `1.5px solid ${primary}20`, borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <div style={{ fontSize: '11px', fontWeight: '800', color: primary, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Sparkles size={12} /> AI Draft
-        </div>
-        <div style={{ marginBottom: '10px' }}>
-          <label style={labelSt}>Key points (bullet list)</label>
-          <textarea
-            value={bullets} onChange={e => setBullets(e.target.value)}
-            placeholder={'- Training cancelled Thursday\n- Moved to Saturday 10am\n- Bring red kit'}
-            rows={4}
-            style={{ ...inputSt, resize: 'vertical', lineHeight: 1.6, background: '#fff' }}
-          />
-        </div>
-        <div style={{ marginBottom: '12px' }}>
-          <label style={labelSt}>Tone</label>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {TONES.map(t => (
-              <button key={t.value} onClick={() => setTone(t.value)}
-                style={{ padding: '6px 12px', borderRadius: '20px', border: `1.5px solid ${tone === t.value ? primary : '#E2E8F0'}`, background: tone === t.value ? `${primary}12` : '#fff', color: tone === t.value ? primary : '#64748B', fontWeight: tone === t.value ? '700' : '500', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {error && <p style={{ fontSize: '12px', color: '#EF4444', margin: '0 0 10px' }}>{error}</p>}
-        <button onClick={onDraft} disabled={writing || !bullets.trim()}
-          style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '8px', border: 'none', background: writing || !bullets.trim() ? '#E2E8F0' : primary, color: writing || !bullets.trim() ? '#94A3B8' : '#fff', fontWeight: '700', fontSize: '13px', cursor: writing || !bullets.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-          {writing
-            ? <><RefreshCw size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Writing…</>
-            : <><Sparkles size={13} /> Draft with AI</>}
-        </button>
-        {done && <p style={{ fontSize: '11px', color: primary, marginTop: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}><Sparkles size={11} /> AI drafted — edit freely before sending</p>}
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
   }
 
   return (
@@ -280,7 +281,7 @@ export default function TeamContactPage() {
                       bullets={annBullets} setBullets={setAnnBullets}
                       tone={annTone} setTone={setAnnTone}
                       writing={annWriting} onDraft={draftAnnouncement}
-                      error={annAiError} done={annAiDone}
+                      error={annAiError} done={annAiDone} primary={primary}
                     />
                   )}
 
@@ -338,7 +339,7 @@ export default function TeamContactPage() {
                   bullets={emailBullets} setBullets={setEmailBullets}
                   tone={emailTone} setTone={setEmailTone}
                   writing={emailWriting} onDraft={draftEmail}
-                  error={emailAiError} done={emailAiDone}
+                  error={emailAiError} done={emailAiDone} primary={primary}
                 />
               )}
 

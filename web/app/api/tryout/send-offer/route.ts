@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       .eq('team', teamName)
       .eq('role', 'head')
       .maybeSingle();
-    coachName = (ca?.tryout_coaches as any)?.full_name ?? '';
+    coachName = (ca?.tryout_coaches as unknown as { full_name: string } | null)?.full_name ?? '';
   }
 
   // Practice schedule for this team

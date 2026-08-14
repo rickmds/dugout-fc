@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { FlipBoard } from '@/components/FlipBoard';
-import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
-import { CheckCircle, XCircle, Clock, Lock, Send, ChevronDown, ChevronUp, Users } from 'lucide-react';
+import { seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
+import { Lock, Send, ChevronDown, ChevronUp, Users } from 'lucide-react';
 
 type Player = { id: string; first_name: string; last_name: string; date_of_birth: string | null; grade: string | null; gender: string | null; final_age_group: string | null; positions: string[] | null; email_primary: string | null };
 type Assignment = { player_id: string; team: string | null; status: string; offer_status: string };
@@ -25,10 +25,6 @@ export default function TryoutRostersPage() {
   const [filterTeam, setFilterTeam] = useState('All');
   const [expanded, setExpanded]     = useState<Set<string>>(new Set());
   const [sending, setSending]       = useState<Record<string, boolean>>({});
-  const seasonYear = seasonLabelToYear(season);
-
-  const getAg = (p: Player) =>
-    p.final_age_group || (p.date_of_birth ? calcAgeGroup(p.date_of_birth, seasonYear) : 'Unknown');
 
   async function load() {
     if (!club) return;
@@ -44,12 +40,13 @@ export default function TryoutRostersPage() {
     setCoaches(Object.fromEntries(((cs ?? []) as { id: string; full_name: string }[]).map(c => [c.id, c.full_name])));
     setLoading(false);
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club]);
 
   function toggleExpanded(teamId: string) {
     setExpanded(prev => {
       const next = new Set(prev);
-      next.has(teamId) ? next.delete(teamId) : next.add(teamId);
+      if (next.has(teamId)) next.delete(teamId); else next.add(teamId);
       return next;
     });
   }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Bell, BellOff, Megaphone, X, ChevronDown, Trash2, Pin, Mail, Send, Sparkles, RefreshCw, Check } from 'lucide-react';
+import { Plus, Bell, BellOff, Megaphone, ChevronDown, Trash2, Pin, Mail, Send, Sparkles, RefreshCw, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -102,6 +102,7 @@ export default function AnnouncementsPage() {
     setLoading(false);
   }, [teams, club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   function openCreate() {

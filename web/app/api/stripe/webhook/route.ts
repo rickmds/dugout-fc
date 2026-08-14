@@ -40,8 +40,92 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (event.type === 'payment_intent.payment_failed') {
+    const pi = event.data.object;
+    const { player_fee_id, club_slug } = pi.metadata ?? {};
+    if (player_fee_id) {
+      const declineReason = pi.last_payment_error?.message ?? 'Your card was declined.';
+      await handlePaymentFailed({ player_fee_id, club_slug, declineReason });
+    }
+  }
+
+  if (event.type === 'account.updated') {
+    await handleAccountUpdated(event.data.object);
+  }
+
   return NextResponse.json({ received: true });
 }
+
+// Stripe fires this whenever a connected account's status changes — the
+// only path to re-check it, since connect/return/route.ts only runs once
+// at the end of onboarding. If Stripe later restricts/deauthorizes an
+// account (compliance hold, disputes, manual review), charges_enabled
+// flips to false and the payment page needs to stop offering online
+// payment for that club instead of silently keeping stripe_connect_onboarded
+// stuck at true forever.
+async function handleAccountUpdated(account: { id: string; charges_enabled?: boolean; details_submitted?: boolean }) {
+  const supabase = supabaseAdmin();
+  const stillOnboarded = !!(account.charges_enabled && account.details_submitted);
+
+  const { error } = await supabase
+    .from('clubs')
+    .update({ stripe_connect_onboarded: stillOnboarded })
+    .eq('stripe_connect_account_id', account.id);
+
+  if (error) console.error('account.updated: failed to sync stripe_connect_onboarded', { account_id: account.id, error: error.message });
+}
+
+// A declined/failed card produces no fee_payments row — nothing was
+// actually charged — but the parent should still be told, otherwise a
+// failed payment looks identical to "never tried" from their side.
+async function handlePaymentFailed({ player_fee_id, club_slug, declineReason }: {
+  player_fee_id: string; club_slug?: string; declineReason: string;
+}) {
+  const supabase = supabaseAdmin();
+
+  const { data: fee } = await supabase
+    .from('player_fees')
+    .select('id, description, player_id')
+    .eq('id', player_fee_id)
+    .single();
+  if (!fee) return;
+
+  const { data: player } = await supabase
+    .from('players')
+    .select('profile_id')
+    .eq('id', fee.player_id)
+    .single();
+  const parentProfileId = player?.profile_id as string | null;
+  if (!parentProfileId) return;
+
+  await supabase.from('notifications').insert({
+    profile_id: parentProfileId,
+    type:       'payment_failed',
+    title:      '❌ Payment failed',
+    body:       `${fee.description} — ${declineReason}`,
+    data:       { player_fee_id, type: 'payment_failed', club_slug: club_slug ?? '' },
+  });
+
+  const { data: parentTokens } = await supabase
+    .from('push_tokens').select('token').eq('profile_id', parentProfileId);
+  if (parentTokens?.length) {
+    await fetch(EXPO_PUSH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(parentTokens.map(t => ({
+        to: t.token, title: '❌ Payment failed',
+        body: `${fee.description} — ${declineReason}`,
+        sound: 'default',
+        data: { type: 'payment_failed', player_fee_id, club_slug: club_slug ?? '' },
+      }))),
+    });
+  }
+}
+
+type FeeWithClub = {
+  id: string; amount_due: number; amount_paid: number; discount: number; description: string; player_id: string;
+  teams: { id: string; name: string; clubs: { id: string; name: string; slug: string | null; logo_url: string | null; primary_color: string | null } | null } | null;
+};
 
 async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, club_slug, reference, payment_intent_id }: {
   player_fee_id: string; pay_amount: number; club_slug?: string; reference: string; payment_intent_id: string;
@@ -52,9 +136,9 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
   // Load the fee
   const { data: fee } = await supabase
     .from('player_fees')
-    .select('id, amount_due, amount_paid, discount, description, player_id, teams!inner(id, name, clubs!inner(name, slug, logo_url, primary_color))')
+    .select('id, amount_due, amount_paid, discount, description, player_id, teams!inner(id, name, clubs!inner(id, name, slug, logo_url, primary_color))')
     .eq('id', player_fee_id)
-    .single();
+    .single<FeeWithClub>();
 
   if (!fee) return;
 
@@ -63,28 +147,38 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
   const balance   = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
   const newStatus = newPaid >= balance - 0.01 ? 'paid' : 'partial';
 
-  // Record payment + update fee status
-  await Promise.all([
-    supabase.from('fee_payments').insert({
-      player_fee_id,
-      amount:                  amountPaid,
-      method:                  'stripe',
-      reference:               reference,
-      stripe_payment_intent_id: paymentIntentId,
-      stripe_charge_id:        paymentIntentId,
-      notes:                   'Online payment via Stripe',
-    }),
-    supabase.from('player_fees').update({
-      amount_paid: newPaid,
-      status:      newStatus,
-    }).eq('id', player_fee_id),
-  ]);
+  // Idempotency: Stripe delivers webhooks at-least-once, so the same
+  // payment can arrive more than once (checkout.session.completed AND
+  // payment_intent.succeeded for one payment, or a plain retry). The
+  // insert below is the atomic claim — a duplicate delivery hits the
+  // unique constraint on stripe_payment_intent_id and we stop here
+  // before crediting the fee or notifying anyone a second time.
+  const { error: insertErr } = await supabase.from('fee_payments').insert({
+    player_fee_id,
+    amount:                   amountPaid,
+    method:                   'stripe',
+    reference:                reference,
+    stripe_payment_intent_id: paymentIntentId,
+    stripe_charge_id:         paymentIntentId,
+    notes:                    'Online payment via Stripe',
+  });
+  if (insertErr) {
+    if (insertErr.code === '23505') return; // already processed this payment intent
+    console.error('fee_payments insert failed', insertErr);
+    return;
+  }
+
+  const { error: updateErr } = await supabase.from('player_fees').update({
+    amount_paid: newPaid,
+    status:      newStatus,
+  }).eq('id', player_fee_id);
+  if (updateErr) console.error('player_fees update failed', updateErr, { player_fee_id });
 
   // Load parent + coach details for notifications
-  const club      = (fee as any).teams?.clubs;
+  const club      = fee.teams?.clubs;
   const clubName  = club?.name  ?? 'Your club';
-  const teamId    = (fee as any).teams?.id as string;
-  const teamName  = (fee as any).teams?.name ?? 'your team';
+  const teamId    = fee.teams?.id ?? '';
+  const teamName  = fee.teams?.name ?? 'your team';
   const accent    = resolveAccent(club?.primary_color);
 
   const { data: player } = await supabase
@@ -114,7 +208,7 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
       await fetch(EXPO_PUSH_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(parentTokens.map((t: any) => ({
+        body: JSON.stringify(parentTokens.map(t => ({
           to: t.token, title: '✅ Payment confirmed',
           body: `${fee.description} · ${fmtAmount} received. Thanks!`,
           sound: 'default',
@@ -130,8 +224,8 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
     supabase.from('profiles').select('id').eq('club_id', club?.id ?? '').in('role', ['org_admin', 'app_admin']),
   ]);
   const staffIds = [
-    ...((coachRows ?? []) as any[]).map(r => r.profile_id as string),
-    ...((adminRows ?? []) as any[]).map(r => r.id as string),
+    ...(coachRows ?? []).map(r => r.profile_id as string),
+    ...(adminRows ?? []).map(r => r.id as string),
   ].filter((id, i, arr) => !!id && arr.indexOf(id) === i && id !== parentProfileId);
 
   if (staffIds.length) {
@@ -150,7 +244,7 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
       await fetch(EXPO_PUSH_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify((staffTokenRows as any[]).map(t => ({
+        body: JSON.stringify(staffTokenRows.map(t => ({
           to: t.token, title: '💳 Payment received',
           body: `${playerName} paid ${fee.description} · ${fmtAmount}`,
           sound: 'default',
@@ -231,6 +325,18 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
 }
 
 // ── Stripe webhook signature verification (no SDK) ────────────────────────────
+const SIGNATURE_TOLERANCE_SECONDS = 300; // Stripe's own recommended replay window
+
+// Constant-time compare — a plain `===` short-circuits on the first
+// mismatched character, which leaks timing information an attacker could
+// use to guess the correct signature one byte at a time.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 async function verifyStripeSignature(body: string, header: string, secret: string): Promise<boolean> {
   try {
     const parts: Record<string, string> = {};
@@ -242,11 +348,14 @@ async function verifyStripeSignature(body: string, header: string, secret: strin
     const signature = parts['v1'];
     if (!timestamp || !signature) return false;
 
+    const ts = parseInt(timestamp, 10);
+    if (!Number.isFinite(ts) || Math.abs(Math.floor(Date.now() / 1000) - ts) > SIGNATURE_TOLERANCE_SECONDS) return false;
+
     const payload    = `${timestamp}.${body}`;
     const key        = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const sigBytes   = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
     const computed   = Array.from(new Uint8Array(sigBytes)).map(b => b.toString(16).padStart(2, '0')).join('');
-    return computed === signature;
+    return timingSafeEqual(computed, signature);
   } catch {
     return false;
   }

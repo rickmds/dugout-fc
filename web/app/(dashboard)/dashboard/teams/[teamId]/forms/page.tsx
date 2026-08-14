@@ -29,12 +29,12 @@ export default function TeamFormsPage() {
       supabase.from('waiver_team_assignments').select('waivers(id, title, required_by, waiver_signatures(id))').eq('team_id', teamId),
     ]);
 
-    setForms((formsRes.data ?? []).map((f: any) => ({
+    setForms((formsRes.data ?? []).map(f => ({
       id: f.id, title: f.title, status: f.status,
       submissions: f.registration_submissions?.length ?? 0,
     })));
 
-    setWaivers(((waiversRes.data ?? []).map((a: any) => a.waivers).filter(Boolean)).map((w: any) => ({
+    setWaivers(((waiversRes.data ?? []).map(a => a.waivers as unknown as { id: string; title: string; required_by: string | null; waiver_signatures: { id: string }[] } | null).filter(w => w !== null)).map(w => ({
       id: w.id, title: w.title, required_by: w.required_by,
       signed: w.waiver_signatures?.length ?? 0,
     })));
@@ -42,6 +42,7 @@ export default function TeamFormsPage() {
     setLoading(false);
   }, [teamId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const statusBadge = (s: string) => {

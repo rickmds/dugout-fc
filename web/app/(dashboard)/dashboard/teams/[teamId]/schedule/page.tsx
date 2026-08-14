@@ -3,14 +3,16 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
-  Plus, CalendarDays, MapPin, Clock, Bell, BellOff, Pencil,
+  Plus, CalendarDays, MapPin, Bell, BellOff, Pencil,
   Trash2, X, ChevronDown, Users, Check,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { sendEventPush } from '@/lib/pushEvent';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
 import GuestCalloutSection from '@/components/dashboard/GuestCalloutSection';
+import AttendanceFeeModal from '@/components/dashboard/AttendanceFeeModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,9 @@ type RsvpPlayer = {
   position: string | null; status: 'attending' | 'not_attending' | 'pending';
   rsvp_id: string | null;
 };
+
+type AttStatus = 'present' | 'absent' | 'late';
+type AttRecord = { id: string; status: AttStatus };
 
 type FormState = {
   title: string; type: 'game' | 'training' | 'other';
@@ -308,6 +313,12 @@ export default function TeamSchedulePage() {
   const [confirmedGuestCount, setConfirmedGuestCount] = useState(0);
   const [confirmedGuests,     setConfirmedGuests]     = useState<ConfirmedGuest[]>([]);
 
+  // Attendance panel (past events)
+  const [panelTab,  setPanelTab]  = useState<'rsvps' | 'attendance'>('rsvps');
+  const [attMarks,  setAttMarks]  = useState<Record<string, AttRecord | null>>({});
+  const [attLoading, setAttLoading] = useState(false);
+  const [attSaving, setAttSaving] = useState<string | null>(null);
+
   const dialogRef    = useRef<HTMLDialogElement>(null);
   const delDialogRef = useRef<HTMLDialogElement>(null);
 
@@ -332,7 +343,7 @@ export default function TeamSchedulePage() {
       supabase.from('players').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
     ]);
 
-    const total = (countRes as any).count ?? 0;
+    const total = countRes.count ?? 0;
     const rsvpMap: Record<string, { attending: number; not_attending: number }> = {};
     for (const r of rsvpRes.data ?? []) {
       if (!rsvpMap[r.event_id]) rsvpMap[r.event_id] = { attending: 0, not_attending: 0 };
@@ -348,8 +359,9 @@ export default function TeamSchedulePage() {
       total,
     })));
     setLoading(false);
-  }, [teamId, tab]);
+  }, [teamId, tab, today]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   // Auto-select and scroll to event from ?event= query param
@@ -358,23 +370,29 @@ export default function TeamSchedulePage() {
     if (!eventId || !events.length) return;
     const match = events.find((e) => e.id === eventId);
     if (!match) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     setSelectedEvent(match);
     setTimeout(() => {
       document.getElementById(`event-${eventId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
   }, [events, searchParams]);
 
-  // Reset guest count when event changes
-  useEffect(() => { setConfirmedGuestCount(0); setConfirmedGuests([]); }, [selectedEvent?.id]);
+  // Reset guest count + panel tab when event changes
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
+  useEffect(() => { setConfirmedGuestCount(0); setConfirmedGuests([]); setPanelTab('rsvps'); setAttMarks({}); }, [selectedEvent?.id]);
 
-  // Load RSVP players when an event is selected
+  // Load RSVP players (+ attendance, for past events) when an event is selected
   useEffect(() => {
     if (!selectedEvent) return;
     (async () => {
       setRsvpLoading(true);
-      const [playerRes, rsvpRes] = await Promise.all([
+      const isPast = selectedEvent.event_date < today;
+      const [playerRes, rsvpRes, attRes] = await Promise.all([
         supabase.from('players').select('id,full_name,jersey_number,position').eq('team_id', teamId).order('full_name'),
         supabase.from('event_rsvps').select('id,player_id,status').eq('event_id', selectedEvent.id),
+        isPast
+          ? supabase.from('event_attendance').select('id, player_id, status').eq('event_id', selectedEvent.id)
+          : Promise.resolve({ data: [] as { id: string; player_id: string; status: string }[] }),
       ]);
       const rsvpMap = new Map<string, { id: string; status: 'attending' | 'not_attending' }>();
       for (const r of rsvpRes.data ?? []) rsvpMap.set(r.player_id, { id: r.id, status: r.status });
@@ -382,9 +400,12 @@ export default function TeamSchedulePage() {
         const r = rsvpMap.get(p.id);
         return { ...p, status: r?.status ?? 'pending', rsvp_id: r?.id ?? null };
       }));
+      const marks: Record<string, AttRecord | null> = {};
+      for (const a of attRes.data ?? []) marks[a.player_id] = { id: a.id, status: a.status as AttStatus };
+      setAttMarks(marks);
       setRsvpLoading(false);
     })();
-  }, [selectedEvent, teamId]);
+  }, [selectedEvent, teamId, today]);
 
   async function toggleRsvp(player: RsvpPlayer, newStatus: 'attending' | 'not_attending' | 'pending') {
     if (!selectedEvent) return;
@@ -398,11 +419,40 @@ export default function TeamSchedulePage() {
     } else {
       const { data } = await supabase.from('event_rsvps').insert({
         event_id: selectedEvent.id, player_id: player.id, status: newStatus, responded_by: profile?.id,
-      }).select('id').single();
-      setRsvpPlayers(p => p.map(pl => pl.id === player.id ? { ...pl, status: newStatus, rsvp_id: (data as any)?.id ?? null } : pl));
+      }).select('id').single<{ id: string }>();
+      setRsvpPlayers(p => p.map(pl => pl.id === player.id ? { ...pl, status: newStatus, rsvp_id: data?.id ?? null } : pl));
       return;
     }
     setRsvpPlayers(p => p.map(pl => pl.id === player.id ? { ...pl, status: newStatus } : pl));
+  }
+
+  async function markAttendance(playerId: string, newStatus: AttStatus | null) {
+    if (!selectedEvent) return;
+    setAttSaving(playerId);
+    const existing = attMarks[playerId];
+    if (newStatus === null) {
+      if (existing) await supabase.from('event_attendance').delete().eq('id', existing.id);
+      setAttMarks(prev => { const n = { ...prev }; delete n[playerId]; return n; });
+    } else if (existing) {
+      await supabase.from('event_attendance').update({ status: newStatus, marked_by: profile?.id, marked_at: new Date().toISOString() }).eq('id', existing.id);
+      setAttMarks(prev => ({ ...prev, [playerId]: { id: existing.id, status: newStatus } }));
+    } else {
+      const { data } = await supabase.from('event_attendance').insert({ event_id: selectedEvent.id, player_id: playerId, status: newStatus, marked_by: profile?.id }).select('id').single<{ id: string }>();
+      if (data) setAttMarks(prev => ({ ...prev, [playerId]: { id: data.id, status: newStatus } }));
+    }
+    setAttSaving(null);
+  }
+
+  async function markAllPresent() {
+    if (!selectedEvent) return;
+    setAttLoading(true);
+    const rows = rsvpPlayers.map(p => ({ event_id: selectedEvent.id, player_id: p.id, status: 'present' as const, marked_by: profile?.id }));
+    await supabase.from('event_attendance').upsert(rows, { onConflict: 'event_id,player_id' });
+    const { data } = await supabase.from('event_attendance').select('id, player_id, status').eq('event_id', selectedEvent.id);
+    const marks: Record<string, AttRecord | null> = {};
+    for (const a of data ?? []) marks[a.player_id] = { id: a.id, status: a.status as AttStatus };
+    setAttMarks(marks);
+    setAttLoading(false);
   }
 
   function openCreate() {
@@ -466,24 +516,16 @@ export default function TeamSchedulePage() {
           try {
             const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
             const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            await fetch('/api/push-event', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_updated', title: `📝 Event updated — ${teamName}`, body: `${savedTitle} · ${label}${form.hasTime ? ' · ' + fmtTime(form.event_time) : ''}`, data: { event_id: editId } }),
-            });
+            await sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_updated', title: `📝 Event updated — ${teamName}`, body: `${savedTitle} · ${label}${form.hasTime ? ' · ' + fmtTime(form.event_time) : ''}`, data: { event_id: editId } });
           } catch { /* non-critical */ }
         }
       } else {
-        const { data, error } = await supabase.from('events').insert(payload).select('id').single();
+        const { data, error } = await supabase.from('events').insert(payload).select('id').single<{ id: string }>();
         if (error) throw error;
-        if (form.push_notify && (data as any)?.id) {
+        if (form.push_notify && data?.id) {
           try {
             const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
-            await fetch('/api/push-event', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ team_id: teamId, exclude_profile_id: profile?.id, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: savedTitle, data: { event_id: (data as any).id } }),
-            });
+            await sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: savedTitle, data: { event_id: data.id } });
           } catch { /* non-critical */ }
         }
       }
@@ -506,11 +548,7 @@ export default function TeamSchedulePage() {
     delDialogRef.current?.close();
     load();
     if (ev && teamId) {
-      fetch('/api/push-event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_id: teamId, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }),
-      }).catch(() => {});
+      sendEventPush({ team_id: teamId, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }).catch(() => {});
     }
   }
 
@@ -631,7 +669,26 @@ export default function TeamSchedulePage() {
               </div>
             </div>
 
-            {!rsvpLoading && (
+            {/* Tab switcher — past events only */}
+            {(() => {
+              const isPast = selectedEvent.event_date < today;
+              const markedCount = Object.keys(attMarks).length;
+              return isPast ? (
+                <div style={{ display: 'flex', padding: '10px 14px', gap: '6px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
+                  {([['rsvps', '📋 RSVPs'], ['attendance', '✅ Attendance']] as const).map(([t, label]) => (
+                    <button key={t} onClick={() => setPanelTab(t)}
+                      style={{ flex: 1, padding: '7px 10px', borderRadius: '9px', border: panelTab === t ? `2px solid ${primary}` : '2px solid #E2E8F0', background: panelTab === t ? `${primary}12` : '#F8FAFC', color: panelTab === t ? primary : '#64748B', fontWeight: '700', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit', position: 'relative' }}>
+                      {label}
+                      {t === 'attendance' && markedCount > 0 && (
+                        <span style={{ marginLeft: '5px', fontSize: '10px', fontWeight: '800', background: primary, color: '#fff', borderRadius: '10px', padding: '1px 6px' }}>{markedCount}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+
+            {!rsvpLoading && panelTab === 'rsvps' && (
               <div style={{ display: 'flex', gap: '8px', padding: '12px 18px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
                 <div style={{ flex: 1, textAlign: 'center', background: '#F0FDF4', borderRadius: '8px', padding: '8px 6px' }}>
                   <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{attending.length + confirmedGuestCount}</div>
@@ -651,6 +708,44 @@ export default function TeamSchedulePage() {
               </div>
             )}
 
+            {!rsvpLoading && panelTab === 'attendance' && (() => {
+              const presentCount = Object.values(attMarks).filter(a => a?.status === 'present').length;
+              const lateCount    = Object.values(attMarks).filter(a => a?.status === 'late').length;
+              const absentCount  = Object.values(attMarks).filter(a => a?.status === 'absent').length;
+              return (
+                <div style={{ flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: '8px', padding: '12px 18px 10px', borderBottom: '1px solid #F1F5F9' }}>
+                    <div style={{ flex: 1, textAlign: 'center', background: '#F0FDF4', borderRadius: '10px', padding: '8px 6px' }}>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#16A34A' }}>{presentCount}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#22C55E' }}>Present</div>
+                    </div>
+                    <div style={{ flex: 1, textAlign: 'center', background: '#FFFBEB', borderRadius: '10px', padding: '8px 6px' }}>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#D97706' }}>{lateCount}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#F59E0B' }}>Late</div>
+                    </div>
+                    <div style={{ flex: 1, textAlign: 'center', background: '#FEF2F2', borderRadius: '10px', padding: '8px 6px' }}>
+                      <div style={{ fontSize: '20px', fontWeight: '900', color: '#DC2626' }}>{absentCount}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#EF4444' }}>Absent</div>
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 18px 6px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                    <AttendanceFeeModal
+                      teamId={teamId}
+                      eventId={selectedEvent.id}
+                      eventTitle={selectedEvent.title}
+                      primary={primary}
+                      players={rsvpPlayers.map(p => ({ id: p.id, full_name: p.full_name }))}
+                      attStatusByPlayer={Object.fromEntries(Object.entries(attMarks).map(([id, rec]) => [id, rec?.status]))}
+                    />
+                    <button onClick={markAllPresent} disabled={attLoading}
+                      style={{ fontSize: '11px', fontWeight: '700', color: '#16A34A', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '7px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {attLoading ? 'Saving…' : '✓ Mark all present'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {rsvpLoading ? (
                 <div style={{ padding: '40px', textAlign: 'center' }}>
@@ -660,6 +755,43 @@ export default function TeamSchedulePage() {
                 <div style={{ padding: '32px 20px', textAlign: 'center' }}>
                   <Users size={28} color="#CBD5E1" style={{ marginBottom: '8px' }} />
                   <div style={{ fontSize: '13px', color: '#94A3B8' }}>No players on this team yet</div>
+                </div>
+              ) : panelTab === 'attendance' ? (
+                /* ── Attendance marking UI ── */
+                <div>
+                  <div style={{ padding: '8px 18px 4px', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', background: '#FAFAFA', borderBottom: '1px solid #F1F5F9' }}>
+                    Mark who actually showed up
+                  </div>
+                  {rsvpPlayers.map((p) => {
+                    const att = attMarks[p.id];
+                    const isSaving = attSaving === p.id;
+                    const rsvpColor = p.status === 'attending' ? '#16A34A' : p.status === 'not_attending' ? '#DC2626' : '#94A3B8';
+                    const rsvpLabel = p.status === 'attending' ? 'RSVPd Going' : p.status === 'not_attending' ? 'RSVPd Out' : 'No RSVP';
+                    return (
+                      <div key={p.id} style={{ padding: '10px 18px', borderBottom: '1px solid #F8FAFC', opacity: isSaving ? 0.6 : 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '7px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: '#64748B', flexShrink: 0 }}>
+                            {p.full_name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.full_name}</div>
+                            <div style={{ fontSize: '10px', fontWeight: '600', color: rsvpColor }}>{rsvpLabel}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          {([['present', '✓ Present', '#16A34A', '#F0FDF4', '#BBF7D0'],
+                             ['late',    '⏰ Late',    '#D97706', '#FFFBEB', '#FDE68A'],
+                             ['absent',  '✗ Absent',  '#DC2626', '#FEF2F2', '#FECACA']] as const).map(([s, label, color, bg, border]) => (
+                            <button key={s} onClick={() => markAttendance(p.id, att?.status === s ? null : s)}
+                              disabled={isSaving}
+                              style={{ flex: 1, padding: '6px 4px', borderRadius: '8px', border: `1.5px solid ${att?.status === s ? border : '#E2E8F0'}`, background: att?.status === s ? bg : '#fff', color: att?.status === s ? color : '#94A3B8', fontWeight: '700', fontSize: '11px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <>
@@ -728,6 +860,7 @@ export default function TeamSchedulePage() {
               eventId={selectedEvent.id}
               teamId={teamId}
               teamName={teams.find(t => t.id === teamId)?.name ?? ''}
+              teamClubId={teams.find(t => t.id === teamId)?.club_id ?? ''}
               eventTitle={selectedEvent.title}
               primary={primary}
             />

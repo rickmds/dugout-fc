@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { FileText, ClipboardCheck, ExternalLink, ChevronRight, Users, Check, X, Clock } from 'lucide-react';
+import { FileText, ClipboardCheck, ExternalLink, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import Link from 'next/link';
@@ -33,28 +33,29 @@ export default function FormsPage() {
     const teamIds = teams.map(t => t.id);
 
     const [formsRes, waiversRes] = await Promise.all([
-      supabase.from('registration_forms').select('id,title,status,team_id,teams(name),registration_submissions(id)').in('team_id', teamIds).order('created_at', { ascending: false }),
+      supabase.from('registration_forms').select('id,title,status,team_id,created_at,teams(name),registration_submissions(id)').in('team_id', teamIds).order('created_at', { ascending: false }),
       supabase.from('waivers').select('id,title,required_by,waiver_team_assignments(team_id,teams(name)),waiver_signatures(id)').in('id',
-        (await supabase.from('waiver_team_assignments').select('waiver_id').in('team_id', teamIds)).data?.map((r: any) => r.waiver_id) ?? []
+        (await supabase.from('waiver_team_assignments').select('waiver_id').in('team_id', teamIds)).data?.map(r => r.waiver_id) ?? []
       ),
     ]);
 
-    setForms((formsRes.data ?? []).map((f: any) => ({
+    setForms((formsRes.data ?? []).map(f => ({
       id: f.id, title: f.title, status: f.status,
-      team_id: f.team_id, team_name: f.teams?.name ?? '—',
+      team_id: f.team_id, team_name: (f.teams as unknown as { name: string } | null)?.name ?? '—',
       submissions: f.registration_submissions?.length ?? 0,
       created_at: f.created_at,
     })));
 
-    setWaivers((waiversRes.data ?? []).map((w: any) => ({
+    setWaivers((waiversRes.data ?? []).map(w => ({
       id: w.id, title: w.title, required_by: w.required_by,
-      team_names: (w.waiver_team_assignments ?? []).map((a: any) => a.teams?.name).filter(Boolean),
+      team_names: (w.waiver_team_assignments ?? []).map(a => (a.teams as unknown as { name: string } | null)?.name).filter((n): n is string => !!n),
       total: 0, signed: w.waiver_signatures?.length ?? 0,
     })));
 
     setLoading(false);
   }, [club, teams]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const filteredForms   = teamFilter ? forms.filter(f => f.team_id === teamFilter) : forms;

@@ -33,7 +33,6 @@ const BLANK: OfferSettings = {
   club_website_url: '', uniform_shop_url: '',
 };
 
-const TEMPLATE_LABELS: Record<string, string> = { waitlist: 'Waitlist', decline: 'Decline', reminder: 'Reminder' };
 
 const MERGE_TOKENS = [
   { token: '{{player_first_name}}', desc: 'Player first name' },
@@ -162,6 +161,80 @@ const bodyTA: React.CSSProperties = {
 const lbl = (text: string) => (
   <label style={{ fontSize: '11.5px', fontWeight: '700', color: '#374151', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{text}</label>
 );
+
+function EmailBodyEditor({ editorKey, value, onChange, onPreview, previewLabel, showCta, placeholder, emailModes, setEmailModes, primary, onViewTokens }: {
+  editorKey: string; value: string; onChange: (v: string) => void;
+  onPreview: () => void; previewLabel: string; showCta: boolean; placeholder?: string;
+  emailModes: Record<string, 'simple' | 'html'>;
+  setEmailModes: React.Dispatch<React.SetStateAction<Record<string, 'simple' | 'html'>>>;
+  primary: string; onViewTokens: () => void;
+}) {
+  const mode = emailModes[editorKey] ?? (hasHtmlTags(value) ? 'html' : 'simple');
+  const isSimple = mode === 'simple';
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+        <label style={{ fontSize: '12px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email body</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Simple / HTML toggle */}
+          <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '6px', padding: '2px', gap: '1px' }}>
+            <button onClick={() => setEmailModes(m => ({ ...m, [editorKey]: 'simple' }))}
+              style={{ padding: '4px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
+                background: isSimple ? '#fff' : 'transparent', color: isSimple ? '#0F172A' : '#64748B',
+                boxShadow: isSimple ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.1s' }}>
+              ✏ Text
+            </button>
+            <button onClick={() => setEmailModes(m => ({ ...m, [editorKey]: 'html' }))}
+              style={{ padding: '4px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
+                background: !isSimple ? '#fff' : 'transparent', color: !isSimple ? '#0F172A' : '#64748B',
+                boxShadow: !isSimple ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.1s' }}>
+              {'<>'} HTML
+            </button>
+          </div>
+          {!value && previewLabel === 'Roster Offer' && (
+            <button onClick={() => { onChange(DEFAULT_OFFER_BODY); setEmailModes(m => ({ ...m, [editorKey]: 'html' })); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '6px', background: '#EFF6FF', border: '1px solid #BFDBFE', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#1D4ED8' }}>
+              Load template
+            </button>
+          )}
+          <button onClick={onPreview}
+            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '6px', background: '#F1F5F9', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
+            <Eye size={12} /> Preview
+          </button>
+        </div>
+      </div>
+
+      {isSimple ? (
+        <textarea
+          value={stripHtmlToText(value)}
+          onChange={e => onChange(textToHtml(e.target.value))}
+          style={{ ...bodyTA, fontFamily: 'inherit', fontSize: '14px', lineHeight: '1.7', minHeight: showCta ? '220px' : '160px' }}
+          placeholder={'Write your message here…\n\nUse blank lines to separate paragraphs.\nMerge tokens like {{player_first_name}} work here too.'}
+        />
+      ) : (
+        <textarea
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{ ...bodyTA, minHeight: showCta ? '280px' : '180px' }}
+          placeholder={placeholder}
+        />
+      )}
+
+      <div style={{ marginTop: '8px', fontSize: '11px', color: '#94A3B8', lineHeight: '1.8' }}>
+        {isSimple ? (
+          'Plain text — blank lines create paragraphs. Switch to HTML for tables and advanced formatting.'
+        ) : (
+          <>HTML source. Quick tokens: <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{player_first_name}}'}</code>
+            <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{team_name}}'}</code>
+            <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{offer_deadline}}'}</code>
+            <button onClick={onViewTokens} style={{ background: 'none', border: 'none', cursor: 'pointer', color: primary, fontWeight: '600', fontSize: '11px', padding: '0 2px' }}>all tokens →</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function TryoutOfferSettingsPage() {
   const { club } = useDashboard();
@@ -349,77 +422,6 @@ export default function TryoutOfferSettingsPage() {
     );
   }
 
-  function EmailBodyEditor({ editorKey, value, onChange, onPreview, previewLabel, showCta, placeholder }: {
-    editorKey: string; value: string; onChange: (v: string) => void;
-    onPreview: () => void; previewLabel: string; showCta: boolean; placeholder?: string;
-  }) {
-    const mode = emailModes[editorKey] ?? (hasHtmlTags(value) ? 'html' : 'simple');
-    const isSimple = mode === 'simple';
-
-    return (
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-          <label style={{ fontSize: '12px', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email body</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {/* Simple / HTML toggle */}
-            <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '6px', padding: '2px', gap: '1px' }}>
-              <button onClick={() => setEmailModes(m => ({ ...m, [editorKey]: 'simple' }))}
-                style={{ padding: '4px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
-                  background: isSimple ? '#fff' : 'transparent', color: isSimple ? '#0F172A' : '#64748B',
-                  boxShadow: isSimple ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.1s' }}>
-                ✏ Text
-              </button>
-              <button onClick={() => setEmailModes(m => ({ ...m, [editorKey]: 'html' }))}
-                style={{ padding: '4px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
-                  background: !isSimple ? '#fff' : 'transparent', color: !isSimple ? '#0F172A' : '#64748B',
-                  boxShadow: !isSimple ? '0 1px 2px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.1s' }}>
-                {'<>'} HTML
-              </button>
-            </div>
-            {!value && previewLabel === 'Roster Offer' && (
-              <button onClick={() => { onChange(DEFAULT_OFFER_BODY); setEmailModes(m => ({ ...m, [editorKey]: 'html' })); }}
-                style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '6px', background: '#EFF6FF', border: '1px solid #BFDBFE', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#1D4ED8' }}>
-                Load template
-              </button>
-            )}
-            <button onClick={onPreview}
-              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '6px', background: '#F1F5F9', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#374151' }}>
-              <Eye size={12} /> Preview
-            </button>
-          </div>
-        </div>
-
-        {isSimple ? (
-          <textarea
-            value={stripHtmlToText(value)}
-            onChange={e => onChange(textToHtml(e.target.value))}
-            style={{ ...bodyTA, fontFamily: 'inherit', fontSize: '14px', lineHeight: '1.7', minHeight: showCta ? '220px' : '160px' }}
-            placeholder={'Write your message here…\n\nUse blank lines to separate paragraphs.\nMerge tokens like {{player_first_name}} work here too.'}
-          />
-        ) : (
-          <textarea
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            style={{ ...bodyTA, minHeight: showCta ? '280px' : '180px' }}
-            placeholder={placeholder}
-          />
-        )}
-
-        <div style={{ marginTop: '8px', fontSize: '11px', color: '#94A3B8', lineHeight: '1.8' }}>
-          {isSimple ? (
-            'Plain text — blank lines create paragraphs. Switch to HTML for tables and advanced formatting.'
-          ) : (
-            <>HTML source. Quick tokens: <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{player_first_name}}'}</code>
-              <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{team_name}}'}</code>
-              <code style={{ background: '#F1F5F9', color: '#374151', padding: '1px 5px', borderRadius: '4px', marginRight: '4px' }}>{'{{offer_deadline}}'}</code>
-              <button onClick={() => setActiveSection('tokens')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: primary, fontWeight: '600', fontSize: '11px', padding: '0 2px' }}>all tokens →</button>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
@@ -530,6 +532,7 @@ export default function TryoutOfferSettingsPage() {
                   previewLabel="Roster Offer"
                   showCta={true}
                   placeholder={`<p>Dear {{parent_name}},</p>\n<p>We are pleased to offer <strong>{{player_first_name}}</strong> a roster spot on <strong>{{team_name}}</strong> for the {{season_label}} season.</p>`}
+                  emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
                 />
               </div>
             </div>
@@ -547,6 +550,7 @@ export default function TryoutOfferSettingsPage() {
                   previewLabel="U8 Offer"
                   showCta={true}
                   placeholder="Leave blank to use the U9+ offer email above."
+                  emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
                 />
               </div>
             </div>
@@ -567,6 +571,7 @@ export default function TryoutOfferSettingsPage() {
                   onPreview={() => setPreview(buildPreviewHtml(templates['waitlist']?.body_html ?? '', 'Waitlist', false))}
                   previewLabel="Waitlist"
                   showCta={false}
+                  emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
                 />
               </div>
             </div>
@@ -587,6 +592,7 @@ export default function TryoutOfferSettingsPage() {
                   onPreview={() => setPreview(buildPreviewHtml(templates['decline']?.body_html ?? '', 'Decline', false))}
                   previewLabel="Decline"
                   showCta={false}
+                  emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
                 />
               </div>
             </div>
@@ -607,6 +613,7 @@ export default function TryoutOfferSettingsPage() {
                   onPreview={() => setPreview(buildPreviewHtml(templates['reminder']?.body_html ?? '', 'Reminder', true))}
                   previewLabel="Reminder"
                   showCta={true}
+                  emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
                 />
               </div>
             </div>

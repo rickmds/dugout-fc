@@ -259,7 +259,7 @@ export async function POST(req: NextRequest) {
       title: `❌ Session Cancelled — ${club.name}`,
       body: `Your session at ${fieldList} has been cancelled. ${reason ? `Reason: ${reason}.` : ''}`,
       sound: 'default',
-      data: { type: 'field_closure', field_names, reason, club_slug: (club as any).slug ?? '' },
+      data: { type: 'field_closure', field_names, reason, club_slug: club.slug ?? '' },
     }));
 
     for (let i = 0; i < messages.length; i += 100) {

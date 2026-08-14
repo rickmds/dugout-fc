@@ -131,6 +131,7 @@ export default function GamesPage() {
     return { slots: sl ?? [], permits: pe ?? [] };
   }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   // Auto-fill on first load when there are permits but no slots yet
@@ -408,7 +409,7 @@ export default function GamesPage() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []); // eslint-disable-line
+  }, []);
 
   // Capture pre-edit snapshot whenever the user opens a slot
   useEffect(() => {
@@ -753,7 +754,7 @@ export default function GamesPage() {
 
 // ── Schedule Grid ─────────────────────────────────────────────────────────────
 
-function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked, onSlotClick, onOpenFieldEdit, onReorderFields, primary, allSlots }: {
+function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked: _isBlocked, onSlotClick, onOpenFieldEdit, onReorderFields, primary, allSlots }: {
   sortedDates: string[]; columns: Column[];
   slotsFor: (date: string, fn: string) => GameSlot[];
   isBlocked: (slot: GameSlot) => boolean;
@@ -897,7 +898,6 @@ function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked, onSlotClick, 
                 {cellSlots.length === 0 ? (
                   <div style={{ color: '#E2E8F0', fontSize: '11px', paddingTop: '10px', textAlign: 'center' }}>—</div>
                 ) : cellSlots.map(slot => {
-                  const blocked    = isBlocked(slot);
                   const isAssigned = slot.status === 'assigned';
                   const isFull     = isFullFieldGame(slot);
                   const bg     = isAssigned ? `${primary}15` : '#F8FAFC';
@@ -950,7 +950,7 @@ function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked, onSlotClick, 
 
 // ── Refresh Modal ─────────────────────────────────────────────────────────────
 
-function RefreshModal({ permits, slots, fields, primary, defaultFmt, setDefaultFmt, onClose, onFill }: {
+function RefreshModal({ permits, slots, fields: _fields, primary, defaultFmt, setDefaultFmt, onClose, onFill }: {
   permits: Permit[]; slots: GameSlot[]; fields: FieldDef[]; primary: string;
   defaultFmt: FormatValue; setDefaultFmt: (f: FormatValue) => void;
   onClose: () => void; onFill: (fmt: FormatValue) => Promise<void>;
@@ -972,7 +972,7 @@ function RefreshModal({ permits, slots, fields, primary, defaultFmt, setDefaultF
         <div style={{ padding: '18px 22px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Refresh from permits</div>
-            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Fills any permit windows that don't have slots yet</div>
+            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Fills any permit windows that don&apos;t have slots yet</div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#94A3B8"/></button>
         </div>
@@ -1062,6 +1062,7 @@ function AssignGameModal({ slot, partnerSlot, teams, primary, defaultMins, field
   useEffect(() => {
     const t = teams.find(t => t.id === homeId);
     if (t?.age_group) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
       if (!slot.age_group) setAgeGroup(t.age_group);
       const fmt = formatForAgeGroup(t.age_group);
       if (fmt) setFormat(fmt);
@@ -1367,7 +1368,7 @@ function FieldEditModal({ field, primary, onClose, onSave, onDelete }: {
                   <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px', fontWeight: '600', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Second half</div>
                 </div>
               </div>
-              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>Leave blank to use "Half A" / "Half B". Names only affect the display label — they don't rename the underlying slots.</div>
+              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>Leave blank to use &quot;Half A&quot; / &quot;Half B&quot;. Names only affect the display label — they don&apos;t rename the underlying slots.</div>
             </div>
           )}
 
@@ -1566,7 +1567,7 @@ function ImportModal({ club, primary, onClose, onImported }: {
               )}
               {parseAttempted && parsed.length === 0 && (
                 <div style={{ padding: '12px 14px', background: '#FFF7ED', borderRadius: '8px', border: '1px solid #FED7AA', color: '#92400E', fontSize: '12px', lineHeight: 1.5 }}>
-                  <strong>No home games found.</strong> The AI may not have recognised which team is yours. Try uploading a file where your team name clearly appears in a "Home Team" column, or check that the file contains home games.
+                  <strong>No home games found.</strong> The AI may not have recognised which team is yours. Try uploading a file where your team name clearly appears in a &quot;Home Team&quot; column, or check that the file contains home games.
                 </div>
               )}
               {error && <div style={{ padding: '10px 14px', background: '#FEF2F2', borderRadius: '8px', border: '1px solid #FCA5A5', color: '#DC2626', fontSize: '12px' }}>{error}</div>}

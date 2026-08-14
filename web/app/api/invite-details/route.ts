@@ -10,13 +10,17 @@ export async function GET(req: NextRequest) {
     .from('invites')
     .select('id, email, role, accepted_at, players(full_name), teams(name, age_group, club_id, clubs(name, slug, logo_url, primary_color))')
     .eq('token', token)
-    .single();
+    .single<{
+      id: string; email: string; role: string; accepted_at: string | null;
+      players: { full_name: string } | null;
+      teams: { name: string; age_group: string | null; club_id: string; clubs: { name: string; slug: string; logo_url: string | null; primary_color: string | null } | null } | null;
+    }>();
 
   if (error || !invite) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
 
-  const inv = invite as any;
+  const inv = invite;
 
   if (inv.accepted_at) {
     return NextResponse.json({ already_accepted: true });

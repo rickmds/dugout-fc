@@ -72,6 +72,7 @@ function JoinContent() {
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (!token) { setStep('invalid'); return; }
 
     fetch(`/api/invite-details?token=${encodeURIComponent(token)}`)
@@ -130,11 +131,22 @@ function JoinContent() {
       return;
     }
 
-    // Sign in client-side so the app session is ready when they open it
-    await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    // Sign in client-side so the app session is ready when they open it.
+    // The account was already created server-side (accept-invite handled
+    // that), so this is just a convenience session — but if it fails, don't
+    // claim success with no session actually established. Send them to log
+    // in explicitly instead.
+    const { error: signInErr } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+
+    setSubmitting(false);
+
+    if (signInErr) {
+      setError('Account created — please sign in to continue.');
+      setStep('login');
+      return;
+    }
 
     setSuccessEmail(email.trim().toLowerCase());
-    setSubmitting(false);
     setStep('success');
   }
 
@@ -222,6 +234,7 @@ function JoinContent() {
             {effectiveClub && (
               <div style={{ marginBottom: 20 }}>
                 {effectiveClub.logo_url
+                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
                   ? <img src={effectiveClub.logo_url} alt="" style={{ height: 52, borderRadius: 12, objectFit: 'contain' }} />
                   : (
                     <div style={{ width: 52, height: 52, borderRadius: 14, background: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: accentText, boxShadow: `0 0 0 3px ${accent}33` }}>
@@ -243,6 +256,7 @@ function JoinContent() {
             {effectiveClub && (
               <div style={{ marginBottom: 20 }}>
                 {effectiveClub.logo_url
+                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
                   ? <img src={effectiveClub.logo_url} alt="" style={{ height: 52, borderRadius: 12, objectFit: 'contain' }} />
                   : (
                     <div style={{ width: 52, height: 52, borderRadius: 14, background: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: accentText, boxShadow: `0 0 0 3px ${accent}33` }}>
@@ -286,7 +300,7 @@ function JoinContent() {
               </div>
 
               <p style={{ ...s.sub, marginBottom: 28, textAlign: 'left' }}>
-                Create a free account to join your team. You'll get access to the full schedule, RSVP to events, and message the coaching staff through the Pulse FC app.
+                Create a free account to join your team. You&apos;ll get access to the full schedule, RSVP to events, and message the coaching staff through the Pulse FC app.
               </p>
 
               <button
@@ -315,7 +329,7 @@ function JoinContent() {
 
             <div style={{ padding: '24px 28px 32px' }}>
               <h2 style={s.formHeading}>Create your account</h2>
-              <p style={s.formSub}>It only takes a minute. You'll use these details to log in to the app.</p>
+              <p style={s.formSub}>It only takes a minute. You&apos;ll use these details to log in to the app.</p>
 
               {error && <div style={s.errorBox}>{error}</div>}
 
@@ -392,7 +406,7 @@ function JoinContent() {
 
             <div style={{ padding: '24px 28px 32px' }}>
               <h2 style={s.formHeading}>Sign in to join</h2>
-              <p style={s.formSub}>Sign in with your existing Pulse FC account and we'll link you to the team.</p>
+              <p style={s.formSub}>Sign in with your existing Pulse FC account and we&apos;ll link you to the team.</p>
 
               {error && <div style={s.errorBox}>{error}</div>}
 
@@ -474,7 +488,7 @@ function JoinContent() {
                 </svg>
               </div>
 
-              <h1 style={{ ...s.heading, marginBottom: 8 }}>You're in!</h1>
+              <h1 style={{ ...s.heading, marginBottom: 8 }}>You&apos;re in!</h1>
               <p style={{ ...s.sub, marginBottom: 4 }}>
                 {invite.player_name
                   ? <><strong style={{ color: '#F9FAFB' }}>{invite.player_name}</strong> has been added to</>
@@ -564,6 +578,7 @@ function ClubHeader({ invite, accent, compact }: { invite: InviteDetails; accent
         boxShadow: `0 0 0 3px ${accent}33`,
       }}>
         {invite.club_logo_url
+          // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
           ? <img src={invite.club_logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           : <span style={{ fontSize: compact ? 14 : 18, fontWeight: 900, color: accentText }}>{initials}</span>}
       </div>
@@ -593,7 +608,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function AppStoreButton({ accent, accentText }: { accent: string; accentText: string }) {
   return (
     <a
-      href="https://apps.apple.com/app/pulse-fc/id6740793498"
+      href="https://apps.apple.com/us/app/pulse-fc/id6797330659"
       className="app-store-btn"
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,

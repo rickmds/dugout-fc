@@ -5,6 +5,7 @@ import { z } from 'zod';
 import ExcelJS from 'exceljs';
 import * as Sentry from '@sentry/nextjs';
 import { requireRole } from '@/lib/apiAuth';
+import { sameCoachName } from '@/lib/nameMatch';
 
 // Matches the maxDuration for this route in vercel.json — was mismatched at
 // 120 here, which could silently cap the function short of what's configured.
@@ -56,7 +57,22 @@ function csvCell(v: string): string {
 
 function excelCellToString(v: ExcelJS.CellValue): string {
   if (v == null) return '';
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (v instanceof Date) {
+    const hh = v.getUTCHours(), mm = v.getUTCMinutes();
+    const hhmm = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    // Excel has no native "time only" type — a cell formatted to show just
+    // a time is still a full date under the hood, anchored to Excel's
+    // epoch (Dec 30 1899). Detect that sentinel so a Time column doesn't
+    // come out as "1899-12-30" instead of the actual time.
+    const isTimeOnlyEpoch = v.getUTCFullYear() === 1899 && v.getUTCMonth() === 11 && v.getUTCDate() <= 31;
+    if (isTimeOnlyEpoch) return hhmm;
+    const datePart = v.toISOString().slice(0, 10);
+    // A combined Date/Time column (common in league-export schedules) has
+    // a real, non-midnight time component — keep it. A pure date column
+    // sits at midnight and should stay a bare date so existing exact-date
+    // matching (toIsoDate, header-based Date-column handling) still works.
+    return (hh === 0 && mm === 0) ? datePart : `${datePart} ${hhmm}`;
+  }
   if (typeof v === 'object') {
     if ('result' in v && v.result != null) return excelCellToString(v.result as ExcelJS.CellValue); // formula
     if ('text' in v && typeof v.text === 'string') return v.text; // hyperlink
@@ -106,19 +122,39 @@ function toIsoDate(raw: string): string {
   return raw;
 }
 
+// Normalizes to strict 24h "HH:MM" — the only format <input type="time">
+// will actually display. Anything it can't confidently parse becomes '' so
+// a garbage string never silently reaches the DB's time column; the row
+// just shows the picker placeholder for manual entry instead.
 function to24h(raw: string): string {
   if (!raw) return '';
   if (/^\d{2}:\d{2}$/.test(raw)) return raw;
-  const m = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (m) {
-    let h = parseInt(m[1]);
-    const min = m[2];
-    const pm = m[3].toUpperCase() === 'PM';
+
+  let s = raw.trim();
+  // A range like "6:30 PM - 8:00 PM" or "6:30-8:00pm" — use the start time.
+  s = s.split(/[-–—]/)[0].trim();
+  // "a.m." / "P.M." → "am" / "PM"
+  s = s.replace(/\./g, '').trim();
+
+  const withMeridiem = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (withMeridiem) {
+    let h = parseInt(withMeridiem[1], 10);
+    const min = withMeridiem[2] ?? '00';
+    const pm = withMeridiem[3].toLowerCase() === 'pm';
     if (pm && h < 12) h += 12;
     if (!pm && h === 12) h = 0;
+    if (h > 23) return '';
     return `${h.toString().padStart(2, '0')}:${min}`;
   }
-  return raw;
+
+  const bare = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (bare) {
+    const h = parseInt(bare[1], 10);
+    if (h > 23) return '';
+    return `${h.toString().padStart(2, '0')}:${bare[2]}`;
+  }
+
+  return '';
 }
 
 const COACH_ROLES = ['coach', 'headcoach', 'head coach', 'manager', 'director', 'trainer', 'staff', 'assistant', 'assistantcoach'];
@@ -137,6 +173,7 @@ const TeamSchema = z.object({
   age_group: z.string(),
   gender: z.string(),
   confidence: ConfidenceSchema,
+  reason: z.string().optional(),
 });
 const PlayerSchema = z.object({
   full_name: z.string(),
@@ -145,6 +182,7 @@ const PlayerSchema = z.object({
   parent_email: z.string(),
   team_name: z.string(),
   confidence: ConfidenceSchema,
+  reason: z.string().optional(),
 });
 const EventSchema = z.object({
   title: z.string(),
@@ -163,12 +201,14 @@ const EventSchema = z.object({
   coach_notes: z.string(),
   team_name: z.string(),
   confidence: ConfidenceSchema,
+  reason: z.string().optional(),
 });
 const CoachSchema = z.object({
   full_name: z.string(),
   email: z.string(),
   team_name: z.string(),
   confidence: ConfidenceSchema,
+  reason: z.string().optional(),
 });
 const ExtractionSchema = z.object({
   teams: z.array(TeamSchema),
@@ -432,10 +472,10 @@ function extractFromCSV(text: string): ParsedResult | null {
 
 const CLAUDE_SYSTEM = `You are analysing soccer club documents to extract structured data.
 Return ONLY valid minified JSON with exactly these 4 keys, no markdown, no explanation:
-{"teams":[{"name":"","alt_names":[],"age_group":"","gender":"","confidence":"high"}],
- "players":[{"full_name":"","jersey_number":"","position":"","parent_email":"","team_name":"","confidence":"high"}],
- "events":[{"title":"","type":"game","home_away":"","event_date":"YYYY-MM-DD","event_time":"HH:MM","location":"","address":"","uniform":"","duration_minutes":"","arrival_buffer_minutes":"","field_notes":"","field_type":"","notes":"","coach_notes":"","team_name":"","confidence":"high"}],
- "coaches":[{"full_name":"","email":"","team_name":"","confidence":"high"}]}
+{"teams":[{"name":"","alt_names":[],"age_group":"","gender":"","confidence":"high","reason":""}],
+ "players":[{"full_name":"","jersey_number":"","position":"","parent_email":"","team_name":"","confidence":"high","reason":""}],
+ "events":[{"title":"","type":"game","home_away":"","event_date":"YYYY-MM-DD","event_time":"HH:MM","location":"","address":"","uniform":"","duration_minutes":"","arrival_buffer_minutes":"","field_notes":"","field_type":"","notes":"","coach_notes":"","team_name":"","confidence":"high","reason":""}],
+ "coaches":[{"full_name":"","email":"","team_name":"","confidence":"high","reason":""}]}
 Rules:
 - Some documents give a team TWO names — e.g. a roster mapping table with a
   "League Schedule Name" or "Division" column (the name a league's game
@@ -451,6 +491,22 @@ Rules:
 - team_name (on players/events/coaches): use whatever name that specific
   document calls the team by — it doesn't need to match a team's primary
   "name" exactly, matching against alt_names happens downstream.
+- Some rosters group players under a broad age+gender heading (e.g. "U9
+  BOYS", "U9 GIRLS") that contains several separate team blocks below it,
+  each labeled with only a short color/city/nickname (e.g. "Madrid",
+  "Milan") — no age or gender in the block's own label. That short label
+  is NOT a full team identity: the exact same short name is typically
+  reused under every age+gender heading in the document (a "Madrid" team
+  under U9 BOYS, a completely different "Madrid" under U9 GIRLS, another
+  under U10 BOYS, etc. — all different real teams that happen to share a
+  color name). For every player in such a block, and for the team entry
+  itself, build the name by combining the enclosing heading's gender+age
+  with the block's short label — e.g. "BU9 Madrid" for boys, "GU9 Madrid"
+  for girls — matching the format a club's own team-mapping document uses
+  for that same team, if one is present in this document set. NEVER emit
+  the bare short label alone; doing so would silently merge unrelated
+  teams together downstream. Take age_group and gender for that team from
+  the enclosing heading, not from the block label.
 - A game schedule lists two sides (e.g. "Home Team" and "Visitor Team"
   columns) — only ONE of them is the club whose data is being imported; the
   other is an opponent from a different club entirely. Figure out which
@@ -469,7 +525,12 @@ Rules:
   sharing the club's pattern, on the other hand, belongs in "teams" even
   if a schedule is the only document that mentions it.
 - event_date: YYYY-MM-DD format
-- event_time: HH:MM 24h format
+- event_time: HH:MM 24h format. Some documents combine date and time in one
+  field (e.g. "2026-10-31 12:30") — split it into event_date and
+  event_time rather than leaving event_time blank. A time of exactly
+  00:00/midnight in a combined field usually means no real time was set
+  (schedule shows "TBD"/"To Be Scheduled") — leave event_time blank in
+  that case rather than reporting midnight as the kickoff time.
 - type: "game", "training", or "other"
 - home_away: "home" if the team plays at their own field, "away" if travelling to opponent's field, empty string for training/other
 - title: for games use "vs X" (home) or "@ X" (away) matching home_away; for training use "Team Training" or session description
@@ -494,7 +555,17 @@ Rules:
   "Sod", "Grass" as "grass". Empty string if surface isn't stated.
 - notes: any team-facing notes or instructions visible to all (e.g. "Bring extra water", "Wear training kit"), empty string if none
 - coach_notes: any coach-only or internal notes (e.g. "Focus on set pieces", "Call-up players available"), empty string if none
-- confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain`;
+- confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain
+- reason: REQUIRED whenever confidence is "medium" or "low" — a short,
+  specific, human-readable sentence a club admin can act on, naming the
+  actual ambiguity (e.g. "Age group wasn't stated on this row — inferred
+  U9 from the nearby section heading", "This short team name is reused
+  under multiple age/gender headings in the document — verify it wasn't
+  merged with the wrong division", "Two different division codes in the
+  source both point to this same team name — double-check that isn't a
+  mistake in the club's own records"). Never write a generic placeholder
+  like "uncertain" or "please review" — say what specifically is uncertain
+  and, where useful, what to check. Empty string when confidence is "high".`;
 
 // Walks a `"key": [ {...}, {...}, ... ]` array by hand, parsing one
 // balanced object at a time. Used when the response got cut off mid-array
@@ -761,6 +832,32 @@ function merge(a: ParsedResult, b: ParsedResult): ParsedResult {
   };
 }
 
+type Coach = ParsedResult['coaches'][number];
+
+// Unlike teams, coaches have no alt_names concept — and unlike players,
+// each uploaded file gets its own independent Claude call with no
+// visibility into what any other file said, so the same coach commonly
+// comes back twice: a team-mapping doc using a formal name ("Richard
+// Breheny") and a roster doc using a nickname ("Rick Breheny") for the
+// same person on the same team. Run one consolidation pass over every
+// coach collected from every file/chunk, matching on team + name (nickname
+// -aware), rather than gating on it per-pair-of-files.
+function dedupeCoaches(coaches: Coach[]): Coach[] {
+  const result: Coach[] = [];
+  for (const c of coaches) {
+    const existing = result.find(r => normName(r.team_name) === normName(c.team_name) && sameCoachName(r.full_name, c.full_name));
+    if (existing) {
+      if (!existing.email && c.email) existing.email = c.email;
+      // Prefer the more complete-looking name (formal name is usually
+      // longer than its nickname) for what actually gets shown/imported.
+      if (c.full_name.trim().length > existing.full_name.trim().length) existing.full_name = c.full_name;
+    } else {
+      result.push({ ...c });
+    }
+  }
+  return result;
+}
+
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 // Streams newline-delimited JSON progress updates as each file/chunk
@@ -768,7 +865,9 @@ function merge(a: ParsedResult, b: ParsedResult): ParsedResult {
 // result — so the client can show real extraction counts climbing live
 // instead of a decorative animation with no relationship to actual work.
 export async function POST(req: NextRequest) {
-  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  // Coaches can use this too — the dashboard's AI Roster/Schedule Import
+  // (single-team mode) is reachable by a coach, not just org_admin.
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
   if (!auth.ok) return auth.response;
 
   let files: FileInput[];
@@ -846,6 +945,18 @@ export async function POST(req: NextRequest) {
         // enough — do one final self-consolidation pass now that every
         // alias is known.
         result.teams = mergeTeamsList([], result.teams);
+
+        // Same reasoning as the teams consolidation above — coaches from
+        // different files/chunks were never seen together by Claude, so
+        // duplicates (formal name vs. nickname) only become visible now
+        // that everything's collected.
+        result.coaches = dedupeCoaches(result.coaches);
+
+        // Claude's own event_time strings only follow the "HH:MM 24h"
+        // instruction on a best-effort basis (the schema doesn't enforce a
+        // format) — normalize every event here so no path can hand the
+        // review screen a time <input> can't render.
+        result.events = result.events.map(e => ({ ...e, event_time: to24h(e.event_time) }));
 
         emit({ type: 'done', ...result, fileOutcomes });
       } catch (err) {

@@ -3,6 +3,15 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
+type ReminderEvent = {
+  id: string;
+  title: string;
+  team_id: string;
+  rsvp_lock_at: string | null;
+  event_time: string | null;
+  teams: { clubs: { slug: string } | null } | null;
+};
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -39,7 +48,7 @@ export async function GET(req: NextRequest) {
     const { data } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
     const users = data?.users ?? [];
     users.forEach((u) => { if (u.email) emailToUserId[u.email.toLowerCase()] = u.id; });
-    const nextPage = (data as any)?.nextPage;
+    const nextPage = data && 'nextPage' in data ? data.nextPage : null;
     if (!nextPage) break;
     page = nextPage;
   }
@@ -49,7 +58,8 @@ export async function GET(req: NextRequest) {
       .from('events')
       .select('id, title, team_id, rsvp_lock_at, event_time, teams(clubs(slug))')
       .gte('rsvp_lock_at', window.from.toISOString())
-      .lte('rsvp_lock_at', window.to.toISOString());
+      .lte('rsvp_lock_at', window.to.toISOString())
+      .returns<ReminderEvent[]>();
 
     if (!events?.length) continue;
 
@@ -60,9 +70,9 @@ export async function GET(req: NextRequest) {
 
       const { data: rsvps } = await supabase
         .from('event_rsvps').select('player_id').eq('event_id', ev.id);
-      const rsvpedIds = new Set((rsvps ?? []).map((r: any) => r.player_id));
+      const rsvpedIds = new Set((rsvps ?? []).map(r => r.player_id));
 
-      const pendingPlayerIds = players.map((p: any) => p.id).filter((id: string) => !rsvpedIds.has(id));
+      const pendingPlayerIds = players.map(p => p.id).filter(id => !rsvpedIds.has(id));
       if (!pendingPlayerIds.length) continue;
 
       const { data: invites } = await supabase
@@ -70,7 +80,7 @@ export async function GET(req: NextRequest) {
       if (!invites?.length) continue;
 
       const parentProfileIds = invites
-        .map((inv: any) => emailToUserId[inv.email?.toLowerCase()])
+        .map(inv => emailToUserId[inv.email?.toLowerCase()])
         .filter(Boolean) as string[];
       if (!parentProfileIds.length) continue;
 
@@ -81,12 +91,12 @@ export async function GET(req: NextRequest) {
       const pushBody  = window.body(eventLabel);
 
       await supabase.from('notifications').insert(
-        parentProfileIds.map((profile_id: string) => ({
+        parentProfileIds.map(profile_id => ({
           profile_id,
           type: 'rsvp_reminder',
           title: pushTitle,
           body: pushBody,
-          data: { type: 'rsvp_reminder', event_id: ev.id, club_slug: (ev as any).teams?.clubs?.slug ?? '' },
+          data: { type: 'rsvp_reminder', event_id: ev.id, club_slug: ev.teams?.clubs?.slug ?? '' },
         }))
       );
 
@@ -94,7 +104,7 @@ export async function GET(req: NextRequest) {
         .from('push_tokens').select('token').in('profile_id', parentProfileIds);
       if (!tokens?.length) continue;
 
-      const messages = tokens.map((t: any) => ({
+      const messages = tokens.map(t => ({
         to: t.token,
         title: pushTitle,
         body: pushBody,

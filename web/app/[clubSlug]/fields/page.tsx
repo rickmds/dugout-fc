@@ -81,6 +81,7 @@ export default async function PublicFieldStatusPage({ params }: { params: Promis
       </head>
       <body>
         <div className="header">
+          {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
           {club.logo_url && <img src={club.logo_url} alt={club.name}/>}
           <div className="header-eyebrow">Field Status</div>
           <div className="header-title">{club.name}</div>
@@ -136,7 +137,7 @@ export default async function PublicFieldStatusPage({ params }: { params: Promis
                       }
                     </div>
                     {closure.notify_message && (
-                      <div className="closure-message">"{closure.notify_message}"</div>
+                      <div className="closure-message">&quot;{closure.notify_message}&quot;</div>
                     )}
                   </>
                 )}

@@ -26,7 +26,7 @@ export default function ContactForm() {
           <span className="text-[#22c55e] font-extrabold text-[14px]">✓</span>
         </div>
         <p className="text-white font-bold text-[17px] mb-1.5">Message sent.</p>
-        <p className="text-[#444] text-[14px]">We'll get back to you shortly.</p>
+        <p className="text-[#444] text-[14px]">We&apos;ll get back to you shortly.</p>
       </div>
     );
   }

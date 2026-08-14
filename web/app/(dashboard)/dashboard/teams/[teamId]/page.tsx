@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Users, CalendarDays, DollarSign, CheckCircle, AlertCircle, Clock, MapPin, ChevronRight, TrendingUp, ArrowLeft } from 'lucide-react';
+import { Users, CalendarDays, DollarSign, CheckCircle, Clock, MapPin, ChevronRight, TrendingUp, ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { FlipBoard } from '@/components/FlipBoard';
@@ -64,7 +64,7 @@ export default function TeamSummaryPage() {
       supabase.from('event_rsvps').select('event_id,status').in('event_id',
         await supabase.from('events').select('id').eq('team_id', teamId)
           .gte('event_date', new Date(Date.now() - 30*86400000).toISOString().slice(0,10))
-          .then(r => (r.data ?? []).map((e: any) => e.id))
+          .then(r => (r.data ?? []).map(e => e.id))
       ),
       supabase.from('player_fees').select('amount_due,amount_paid,status').eq('team_id', teamId),
     ]);
@@ -75,20 +75,20 @@ export default function TeamSummaryPage() {
     let rsvpAttending = 0, rsvpTotal = 0;
     if (nextEvent) {
       const { data: nr } = await supabase.from('event_rsvps').select('status').eq('event_id', nextEvent.id);
-      rsvpAttending = (nr ?? []).filter((r: any) => r.status === 'attending').length;
+      rsvpAttending = (nr ?? []).filter(r => r.status === 'attending').length;
       rsvpTotal     = (nr ?? []).length;
     }
 
     // Attendance rate (last 30 days)
     const rsvps = rsvpRes.data ?? [];
-    const attended = rsvps.filter((r: any) => r.status === 'attending').length;
+    const attended = rsvps.filter(r => r.status === 'attending').length;
     const attendanceRate = rsvps.length > 0 ? Math.round((attended / rsvps.length) * 100) : 0;
 
     // Outstanding fees
     const fees = feesRes.data ?? [];
-    const outstandingFees  = fees.filter((f: any) => f.status !== 'paid' && f.status !== 'waived')
-      .reduce((sum: number, f: any) => sum + (f.amount_due - f.amount_paid - 0), 0);
-    const outstandingCount = fees.filter((f: any) => f.status !== 'paid' && f.status !== 'waived').length;
+    const outstandingFees  = fees.filter(f => f.status !== 'paid' && f.status !== 'waived')
+      .reduce((sum, f) => sum + (f.amount_due - f.amount_paid - 0), 0);
+    const outstandingCount = fees.filter(f => f.status !== 'paid' && f.status !== 'waived').length;
 
     setData({
       playerCount: playersRes.count ?? 0,
@@ -102,6 +102,7 @@ export default function TeamSummaryPage() {
     setLoading(false);
   }, [teamId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   if (loading) return (

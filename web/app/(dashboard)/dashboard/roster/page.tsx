@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Plus, Search, Mail, User, X, ChevronDown, Trash2, Send,
-  Sparkles, Check, AlertCircle, ChevronRight, Shield, Hash,
+  Sparkles, Check, AlertCircle, Hash,
   CalendarCheck, CalendarX, Clock, RotateCcw,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -41,7 +41,6 @@ type FormState = {
 };
 
 type DeleteModal  = { player: Player; deleting: boolean };
-type InviteModal  = { player: Player; email: string; sending: boolean; sent: boolean; error: string };
 
 const POSITIONS = [
   'GK', 'CB', 'LB', 'RB', 'WB', 'SW',
@@ -53,6 +52,21 @@ const POSITIONS = [
 const emptyForm = (teamId: string): FormState => ({
   full_name: '', jersey_number: '', position: '', parent_email: '', team_id: teamId,
 });
+
+function timeAgo(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mo = Math.floor(day / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(mo / 12)}y ago`;
+}
 
 function positionStyle(pos: string | null): { color: string; bg: string } {
   if (!pos) return { color: '#94A3B8', bg: '#F8FAFC' };
@@ -105,6 +119,7 @@ export default function RosterPage() {
   const [panelSaved, setPanelSaved]           = useState(false);
   const [invites, setInvites]                 = useState<Invite[]>([]);
   const [inviteLoading, setInviteLoading]     = useState(false);
+  const [parentLastActive, setParentLastActive] = useState<string | null>(null);
   const [rsvpStats, setRsvpStats]             = useState<RsvpStats>({ attending: 0, not_attending: 0, pending: 0 });
   const [rsvpLoading, setRsvpLoading]         = useState(false);
   const [sendingInvite, setSendingInvite]     = useState(false);
@@ -119,7 +134,6 @@ export default function RosterPage() {
 
   // Other modals
   const [deleteModal, setDeleteModal]   = useState<DeleteModal | null>(null);
-  const [inviteModal, setInviteModal]   = useState<InviteModal | null>(null);
 
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
@@ -136,11 +150,13 @@ export default function RosterPage() {
     setLoading(false);
   }, [teams, teamFilter]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/filter-change; loadPlayers sets loading/players from a real network call, not derivable at render time
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
 
   // Load invite + RSVP stats when a player is selected
   useEffect(() => {
     if (!selectedPlayer) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets the whole edit-panel/invite-form state in response to the selection actually changing, not derivable from props alone
     setPanelForm({
       full_name: selectedPlayer.full_name,
       jersey_number: selectedPlayer.jersey_number?.toString() ?? '',
@@ -156,12 +172,25 @@ export default function RosterPage() {
     setShowAddGuardianForm(false);
 
     setInviteLoading(true);
+    setParentLastActive(null);
     supabase
       .from('invites')
       .select('id, token, email, guardian_name, phone, relationship, accepted_at, created_at')
       .eq('player_id', selectedPlayer.id)
       .order('created_at', { ascending: true })
-      .then(({ data }) => { setInvites((data ?? []) as Invite[]); setInviteLoading(false); });
+      .then(async ({ data }) => {
+        const rows = (data ?? []) as Invite[];
+        setInvites(rows);
+        setInviteLoading(false);
+        if (rows.some((inv) => inv.accepted_at)) {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`/api/parent-status?player_id=${selectedPlayer.id}`, {
+            headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+          });
+          const statusData = await res.json().catch(() => ({}));
+          setParentLastActive(statusData.lastSignInAt ?? null);
+        }
+      });
 
     setRsvpLoading(true);
     supabase
@@ -220,9 +249,13 @@ export default function RosterPage() {
       return;
     }
     const teamName = teams.find((t) => t.id === selectedPlayer.team_id)?.name ?? 'your team';
+    const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch('/api/send-invite', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify({
         invite_id: (newRow as Invite).id,
         team_name: teamName,
@@ -267,10 +300,15 @@ export default function RosterPage() {
   async function resendInvite(inv: Invite) {
     if (!selectedPlayer) return;
     setSendingInvite(true);
+    setInviteError('');
     const teamName = teams.find((t) => t.id === selectedPlayer.team_id)?.name ?? 'your team';
-    await fetch('/api/send-invite', {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/send-invite', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
       body: JSON.stringify({
         invite_id: inv.id,
         team_name: teamName,
@@ -279,6 +317,11 @@ export default function RosterPage() {
       }),
     });
     setSendingInvite(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setInviteError('Resend failed: ' + (err.error ?? res.statusText));
+      return;
+    }
     setInviteSent(true);
     setTimeout(() => setInviteSent(false), 2500);
   }
@@ -303,9 +346,13 @@ export default function RosterPage() {
           created_by: profile?.id,
         }).select('id').single();
         if (inviteRow) {
+          const { data: { session } } = await supabase.auth.getSession();
           fetch('/api/send-invite', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+            },
             body: JSON.stringify({
               invite_id: (inviteRow as { id: string }).id,
               team_name: teams.find((t) => t.id === form.team_id)?.name ?? 'your team',
@@ -658,11 +705,16 @@ export default function RosterPage() {
                               {inv.phone && (
                                 <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '3px' }}>📞 {inv.phone}</div>
                               )}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
                                 {inv.accepted_at ? (
-                                  <><Check size={11} color="#16A34A" strokeWidth={2.5} /><span style={{ fontSize: '11px', color: '#16A34A', fontWeight: '600' }}>Joined the app</span></>
+                                  <>
+                                    <Check size={11} color="#16A34A" strokeWidth={2.5} /><span style={{ fontSize: '11px', color: '#16A34A', fontWeight: '600' }}>Joined the app</span>
+                                    {parentLastActive && (
+                                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>· Active {timeAgo(parentLastActive)}</span>
+                                    )}
+                                  </>
                                 ) : (
-                                  <><Clock size={11} color="#94A3B8" /><span style={{ fontSize: '11px', color: '#94A3B8' }}>Invite pending</span></>
+                                  <><Clock size={11} color="#94A3B8" /><span style={{ fontSize: '11px', color: '#94A3B8' }}>Invite pending · sent {timeAgo(inv.created_at)}</span></>
                                 )}
                               </div>
                             </div>
@@ -703,6 +755,12 @@ export default function RosterPage() {
                     </div>
                   )}
 
+                  {inviteError && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '9px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '9px', fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
+                      <AlertCircle size={12} /> {inviteError}
+                    </div>
+                  )}
+
                   {/* ── Add guardian form ── */}
                   {showAddGuardianForm ? (
                     <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -716,11 +774,6 @@ export default function RosterPage() {
                             style={{ ...inputStyle, paddingLeft: '32px' }} />
                         </div>
                       </div>
-                      {inviteError && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#DC2626' }}>
-                          <AlertCircle size={12} /> {inviteError}
-                        </div>
-                      )}
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button onClick={() => { setShowAddGuardianForm(false); setInviteEmail(''); setInviteError(''); }}
                           style={{ flex: 1, padding: '8px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>

@@ -90,6 +90,7 @@ export default function TryoutFieldsPage() {
     setFields((data ?? []) as TryoutField[]);
     setLoading(false);
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club]);
 
   function openAdd() {
@@ -167,11 +168,6 @@ export default function TryoutFieldsPage() {
   async function deleteField(id: string) {
     await supabase.from('tryout_fields').delete().eq('id', id);
     setDeleteId(null);
-    await load();
-  }
-
-  async function toggleActive(f: TryoutField) {
-    await supabase.from('tryout_fields').update({ is_active: !f.is_active }).eq('id', f.id);
     await load();
   }
 
@@ -254,7 +250,7 @@ export default function TryoutFieldsPage() {
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = '#94A3B8'; }}>
                         <Trash2 size={13} />
                       </button>
-                      <button onClick={() => setExpanded(prev => { const next = new Set(prev); next.has(field.id) ? next.delete(field.id) : next.add(field.id); return next; })} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '7px', border: 'none', background: 'transparent', color: '#94A3B8', cursor: 'pointer' }}>
+                      <button onClick={() => setExpanded(prev => { const next = new Set(prev); if (next.has(field.id)) next.delete(field.id); else next.add(field.id); return next; })} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '7px', border: 'none', background: 'transparent', color: '#94A3B8', cursor: 'pointer' }}>
                         {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                       </button>
                     </div>

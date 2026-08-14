@@ -25,13 +25,19 @@ export async function GET(req: NextRequest) {
   const { data: expiring } = await sb
     .from('staff_certifications')
     .select(`
-      id, cert_type, license_level, custom_label, expiry_date, status,
+      id, cert_type, license_level, custom_label, expiry_date, status, profile_id,
       profiles!staff_certifications_profile_id_fkey(full_name, club_id),
       clubs!staff_certifications_club_id_fkey(name)
     `)
     .eq('status', 'verified')
     .gte('expiry_date', today.toISOString().slice(0, 10))
-    .lte('expiry_date', in60.toISOString().slice(0, 10));
+    .lte('expiry_date', in60.toISOString().slice(0, 10))
+    .returns<{
+      id: string; cert_type: string; license_level: string | null; custom_label: string | null;
+      expiry_date: string; status: string; profile_id: string;
+      profiles: { full_name: string | null; club_id: string | null } | null;
+      clubs: { name: string } | null;
+    }[]>();
 
   if (!expiring?.length) {
     return NextResponse.json({ sent: 0, expired: 0 });
@@ -47,7 +53,7 @@ export async function GET(req: NextRequest) {
 
   let sent = 0;
 
-  for (const cert of expiring as any[]) {
+  for (const cert of expiring) {
     const expiry = new Date(cert.expiry_date);
     const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
 
@@ -69,7 +75,7 @@ export async function GET(req: NextRequest) {
 
     // Get coach email via auth admin
     const { data: { users } } = await sb.auth.admin.listUsers();
-    const coachUser = users.find((u: any) =>
+    const coachUser = users.find(u =>
       u.user_metadata?.profile_id === cert.profile_id ||
       u.id === cert.profile_id
     );
@@ -84,7 +90,7 @@ export async function GET(req: NextRequest) {
 
     const adminEmails: string[] = [];
     for (const admin of admins ?? []) {
-      const adminUser = users.find((u: any) => u.id === admin.id);
+      const adminUser = users.find(u => u.id === admin.id);
       if (adminUser?.email) adminEmails.push(adminUser.email);
     }
 

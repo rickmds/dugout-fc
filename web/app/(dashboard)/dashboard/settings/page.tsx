@@ -1,11 +1,11 @@
 'use client';
 
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
-  Save, Eye, EyeOff, Check, AlertCircle, Lock, User, Target,
-  Upload, Palette, Globe, Bell, Download, CreditCard, Trash2, AlertTriangle,
-  Settings as SettingsIcon, Building2,
+  Save, Eye, EyeOff, Check, AlertCircle, Lock, User,
+  Upload, Download, CreditCard, AlertTriangle,
+  Building2,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -108,6 +108,7 @@ function AccountTab({ primary, showToast }: { primary: string; showToast: (t: To
       if (user?.email) setEmail(user.email);
       setAuthProvider(user?.app_metadata?.provider ?? 'email');
     });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     setFullName(profile?.full_name ?? '');
   }, [profile]);
 
@@ -244,7 +245,7 @@ function AccountTab({ primary, showToast }: { primary: string; showToast: (t: To
 // ── Club tab ───────────────────────────────────────────────────────────────────
 
 function ClubTab({ primary, showToast, initialSection }: { primary: string; showToast: (t: Toast['type'], m: string) => void; initialSection?: string }) {
-  const { club, profile, reload, canUse } = useDashboard();
+  const { club, profile: _profile, reload, canUse } = useDashboard();
   const [active,    setActive]    = useState(initialSection ?? 'Club Profile');
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
@@ -258,6 +259,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   });
   const [brandForm, setBrandForm] = useState({
     primary_color: '#22C55E', secondary_color: '#ffffff',
+    home_kit_color: '#22C55E', away_kit_color: '#ffffff', training_kit_color: '#F97316',
   });
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [paymentForm, setPaymentForm] = useState({
@@ -272,18 +274,24 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
 
   useEffect(() => {
     if (!club) return;
-    setProfileForm({ name: club.name ?? '', slug: (club as any).slug ?? '', website: (club as any).website ?? '', contact_email: (club as any).contact_email ?? '', tagline: (club as any).tagline ?? '', currency: (club as any).currency ?? 'USD' });
-    setBrandForm({ primary_color: club.primary_color ?? '#22C55E', secondary_color: (club as any).secondary_color ?? '#ffffff' });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
+    setProfileForm({ name: club.name ?? '', slug: club.slug ?? '', website: club.website ?? '', contact_email: club.contact_email ?? '', tagline: club.tagline ?? '', currency: club.currency ?? 'USD' });
+    setBrandForm({
+      primary_color: club.primary_color ?? '#22C55E', secondary_color: club.secondary_color ?? '#ffffff',
+      home_kit_color: club.home_kit_color ?? club.primary_color ?? '#22C55E',
+      away_kit_color: club.away_kit_color ?? club.secondary_color ?? '#ffffff',
+      training_kit_color: club.training_kit_color ?? '#F97316',
+    });
     setLogoPreview(club.logo_url);
     setTryoutsActive(club?.tryouts_active ?? false);
     setPaymentForm({
-      stripe_fee_handling:   (club as any).stripe_fee_handling   ?? 'absorb',
-      allow_partial_payments: (club as any).allow_partial_payments ?? false,
-      late_fee_enabled:       (club as any).late_fee_enabled       ?? false,
-      late_fee_type:          (club as any).late_fee_type          ?? 'fixed',
-      late_fee_amount:        String((club as any).late_fee_amount ?? 10),
-      late_fee_grace_days:    String((club as any).late_fee_grace_days ?? 7),
-      hardship_fund_enabled:  (club as any).hardship_fund_enabled  ?? false,
+      stripe_fee_handling:   club.stripe_fee_handling   ?? 'absorb',
+      allow_partial_payments: club.allow_partial_payments ?? false,
+      late_fee_enabled:       club.late_fee_enabled       ?? false,
+      late_fee_type:          club.late_fee_type          ?? 'fixed',
+      late_fee_amount:        String(club.late_fee_amount ?? 10),
+      late_fee_grace_days:    String(club.late_fee_grace_days ?? 7),
+      hardship_fund_enabled:  club.hardship_fund_enabled  ?? false,
     });
   }, [club]);
 
@@ -305,7 +313,11 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   async function saveBranding() {
     if (!club) return;
     setSaving(true);
-    const { error } = await supabase.from('clubs').update({ primary_color: brandForm.primary_color, secondary_color: brandForm.secondary_color }).eq('id', club.id);
+    const { error } = await supabase.from('clubs').update({
+      primary_color: brandForm.primary_color, secondary_color: brandForm.secondary_color,
+      home_kit_color: brandForm.home_kit_color, away_kit_color: brandForm.away_kit_color,
+      training_kit_color: brandForm.training_kit_color,
+    }).eq('id', club.id);
     setSaving(false);
     if (error) { showToast('error', `Save failed: ${error.message}`); return; }
     flash(); reload();
@@ -359,29 +371,33 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
 
   async function exportCSV(type: string) {
     if (!club) return;
-    let rows: any[] = [];
-    const teamIds = (await supabase.from('teams').select('id').eq('club_id', club.id)).data?.map((t: any) => t.id) ?? [];
+    let rows: Record<string, string | number | null | undefined>[] = [];
+    const teamIds = (await supabase.from('teams').select('id').eq('club_id', club.id)).data?.map((t: { id: string }) => t.id) ?? [];
     if (type === 'players') {
       const { data } = await supabase.from('players').select('full_name,jersey_number,position,date_of_birth,teams(name)').in('team_id', teamIds);
-      rows = (data ?? []).map((p: any) => ({ Name: p.full_name, Jersey: p.jersey_number, Position: p.position, DOB: p.date_of_birth, Team: p.teams?.name }));
+      rows = ((data ?? []) as unknown as { full_name: string; jersey_number: number | null; position: string | null; date_of_birth: string | null; teams: { name: string } | null }[])
+        .map(p => ({ Name: p.full_name, Jersey: p.jersey_number, Position: p.position, DOB: p.date_of_birth, Team: p.teams?.name }));
     } else if (type === 'fees') {
       const { data } = await supabase.from('player_fees').select('description,amount_due,amount_paid,discount,status,due_date,last_reminded_at,created_at,players(full_name),teams(name)').in('team_id', teamIds).order('created_at', { ascending: false });
-      rows = (data ?? []).map((f: any) => ({
-        Player: f.players?.full_name, Team: f.teams?.name, Fee: f.description,
-        Invoiced: f.amount_due, Discount: f.discount, NetDue: Math.max(0, f.amount_due - f.discount),
-        Paid: f.amount_paid, Balance: Math.max(0, f.amount_due - f.discount - f.amount_paid),
-        Status: f.status, DueDate: f.due_date, LastReminded: f.last_reminded_at?.slice(0, 10) ?? '', Created: f.created_at?.slice(0, 10),
-      }));
+      rows = ((data ?? []) as unknown as { description: string; amount_due: number; amount_paid: number; discount: number; status: string; due_date: string | null; last_reminded_at: string | null; created_at: string; players: { full_name: string } | null; teams: { name: string } | null }[])
+        .map(f => ({
+          Player: f.players?.full_name, Team: f.teams?.name, Fee: f.description,
+          Invoiced: f.amount_due, Discount: f.discount, NetDue: Math.max(0, f.amount_due - f.discount),
+          Paid: f.amount_paid, Balance: Math.max(0, f.amount_due - f.discount - f.amount_paid),
+          Status: f.status, DueDate: f.due_date, LastReminded: f.last_reminded_at?.slice(0, 10) ?? '', Created: f.created_at?.slice(0, 10),
+        }));
     } else if (type === 'payments') {
-      const { data } = await supabase.from('fee_payments').select('amount,method,reference,paid_at,player_fees!inner(description,players(full_name),teams(name))').in('player_fee_id', (await supabase.from('player_fees').select('id').in('team_id', teamIds)).data?.map((f: any) => f.id) ?? []).order('paid_at', { ascending: false });
-      rows = (data ?? []).map((p: any) => ({
-        Player: p.player_fees?.players?.full_name, Team: p.player_fees?.teams?.name,
-        Fee: p.player_fees?.description, Amount: p.amount, Method: p.method,
-        Reference: p.reference ?? '', Date: p.paid_at?.slice(0, 10),
-      }));
+      const { data } = await supabase.from('fee_payments').select('amount,method,reference,paid_at,player_fees!inner(description,players(full_name),teams(name))').in('player_fee_id', (await supabase.from('player_fees').select('id').in('team_id', teamIds)).data?.map((f: { id: string }) => f.id) ?? []).order('paid_at', { ascending: false });
+      rows = ((data ?? []) as unknown as { amount: number; method: string; reference: string | null; paid_at: string; player_fees: { description: string; players: { full_name: string } | null; teams: { name: string } | null } | null }[])
+        .map(p => ({
+          Player: p.player_fees?.players?.full_name, Team: p.player_fees?.teams?.name,
+          Fee: p.player_fees?.description, Amount: p.amount, Method: p.method,
+          Reference: p.reference ?? '', Date: p.paid_at?.slice(0, 10),
+        }));
     } else if (type === 'events') {
       const { data } = await supabase.from('events').select('title,type,event_date,event_time,location,teams(name)').in('team_id', teamIds).order('event_date');
-      rows = (data ?? []).map((e: any) => ({ Title: e.title, Type: e.type, Date: e.event_date, Time: e.event_time, Location: e.location, Team: e.teams?.name }));
+      rows = ((data ?? []) as unknown as { title: string; type: string; event_date: string; event_time: string | null; location: string | null; teams: { name: string } | null }[])
+        .map(e => ({ Title: e.title, Type: e.type, Date: e.event_date, Time: e.event_time, Location: e.location, Team: e.teams?.name }));
     }
     if (!rows.length) return;
     const headers = Object.keys(rows[0]);
@@ -472,6 +488,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                 <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '10px' }}>Club Logo</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                   <div style={{ width: '72px', height: '72px', borderRadius: '14px', border: '2px dashed #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#F8FAFC' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
                     {logoPreview ? <img src={logoPreview} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Upload size={22} color="#CBD5E1" />}
                   </div>
                   <div>
@@ -496,6 +513,33 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
                     <input type="color" value={brandForm.secondary_color} onChange={e => setBrandForm(f => ({ ...f, secondary_color: e.target.value }))} style={{ width: '44px', height: '44px', borderRadius: '8px', border: '1px solid #E2E8F0', cursor: 'pointer', padding: '2px' }} />
                     <input value={brandForm.secondary_color} onChange={e => setBrandForm(f => ({ ...f, secondary_color: e.target.value }))} style={{ ...inputStyle, width: '120px' }} />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '4px' }}>Kit Colours</div>
+                <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '10px' }}>Used to colour game and training cards on the app — home kit, away kit, and training.</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={labelStyle}>Home kit</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
+                      <input type="color" value={brandForm.home_kit_color} onChange={e => setBrandForm(f => ({ ...f, home_kit_color: e.target.value }))} style={{ width: '44px', height: '44px', borderRadius: '8px', border: '1px solid #E2E8F0', cursor: 'pointer', padding: '2px' }} />
+                      <input value={brandForm.home_kit_color} onChange={e => setBrandForm(f => ({ ...f, home_kit_color: e.target.value }))} style={{ ...inputStyle, width: '100px' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Away kit</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
+                      <input type="color" value={brandForm.away_kit_color} onChange={e => setBrandForm(f => ({ ...f, away_kit_color: e.target.value }))} style={{ width: '44px', height: '44px', borderRadius: '8px', border: '1px solid #E2E8F0', cursor: 'pointer', padding: '2px' }} />
+                      <input value={brandForm.away_kit_color} onChange={e => setBrandForm(f => ({ ...f, away_kit_color: e.target.value }))} style={{ ...inputStyle, width: '100px' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Training kit</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
+                      <input type="color" value={brandForm.training_kit_color} onChange={e => setBrandForm(f => ({ ...f, training_kit_color: e.target.value }))} style={{ width: '44px', height: '44px', borderRadius: '8px', border: '1px solid #E2E8F0', cursor: 'pointer', padding: '2px' }} />
+                      <input value={brandForm.training_kit_color} onChange={e => setBrandForm(f => ({ ...f, training_kit_color: e.target.value }))} style={{ ...inputStyle, width: '100px' }} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -558,7 +602,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
               {/* Payout account status */}
-              {(club as any)?.stripe_connect_onboarded ? (
+              {club?.stripe_connect_onboarded ? (
                 <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '10px', padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#22C55E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <Check size={16} color="#fff" strokeWidth={3} />
@@ -568,7 +612,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                     <div style={{ fontSize: '12px', color: '#166534', marginTop: '2px' }}>Online payments are active. Funds go directly to your bank account.</div>
                   </div>
                 </div>
-              ) : (club as any)?.stripe_connect_account_id ? (
+              ) : club?.stripe_connect_account_id ? (
                 <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: '10px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <AlertCircle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
@@ -907,10 +951,10 @@ function SettingsPageInner() {
 
   useEffect(() => {
     if (!connectParam) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (connectParam === 'success')    showToast('success', 'Payouts connected — you can now accept online payments.');
     if (connectParam === 'incomplete') showToast('error',   'Bank account setup not completed. Click "Continue setup" to finish.');
     if (connectParam === 'error')      showToast('error',   'Something went wrong. Please try connecting your bank account again.');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectParam]);
 
   return (

@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
         body: message.slice(0, 200),
         sound: 'default',
         priority: 'high',
-        data: { type: 'emergency_broadcast', club_slug: (club as any).slug ?? '' },
+        data: { type: 'emergency_broadcast', club_slug: club.slug ?? '' },
       }));
 
       for (let i = 0; i < messages.length; i += 100) {

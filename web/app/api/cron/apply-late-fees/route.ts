@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
   if (!clubs?.length) return NextResponse.json({ applied: 0 });
 
   let applied = 0;
+  let failed  = 0;
 
   for (const club of clubs as { id: string; late_fee_type: string; late_fee_amount: number; late_fee_grace_days: number }[]) {
     const { data: teams } = await supabase.from('teams').select('id').eq('club_id', club.id);
@@ -49,14 +50,22 @@ export async function GET(req: NextRequest) {
 
       if (penalty <= 0) continue;
 
-      await supabase.from('player_fees').update({
+      const { error } = await supabase.from('player_fees').update({
         amount_due:       fee.amount_due + penalty,
         late_fee_applied: true,
       }).eq('id', fee.id);
+
+      if (error) {
+        console.error('apply-late-fees: failed to apply late fee', { fee_id: fee.id, club_id: club.id, error: error.message });
+        failed++;
+        continue;
+      }
 
       applied++;
     }
   }
 
-  return NextResponse.json({ applied, clubs: clubs.length });
+  if (failed > 0) console.error(`apply-late-fees: ${failed} late fee update(s) failed this run`);
+
+  return NextResponse.json({ applied, failed, clubs: clubs.length });
 }

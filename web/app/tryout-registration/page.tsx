@@ -292,6 +292,7 @@ function TryoutFormContent() {
   const [customResponses, setCustomResponses] = useState<Record<string, string | string[]>>({});
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (!clubSlug) { setNotFound(true); setLoading(false); return; }
     (async () => {
       const { data: club } = await supabase.from('clubs').select('id,name,primary_color').eq('slug', clubSlug).single();

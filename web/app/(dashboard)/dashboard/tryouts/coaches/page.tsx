@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { AGE_GROUPS } from '@/lib/ageGroup';
 import { seasonOptions } from '@/lib/ageGroup';
 import {
   Edit2, X, Users, ArrowRight, Search, Mail, Download,
-  FileText, CheckSquare, Square, Send, Clock, AlertCircle,
+  FileText, CheckSquare, Square, Send, Clock,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -91,6 +91,7 @@ export default function TryoutCoachesPage() {
     setLoading(false);
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club]);
 
   const ageGroupsWithTeams = [...new Set(teams.map(t => t.age_group).filter(Boolean))]
@@ -344,7 +345,6 @@ export default function TryoutCoachesPage() {
                   <div style={{ fontSize: '11px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px', paddingBottom: '6px', borderBottom: `2px solid ${agIdx === 0 ? primary : '#E2E8F0'}` }}>{ag}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '12px' }}>
                     {agTeams.map(team => {
-                      const headCoach = coaches.find(c => c.id === team.head_coach_id);
                       const assistants = teamAssistants(team.name);
                       const count = playerCounts[team.name] ?? 0;
                       const draftAssistant = addingAssistant[team.id] ?? '';
@@ -472,7 +472,7 @@ export default function TryoutCoachesPage() {
                 return (
                   <div
                     key={c.id}
-                    onClick={() => hasEmail && setSelectedIds(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}
+                    onClick={() => hasEmail && setSelectedIds(prev => { const n = new Set(prev); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n; })}
                     style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 22px', borderBottom: '1px solid #F8FAFC', cursor: hasEmail ? 'pointer' : 'not-allowed', opacity: hasEmail ? 1 : 0.45, background: selected ? `${primary}08` : 'transparent', transition: 'background 0.12s' }}>
                     {selected
                       ? <CheckSquare size={16} color={primary} />

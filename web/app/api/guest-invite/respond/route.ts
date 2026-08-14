@@ -1,6 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+type GuestDetail = {
+  id: string;
+  full_name: string;
+  role: string;
+  status: string;
+  player_id: string | null;
+  profile_id: string | null;
+  events: {
+    id: string; title: string; type: string; event_date: string; event_time: string | null;
+    location: string | null; address: string | null; home_away: string | null;
+    teams: { name: string; club_id: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string } | null } | null;
+  } | null;
+};
+
+type GuestResponseTarget = {
+  id: string;
+  full_name: string;
+  role: string;
+  status: string;
+  player_id: string | null;
+  profile_id: string | null;
+  event_id: string;
+  events: { title: string; team_id: string; teams: { name: string; club_id: string; clubs: { name: string; slug: string } | null } | null } | null;
+};
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const guestId = searchParams.get('guestId');
@@ -21,13 +46,13 @@ export async function GET(req: NextRequest) {
       )
     `)
     .eq('id', guestId)
-    .single();
+    .single<GuestDetail>();
 
   if (error || !guest) {
     return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
   }
 
-  const ev    = (guest as any).events;
+  const ev    = guest.events;
   const team  = ev?.teams;
   const club  = team?.clubs;
 
@@ -62,31 +87,31 @@ export async function POST(req: NextRequest) {
 
   const { data: guest, error: fetchErr } = await db
     .from('event_guests')
-    .select('id, full_name, role, status, player_id, profile_id, event_id, events(title, team_id, teams(name, club_id, clubs(name)))')
+    .select('id, full_name, role, status, player_id, profile_id, event_id, events(title, team_id, teams(name, club_id, clubs(name, slug)))')
     .eq('id', guestId)
-    .single();
+    .single<GuestResponseTarget>();
 
   if (fetchErr || !guest) return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
-  if ((guest as any).status !== 'pending') {
-    return NextResponse.json({ ok: true, already_responded: true, status: (guest as any).status });
+  if (guest.status !== 'pending') {
+    return NextResponse.json({ ok: true, already_responded: true, status: guest.status });
   }
 
   const { error: updateErr } = await db
     .from('event_guests')
-    .update({ status, responded_at: new Date().toISOString() } as any)
+    .update({ status, responded_at: new Date().toISOString() })
     .eq('id', guestId);
 
   if (updateErr) return NextResponse.json({ error: 'Could not update invite' }, { status: 500 });
 
-  const ev      = (guest as any).events;
+  const ev      = guest.events;
   const team    = ev?.teams;
   const club    = team?.clubs;
-  const eventId = (guest as any).event_id;
+  const eventId = guest.event_id;
 
   // Write event_rsvps for player guests so RSVP counts stay accurate
-  if (action === 'accept' && (guest as any).player_id) {
+  if (action === 'accept' && guest.player_id) {
     await db.from('event_rsvps').upsert(
-      { event_id: eventId, player_id: (guest as any).player_id, responded_by: null, status: 'attending' },
+      { event_id: eventId, player_id: guest.player_id, responded_by: null, status: 'attending' },
       { onConflict: 'event_id,player_id' }
     );
   }
@@ -96,12 +121,13 @@ export async function POST(req: NextRequest) {
     .from('team_members')
     .select('profile_id')
     .eq('team_id', ev?.team_id ?? '')
-    .eq('role', 'coach');
+    .eq('role', 'coach')
+    .returns<{ profile_id: string | null }[]>();
 
-  const coachIds = ((coaches ?? []) as any[]).map(c => c.profile_id as string).filter(Boolean);
+  const coachIds = (coaches ?? []).map(c => c.profile_id).filter((id): id is string => !!id);
   if (coachIds.length > 0) {
-    const roleLabel = (guest as any).role === 'coach' ? 'coach' : 'guest player';
-    const guestName = (guest as any).full_name as string;
+    const roleLabel = guest.role === 'coach' ? 'coach' : 'guest player';
+    const guestName = guest.full_name;
     await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-push`, {
       method: 'POST',
       headers: {

@@ -92,8 +92,10 @@ Rules:
     }
 
     return NextResponse.json({ ok: true, ...parsed });
-  } catch (e: any) {
-    const msg = e?.error?.message ?? e?.message ?? String(e);
+  } catch (e) {
+    const msg = e && typeof e === 'object' && 'error' in e && e.error && typeof e.error === 'object' && 'message' in e.error
+      ? String(e.error.message)
+      : e instanceof Error ? e.message : String(e);
     console.error('/api/ai/parse-availability error:', msg, e);
     return NextResponse.json({ error: msg || 'AI request failed' }, { status: 500 });
   }

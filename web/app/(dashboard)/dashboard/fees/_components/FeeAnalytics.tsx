@@ -26,6 +26,19 @@ type AgeingData = {
   color: string;
 };
 
+type FeeRow = {
+  id: string;
+  description: string | null;
+  amount_due: number;
+  amount_paid: number;
+  discount: number | null;
+  status: string;
+  due_date: string | null;
+  created_at: string | null;
+};
+
+type PaymentRow = { player_fee_id: string; amount: number; paid_at: string | null };
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtK(n: number) {
@@ -148,15 +161,16 @@ export default function FeeAnalytics() {
 
     // Get all teams
     const { data: teamsData } = await supabase.from('teams').select('id').eq('club_id', club.id);
-    const teamIds = (teamsData ?? []).map((t: any) => t.id);
+    const teamIds = (teamsData ?? []).map(t => t.id);
     if (!teamIds.length) { setLoading(false); return; }
 
     // Fetch all fees (lightweight)
     const { data: feesData } = await supabase
       .from('player_fees')
       .select('id,description,amount_due,amount_paid,discount,status,due_date,created_at')
-      .in('team_id', teamIds);
-    const fees = ((feesData ?? []) as any[]).map(f => ({
+      .in('team_id', teamIds)
+      .returns<FeeRow[]>();
+    const fees = (feesData ?? []).map(f => ({
       ...f,
       amount_due:  +f.amount_due,
       amount_paid: +f.amount_paid,
@@ -167,10 +181,11 @@ export default function FeeAnalytics() {
 
     // Fetch all payments
     const feeIds = fees.map(f => f.id);
-    let payments: any[] = [];
+    let payments: PaymentRow[] = [];
     if (feeIds.length > 0) {
       const { data: pmtsData } = await supabase
-        .from('fee_payments').select('player_fee_id,amount,paid_at').in('player_fee_id', feeIds);
+        .from('fee_payments').select('player_fee_id,amount,paid_at').in('player_fee_id', feeIds)
+        .returns<PaymentRow[]>();
       payments = pmtsData ?? [];
     }
 
@@ -183,11 +198,11 @@ export default function FeeAnalytics() {
       // Invoiced = fees created this month
       const invoiced = fees
         .filter(f => (f.created_at ?? '').slice(0, 7) === key)
-        .reduce((s: number, f: any) => s + (f.amount_due - f.discount), 0);
+        .reduce((s, f) => s + (f.amount_due - f.discount), 0);
       // Collected = payments received this month
       const collected = payments
-        .filter((p: any) => (p.paid_at ?? '').slice(0, 7) === key)
-        .reduce((s: number, p: any) => s + +p.amount, 0);
+        .filter(p => (p.paid_at ?? '').slice(0, 7) === key)
+        .reduce((s, p) => s + +p.amount, 0);
       return { label, invoiced, collected };
     });
 
@@ -205,19 +220,19 @@ export default function FeeAnalytics() {
     const cats = Object.values(catMap).sort((a, b) => b.invoiced - a.invoiced).slice(0, 8);
 
     // ── Totals ───────────────────────────────────────────────────────────────
-    const inv = fees.reduce((s: number, f: any) => s + (f.amount_due - f.discount), 0);
-    const col = fees.reduce((s: number, f: any) => s + f.amount_paid, 0);
-    const out = fees.filter((f: any) => !['paid','waived'].includes(f.status))
-                    .reduce((s: number, f: any) => s + Math.max(f.amount_due - f.discount - f.amount_paid, 0), 0);
+    const inv = fees.reduce((s, f) => s + (f.amount_due - f.discount), 0);
+    const col = fees.reduce((s, f) => s + f.amount_paid, 0);
+    const out = fees.filter(f => !['paid','waived'].includes(f.status))
+                    .reduce((s, f) => s + Math.max(f.amount_due - f.discount - f.amount_paid, 0), 0);
 
     // ── Ageing + projected collection ───────────────────────────────────────
     function daysDiff(a: string, b: string) { return Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000); }
-    const unpaid = fees.filter((f: any) => !['paid','waived'].includes(f.status));
-    const current = unpaid.filter((f: any) => f.status !== 'overdue');
-    const d30    = unpaid.filter((f: any) => f.status === 'overdue' && f.due_date && daysDiff(f.due_date, today) <= 30);
-    const d60    = unpaid.filter((f: any) => f.status === 'overdue' && f.due_date && daysDiff(f.due_date, today) > 30 && daysDiff(f.due_date, today) <= 60);
-    const d60p   = unpaid.filter((f: any) => f.status === 'overdue' && f.due_date && daysDiff(f.due_date, today) > 60);
-    const sumOwed = (arr: any[]) => arr.reduce((s: number, f: any) => s + Math.max(f.amount_due - f.discount - f.amount_paid, 0), 0);
+    const unpaid = fees.filter(f => !['paid','waived'].includes(f.status));
+    const current = unpaid.filter(f => f.status !== 'overdue');
+    const d30    = unpaid.filter(f => f.status === 'overdue' && f.due_date && daysDiff(f.due_date, today) <= 30);
+    const d60    = unpaid.filter(f => f.status === 'overdue' && f.due_date && daysDiff(f.due_date, today) > 30 && daysDiff(f.due_date, today) <= 60);
+    const d60p   = unpaid.filter(f => f.status === 'overdue' && f.due_date && daysDiff(f.due_date, today) > 60);
+    const sumOwed = (arr: typeof unpaid) => arr.reduce((s, f) => s + Math.max(f.amount_due - f.discount - f.amount_paid, 0), 0);
     const ageingData: AgeingData[] = [
       { label: 'Not yet due',   amount: sumOwed(current), probability: 0.90, color: '#22C55E' },
       { label: '1–30d overdue', amount: sumOwed(d30),     probability: 0.70, color: '#F59E0B' },
@@ -234,6 +249,7 @@ export default function FeeAnalytics() {
     setLoading(false);
   }, [club, today]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const projectedCollection = useMemo(() =>

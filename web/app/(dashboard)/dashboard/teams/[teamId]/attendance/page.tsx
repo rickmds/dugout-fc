@@ -56,8 +56,8 @@ export default function TeamAttendancePage() {
         .gte('event_date', since).lte('event_date', new Date().toISOString().slice(0,10)).order('event_date', { ascending: false }),
     ]);
 
-    const allPlayers = (playersRes.data ?? []) as any[];
-    const allEvents  = (eventsRes.data ?? []) as any[];
+    const allPlayers = (playersRes.data ?? []) as { id: string; full_name: string; position: string | null; jersey_number: number | null }[];
+    const allEvents  = (eventsRes.data ?? []) as { id: string; title: string; event_date: string; type: string }[];
 
     if (allEvents.length === 0) {
       setPlayers(allPlayers.map(p => ({ ...p, attended: 0, total: 0, rate: 0 })));
@@ -66,12 +66,12 @@ export default function TeamAttendancePage() {
       return;
     }
 
-    const eventIds = allEvents.map((e: any) => e.id);
+    const eventIds = allEvents.map(e => e.id);
     const { data: rsvps } = await supabase.from('event_rsvps').select('event_id,player_id,status').in('event_id', eventIds);
-    const allRsvps = (rsvps ?? []) as any[];
+    const allRsvps = (rsvps ?? []) as { event_id: string; player_id: string; status: string }[];
 
     // Per-player stats
-    const playerStats: PlayerStat[] = allPlayers.map((p: any) => {
+    const playerStats: PlayerStat[] = allPlayers.map(p => {
       const mine    = allRsvps.filter(r => r.player_id === p.id);
       const attended = mine.filter(r => r.status === 'attending').length;
       const total    = allEvents.length;
@@ -79,7 +79,7 @@ export default function TeamAttendancePage() {
     });
 
     // Per-event stats
-    const eventSummaries: EventSummary[] = allEvents.map((e: any) => {
+    const eventSummaries: EventSummary[] = allEvents.map(e => {
       const er        = allRsvps.filter(r => r.event_id === e.id);
       const attending = er.filter(r => r.status === 'attending').length;
       const notAtt    = er.filter(r => r.status === 'not_attending').length;
@@ -91,6 +91,7 @@ export default function TeamAttendancePage() {
     setLoading(false);
   }, [teamId, days]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const sorted = [...players].sort((a, b) =>
@@ -108,7 +109,7 @@ export default function TeamAttendancePage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '10px', padding: '3px' }}>
           {['players','events'].map(t => (
-            <button key={t} onClick={() => setTab(t as any)} style={{
+            <button key={t} onClick={() => setTab(t as 'players' | 'events')} style={{
               padding: '6px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '600',
               background: tab === t ? '#fff' : 'transparent',
               color: tab === t ? '#0F172A' : '#64748B',
@@ -120,7 +121,7 @@ export default function TeamAttendancePage() {
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {tab === 'players' && (
-            <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={{ fontSize: '13px', padding: '6px 10px', borderRadius: '8px', border: '1px solid #E2E8F0', color: '#374151', background: '#fff', cursor: 'pointer' }}>
+            <select value={sortBy} onChange={e => setSortBy(e.target.value as 'name' | 'rate')} style={{ fontSize: '13px', padding: '6px 10px', borderRadius: '8px', border: '1px solid #E2E8F0', color: '#374151', background: '#fff', cursor: 'pointer' }}>
               <option value="rate">Sort by rate</option>
               <option value="name">Sort by name</option>
             </select>

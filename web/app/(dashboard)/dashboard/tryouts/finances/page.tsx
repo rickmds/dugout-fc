@@ -5,7 +5,7 @@ import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { FlipBoard } from '@/components/FlipBoard';
 import { seasonOptions } from '@/lib/ageGroup';
-import { Plus, Trash2, X, TrendingUp, TrendingDown, DollarSign, Download } from 'lucide-react';
+import { Plus, Trash2, X, DollarSign, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 type Player = { id: string };
@@ -23,12 +23,22 @@ const REG_FEE_DEFAULT = 50;
 const SEASONAL_FEE_DEFAULT = 1200;
 const blankExp = (): Omit<Expense,'id'> => ({ category: EXPENSE_CATEGORIES[0], description: '', amount: 0, notes: null });
 
+function StatCard({ label, val, sub, green }: { label: string; val: string; sub: string; green?: boolean }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+      <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px' }}>{label}</div>
+      <div style={{ fontSize: '28px', fontWeight: '900', color: green === false ? '#EF4444' : green ? '#22C55E' : '#0F172A', lineHeight: 1 }}>{val}</div>
+      <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '6px' }}>{sub}</div>
+    </div>
+  );
+}
+
 export default function TryoutFinancesPage() {
   const { club } = useDashboard();
   const [season, setSeason] = useState(() => seasonOptions()[1] ?? '2026-27');
   const [players, setPlayers] = useState<Player[]>([]);
   const [assigns, setAssigns] = useState<Assignment[]>([]);
-  const [teams, setTeams] = useState<TryoutTeam[]>([]);
+  const [_teams, setTeams] = useState<TryoutTeam[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddExp, setShowAddExp] = useState(false);
@@ -51,6 +61,7 @@ export default function TryoutFinancesPage() {
     setExpenses((exps ?? []) as Expense[]);
     setLoading(false);
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club, season]);
 
   const placed = assigns.filter(a => a.offer_status === 'Accepted' || a.offer_status === 'Sent').length;
@@ -72,14 +83,6 @@ export default function TryoutFinancesPage() {
     const csv = rows.map(r => r.map(v => `"${v.replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `tryout-finances-${season}.csv`; a.click();
   }
-
-  const StatCard = ({ label, val, sub, green }: { label: string; val: string; sub: string; green?: boolean }) => (
-    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px 22px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px' }}>{label}</div>
-      <div style={{ fontSize: '28px', fontWeight: '900', color: green === false ? '#EF4444' : green ? '#22C55E' : '#0F172A', lineHeight: 1 }}>{val}</div>
-      <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '6px' }}>{sub}</div>
-    </div>
-  );
 
   if (loading) return (
     <FlipBoard title="Loading finances…" rows={[
@@ -204,7 +207,7 @@ export default function TryoutFinancesPage() {
                         <span style={{ fontSize: '10px', color: '#94A3B8', marginLeft: '6px' }}>({g.items.length})</span>
                       </td>
                     </tr>,
-                    ...g.items.map((e, i) => (
+                    ...g.items.map((e) => (
                       <tr key={e.id} style={{ borderBottom: '1px solid #F1F5F9', background: '#fff' }}>
                         <td style={{ padding: '8px 14px 8px 20px', fontWeight: '500', color: '#64748B', fontSize: '12px', width: '150px' }} />
                         <td style={{ padding: '8px 14px', color: '#374151', fontWeight: '500' }}>{e.description ?? <span style={{ color: '#CBD5E1' }}>—</span>}</td>

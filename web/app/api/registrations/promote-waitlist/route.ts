@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 import { Resend } from 'resend';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 const resend = new Resend(process.env.RESEND_API_KEY!);
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { submission_id } = await req.json() as { submission_id: string };
 
   if (!submission_id) {
     return NextResponse.json({ error: 'submission_id is required' }, { status: 400 });
   }
+
+  const supabase = supabaseAdmin();
 
   const { data: sub, error: subErr } = await supabase
     .from('registration_submissions')
@@ -23,6 +25,11 @@ export async function POST(req: NextRequest) {
 
   if (subErr || !sub) {
     return NextResponse.json({ error: 'Submission not found' }, { status: 404 });
+  }
+
+  const submissionClubId = (sub as unknown as { registration_forms: { club_id: string } }).registration_forms?.club_id;
+  if (auth.role !== 'app_admin' && submissionClubId !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   if (sub.status !== 'waitlisted') {

@@ -23,6 +23,7 @@ const TIERS = [
     highlight: false,
     cta: 'Get started free',
     ctaHref: '/onboarding',
+    roi: null as string | null,
     features: [
       'Schedule, roster & RSVP',
       'Team, group & 1:1 chat',
@@ -44,6 +45,7 @@ const TIERS = [
     highlight: false,
     cta: 'Start Team Pro',
     ctaHref: '/onboarding',
+    roi: null as string | null,
     features: [
       'Everything in Free',
       'Unlimited players',
@@ -73,10 +75,15 @@ const TIERS = [
     highlight: true,
     cta: 'Start Starter',
     ctaHref: '/onboarding',
+    roi: null as string | null,
     features: [
       'Everything in Team Pro',
-      'Up to 25 teams',
-      'Multi-team dashboard',
+      'Up to 25 teams across your club',
+      'Unified multi-team dashboard',
+      'Club-wide attendance & RSVP reporting',
+      'AI tools active across every team',
+      'Unlimited coaches and staff logins',
+      'Club-wide announcement broadcasts',
     ],
   },
   {
@@ -92,6 +99,7 @@ const TIERS = [
     highlight: false,
     cta: 'Start Club',
     ctaHref: '/onboarding',
+    roi: 'Keep 1 family = paid for itself. Keep 3 = +$3,600 net.' as string | null,
     features: [
       'Everything in Starter',
       'Up to 60 teams',
@@ -101,6 +109,7 @@ const TIERS = [
       'Offer letters with accept/decline tracking',
       'Waitlist & decline email templates',
       'Club-wide guest activity dashboard',
+      'Advanced season reports & export',
     ],
   },
   {
@@ -116,6 +125,7 @@ const TIERS = [
     highlight: false,
     cta: 'Contact us',
     ctaHref: 'mailto:support@pulse-fc.app?subject=Academy Plan',
+    roi: null as string | null,
     features: [
       'Everything in Club',
       'Unlimited teams',
@@ -180,11 +190,11 @@ export default function PricingPage() {
         </div>
         <h1 className="text-white font-extrabold tracking-tight leading-[1.05] mb-4"
           style={{ fontSize: 'clamp(34px, 6vw, 56px)', letterSpacing: '-1px' }}>
-          The right plan for every club
+          One family leaving pays for<br />a year of Pulse FC.
         </h1>
         <p className="text-[#888] leading-relaxed max-w-md mx-auto mb-10"
           style={{ fontSize: 'clamp(15px, 2.5vw, 18px)' }}>
-          Start free. Upgrade when you need more players, AI tools, or tryout management.
+          Every plan includes full AI tools, unlimited parents, and setup in 20 minutes. No per-team fees. No hidden costs.
         </p>
 
         {/* Billing toggle */}
@@ -298,9 +308,14 @@ export default function PricingPage() {
                     ${annualPerMonth}/mo billed annually
                   </div>
                 )}
-                <div style={{ fontSize: '11px', color: '#444', marginBottom: '20px' }}>
+                <div style={{ fontSize: '11px', color: '#444', marginBottom: tier.roi ? '10px' : '20px' }}>
                   {tier.playerLimit}
                 </div>
+                {tier.roi && (
+                  <div style={{ fontSize: '11px', color: '#22c55e', fontWeight: '700', background: '#22c55e0d', border: '1px solid #22c55e20', borderRadius: '8px', padding: '7px 10px', marginBottom: '16px', lineHeight: '1.4' }}>
+                    {tier.roi}
+                  </div>
+                )}
 
                 {/* CTA */}
                 <a
@@ -419,6 +434,7 @@ export default function PricingPage() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f', padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
         <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>

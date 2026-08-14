@@ -214,6 +214,7 @@ export default function SubmissionsTab() {
     }
   }, [club, detectDuplicates]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadData(); }, [loadData]);
 
   // ── Filtered submissions ────────────────────────────────────────────────────
@@ -455,7 +456,7 @@ export default function SubmissionsTab() {
         }}>
           <AlertTriangle size={16} color="#D97706" style={{ flexShrink: 0 }} />
           <span style={{ fontSize: '13px', color: '#92400E', flex: 1 }}>
-            Potential duplicate submissions detected. Rows marked "Duplicate?" are highlighted below.
+            Potential duplicate submissions detected. Rows marked &quot;Duplicate?&quot; are highlighted below.
           </span>
           <button
             onClick={() => setShowDuplicateBanner(false)}

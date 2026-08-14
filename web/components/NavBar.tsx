@@ -17,6 +17,7 @@ export default function NavBar() {
         padding: '16px 24px', maxWidth: '1280px', margin: '0 auto',
       }}>
         <Link href="/" style={{ textDecoration: 'none' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
           <img src="/logo.png" alt="Pulse FC" style={{ height: '64px', width: 'auto' }} />
         </Link>
 

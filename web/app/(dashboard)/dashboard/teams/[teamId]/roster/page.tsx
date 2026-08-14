@@ -35,19 +35,20 @@ export default function TeamRosterPage() {
       supabase.from('team_members').select('profile_id, profiles(full_name, avatar_url)').eq('team_id', teamId).eq('role', 'coach'),
     ]);
 
-    const inviteMap = Object.fromEntries((invitesRes.data ?? []).map((i: any) => [i.player_id, i]));
+    const inviteMap = Object.fromEntries((invitesRes.data ?? []).map(i => [i.player_id, i]));
     setPlayers(((playersRes.data ?? []) as Omit<Player, 'team_id' | 'parent_email'>[]).map(p => ({
       ...p, team_id: teamId, parent_email: inviteMap[p.id]?.email ?? null,
     })));
     setInvites(invitesRes.data ?? []);
-    setCoaches((coachesRes.data ?? []).map((m: any) => ({
+    setCoaches((coachesRes.data ?? []).map(m => ({
       profile_id: m.profile_id,
-      full_name:  m.profiles?.full_name ?? null,
-      avatar_url: m.profiles?.avatar_url ?? null,
+      full_name:  (m.profiles as unknown as { full_name: string | null; avatar_url: string | null } | null)?.full_name ?? null,
+      avatar_url: (m.profiles as unknown as { full_name: string | null; avatar_url: string | null } | null)?.avatar_url ?? null,
     })));
     setLoading(false);
   }, [teamId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const inviteStatus = (p: Player) => {

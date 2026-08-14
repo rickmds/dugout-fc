@@ -31,7 +31,6 @@ const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', GBP: '£', EUR: '�
 
 const AGE_GROUPS = ['U7','U8','U9','U10','U11','U12','U13','U14'];
 const FORMATS = ['7v7','9v9','11v11'];
-const TIERS = ['A','B','C','D'];
 
 const blank = (): Omit<TryoutTeam,'id'|'sort_order'|'is_active'> => ({
   name: '', color: '#22C55E', age_group: null, gender: null, format: null, tier: null,
@@ -70,7 +69,31 @@ export default function TryoutTeamsSettingsPage() {
     setLoading(false);
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club]);
+
+  // Teams from club that are not yet in tryout_teams (matched by name, case-insensitive)
+  const teamsToSync = clubTeams
+    .filter(ct => !teams.some(tt => tt.name.toLowerCase() === ct.name.toLowerCase()))
+    .map(ct => ({ ...ct, new_age_group: incrementAgeGroup(ct.age_group) }));
+
+  async function doSync() {
+    if (!club || teamsToSync.length === 0) return;
+    setSyncing(true);
+    await supabase.from('tryout_teams').insert(
+      teamsToSync.map((ct, i) => ({
+        club_id: club.id,
+        name: ct.name,
+        age_group: ct.new_age_group,
+        color: '#22C55E',
+        sort_order: (teams.length + i) * 10,
+        is_active: true,
+      }))
+    );
+    setSyncing(false);
+    setShowSync(false);
+    load();
+  }
 
   // Auto-sync from club teams on first load when no tryout teams exist yet
   useEffect(() => {
@@ -78,8 +101,10 @@ export default function TryoutTeamsSettingsPage() {
     if (autoSyncedRef.current) return;
     if (teams.length === 0 && clubTeams.length > 0) {
       autoSyncedRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
       doSync();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- doSync is a plain function redefined each render; autoSyncedRef guards against re-firing, so its identity is irrelevant here
   }, [loading, teams.length, clubTeams.length]);
 
   function openAdd() {
@@ -111,29 +136,6 @@ export default function TryoutTeamsSettingsPage() {
   async function handleDelete(id: string) {
     await supabase.from('tryout_teams').delete().eq('id', id);
     setDeleteId(null);
-    load();
-  }
-
-  // Teams from club that are not yet in tryout_teams (matched by name, case-insensitive)
-  const teamsToSync = clubTeams
-    .filter(ct => !teams.some(tt => tt.name.toLowerCase() === ct.name.toLowerCase()))
-    .map(ct => ({ ...ct, new_age_group: incrementAgeGroup(ct.age_group) }));
-
-  async function doSync() {
-    if (!club || teamsToSync.length === 0) return;
-    setSyncing(true);
-    await supabase.from('tryout_teams').insert(
-      teamsToSync.map((ct, i) => ({
-        club_id: club.id,
-        name: ct.name,
-        age_group: ct.new_age_group,
-        color: '#22C55E',
-        sort_order: (teams.length + i) * 10,
-        is_active: true,
-      }))
-    );
-    setSyncing(false);
-    setShowSync(false);
     load();
   }
 
@@ -679,7 +681,7 @@ export default function TryoutTeamsSettingsPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
           <div style={{ background: '#fff', borderRadius: '8px', padding: '28px', width: '340px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
             <div style={{ fontWeight: '700', fontSize: '15px', color: '#0F172A', marginBottom: '8px' }}>Delete team?</div>
-            <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '20px' }}>This won't delete players — just the team slot.</div>
+            <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '20px' }}>This won&apos;t delete players — just the team slot.</div>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
               <button onClick={() => setDeleteId(null)} style={{ padding: '9px 20px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', fontSize: '13.5px' }}>Cancel</button>
               <button onClick={() => handleDelete(deleteId)} style={{ padding: '9px 20px', borderRadius: '9px', background: '#EF4444', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '13.5px' }}>Delete</button>

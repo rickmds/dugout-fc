@@ -6,14 +6,26 @@ import { requireRole } from '@/lib/apiAuth';
 const resend = new Resend(process.env.RESEND_API_KEY);
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
+type FeeForReminder = {
+  id: string; payment_token: string | null; description: string; amount_due: number; discount: number;
+  due_date: string | null; status: string; player_id: string;
+  payee_type: 'club' | 'coach'; payment_instructions: string | null;
+  players: { full_name: string | null } | null;
+  teams: { id: string; name: string; club_id: string; clubs: { name: string; slug: string | null; logo_url: string | null; primary_color: string | null } | null } | null;
+};
+
 export async function POST(req: NextRequest) {
   const cronSecret = req.headers.get('x-cron-secret');
   const isCron = cronSecret && cronSecret === process.env.CRON_SECRET;
   let senderUserId: string | null = null;
+  let callerRole: string | null = null;
+  let callerClubId: string | null = null;
   if (!isCron) {
     const auth = await requireRole(req, ['org_admin', 'app_admin']);
     if (!auth.ok) return auth.response;
     senderUserId = auth.userId;
+    callerRole = auth.role;
+    callerClubId = auth.clubId;
   }
 
   const { player_fee_id } = await req.json();
@@ -24,11 +36,19 @@ export async function POST(req: NextRequest) {
   // Fetch fee + player + team + club
   const { data: fee, error: feeErr } = await supabase
     .from('player_fees')
-    .select('id, payment_token, description, amount_due, discount, due_date, status, player_id, players(full_name), teams(id, name, club_id, clubs(name, slug, logo_url, primary_color))')
+    .select('id, payment_token, description, amount_due, discount, due_date, status, player_id, payee_type, payment_instructions, players(full_name), teams(id, name, club_id, clubs(name, slug, logo_url, primary_color))')
     .eq('id', player_fee_id)
-    .single();
+    .single<FeeForReminder>();
 
   if (feeErr || !fee) return NextResponse.json({ error: 'Fee not found' }, { status: 404 });
+
+  // A caller with a real session (not the cron job) can only send reminders
+  // for their own club's fees — without this, an org_admin could pass any
+  // other club's player_fee_id and trigger an email carrying that club's
+  // amount, description, and parent's address.
+  if (!isCron && callerRole !== 'app_admin' && fee.teams?.club_id !== callerClubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   // Parent email from invites
   const { data: invite } = await supabase
@@ -41,8 +61,8 @@ export async function POST(req: NextRequest) {
 
   if (!invite?.email) return NextResponse.json({ ok: true, skipped: true, reason: 'no_parent_email' });
 
-  const player   = (fee as any).players;
-  const team     = (fee as any).teams;
+  const player   = fee.players;
+  const team     = fee.teams;
   const club     = team?.clubs;
   const clubName = club?.name ?? 'Your club';
   const teamName = team?.name ?? 'your team';
@@ -57,7 +77,8 @@ export async function POST(req: NextRequest) {
   const fmtAmount  = `$${netAmount.toFixed(2)}`;
   const isOverdue  = fee.due_date ? new Date(fee.due_date) < new Date() : false;
   const baseUrl    = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.pulse-fc.app';
-  const payUrl     = (fee as any).payment_token ? `${baseUrl}/pay/${(fee as any).payment_token}` : null;
+  const isCoachCollected = fee.payee_type === 'coach';
+  const payUrl     = (!isCoachCollected && fee.payment_token) ? `${baseUrl}/pay/${fee.payment_token}` : null;
   const fmtDue = fee.due_date
     ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : null;
@@ -143,16 +164,21 @@ export async function POST(req: NextRequest) {
                   </td>
                 </tr>
 
-                <!-- Pay Now button -->
+                <!-- Pay Now button / coach payment instructions -->
                 ${payUrl ? `<tr><td style="padding:0 28px 20px;text-align:center;">
                   <a href="${esc(payUrl)}" style="display:inline-block;padding:14px 32px;background:${urgencyColor};color:#fff;text-decoration:none;font-size:15px;font-weight:800;border-radius:12px;letter-spacing:-0.2px;">Pay now →</a>
                   <p style="margin:10px 0 0;font-size:12px;color:#6b7280;">Secure payment · No login required · Powered by Stripe</p>
+                </td></tr>` : isCoachCollected ? `<tr><td style="padding:0 28px 20px;">
+                  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;padding:16px 18px;">
+                    <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">This fee is collected directly by your coach</p>
+                    <p style="margin:0;font-size:14px;color:#f9fafb;line-height:1.6;">${esc(fee.payment_instructions ?? 'Contact your coach for payment details.')}</p>
+                  </div>
                 </td></tr>` : ''}
 
                 <tr>
                   <td style="padding:0 28px 24px;">
                     <p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">
-                      ${payUrl ? 'Click the button above to pay securely online. Alternatively, contact your coach or club administrator to arrange payment.' : 'Please contact your coach or club administrator to arrange payment.'} Questions? Simply reply to this email.
+                      ${payUrl ? 'Click the button above to pay securely online. Alternatively, contact your coach or club administrator to arrange payment.' : isCoachCollected ? 'This fee does not go through the club — please pay your coach directly using the instructions above.' : 'Please contact your coach or club administrator to arrange payment.'} Questions? Simply reply to this email.
                     </p>
                   </td>
                 </tr>
@@ -203,13 +229,14 @@ export async function POST(req: NextRequest) {
     const parentUser = users.find((u) => u.email?.toLowerCase() === invite.email.toLowerCase());
 
     if (parentUser) {
+      const reminderSuffix = isCoachCollected ? ' — pay your coach directly' : '';
       // Insert in-app notification
       await supabase.from('notifications').insert({
         profile_id: parentUser.id,
         type: 'fee_reminder',
         title: isOverdue ? 'Overdue payment' : 'Payment reminder',
-        body: `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}`,
-        data: { player_fee_id, type: 'fee_reminder', club_slug: (fee as any).teams?.clubs?.slug ?? '' },
+        body: `${fee.description} · ${fmtAmount}${fmtDue ? ` — due ${fmtDue}` : ''}${reminderSuffix}`,
+        data: { player_fee_id, type: 'fee_reminder', club_slug: fee.teams?.clubs?.slug ?? '' },
       });
 
       // Get push tokens and fire
@@ -219,12 +246,12 @@ export async function POST(req: NextRequest) {
         .eq('profile_id', parentUser.id);
 
       if (tokens?.length) {
-        const messages = tokens.map((t: any) => ({
+        const messages = tokens.map(t => ({
           to: t.token,
           title: isOverdue ? `⚠️ Overdue: ${fee.description}` : `💳 Payment reminder: ${fee.description}`,
-          body: `${fmtAmount}${fmtDue ? ` · Due ${fmtDue}` : ''}`,
+          body: `${fmtAmount}${fmtDue ? ` · Due ${fmtDue}` : ''}${reminderSuffix}`,
           sound: 'default',
-          data: { type: 'fee_reminder', player_fee_id, club_slug: (fee as any).teams?.clubs?.slug ?? '' },
+          data: { type: 'fee_reminder', player_fee_id, club_slug: fee.teams?.clubs?.slug ?? '' },
         }));
         await fetch(EXPO_PUSH_URL, {
           method: 'POST',

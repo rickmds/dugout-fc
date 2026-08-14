@@ -6,17 +6,25 @@ import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
 type StaffMember = {
+  kind: 'active' | 'pending';
   id: string;
   full_name: string | null;
-  role: string;
+  role: string | null;
   avatar_url: string | null;
-  created_at: string | null;
+  email: string | null;
+  createdAt: string | null;
+  lastSignInAt: string | null;
+  invitedAt: string | null;
   assigned_teams: string[];
 };
+
+type EmailEditTarget = { kind: 'active' | 'pending'; id: string; current: string | null };
 
 type EditModal = {
   staff: StaffMember;
   name: string;
+  email: string;
+  emailError: string | null;
   role: 'coach' | 'org_admin';
   teamDraft: string[];
   teamSearch: string;
@@ -44,28 +52,52 @@ export default function StaffPage() {
   // Edit modal
   const [editModal, setEditModal] = useState<EditModal | null>(null);
 
+  // Email edit (small modal, works for both active accounts and pending invites)
+  const [emailEdit, setEmailEdit] = useState<EmailEditTarget | null>(null);
+  const [emailEditValue, setEmailEditValue] = useState('');
+  const [emailEditSaving, setEmailEditSaving] = useState(false);
+  const [emailEditError, setEmailEditError] = useState<string | null>(null);
+
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resentId, setResentId] = useState<string | null>(null);
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
+
+  async function authHeaders() {
+    const { data: { session } } = await supabase.auth.getSession();
+    return {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    };
+  }
+
   const loadStaff = useCallback(async () => {
     if (!club) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, full_name, role, avatar_url, created_at')
-      .eq('club_id', club.id)
-      .in('role', ['coach', 'org_admin'])
-      .order('full_name');
+    const headers = await authHeaders();
+    const res = await fetch(`/api/staff-list?club_id=${club.id}`, { headers });
+    const data = await res.json() as { staff?: Array<{
+      kind: 'active' | 'pending'; id?: string; inviteId?: string; full_name?: string | null; role?: string | null;
+      avatar_url?: string | null; email?: string | null; createdAt?: string | null; lastSignInAt?: string | null;
+      invitedAt?: string | null; assigned_teams?: string[]; teamId?: string;
+    }> };
+    if (!res.ok || !data.staff) { setLoading(false); return; }
 
-    if (!data) { setLoading(false); return; }
-
-    const withTeams = await Promise.all(data.map(async (s) => {
-      const { data: tm } = await supabase
-        .from('team_members').select('team_id').eq('profile_id', s.id);
-      return { ...s, assigned_teams: (tm ?? []).map((t) => t.team_id as string) };
-    }));
-
-    setStaff(withTeams);
+    setStaff(data.staff.map((s) => ({
+      kind: s.kind,
+      id: (s.kind === 'active' ? s.id : s.inviteId) ?? '',
+      full_name: s.full_name ?? null,
+      role: s.role ?? null,
+      avatar_url: s.avatar_url ?? null,
+      email: s.email ?? null,
+      createdAt: s.createdAt ?? null,
+      lastSignInAt: s.lastSignInAt ?? null,
+      invitedAt: s.invitedAt ?? null,
+      assigned_teams: (s.kind === 'active' ? s.assigned_teams : (s.teamId ? [s.teamId] : [])) ?? [],
+    })));
     setLoading(false);
   }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/club-change; loadStaff sets state from a real network call, not derivable at render time
   useEffect(() => { loadStaff(); }, [loadStaff]);
 
   // ── Open edit modal ─────────────────────────────────────────────────────────
@@ -73,6 +105,8 @@ export default function StaffPage() {
     setEditModal({
       staff: s,
       name: s.full_name ?? '',
+      email: s.email ?? '',
+      emailError: null,
       role: (s.role as 'coach' | 'org_admin'),
       teamDraft: [...s.assigned_teams],
       teamSearch: '',
@@ -84,9 +118,22 @@ export default function StaffPage() {
   // ── Save edit ────────────────────────────────────────────────────────────────
   async function saveEdit() {
     if (!editModal) return;
-    setEditModal((m) => m ? { ...m, saving: true } : null);
+    setEditModal((m) => m ? { ...m, saving: true, emailError: null } : null);
 
-    const { staff: s, name, role, teamDraft } = editModal;
+    const { staff: s, name, email, role, teamDraft } = editModal;
+
+    if (email.trim() && email.trim().toLowerCase() !== (s.email ?? '').toLowerCase()) {
+      const headers = await authHeaders();
+      const res = await fetch('/api/staff-edit-email', {
+        method: 'POST', headers,
+        body: JSON.stringify({ kind: 'active', profile_id: s.id, email: email.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setEditModal((m) => m ? { ...m, saving: false, emailError: data.error ?? 'Could not update email.' } : null);
+        return;
+      }
+    }
 
     const toAdd    = teamDraft.filter((id) => !s.assigned_teams.includes(id));
     const toRemove = s.assigned_teams.filter((id) => !teamDraft.includes(id));
@@ -102,7 +149,7 @@ export default function StaffPage() {
     ]);
 
     setStaff((prev) => prev.map((m) =>
-      m.id !== s.id ? m : { ...m, full_name: name.trim() || null, role, assigned_teams: teamDraft }
+      m.id !== s.id ? m : { ...m, full_name: name.trim() || null, email: email.trim() || m.email, role, assigned_teams: teamDraft }
     ));
     setEditModal(null);
   }
@@ -119,17 +166,91 @@ export default function StaffPage() {
   async function handleInvite() {
     if (!inviteEmail.trim() || !club) return;
     setSending(true);
-    const { error } = await supabase.functions.invoke('invite-staff', {
-      body: { email: inviteEmail.trim(), full_name: inviteName.trim() || null, role: inviteRole, club_id: club.id, team_ids: inviteTeams },
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/invite-coach', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({
+        club_id: club.id,
+        coaches: [{ full_name: inviteName.trim() || inviteEmail.trim(), email: inviteEmail.trim(), team_ids: inviteTeams, role: inviteRole }],
+      }),
     });
+    const data = await res.json();
     setSending(false);
-    if (error) { alert(`Invite failed: ${error.message}`); return; }
+    const failed = data.results?.find((r: { ok: boolean }) => !r.ok);
+    if (!res.ok || failed) { alert(`Invite failed: ${failed?.error ?? data.error ?? 'Unknown error'}`); return; }
     setSent(true);
     setTimeout(() => {
       setSent(false); setShowInvite(false);
       setInviteEmail(''); setInviteName(''); setInviteTeams([]); setInviteSearch('');
       loadStaff();
     }, 2000);
+  }
+
+  async function resendInvite(row: StaffMember) {
+    setResendingId(row.id);
+    const headers = await authHeaders();
+    const res = await fetch('/api/staff-resend', {
+      method: 'POST', headers,
+      body: JSON.stringify(row.kind === 'pending' ? { kind: 'pending', invite_id: row.id } : { kind: 'active', profile_id: row.id }),
+    });
+    setResendingId(null);
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(`Resend failed: ${d.error ?? 'Unknown error'}`); return; }
+    setResentId(row.id);
+    setTimeout(() => setResentId(null), 2500);
+  }
+
+  async function cancelInvite(inviteId: string) {
+    if (!confirm('Cancel this pending invite?')) return;
+    setCancelingId(inviteId);
+    const headers = await authHeaders();
+    const res = await fetch(`/api/staff-resend?invite_id=${inviteId}`, { method: 'DELETE', headers });
+    setCancelingId(null);
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(`Cancel failed: ${d.error ?? 'Unknown error'}`); return; }
+    setStaff((prev) => prev.filter((s) => s.id !== inviteId));
+  }
+
+  function openEmailEdit(row: StaffMember) {
+    setEmailEdit({ kind: row.kind, id: row.id, current: row.email });
+    setEmailEditValue(row.email ?? '');
+    setEmailEditError(null);
+  }
+
+  async function saveEmailEdit() {
+    if (!emailEdit) return;
+    setEmailEditSaving(true);
+    setEmailEditError(null);
+    const headers = await authHeaders();
+    const res = await fetch('/api/staff-edit-email', {
+      method: 'POST', headers,
+      body: JSON.stringify(emailEdit.kind === 'pending'
+        ? { kind: 'pending', invite_id: emailEdit.id, email: emailEditValue }
+        : { kind: 'active', profile_id: emailEdit.id, email: emailEditValue }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setEmailEditSaving(false);
+    if (!res.ok) { setEmailEditError(data.error ?? 'Something went wrong.'); return; }
+    setStaff((prev) => prev.map((s) => s.id === emailEdit.id ? { ...s, email: emailEditValue.trim().toLowerCase() } : s));
+    setEmailEdit(null);
+  }
+
+  function timeAgo(iso: string | null): string | null {
+    if (!iso) return null;
+    // eslint-disable-next-line react-hooks/purity -- relative "time ago" text is inherently wall-clock-dependent; re-renders elsewhere on this page keep it fresh enough
+    const ms = Date.now() - new Date(iso).getTime();
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return 'just now';
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day < 30) return `${day}d ago`;
+    const mo = Math.floor(day / 30);
+    if (mo < 12) return `${mo}mo ago`;
+    return `${Math.floor(mo / 12)}y ago`;
   }
 
   function initials(name: string | null) {
@@ -189,29 +310,51 @@ export default function StaffPage() {
             const assignedNames = s.assigned_teams.map(teamName).filter(Boolean);
             const visible  = assignedNames.slice(0, 3);
             const overflow = assignedNames.length - 3;
-            const isMe     = s.id === profile?.id;
+            const isMe     = s.kind === 'active' && s.id === profile?.id;
             const aColor   = avatarColor(s.id);
+            const isPending = s.kind === 'pending';
+            const neverSignedIn = s.kind === 'active' && !s.lastSignInAt;
+
+            const status = isPending
+              ? { label: 'Invite pending', color: '#B45309', bg: '#FEF3C7', border: '#FDE68A' }
+              : neverSignedIn
+                ? { label: 'Invited — no login yet', color: '#B45309', bg: '#FEF3C7', border: '#FDE68A' }
+                : { label: 'Active', color: '#15803D', bg: '#DCFCE7', border: '#BBF7D0' };
 
             return (
-              <div key={s.id} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+              <div key={s.id} style={{ background: '#fff', borderRadius: '8px', border: `1px solid ${isPending ? '#FDE68A' : '#E2E8F0'}`, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
 
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: aColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: '#fff', flexShrink: 0, boxShadow: `0 0 0 3px ${aColor}22` }}>
-                  {initials(s.full_name)}
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: isPending ? '#FEF3C7' : aColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: isPending ? '#B45309' : '#fff', flexShrink: 0, boxShadow: isPending ? 'none' : `0 0 0 3px ${aColor}22` }}>
+                  {isPending ? <Mail size={17} /> : initials(s.full_name)}
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>{s.full_name ?? 'Unnamed'}</span>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${s.role === 'org_admin' ? '#DDD6FE' : `${primary}30`}` }}>
-                      {s.role === 'org_admin' ? 'Admin' : 'Coach'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>
+                      {isPending ? s.email : (s.full_name ?? 'Unnamed')}
                     </span>
-                    {s.assigned_teams.length > 0 && (
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', background: '#F1F5F9', borderRadius: '4px', padding: '2px 8px', border: '1px solid #E2E8F0' }}>
-                        {s.assigned_teams.length} {s.assigned_teams.length === 1 ? 'team' : 'teams'}
+                    {!isPending && (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${s.role === 'org_admin' ? '#DDD6FE' : `${primary}30`}` }}>
+                        {s.role === 'org_admin' ? 'Admin' : 'Coach'}
                       </span>
                     )}
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: status.color, background: status.bg, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${status.border}` }}>
+                      {status.label}
+                    </span>
                     {isMe && (
                       <span style={{ fontSize: '11px', color: primary, background: `${primary}15`, borderRadius: '4px', padding: '2px 8px', fontWeight: '700' }}>You</span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                    {!isPending && s.email && (
+                      <span style={{ fontSize: '12px', color: '#64748B' }}>{s.email}</span>
+                    )}
+                    {!isPending && s.lastSignInAt && (
+                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>· Active {timeAgo(s.lastSignInAt)}</span>
+                    )}
+                    {(isPending || neverSignedIn) && (
+                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>Invited {timeAgo(s.invitedAt ?? s.createdAt)}</span>
                     )}
                   </div>
 
@@ -235,16 +378,45 @@ export default function StaffPage() {
                   </div>
                 </div>
 
-                {!isMe && (
-                  <button
-                    onClick={() => openEdit(s)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: '#374151', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '8px 16px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#F1F5F9'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; }}
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                  {(isPending || neverSignedIn) && (
+                    <button
+                      onClick={() => resendInvite(s)}
+                      disabled={resendingId === s.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: resentId === s.id ? '#15803D' : '#374151', background: resentId === s.id ? '#DCFCE7' : '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '8px 14px', cursor: resendingId === s.id ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                    >
+                      <Mail size={13} /> {resendingId === s.id ? 'Sending…' : resentId === s.id ? 'Sent!' : 'Resend'}
+                    </button>
+                  )}
+                  {isPending && (
+                    <button
+                      onClick={() => openEmailEdit(s)}
+                      title="Edit email"
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: '#374151', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '8px 10px', cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  {isPending ? (
+                    <button
+                      onClick={() => cancelInvite(s.id)}
+                      disabled={cancelingId === s.id}
+                      title="Cancel invite"
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: '#EF4444', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '8px 10px', cursor: cancelingId === s.id ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                    >
+                      <X size={13} />
+                    </button>
+                  ) : !isMe && (
+                    <button
+                      onClick={() => openEdit(s)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: '#374151', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '8px 16px', cursor: 'pointer', fontFamily: 'inherit' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#F1F5F9'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; }}
+                    >
+                      <Pencil size={13} /> Edit
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -271,8 +443,8 @@ export default function StaffPage() {
               <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: '800', color: '#fff', marginBottom: '8px', boxShadow: `0 0 0 4px ${primary}22` }}>
                 {initials(editModal.name || editModal.staff.full_name)}
               </div>
-              {editModal.staff.created_at && (
-                <div style={{ fontSize: '12px', color: '#94A3B8' }}>Joined {formatDate(editModal.staff.created_at)}</div>
+              {editModal.staff.createdAt && (
+                <div style={{ fontSize: '12px', color: '#94A3B8' }}>Joined {formatDate(editModal.staff.createdAt)}</div>
               )}
             </div>
 
@@ -291,6 +463,19 @@ export default function StaffPage() {
                       style={inputSt}
                       autoFocus
                     />
+                  </div>
+                  <div>
+                    <label style={labelSt}>Email address</label>
+                    <input
+                      type="email"
+                      value={editModal.email}
+                      onChange={(e) => setEditModal((m) => m ? { ...m, email: e.target.value, emailError: null } : null)}
+                      placeholder="coach@example.com"
+                      style={inputSt}
+                    />
+                    {editModal.emailError && (
+                      <p style={{ fontSize: '12px', color: '#EF4444', margin: '6px 0 0' }}>{editModal.emailError}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -426,7 +611,7 @@ export default function StaffPage() {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
               <div>
                 <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', margin: 0 }}>Add staff member</h2>
-                <p style={{ fontSize: '12px', color: '#94A3B8', margin: '2px 0 0' }}>They'll receive login credentials by email</p>
+                <p style={{ fontSize: '12px', color: '#94A3B8', margin: '2px 0 0' }}>They&apos;ll receive login credentials by email</p>
               </div>
               <button onClick={() => setShowInvite(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '6px', display: 'flex' }}>
                 <X size={18} color="#64748B" />
@@ -507,6 +692,43 @@ export default function StaffPage() {
               </button>
               <button onClick={handleInvite} disabled={sending || sent || !inviteEmail.trim()} style={{ flex: 2, padding: '11px', background: sent ? '#22C55E' : sending || !inviteEmail.trim() ? '#CBD5E1' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: sending || sent || !inviteEmail.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                 <Mail size={15} /> {sent ? 'Invite sent!' : sending ? 'Sending…' : 'Send invite'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Email edit modal ──────────────────────────────────────────────────── */}
+      {emailEdit && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '20px' }} onClick={() => !emailEditSaving && setEmailEdit(null)}>
+          <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '400px', boxShadow: '0 24px 80px rgba(0,0,0,0.18)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', margin: 0 }}>Edit email address</h2>
+              <button onClick={() => setEmailEdit(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '6px', display: 'flex' }}>
+                <X size={18} color="#64748B" />
+              </button>
+            </div>
+            <div style={{ padding: '20px 24px' }}>
+              {emailEdit.kind === 'pending' && (
+                <p style={{ fontSize: '12px', color: '#94A3B8', margin: '0 0 12px' }}>This invite hasn&apos;t been accepted yet — updating the email will send future resends to the new address.</p>
+              )}
+              {emailEdit.kind === 'active' && (
+                <p style={{ fontSize: '12px', color: '#94A3B8', margin: '0 0 12px' }}>This changes the email they use to sign in.</p>
+              )}
+              <label style={labelSt}>Email address</label>
+              <input
+                type="email" value={emailEditValue} onChange={(e) => setEmailEditValue(e.target.value)}
+                placeholder="coach@example.com" style={inputSt} autoFocus
+                onKeyDown={(e) => e.key === 'Enter' && saveEmailEdit()}
+              />
+              {emailEditError && <p style={{ fontSize: '12px', color: '#EF4444', margin: '8px 0 0' }}>{emailEditError}</p>}
+            </div>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px' }}>
+              <button onClick={() => setEmailEdit(null)} disabled={emailEditSaving} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancel
+              </button>
+              <button onClick={saveEmailEdit} disabled={emailEditSaving || !emailEditValue.trim()} style={{ flex: 2, padding: '11px', background: emailEditSaving ? '#CBD5E1' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: emailEditSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {emailEditSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

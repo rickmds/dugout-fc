@@ -20,6 +20,18 @@ type AgGroupStats = {
 
 function empty() { return { pool: 0, placed: 0, accepted: 0, declined: 0, cut: 0, total: 0 }; }
 
+function StatCard({ label, val, icon, color }: { label: string; val: number | string; icon: React.ReactNode; color: string }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px 22px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+      <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: `${color}12`, border: `1.5px solid ${color}25`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
+      <div>
+        <div style={{ fontSize: '30px', fontWeight: '900', color: '#0F172A', lineHeight: 1, letterSpacing: '-0.02em' }}>{val}</div>
+        <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function TryoutOverviewPage() {
   const { club } = useDashboard();
   const [season, setSeason] = useState(() => seasonOptions()[1] ?? '2026-27');
@@ -108,16 +120,6 @@ export default function TryoutOverviewPage() {
     const sent = inTeam.filter(p => ['Sent','Accepted','Declined'].includes(assigns.get(p.id)?.offer_status ?? '')).length;
     return { ...t, count: inTeam.length, accepted, sent };
   }).filter(t => t.count > 0);
-
-  const StatCard = ({ label, val, icon, color }: { label: string; val: number | string; icon: React.ReactNode; color: string }) => (
-    <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '20px 22px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
-      <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: `${color}12`, border: `1.5px solid ${color}25`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
-      <div>
-        <div style={{ fontSize: '30px', fontWeight: '900', color: '#0F172A', lineHeight: 1, letterSpacing: '-0.02em' }}>{val}</div>
-        <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '700', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-      </div>
-    </div>
-  );
 
   if (loading) return (
     <FlipBoard title="Loading tryout overview…" rows={[

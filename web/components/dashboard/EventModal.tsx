@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { X, ChevronDown, Bell, BellOff, MapPin, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -237,8 +237,8 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
     if (isEdit) {
       await supabase.from('events').update(payload).eq('id', event!.id);
     } else {
-      const { data } = await supabase.from('events').insert(payload).select('id').single();
-      eventId = (data as any)?.id ?? null;
+      const { data } = await supabase.from('events').insert(payload).select('id').single<{ id: string }>();
+      eventId = data?.id ?? null;
     }
 
     if (form.push_notify && eventId) {
@@ -268,14 +268,14 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
             .eq('status', 'confirmed');
 
           // Coach guests have profile_id; player guests need profile_id resolved via players table
-          const directIds = (guestRows ?? []).filter((g: any) => g.profile_id).map((g: any) => g.profile_id as string);
-          const playerIds = (guestRows ?? []).filter((g: any) => g.player_id && !g.profile_id).map((g: any) => g.player_id as string);
+          const directIds = (guestRows ?? []).filter(g => g.profile_id).map(g => g.profile_id as string);
+          const playerIds = (guestRows ?? []).filter(g => g.player_id && !g.profile_id).map(g => g.player_id as string);
 
           let playerProfileIds: string[] = [];
           if (playerIds.length > 0) {
             const { data: playerRows } = await supabase
               .from('players').select('profile_id').in('id', playerIds).not('profile_id', 'is', null);
-            playerProfileIds = (playerRows ?? []).map((p: any) => p.profile_id as string);
+            playerProfileIds = (playerRows ?? []).map(p => p.profile_id as string);
           }
 
           const guestProfileIds = [...directIds, ...playerProfileIds].filter(id => id !== profileId);

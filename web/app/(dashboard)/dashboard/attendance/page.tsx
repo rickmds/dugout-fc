@@ -90,6 +90,7 @@ export default function AttendancePage() {
     setLoading(false);
   }, [club, teams, rangeIdx]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const teamsWithData = stats.filter(t => t.eventCount > 0);

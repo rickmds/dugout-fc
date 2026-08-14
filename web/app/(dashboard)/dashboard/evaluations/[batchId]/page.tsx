@@ -158,6 +158,7 @@ function ReportPanel({ ev, primary, clubLogoUrl, clubName, onClose, onPrev, onNe
             {/* Band */}
             <div style={{ background: primary, padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
                 {clubLogoUrl && <img src={clubLogoUrl} alt={clubName} style={{ width: '34px', height: '34px', objectFit: 'contain' }} />}
                 <div>
                   <div style={{ fontSize: '7px', fontWeight: '700', color: 'rgba(255,255,255,0.6)', letterSpacing: '2px', marginBottom: '1px' }}>PLAYER DEVELOPMENT REPORT</div>
@@ -303,6 +304,7 @@ export default function BatchReviewPage() {
     setLoading(false);
   }, [batchId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   async function approveAll() {
@@ -316,7 +318,7 @@ export default function BatchReviewPage() {
     const playerIds = evals.map((e) => e.player_id).filter(Boolean);
     if (playerIds.length) {
       const { data: players } = await supabase.from('players').select('profile_id').in('id', playerIds);
-      const profileIds = (players ?? []).map((p: any) => p.profile_id).filter(Boolean) as string[];
+      const profileIds = (players ?? []).map(p => p.profile_id).filter(Boolean) as string[];
       if (profileIds.length) {
         supabase.functions.invoke('send-push', {
           body: {
@@ -381,7 +383,7 @@ export default function BatchReviewPage() {
           <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '40px', textAlign: 'center' }}>
             <div style={{ fontSize: '14px', color: '#64748B' }}>No evaluations in this batch yet.</div>
           </div>
-        ) : evals.map((ev, idx) => {
+        ) : evals.map((ev) => {
           const isSelected = selected === ev.id;
           const ready = ev.status !== 'draft';
           return (

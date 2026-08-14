@@ -505,7 +505,7 @@ export default function RegisterPage() {
 
 // ─── Field renderer ───────────────────────────────────────────────────────────
 
-function FormField({ field: f, value, fileValue, error, uploading, primary, onValue, onMultiValue, onFile }: {
+function FormField({ field: f, value, fileValue, error, uploading: _uploading, primary, onValue, onMultiValue, onFile }: {
   field: FieldDef; value: string; fileValue: File | null; error?: string;
   uploading: boolean; primary: string;
   onValue: (v: string) => void;
@@ -695,6 +695,7 @@ function FormCard({ children, primary, form }: { children: React.ReactNode; prim
       <div style={{ padding: '24px 28px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: club?.logo_url ? 'transparent' : primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px', fontWeight: '800', color: '#fff', flexShrink: 0, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
             {club?.logo_url ? <img src={club.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
           </div>
           <div>

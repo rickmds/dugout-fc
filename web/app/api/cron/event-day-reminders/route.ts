@@ -16,7 +16,11 @@ export async function GET(req: NextRequest) {
     .from('events')
     .select('id, title, type, team_id, event_time, location, teams(clubs(slug))')
     .eq('event_date', today)
-    .is('cancelled_at', null);
+    .is('cancelled_at', null)
+    .returns<{
+      id: string; title: string; type: string; team_id: string; event_time: string | null; location: string | null;
+      teams: { clubs: { slug: string } | null } | null;
+    }[]>();
 
   if (!events?.length) return NextResponse.json({ sent: 0, reason: 'no_events_today' });
 
@@ -30,7 +34,7 @@ export async function GET(req: NextRequest) {
       .eq('team_id', ev.team_id);
     if (!members?.length) continue;
 
-    const profileIds = members.map((m: any) => m.profile_id as string).filter(Boolean);
+    const profileIds = members.map(m => m.profile_id).filter(Boolean);
 
     const timeStr = ev.event_time ? ev.event_time.slice(0, 5) : null;
     const icon    = ev.type === 'game' ? '🏟️' : ev.type === 'training' ? '⚽' : '📅';
@@ -41,12 +45,12 @@ export async function GET(req: NextRequest) {
 
     // In-app notifications
     await supabase.from('notifications').insert(
-      profileIds.map((profile_id: string) => ({
+      profileIds.map(profile_id => ({
         profile_id,
         type: 'event_day_reminder',
         title: pushTitle,
         body: pushBody,
-        data: { type: 'event_day_reminder', event_id: ev.id, club_slug: (ev as any).teams?.clubs?.slug ?? '' },
+        data: { type: 'event_day_reminder', event_id: ev.id, club_slug: ev.teams?.clubs?.slug ?? '' },
       }))
     );
 
@@ -57,7 +61,7 @@ export async function GET(req: NextRequest) {
       .in('profile_id', profileIds);
     if (!tokens?.length) continue;
 
-    const messages = tokens.map((t: any) => ({
+    const messages = tokens.map(t => ({
       to: t.token,
       title: pushTitle,
       body: pushBody,

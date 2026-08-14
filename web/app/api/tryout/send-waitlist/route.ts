@@ -8,7 +8,6 @@ const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['org_admin', 'app_admin']);

@@ -45,6 +45,7 @@ function OfferResponseContent() {
   const [pending, setPending] = useState<'accept' | 'decline' | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (!token) { setLoading(false); return; }
     fetch(`/api/tryout/process-response?token=${token}`)
       .then(r => r.json())
@@ -55,6 +56,7 @@ function OfferResponseContent() {
           handleAction(action as 'accept' | 'decline');
         }
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- action comes from the stable searchParams ref; handleAction is a plain function whose only reactive input (token) is already tracked
   }, [token]);
 
   async function handleAction(act: 'accept' | 'decline') {
@@ -96,6 +98,7 @@ function OfferResponseContent() {
         {(data?.club_name || data?.club_logo) && (
           <div style={{ textAlign: 'center', marginBottom: '22px' }}>
             {data.club_logo
+              // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
               ? <img src={data.club_logo} alt="" style={{ height: '52px', objectFit: 'contain', borderRadius: '12px' }} />
               : (
                 <div style={{
@@ -174,7 +177,7 @@ function OfferResponseContent() {
         </div>
         <div style={{ fontSize: '19px', fontWeight: '800', color: '#f9fafb', marginBottom: '8px' }}>Already responded</div>
         <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.6' }}>
-          You've already {wasAccepted ? 'accepted' : 'declined'} this offer{data?.team_name ? ` for ${data.team_name}` : ''}.
+          You&apos;ve already {wasAccepted ? 'accepted' : 'declined'} this offer{data?.team_name ? ` for ${data.team_name}` : ''}.
         </div>
       </>
     );
@@ -191,7 +194,7 @@ function OfferResponseContent() {
       <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.65', marginBottom: '24px', maxWidth: '320px', margin: '0 auto 24px' }}>
         {data.player_name ? `${data.player_name}'s` : 'Your'} spot has been confirmed on <strong style={{ color: '#e5e7eb' }}>{data.team_name}</strong>. Download the Pulse FC app to connect with your team.
       </div>
-      <a href="https://apps.apple.com/app/pulse-fc/id6740793498" target="_blank" rel="noreferrer"
+      <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659" target="_blank" rel="noreferrer"
         style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: accent, color: btnColor, borderRadius: '12px', padding: '13px 28px', fontWeight: '700', fontSize: '15px', textDecoration: 'none', boxShadow: `0 4px 16px ${accent}44` }}>
         Download Pulse FC →
       </a>
@@ -205,7 +208,7 @@ function OfferResponseContent() {
       </div>
       <div style={{ fontSize: '19px', fontWeight: '800', color: '#f9fafb', marginBottom: '8px' }}>Response recorded</div>
       <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.6' }}>
-        Thank you for letting us know. We've recorded your decision and wish {data.player_name ?? 'your player'} the best.
+        Thank you for letting us know. We&apos;ve recorded your decision and wish {data.player_name ?? 'your player'} the best.
       </div>
     </>
   );

@@ -4,12 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Plus, Copy, Link, ExternalLink, Trash2, Pencil, Archive, ArchiveRestore,
   Calendar, Users, Clock, CheckCircle, AlertCircle, ChevronDown, ChevronUp, MoreHorizontal,
-  RefreshCw, Mail, Lock, Unlock, Star, Tag, X, TrendingUp, RotateCcw,
-  DollarSign, Percent,
+  RefreshCw, Mail, Lock, Unlock, Star, Tag, X, RotateCcw,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { STATUS_STYLES, PAY_STATUS_STYLES, fmtMoney, fmtDate, formFields, uid, labelSt, inputSt, playerName, parentEmail } from './shared';
+import { STATUS_STYLES, PAY_STATUS_STYLES, fmtMoney, fmtDate, labelSt, inputSt, playerName } from './shared';
 import type { RegForm, PromoCode, DiscountType, PaymentStatus } from './shared';
 import FormBuilder from './FormBuilder';
 import SeasonRolloverWizard from './SeasonRolloverWizard';
@@ -158,6 +157,7 @@ export default function FormsTab() {
     setLoading(false);
   }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadForms(); }, [loadForms]);
 
   function copy(token: string) {
@@ -427,7 +427,7 @@ export default function FormsTab() {
                               { label: 'Income',       value: `${sym}${inc.toFixed(2)}`, sub: `net collected`,               accent: '#22C55E', accentBg: '#F0FDF4', numColor: inc   > 0 ? '#15803D' : '#94A3B8' },
                               { label: 'Outstanding',  value: `${sym}${out.toFixed(2)}`, sub: `balance due`,                 accent: '#F59E0B', accentBg: '#FFFBEB', numColor: out   > 0 ? '#B45309' : '#94A3B8' },
                               { label: 'Refunded',     value: `${sym}${ref.toFixed(2)}`, sub: `issued to families`,          accent: '#64748B', accentBg: '#F1F5F9', numColor: ref   > 0 ? '#475569' : '#94A3B8' },
-                            ].map(({ label, value, sub: subLabel, accent, accentBg, numColor }) => (
+                            ].map(({ label, value, sub: subLabel, accent, numColor }) => (
                               <div key={label} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '13px 15px', borderTop: `3px solid ${accent}` }}>
                                 <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>{label}</div>
                                 <div style={{ fontSize: '20px', fontWeight: '900', color: numColor, letterSpacing: '-0.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums', marginBottom: '4px' }}>{value}</div>
@@ -622,7 +622,7 @@ export default function FormsTab() {
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Trash2 size={22} color="#EF4444" />
             </div>
-            <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '8px' }}>Delete "{delConfirm.title}"?</div>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '8px' }}>Delete &quot;{delConfirm.title}&quot;?</div>
             <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '24px', lineHeight: '1.5' }}>All submissions will be permanently deleted. This cannot be undone.</div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setDelConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
@@ -719,6 +719,7 @@ function ArchiveView({ onBack }: { onBack: () => void }) {
     if (!club) return;
     supabase.from('registration_forms').select('*').eq('club_id', club.id).eq('archived', true).order('created_at', { ascending: false })
       .then(({ data }) => { setForms((data ?? []) as RegForm[]); setLoading(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only club.id is read, tracked via club?.id above
   }, [club?.id]);
 
   async function restore(id: string) {
@@ -754,7 +755,7 @@ function ArchiveView({ onBack }: { onBack: () => void }) {
 
 // ── FormActionsMenu ───────────────────────────────────────────────────────────
 
-function FormActionsMenu({ form, onEdit, onDuplicate, onSchedule, onEarlyAccess, onLateInvite, onSetupChecklist, onPromoCodes, onArchive, onDelete, primary }: {
+function FormActionsMenu({ form: _form, onEdit, onDuplicate, onSchedule, onEarlyAccess, onLateInvite, onSetupChecklist, onPromoCodes, onArchive, onDelete, primary: _primary }: {
   form: RegForm;
   onEdit: () => void; onDuplicate: () => void; onSchedule: () => void; onEarlyAccess: () => void;
   onLateInvite: () => void; onSetupChecklist: () => void; onPromoCodes: () => void;
@@ -873,6 +874,7 @@ function PromoCodesModal({ form, primary, onClose }: { form: RegForm; primary: s
       .eq('club_id', club.id).eq('form_id', form.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setCodes((data ?? []) as PromoCode[]); setLoading(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only club.id is read, tracked via club?.id above
   }, [club?.id, form.id]);
 
   function generateCode() {
@@ -1012,7 +1014,7 @@ function PromoCodesModal({ form, primary, onClose }: { form: RegForm; primary: s
 
 // ── Modal wrapper ─────────────────────────────────────────────────────────────
 
-export function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+export function Modal({ children, onClose: _onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
       <div style={{ background: '#fff', borderRadius: '18px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,0.24)' }}>

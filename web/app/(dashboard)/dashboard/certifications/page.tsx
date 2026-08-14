@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import {
-  ShieldCheck, Clock, AlertTriangle, XCircle, FileText,
+  ShieldCheck, Clock, AlertTriangle, XCircle,
   CheckCircle, ChevronDown, ExternalLink, RefreshCw,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -110,22 +110,23 @@ export default function CertificationsPage() {
 
     if (!error && data) {
       // Also fetch emails
-      const profileIds = [...new Set((data as any[]).map(r => r.profile_id))];
+      const profileIds = [...new Set(data.map(r => r.profile_id))];
       const emailMap: Record<string, string> = {};
       if (profileIds.length) {
-        const { data: users } = await supabase.rpc('get_staff_emails' as any, { p_club_id: club.id });
-        (users ?? []).forEach((u: any) => { emailMap[u.id] = u.email; });
+        const { data: users } = await supabase.rpc('get_staff_emails', { p_club_id: club.id });
+        (users as { id: string; email: string }[] ?? []).forEach(u => { emailMap[u.id] = u.email; });
       }
 
-      setCerts((data as any[]).map(r => ({
+      setCerts(data.map(r => ({
         ...r,
-        coach_name: r.profiles?.full_name ?? 'Unknown',
+        coach_name: (r.profiles as unknown as { full_name: string } | null)?.full_name ?? 'Unknown',
         coach_email: emailMap[r.profile_id] ?? '',
       })));
     }
     setLoading(false);
   }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   // Auto-expire past-due verified certs
@@ -172,8 +173,6 @@ export default function CertificationsPage() {
   }
 
   // ── Filter logic ──
-  const today = new Date().toISOString().slice(0, 10);
-
   const filtered = certs.filter(c => {
     if (filter === 'all')      return true;
     if (filter === 'pending')  return c.status === 'pending';

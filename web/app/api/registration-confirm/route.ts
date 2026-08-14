@@ -107,7 +107,7 @@ export async function POST(req: Request) {
                     <p style="margin:0 0 16px;font-size:14px;color:#9ca3af;">
                       Download the Pulse FC app to stay connected with your team
                     </p>
-                    <a href="https://apps.apple.com/app/pulse-fc"
+                    <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659"
                        style="display:inline-block;background:${accent};color:${btnText};
                               text-decoration:none;font-size:15px;font-weight:800;
                               padding:14px 36px;border-radius:12px;letter-spacing:0.2px;line-height:1;">

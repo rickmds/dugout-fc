@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { X, Upload, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { toParseAllPayload, streamParseAll } from '@/lib/parseAllClient';
 import { useDashboard } from './DashboardContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -18,20 +19,6 @@ type CreatedTeam = { localId: string; dbId: string; name: string };
 const STEPS = ['Branding', 'Teams', 'Coaches', 'Roster', 'Schedule', 'Done'];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
-
-async function fileToPayload(file: File): Promise<{ base64: string; mimeType: string } | { text: string }> {
-  const mimeType = file.type || 'text/plain';
-  if (mimeType === 'text/csv' || mimeType === 'text/plain' || file.name.endsWith('.csv')) {
-    const text = await file.text();
-    return { text };
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload  = () => { const r = reader.result as string; resolve({ base64: r.split(',')[1], mimeType }); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 function matchTeamId(name: string, createdTeams: CreatedTeam[]): string {
   if (!name) return '';
@@ -93,7 +80,7 @@ const sel: React.CSSProperties = { ...inp, cursor: 'pointer', appearance: 'none'
 
 // ── Step 0 — Branding ─────────────────────────────────────────────────────────
 
-function Step0({ primary, onDone }: { primary: string; onDone: () => void }) {
+function Step0({ primary: _primary, onDone }: { primary: string; onDone: () => void }) {
   const { club, reload } = useDashboard();
   const [name, setName]         = useState(club?.name ?? '');
   const [color, setColor]       = useState(club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E');
@@ -132,6 +119,7 @@ function Step0({ primary, onDone }: { primary: string; onDone: () => void }) {
       {/* Preview */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', background: '#F8FAFC', borderRadius: 12, border: '1.5px solid #E2E8F0' }}>
         <div onClick={() => logoRef.current?.click()} style={{ width: 64, height: 64, borderRadius: 14, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: 'pointer', flexShrink: 0, border: '2px solid rgba(0,0,0,0.08)' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
           {logoUrl ? <img src={logoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : <span style={{ fontSize: 20, fontWeight: 900, color: '#fff' }}>{initials}</span>}
         </div>
         <div>
@@ -191,12 +179,14 @@ function Step1({ primary, createdTeams, setCreatedTeams, onDone, onSkip }: {
 
   async function handleFile(file: File) {
     setParsing(true); setShowDrop(false);
-    const payload = await fileToPayload(file);
-    const res = await fetch('/api/ai/parse-teams', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const data = await res.json() as { teams?: { name: string; age_group: string | null; gender: string | null; confidence: string }[]; error?: string };
+    const payload = await toParseAllPayload(file);
+    const { data: { session } } = await supabase.auth.getSession();
+    const outcome = await streamParseAll([payload], session?.access_token);
     setParsing(false);
-    if (data.error || !data.teams?.length) { alert(data.error ?? 'No teams found in the file.'); return; }
-    setRows(data.teams.map((t) => ({ id: uid(), name: t.name, age_group: t.age_group ?? '', gender: t.gender ?? '', conf: (t.confidence as Conf) ?? 'medium' })));
+    if (!outcome.ok) { alert(outcome.error); return; }
+    const data = outcome.data as { teams?: { name: string; age_group: string; gender: string; confidence: string }[] };
+    if (!data.teams?.length) { alert('No teams found in the file.'); return; }
+    setRows(data.teams.map((t) => ({ id: uid(), name: t.name, age_group: t.age_group || '', gender: t.gender || '', conf: (t.confidence as Conf) ?? 'medium' })));
   }
 
   function update(id: string, field: keyof TRow, val: string) {
@@ -398,11 +388,13 @@ function Step3({ primary, createdTeams, onDone, onSkip }: {
 
   async function handleFile(file: File) {
     setParsing(true);
-    const payload = await fileToPayload(file);
-    const res = await fetch('/api/ai/parse-roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const data = await res.json() as { players?: { full_name: string; jersey_number?: string; position?: string; parent_email?: string; team_name?: string; confidence?: string }[]; error?: string };
+    const payload = await toParseAllPayload(file);
+    const { data: { session } } = await supabase.auth.getSession();
+    const outcome = await streamParseAll([payload], session?.access_token);
     setParsing(false);
-    if (data.error || !data.players?.length) { alert(data.error ?? 'No players found.'); return; }
+    if (!outcome.ok) { alert(outcome.error); return; }
+    const data = outcome.data as { players?: { full_name: string; jersey_number: string; position: string; parent_email: string; team_name: string; confidence: string }[] };
+    if (!data.players?.length) { alert('No players found.'); return; }
     setRows(data.players.map((p) => ({
       id: uid(),
       full_name: p.full_name ?? '',
@@ -531,15 +523,17 @@ function Step4({ primary, createdTeams, onDone, onSkip }: {
 
   async function handleFile(file: File) {
     setParsing(true);
-    const payload = await fileToPayload(file);
-    const res = await fetch('/api/ai/parse-schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const data = await res.json() as { events?: { title: string; type?: string; event_date?: string; event_time?: string; location?: string; team_name?: string; confidence?: string }[]; error?: string };
+    const payload = await toParseAllPayload(file);
+    const { data: { session } } = await supabase.auth.getSession();
+    const outcome = await streamParseAll([payload], session?.access_token);
     setParsing(false);
-    if (data.error || !data.events?.length) { alert(data.error ?? 'No events found.'); return; }
+    if (!outcome.ok) { alert(outcome.error); return; }
+    const data = outcome.data as { events?: { title: string; type: string; event_date: string; event_time: string; location: string; team_name: string; confidence: string }[] };
+    if (!data.events?.length) { alert('No events found.'); return; }
     setRows(data.events.map((e) => ({
       id: uid(),
       title: e.title ?? '',
-      type: e.type ?? 'training',
+      type: e.type || 'training',
       event_date: e.event_date ?? '',
       event_time: e.event_time ?? '',
       location: e.location ?? '',
@@ -662,8 +656,13 @@ function Step5({ primary, savedPlayers, onClose }: { primary: string; savedPlaye
     const emails = toSend.map((p) => p.parent_email.trim()).filter(Boolean);
     if (emails.length) {
       const { data: invRows } = await supabase.from('invites').select('id, email, players(full_name)').in('email', emails);
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      };
       for (const inv of (invRows ?? []) as unknown as { id: string; email: string; players: { full_name: string } | null }[]) {
-        await fetch('/api/send-invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invite_id: inv.id, player_name: inv.players?.full_name ?? null }) });
+        await fetch('/api/send-invite', { method: 'POST', headers, body: JSON.stringify({ invite_id: inv.id, player_name: inv.players?.full_name ?? null }) });
       }
     }
     setSending(false);
@@ -696,7 +695,7 @@ function Step5({ primary, savedPlayers, onClose }: { primary: string; savedPlaye
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 240, overflowY: 'auto' }}>
             {parents.map((p) => (
-              <div key={p.id} onClick={() => setSelected((prev) => { const n = new Set(prev); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, border: `1px solid ${selected.has(p.id) ? primary : '#E2E8F0'}`, background: selected.has(p.id) ? `${primary}08` : '#fff', cursor: 'pointer' }}>
+              <div key={p.id} onClick={() => setSelected((prev) => { const n = new Set(prev); if (n.has(p.id)) n.delete(p.id); else n.add(p.id); return n; })} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, border: `1px solid ${selected.has(p.id) ? primary : '#E2E8F0'}`, background: selected.has(p.id) ? `${primary}08` : '#fff', cursor: 'pointer' }}>
                 <div style={{ width: 14, height: 14, borderRadius: 3, border: `2px solid ${selected.has(p.id) ? primary : '#CBD5E1'}`, background: selected.has(p.id) ? primary : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {selected.has(p.id) && <span style={{ color: '#fff', fontSize: 9, fontWeight: 900 }}>✓</span>}
                 </div>

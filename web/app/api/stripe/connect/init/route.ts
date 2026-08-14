@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
 
+type StripeResponse = { id?: string; url?: string; error?: { message?: string } };
+
 // POST — called when org_admin clicks "Connect with Stripe"
 // Creates (or reuses) a Stripe Express account, generates an account link, returns the URL
 export async function POST(req: NextRequest) {
@@ -36,10 +38,11 @@ export async function POST(req: NextRequest) {
         'capabilities[transfers][requested]':       'true',
       }),
     });
-    const account = await res.json();
-    if (!account.id) {
-      console.error('Stripe account creation failed:', account);
-      return NextResponse.json({ error: account.error?.message ?? 'Could not create Stripe account.' }, { status: 500 });
+    let account: StripeResponse | null;
+    try { account = await res.json(); } catch { account = null; }
+    if (!res.ok || !account?.id) {
+      console.error('Stripe account creation failed:', res.status, account);
+      return NextResponse.json({ error: account?.error?.message ?? 'Could not create Stripe account. Please try again.' }, { status: 502 });
     }
     accountId = account.id;
     await supabase.from('clubs').update({ stripe_connect_account_id: accountId }).eq('id', club_id);
@@ -61,10 +64,11 @@ export async function POST(req: NextRequest) {
       refresh_url: refreshUrl,
     }),
   });
-  const link = await linkRes.json();
-  if (!link.url) {
-    console.error('Account link creation failed:', JSON.stringify(link), { returnUrl, refreshUrl, accountId });
-    return NextResponse.json({ error: link.error?.message ?? 'Could not generate onboarding link.' }, { status: 500 });
+  let link: StripeResponse | null;
+  try { link = await linkRes.json(); } catch { link = null; }
+  if (!linkRes.ok || !link?.url) {
+    console.error('Account link creation failed:', linkRes.status, JSON.stringify(link), { returnUrl, refreshUrl, accountId });
+    return NextResponse.json({ error: link?.error?.message ?? 'Could not generate onboarding link. Please try again.' }, { status: 502 });
   }
 
   return NextResponse.json({ url: link.url });

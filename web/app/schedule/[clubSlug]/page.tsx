@@ -14,7 +14,6 @@ type GameSlot = {
 
 function fmtT(t: string) { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`; }
 function fmtDateLong(d: string) { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); }
-function fmtDateShort(d: string) { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function fmtWeekday(d: string) { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' }); }
 
 export default function PublicSchedulePage() {
@@ -24,6 +23,7 @@ export default function PublicSchedulePage() {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
   const [filter,  setFilter]  = useState('');
+  const [showPast, setShowPast] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -95,8 +95,6 @@ export default function PublicSchedulePage() {
   const upcomingGroups = groupByDate(upcoming);
   const pastGroups     = groupByDate(past);
 
-  const [showPast, setShowPast] = useState(false);
-
   return (
     <div style={{ minHeight: '100vh', background: '#FAFBFC', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
 
@@ -104,6 +102,7 @@ export default function PublicSchedulePage() {
       <div style={{ background: '#fff', borderBottom: `3px solid ${primary}`, padding: '20px 24px' }}>
         <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', alignItems: 'center', gap: '14px' }}>
           {club.logo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
             <img src={club.logo_url} alt={club.name} style={{ width: '48px', height: '48px', borderRadius: '10px', objectFit: 'cover' }}/>
           ) : (
             <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '900', color: '#fff' }}>

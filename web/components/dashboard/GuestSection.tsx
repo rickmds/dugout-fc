@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { X, UserPlus, RotateCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { isEligibleTeam, parseAgeGroup } from '@/lib/guestEligibility';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -17,13 +18,17 @@ type GuestRow = {
   player_profile_id: string | null;
 };
 
+type RawGuestRow = Omit<GuestRow, 'player_profile_id'>;
+
 type PlayerResult = {
   id: string;
   full_name: string;
   jersey_number: number | null;
   position: string | null;
   team_name: string;
+  age_group: string | null;
   profile_id: string | null;
+  eligible: boolean;
 };
 
 type CoachResult = {
@@ -56,6 +61,10 @@ interface GuestSectionProps {
 export default function GuestSection({ eventId, teamId, teamName, eventTitle, primary, onConfirmedCount, onConfirmedGuests }: GuestSectionProps) {
   const { profile, club, teams } = useDashboard();
   const isCoach = ['coach', 'org_admin', 'app_admin'].includes(profile?.role ?? '');
+  // The requesting team's own record — used to scope eligible guest teams
+  // by THIS team's club (not the coach's home club, which may differ for a
+  // cross-club coach) and by age/gender eligibility.
+  const myTeam = teams.find(t => t.id === teamId);
 
   const [guests,          setGuests]          = useState<GuestRow[]>([]);
   const [loading,         setLoading]         = useState(true);
@@ -70,9 +79,12 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
   const [adding,          setAdding]          = useState<string | null>(null);
   const [removing,        setRemoving]        = useState<string | null>(null);
   const [resending,       setResending]       = useState<string | null>(null);
+  // Age-group sections that are expanded — sections with an eligible team
+  // open by default when data loads; nothing is ever hard-hidden.
+  const [openAgeGroups,   setOpenAgeGroups]   = useState<Set<string>>(new Set());
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clubId   = club?.id   ?? '';
+  const clubId   = myTeam?.club_id ?? '';
   const clubSlug = club?.slug ?? '';
   const coachName = profile?.full_name ?? 'Coach';
 
@@ -87,7 +99,7 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
       .eq('event_id', eventId)
       .order('created_at');
 
-    const rows = (raw ?? []) as any[];
+    const rows = (raw ?? []) as RawGuestRow[];
 
     // Resolve profile_id for player guests
     const playerIds = rows.filter(g => g.player_id).map(g => g.player_id as string);
@@ -95,7 +107,7 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     if (playerIds.length > 0) {
       const { data: playerRows } = await supabase
         .from('players').select('id, profile_id').in('id', playerIds);
-      (playerRows ?? []).forEach((p: any) => pidMap.set(p.id, p.profile_id ?? null));
+      (playerRows ?? []).forEach(p => pidMap.set(p.id, p.profile_id ?? null));
     }
 
     const resolved = rows.map(g => ({
@@ -107,16 +119,20 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     onConfirmedCount?.(confirmedRows.length);
     onConfirmedGuests?.(confirmedRows.map(g => ({ id: g.id, full_name: g.full_name, role: g.role as 'player' | 'coach' })));
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onConfirmedCount/onConfirmedGuests are optional, unmemoized callback props; including them would re-trigger the fetch effect below on every parent render
   }, [eventId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadGuests(); }, [loadGuests]);
 
   // ── Reset & load results when modal opens ────────────────────────────────────
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (!showAdd) { setQuery(''); setCoachQuery(''); setPlayerRes([]); setAllCoaches([]); return; }
     setQuery('');
     setCoachQuery('');
+    setOpenAgeGroups(new Set());
     fetchPlayers('');
     fetchAllCoaches();
   }, [showAdd]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -128,9 +144,10 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     setPlayersSearching(true);
 
     const { data: clubTeams } = await supabase
-      .from('teams').select('id, name').eq('club_id', clubId).neq('id', teamId);
-    const otherIds = (clubTeams ?? []).map((t: any) => t.id);
+      .from('teams').select('id, name, age_group, gender').eq('club_id', clubId).neq('id', teamId);
+    const otherIds = (clubTeams ?? []).map(t => t.id);
     if (!otherIds.length) { setPlayerRes([]); setPlayersSearching(false); return; }
+    const eligibleMap = new Map((clubTeams ?? []).map(t => [t.id, isEligibleTeam(myTeam ?? { age_group: null, gender: null }, t)]));
 
     const existingPids = guests.filter(g => g.player_id).map(g => g.player_id as string);
 
@@ -143,10 +160,22 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     if (existingPids.length) pq = pq.not('id', 'in', `(${existingPids.join(',')})`);
 
     const { data: players } = await pq;
-    const nameMap = Object.fromEntries((clubTeams ?? []).map((t: any) => [t.id, t.name]));
-    setPlayerRes(
-      ((players ?? []) as any[]).map(p => ({ ...p, team_name: nameMap[p.team_id] ?? 'Other Team' }))
-    );
+    const nameMap = Object.fromEntries((clubTeams ?? []).map(t => [t.id, t.name]));
+    const ageGroupMap = Object.fromEntries((clubTeams ?? []).map(t => [t.id, t.age_group]));
+    const rows = (players ?? [])
+      .map(p => ({
+        ...p,
+        team_name: nameMap[p.team_id] ?? 'Other Team',
+        age_group: ageGroupMap[p.team_id] ?? null,
+        eligible: eligibleMap.get(p.team_id) ?? true,
+      }))
+      .sort((a, b) => Number(b.eligible) - Number(a.eligible));
+    setPlayerRes(rows);
+    setOpenAgeGroups(prev => {
+      const next = new Set(prev);
+      for (const r of rows) if (r.eligible) next.add(r.age_group ?? 'Other');
+      return next;
+    });
     setPlayersSearching(false);
   }
 
@@ -168,7 +197,7 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     if (existingCids.length) cq = cq.not('id', 'in', `(${existingCids.join(',')})`);
 
     const { data } = await cq;
-    setAllCoaches(((data ?? []) as any[]) as CoachResult[]);
+    setAllCoaches(data ?? []);
     setCoachesLoading(false);
   }
 
@@ -218,10 +247,10 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     const { data: newGuest } = await supabase.from('event_guests').insert({
       event_id: eventId, player_id: p.id, full_name: p.full_name,
       role: 'player', status: 'pending', added_by: profile?.id ?? null,
-    }).select().single();
+    }).select('id').single<{ id: string }>();
 
     if (newGuest && p.profile_id) {
-      await sendInvite((newGuest as any).id, p.profile_id, p.full_name, 'player');
+      await sendInvite(newGuest.id, p.profile_id, p.full_name, 'player');
     }
     await loadGuests();
     setAdding(null);
@@ -233,10 +262,10 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
     const { data: newGuest } = await supabase.from('event_guests').insert({
       event_id: eventId, profile_id: c.id, full_name: c.full_name,
       role: 'coach', status: 'pending', added_by: profile?.id ?? null,
-    }).select().single();
+    }).select('id').single<{ id: string }>();
 
     if (newGuest) {
-      await sendInvite((newGuest as any).id, c.id, c.full_name, 'coach');
+      await sendInvite(newGuest.id, c.id, c.full_name, 'coach');
     }
     await loadGuests();
     setAdding(null);
@@ -266,7 +295,10 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
   const pending   = guests.filter(g => g.status === 'pending');
   const declined  = guests.filter(g => g.status === 'declined');
 
-  // ── Player search results grouped by team ─────────────────────────────────────
+  // ── Player search results grouped by age group, then by team ──────────────────
+  // Sections always sorted youngest-first (age order is a coach's existing
+  // mental model); open/collapsed state is a separate, eligibility-driven
+  // concern tracked in openAgeGroups.
 
   const playersByTeam = (() => {
     const map = new Map<string, PlayerResult[]>();
@@ -275,6 +307,28 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
       map.get(p.team_name)!.push(p);
     });
     return Array.from(map.entries());
+  })();
+
+  const teamsByAgeGroup = (() => {
+    const map = new Map<string, { teamName: string; players: PlayerResult[] }[]>();
+    for (const [teamName, players] of playersByTeam) {
+      const key = players[0]?.age_group ?? 'Other';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push({ teamName, players });
+    }
+    return Array.from(map.entries())
+      .map(([key, teams]) => ({
+        key, ageGroup: teams[0]?.players[0]?.age_group ?? null, teams,
+        hasEligible: teams.some((t) => t.players[0]?.eligible),
+      }))
+      .sort((a, b) => {
+        const pa = parseAgeGroup(a.ageGroup);
+        const pb = parseAgeGroup(b.ageGroup);
+        if (pa == null && pb == null) return a.key.localeCompare(b.key);
+        if (pa == null) return 1;
+        if (pb == null) return -1;
+        return pa - pb;
+      });
   })();
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -407,31 +461,58 @@ export default function GuestSection({ eventId, teamId, teamName, eventTitle, pr
                     {query ? 'No players found' : 'No players on other teams yet'}
                   </div>
                 ) : (
-                  playersByTeam.map(([tName, players]) => (
-                    <div key={tName} style={{ marginBottom: '12px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '4px', paddingBottom: '6px', borderBottom: '1px solid #F1F5F9' }}>
-                        {tName}
-                      </div>
-                      {players.map(p => (
-                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                          <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', flexShrink: 0 }}>
-                            {p.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</div>
-                            <div style={{ fontSize: '11px', color: '#94A3B8' }}>
-                              {[p.jersey_number != null ? `#${p.jersey_number}` : null, p.position].filter(Boolean).join(' · ')}
-                              {!p.profile_id && <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: '700', color: '#F59E0B' }}>No account</span>}
+                  teamsByAgeGroup.map(section => {
+                    const isOpen = openAgeGroups.has(section.key);
+                    return (
+                      <div key={section.key} style={{ marginBottom: '4px' }}>
+                        <button onClick={() => setOpenAgeGroups(prev => {
+                            const next = new Set(prev);
+                            if (next.has(section.key)) next.delete(section.key); else next.add(section.key);
+                            return next;
+                          })}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 2px', border: 'none', borderTop: '1px solid #F1F5F9', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                          <span style={{ fontSize: '12px', color: '#94A3B8', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
+                          <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>{section.ageGroup ?? 'Other'}</span>
+                          <span style={{ fontSize: '11px', color: '#94A3B8', flex: 1 }}>{section.teams.length} team{section.teams.length !== 1 ? 's' : ''}</span>
+                          {!section.hasEligible && (
+                            <span style={{ fontSize: '9px', fontWeight: '700', color: '#94A3B8', background: '#F1F5F9', borderRadius: '20px', padding: '2px 7px' }}>
+                              Check eligibility
+                            </span>
+                          )}
+                        </button>
+                        {isOpen && section.teams.map(({ teamName: tName, players }) => (
+                          <div key={tName} style={{ marginBottom: '12px', paddingLeft: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '4px', paddingBottom: '6px', borderBottom: '1px solid #F1F5F9' }}>
+                              {tName}
+                              {!players[0]?.eligible && (
+                                <span style={{ fontSize: '9px', fontWeight: '700', color: '#94A3B8', background: '#F1F5F9', borderRadius: '20px', padding: '2px 7px', textTransform: 'none', letterSpacing: 'normal' }}>
+                                  Check eligibility
+                                </span>
+                              )}
                             </div>
+                            {players.map(p => (
+                              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: '#475569', flexShrink: 0 }}>
+                                  {p.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</div>
+                                  <div style={{ fontSize: '11px', color: '#94A3B8' }}>
+                                    {[p.jersey_number != null ? `#${p.jersey_number}` : null, p.position].filter(Boolean).join(' · ')}
+                                    {!p.profile_id && <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: '700', color: '#F59E0B' }}>No account</span>}
+                                  </div>
+                                </div>
+                                <button onClick={() => addPlayer(p)} disabled={adding === p.id}
+                                  style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: adding === p.id ? '#E2E8F0' : primary, color: adding === p.id ? '#94A3B8' : '#fff', fontSize: '12px', fontWeight: '700', cursor: adding === p.id ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                                  {adding === p.id ? '…' : 'Add'}
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                          <button onClick={() => addPlayer(p)} disabled={adding === p.id}
-                            style={{ padding: '6px 12px', borderRadius: '7px', border: 'none', background: adding === p.id ? '#E2E8F0' : primary, color: adding === p.id ? '#94A3B8' : '#fff', fontSize: '12px', fontWeight: '700', cursor: adding === p.id ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
-                            {adding === p.id ? '…' : 'Add'}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ))
+                        ))}
+                      </div>
+                    );
+                  })
                 )
               ) : (
                 coachesLoading ? (

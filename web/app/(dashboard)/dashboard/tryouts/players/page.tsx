@@ -65,12 +65,12 @@ export default function PlayerPoolPage() {
 
   function parseImport() {
     const lines = importText.split('\n').map(l => l.trim()).filter(Boolean);
-    const rows = lines.map((line, i) => {
+    const rows = lines.map((line) => {
       // Strip leading numbers like "1." or "1)"
       const stripped = line.replace(/^\d+[\.\)]\s*/, '');
       // Try to split on comma or tab
       const parts = stripped.split(/[,\t]/).map(p => p.trim());
-      let name = parts[0]; let value: number | null = null;
+      const name = parts[0]; let value: number | null = null;
       if (parts.length >= 2) { const v = parseFloat(parts[parts.length - 1]); if (!isNaN(v)) value = v; }
       return { raw: line, name, value, player: matchPlayer(name) };
     });
@@ -120,6 +120,7 @@ export default function PlayerPoolPage() {
     }
     setLoading(false);
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- load is a plain function redefined each render; its real reactive inputs are already listed here
   useEffect(() => { load(); }, [club]);
 
   const getAg = (p: Player) => p.final_age_group || (p.date_of_birth ? calcAgeGroup(p.date_of_birth, seasonYear) : 'Unknown');
@@ -175,7 +176,7 @@ export default function PlayerPoolPage() {
   }
 
   function toggleGroup(key: string) {
-    setPrintGroups(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next; });
+    setPrintGroups(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   }
 
   function generateAndPrint() {
@@ -440,7 +441,7 @@ export default function PlayerPoolPage() {
                       <input type="checkbox" checked={printExcludeNTR} onChange={e => setPrintExcludeNTR(e.target.checked)} style={{ width: '15px', height: '15px', cursor: 'pointer' }} />
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Exclude NTR players</div>
-                        <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Players marked Not To Return won't appear on forms</div>
+                        <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Players marked Not To Return won&apos;t appear on forms</div>
                       </div>
                     </label>
                   </div>
@@ -594,7 +595,7 @@ export default function PlayerPoolPage() {
   );
 }
 
-function PlayerModal({ club, player, season, seasonYear, onClose, onSaved }: { club: ClubT; player: Player | null; season: string; seasonYear: number; onClose: () => void; onSaved: () => void }) {
+function PlayerModal({ club, player, season: _season, seasonYear, onClose, onSaved }: { club: ClubT; player: Player | null; season: string; seasonYear: number; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({ first_name: player?.first_name ?? '', last_name: player?.last_name ?? '', date_of_birth: player?.date_of_birth ?? '', grade: player?.grade ?? '', gender: player?.gender ?? 'Male', email_primary: player?.email_primary ?? '', positions: player?.positions?.join(', ') ?? '', final_age_group: player?.final_age_group ?? '' });
   const [saving, setSaving] = useState(false);
   const autoAg = form.date_of_birth ? calcAgeGroup(form.date_of_birth, seasonYear) : '';

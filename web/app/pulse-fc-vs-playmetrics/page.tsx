@@ -206,12 +206,13 @@ export default async function PulseVsPlaymetricsPage() {
           Pulse FC vs PlayMetrics
         </h1>
         <p style={{ fontSize: 18, color: '#888', lineHeight: 1.7, maxWidth: 580, margin: '0 auto 48px' }}>
-          PlayMetrics is a genuinely capable, multi-sport club operations platform — evaluations, payments, scheduling, all of it. It's also built for any sport, priced after a sales call, and set up by a team, not a coach on a Tuesday night.
+          PlayMetrics is a genuinely capable, multi-sport club operations platform — evaluations, payments, scheduling, all of it. It&apos;s also built for any sport, priced after a sales call, and set up by a team, not a coach on a Tuesday night.
         </p>
 
         {/* Quick verdict */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 16, alignItems: 'center', maxWidth: 640, margin: '0 auto' }}>
           <div style={{ background: '#0a1a0a', border: `2px solid ${GREEN}`, borderRadius: 16, padding: '24px 20px' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
             <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto', marginBottom: 12 }} />
             <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, marginBottom: 4 }}>Purpose-built for soccer DOCs</p>
             <p style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>AI features · Public $9.99/mo pricing · Self-serve in 20 minutes</p>
@@ -301,7 +302,7 @@ export default async function PulseVsPlaymetricsPage() {
         </div>
 
         <p style={{ fontSize: 12, color: '#333', textAlign: 'center', marginTop: 24, lineHeight: 1.6, maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}>
-          PlayMetrics features sourced from their public site as of 2026. They're a well-reviewed, capable platform — this comparison is about fit, not quality.
+          PlayMetrics features sourced from their public site as of 2026. They&apos;re a well-reviewed, capable platform — this comparison is about fit, not quality.
         </p>
       </div>
 
@@ -314,7 +315,7 @@ export default async function PulseVsPlaymetricsPage() {
           <div style={{ background: '#0a1a0a', border: `1px solid ${GREEN}22`, borderRadius: 20, padding: '32px' }}>
             <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.1em' }}>If you run a soccer club</p>
             <p style={{ fontSize: 16, color: '#ccc', lineHeight: 1.8, marginBottom: 20 }}>
-              PlayMetrics is built to serve every sport a club runs, which means it's priced and sold like enterprise software — a demo, a conversation, a quote built around your organization. If you already know you're a soccer club and you want to be live tonight without a sales call, that process is solving a problem you don't have.
+              PlayMetrics is built to serve every sport a club runs, which means it&apos;s priced and sold like enterprise software — a demo, a conversation, a quote built around your organization. If you already know you&apos;re a soccer club and you want to be live tonight without a sales call, that process is solving a problem you don&apos;t have.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
@@ -331,7 +332,7 @@ export default async function PulseVsPlaymetricsPage() {
               ))}
             </div>
             <p style={{ fontSize: 14, color: '#555', marginTop: 20, fontStyle: 'italic' }}>
-              If you need multi-sport support across a whole association, PlayMetrics is a legitimate choice. If you're a soccer club, you're paying for breadth you'll never use.
+              If you need multi-sport support across a whole association, PlayMetrics is a legitimate choice. If you&apos;re a soccer club, you&apos;re paying for breadth you&apos;ll never use.
             </p>
           </div>
         </div>
@@ -376,6 +377,7 @@ export default async function PulseVsPlaymetricsPage() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #111', padding: '24px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
         <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <Link href="/pulse-fc-vs-teamsnap" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>vs TeamSnap</Link>

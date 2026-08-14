@@ -10,6 +10,7 @@ import {
   FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ShieldCheck, Trophy,
 } from 'lucide-react';
 import { useDashboard } from './DashboardContext';
+import { contrastText, safeAccent } from '@/lib/colorContrast';
 
 type NavEntry = {
   section?: string;
@@ -43,6 +44,16 @@ const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard/evaluations',   icon: Award,         label: 'Evaluations' },
 ];
 
+// The sidebar panel itself is a fixed dark navy regardless of a club's
+// branding — if a club picks a primary color close to that navy, any
+// element using `primary` as its own color (not background) on top of the
+// panel becomes unreadable. Fall back to the default accent in that case
+// rather than let a club's own brand color make their sidebar illegible.
+const SIDEBAR_BG = '#0F172A';
+function sidebarSafeAccent(hex: string): string {
+  return safeAccent(hex, SIDEBAR_BG);
+}
+
 const TRYOUTS_NAV: NavEntry[] = [
   { href: '/dashboard/tryouts',                  icon: Target,        label: 'Dashboard',          exact: true, adminOnly: true },
   { href: '/dashboard/tryouts/players',          icon: Users,         label: 'Player Pool',        adminOnly: true },
@@ -64,6 +75,11 @@ export default function Sidebar() {
   const router      = useRouter();
 
   const primary     = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
+  // Everything below is rendered directly on the sidebar's fixed navy
+  // panel — use the panel-safe accent, not the raw brand color, so a club
+  // can't accidentally make their own sidebar illegible.
+  const accent      = sidebarSafeAccent(primary);
+  const accentText  = contrastText(accent);
   const initials    = (club?.name ?? 'FC').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const userInitials = (profile?.full_name ?? '??').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
   const tryoutsActive = club?.tryouts_active ?? false;
@@ -97,19 +113,19 @@ export default function Sidebar() {
           display: 'flex', alignItems: 'center', gap: '9px',
           padding: '7px 12px', marginBottom: '1px',
           borderRadius: '6px',
-          background: active ? `${primary}18` : 'transparent',
-          borderLeft: active ? `2px solid ${primary}` : '2px solid transparent',
+          background: active ? `${accent}18` : 'transparent',
+          borderLeft: active ? `2px solid ${accent}` : '2px solid transparent',
           transition: 'background 0.12s',
           cursor: 'pointer',
         }}
           onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; }}
           onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
         >
-          <Icon size={14} color={active ? primary : 'rgba(255,255,255,0.45)'} strokeWidth={active ? 2.5 : 2} />
+          <Icon size={14} color={active ? accent : 'rgba(255,255,255,0.45)'} strokeWidth={active ? 2.5 : 2} />
           <span style={{ fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#fff' : 'rgba(255,255,255,0.6)', letterSpacing: active ? '-0.1px' : '0' }}>
             {label}
           </span>
-          {active && <ChevronRight size={10} color={primary} style={{ marginLeft: 'auto' }} />}
+          {active && <ChevronRight size={10} color={accent} style={{ marginLeft: 'auto' }} />}
         </div>
       </Link>
     );
@@ -127,7 +143,7 @@ export default function Sidebar() {
       <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <span style={{ fontSize: '18px', fontWeight: '900', color: '#fff', letterSpacing: '1px', display: 'block' }}>
-            PULSE<span style={{ color: primary }}>FC</span>
+            PULSE<span style={{ color: accent }}>FC</span>
           </span>
           <span style={{ fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.25)', letterSpacing: '2px', textTransform: 'uppercase', display: 'block', marginTop: '2px' }}>Club Dashboard</span>
         </div>
@@ -136,12 +152,13 @@ export default function Sidebar() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
               width: '34px', height: '34px', borderRadius: '6px', flexShrink: 0,
-              background: club.logo_url ? 'transparent' : primary,
+              background: club.logo_url ? 'transparent' : accent,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '11px', fontWeight: '800', color: '#fff', overflow: 'hidden',
+              fontSize: '11px', fontWeight: '800', color: accentText, overflow: 'hidden',
               border: '1px solid rgba(255,255,255,0.1)',
             }}>
               {club.logo_url
+                // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
                 ? <img src={club.logo_url} alt={club.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 : initials}
             </div>
@@ -207,7 +224,7 @@ export default function Sidebar() {
           </div>
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '8px 12px', marginTop: '2px' }}>
-          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: primary, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: '#fff' }}>
+          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: accent, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: accentText }}>
             {userInitials}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>

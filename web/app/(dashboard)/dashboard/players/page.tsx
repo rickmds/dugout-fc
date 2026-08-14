@@ -31,12 +31,13 @@ export default function PlayersPage() {
       .in('team_id', teams.map(t => t.id))
       .order('full_name');
 
-    setPlayers((data ?? []).map((p: any) => ({
-      ...p, team_name: p.teams?.name ?? '—', age_group: p.teams?.age_group ?? null,
+    setPlayers((data ?? []).map(p => ({
+      ...p, team_name: (p.teams as unknown as { name: string; age_group: string | null } | null)?.name ?? '—', age_group: (p.teams as unknown as { name: string; age_group: string | null } | null)?.age_group ?? null,
     })));
     setLoading(false);
   }, [club, teams]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; load sets state from a real network call, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   const filtered = players.filter(p => {

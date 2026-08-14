@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase';
+import { requireRole } from '@/lib/apiAuth';
 import { Resend } from 'resend';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 const resend = new Resend(process.env.RESEND_API_KEY!);
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
+  if (!auth.ok) return auth.response;
+
   const { submission_ids, subject, body, from_name } = await req.json() as {
     submission_ids: string[];
     subject: string;
@@ -20,13 +20,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'submission_ids, subject, and body are required' }, { status: 400 });
   }
 
+  const supabase = supabaseAdmin();
+
   const { data: subs, error: subsErr } = await supabase
     .from('registration_submissions')
-    .select('id, data, form_id')
+    .select('id, data, form_id, registration_forms(club_id)')
     .in('id', submission_ids);
 
   if (subsErr || !subs?.length) {
     return NextResponse.json({ error: 'No submissions found' }, { status: 404 });
+  }
+
+  if (auth.role !== 'app_admin') {
+    const foreign = subs.some(s => (s as unknown as { registration_forms: { club_id: string } }).registration_forms?.club_id !== auth.clubId);
+    if (foreign) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const fromName = from_name?.trim() || 'Pulse FC';

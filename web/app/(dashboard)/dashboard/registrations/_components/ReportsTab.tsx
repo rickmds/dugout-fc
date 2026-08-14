@@ -918,7 +918,7 @@ export default function ReportsTab() {
             <p style={CARD_TITLE}>GDPR data deletion</p>
           </div>
           <p style={CARD_DESC}>
-            Search by email or name to locate and delete a person's registration records.
+            Search by email or name to locate and delete a person&apos;s registration records.
           </p>
 
           <div style={{ display: 'flex', gap: '8px' }}>

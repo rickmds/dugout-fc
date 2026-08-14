@@ -257,7 +257,6 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
 
   const fields       = formFields(form);
   const statusStyle  = SUB_STATUS_STYLES[currentSub.status];
-  const payStyle     = PAY_STATUS_STYLES[currentSub.payment_status];
   const balance      = (currentSub.amount_due ?? 0) - currentSub.amount_paid;
   const currency     = form.currency;
 

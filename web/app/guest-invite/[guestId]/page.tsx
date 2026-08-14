@@ -72,6 +72,7 @@ export default function GuestInvitePage() {
   const autoFired = useRef(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (!guestId) { setLoading(false); return; }
     fetch(`/api/guest-invite/respond?guestId=${guestId}`)
       .then(r => r.json())
@@ -139,6 +140,7 @@ export default function GuestInvitePage() {
         {/* Club header */}
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           {clubLogo
+            // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
             ? <img src={clubLogo} alt="" style={{ height: '56px', objectFit: 'contain', borderRadius: '12px' }} />
             : (
               <div style={{
@@ -284,7 +286,7 @@ export default function GuestInvitePage() {
 
       <div style={{ fontSize: '19px', fontWeight: '800', color: '#f9fafb', lineHeight: '1.35', marginBottom: '20px' }}>
         {isCoach
-          ? <>You've been invited to guest coach <span style={{ color: accent }}>{data.team_name}</span></>
+          ? <>You&apos;ve been invited to guest coach <span style={{ color: accent }}>{data.team_name}</span></>
           : <><span style={{ color: accent }}>{data.full_name}</span> is invited to guest play for <span style={{ color: accent }}>{data.team_name}</span></>}
       </div>
 

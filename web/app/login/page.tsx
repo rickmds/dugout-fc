@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -10,7 +11,7 @@ type Profile = {
 
 function OAuthButton({
   label,
-  logo,
+  logo: _logo,
   onPress,
   provider,
 }: {
@@ -139,10 +140,10 @@ export default function LoginPage() {
 
         {/* Logo lockup */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '36px' }}>
-          <a href="/" style={{ textDecoration: 'none' }}>
+          <Link href="/" style={{ textDecoration: 'none' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
             <img src="/logo.png" alt="Pulse FC" style={{ height: '48px', width: 'auto' }} />
-            
-          </a>
+          </Link>
         </div>
 
         {/* Card */}
@@ -287,9 +288,9 @@ export default function LoginPage() {
         </p>
         <p style={{ textAlign: 'center', fontSize: '12px', color: '#444', marginTop: '8px' }}>
           For parents &amp; players — download the{' '}
-          <a href="/" style={{ color: '#555', textDecoration: 'none', fontWeight: '500' }}>
+          <Link href="/" style={{ color: '#555', textDecoration: 'none', fontWeight: '500' }}>
             Pulse FC app
-          </a>
+          </Link>
         </p>
       </div>
     </div>

@@ -3,6 +3,10 @@
 import { useRef, useState } from 'react';
 import { X, Upload, AlertTriangle, CheckSquare, Square, ChevronDown, ChevronRight, Mail } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import {
+  toParseAllPayload, streamParseAll, matchExtractedTeam, confToUncertain,
+  type ExtractedTeam, type ExtractedPlayer, type ExtractedCoach,
+} from '@/lib/parseAllClient';
 import { useDashboard } from './DashboardContext';
 import type { Team } from './DashboardContext';
 
@@ -56,15 +60,6 @@ const PROCESSING_STEPS = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => { const r = reader.result as string; resolve(r.split(',')[1]); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 function uid() { return Math.random().toString(36).slice(2); }
 
 function matchTeam(name: string, teams: Team[]): Team | null {
@@ -101,10 +96,23 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
   async function handleFile(file: File) {
     startProcessing();
     try {
-      const base64    = await fileToBase64(file);
-      const file_type = file.type || 'text/plain';
-      if (mode === 'club') await runClubImport(base64, file_type);
-      else                 await runSingleImport(base64, file_type);
+      const payload = await toParseAllPayload(file);
+      const { data: { session } } = await supabase.auth.getSession();
+      const outcome = await streamParseAll([payload], session?.access_token);
+      stopProcessing();
+
+      if (!outcome.ok) {
+        alert(outcome.error);
+        setPhase('idle'); return;
+      }
+      const data = outcome.data as {
+        teams: ExtractedTeam[]; players: ExtractedPlayer[]; coaches: ExtractedCoach[];
+        fileOutcomes: { name: string; ok: boolean; error?: string }[];
+      };
+      const failed = (data.fileOutcomes ?? []).filter((f) => !f.ok);
+
+      if (mode === 'club') await runClubImport(data, failed);
+      else                 await runSingleImport(data, failed);
     } catch (e) {
       stopProcessing();
       alert(`Could not read file: ${e instanceof Error ? e.message : 'Unknown error'}`);
@@ -112,80 +120,75 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
     }
   }
 
-  async function runSingleImport(base64: string, file_type: string) {
+  async function runSingleImport(
+    data: { players: ExtractedPlayer[] },
+    failed: { name: string; error?: string }[],
+  ) {
     const team = teams.find((t) => t.id === teamId);
 
-    const [parseRes, existingRes] = await Promise.all([
-      supabase.functions.invoke('import-roster', { body: { file_base64: base64, file_type } }),
-      supabase.from('players').select('full_name').eq('team_id', teamId),
-    ]);
-    stopProcessing();
+    const { data: existingRows } = await supabase.from('players').select('full_name').eq('team_id', teamId);
 
-    if (parseRes.error || !parseRes.data?.players) {
-      alert(parseRes.data?.error ?? parseRes.error?.message ?? 'Failed to parse roster.');
+    if (!data.players.length) {
+      alert(failed.length ? (failed[0].error ?? 'Failed to parse roster.') : 'No players found in this file.');
       setPhase('idle'); return;
-    }
-    if (!parseRes.data.players.length) {
-      alert('No players found in this file.'); setPhase('idle'); return;
     }
 
     const existingNames = new Set(
-      ((existingRes.data ?? []) as any[]).map((r) => (r.full_name as string).toLowerCase().trim())
+      (existingRows ?? []).map((r) => (r.full_name as string).toLowerCase().trim())
     );
 
-    setPlayers(parseRes.data.players.map((p: any) => {
+    setPlayers(data.players.map((p) => {
       const dup = existingNames.has((p.full_name ?? '').toLowerCase().trim());
+      const { uncertain, reason } = confToUncertain(p.confidence);
+      const jersey = p.jersey_number ? parseInt(p.jersey_number, 10) : NaN;
       return {
-        _id: uid(), full_name: p.full_name, jersey_number: p.jersey_number ?? null,
-        position: p.position ?? null, parent_email: p.parent_email ?? null,
-        uncertain: !!p.uncertain, uncertaintyReason: p.uncertainty_reason ?? null,
-        duplicate: dup, selected: !p.uncertain && !dup,
+        _id: uid(), full_name: p.full_name, jersey_number: Number.isFinite(jersey) ? jersey : null,
+        position: p.position || null, parent_email: p.parent_email || null,
+        uncertain, uncertaintyReason: reason,
+        duplicate: dup, selected: !uncertain && !dup,
         teamId, teamName: team?.name ?? '',
       };
     }));
-    setWarnings(parseRes.data.warnings ?? []);
+    setWarnings(failed.map((f) => `${f.name}: ${f.error ?? 'failed to import'}`));
     setPhase('review');
   }
 
-  async function runClubImport(base64: string, file_type: string) {
-    const existingTeamNames = teams.map((t) => t.name);
+  async function runClubImport(
+    data: { teams: ExtractedTeam[]; players: ExtractedPlayer[]; coaches: ExtractedCoach[] },
+    failed: { name: string; error?: string }[],
+  ) {
+    const { data: existingPlayerRows } = await supabase.from('players').select('full_name, team_id').in('team_id', teams.map((t) => t.id));
 
-    const [parseRes, existingPlayersRes] = await Promise.all([
-      supabase.functions.invoke('import-club', {
-        body: { file_base64: base64, file_type, existing_teams: existingTeamNames },
-      }),
-      supabase.from('players').select('full_name, team_id').in('team_id', teams.map((t) => t.id)),
-    ]);
-    stopProcessing();
-
-    if (parseRes.error || !parseRes.data?.teams) {
-      alert(parseRes.data?.error ?? parseRes.error?.message ?? 'Failed to parse file.');
+    if (!data.teams.length) {
+      alert(failed.length ? (failed[0].error ?? 'Failed to parse file.') : 'No teams or players found in this file.');
       setPhase('idle'); return;
-    }
-    if (!parseRes.data.teams.length) {
-      alert('No teams or players found in this file.'); setPhase('idle'); return;
     }
 
     // Build existing name set per team
     const existingByTeam: Record<string, Set<string>> = {};
     for (const t of teams) existingByTeam[t.id] = new Set();
-    for (const r of (existingPlayersRes.data ?? []) as any[]) {
+    for (const r of existingPlayerRows ?? []) {
       existingByTeam[r.team_id]?.add((r.full_name as string).toLowerCase().trim());
     }
 
-    const rTeams: ReviewTeam[] = parseRes.data.teams.map((t: any) => {
+    const rTeams: ReviewTeam[] = data.teams.map((t) => {
       const matched = matchTeam(t.name, teams);
       const existingNames = matched ? (existingByTeam[matched.id] ?? new Set()) : new Set<string>();
       const assignedTeamId = matched?.id ?? '';
       const assignedTeamName = matched?.name ?? t.name;
 
-      const rPlayers: ReviewPlayer[] = (t.players ?? []).map((p: any) => {
+      const teamPlayers = data.players.filter((p) => matchExtractedTeam(p.team_name, data.teams) === t);
+      const teamCoaches = data.coaches.filter((c) => matchExtractedTeam(c.team_name, data.teams) === t);
+
+      const rPlayers: ReviewPlayer[] = teamPlayers.map((p) => {
         const dup = !!matched && existingNames.has((p.full_name ?? '').toLowerCase().trim());
+        const { uncertain, reason } = confToUncertain(p.confidence);
+        const jersey = p.jersey_number ? parseInt(p.jersey_number, 10) : NaN;
         return {
-          _id: uid(), full_name: p.full_name, jersey_number: p.jersey_number ?? null,
-          position: p.position ?? null, parent_email: p.parent_email ?? null,
-          uncertain: !!p.uncertain, uncertaintyReason: p.uncertainty_reason ?? null,
-          duplicate: dup, selected: !p.uncertain && !dup,
+          _id: uid(), full_name: p.full_name, jersey_number: Number.isFinite(jersey) ? jersey : null,
+          position: p.position || null, parent_email: p.parent_email || null,
+          uncertain, uncertaintyReason: reason,
+          duplicate: dup, selected: !uncertain && !dup,
           teamId: assignedTeamId, teamName: assignedTeamName,
         };
       });
@@ -193,16 +196,16 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
       return {
         parsedName: t.name,
         matchedTeam: matched,
-        age_group: t.age_group ?? null,
-        season: t.season ?? null,
-        coaches: t.coaches ?? [],
+        age_group: t.age_group || null,
+        season: null,
+        coaches: teamCoaches.map((c) => ({ full_name: c.full_name, email: c.email || null, role: 'Coach', uncertain: c.confidence !== 'high' })),
         players: rPlayers,
         isNew: !matched,
       };
     });
 
     setReviewTeams(rTeams);
-    setWarnings(parseRes.data.warnings ?? []);
+    setWarnings(failed.map((f) => `${f.name}: ${f.error ?? 'failed to import'}`));
     // Default expand all teams
     setExpandedTeams(new Set(rTeams.map((t) => t.parsedName)));
     setPhase('review');
@@ -230,12 +233,12 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
         const { data: pd } = await supabase.from('players').insert({
           team_id: p.teamId, full_name: p.full_name,
           jersey_number: p.jersey_number, position: p.position,
-        }).select('id').single();
+        }).select('id').single<{ id: string }>();
         if (!pd) continue;
         stats.players++;
         if (p.parent_email?.trim()) {
           await supabase.from('invites').insert({
-            team_id: p.teamId, player_id: (pd as any).id,
+            team_id: p.teamId, player_id: pd.id,
             email: p.parent_email.trim(), created_by: profile?.id,
           });
           stats.invites++;
@@ -255,8 +258,8 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
             name: rt.parsedName,
             age_group: rt.age_group,
             season: rt.season,
-          }).select('id').single();
-          resolvedTeamId = (newTeam as any)?.id ?? null;
+          }).select('id').single<{ id: string }>();
+          resolvedTeamId = newTeam?.id ?? null;
           if (resolvedTeamId) stats.teams++;
         }
 
@@ -266,12 +269,12 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
           const { data: pd } = await supabase.from('players').insert({
             team_id: resolvedTeamId, full_name: p.full_name,
             jersey_number: p.jersey_number, position: p.position,
-          }).select('id').single();
+          }).select('id').single<{ id: string }>();
           if (!pd) continue;
           stats.players++;
           if (p.parent_email?.trim()) {
             await supabase.from('invites').insert({
-              team_id: resolvedTeamId, player_id: (pd as any).id,
+              team_id: resolvedTeamId, player_id: pd.id,
               email: p.parent_email.trim(), created_by: profile?.id,
             });
             stats.invites++;
@@ -297,7 +300,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
   }
 
   function toggleTeamExpand(name: string) {
-    setExpandedTeams((p) => { const n = new Set(p); n.has(name) ? n.delete(name) : n.add(name); return n; });
+    setExpandedTeams((p) => { const n = new Set(p); if (n.has(name)) n.delete(name); else n.add(name); return n; });
   }
 
   function selectAllInTeam(parsedName: string, val: boolean) {

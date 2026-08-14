@@ -1,16 +1,16 @@
 const items = [
-  'AI Schedule Import',
-  'Drag & Drop Lineup Builder',
-  'Live RSVP Tracking',
-  'Parent Announcements',
-  'One-Tap Attendance',
-  'Team Chat',
-  'Equal Play Time Planner',
-  'Push Notifications',
-  'Roster Management',
-  'Game Day Countdown',
-  'Substitution Planner',
-  'Direct Messaging',
+  'Season set up in 40 seconds',
+  'Lineup built in 2 minutes, not 45',
+  'Zero "what time?" texts',
+  'Every parent notified before you put your phone down',
+  'RSVPs locked before kick-off',
+  'No family left at the wrong field',
+  'Coaches save 4–6 hours a week',
+  'Tryout chaos replaced by one dashboard',
+  'Equal play time calculated instantly',
+  'Attendance tracked, parents notified automatically',
+  'Roster imported from any spreadsheet',
+  'One app your parents actually open',
 ];
 
 export default function Ticker() {

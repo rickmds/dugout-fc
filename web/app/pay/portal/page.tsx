@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 type Fee = {
@@ -31,7 +30,6 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function PayPortal() {
-  const router = useRouter();
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
@@ -39,16 +37,6 @@ export default function PayPortal() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) { loadFees(session.user.id); } else { setLoading(false); }
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session) { loadFees(session.user.id); } else { setLoggedIn(false); setFees([]); setLoading(false); }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   async function loadFees(userId: string) {
     setLoading(true);
@@ -58,7 +46,7 @@ export default function PayPortal() {
       .select('id')
       .eq('profile_id', userId);
 
-    const playerIds = (players ?? []).map((p: any) => p.id);
+    const playerIds = (players ?? []).map(p => p.id);
     if (!playerIds.length) { setLoggedIn(true); setLoading(false); return; }
 
     const { data: feeRows } = await supabase
@@ -71,13 +59,19 @@ export default function PayPortal() {
       .in('player_id', playerIds)
       .order('due_date', { ascending: true, nullsFirst: false });
 
-    setFees((feeRows ?? []).map((f: any) => ({
+    type FeeRow = {
+      id: string; payment_token: string | null; description: string; amount_due: number; amount_paid: number;
+      discount: number | null; due_date: string | null; status: string;
+      players: { full_name: string } | null;
+      teams: { name: string; clubs: { name: string; logo_url: string | null; primary_color: string | null } | null } | null;
+    };
+    setFees(((feeRows ?? []) as unknown as FeeRow[]).map(f => ({
       id:           f.id,
-      payment_token: f.payment_token,
+      payment_token: f.payment_token ?? '',
       description:  f.description,
       amount_due:   f.amount_due,
       amount_paid:  f.amount_paid,
-      discount:     f.discount,
+      discount:     f.discount ?? 0,
       due_date:     f.due_date,
       status:       f.status,
       player_name:  f.players?.full_name ?? '',
@@ -89,6 +83,16 @@ export default function PayPortal() {
     setLoggedIn(true);
     setLoading(false);
   }
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) { loadFees(session.user.id); } else { setLoading(false); }
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session) { loadFees(session.user.id); } else { setLoggedIn(false); setFees([]); setLoading(false); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, X, Plus, RefreshCw, Sparkles, FileText, Trash2, GripVertical, Settings2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronDown, X, Plus, RefreshCw, Sparkles, FileText, Trash2, Settings2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { WAIVER_TEMPLATES, labelSt, inputSt, backBtnSt, uid } from './shared';
@@ -24,13 +24,6 @@ const FIELD_META: Record<FieldType, { emoji: string; label: string; hint: string
   waiver:      { emoji: '✍️', label: 'Consent / waiver',  hint: 'Parent must read and agree',             color: '#DC2626', bg: '#FEF2F2' },
   volunteer:   { emoji: '🙋', label: 'Volunteer sign-up', hint: 'Pick a duty slot',                       color: '#0F766E', bg: '#F0FDFA' },
 };
-
-const FIELD_GROUPS: { label: string; types: FieldType[] }[] = [
-  { label: 'Basic',    types: ['text', 'textarea', 'number', 'date', 'email', 'phone'] },
-  { label: 'Choice',   types: ['dropdown', 'radio', 'multiselect'] as unknown as FieldType[] },
-  { label: 'Special',  types: ['file', 'volunteer'] },
-  { label: 'Layout',   types: ['section'] },
-];
 
 // Fix: group choices use canonical type names
 const CANONICAL_GROUPS: { label: string; types: FieldType[] }[] = [
@@ -205,6 +198,7 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
     if (!club) return;
     supabase.from('waivers').select('id, title, body').eq('club_id', club.id).order('created_at', { ascending: false })
       .then(({ data }) => setSavedWaivers(data ?? []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only club.id is read, tracked via club?.id above
   }, [club?.id]);
 
   function addField(type: FieldType) {
@@ -939,7 +933,7 @@ function FieldCard({ field: f, index, total, primary, allFields, onChange, onRem
 
 // ── Waiver modal ──────────────────────────────────────────────────────────────
 
-function WaiverModal({ club, profile, primary, wvTemplate, setWvTemplate, wvNotes, setWvNotes, wvBody, setWvBody, wvTitle, setWvTitle, wvMode, setWvMode, wvGenerating, wvGenError, wvSaving, onGenerate, onSaveAndAttach, onClose }: {
+function WaiverModal({ club, profile: _profile, primary, wvTemplate, setWvTemplate, wvNotes, setWvNotes, wvBody, setWvBody, wvTitle, setWvTitle, wvMode, setWvMode, wvGenerating, wvGenError, wvSaving, onGenerate, onSaveAndAttach, onClose }: {
   club: { name: string } | null; profile: { id: string } | null; primary: string;
   wvTemplate: string | null; setWvTemplate: (v: string) => void;
   wvNotes: string; setWvNotes: (v: string) => void;

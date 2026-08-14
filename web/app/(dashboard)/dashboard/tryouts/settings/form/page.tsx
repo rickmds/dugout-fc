@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Save, Plus, Trash2, GripVertical, ExternalLink } from 'lucide-react';
+import { Save, Plus, Trash2, ExternalLink } from 'lucide-react';
 
 type Question = {
   id: string;

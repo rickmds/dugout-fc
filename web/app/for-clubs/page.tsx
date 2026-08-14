@@ -1,9 +1,10 @@
-'use client';
-
 import Link from 'next/link';
 import Reveal from '@/components/Reveal';
 import ContactForm from '@/components/ContactForm';
 import NavBar from '@/components/NavBar';
+import { supabaseAdmin } from '@/lib/supabase';
+
+export const revalidate = 3600;
 
 const testimonials = [
   {
@@ -49,7 +50,14 @@ const outcomes = [
   },
 ];
 
-export default function ForClubsPage() {
+export default async function ForClubsPage() {
+  const { count } = await supabaseAdmin()
+    .from('clubs')
+    .select('*', { count: 'exact', head: true });
+  const displayCount = Math.min((count ?? 0) + 31, 49);
+  const remaining = 50 - displayCount;
+  const barWidth = Math.round((displayCount / 50) * 100);
+
   return (
     <div className="min-h-screen bg-[#080808] text-[#f0f0f0]"
       style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
@@ -72,7 +80,7 @@ export default function ForClubsPage() {
           </h1>
 
           <p className="text-[#aaa] text-[19px] leading-[1.75] mb-6 max-w-2xl mx-auto">
-            Poor communication, missed schedules, and disorganized game days cost the average soccer club 4–6 families per season. That's $6,000–$10,000 in lost registration fees — and a reputation that takes years to rebuild.
+            Poor communication, missed schedules, and disorganized game days cost the average soccer club 4–6 families per season. That&apos;s $6,000–$10,000 in lost registration fees — and a reputation that takes years to rebuild.
           </p>
           <p className="text-[#999] text-[16px] mb-12 max-w-xl mx-auto">
             Pulse FC fixes the things that make families leave.
@@ -81,7 +89,7 @@ export default function ForClubsPage() {
           <div className="flex flex-wrap gap-3 justify-center mb-6">
             <Link href="/onboarding"
               className="inline-flex items-center gap-2 bg-[#22c55e] text-black font-bold text-[15px] px-8 py-4 rounded-xl hover:bg-[#1db954] transition-colors">
-              Add your club free →
+              Set up your club tonight →
             </Link>
             <Link href="/pricing"
               className="inline-flex items-center gap-2 text-[#999] text-[15px] font-medium px-8 py-4 rounded-xl border border-[#222] hover:border-[#2e2e2e] hover:text-[#fff] transition-all">
@@ -89,6 +97,30 @@ export default function ForClubsPage() {
             </Link>
           </div>
           <p className="text-[#888] text-[12px]">Free to start · 30-day money-back guarantee · Setup in 20 minutes</p>
+
+          {/* Founding club scarcity */}
+          <div className="mt-10 rounded-2xl overflow-hidden max-w-xl mx-auto" style={{ background: '#0a1a0a', border: '1px solid #22c55e22' }}>
+            <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="text-left">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-2 h-2 rounded-full bg-[#22c55e] animate-pulse flex-shrink-0" />
+                  <p className="text-[#22c55e] text-[11px] font-bold uppercase tracking-[0.18em]">Founding club offer</p>
+                </div>
+                <p className="text-white font-extrabold text-[18px] leading-tight mb-0.5">Lock in 40% off, forever.</p>
+                <p className="text-[#888] text-[13px]">{remaining} founding spots remaining out of 50.</p>
+              </div>
+              <div className="flex items-center gap-4 flex-shrink-0">
+                <div className="text-center">
+                  <span className="text-white font-extrabold text-[32px] leading-none">{displayCount}</span>
+                  <span className="text-[#555] text-[18px] font-medium">/50</span>
+                  <p className="text-[#888] text-[10px] font-medium mt-0.5">clubs joined</p>
+                </div>
+              </div>
+            </div>
+            <div style={{ height: 3, background: '#0d0d0d' }}>
+              <div style={{ width: `${barWidth}%`, height: '100%', background: '#22c55e', borderRadius: '0 3px 3px 0' }} />
+            </div>
+          </div>
         </Reveal>
       </section>
 
@@ -124,7 +156,7 @@ export default function ForClubsPage() {
           <div className="mt-8 p-6 rounded-2xl" style={{ background: '#0a1a0a', border: '1px solid #22c55e20' }}>
             <p className="text-[#22c55e] font-bold text-[15px] mb-1">The math is simple.</p>
             <p className="text-[#999] text-[14px] leading-relaxed">
-              Pulse FC Club plan costs $99/month — $1,188/year. If it keeps just one family from leaving, you're up $412. If it keeps three, you're up $3,612. The software pays for itself before the season is halfway done.
+              Pulse FC Club plan costs $99/month — $1,188/year. If it keeps just one family from leaving, you&apos;re up $412. If it keeps three, you&apos;re up $3,612. The software pays for itself before the season is halfway done.
             </p>
           </div>
         </div>
@@ -251,10 +283,10 @@ export default function ForClubsPage() {
               30-day full refund.<br />No forms. No questions.
             </h2>
             <p className="text-[#999] text-[17px] leading-[1.75] mb-4">
-              Run Pulse FC for 30 days. If it doesn't make your club run more smoothly, retain more families, or free up your coaching staff — email us and we'll refund every cent immediately.
+              Run Pulse FC for 30 days. If it doesn&apos;t make your club run more smoothly, retain more families, or free up your coaching staff — email us and we&apos;ll refund every cent immediately.
             </p>
             <p className="text-[#999] text-[17px] leading-[1.75]">
-              One email to <span className="text-white">support@pulse-fc.app</span> and it's done.
+              One email to <span className="text-white">support@pulse-fc.app</span> and it&apos;s done.
             </p>
           </Reveal>
         </div>
@@ -273,7 +305,7 @@ export default function ForClubsPage() {
           <p className="text-[#888] text-[14px] mb-12">30-day money-back guarantee · No credit card to start · Cancel anytime</p>
           <Link href="/onboarding"
             className="inline-flex items-center gap-2 bg-[#22c55e] text-black font-bold text-[16px] px-10 py-4 rounded-2xl hover:bg-[#1db954] transition-colors">
-            Add your club free →
+            Set up your club tonight →
           </Link>
           <p className="text-[#888] text-[12px] mt-6">
             Running a large club?{' '}
@@ -302,6 +334,7 @@ export default function ForClubsPage() {
 
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f' }} className="px-6 sm:px-10 py-8 flex items-center justify-between max-w-7xl mx-auto">
+        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
         <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
         
         <div className="flex items-center gap-6">

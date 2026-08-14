@@ -26,8 +26,6 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
   const [stats, setStats] = useState<OverviewStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { if (club) loadStats(); }, [club?.id]);
-
   async function loadStats() {
     if (!club) return;
     setLoading(true);
@@ -82,6 +80,9 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
     });
     setLoading(false);
   }
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; loadStats is a plain function whose only reactive input (club.id) is already tracked
+  useEffect(() => { if (club) loadStats(); }, [club?.id]);
 
   const currency = 'GBP';
 

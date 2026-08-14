@@ -292,6 +292,7 @@ const tabDefs = [
         <div className="mx-auto sm:mx-0" style={{ flexShrink: 0, width: 168 }}>
           <div style={{ position: 'relative', width: '100%' }}>
             <div style={{ position: 'absolute', inset: -16, background: 'radial-gradient(ellipse at 50% 45%, rgba(34,197,94,0.14) 0%, transparent 70%)', pointerEvents: 'none' }} />
+            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
             <img src="/screenshots/match-trackerTB-crop.png" alt="Match tracker" style={{ position: 'relative', width: '100%', display: 'block', filter: 'drop-shadow(0 16px 40px rgba(0,0,0,0.6))' }} />
           </div>
         </div>

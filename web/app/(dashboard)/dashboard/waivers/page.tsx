@@ -125,8 +125,9 @@ export default function WaiversPage() {
 
     setWaivers(enriched);
     setLoading(false);
-  }, [club?.id, teams]);
+  }, [club, teams]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadWaivers(); }, [loadWaivers]);
 
   useEffect(() => {
@@ -173,7 +174,7 @@ export default function WaiversPage() {
           full_name: p.full_name,
           team_name: teamMap[p.team_id] ?? '—',
           parent_email: inviteMap[p.id] ?? null,
-          profile_id: (p as any).profile_id ?? null,
+          profile_id: p.profile_id ?? null,
         }));
 
       setSignatures(sigs);
@@ -327,7 +328,7 @@ export default function WaiversPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', marginBottom: '2px' }}>Waivers</h1>
-          <p style={{ fontSize: '12px', color: '#94A3B8' }}>Consent forms and documents — track who has and hasn't signed</p>
+          <p style={{ fontSize: '12px', color: '#94A3B8' }}>Consent forms and documents — track who has and hasn&apos;t signed</p>
         </div>
         {profile?.role === 'org_admin' && (
           <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -728,6 +729,7 @@ function BodyEditor({ body, setBody, title, club, primary }: {
               {/* Club header band */}
               <div style={{ background: primary, padding: '20px 28px', display: 'flex', alignItems: 'center', gap: '14px' }}>
                 {club?.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
                   <img src={club.logo_url} alt={club.name} style={{ width: '44px', height: '44px', borderRadius: '8px', objectFit: 'contain', background: 'rgba(255,255,255,0.15)', flexShrink: 0 }} />
                 ) : (
                   <div style={{ width: '44px', height: '44px', borderRadius: '8px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

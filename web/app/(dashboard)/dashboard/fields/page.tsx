@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapPin, Plus, X, Trash2, Pencil, AlertOctagon, CheckCircle, Clock, CloudRain, Sun, Cloud, Zap, Snowflake, Wind, RefreshCw, Sparkles, ChevronDown, ChevronUp, Save, FileText, Upload, Eye, Check } from 'lucide-react';
+import { MapPin, Plus, X, Trash2, Pencil, AlertOctagon, CheckCircle, CloudRain, Sun, Cloud, Zap, Snowflake, Wind, Sparkles, ChevronDown, ChevronUp, Upload, Check } from 'lucide-react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 
@@ -40,7 +40,6 @@ type ParsedWindow = {
 
 type WeatherHour = { time: string; chance_of_rain: number; condition_text: string; temp_f: number; };
 
-const DAYS_OF_WEEK = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DURATION_OPTIONS = [
   { value: 'rest_of_day',  label: 'Rest of today' },
   { value: 'hours',        label: 'Next few hours' },
@@ -132,6 +131,7 @@ export default function FieldsPage() {
     setLoading(false);
   }, [club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   // Weather fetch via WeatherAPI (3-day forecast, 3pm–8pm window)
@@ -452,7 +452,7 @@ export default function FieldsPage() {
 
 // ── Weather Widget ─────────────────────────────────────────────────────────────
 
-function WeatherWidget({ weather, hasLocation, onSave, saving, primary }: {
+function WeatherWidget({ weather, hasLocation, onSave, saving, primary: _primary }: {
   weather: WeatherHour[]; hasLocation: boolean;
   onSave:(lat:number,lng:number)=>void; saving:boolean; primary:string;
 }) {
@@ -482,7 +482,7 @@ function WeatherWidget({ weather, hasLocation, onSave, saving, primary }: {
     if (loc) onSave(loc.lat, loc.lng);
   }
 
-  function useMyLocation() {
+  function locateMyClub() {
     if (!navigator.geolocation) return;
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
@@ -529,7 +529,7 @@ function WeatherWidget({ weather, hasLocation, onSave, saving, primary }: {
                 </div>
               )}
             </div>
-            <button onClick={useMyLocation} disabled={locating}
+            <button onClick={locateMyClub} disabled={locating}
               style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:'6px', padding:'6px 13px', borderRadius:'7px', border:'1px solid #E2E8F0', background:'#fff', color:'#64748B', fontSize:'12px', fontWeight:'600', cursor:'pointer', fontFamily:'inherit' }}>
               <MapPin size={12}/>{locating?'Getting location…':'Use my current location'}
             </button>
@@ -580,7 +580,7 @@ function WeatherWidget({ weather, hasLocation, onSave, saving, primary }: {
               </div>
             )}
           </div>
-          <button onClick={()=>{ useMyLocation(); setShowSetup(false); }} disabled={locating}
+          <button onClick={()=>{ locateMyClub(); setShowSetup(false); }} disabled={locating}
             style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:'6px', padding:'6px 13px', borderRadius:'7px', border:'1px solid #BAE6FD', background:'#fff', color:'#0369A1', fontSize:'12px', fontWeight:'600', cursor:'pointer', fontFamily:'inherit' }}>
             <MapPin size={12}/>{locating?'Getting location…':'Use my current location'}
           </button>
@@ -611,7 +611,7 @@ function WeatherWidget({ weather, hasLocation, onSave, saving, primary }: {
 
 // ── Closure Card ───────────────────────────────────────────────────────────────
 
-function ClosureCard({ closure, acks, onReopen, primary }: { closure:FieldClosure; acks:ClosureAck[]; onReopen?:()=>void; primary:string; }) {
+function ClosureCard({ closure, acks, onReopen, primary: _primary }: { closure:FieldClosure; acks:ClosureAck[]; onReopen?:()=>void; primary:string; }) {
   const [expanded, setExpanded] = useState(false);
   const active = isActiveClosure(closure);
   return (
@@ -651,7 +651,7 @@ function ClosureCard({ closure, acks, onReopen, primary }: { closure:FieldClosur
       </div>
       {expanded && closure.notify_message && (
         <div style={{ marginTop:'10px', padding:'10px 13px', background:'#F8FAFC', borderRadius:'7px', border:'1px solid #E2E8F0', fontSize:'12.5px', color:'#374151', lineHeight:1.6, fontStyle:'italic' }}>
-          "{closure.notify_message}"
+          &quot;{closure.notify_message}&quot;
         </div>
       )}
       {acks.length>0 && expanded && (
@@ -910,7 +910,7 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
               <div>
                 {lbl('Notification message')}
                 <div style={{ background:'#F8FAFC', borderRadius:'8px', border:'1px solid #E2E8F0', padding:'12px 15px', fontSize:'13px', color:'#374151', lineHeight:1.65, fontStyle:'italic' }}>
-                  "{message}"
+                  &quot;{message}&quot;
                 </div>
               </div>
             )}
@@ -1287,11 +1287,6 @@ function AvailabilityCalendar({ fields, rules, onAddForDate, onEdit, onDelete, p
           {fieldsWithData.length > 0 && (
             <div style={{display:'flex',flexWrap:'wrap',gap:'14px',marginBottom:fieldsEmpty.length>0?'10px':0}}>
               {fieldsWithData.map(field=>{
-                const monthRules = rules.filter(r=>{
-                  if(r.field_name!==field.name||!r.rule_date) return false;
-                  const [y,m]=r.rule_date.split('-').map(Number);
-                  return y===calYear && m-1===calMonth;
-                });
                 const allFieldRules = rules.filter(r=>r.field_name===field.name&&r.rule_date);
 
                 return (
@@ -1579,9 +1574,9 @@ function ParsePermitModal({ fields, club, primary, onClose, onSaved }: {
       setNotes(allNotes.join(' · '));
       setParseProgress(null);
       setStep('review');
-    } catch (e: any) {
+    } catch (e) {
       setParseProgress(null);
-      setError(e.message ?? 'Failed to parse one or more permits');
+      setError(e instanceof Error ? e.message : 'Failed to parse one or more permits');
       setStep('upload');
     }
   }
@@ -1602,8 +1597,8 @@ function ParsePermitModal({ fields, club, primary, onClose, onSaved }: {
       setWindows((data.dates as Omit<ParsedWindow,'selected'>[]).map(w => ({ ...w, selected: true })));
       setNotes(data.notes ?? '');
       setStep('review');
-    } catch (e: any) {
-      setError(e.message ?? 'Failed to parse permit');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to parse permit');
       setStep('upload');
     }
   }

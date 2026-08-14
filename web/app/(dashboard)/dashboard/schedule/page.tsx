@@ -9,11 +9,13 @@ import {
 
 const TEAM_PALETTE = ['#6366F1', '#F59E0B', '#10B981', '#EC4899', '#14B8A6', '#F97316', '#8B5CF6', '#DC2626'];
 import { supabase } from '@/lib/supabase';
+import { sendEventPush } from '@/lib/pushEvent';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import AIScheduleImport from '@/components/dashboard/AIScheduleImport';
 import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
 import GuestCalloutSection from '@/components/dashboard/GuestCalloutSection';
+import AttendanceFeeModal from '@/components/dashboard/AttendanceFeeModal';
 
 type Event = {
   id: string;
@@ -214,7 +216,7 @@ export default function SchedulePage() {
     }
 
     const { data } = await q.limit(200);
-    const evs = (data ?? []).map((e: any) => ({ ...e, team_name: e.teams?.name })) as Event[];
+    const evs = (data ?? []).map((e) => ({ ...e, team_name: (e.teams as unknown as { name: string } | null)?.name })) as Event[];
     setEvents(evs);
     setLoading(false);
 
@@ -241,12 +243,14 @@ export default function SchedulePage() {
       }
       setRsvpSummaries(summaries);
     }
-  }, [teams, tab, viewMode, calMonth]);
+  }, [teams, tab, viewMode, calMonth, today]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
   // Reset guest count + panel tab when event changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     setConfirmedGuestCount(0);
     setConfirmedGuests([]);
     setPanelTab('rsvps');
@@ -264,7 +268,7 @@ export default function SchedulePage() {
         supabase.from('event_rsvps').select('id, player_id, status').eq('event_id', selectedEvent.id),
         isPast
           ? supabase.from('event_attendance').select('id, player_id, status').eq('event_id', selectedEvent.id)
-          : Promise.resolve({ data: [] }),
+          : Promise.resolve({ data: [] as { id: string; player_id: string; status: string }[] }),
       ]);
       const rsvpMap = new Map<string, { id: string; status: 'attending' | 'not_attending' }>();
       for (const r of rsvpRes.data ?? []) rsvpMap.set(r.player_id, { id: r.id, status: r.status });
@@ -275,7 +279,7 @@ export default function SchedulePage() {
       }));
 
       const marks: Record<string, AttRecord | null> = {};
-      for (const a of (attRes as any).data ?? []) marks[a.player_id] = { id: a.id, status: a.status as AttStatus };
+      for (const a of attRes.data ?? []) marks[a.player_id] = { id: a.id, status: a.status as AttStatus };
       setAttMarks(marks);
       setRsvpLoading(false);
     })();
@@ -293,8 +297,8 @@ export default function SchedulePage() {
     } else {
       const { data } = await supabase.from('event_rsvps').insert({
         event_id: selectedEvent.id, player_id: player.id, status: newStatus, responded_by: profile?.id,
-      }).select('id').single();
-      setRsvpPlayers((p) => p.map((pl) => pl.id === player.id ? { ...pl, status: newStatus, rsvp_id: (data as any)?.id ?? null } : pl));
+      }).select('id').single<{ id: string }>();
+      setRsvpPlayers((p) => p.map((pl) => pl.id === player.id ? { ...pl, status: newStatus, rsvp_id: data?.id ?? null } : pl));
       return;
     }
     setRsvpPlayers((p) => p.map((pl) => pl.id === player.id ? { ...pl, status: newStatus } : pl));
@@ -312,8 +316,8 @@ export default function SchedulePage() {
       await supabase.from('event_attendance').update({ status: newStatus, marked_by: profile?.id, marked_at: new Date().toISOString() }).eq('id', existing.id);
       setAttMarks((prev) => ({ ...prev, [playerId]: { id: existing.id, status: newStatus } }));
     } else {
-      const { data } = await supabase.from('event_attendance').insert({ event_id: selectedEvent.id, player_id: playerId, status: newStatus, marked_by: profile?.id }).select('id').single();
-      if (data) setAttMarks((prev) => ({ ...prev, [playerId]: { id: (data as any).id, status: newStatus } }));
+      const { data } = await supabase.from('event_attendance').insert({ event_id: selectedEvent.id, player_id: playerId, status: newStatus, marked_by: profile?.id }).select('id').single<{ id: string }>();
+      if (data) setAttMarks((prev) => ({ ...prev, [playerId]: { id: data.id, status: newStatus } }));
     }
     setAttSaving(null);
   }
@@ -373,12 +377,7 @@ export default function SchedulePage() {
     if (selectedEvent?.id === id) setSelectedEvent(null);
     setDeleteConfirm(null);
     if (ev) {
-      const teamName = teams.find((t) => t.id === ev.team_id)?.name ?? 'your team';
-      fetch('/api/push-event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_id: ev.team_id, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }),
-      }).catch(() => {});
+      sendEventPush({ team_id: ev.team_id, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }).catch(() => {});
     }
   }
 
@@ -421,9 +420,9 @@ export default function SchedulePage() {
         const { error } = await supabase.from('events').update(payload).eq('id', editId);
         if (error) { alert(`Could not save event: ${error.message}`); return; }
       } else {
-        const { data, error } = await supabase.from('events').insert(payload).select('id').single();
+        const { data, error } = await supabase.from('events').insert(payload).select('id').single<{ id: string }>();
         if (error) { alert(`Could not create event: ${error.message}`); return; }
-        eventId = (data as any)?.id ?? null;
+        eventId = data?.id ?? null;
       }
     } finally {
       setSaving(false);
@@ -433,17 +432,13 @@ export default function SchedulePage() {
       const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
       const isEdit = !!editId;
       try {
-        await fetch('/api/push-event', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            team_id: form.team_id,
-            exclude_profile_id: profile?.id,
-            type: isEdit ? 'event_updated' : 'new_event',
-            title: isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`,
-            body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
-            data: { event_id: eventId },
-          }),
+        await sendEventPush({
+          team_id: form.team_id,
+          exclude_profile_id: profile?.id,
+          type: isEdit ? 'event_updated' : 'new_event',
+          title: isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`,
+          body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
+          data: { event_id: eventId },
         });
       } catch { /* non-critical */ }
     }
@@ -978,7 +973,15 @@ export default function SchedulePage() {
                       <div style={{ fontSize: '10px', fontWeight: '700', color: '#EF4444' }}>Absent</div>
                     </div>
                   </div>
-                  <div style={{ padding: '8px 18px 6px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{ padding: '8px 18px 6px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                    <AttendanceFeeModal
+                      teamId={selectedEvent.team_id}
+                      eventId={selectedEvent.id}
+                      eventTitle={selectedEvent.title}
+                      primary={primary}
+                      players={rsvpPlayers.map(p => ({ id: p.id, full_name: p.full_name }))}
+                      attStatusByPlayer={Object.fromEntries(Object.entries(attMarks).map(([id, rec]) => [id, rec?.status]))}
+                    />
                     <button onClick={markAllPresent} disabled={attLoading}
                       style={{ fontSize: '11px', fontWeight: '700', color: '#16A34A', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '7px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
                       {attLoading ? 'Saving…' : '✓ Mark all present'}
@@ -1104,6 +1107,7 @@ export default function SchedulePage() {
               eventId={selectedEvent.id}
               teamId={selectedEvent.team_id}
               teamName={selectedEvent.team_name ?? ''}
+              teamClubId={teams.find(t => t.id === selectedEvent.team_id)?.club_id ?? club?.id ?? ''}
               eventTitle={selectedEvent.title}
               primary={primary}
             />

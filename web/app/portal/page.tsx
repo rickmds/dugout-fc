@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import Link from 'next/link';
 import { CalendarDays, Megaphone, MapPin, Clock, Check, X, LogOut, FileText } from 'lucide-react';
 
 type Profile = { id: string; full_name: string | null; role: string | null; club_id: string | null };
@@ -93,7 +92,7 @@ export default function ParentPortal() {
         .select('team_id, teams(id, name, age_group)')
         .eq('profile_id', user.id);
 
-      const userTeams: Team[] = (memberData ?? []).map((m: any) => m.teams).filter(Boolean);
+      const userTeams: Team[] = (memberData ?? []).map(m => m.teams as unknown as Team | null).filter((t): t is Team => t !== null);
       setTeams(userTeams);
       if (userTeams.length) setSelectedTeam(userTeams[0].id);
 
@@ -193,6 +192,7 @@ export default function ParentPortal() {
       <div style={{ background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '60px', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: club?.logo_url ? 'transparent' : primary, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', fontSize: '13px', fontWeight: '800', color: '#fff' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
             {club?.logo_url ? <img src={club.logo_url} alt={club.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
           </div>
           <span style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>{club?.name ?? 'Pulse FC'}</span>
@@ -288,7 +288,7 @@ export default function ParentPortal() {
                         <button
                           onClick={() => toggleRsvp(ev.id, mainPlayer.id, status === 'not_attending' ? 'attending' : status)}
                           style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '8px', border: `1.5px solid ${status === 'not_attending' ? '#EF4444' : '#E2E8F0'}`, background: status === 'not_attending' ? '#FEF2F2' : '#fff', color: status === 'not_attending' ? '#DC2626' : '#64748B', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          <X size={13} strokeWidth={2.5} /> Can't go
+                          <X size={13} strokeWidth={2.5} /> Can&apos;t go
                         </button>
                       </div>
                     )}

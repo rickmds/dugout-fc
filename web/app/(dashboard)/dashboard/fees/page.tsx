@@ -4,13 +4,16 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   DollarSign, Plus, X, Send, Download, ChevronDown, ChevronUp,
   TrendingUp, AlertCircle, Clock, CheckCircle, CreditCard, Search,
-  ChevronRight, Banknote, Tag, MoreHorizontal, ArrowUpDown,
-  ArrowUp, ArrowDown, Zap, Calendar, Users, BarChart3, UserPlus, QrCode, Printer,
+  Banknote, Tag, MoreHorizontal, ArrowUpDown,
+  ArrowUp, ArrowDown, Zap, Calendar, Users, BarChart3, UserPlus, QrCode, Printer, Trash2,
 } from 'lucide-react';
 import FamiliesTab  from './_components/FamiliesTab';
 import FeeAnalytics from './_components/FeeAnalytics';
 import { supabase } from '@/lib/supabase';
+import { recordFeePayment, undoFeePayment } from '@/lib/feePayments';
+import { syncPaymentInstructions } from '@/lib/feePayee';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import PayeeTypeField from '@/components/dashboard/PayeeTypeField';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type PageTab     = 'ledger' | 'families' | 'analytics';
@@ -27,6 +30,9 @@ type ClubFee     = {
   installment_total: number | null;
   last_reminded_at: string | null;
   payment_token: string | null;
+  payee_type: 'club' | 'coach';
+  payment_instructions: string | null;
+  event_title: string | null;
 };
 type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; recorder_name: string | null };
 type ReminderLog = { id: string; sent_at: string; reminder_type: string; player_fee_id: string };
@@ -39,13 +45,24 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   waived:      { label: 'Waived',      color: '#8B5CF6', bg: '#F5F3FF' },
   overdue:     { label: 'Overdue',     color: '#EF4444', bg: '#FEF2F2' },
 };
-const PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Card', 'Cheque', 'Online', 'Other'];
+// value must match the fee_payments.method CHECK constraint (lowercase
+// snake_case) — label is what the dropdown displays
+const PAYMENT_METHODS: { label: string; value: string }[] = [
+  { label: 'Cash', value: 'cash' },
+  { label: 'Venmo', value: 'venmo' },
+  { label: 'Bank Transfer', value: 'bank_transfer' },
+  { label: 'Card', value: 'card' },
+  { label: 'Cheque', value: 'cheque' },
+  { label: 'Other', value: 'other' },
+];
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- only used as a type source (SortCol below), keeps the type and the runtime list in sync
 const SORT_COLS = ['player','team','description','invoiced','paid','owed','due','status'] as const;
 type SortCol = typeof SORT_COLS[number];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function daysDiff(a: string, b: string) { return Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000); }
 function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtMethod(m: string) { return m.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function initials(name: string) { return name.split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2); }
 
 // ── Tiny sparkline SVG ─────────────────────────────────────────────────────────
@@ -71,18 +88,28 @@ type RowMenuProps = {
   onEdit?: () => void;
   onResendReceipt?: () => void;
   onQR?: () => void;
+  onDelete?: () => void;
   isPaid?: boolean;
   hasPayments?: boolean;
   primary: string;
 };
-function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, isPaid, hasPayments, primary }: RowMenuProps) {
+function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, onDelete, isPaid: _isPaid, hasPayments: _hasPayments, primary }: RowMenuProps) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     function h(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+  function toggleOpen() {
+    if (!open && btnRef.current) {
+      const spaceBelow = window.innerHeight - btnRef.current.getBoundingClientRect().bottom;
+      setDropUp(spaceBelow < 220);
+    }
+    setOpen(o => !o);
+  }
   const item = (onClick: () => void, color: string, hoverBg: string, icon: React.ReactNode, label: string) => (
     <button onClick={() => { setOpen(false); onClick(); }}
       style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 14px', border: 'none', background: 'none', fontSize: '12.5px', fontWeight: '600', color, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
@@ -92,7 +119,7 @@ function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, isPaid
   );
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={() => setOpen(o => !o)}
+      <button ref={btnRef} onClick={toggleOpen}
         style={{ width: '26px', height: '26px', borderRadius: '6px', border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F1F5F9'}
         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
@@ -100,7 +127,7 @@ function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, isPaid
         <MoreHorizontal size={14} color="#94A3B8" />
       </button>
       {open && (
-        <div style={{ position: 'absolute', right: 0, top: '30px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: '160px', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', right: 0, ...(dropUp ? { bottom: '30px' } : { top: '30px' }), background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, minWidth: '160px', overflow: 'hidden' }}>
           {onPay  && <>{item(onPay,  '#374151', '#F8FAFC', <CreditCard size={13} color={primary} />,   'Record Payment')}<div style={{ height: '1px', background: '#F1F5F9' }} /></>}
           {onEdit && item(onEdit, '#374151', '#F8FAFC', <Calendar size={13} color="#64748B" />, 'Edit Fee')}
           {onQR   && item(onQR,   '#374151', '#F8FAFC', <QrCode size={13} color="#64748B" />, 'Payment QR Code')}
@@ -108,6 +135,7 @@ function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, isPaid
           {(onEdit || onWaive) && (onUndo || onResendReceipt) && <div style={{ height: '1px', background: '#F1F5F9' }} />}
           {onUndo && item(onUndo, '#EF4444', '#FEF2F2', <X size={13} color="#EF4444" />, 'Undo Last Payment')}
           {onResendReceipt && item(onResendReceipt, '#3B82F6', '#EFF6FF', <Send size={13} color="#3B82F6" />, 'Resend Receipt')}
+          {onDelete && <><div style={{ height: '1px', background: '#F1F5F9' }} />{item(onDelete, '#EF4444', '#FEF2F2', <Trash2 size={13} color="#EF4444" />, 'Delete Fee')}</>}
         </div>
       )}
     </div>
@@ -120,14 +148,12 @@ export default function ClubFeesPage() {
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const today   = new Date().toISOString().slice(0, 10);
 
-  if (profile && profile.role === 'coach') {
-    return (
-      <div style={{ padding: '80px 32px', textAlign: 'center', color: '#64748B', fontFamily: 'system-ui, sans-serif' }}>
-        <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔒</div>
-        <div style={{ fontSize: '18px', fontWeight: '700', color: '#0F172A', marginBottom: '8px' }}>Access restricted</div>
-        <div style={{ fontSize: '14px' }}>Fee management is available to DOCs and club admins only.</div>
-      </div>
-    );
+  async function authHeaders() {
+    const { data: { session } } = await supabase.auth.getSession();
+    return {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    };
   }
 
   // ── Core data state ──────────────────────────────────────────────────────────
@@ -160,8 +186,9 @@ export default function ClubFeesPage() {
   const [indivSaving,     setIndivSaving]     = useState(false);
   const [indivForm,       setIndivForm]       = useState({
     description: '', amount_due: '', due_date: '', discount_amount: '', discount_reason: '',
+    payee_type: 'club' as 'club' | 'coach', payment_instructions: '',
   });
-  function resetIndivForm() { setIndivForm({ description: '', amount_due: '', due_date: '', discount_amount: '', discount_reason: '' }); }
+  function resetIndivForm() { setIndivForm({ description: '', amount_due: '', due_date: '', discount_amount: '', discount_reason: '', payee_type: 'club', payment_instructions: '' }); }
 
   // ── Standalone "assign to any player" modal ────────────────────────────────
   type RosterPlayer = { id: string; full_name: string; team_id: string; team_name: string };
@@ -170,20 +197,21 @@ export default function ClubFeesPage() {
   const [rosterLoading,    setRosterLoading]    = useState(false);
   const [playerSearch,     setPlayerSearch]     = useState('');
   const [selectedPlayer,   setSelectedPlayer]   = useState<RosterPlayer | null>(null);
-  const [playerAssignForm, setPlayerAssignForm] = useState({ description: '', amount_due: '', due_date: '' });
+  const [playerAssignForm, setPlayerAssignForm] = useState({ description: '', amount_due: '', due_date: '', payee_type: 'club' as 'club' | 'coach', payment_instructions: '' });
   const [playerAssignSaving, setPlayerAssignSaving] = useState(false);
 
   async function openPlayerAssign() {
     setShowPlayerAssign(true);
     setPlayerSearch(''); setSelectedPlayer(null);
-    setPlayerAssignForm({ description: '', amount_due: '', due_date: '' });
+    setPlayerAssignForm({ description: '', amount_due: '', due_date: '', payee_type: 'club', payment_instructions: '' });
     if (rosterPlayers.length > 0) return; // already loaded
     setRosterLoading(true);
     const { data } = await supabase
       .from('players').select('id,full_name,team_id,teams(name)')
-      .in('team_id', teams.map(t => t.id)).order('full_name');
+      .in('team_id', teams.map(t => t.id)).order('full_name')
+      .returns<{ id: string; full_name: string; team_id: string; teams: { name: string } | null }[]>();
     setRosterPlayers(
-      (data ?? []).map((p: any) => ({ id: p.id, full_name: p.full_name, team_id: p.team_id, team_name: p.teams?.name ?? '' }))
+      (data ?? []).map(p => ({ id: p.id, full_name: p.full_name, team_id: p.team_id, team_name: p.teams?.name ?? '' }))
     );
     setRosterLoading(false);
   }
@@ -199,10 +227,15 @@ export default function ClubFeesPage() {
         amount_due:  parseFloat(playerAssignForm.amount_due) || 0,
         due_date:    playerAssignForm.due_date || null,
         created_by:  profile.id,
+        payee_type:  playerAssignForm.payee_type,
+        payment_instructions: playerAssignForm.payee_type === 'coach' ? (playerAssignForm.payment_instructions.trim() || null) : null,
       }).select('id').single();
       if (error) { alert(`Could not assign fee: ${error.message}`); return; }
+      if (playerAssignForm.payee_type === 'coach' && playerAssignForm.payment_instructions.trim()) {
+        await syncPaymentInstructions(profile.id, playerAssignForm.payment_instructions);
+      }
       if (inserted?.id) {
-        fetch('/api/send-fee-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: inserted.id }) }).catch(() => {});
+        fetch('/api/send-fee-notification', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ player_fee_id: inserted.id }) }).catch(() => {});
       }
       setShowPlayerAssign(false);
       load();
@@ -222,6 +255,8 @@ export default function ClubFeesPage() {
 
   // ── Undo payment ─────────────────────────────────────────────────────────────
   const [showUndoConfirm, setShowUndoConfirm] = useState<{ fee: ClubFee; payment: Payment } | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<ClubFee | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
   const [undoSaving,      setUndoSaving]      = useState(false);
 
   // ── Edit fee ─────────────────────────────────────────────────────────────────
@@ -258,7 +293,7 @@ export default function ClubFeesPage() {
 
   const [showPayment,   setShowPayment]   = useState<ClubFee | null>(null);
   const [paymentSaving, setPaymentSaving] = useState(false);
-  const [payForm, setPayForm] = useState({ amount: '', method: 'Bank Transfer', reference: '', notes: '' });
+  const [payForm, setPayForm] = useState({ amount: '', method: 'bank_transfer', reference: '', notes: '' });
 
   const [showWaive,   setShowWaive]   = useState<ClubFee | null>(null);
   const [waiveReason, setWaiveReason] = useState('');
@@ -268,7 +303,7 @@ export default function ClubFeesPage() {
   const [showCashMode,   setShowCashMode]   = useState(false);
   const [cashMethod,     setCashMethod]     = useState<'Cash' | 'Check' | 'Card'>('Cash');
   const [cashCollected,  setCashCollected]  = useState<{ id: string; name: string; description: string; amount: number; method: string }[]>([]);
-  const cashPaidIds = new Set(cashCollected.map(c => c.id));
+  const cashPaidIds = useMemo(() => new Set(cashCollected.map(c => c.id)), [cashCollected]);
 
   // ── Category CRUD ─────────────────────────────────────────────────────────────
   const [editCatId,  setEditCatId]  = useState<string | null>(null);
@@ -283,12 +318,14 @@ export default function ClubFeesPage() {
     apply_to: 'all' as 'all' | 'select',
     selected_teams: [] as string[], team_search: '',
     use_plan: false, plan_count: '3', plan_dates: ['','',''] as string[],
+    payee_type: 'club' as 'club' | 'coach', payment_instructions: '',
   });
   const resetForm = () => setAForm({
     category_id: '', description: '', amount_due: '', due_date: '', notes: '',
     discount_amount: '', discount_reason: '',
     apply_to: 'all', selected_teams: [], team_search: '',
     use_plan: false, plan_count: '3', plan_dates: ['','',''],
+    payee_type: 'club', payment_instructions: '',
   });
   function setPlanCount(val: string) {
     const n = Math.max(2, Math.min(24, parseInt(val) || 3));
@@ -304,11 +341,11 @@ export default function ClubFeesPage() {
       supabase.from('fee_categories').select('id,name,amount,description').eq('club_id', club.id).order('name'),
     ]);
     // Hardship fund
-    const { data: clubRow } = await supabase.from('clubs').select('hardship_fund_enabled').eq('id', club.id).single();
-    if ((clubRow as any)?.hardship_fund_enabled) {
+    const { data: clubRow } = await supabase.from('clubs').select('hardship_fund_enabled').eq('id', club.id).single<{ hardship_fund_enabled: boolean | null }>();
+    if (clubRow?.hardship_fund_enabled) {
       setHardshipEnabled(true);
       const { data: contribs } = await supabase.from('hardship_contributions').select('amount').eq('club_id', club.id);
-      setHardshipBalance((contribs ?? []).reduce((s: number, c: any) => s + Number(c.amount), 0));
+      setHardshipBalance((contribs ?? []).reduce((s, c) => s + Number(c.amount), 0));
     } else {
       setHardshipEnabled(false);
       setHardshipBalance(null);
@@ -321,11 +358,21 @@ export default function ClubFeesPage() {
 
     const { data: fd } = await supabase
       .from('player_fees')
-      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,payment_token,players(full_name)')
+      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,payment_token,payee_type,payment_instructions,events(title),players(full_name)')
       .in('team_id', tList.map(t => t.id))
-      .order('due_date', { ascending: true, nullsFirst: false });
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .returns<{
+        id: string; player_id: string; team_id: string; description: string;
+        amount_due: number; amount_paid: number; discount: number; discount_reason: string | null;
+        due_date: string | null; status: string; plan_group_id: string | null;
+        installment_number: number | null; installment_total: number | null;
+        last_reminded_at: string | null; payment_token: string | null;
+        payee_type: 'club' | 'coach'; payment_instructions: string | null;
+        events: { title: string } | null;
+        players: { full_name: string } | null;
+      }[]>();
 
-    const mapped: ClubFee[] = (fd ?? []).map((f: any) => ({
+    const mapped: ClubFee[] = (fd ?? []).map(f => ({
       id: f.id, player_id: f.player_id,
       player_name: f.players?.full_name ?? 'Unknown',
       team_id: f.team_id, team_name: tMap[f.team_id] ?? 'Unknown',
@@ -339,6 +386,9 @@ export default function ClubFeesPage() {
       installment_total: f.installment_total,
       last_reminded_at: f.last_reminded_at ?? null,
       payment_token: f.payment_token ?? null,
+      payee_type: f.payee_type ?? 'club',
+      payment_instructions: f.payment_instructions ?? null,
+      event_title: f.events?.title ?? null,
     }));
     setFees(mapped);
 
@@ -347,14 +397,15 @@ export default function ClubFeesPage() {
         .from('fee_payments')
         .select('id,player_fee_id,amount,paid_at,method,reference,profiles!fee_payments_recorded_by_fkey(full_name)')
         .in('player_fee_id', mapped.map(f => f.id))
-        .order('paid_at', { ascending: false });
-      setAllPayments((pmts ?? []).map((p: any) => ({
+        .order('paid_at', { ascending: false })
+        .returns<{ id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; profiles: { full_name: string | null } | null }[]>();
+      setAllPayments((pmts ?? []).map(p => ({
         id: p.id, player_fee_id: p.player_fee_id,
         amount: +p.amount, paid_at: p.paid_at,
         method: p.method ?? null,
         reference: p.reference ?? null,
-        recorder_name: (p.profiles as any)?.full_name ?? null,
-      })) as Payment[]);
+        recorder_name: p.profiles?.full_name ?? null,
+      })));
     }
     setLoading(false);
   }, [club, today]);
@@ -499,7 +550,7 @@ export default function ClubFeesPage() {
   function openPayment(fee: ClubFee) {
     const owed = Math.max(fee.amount_due - fee.discount - fee.amount_paid, 0);
     setShowPayment(fee);
-    setPayForm({ amount: fmt(owed).replace(/,/g,''), method: 'Bank Transfer', reference: '', notes: '' });
+    setPayForm({ amount: fmt(owed).replace(/,/g,''), method: 'bank_transfer', reference: '', notes: '' });
   }
 
   async function handleRecordPayment() {
@@ -509,15 +560,14 @@ export default function ClubFeesPage() {
     if (!amount || amount <= 0 || amount > owed + 0.01) return;
     setPaymentSaving(true);
     try {
-      const newPaid   = showPayment.amount_paid + amount;
-      const newStatus = newPaid >= showPayment.amount_due - showPayment.discount ? 'paid' : 'partial';
-      const { error: insertErr } = await supabase.from('fee_payments').insert({ player_fee_id: showPayment.id, amount, method: payForm.method, reference: payForm.reference || null, notes: payForm.notes || null, recorded_by: profile.id });
-      if (insertErr) { alert(`Could not record payment: ${insertErr.message}`); return; }
-      const { error: updateErr } = await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', showPayment.id);
-      if (updateErr) { alert(`Payment recorded but balance update failed: ${updateErr.message}`); return; }
+      const result = await recordFeePayment({
+        feeId: showPayment.id, amountDue: showPayment.amount_due, discount: showPayment.discount, currentPaid: showPayment.amount_paid,
+        amount, method: payForm.method, reference: payForm.reference, notes: payForm.notes, recordedBy: profile.id,
+      });
+      if (!result.ok) { alert(result.error); return; }
       fetch('/api/send-payment-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: showPayment.id, amount_paid: amount }) }).catch(() => {});
       setShowPayment(null);
-      setPayForm({ amount: '', method: 'Bank Transfer', reference: '', notes: '' });
+      setPayForm({ amount: '', method: 'bank_transfer', reference: '', notes: '' });
       load();
     } finally {
       setPaymentSaving(false);
@@ -543,15 +593,25 @@ export default function ClubFeesPage() {
     const { fee, payment } = showUndoConfirm;
     setUndoSaving(true);
     try {
-      const { error: delErr } = await supabase.from('fee_payments').delete().eq('id', payment.id);
-      if (delErr) { alert(`Could not undo payment: ${delErr.message}`); return; }
-      const newPaid = Math.max(fee.amount_paid - payment.amount, 0);
-      const newStatus = newPaid <= 0 ? 'outstanding' : 'partial';
-      await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', fee.id);
+      const result = await undoFeePayment({ paymentId: payment.id, feeId: fee.id, currentPaid: fee.amount_paid, paymentAmount: payment.amount });
+      if (!result.ok) { alert(result.error); return; }
       setShowUndoConfirm(null);
       load();
     } finally {
       setUndoSaving(false);
+    }
+  }
+
+  async function handleDeleteFee() {
+    if (!showDeleteConfirm) return;
+    setDeleteSaving(true);
+    try {
+      const { error } = await supabase.from('player_fees').delete().eq('id', showDeleteConfirm.id);
+      if (error) { alert(`Could not delete fee: ${error.message}`); return; }
+      setShowDeleteConfirm(null);
+      load();
+    } finally {
+      setDeleteSaving(false);
     }
   }
 
@@ -564,11 +624,8 @@ export default function ClubFeesPage() {
       load();
       return;
     }
-    const { error: delErr } = await supabase.from('fee_payments').delete().eq('id', pmt.id);
-    if (delErr) { alert(`Could not undo: ${delErr.message}`); return; }
-    const newPaid = Math.max(fee.amount_paid - pmt.amount, 0);
-    const newStatus = newPaid <= 0 ? 'outstanding' : 'partial';
-    await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', fee.id);
+    const result = await undoFeePayment({ paymentId: pmt.id, feeId: fee.id, currentPaid: fee.amount_paid, paymentAmount: pmt.amount });
+    if (!result.ok) { alert(result.error); return; }
     setCashCollected(s => s.filter(c => c.id !== item.id));
     load();
   }
@@ -618,12 +675,12 @@ export default function ClubFeesPage() {
     if (!profile) return;
     const owed = Math.max(fee.amount_due - fee.discount - fee.amount_paid, 0);
     if (owed <= 0) return;
-    const newPaid  = fee.amount_paid + owed;
-    const method   = cashMethod.toLowerCase();
-    const { error: insertErr } = await supabase.from('fee_payments').insert({ player_fee_id: fee.id, amount: owed, method, recorded_by: profile.id });
-    if (insertErr) { alert(`Could not record payment: ${insertErr.message}`); return; }
-    const { error: updateErr } = await supabase.from('player_fees').update({ amount_paid: newPaid, status: 'paid' }).eq('id', fee.id);
-    if (updateErr) { alert(`Payment recorded but balance update failed: ${updateErr.message}`); return; }
+    const method = cashMethod.toLowerCase();
+    const result = await recordFeePayment({
+      feeId: fee.id, amountDue: fee.amount_due, discount: fee.discount, currentPaid: fee.amount_paid,
+      amount: owed, method, recordedBy: profile.id,
+    });
+    if (!result.ok) { alert(result.error); return; }
     setCashCollected(s => [...s, { id: fee.id, name: fee.player_name, description: fee.description, amount: owed, method: cashMethod }]);
     fetch('/api/send-payment-confirmation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: fee.id, amount_paid: owed }) }).catch(() => {});
   }
@@ -662,15 +719,25 @@ export default function ClubFeesPage() {
     const { data: playersData } = await supabase.from('players').select('id,team_id').in('team_id', targets.map(t => t.id));
     const players = (playersData ?? []) as { id: string; team_id: string }[];
     const planGroupId = aForm.use_plan ? crypto.randomUUID() : null;
-    const rows: any[] = [];
+    const payeeInstructions = aForm.payee_type === 'coach' ? (aForm.payment_instructions.trim() || null) : null;
+    const rows: {
+      player_id: string; team_id: string; description: string; amount_due: number; due_date: string | null;
+      notes: string | null; created_by: string; plan_group_id?: string | null;
+      installment_number?: number; installment_total?: number;
+      discount: number; discount_reason: string | null;
+      payee_type: 'club' | 'coach'; payment_instructions: string | null;
+    }[] = [];
     for (const p of players) {
       if (aForm.use_plan && instPrev.length > 0) {
         for (const inst of instPrev) {
-          rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: inst.amount, due_date: inst.due || null, notes: aForm.notes || null, created_by: profile.id, plan_group_id: planGroupId, installment_number: inst.num, installment_total: instPrev.length, discount: parseFloat(aForm.discount_amount) || 0, discount_reason: aForm.discount_reason || null });
+          rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: inst.amount, due_date: inst.due || null, notes: aForm.notes || null, created_by: profile.id, plan_group_id: planGroupId, installment_number: inst.num, installment_total: instPrev.length, discount: parseFloat(aForm.discount_amount) || 0, discount_reason: aForm.discount_reason || null, payee_type: aForm.payee_type, payment_instructions: payeeInstructions });
         }
       } else {
-        rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: parseFloat(aForm.amount_due) || 0, due_date: aForm.due_date || null, notes: aForm.notes || null, created_by: profile.id, discount: parseFloat(aForm.discount_amount) || 0, discount_reason: aForm.discount_reason || null });
+        rows.push({ player_id: p.id, team_id: p.team_id, description: aForm.description || 'Club Fee', amount_due: parseFloat(aForm.amount_due) || 0, due_date: aForm.due_date || null, notes: aForm.notes || null, created_by: profile.id, discount: parseFloat(aForm.discount_amount) || 0, discount_reason: aForm.discount_reason || null, payee_type: aForm.payee_type, payment_instructions: payeeInstructions });
       }
+    }
+    if (aForm.payee_type === 'coach' && aForm.payment_instructions.trim()) {
+      await syncPaymentInstructions(profile.id, aForm.payment_instructions);
     }
     const insertedIds: string[] = [];
     for (let i = 0; i < rows.length; i += 100) {
@@ -679,8 +746,9 @@ export default function ClubFeesPage() {
       for (const r of ins ?? []) { if (!r.installment_number || r.installment_number === 1) insertedIds.push(r.id); }
     }
     setSaveProgress(`Notifying ${insertedIds.length} parents…`);
+    const notifyHeaders = await authHeaders();
     for (let i = 0; i < insertedIds.length; i += 10) {
-      await Promise.allSettled(insertedIds.slice(i, i + 10).map(id => fetch('/api/send-fee-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: id }) })));
+      await Promise.allSettled(insertedIds.slice(i, i + 10).map(id => fetch('/api/send-fee-notification', { method: 'POST', headers: notifyHeaders, body: JSON.stringify({ player_fee_id: id }) })));
     }
       setSaveProgress(''); setShowAssign(false); resetForm(); load();
     } catch (e) {
@@ -693,6 +761,7 @@ export default function ClubFeesPage() {
 
   // Load reminder log when player panel opens
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (!playerPanel) { setReminderLog([]); return; }
     const feeIds = fees.filter(f => f.player_id === playerPanel).map(f => f.id);
     if (!feeIds.length) return;
@@ -721,10 +790,15 @@ export default function ClubFeesPage() {
         discount:       parseFloat(indivForm.discount_amount) || 0,
         discount_reason: indivForm.discount_reason || null,
         created_by:     profile.id,
+        payee_type:     indivForm.payee_type,
+        payment_instructions: indivForm.payee_type === 'coach' ? (indivForm.payment_instructions.trim() || null) : null,
       }).select('id').single();
       if (error) { alert(`Could not assign fee: ${error.message}`); return; }
+      if (indivForm.payee_type === 'coach' && indivForm.payment_instructions.trim()) {
+        await syncPaymentInstructions(profile.id, indivForm.payment_instructions);
+      }
       if (inserted?.id) {
-        fetch('/api/send-fee-notification', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_fee_id: inserted.id }) }).catch(() => {});
+        fetch('/api/send-fee-notification', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ player_fee_id: inserted.id }) }).catch(() => {});
       }
       setShowIndivAssign(false);
       resetIndivForm();
@@ -768,6 +842,20 @@ export default function ClubFeesPage() {
   const shimmerStyle: React.CSSProperties = { background: 'linear-gradient(90deg,#F1F5F9 25%,#E8EFF5 50%,#F1F5F9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite', borderRadius: '8px' };
 
   // ── Render ─────────────────────────────────────────────────────────────────────
+  // This check must stay AFTER every hook above — profile loads asynchronously,
+  // so on first render profile is null and every hook mounts; an early return
+  // gated on profile.role placed BEFORE the hooks would then throw "rendered
+  // fewer hooks than expected" the moment profile populates on a later render.
+  if (profile && profile.role === 'coach') {
+    return (
+      <div style={{ padding: '80px 32px', textAlign: 'center', color: '#64748B', fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔒</div>
+        <div style={{ fontSize: '18px', fontWeight: '700', color: '#0F172A', marginBottom: '8px' }}>Access restricted</div>
+        <div style={{ fontSize: '14px' }}>Fee management is available to DOCs and club admins only.</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#F0F2F5', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
       <style>{`
@@ -1165,7 +1253,7 @@ export default function ClubFeesPage() {
               return (
                 <div key={fee.id} className="fee-row"
                   style={{ display: 'grid', gridTemplateColumns: '36px 160px 130px 1fr 80px 70px 80px 100px 52px', padding: '10px 16px', borderBottom: '1px solid #F1F5F9', alignItems: 'center', background: sel ? `${primary}06` : '#fff', transition: 'background 0.1s' }}>
-                  <input type="checkbox" checked={sel} onChange={e => { const s = new Set(selectedIds); e.target.checked ? s.add(fee.id) : s.delete(fee.id); setSelectedIds(s); }} style={{ width: '14px', height: '14px', accentColor: primary, cursor: 'pointer' }} />
+                  <input type="checkbox" checked={sel} onChange={e => { const s = new Set(selectedIds); if (e.target.checked) s.add(fee.id); else s.delete(fee.id); setSelectedIds(s); }} style={{ width: '14px', height: '14px', accentColor: primary, cursor: 'pointer' }} />
                   <div style={{ paddingRight: '8px' }}>
                     <button onClick={() => setPlayerPanel(fee.player_id)} style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left', maxWidth: '148px', textDecoration: 'underline', textDecorationColor: '#E2E8F0', textUnderlineOffset: '2px' }}>
                       {fee.player_name}
@@ -1178,8 +1266,18 @@ export default function ClubFeesPage() {
                       {fee.installment_number && fee.installment_total && (
                         <span style={{ marginLeft: '5px', fontSize: '10px', color: '#64748B', background: '#F1F5F9', borderRadius: '4px', padding: '1px 5px', fontWeight: '600' }}>{fee.installment_number}/{fee.installment_total}</span>
                       )}
+                      {fee.payee_type === 'coach' && (
+                        <span title={fee.payment_instructions ?? undefined} style={{ marginLeft: '5px', fontSize: '10px', color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '4px', padding: '1px 5px', fontWeight: '700' }}>Coach</span>
+                      )}
                     </div>
-                    {fee.due_date && <div style={{ fontSize: '10.5px', color: fee.status === 'overdue' ? '#EF4444' : '#94A3B8', marginTop: '2px' }}>Due {fee.due_date}</div>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                      {fee.due_date && <div style={{ fontSize: '10.5px', color: fee.status === 'overdue' ? '#EF4444' : '#94A3B8' }}>Due {fee.due_date}</div>}
+                      {fee.event_title && (
+                        <div style={{ fontSize: '10.5px', color: '#94A3B8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {fee.due_date ? '· ' : ''}📅 {fee.event_title}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#374151' }}>${fmt(fee.amount_due - fee.discount)}</div>
                   <div style={{ fontSize: '12.5px', color: fee.amount_paid > 0 ? '#22C55E' : '#CBD5E1', fontWeight: fee.amount_paid > 0 ? '600' : '400' }}>${fmt(fee.amount_paid)}</div>
@@ -1195,7 +1293,7 @@ export default function ClubFeesPage() {
                       return (
                         <div style={{ fontSize: '9.5px', color: '#94A3B8', marginTop: '3px', lineHeight: '1.5' }}>
                           <div>{dateStr}</div>
-                          {pmt.method && <div style={{ textTransform: 'capitalize' }}>{pmt.method}</div>}
+                          {pmt.method && <div>{fmtMethod(pmt.method)}</div>}
                           {firstName && <div>Recv&apos;d by {firstName}</div>}
                           {pmt.reference && <div>Ref: {pmt.reference}</div>}
                         </div>
@@ -1203,12 +1301,13 @@ export default function ClubFeesPage() {
                     })()}
                     {fee.last_reminded_at && fee.status === 'overdue' && (
                       <div style={{ fontSize: '9.5px', color: '#94A3B8', marginTop: '2px' }}>
+                        {/* eslint-disable-next-line react-hooks/purity -- relative "days ago" label; a few ms of render-time drift is inconsequential here */}
                         Reminded {Math.floor((Date.now() - new Date(fee.last_reminded_at).getTime()) / 86400000)}d ago
                       </div>
                     )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    {fee.status !== 'waived' && (() => {
+                    {(() => {
                       const feePayments = allPayments.filter(p => p.player_fee_id === fee.id);
                       const latestPmt   = feePayments[0] ?? null;
                       return (
@@ -1220,6 +1319,7 @@ export default function ClubFeesPage() {
                           onUndo={latestPmt ? () => setShowUndoConfirm({ fee, payment: latestPmt }) : undefined}
                           onResendReceipt={fee.status === 'paid' ? () => handleResendReceipt(fee) : undefined}
                           onQR={fee.payment_token ? () => openQr(fee) : undefined}
+                          onDelete={() => setShowDeleteConfirm(fee)}
                           isPaid={fee.status === 'paid'}
                           hasPayments={feePayments.length > 0}
                         />
@@ -1288,7 +1388,7 @@ export default function ClubFeesPage() {
                       <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '8px', marginBottom: '8px' }}>
                         {feePayments.map(p => (
                           <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', color: '#64748B', paddingBottom: '3px' }}>
-                            <span>${fmt(p.amount)} via {(p as any).method ?? 'unknown'}</span>
+                            <span>${fmt(p.amount)} via {p.method ? fmtMethod(p.method) : 'unknown'}</span>
                             <span>{p.paid_at.slice(0,10)}</span>
                           </div>
                         ))}
@@ -1392,6 +1492,14 @@ export default function ClubFeesPage() {
                     style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
                 </div>
               </div>
+
+              <PayeeTypeField
+                value={playerAssignForm.payee_type}
+                onChange={v => setPlayerAssignForm(f => ({ ...f, payee_type: v, payment_instructions: v === 'coach' && !f.payment_instructions ? (profile?.payment_instructions ?? '') : f.payment_instructions }))}
+                instructions={playerAssignForm.payment_instructions}
+                onInstructionsChange={text => setPlayerAssignForm(f => ({ ...f, payment_instructions: text }))}
+                primary={primary}
+              />
             </div>
 
             {/* Footer */}
@@ -1452,6 +1560,14 @@ export default function ClubFeesPage() {
                   </select>
                 </div>
               </div>
+
+              <PayeeTypeField
+                value={indivForm.payee_type}
+                onChange={v => setIndivForm(f => ({ ...f, payee_type: v, payment_instructions: v === 'coach' && !f.payment_instructions ? (profile?.payment_instructions ?? '') : f.payment_instructions }))}
+                instructions={indivForm.payment_instructions}
+                onInstructionsChange={text => setIndivForm(f => ({ ...f, payment_instructions: text }))}
+                primary={primary}
+              />
             </div>
             <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button onClick={() => { setShowIndivAssign(false); resetIndivForm(); }} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
@@ -1669,7 +1785,7 @@ export default function ClubFeesPage() {
               <div>
                 <label style={lbl}>Payment method</label>
                 <select value={payForm.method} onChange={e => setPayForm(f => ({ ...f, method: e.target.value }))} style={inp}>
-                  {PAYMENT_METHODS.map(m => <option key={m}>{m}</option>)}
+                  {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -1730,6 +1846,15 @@ export default function ClubFeesPage() {
                 <span style={lbl}>Total amount per player ($) *</span>
                 <input type="number" value={aForm.amount_due} onChange={e => setAForm(f => ({ ...f, amount_due: e.target.value }))} placeholder="0.00" style={inp} />
               </div>
+
+              <PayeeTypeField
+                value={aForm.payee_type}
+                onChange={v => setAForm(f => ({ ...f, payee_type: v, payment_instructions: v === 'coach' && !f.payment_instructions ? (profile?.payment_instructions ?? '') : f.payment_instructions }))}
+                instructions={aForm.payment_instructions}
+                onInstructionsChange={text => setAForm(f => ({ ...f, payment_instructions: text }))}
+                primary={primary}
+              />
+
               <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '14px 16px', border: '1px solid #E2E8F0' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: aForm.use_plan ? '14px' : '0' }}>
                   <input type="checkbox" checked={aForm.use_plan} onChange={e => setAForm(f => ({ ...f, use_plan: e.target.checked }))} style={{ width: '16px', height: '16px', accentColor: primary }} />
@@ -1821,7 +1946,7 @@ export default function ClubFeesPage() {
                   <div style={{ fontSize: '11px', fontWeight: '700', color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Payment to reverse</div>
                   <div style={{ fontSize: '18px', fontWeight: '800', color: '#DC2626' }}>${fmt(payment.amount)}</div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>{fee.player_name} · {fee.description}</div>
-                  <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '3px' }}>{dateStr}{payment.method ? ` · ${payment.method}` : ''}{payment.reference ? ` · Ref: ${payment.reference}` : ''}</div>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '3px' }}>{dateStr}{payment.method ? ` · ${fmtMethod(payment.method)}` : ''}{payment.reference ? ` · Ref: ${payment.reference}` : ''}</div>
                 </div>
                 <div style={{ fontSize: '13px', color: '#64748B', lineHeight: '1.5' }}>
                   This will delete the payment record and mark the fee as <strong>outstanding</strong>. This cannot be undone.
@@ -1831,6 +1956,37 @@ export default function ClubFeesPage() {
                 <button onClick={() => setShowUndoConfirm(null)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
                 <button onClick={handleUndoPayment} disabled={undoSaving} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: '#EF4444', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: undoSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                   {undoSaving ? 'Undoing…' : 'Undo Payment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Delete Fee Confirm Modal ─────────────────────────────────────────────── */}
+      {showDeleteConfirm && (() => {
+        const hasPayments = allPayments.some(p => p.player_fee_id === showDeleteConfirm.id);
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 900, padding: '20px' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Delete Fee</div>
+                <button onClick={() => setShowDeleteConfirm(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+              </div>
+              <div style={{ padding: '20px 24px' }}>
+                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Fee to delete</div>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>{showDeleteConfirm.description}</div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>{showDeleteConfirm.player_name} · ${fmt(showDeleteConfirm.amount_due - showDeleteConfirm.discount)}</div>
+                </div>
+                <div style={{ fontSize: '13px', color: '#64748B', lineHeight: '1.5' }}>
+                  This permanently removes the fee{hasPayments ? ' and its recorded payment history' : ''}. This cannot be undone.
+                </div>
+              </div>
+              <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowDeleteConfirm(null)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={handleDeleteFee} disabled={deleteSaving} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: '#EF4444', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: deleteSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  {deleteSaving ? 'Deleting…' : 'Delete Fee'}
                 </button>
               </div>
             </div>
@@ -1966,6 +2122,7 @@ export default function ClubFeesPage() {
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
               <div style={{ background: '#F8FAFC', borderRadius: '14px', padding: '16px', border: '1px solid #E2E8F0' }}>
                 {qrDataUrl
+                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
                   ? <img src={qrDataUrl} alt="Payment QR" style={{ width: '240px', height: '240px', display: 'block', borderRadius: '8px' }} />
                   : <div style={{ width: '240px', height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <div style={{ width: '28px', height: '28px', border: '3px solid #E2E8F0', borderTop: `3px solid ${primary}`, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />

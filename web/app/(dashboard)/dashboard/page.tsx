@@ -107,8 +107,10 @@ export default function OverviewPage() {
     if (!club) return;
     const key    = prefKey(club.id);
     const stored = localStorage.getItem(key) as 'simple' | 'pro' | null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (stored) { setMode(stored); return; }
     setMode(teams.length >= UPGRADE_THRESHOLD ? 'prompt' : 'simple');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only club.id is read, tracked via club?.id above
   }, [club?.id, teams.length]);
 
   function choose(m: 'simple' | 'pro') {

@@ -48,6 +48,7 @@ export default function TryoutGamesPage() {
     setLoading(false);
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club]);
 
   function openAdd() { setEditId(null); setForm(blank()); setShowModal(true); }

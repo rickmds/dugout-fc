@@ -16,13 +16,16 @@ export async function POST(req: NextRequest) {
     .select('id, team_id, player_id, role, accepted_at, teams(club_id, clubs(slug))')
     .eq('token', token)
     .is('accepted_at', null)
-    .single();
+    .single<{
+      id: string; team_id: string; player_id: string | null; role: string; accepted_at: string | null;
+      teams: { club_id: string; clubs: { slug: string } | null } | null;
+    }>();
 
   if (invErr || !invite) {
     return NextResponse.json({ error: 'This invite link is invalid or has already been used.' }, { status: 400 });
   }
 
-  const inv       = invite as any;
+  const inv       = invite;
   const club_id   = inv.teams?.club_id;
   const club_slug = inv.teams?.clubs?.slug;
   const role      = inv.role === 'coach' ? 'coach'  : 'player';
@@ -73,12 +76,25 @@ export async function POST(req: NextRequest) {
   }
 
   // 5. Link player record to this profile
+  // The account, profile, and team membership are already committed at
+  // this point (the important part) — a failure here shouldn't roll any
+  // of that back like the earlier steps do, but it also shouldn't be
+  // swallowed silently and reported as a full success.
+  let tailWarning: string | null = null;
   if (inv.player_id) {
-    await db.from('players').update({ profile_id: userId }).eq('id', inv.player_id);
+    const { error: playerLinkErr } = await db.from('players').update({ profile_id: userId }).eq('id', inv.player_id);
+    if (playerLinkErr) {
+      console.error('player profile link failed:', playerLinkErr);
+      tailWarning = 'Your account was created, but linking your player profile failed. Contact your club if your roster info looks off.';
+    }
   }
 
   // 6. Mark invite as accepted
-  await db.from('invites').update({ accepted_at: new Date().toISOString() }).eq('id', inv.id);
+  const { error: acceptErr } = await db.from('invites').update({ accepted_at: new Date().toISOString() }).eq('id', inv.id);
+  if (acceptErr) {
+    console.error('invite accept mark failed:', acceptErr);
+    tailWarning ??= 'Your account was created, but we could not mark the invite as accepted.';
+  }
 
-  return NextResponse.json({ success: true, club_slug });
+  return NextResponse.json({ success: true, club_slug, warning: tailWarning });
 }

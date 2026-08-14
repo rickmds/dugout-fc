@@ -2,10 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { DollarSign, Plus, X, ChevronDown, Send, Download, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { DollarSign, Plus, X, ChevronDown, Send, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { recordFeePayment } from '@/lib/feePayments';
+import { syncPaymentInstructions } from '@/lib/feePayee';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
+import PayeeTypeField from '@/components/dashboard/PayeeTypeField';
 
 type FeeCategory = { id: string; name: string; amount: number; description: string | null };
 type Player = { id: string; full_name: string; jersey_number: number | null; position: string | null };
@@ -18,6 +21,9 @@ type PlayerFee = {
   plan_group_id: string | null;
   installment_number: number | null;
   installment_total: number | null;
+  payee_type: 'club' | 'coach';
+  payment_instructions: string | null;
+  event_title: string | null;
 };
 type Payment = { id: string; player_fee_id: string; amount: number; method: string; reference: string | null; notes: string | null; paid_at: string };
 
@@ -29,7 +35,7 @@ const STATUS_CONFIG: Record<string,{label:string;color:string;bg:string}> = {
   overdue:     { label: 'Overdue',     color: '#EF4444', bg: '#FEF2F2' },
 };
 
-const METHODS = ['cash','bank_transfer','card','cheque','stripe','other'];
+const METHODS = ['cash','venmo','bank_transfer','card','cheque','stripe','other'];
 
 export default function TeamFeesPage() {
   const { teamId } = useParams<{ teamId: string }>();
@@ -51,7 +57,7 @@ export default function TeamFeesPage() {
   const [showWaive,    setShowWaive]    = useState<PlayerFee | null>(null);
 
   // Assign fee form
-  const [assignForm, setAssignForm] = useState({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false });
+  const [assignForm, setAssignForm] = useState({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false, payee_type: 'club' as 'club' | 'coach', payment_instructions: '' });
   // Payment form
   const [payForm, setPayForm] = useState({ amount: '', method: 'cash', reference: '', notes: '', pay_plan_full: false });
   // Category form
@@ -75,13 +81,14 @@ export default function TeamFeesPage() {
     // Load player fees with player names via join
     const { data: feesData } = await supabase
       .from('player_fees')
-      .select('id,player_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,notes,category_id,plan_group_id,installment_number,installment_total,players(full_name)')
+      .select('id,player_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,notes,category_id,plan_group_id,installment_number,installment_total,payee_type,payment_instructions,events(title),players(full_name)')
       .eq('team_id', teamId)
       .order('due_date', { ascending: true, nullsFirst: false });
 
-    const mapped: PlayerFee[] = (feesData ?? []).map((f: any) => ({
+    const mapped: PlayerFee[] = (feesData ?? []).map(f => ({
       ...f,
-      player_name: f.players?.full_name ?? 'Unknown',
+      event_title: (f.events as unknown as { title: string } | null)?.title ?? null,
+      player_name: (f.players as unknown as { full_name: string } | null)?.full_name ?? 'Unknown',
       plan_group_id: f.plan_group_id ?? null,
       installment_number: f.installment_number ?? null,
       installment_total: f.installment_total ?? null,
@@ -97,6 +104,7 @@ export default function TeamFeesPage() {
     setLoading(false);
   }, [teamId, club]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
   // Auto-set overdue
@@ -117,8 +125,16 @@ export default function TeamFeesPage() {
   async function handleAssign() {
     if (!profile || !teamId) return;
     setSaving(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const authHeaders = {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    };
     const playerIds = assignForm.apply_to_all ? players.map(p => p.id) : [assignForm.player_id];
     const cat = categories.find(c => c.id === assignForm.category_id);
+    if (assignForm.payee_type === 'coach' && assignForm.payment_instructions.trim()) {
+      await syncPaymentInstructions(profile.id, assignForm.payment_instructions);
+    }
     for (const pid of playerIds) {
       const { data: inserted } = await supabase.from('player_fees').insert({
         player_id: pid, team_id: teamId,
@@ -130,17 +146,19 @@ export default function TeamFeesPage() {
         due_date: assignForm.due_date || null,
         notes: assignForm.notes || null,
         created_by: profile.id,
+        payee_type: assignForm.payee_type,
+        payment_instructions: assignForm.payee_type === 'coach' ? (assignForm.payment_instructions.trim() || null) : null,
       }).select('id').single();
       if (inserted?.id) {
         fetch('/api/send-fee-notification', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({ player_fee_id: inserted.id }),
         }).catch(() => {/* fire and forget */});
       }
     }
     setShowAssign(false);
-    setAssignForm({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false });
+    setAssignForm({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false, payee_type: 'club', payment_instructions: '' });
     setSaving(false);
     load();
   }
@@ -158,12 +176,15 @@ export default function TeamFeesPage() {
       for (const pf of planFees) {
         const remaining = pf.amount_due - pf.discount - pf.amount_paid;
         if (remaining <= 0) continue;
-        await supabase.from('fee_payments').insert({
-          player_fee_id: pf.id, amount: remaining,
-          method: payForm.method, reference: payForm.reference || null,
-          notes: payForm.notes || null, recorded_by: profile.id,
+        const result = await recordFeePayment({
+          feeId: pf.id, amountDue: pf.amount_due, discount: pf.discount, currentPaid: pf.amount_paid,
+          amount: remaining, method: payForm.method, reference: payForm.reference, notes: payForm.notes, recordedBy: profile.id,
         });
-        await supabase.from('player_fees').update({ amount_paid: pf.amount_paid + remaining, status: 'paid' }).eq('id', pf.id);
+        if (!result.ok) {
+          alert(`${result.error}${totalPaid > 0 ? ` ${totalPaid.toFixed(2)} was already recorded before this failure.` : ''}`);
+          setSaving(false);
+          return;
+        }
         totalPaid += remaining;
       }
       // Send one confirmation for the full plan payment
@@ -173,14 +194,15 @@ export default function TeamFeesPage() {
       }).catch(() => {});
     } else {
       const amt = parseFloat(payForm.amount);
-      await supabase.from('fee_payments').insert({
-        player_fee_id: showPayment.id, amount: amt,
-        method: payForm.method, reference: payForm.reference || null,
-        notes: payForm.notes || null, recorded_by: profile.id,
+      const result = await recordFeePayment({
+        feeId: showPayment.id, amountDue: showPayment.amount_due, discount: showPayment.discount, currentPaid: showPayment.amount_paid,
+        amount: amt, method: payForm.method, reference: payForm.reference, notes: payForm.notes, recordedBy: profile.id,
       });
-      const newPaid = showPayment.amount_paid + amt;
-      const newStatus = newPaid >= (showPayment.amount_due - showPayment.discount) ? 'paid' : 'partial';
-      await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', showPayment.id);
+      if (!result.ok) {
+        alert(result.error);
+        setSaving(false);
+        return;
+      }
       fetch('/api/send-payment-confirmation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -355,7 +377,11 @@ export default function TeamFeesPage() {
                             Instalment {fee.installment_number}/{fee.installment_total}
                           </span>
                         )}
+                        {fee.payee_type === 'coach' && (
+                          <span title={fee.payment_instructions ?? undefined} style={{ fontSize: '10px', color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '4px', padding: '1px 6px', fontWeight: '700' }}>Coach</span>
+                        )}
                         {fee.due_date && <span style={{ fontSize: '11px', color: fee.status === 'overdue' ? '#EF4444' : '#94A3B8' }}>Due {fee.due_date}</span>}
+                        {fee.event_title && <span style={{ fontSize: '11px', color: '#94A3B8' }}>📅 {fee.event_title}</span>}
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
@@ -475,6 +501,14 @@ export default function TeamFeesPage() {
                   </select>
                 </label>
               )}
+
+              <PayeeTypeField
+                value={assignForm.payee_type}
+                onChange={v => setAssignForm(f => ({ ...f, payee_type: v, payment_instructions: v === 'coach' && !f.payment_instructions ? (profile?.payment_instructions ?? '') : f.payment_instructions }))}
+                instructions={assignForm.payment_instructions}
+                onInstructionsChange={text => setAssignForm(f => ({ ...f, payment_instructions: text }))}
+                primary={primary}
+              />
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button onClick={() => setShowAssign(false)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
