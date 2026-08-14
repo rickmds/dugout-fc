@@ -80,17 +80,35 @@ export async function POST(req: NextRequest) {
   // this point (the important part) — a failure here shouldn't roll any
   // of that back like the earlier steps do, but it also shouldn't be
   // swallowed silently and reported as a full success.
+  //
+  // Mirrors the mobile accept_invite RPC exactly: every accepting guardian
+  // gets a player_guardians row (this is what makes a second/third guardian
+  // actually work), and the legacy single-column players.profile_id slot is
+  // only ever claimed by whoever gets there first (.is('profile_id', null))
+  // — without that guard, each new guardian silently evicted the previous
+  // one from every RLS check keyed on players.profile_id.
   let tailWarning: string | null = null;
   if (inv.player_id) {
-    const { error: playerLinkErr } = await db.from('players').update({ profile_id: userId }).eq('id', inv.player_id);
+    const { error: guardianErr } = await db.from('player_guardians').upsert(
+      { player_id: inv.player_id, profile_id: userId },
+      { onConflict: 'player_id,profile_id', ignoreDuplicates: true }
+    );
+    if (guardianErr) console.error('player_guardians insert failed:', guardianErr);
+
+    const { error: playerLinkErr } = await db.from('players')
+      .update({ profile_id: userId })
+      .eq('id', inv.player_id)
+      .is('profile_id', null);
     if (playerLinkErr) {
       console.error('player profile link failed:', playerLinkErr);
       tailWarning = 'Your account was created, but linking your player profile failed. Contact your club if your roster info looks off.';
     }
   }
 
-  // 6. Mark invite as accepted
-  const { error: acceptErr } = await db.from('invites').update({ accepted_at: new Date().toISOString() }).eq('id', inv.id);
+  // 6. Mark invite as accepted — accepted_by records who, so removing a
+  // guardian later can actually revoke their player_guardians access
+  // instead of just deleting this historical row.
+  const { error: acceptErr } = await db.from('invites').update({ accepted_at: new Date().toISOString(), accepted_by: userId }).eq('id', inv.id);
   if (acceptErr) {
     console.error('invite accept mark failed:', acceptErr);
     tailWarning ??= 'Your account was created, but we could not mark the invite as accepted.';

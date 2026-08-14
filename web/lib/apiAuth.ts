@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-type AllowedRole = 'app_admin' | 'org_admin' | 'coach';
+type AllowedRole = 'app_admin' | 'org_admin' | 'coach' | 'player';
 
 export async function requireRole(
   req: NextRequest,
