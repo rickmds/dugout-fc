@@ -106,7 +106,7 @@ function SettingsRow({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
-  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook, secondaryColor, homeKitColor, awayKitColor, trainingKitColor, headerPattern } = useClub();
+  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook, secondaryColor, homeKitColor, awayKitColor, trainingKitColor } = useClub();
   const router = useRouter();
   const { profile, club, user, signOut, refreshProfile } = useAuth();
   const { allTeams, refetch: refetchTeams } = useActiveTeam();
@@ -140,8 +140,6 @@ export default function SettingsScreen() {
   const [colorTarget, setColorTarget]         = useState<'primary' | 'secondary' | 'home_kit' | 'away_kit' | 'training_kit' | null>(null);
   const [colorDraft, setColorDraft]           = useState('');
   const [savingColor, setSavingColor]         = useState(false);
-  const [patternPickerOpen, setPatternPickerOpen] = useState(false);
-  const [savingPattern, setSavingPattern]     = useState(false);
 
   const [showPwForm, setShowPwForm]   = useState(false);
   const [newPw, setNewPw]             = useState('');
@@ -381,15 +379,6 @@ export default function SettingsScreen() {
     await refreshProfile();
     setSavingColor(false);
     setColorTarget(null);
-  }
-
-  async function handleSavePattern(pattern: string) {
-    if (!club) return;
-    setSavingPattern(true);
-    await (supabase as any).from('clubs').update({ header_pattern: pattern }).eq('id', club.id);
-    await refreshProfile();
-    setSavingPattern(false);
-    setPatternPickerOpen(false);
   }
 
   async function handleLeaveTeam(teamId: string, teamName: string) {
@@ -751,47 +740,63 @@ export default function SettingsScreen() {
       )}
 
       {/* ── My Teams (coaches only) ── */}
-      {profile?.role === 'coach' && (
+      {/* profile.role alone can lag team_members (e.g. a coach added via an
+          instant-create staff invite before that path elevated their global
+          role) — showing the section if ANY team has them as coach is more
+          robust than trusting the single global flag. */}
+      {(profile?.role === 'coach' || allTeams.some((t) => t.myRole === 'coach')) && (
         <Section label="MY TEAMS">
-          {allTeams.map((t, i) => (
-            <View key={t.id}>
-              {i > 0 && <View style={st.divider} />}
-              <View style={st.teamRow}>
-                <View style={[st.iconCell, { backgroundColor: rgba(0.12) }]}>
-                  <Ionicons name="football-outline" size={16} color={primaryColor} />
+          {(() => {
+            const showClub = new Set(allTeams.map((t) => t.club?.id)).size > 1;
+            return allTeams.map((t, i) => {
+              const teamColor = t.club?.primary_color ?? primaryColor;
+              const metaParts = [showClub ? t.club?.name : null, t.age_group, t.season].filter(Boolean);
+              return (
+                <View key={t.id}>
+                  {i > 0 && <View style={st.divider} />}
+                  <View style={st.teamRow}>
+                    <View style={[st.teamAccent, { backgroundColor: teamColor }]} />
+                    <View style={[st.iconCell, { backgroundColor: `${teamColor}1F` }]}>
+                      {t.club?.logo_url ? (
+                        <Image source={{ uri: t.club.logo_url }} style={st.teamClubLogo} contentFit="contain" />
+                      ) : (
+                        <Ionicons name="football-outline" size={16} color={teamColor} />
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={st.teamName}>{t.name}</Text>
+                      {metaParts.length > 0 && (
+                        <Text style={st.teamMeta}>{metaParts.join(' · ')}</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setEditingTeam(t)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      style={{ marginRight: 14 }}
+                    >
+                      <Ionicons name="pencil-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleSyncCalendar(t.id, t.name)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      style={{ marginRight: 14 }}
+                    >
+                      <Ionicons name="calendar-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleLeaveTeam(t.id, t.name)}
+                      disabled={leavingTeamId === t.id}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      {leavingTeamId === t.id
+                        ? <ActivityIndicator size="small" color={PULSE_COLORS.status.error} />
+                        : <Text style={st.leaveText}>Leave</Text>}
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={st.teamName}>{t.name}</Text>
-                  {(t.age_group || t.season) && (
-                    <Text style={st.teamMeta}>{[t.age_group, t.season].filter(Boolean).join(' · ')}</Text>
-                  )}
-                </View>
-                <TouchableOpacity
-                  onPress={() => setEditingTeam(t)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={{ marginRight: 14 }}
-                >
-                  <Ionicons name="pencil-outline" size={16} color={PULSE_COLORS.ui.muted} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleSyncCalendar(t.id, t.name)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={{ marginRight: 14 }}
-                >
-                  <Ionicons name="calendar-outline" size={16} color={PULSE_COLORS.ui.muted} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleLeaveTeam(t.id, t.name)}
-                  disabled={leavingTeamId === t.id}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  {leavingTeamId === t.id
-                    ? <ActivityIndicator size="small" color={PULSE_COLORS.status.error} />
-                    : <Text style={st.leaveText}>Leave</Text>}
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+              );
+            });
+          })()}
         </Section>
       )}
 
@@ -992,24 +997,6 @@ export default function SettingsScreen() {
             <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
           </TouchableOpacity>
 
-          <View style={st.divider} />
-
-          {/* Header style */}
-          <TouchableOpacity
-            style={st.row}
-            onPress={() => setPatternPickerOpen(true)}
-            activeOpacity={0.65}
-          >
-            <View style={[st.iconCell, { backgroundColor: rgba(0.15) }]}>
-              <Ionicons name="layers-outline" size={16} color={primaryColor} />
-            </View>
-            <Text style={[st.rowLabel, { flex: 1 }]}>Header style</Text>
-            <PatternMiniPreview pattern={headerPattern} primaryColor={primaryColor} secondaryColor={secondaryColor} />
-            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>
-              {PATTERN_LABELS[headerPattern] ?? headerPattern}
-            </Text>
-            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
         </Section>
       )}
 
@@ -1047,17 +1034,6 @@ export default function SettingsScreen() {
           )}
         </Section>
       )}
-
-      {/* ── Pattern picker modal ── */}
-      <PatternPickerModal
-        visible={patternPickerOpen}
-        current={headerPattern}
-        saving={savingPattern}
-        primaryColor={primaryColor}
-        secondaryColor={secondaryColor}
-        onSelect={handleSavePattern}
-        onCancel={() => setPatternPickerOpen(false)}
-      />
 
       {/* ── Color picker modal ── */}
       <ColorPickerModal
@@ -1696,289 +1672,6 @@ export default function SettingsScreen() {
   );
 }
 
-// ─── Header pattern picker ────────────────────────────────────────────────────
-
-const PATTERN_LABELS: Record<string, string> = {
-  solid:      'Clean',
-  stripes:    'Diagonal',
-  pinstripes: 'Pinstripes',
-  dots:       'Dots',
-  grid:       'Grid',
-  hoops:      'Hoops',
-  vstripes:   'Vertical',
-  sash:       'Sash',
-  halves:     'Halves',
-  diamond:    'Diamond',
-};
-
-const PATTERN_SUBS: Record<string, string> = {
-  solid:      'No pattern',
-  stripes:    'Classic jersey',
-  pinstripes: 'Fine stripes',
-  dots:       'Retro print',
-  grid:       'Carbon feel',
-  hoops:      'Celtic · QPR',
-  vstripes:   'Inter · Newcastle',
-  sash:       'River Plate',
-  halves:     'Juventus',
-  diamond:    'Argyle · Retro',
-};
-
-const ALL_PATTERNS = [
-  'solid', 'vstripes', 'hoops', 'stripes', 'pinstripes',
-  'sash', 'halves', 'diamond', 'dots', 'grid',
-] as const;
-
-function PatternMiniPreview({ pattern, primaryColor, secondaryColor }: { pattern: string; primaryColor: string; secondaryColor: string }) {
-  const c = secondaryColor + 'CC'; // ~80% opacity hex shorthand
-  return (
-    <View style={{ width: 44, height: 26, borderRadius: 6, backgroundColor: primaryColor, overflow: 'hidden' }}>
-      {pattern === 'stripes' && Array.from({ length: 6 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute', top: -6 + i * 10, left: -6, right: -6, height: 6,
-          transform: [{ rotate: '-20deg' }], backgroundColor: c,
-          opacity: 0.35,
-        }} />
-      ))}
-      {pattern === 'pinstripes' && Array.from({ length: 10 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute', top: -6 + i * 6, left: -6, right: -6, height: 3,
-          transform: [{ rotate: '-20deg' }], backgroundColor: secondaryColor,
-          opacity: 0.38,
-        }} />
-      ))}
-      {pattern === 'hoops' && Array.from({ length: 4 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute', left: 0, right: 0, top: i * 9, height: 4,
-          backgroundColor: secondaryColor, opacity: 0.38,
-        }} />
-      ))}
-      {pattern === 'vstripes' && Array.from({ length: 5 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute', top: 0, bottom: 0, left: i * 11, width: 5,
-          backgroundColor: secondaryColor, opacity: 0.35,
-        }} />
-      ))}
-      {pattern === 'sash' && (
-        <View style={{
-          position: 'absolute', top: 7, left: -6, right: -6, height: 12,
-          transform: [{ rotate: '-22deg' }], backgroundColor: secondaryColor, opacity: 0.42,
-        }} />
-      )}
-      {pattern === 'halves' && (
-        <>
-          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: '50%', backgroundColor: secondaryColor, opacity: 0.32 }} />
-          <View style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1.5, backgroundColor: secondaryColor, opacity: 0.7 }} />
-        </>
-      )}
-      {pattern === 'diamond' && (
-        <>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <View key={`a${i}`} style={{
-              position: 'absolute', top: -20, left: i * 9 - 4, width: 1, height: 70,
-              transform: [{ rotate: '45deg' }], backgroundColor: secondaryColor, opacity: 0.42,
-            }} />
-          ))}
-          {Array.from({ length: 6 }).map((_, i) => (
-            <View key={`b${i}`} style={{
-              position: 'absolute', top: -20, left: i * 9 - 4, width: 1, height: 70,
-              transform: [{ rotate: '-45deg' }], backgroundColor: secondaryColor, opacity: 0.42,
-            }} />
-          ))}
-        </>
-      )}
-      {pattern === 'dots' && Array.from({ length: 3 }).flatMap((_, row) =>
-        Array.from({ length: 5 }).map((_, col) => (
-          <View key={`${row}-${col}`} style={{
-            position: 'absolute', width: 3, height: 3, borderRadius: 1.5,
-            backgroundColor: secondaryColor, opacity: 0.42,
-            left: col * 11 - 1, top: row * 11 - 1 + (col % 2 === 0 ? 0 : 5),
-          }} />
-        ))
-      )}
-      {pattern === 'grid' && (
-        <>
-          {Array.from({ length: 3 }).map((_, i) => (
-            <View key={`h${i}`} style={{
-              position: 'absolute', left: 0, right: 0, top: i * 13, height: 1,
-              backgroundColor: secondaryColor, opacity: 0.42,
-            }} />
-          ))}
-          {Array.from({ length: 5 }).map((_, i) => (
-            <View key={`v${i}`} style={{
-              position: 'absolute', top: 0, bottom: 0, left: i * 11, width: 1,
-              backgroundColor: secondaryColor, opacity: 0.42,
-            }} />
-          ))}
-        </>
-      )}
-    </View>
-  );
-}
-
-function PatternPickerModal({
-  visible, current, saving, primaryColor, secondaryColor, onSelect, onCancel,
-}: {
-  visible: boolean;
-  current: string;
-  saving: boolean;
-  primaryColor: string;
-  secondaryColor: string;
-  onSelect: (p: string) => void;
-  onCancel: () => void;
-}) {
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onCancel}>
-      <View style={cp.overlay}>
-        <View style={[cp.sheet, { maxHeight: '82%' }]}>
-          <View style={cp.handle} />
-          <Text style={cp.title}>Header Style</Text>
-          <Text style={{ textAlign: 'center', marginTop: -8, marginBottom: 20, fontSize: 13, color: PULSE_COLORS.ui.muted }}>
-            Jersey-inspired backgrounds for your home screen
-          </Text>
-
-          <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0 }}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', paddingBottom: 8 }}>
-              {ALL_PATTERNS.map((p) => {
-                const selected = current === p;
-                return (
-                  <TouchableOpacity
-                    key={p}
-                    onPress={() => !saving && onSelect(p)}
-                    activeOpacity={0.75}
-                    style={{
-                      alignItems: 'center', gap: 6, width: 88,
-                      opacity: saving && current !== p ? 0.4 : 1,
-                    }}
-                  >
-                    <View style={{
-                      width: 88, height: 54, borderRadius: 12,
-                      backgroundColor: primaryColor, overflow: 'hidden',
-                      borderWidth: selected ? 3 : 1.5,
-                      borderColor: selected ? '#fff' : 'rgba(255,255,255,0.2)',
-                    }}>
-                      {/* Diagonal stripes */}
-                      {p === 'stripes' && Array.from({ length: 8 }).map((_, i) => (
-                        <View key={i} style={{
-                          position: 'absolute', top: -10 + i * 14, left: -10, right: -10, height: 8,
-                          transform: [{ rotate: '-20deg' }], backgroundColor: secondaryColor, opacity: 0.38,
-                        }} />
-                      ))}
-                      {/* Pinstripes */}
-                      {p === 'pinstripes' && Array.from({ length: 16 }).map((_, i) => (
-                        <View key={i} style={{
-                          position: 'absolute', top: -10 + i * 8, left: -10, right: -10, height: 4,
-                          transform: [{ rotate: '-20deg' }], backgroundColor: secondaryColor, opacity: 0.4,
-                        }} />
-                      ))}
-                      {/* Hoops — Celtic */}
-                      {p === 'hoops' && Array.from({ length: 5 }).map((_, i) => (
-                        <View key={i} style={{
-                          position: 'absolute', left: 0, right: 0, top: i * 14, height: 6,
-                          backgroundColor: secondaryColor, opacity: 0.38,
-                        }} />
-                      ))}
-                      {/* Vertical stripes — Newcastle */}
-                      {p === 'vstripes' && Array.from({ length: 8 }).map((_, i) => (
-                        <View key={i} style={{
-                          position: 'absolute', top: 0, bottom: 0, left: i * 13, width: 6,
-                          backgroundColor: secondaryColor, opacity: 0.36,
-                        }} />
-                      ))}
-                      {/* Sash — River Plate */}
-                      {p === 'sash' && (
-                        <View style={{
-                          position: 'absolute', top: 14, left: -10, right: -10, height: 22,
-                          transform: [{ rotate: '-22deg' }], backgroundColor: secondaryColor, opacity: 0.44,
-                        }} />
-                      )}
-                      {/* Halves — Juventus */}
-                      {p === 'halves' && (
-                        <>
-                          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: '50%', backgroundColor: secondaryColor, opacity: 0.32 }} />
-                          <View style={{ position: 'absolute', top: 0, bottom: 0, left: '50%', width: 2, backgroundColor: secondaryColor, opacity: 0.7 }} />
-                        </>
-                      )}
-                      {/* Diamond lattice — Argyle */}
-                      {p === 'diamond' && (
-                        <>
-                          {Array.from({ length: 10 }).map((_, i) => (
-                            <View key={`a${i}`} style={{
-                              position: 'absolute', top: -60, left: i * 10 - 5, width: 1, height: 160,
-                              transform: [{ rotate: '45deg' }], backgroundColor: secondaryColor, opacity: 0.44,
-                            }} />
-                          ))}
-                          {Array.from({ length: 10 }).map((_, i) => (
-                            <View key={`b${i}`} style={{
-                              position: 'absolute', top: -60, left: i * 10 - 5, width: 1, height: 160,
-                              transform: [{ rotate: '-45deg' }], backgroundColor: secondaryColor, opacity: 0.44,
-                            }} />
-                          ))}
-                        </>
-                      )}
-                      {/* Dots */}
-                      {p === 'dots' && Array.from({ length: 4 }).flatMap((_, row) =>
-                        Array.from({ length: 8 }).map((_, col) => (
-                          <View key={`${row}-${col}`} style={{
-                            position: 'absolute', width: 4, height: 4, borderRadius: 2,
-                            backgroundColor: secondaryColor, opacity: 0.44,
-                            left: col * 13 - 2, top: row * 13 - 2 + (col % 2 === 0 ? 0 : 6),
-                          }} />
-                        ))
-                      )}
-                      {/* Grid */}
-                      {p === 'grid' && (
-                        <>
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <View key={`h${i}`} style={{
-                              position: 'absolute', left: 0, right: 0, top: i * 14, height: 1,
-                              backgroundColor: secondaryColor, opacity: 0.44,
-                            }} />
-                          ))}
-                          {Array.from({ length: 8 }).map((_, i) => (
-                            <View key={`v${i}`} style={{
-                              position: 'absolute', top: 0, bottom: 0, left: i * 13, width: 1,
-                              backgroundColor: secondaryColor, opacity: 0.44,
-                            }} />
-                          ))}
-                        </>
-                      )}
-                      {selected && (
-                        <View style={{
-                          position: 'absolute', bottom: 5, right: 5,
-                          width: 18, height: 18, borderRadius: 9,
-                          backgroundColor: 'rgba(0,0,0,0.55)',
-                          alignItems: 'center', justifyContent: 'center',
-                        }}>
-                          {saving
-                            ? <ActivityIndicator size="small" color="#fff" />
-                            : <Ionicons name="checkmark" size={11} color="#fff" />}
-                        </View>
-                      )}
-                    </View>
-                    <Text style={{
-                      fontSize: 11, fontWeight: selected ? '700' : '600',
-                      color: selected ? PULSE_COLORS.ui.text : PULSE_COLORS.ui.textSecondary,
-                    }}>
-                      {PATTERN_LABELS[p]}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </ScrollView>
-
-          <View style={{ height: 16 }} />
-          <TouchableOpacity style={cp.cancelBtn} onPress={onCancel} disabled={saving}>
-            <Text style={cp.cancelText}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// ─── Color picker modal ───────────────────────────────────────────────────────
 
 const PRESET_COLORS = [
   '#22C55E', '#16A34A', '#15803D', '#166534',
@@ -2263,6 +1956,8 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 12, gap: 12, minHeight: 52,
   },
+  teamAccent: { width: 3, alignSelf: 'stretch', borderRadius: 2, marginVertical: 2 },
+  teamClubLogo: { width: 22, height: 22 },
   teamName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 1 },
   teamMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
   leaveText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.status.error },

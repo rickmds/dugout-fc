@@ -1,4 +1,5 @@
 import { useAuth } from './useAuth';
+import { useTeam } from './useTeam';
 
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace('#', '');
@@ -25,7 +26,13 @@ function contrastOn(hex: string): '#000000' | '#ffffff' {
 const FALLBACK_PRIMARY = '#22C55E';
 
 export function useClub() {
-  const { club } = useAuth();
+  const { club: homeClub } = useAuth();
+  const { team } = useTeam();
+  // Branding follows whichever team is active, not the profile's home club
+  // — a coach viewing a team at a second club should see that club's
+  // colors/logo, not their home club's. Falls back to the home club during
+  // the brief window before teams have loaded.
+  const club = team?.club ?? homeClub;
   const raw = club?.primary_color ?? null;
   // Avoid using the schema defaults (#000000 / #ffffff) as the accent color
   const primaryColor =
@@ -53,8 +60,5 @@ export function useClub() {
     onSecondary: contrastOn(secondaryColor),
     /** Returns rgba(r,g,b,alpha) using the club primary color */
     rgba: (alpha: number) => hexToRgba(primaryColor, alpha),
-    /** Returns rgba(r,g,b,alpha) using the club secondary color */
-    secondaryRgba: (alpha: number) => hexToRgba(secondaryColor, alpha),
-    headerPattern: ((club as any)?.header_pattern ?? 'stripes') as 'solid' | 'stripes' | 'pinstripes' | 'dots' | 'grid' | 'hoops' | 'vstripes' | 'sash' | 'halves' | 'diamond',
   };
 }

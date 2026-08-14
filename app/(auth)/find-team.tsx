@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { PULSE_COLORS } from '../../constants/colors';
@@ -46,15 +47,10 @@ export default function FindTeamScreen() {
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [joinLoading, setJoinLoading] = useState(false);
 
-  async function handleInviteSubmit() {
+  async function acceptInviteToken(token: string) {
     setInviteError(null);
-    if (!inviteToken.trim()) {
-      setInviteError('Please enter your invite code.');
-      return;
-    }
-
     setInviteLoading(true);
-    const { data, error: rpcError } = await supabase.rpc('accept_invite', { p_token: inviteToken.trim() });
+    const { data, error: rpcError } = await supabase.rpc('accept_invite', { p_token: token });
     setInviteLoading(false);
 
     const inviteData = data as { club_slug?: string } | null;
@@ -66,6 +62,27 @@ export default function FindTeamScreen() {
     await refreshProfile();
     router.replace(`/(app)/${inviteData.club_slug}/(tabs)` as never);
   }
+
+  async function handleInviteSubmit() {
+    if (!inviteToken.trim()) {
+      setInviteError('Please enter your invite code.');
+      return;
+    }
+    await acceptInviteToken(inviteToken.trim());
+  }
+
+  // If a deep-link invite arrived while the app was already authenticated
+  // and sitting on this screen (e.g. backgrounded mid-flow), it would
+  // otherwise sit orphaned in AsyncStorage forever — consume it here too.
+  useEffect(() => {
+    AsyncStorage.getItem('pendingInviteToken').then(async (token) => {
+      if (!token) return;
+      await AsyncStorage.removeItem('pendingInviteToken');
+      setInviteToken(token);
+      await acceptInviteToken(token);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   async function handleFindClub() {
     setClubError(null);
@@ -104,11 +121,29 @@ export default function FindTeamScreen() {
   async function handleJoinTeam() {
     if (!foundClub || !selectedTeamId || !user) return;
 
+    setClubError(null);
     setJoinLoading(true);
-    await supabase.from('team_members').insert({ team_id: selectedTeamId, profile_id: user.id, role: 'parent' });
-    await supabase.from('profiles').update({ club_id: foundClub.id, role: 'player' }).eq('id', user.id);
-    setJoinLoading(false);
 
+    const { error: memberErr } = await supabase
+      .from('team_members')
+      .insert({ team_id: selectedTeamId, profile_id: user.id, role: 'parent' });
+    if (memberErr) {
+      setJoinLoading(false);
+      setClubError('Could not join the team. Please try again.');
+      return;
+    }
+
+    const { error: profileErr } = await supabase
+      .from('profiles')
+      .update({ club_id: foundClub.id, role: 'player' })
+      .eq('id', user.id);
+    if (profileErr) {
+      setJoinLoading(false);
+      setClubError('Could not join the team. Please try again.');
+      return;
+    }
+
+    setJoinLoading(false);
     await refreshProfile();
     router.replace('/(auth)/profile-setup');
   }
@@ -118,6 +153,14 @@ export default function FindTeamScreen() {
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.heading}>Find your team</Text>
         <Text style={styles.subheading}>Join with an invite code or search for your club.</Text>
+
+        {user?.email?.endsWith('@privaterelay.appleid.com') && (
+          <View style={styles.relayHint}>
+            <Text style={styles.relayHintText}>
+              You signed in with a private Apple email. If your coach invited you, they likely used your real email — enter the invite code below instead.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>I have an invite code</Text>
@@ -215,6 +258,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 24,
   },
+  relayHint: {
+    backgroundColor: 'rgba(245,158,11,0.08)',
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
+    borderRadius: 12, padding: 12, marginBottom: 16,
+  },
+  relayHintText: { color: '#F59E0B', fontSize: 12.5, lineHeight: 18 },
   card: {
     backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 14,

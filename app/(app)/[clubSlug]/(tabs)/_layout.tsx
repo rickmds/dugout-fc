@@ -6,6 +6,7 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useAuth } from '../../../../hooks/useAuth';
 import { supabase } from '../../../../lib/supabase';
+import { uniqueChannelName } from '../../../../lib/realtime';
 import { useNetworkStatus } from '../../../../hooks/useNetworkStatus';
 import OfflineBanner from '../../../../components/ui/OfflineBanner';
 
@@ -48,7 +49,7 @@ export default function TabsLayout() {
     fetchUnread();
 
     const sub = supabase
-      .channel(`chat-badge-${profile.id}`)
+      .channel(uniqueChannelName(`chat-badge-${profile.id}`))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -81,7 +82,7 @@ export default function TabsLayout() {
     fetchPendingGuests();
 
     const sub = supabase
-      .channel(`guest-badge-${profile.id}`)
+      .channel(uniqueChannelName(`guest-badge-${profile.id}`))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',

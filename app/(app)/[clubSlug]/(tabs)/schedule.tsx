@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { ErrorBoundaryProps } from 'expo-router';
 import {
   ActivityIndicator,
@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { computeArriveBy } from '../../../../lib/eventTime';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -141,6 +142,14 @@ export default function ScheduleScreen() {
   const [playerIdMap, setPlayerIdMap] = useState<Map<string, string>>(new Map()); // team_id -> player_id
   const [playerCount, setPlayerCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  // Once we've shown real content, later refetches (regaining focus after
+  // popping back from an event, toggling filters) shouldn't blank the whole
+  // screen back to the skeleton — that unmounts the scroll view, which both
+  // flashes and loses scroll position. Only the very first load should.
+  const hasLoadedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!loading) hasLoadedOnceRef.current = true;
+  }, [loading]);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherMap, setWeatherMap] = useState<Record<string, WeatherData>>({});
   const [driveTimeMap, setDriveTimeMap] = useState<Record<string, string>>({});
@@ -156,7 +165,7 @@ export default function ScheduleScreen() {
   const [calMonth, setCalMonth] = useState(todayDate.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(getTodayStr);
 
-  const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
+  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
 
   useFocusEffect(
     useCallback(() => {
@@ -362,12 +371,20 @@ export default function ScheduleScreen() {
     const current = myRsvps[eventId];
     try {
       if (current === status) {
-        await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', pid);
+        const { error } = await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', pid);
+        if (error) {
+          Alert.alert('Error', 'Could not update RSVP. Please try again.');
+          return;
+        }
       } else {
-        await supabase.from('event_rsvps').upsert(
+        const { error } = await supabase.from('event_rsvps').upsert(
           { event_id: eventId, player_id: pid, responded_by: profile?.id, status },
           { onConflict: 'event_id,player_id' }
         );
+        if (error) {
+          Alert.alert('Error', 'Could not update RSVP. Please try again.');
+          return;
+        }
       }
       await fetchRsvpData(events, playerIdMap);
     } catch (e) {
@@ -588,6 +605,9 @@ export default function ScheduleScreen() {
                       ? `${formatTime(item.event_time)} – ${computeEndTime(item.event_time, item.duration_minutes)}`
                       : formatTime(item.event_time))
                   : null,
+                (item.event_time && item.arrival_buffer_minutes != null)
+                  ? `Arrive ${computeArriveBy(item.event_time, item.arrival_buffer_minutes)}`
+                  : null,
                 item.location,
               ].filter(Boolean).join('  ·  ')}
             </Text>
@@ -762,7 +782,7 @@ export default function ScheduleScreen() {
     );
   }
 
-  if (teamLoading || loading) return <ScheduleSkeleton />;
+  if ((teamLoading || loading) && !hasLoadedOnceRef.current) return <ScheduleSkeleton />;
 
   if (!team) {
     return (

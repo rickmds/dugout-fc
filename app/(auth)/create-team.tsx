@@ -29,12 +29,6 @@ function toSlug(name: string): string {
 function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 7);
 }
-function uuid(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
 
 export default function CreateTeamScreen() {
   const router = useRouter();
@@ -54,27 +48,30 @@ export default function CreateTeamScreen() {
     const user = session?.user;
     if (!user) { setError('No active session found. Please sign out and sign in again.'); setLoading(false); return; }
 
-    const clubId = uuid();
-    const teamId = uuid();
-    const slug   = `${toSlug(teamName.trim())}-${randomSuffix()}`;
+    const slug = `${toSlug(teamName.trim())}-${randomSuffix()}`;
 
     const { error: roleErr } = await supabase.from('profiles').update({ role: 'org_admin' }).eq('id', user.id);
     if (roleErr) { setError(`Account setup failed: ${roleErr.message}`); setLoading(false); return; }
 
-    const { error: clubErr } = await supabase.from('clubs').insert({ id: clubId, name: teamName.trim(), slug });
-    if (clubErr) { setError(`Failed to create club: ${clubErr.message}`); setLoading(false); return; }
+    const { data: club, error: clubErr } = await supabase.from('clubs').insert({ name: teamName.trim(), slug }).select('id').single();
+    if (clubErr || !club) { setError(`Failed to create club: ${clubErr?.message}`); setLoading(false); return; }
+    const clubId = club.id;
 
-    await supabase.from('profiles').update({ club_id: clubId }).eq('id', user.id);
+    const { error: profileClubErr } = await supabase.from('profiles').update({ club_id: clubId }).eq('id', user.id);
+    if (profileClubErr) { setError(`Account setup failed: ${profileClubErr.message}`); setLoading(false); return; }
 
-    const { error: teamErr } = await supabase.from('teams').insert({
-      id: teamId, club_id: clubId,
+    const { data: team, error: teamErr } = await supabase.from('teams').insert({
+      club_id: clubId,
       name: teamName.trim(),
       age_group: ageGroup || null,
       gender:    gender    || null,
-    });
-    if (teamErr) { setError(`Failed to create team: ${teamErr.message}`); setLoading(false); return; }
+    }).select('id').single();
+    if (teamErr || !team) { setError(`Failed to create team: ${teamErr?.message}`); setLoading(false); return; }
+    const teamId = team.id;
 
-    await supabase.from('team_members').insert({ team_id: teamId, profile_id: user.id, role: 'coach' });
+    const { error: memberErr } = await supabase.from('team_members').insert({ team_id: teamId, profile_id: user.id, role: 'coach' });
+    if (memberErr) { setError(`Failed to add you to the team: ${memberErr.message}`); setLoading(false); return; }
+
     await refreshProfile();
     setLoading(false);
     router.replace(`/(app)/${slug}/(tabs)`);

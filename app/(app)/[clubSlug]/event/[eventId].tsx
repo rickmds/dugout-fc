@@ -17,6 +17,8 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { computeArriveBy, computeLeaveBy } from '../../../../lib/eventTime';
+import { isEligibleTeam, parseAgeGroup } from '../../../../lib/guestEligibility';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -26,7 +28,7 @@ import { useMapApp } from '../../../../hooks/useMapApp';
 import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
 import { MatchTrackerContent } from '../admin/events/[eventId]/match-tracker';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
-import { fetchDriveTime } from '../../../../lib/drivetime';
+import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
 import { sendProfilesPush } from '../../../../lib/push';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
@@ -211,8 +213,8 @@ type GuestEntry = {
 
 type GuestCallout = {
   id: string;
-  target_team_id: string;
-  target_team_name: string;
+  target_team_ids: string[];
+  target_team_names: string[];
   spots_needed: number;
   status: 'open' | 'filled' | 'cancelled';
   note: string | null;
@@ -226,6 +228,7 @@ type GuestPlayerResult = {
   profile_id: string | null;
   team_id: string;
   team_name: string;
+  eligible: boolean;
 };
 
 type CoachResult = { id: string; full_name: string | null };
@@ -234,6 +237,34 @@ function guestStatusColor(status: GuestEntry['status']): string {
   if (status === 'confirmed') return '#22c55e';
   if (status === 'declined') return '#ef4444';
   return '#F59E0B';
+}
+
+type AgeGroupSection<T> = { key: string; ageGroup: string | null; items: T[]; hasEligible: boolean };
+
+// Sections always sorted youngest-first regardless of eligibility — age
+// order is the mental model a coach already has, so eligible groups don't
+// jump the queue. Open/collapsed state is a separate concern (driven by
+// eligibility) from this ordering.
+function groupByAgeGroup<T extends { age_group: string | null; eligible: boolean }>(items: T[]): AgeGroupSection<T>[] {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const key = item.age_group ?? 'Other';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(item);
+  }
+  return Array.from(map.entries())
+    .map(([key, groupItems]) => ({
+      key, ageGroup: groupItems[0].age_group, items: groupItems,
+      hasEligible: groupItems.some((i) => i.eligible),
+    }))
+    .sort((a, b) => {
+      const pa = parseAgeGroup(a.ageGroup);
+      const pb = parseAgeGroup(b.ageGroup);
+      if (pa == null && pb == null) return a.key.localeCompare(b.key);
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return pa - pb;
+    });
 }
 
 const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string }> = {
@@ -262,17 +293,6 @@ function computeEndTime(timeStr: string, durationMins: number): string {
   const period = endH >= 12 ? 'PM' : 'AM';
   const displayH = endH % 12 || 12;
   return `${displayH}:${String(endM).padStart(2, '0')} ${period}`;
-}
-
-function computeArriveBy(timeStr: string, bufferMins: number): string {
-  const [h, m] = timeStr.split(':').map(Number);
-  const totalMins = h * 60 + m - bufferMins;
-  const normalized = ((totalMins % 1440) + 1440) % 1440;
-  const arrH = Math.floor(normalized / 60);
-  const arrM = normalized % 60;
-  const period = arrH >= 12 ? 'PM' : 'AM';
-  const displayH = arrH % 12 || 12;
-  return `${displayH}:${String(arrM).padStart(2, '0')} ${period}`;
 }
 
 function isUpcoming(dateStr: string): boolean {
@@ -317,14 +337,20 @@ export default function EventDetailScreen() {
   const [coachesLoaded, setCoachesLoaded] = useState(false);
   const [guestSearching, setGuestSearching] = useState(false);
   const [addingGuest, setAddingGuest] = useState<string | null>(null);
-  type ClubTeamBrowse = { id: string; name: string; players: GuestPlayerResult[] };
+  type ClubTeamBrowse = { id: string; name: string; age_group: string | null; eligible: boolean; players: GuestPlayerResult[] };
   const [clubBrowse,    setClubBrowse]    = useState<ClubTeamBrowse[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [guestModal,    setGuestModal]    = useState(false);
   const [guestRole,     setGuestRole]     = useState<'player' | 'coach'>('player');
   const [guestTab,      setGuestTab]      = useState<'invite' | 'callout'>('invite');
-  const [requestTeams,    setRequestTeams]    = useState<{ id: string; name: string; age_group: string | null }[]>([]);
-  const [requestTargetId, setRequestTargetId] = useState('');
+  // Age-group sections that are expanded — shared by both the club-browse
+  // list and the call-out team picker (same age-group keys either way).
+  // Sections containing at least one eligible team open by default when
+  // their data loads; nothing is ever hard-hidden, just collapsed.
+  const [openAgeGroups, setOpenAgeGroups] = useState<Set<string>>(new Set());
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
+  const [requestTeams,     setRequestTeams]     = useState<{ id: string; name: string; age_group: string | null; eligible: boolean }[]>([]);
+  const [requestTargetIds, setRequestTargetIds] = useState<string[]>([]);
   const [requestSpots,    setRequestSpots]    = useState(1);
   const [requestNote,     setRequestNote]     = useState('');
   const [requestSending,      setRequestSending]      = useState(false);
@@ -353,7 +379,7 @@ export default function EventDetailScreen() {
   const [eventPolls, setEventPolls] = useState<Poll[]>([]);
   const [showEventPollModal, setShowEventPollModal] = useState(false);
 
-  const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
+  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
   const mapApp = useMapApp();
 
   useEffect(() => {
@@ -433,22 +459,32 @@ export default function EventDetailScreen() {
 
     // Load active call-outs for this event (coaches only, games only)
     const evType = (eventRes.data as any)?.type;
-    const isCoachRole = profile.role === 'org_admin' || profile.role === 'coach';
+    const isCoachRole = profile.role === 'org_admin' || team?.myRole === 'coach';
     if (isCoachRole && evType === 'game') {
       const { data: calloutData } = await (supabase as any).from('guest_requests')
-        .select('id,target_team_id,spots_needed,status,note')
+        .select('id,spots_needed,status,note')
         .eq('event_id', eventId)
         .eq('requesting_team_id', team.id)
         .neq('status', 'cancelled');
       if (calloutData?.length > 0) {
-        const teamIds = [...new Set((calloutData as any[]).map(c => c.target_team_id as string))];
-        const { data: teamData } = await supabase.from('teams').select('id,name').in('id', teamIds);
-        const nameMap = new Map(((teamData ?? []) as any[]).map(t => [t.id as string, t.name as string]));
-        setCallouts((calloutData as any[]).map(c => ({
-          id: c.id, target_team_id: c.target_team_id,
-          target_team_name: nameMap.get(c.target_team_id) ?? 'Unknown team',
-          spots_needed: c.spots_needed, status: c.status, note: c.note,
-        })));
+        const requestIds = (calloutData as any[]).map(c => c.id as string);
+        const { data: targetRows } = await supabase.from('guest_request_targets')
+          .select('request_id,team_id,teams(name)').in('request_id', requestIds);
+        const targetsByRequest = new Map<string, { id: string; name: string }[]>();
+        for (const row of (targetRows ?? []) as any[]) {
+          const list = targetsByRequest.get(row.request_id) ?? [];
+          list.push({ id: row.team_id as string, name: row.teams?.name ?? 'Unknown team' });
+          targetsByRequest.set(row.request_id, list);
+        }
+        setCallouts((calloutData as any[]).map(c => {
+          const targets = targetsByRequest.get(c.id) ?? [];
+          return {
+            id: c.id,
+            target_team_ids: targets.map(t => t.id),
+            target_team_names: targets.map(t => t.name),
+            spots_needed: c.spots_needed, status: c.status, note: c.note,
+          };
+        }));
       }
     }
 
@@ -559,16 +595,24 @@ export default function EventDetailScreen() {
 
   async function applyOverride(playerId: string, status: RsvpStatus) {
     if (!eventId) return;
-    await supabase.from('event_rsvps').upsert(
+    const { error } = await supabase.from('event_rsvps').upsert(
       { event_id: eventId, player_id: playerId, responded_by: profile?.id, status },
       { onConflict: 'event_id,player_id' }
     );
+    if (error) {
+      Alert.alert('Error', 'Could not update RSVP. Please try again.');
+      return;
+    }
     setRsvps((prev) => [...prev.filter((r) => r.player_id !== playerId), { player_id: playerId, status }]);
   }
 
   async function clearOverride(playerId: string) {
     if (!eventId) return;
-    await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', playerId);
+    const { error } = await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', playerId);
+    if (error) {
+      Alert.alert('Error', 'Could not clear RSVP. Please try again.');
+      return;
+    }
     setRsvps((prev) => prev.filter((r) => r.player_id !== playerId));
   }
 
@@ -610,7 +654,12 @@ export default function EventDetailScreen() {
   async function handleDelete() {
     if (!event) return;
     setDeleting(true);
-    await supabase.from('events').delete().eq('id', event.id);
+    const { error } = await supabase.from('events').delete().eq('id', event.id);
+    if (error) {
+      setDeleting(false);
+      Alert.alert('Error', 'Could not delete event. Please try again.');
+      return;
+    }
     router.back();
   }
 
@@ -712,9 +761,10 @@ export default function EventDetailScreen() {
   }
 
   useEffect(() => {
-    if (!guestModal) return;
+    if (!guestModal || !team?.id) return;
     setGuestQuery(''); setGuestPlayerResults([]); setGuestCoachResults([]);
-    setRequestTargetId(''); setRequestSpots(1); setRequestNote('');
+    setRequestTargetIds([]); setRequestSpots(1); setRequestNote('');
+    setOpenAgeGroups(new Set()); setTeamSearchQuery('');
     if (guestRole === 'player') {
       setClubBrowse([]);
       loadClubBrowse();
@@ -722,16 +772,16 @@ export default function EventDetailScreen() {
     } else {
       loadAllCoaches();
     }
-  }, [guestModal, guestRole]);
+  }, [guestModal, guestRole, team?.id]);
 
   async function loadAllCoaches() {
-    if (!profile?.club_id) return;
+    if (!team?.club_id) return;
     setCoachesLoaded(false);
     const { data } = await supabase.from('profiles')
       .select('id,full_name')
-      .eq('club_id', profile.club_id)
+      .eq('club_id', team.club_id)
       .in('role', ['coach', 'org_admin'])
-      .neq('id', profile.id)
+      .neq('id', profile?.id ?? '')
       .order('full_name')
       .limit(100);
     setAllCoaches(((data ?? []) as CoachResult[]).filter(c => !guests.some(g => g.profile_id === c.id)));
@@ -739,15 +789,15 @@ export default function EventDetailScreen() {
   }
 
   async function loadClubBrowse() {
-    if (!profile?.club_id || !team?.id) return;
+    if (!team?.club_id || !team?.id) return;
     setBrowseLoading(true);
-    const { data: teams } = await supabase.from('teams').select('id,name,age_group')
-      .eq('club_id', profile.club_id).neq('id', team.id).order('name');
-    const myAge = parseAge((team as any).age_group);
-    const eligible = ((teams ?? []) as any[]).filter(t => parseAge(t.age_group) <= myAge);
-    const otherIds = eligible.map((t: any) => t.id as string);
+    const { data: teams } = await supabase.from('teams').select('id,name,age_group,gender')
+      .eq('club_id', team.club_id).neq('id', team.id).order('name');
+    const teamList = (teams ?? []) as { id: string; name: string; age_group: string | null; gender: string | null }[];
+    const eligibleMap = new Map(teamList.map(t => [t.id, isEligibleTeam(team, t)]));
+    const otherIds = teamList.map(t => t.id);
     if (!otherIds.length) { setClubBrowse([]); setBrowseLoading(false); return; }
-    const nameMap = new Map(eligible.map((t: any) => [t.id as string, t.name as string]));
+    const nameMap = new Map(teamList.map(t => [t.id, t.name]));
     const { data: pData } = await supabase.from('players')
       .select('id,full_name,jersey_number,position,profile_id,team_id')
       .in('team_id', otherIds).order('jersey_number');
@@ -755,35 +805,44 @@ export default function EventDetailScreen() {
     for (const p of (pData ?? []) as any[]) {
       const tid = p.team_id as string;
       if (!grouped.has(tid)) grouped.set(tid, []);
-      grouped.get(tid)!.push({ ...p, team_name: nameMap.get(tid) ?? '' } as GuestPlayerResult);
+      grouped.get(tid)!.push({ ...p, team_name: nameMap.get(tid) ?? '', eligible: eligibleMap.get(tid) ?? true } as GuestPlayerResult);
     }
-    setClubBrowse(
-      (teams ?? []).map((t: any) => ({ id: t.id, name: t.name, players: grouped.get(t.id) ?? [] }))
-        .filter((t: ClubTeamBrowse) => t.players.length > 0)
-    );
+    const browseRows: ClubTeamBrowse[] = teamList
+      .map(t => ({ id: t.id, name: t.name, age_group: t.age_group, eligible: eligibleMap.get(t.id) ?? true, players: grouped.get(t.id) ?? [] }))
+      .filter((t) => t.players.length > 0);
+    setClubBrowse(browseRows);
+    setOpenAgeGroups(prev => {
+      const next = new Set(prev);
+      for (const t of browseRows) if (t.eligible) next.add(t.age_group ?? 'Other');
+      return next;
+    });
     setBrowseLoading(false);
   }
 
   async function searchGuests(query: string) {
-    if (!profile?.club_id || !team?.id || query.length < 2) {
+    if (!profile?.club_id || !team?.club_id || !team?.id || query.length < 2) {
       setGuestPlayerResults([]); setGuestCoachResults([]); return;
     }
     setGuestSearching(true);
     if (guestRole === 'player') {
-      const { data: teams } = await supabase.from('teams').select('id,name,age_group')
-        .eq('club_id', profile.club_id).neq('id', team.id);
-      const myAge = parseAge((team as any).age_group);
-      const eligible = ((teams ?? []) as any[]).filter(t => parseAge(t.age_group) <= myAge);
-      const otherIds = eligible.map((t: any) => t.id as string);
+      const { data: teams } = await supabase.from('teams').select('id,name,age_group,gender')
+        .eq('club_id', team.club_id).neq('id', team.id);
+      const teamList = (teams ?? []) as { id: string; name: string; age_group: string | null; gender: string | null }[];
+      const eligibleMap = new Map(teamList.map(t => [t.id, isEligibleTeam(team, t)]));
+      const otherIds = teamList.map(t => t.id);
       if (!otherIds.length) { setGuestPlayerResults([]); setGuestSearching(false); return; }
-      const nameMap = new Map(eligible.map((t: any) => [t.id as string, t.name as string]));
+      const nameMap = new Map(teamList.map(t => [t.id, t.name]));
       const { data: pData } = await supabase.from('players')
         .select('id,full_name,jersey_number,position,profile_id,team_id')
         .in('team_id', otherIds).ilike('full_name', `%${query}%`).limit(20);
-      setGuestPlayerResults((pData ?? []).map(p => ({ ...(p as any), team_name: nameMap.get((p as any).team_id) ?? 'Other Team' })));
+      setGuestPlayerResults(
+        (pData ?? [])
+          .map(p => ({ ...(p as any), team_name: nameMap.get((p as any).team_id) ?? 'Other Team', eligible: eligibleMap.get((p as any).team_id) ?? true } as GuestPlayerResult))
+          .sort((a, b) => Number(b.eligible) - Number(a.eligible))
+      );
     } else {
       const { data: cData } = await supabase.from('profiles')
-        .select('id,full_name').eq('club_id', profile.club_id)
+        .select('id,full_name').eq('club_id', team.club_id)
         .eq('role', 'coach').ilike('full_name', `%${query}%`)
         .neq('id', profile.id).limit(20);
       setGuestCoachResults((cData ?? []) as CoachResult[]);
@@ -883,9 +942,12 @@ export default function EventDetailScreen() {
 
     // Notify coaches and org admins on the event's team
     if (team && event) {
+      const clubId = team.club_id;
       const [{ data: coachRows }, { data: adminRows }] = await Promise.all([
         supabase.from('team_members').select('profile_id').eq('team_id', team.id).eq('role', 'coach'),
-        supabase.from('profiles').select('id').eq('club_id', profile!.club_id).in('role', ['org_admin', 'app_admin']),
+        clubId
+          ? supabase.from('profiles').select('id').eq('club_id', clubId).in('role', ['org_admin', 'app_admin'])
+          : Promise.resolve({ data: [] as { id: string }[] }),
       ]);
       const recipientIds = [
         ...((coachRows ?? []) as { profile_id: string }[]).map(r => r.profile_id),
@@ -927,21 +989,21 @@ export default function EventDetailScreen() {
     ]);
   }
 
-  function handleCancelCallout(calloutId: string, teamName: string) {
-    Alert.alert('Cancel call out', `Cancel the call out to ${teamName}?`, [
+  function handleCancelCallout(calloutId: string, teamNames: string) {
+    Alert.alert('Cancel call out', `Cancel the call out to ${teamNames}?`, [
       { text: 'Keep it', style: 'cancel' },
       { text: 'Cancel call out', style: 'destructive', onPress: async () => {
         const callout = callouts.find(c => c.id === calloutId);
         await (supabase as any).from('guest_requests').update({ status: 'cancelled' }).eq('id', calloutId);
         setCallouts(prev => prev.filter(c => c.id !== calloutId));
-        // Notify volunteers from the target team who already confirmed
-        if (callout && eventId) {
+        // Notify volunteers from the target teams who already confirmed
+        if (callout && eventId && callout.target_team_ids.length > 0) {
           const { data: confirmedGuests } = await supabase
             .from('event_guests')
             .select('player_id, players!inner(profile_id, team_id)')
             .eq('event_id', eventId)
             .eq('status', 'confirmed')
-            .eq('players.team_id', callout.target_team_id);
+            .in('players.team_id', callout.target_team_ids);
           const volunteerProfileIds = ((confirmedGuests ?? []) as any[])
             .map(g => g.players?.profile_id as string | null)
             .filter((id): id is string => !!id);
@@ -958,12 +1020,6 @@ export default function EventDetailScreen() {
     ]);
   }
 
-  function parseAge(ag: string | null | undefined): number {
-    if (!ag) return 999;
-    const m = ag.match(/\d+/);
-    return m ? parseInt(m[0]) : 999;
-  }
-
   function openGuestModal(role: 'player' | 'coach') {
     setGuestRole(role);
     setGuestTab('invite');
@@ -971,34 +1027,36 @@ export default function EventDetailScreen() {
   }
 
   async function loadEligibleTeams() {
-    if (!profile?.club_id || !team?.id) return;
-    const { data: teams } = await supabase.from('teams').select('id,name,age_group')
-      .eq('club_id', profile.club_id).neq('id', team.id).order('name');
-    const myAge = parseAge((team as any).age_group);
-    const eligible = ((teams ?? []) as { id: string; name: string; age_group: string | null }[])
-      .filter(t => parseAge(t.age_group) <= myAge);
-    setRequestTeams(eligible);
+    if (!team?.club_id || !team?.id) return;
+    const { data: teams } = await supabase.from('teams').select('id,name,age_group,gender')
+      .eq('club_id', team.club_id).neq('id', team.id).order('name');
+    const teamList = (teams ?? []) as { id: string; name: string; age_group: string | null; gender: string | null }[];
+    const rows = teamList.map(t => ({ ...t, eligible: isEligibleTeam(team, t) }));
+    setRequestTeams(rows);
+    setOpenAgeGroups(prev => {
+      const next = new Set(prev);
+      for (const t of rows) if (t.eligible) next.add(t.age_group ?? 'Other');
+      return next;
+    });
   }
 
   async function sendRequest() {
-    if (!profile || !team || !event || !requestTargetId) return;
+    if (!profile || !team || !event || requestTargetIds.length === 0) return;
     setRequestSending(true);
-    const targetTeam = requestTeams.find(t => t.id === requestTargetId);
+    const targetTeams = requestTeams.filter(t => requestTargetIds.includes(t.id));
 
-    const { data: newReq, error } = await (supabase as any).from('guest_requests').insert({
-      event_id:           event.id,
-      requesting_team_id: team.id,
-      target_team_id:     requestTargetId,
-      note:               requestNote.trim() || null,
-      spots_needed:       requestSpots,
-      status:             'open',
-      created_by:         profile.id,
-    }).select('id').single();
+    const { data: newReq, error } = await supabase.rpc('create_guest_request', {
+      p_event_id: event.id,
+      p_requesting_team_id: team.id,
+      p_target_team_ids: requestTargetIds,
+      p_spots_needed: requestSpots,
+      p_note: requestNote.trim(),
+    });
     if (error || !newReq) {
       Alert.alert('Error', 'Could not send call out. Try again.'); setRequestSending(false); return;
     }
-    const { data: players } = await supabase.from('players').select('profile_id').eq('team_id', requestTargetId);
-    const profileIds = ((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean) as string[];
+    const { data: players } = await supabase.from('players').select('profile_id').in('team_id', requestTargetIds);
+    const profileIds = [...new Set(((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean))] as string[];
     if (profileIds.length > 0) {
       await sendProfilesPush({
         profileIds,
@@ -1008,12 +1066,14 @@ export default function EventDetailScreen() {
       });
     }
     setCallouts(prev => [...prev, {
-      id: newReq.id, target_team_id: requestTargetId,
-      target_team_name: targetTeam?.name ?? 'Unknown team',
+      id: newReq.id,
+      target_team_ids: requestTargetIds,
+      target_team_names: targetTeams.map(t => t.name),
       spots_needed: requestSpots, status: 'open', note: requestNote.trim() || null,
     }]);
     setRequestSending(false); setGuestModal(false);
-    Alert.alert('Call out sent!', `${targetTeam?.name ?? 'The team'}'s parents have been notified and can volunteer their child.`);
+    const teamLabel = targetTeams.length === 1 ? targetTeams[0].name : `${targetTeams.length} teams`;
+    Alert.alert('Call out sent!', `Parents on ${teamLabel} have been notified and can volunteer their child.`);
   }
 
   async function markAttendance(playerId: string, newStatus: 'present' | 'absent' | 'late') {
@@ -1021,14 +1081,24 @@ export default function EventDetailScreen() {
     setSavingAttendance(playerId);
     const current = attendanceMap.get(playerId);
     if (current === newStatus) {
-      await supabase.from('event_attendance').delete()
+      const { error } = await supabase.from('event_attendance').delete()
         .eq('event_id', eventId).eq('player_id', playerId);
+      if (error) {
+        Alert.alert('Error', 'Could not update attendance. Please try again.');
+        setSavingAttendance(null);
+        return;
+      }
       setAttendanceMap(prev => { const next = new Map(prev); next.delete(playerId); return next; });
     } else {
-      await supabase.from('event_attendance').upsert(
+      const { error } = await supabase.from('event_attendance').upsert(
         { event_id: eventId, player_id: playerId, status: newStatus, marked_by: profile?.id },
         { onConflict: 'event_id,player_id' }
       );
+      if (error) {
+        Alert.alert('Error', 'Could not update attendance. Please try again.');
+        setSavingAttendance(null);
+        return;
+      }
       setAttendanceMap(prev => new Map([...prev, [playerId, newStatus]]));
       if (newStatus === 'absent') {
         const p = players.find((pl) => pl.id === playerId);
@@ -1125,12 +1195,50 @@ export default function EventDetailScreen() {
   const hasLocation = !!(event.location || event.address);
   const hasMap = !!(event.lat || event.address);
   const hasFieldInfo = !!event.field_notes;
+  const driveMins = driveTime ? parseDurationText(driveTime) : null;
+  const leaveByTime = (driveMins != null && event.arrival_buffer_minutes != null && event.event_time)
+    ? computeLeaveBy(event.event_time, event.arrival_buffer_minutes, driveMins, 5)
+    : null;
   const rsvpClosed = event.rsvp_lock_at ? new Date(event.rsvp_lock_at) <= new Date() : false;
   const deadlineLabel = event.rsvp_lock_at ? rsvpDeadlineLabel(event.rsvp_lock_at) : null;
 
   function switchToAvailability(tab: 'attending' | 'not_attending' | 'none') {
     setActiveRsvpTab(tab);
     setActiveMainTab('availability');
+  }
+
+  function toggleAgeGroup(key: string) {
+    setOpenAgeGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function renderTeamChip(t: { id: string; name: string; age_group: string | null; eligible: boolean }) {
+    const sel = requestTargetIds.includes(t.id);
+    return (
+      <TouchableOpacity
+        key={t.id}
+        onPress={() => setRequestTargetIds(prev => prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id])}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 5,
+          paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
+          backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
+          borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+        }}
+      >
+        {sel && <Ionicons name="checkmark" size={13} color="#fff" />}
+        <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>
+          {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
+        </Text>
+        {!t.eligible && (
+          <Text style={{ fontSize: 10, fontWeight: '700', color: sel ? 'rgba(255,255,255,0.75)' : PULSE_COLORS.ui.muted }}>
+            · Check eligibility
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
   }
 
   return (
@@ -1392,12 +1500,21 @@ export default function EventDetailScreen() {
                   {driveTime && (
                     <>
                       {weather && <View style={styles.weatherDriveDivider} />}
-                      <View style={styles.driveRow}>
-                        <View style={styles.driveIconWrap}>
-                          <Ionicons name="car-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                      <View style={styles.driveBlock}>
+                        <View style={styles.driveRow}>
+                          <View style={styles.driveIconWrap}>
+                            <Ionicons name="car-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                          </View>
+                          <Text style={styles.driveText}>{driveTime}</Text>
+                          <Text style={styles.driveLabel}>from your location</Text>
                         </View>
-                        <Text style={styles.driveText}>{driveTime}</Text>
-                        <Text style={styles.driveLabel}>from your location</Text>
+                        {leaveByTime && (
+                          <View style={styles.leaveByRow}>
+                            <Ionicons name="alarm-outline" size={14} color="#F59E0B" />
+                            <Text style={styles.leaveByText}>Leave by {leaveByTime}</Text>
+                            <Text style={styles.leaveByHint}>incl. 5 min for parking</Text>
+                          </View>
+                        )}
                       </View>
                     </>
                   )}
@@ -1736,15 +1853,16 @@ export default function EventDetailScreen() {
               {callouts.length > 0 && (
                 <View style={styles.calloutList}>
                   {callouts.map(c => {
-                    const filled = guestPlayers.filter(g => g.team_id === c.target_team_id && g.status !== 'declined').length;
+                    const filled = guestPlayers.filter(g => g.team_id && c.target_team_ids.includes(g.team_id) && g.status !== 'declined').length;
                     const spotsLeft = Math.max(0, c.spots_needed - filled);
+                    const teamNames = c.target_team_names.join(', ');
                     return (
                       <View key={c.id} style={styles.calloutRow}>
                         <View style={styles.calloutIcon}>
                           <Ionicons name="megaphone-outline" size={14} color="#f97316" />
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.calloutTeam}>{c.target_team_name}</Text>
+                          <Text style={styles.calloutTeam}>{teamNames}</Text>
                           <Text style={styles.calloutMeta}>
                             {c.status === 'filled'
                               ? `All ${c.spots_needed} spot${c.spots_needed !== 1 ? 's' : ''} filled`
@@ -1758,7 +1876,7 @@ export default function EventDetailScreen() {
                           </Text>
                         </View>
                         {c.status === 'open' && (
-                          <TouchableOpacity onPress={() => handleCancelCallout(c.id, c.target_team_name)} hitSlop={8} style={{ marginLeft: 8 }}>
+                          <TouchableOpacity onPress={() => handleCancelCallout(c.id, teamNames)} hitSlop={8} style={{ marginLeft: 8 }}>
                             <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
                           </TouchableOpacity>
                         )}
@@ -2413,45 +2531,75 @@ export default function EventDetailScreen() {
                               </View>
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.guestResultName}>{p.full_name}</Text>
-                                <Text style={styles.guestResultSub}>{p.team_name}{p.position ? ` · ${p.position}` : ''}</Text>
+                                <Text style={styles.guestResultSub}>
+                                  {p.team_name}{p.position ? ` · ${p.position}` : ''}{!p.eligible ? ' · Check eligibility' : ''}
+                                </Text>
                               </View>
                               {addingGuest === p.id
                                 ? <ActivityIndicator size="small" color={primaryColor} />
                                 : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
                             </TouchableOpacity>
                           ))
-                        : clubBrowse.map(t => (
-                            <View key={t.id}>
-                              <View style={styles.guestTeamHeader}>
-                                <Ionicons name="shield-outline" size={12} color={primaryColor} />
-                                <Text style={[styles.guestTeamLabel, { color: primaryColor }]}>{t.name}</Text>
+                        : groupByAgeGroup(clubBrowse).map(section => {
+                            const isOpen = openAgeGroups.has(section.key);
+                            return (
+                              <View key={section.key}>
+                                <TouchableOpacity
+                                  onPress={() => toggleAgeGroup(section.key)}
+                                  style={styles.ageSectionHeader}
+                                  activeOpacity={0.7}
+                                >
+                                  <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={PULSE_COLORS.ui.muted} />
+                                  <Text style={styles.ageSectionLabel}>{section.ageGroup ?? 'Other'}</Text>
+                                  <Text style={styles.ageSectionCount}>
+                                    {section.items.length} team{section.items.length !== 1 ? 's' : ''}
+                                  </Text>
+                                  {!section.hasEligible && (
+                                    <View style={styles.guestEligBadge}>
+                                      <Text style={styles.guestEligBadgeText}>Check eligibility</Text>
+                                    </View>
+                                  )}
+                                </TouchableOpacity>
+                                {isOpen && section.items.map(t => (
+                                  <View key={t.id}>
+                                    <View style={styles.guestTeamHeader}>
+                                      <Ionicons name="shield-outline" size={12} color={primaryColor} />
+                                      <Text style={[styles.guestTeamLabel, { color: primaryColor }]}>{t.name}</Text>
+                                      {!t.eligible && (
+                                        <View style={styles.guestEligBadge}>
+                                          <Text style={styles.guestEligBadgeText}>Check eligibility</Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                    {t.players.map(p => {
+                                      const alreadyAdded = guests.some(g => g.player_id === p.id);
+                                      return (
+                                        <TouchableOpacity
+                                          key={p.id}
+                                          style={[styles.guestResultRow, alreadyAdded && { opacity: 0.4 }]}
+                                          onPress={() => !alreadyAdded && handleAddGuestPlayer(p)}
+                                          disabled={!!addingGuest || alreadyAdded}
+                                        >
+                                          <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
+                                            <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
+                                          </View>
+                                          <View style={{ flex: 1 }}>
+                                            <Text style={styles.guestResultName}>{p.full_name}</Text>
+                                            {p.position ? <Text style={styles.guestResultSub}>{p.position}</Text> : null}
+                                          </View>
+                                          {alreadyAdded
+                                            ? <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
+                                            : addingGuest === p.id
+                                              ? <ActivityIndicator size="small" color={primaryColor} />
+                                              : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
+                                        </TouchableOpacity>
+                                      );
+                                    })}
+                                  </View>
+                                ))}
                               </View>
-                              {t.players.map(p => {
-                                const alreadyAdded = guests.some(g => g.player_id === p.id);
-                                return (
-                                  <TouchableOpacity
-                                    key={p.id}
-                                    style={[styles.guestResultRow, alreadyAdded && { opacity: 0.4 }]}
-                                    onPress={() => !alreadyAdded && handleAddGuestPlayer(p)}
-                                    disabled={!!addingGuest || alreadyAdded}
-                                  >
-                                    <View style={[styles.jerseyBadge, { backgroundColor: 'rgba(249,115,22,0.12)', marginRight: 12 }]}>
-                                      <Text style={[styles.jerseyNum, { color: '#f97316' }]}>{p.jersey_number ?? 'G'}</Text>
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={styles.guestResultName}>{p.full_name}</Text>
-                                      {p.position ? <Text style={styles.guestResultSub}>{p.position}</Text> : null}
-                                    </View>
-                                    {alreadyAdded
-                                      ? <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
-                                      : addingGuest === p.id
-                                        ? <ActivityIndicator size="small" color={primaryColor} />
-                                        : <Ionicons name="add-circle-outline" size={20} color={primaryColor} />}
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </View>
-                          ))
+                            );
+                          })
                       }
                       {guestQuery.length >= 2 && !guestSearching && guestPlayerResults.length === 0 && (
                         <Text style={styles.guestNoResults}>No results for "{guestQuery}"</Text>
@@ -2465,36 +2613,67 @@ export default function EventDetailScreen() {
                   /* ── Call out tab ── */
                   <>
                     <Text style={styles.guestCalloutHint}>
-                      Parents on that team get a push notification. First to volunteer fills the spot.
+                      Parents on the selected team(s) get a push notification. Spots are shared across all of them — first to volunteer fills the spot.
                     </Text>
                     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                      <Text style={styles.requestSectionLabel}>WHICH TEAM?</Text>
-                      {requestTeams.length === 0 ? (
-                        <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No age-eligible teams in your club.</Text>
-                      ) : (
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                          {requestTeams.map(t => {
-                            const sel = requestTargetId === t.id;
-                            return (
-                              <TouchableOpacity
-                                key={t.id}
-                                onPress={() => setRequestTargetId(t.id)}
-                                style={{
-                                  paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
-                                  backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
-                                  borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
-                                }}
-                              >
-                                <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>
-                                  {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
+                      <Text style={styles.requestSectionLabel}>WHICH TEAM(S)? {requestTargetIds.length > 0 ? `(${requestTargetIds.length} selected)` : ''}</Text>
+                      {requestTeams.length > 6 && (
+                        <View style={[styles.guestSearchRow, { marginBottom: 12 }]}>
+                          <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                          <TextInput
+                            style={styles.guestSearchInput}
+                            placeholder="Search teams…"
+                            placeholderTextColor={PULSE_COLORS.ui.muted}
+                            value={teamSearchQuery}
+                            onChangeText={setTeamSearchQuery}
+                            returnKeyType="search"
+                          />
                         </View>
                       )}
+                      {requestTeams.length === 0 ? (
+                        <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No other teams in your club yet.</Text>
+                      ) : teamSearchQuery.trim() ? (() => {
+                        const q = teamSearchQuery.trim().toLowerCase();
+                        const matches = requestTeams.filter(t => t.name.toLowerCase().includes(q));
+                        return matches.length === 0 ? (
+                          <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No teams match "{teamSearchQuery}"</Text>
+                        ) : (
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                            {matches.map(renderTeamChip)}
+                          </View>
+                        );
+                      })() : (
+                        groupByAgeGroup(requestTeams).map(section => {
+                          const isOpen = openAgeGroups.has(section.key);
+                          return (
+                            <View key={section.key} style={{ marginBottom: 4 }}>
+                              <TouchableOpacity
+                                onPress={() => toggleAgeGroup(section.key)}
+                                style={styles.ageSectionHeader}
+                                activeOpacity={0.7}
+                              >
+                                <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={PULSE_COLORS.ui.muted} />
+                                <Text style={styles.ageSectionLabel}>{section.ageGroup ?? 'Other'}</Text>
+                                <Text style={styles.ageSectionCount}>
+                                  {section.items.length} team{section.items.length !== 1 ? 's' : ''}
+                                </Text>
+                                {!section.hasEligible && (
+                                  <View style={styles.guestEligBadge}>
+                                    <Text style={styles.guestEligBadgeText}>Check eligibility</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                              {isOpen && (
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 12 }}>
+                                  {section.items.map(renderTeamChip)}
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })
+                      )}
 
-                      {requestTargetId !== '' && (
+                      {requestTargetIds.length > 0 && (
                         <>
                           <Text style={styles.requestSectionLabel}>HOW MANY SPOTS?</Text>
                           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
@@ -2536,19 +2715,19 @@ export default function EventDetailScreen() {
                     <View style={{ paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border }}>
                       <TouchableOpacity
                         onPress={sendRequest}
-                        disabled={!requestTargetId || requestSending}
+                        disabled={requestTargetIds.length === 0 || requestSending}
                         activeOpacity={0.85}
                         style={{
-                          backgroundColor: !requestTargetId || requestSending ? '#E2E8F0' : '#f97316',
+                          backgroundColor: requestTargetIds.length === 0 || requestSending ? '#E2E8F0' : '#f97316',
                           borderRadius: 14, paddingVertical: 15, alignItems: 'center', justifyContent: 'center',
                           flexDirection: 'row', gap: 8,
                         }}
                       >
                         {requestSending
                           ? <ActivityIndicator color="#fff" size="small" />
-                          : <Ionicons name="megaphone-outline" size={16} color={!requestTargetId ? '#94A3B8' : '#fff'} />}
-                        <Text style={{ fontSize: 15, fontWeight: '800', color: !requestTargetId || requestSending ? '#94A3B8' : '#fff' }}>
-                          {requestSending ? 'Sending…' : 'Send call out'}
+                          : <Ionicons name="megaphone-outline" size={16} color={requestTargetIds.length === 0 ? '#94A3B8' : '#fff'} />}
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: requestTargetIds.length === 0 || requestSending ? '#94A3B8' : '#fff' }}>
+                          {requestSending ? 'Sending…' : requestTargetIds.length > 1 ? `Send call out to ${requestTargetIds.length} teams` : 'Send call out'}
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -2739,6 +2918,7 @@ const styles = StyleSheet.create({
   weatherDriveDivider: {
     height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 12,
   },
+  driveBlock: { gap: 8 },
   driveRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   driveIconWrap: {
     width: 30, height: 30, borderRadius: 8,
@@ -2747,6 +2927,9 @@ const styles = StyleSheet.create({
   },
   driveText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
   driveLabel: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  leaveByRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 40 },
+  leaveByText: { fontSize: 13, fontWeight: '800', color: '#F59E0B' },
+  leaveByHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   uniformChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -3136,6 +3319,15 @@ const styles = StyleSheet.create({
   },
   guestTeamHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingTop: 14, paddingBottom: 6 },
   guestTeamLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  guestEligBadge: { backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2 },
+  guestEligBadgeText: { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, textTransform: 'none', letterSpacing: 0.2 },
+  ageSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingVertical: 10, paddingHorizontal: 4,
+    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+  },
+  ageSectionLabel: { fontSize: 13, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  ageSectionCount: { fontSize: 11, color: PULSE_COLORS.ui.muted, flex: 1 },
   guestSearchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,

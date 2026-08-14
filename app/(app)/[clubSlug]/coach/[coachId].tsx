@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { resendCoachInvite } from '../../../../lib/inviteApi';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
@@ -50,7 +51,7 @@ function formatDate(iso: string): string {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function CoachProfileScreen() {
-  const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const { primaryColor, rgba } = useClub();
   const { coachId, source } = useLocalSearchParams<{ coachId: string; source: 'member' | 'invite' }>();
   const { profile } = useAuth();
   const { team } = useTeam();
@@ -130,26 +131,15 @@ export default function CoachProfileScreen() {
   }
 
   async function handleResend() {
-    if (!coach?.email || !coach.inviteToken || !profile) return;
+    if (!coach?.email || !coach.inviteId || !profile) return;
     setResending(true);
     try {
-      const teamName = team?.name ?? 'your team';
-      const deepLink = `https://pulse-fc.app/join?token=${coach.inviteToken}`;
-      const subject = `Reminder: You've been invited to join ${teamName} as a coach on Pulse FC`;
-      const body = `Hi,\n\nJust a reminder — you've been invited to join ${teamName} as coaching staff on Pulse FC.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${coach.inviteToken}\n\n— ${profile.full_name ?? 'Your Club Admin'}`;
-      await supabase.functions.invoke('send-team-email', {
-        body: {
-          to: [{ email: coach.email, name: '' }],
-          cc: [], subject, body, reply_to: null,
-          from_name: profile.full_name ?? 'Pulse FC',
-          team_name: teamName,
-          attachments: [],
-          club_logo_url: logoUrl,
-          club_name: clubName,
-          primary_color: primaryColor,
-        },
-      });
-      Alert.alert('Invite resent', `A reminder has been sent to ${coach.email}.`);
+      const ok = await resendCoachInvite(coach.inviteId);
+      if (ok) {
+        Alert.alert('Invite resent', `A reminder has been sent to ${coach.email}.`);
+      } else {
+        Alert.alert('Failed', 'Could not resend the invite. Please try again.');
+      }
     } catch {
       Alert.alert('Failed', 'Could not resend the invite. Please try again.');
     } finally {
@@ -173,10 +163,15 @@ export default function CoachProfileScreen() {
     if (!coach) return;
     setRemoving(true);
 
-    if (coach.source === 'invite') {
-      await (supabase as any).from('invites').delete().eq('id', coach.inviteId);
-    } else {
-      await supabase.from('team_members').delete().eq('id', coachId);
+    const { error } =
+      coach.source === 'invite'
+        ? await (supabase as any).from('invites').delete().eq('id', coach.inviteId)
+        : await supabase.from('team_members').delete().eq('id', coachId);
+
+    if (error) {
+      setRemoving(false);
+      Alert.alert('Error', 'Could not remove coach. Please try again.');
+      return;
     }
 
     router.back();

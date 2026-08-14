@@ -74,7 +74,7 @@ export default function GalleryScreen() {
   const { team } = useTeam();
   const { profile } = useAuth();
   const { primaryColor } = useClub();
-  const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
+  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
 
   const [photos, setPhotos]         = useState<Photo[]>([]);
   const [loading, setLoading]       = useState(true);

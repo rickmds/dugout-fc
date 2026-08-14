@@ -30,20 +30,32 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function fetchProfileAndClub(userId: string): Promise<{ profile: Profile | null; club: Club | null }> {
-  const { data } = await supabase
+// Supabase's join-cardinality inference for `clubs(*)` isn't guaranteed to
+// stay a single object rather than an array if the relationship is ever
+// redefined — typing it as either (matching the defensive Array.isArray
+// check already below) means a real shape mismatch fails to compile
+// instead of silently returning undefined at runtime.
+type ProfileWithClub = Profile & { clubs: Club | Club[] | null };
+
+async function fetchProfileAndClub(userId: string): Promise<{ profile: Profile | null; club: Club | null; error: boolean }> {
+  const { data, error } = await supabase
     .from('profiles')
     .select('*, clubs(*)')
     .eq('id', userId)
-    .single();
+    .single<ProfileWithClub>();
 
-  if (!data) return { profile: null, club: null };
+  if (error) {
+    console.warn('fetchProfileAndClub failed', error);
+    return { profile: null, club: null, error: true };
+  }
 
-  const { clubs, ...profileFields } = data as any;
+  if (!data) return { profile: null, club: null, error: false };
+
+  const { clubs, ...profileFields } = data;
   const profile = profileFields as Profile;
-  const club = (Array.isArray(clubs) ? clubs[0] ?? null : clubs ?? null) as Club | null;
+  const club = Array.isArray(clubs) ? clubs[0] ?? null : clubs ?? null;
 
-  return { profile, club };
+  return { profile, club, error: false };
 }
 
 async function persistCache(userId: string, profile: Profile, club: Club | null) {
@@ -92,10 +104,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Revalidate in background (or full load if no cache)
-        const { profile, club } = await fetchProfileAndClub(session.user.id);
+        const { profile, club, error } = await fetchProfileAndClub(session.user.id);
         if (mounted) {
-          setState({ session, user: session.user, profile, club, loading: false });
-          if (profile) persistCache(session.user.id, profile, club);
+          if (error) {
+            // Transient/network failure — keep whatever profile/club we already have
+            // (from cache, or null if there was none) instead of nulling out valid data.
+            setState((prev) => ({ ...prev, session, user: session.user, loading: false }));
+          } else {
+            setState({ session, user: session.user, profile, club, loading: false });
+            if (profile) persistCache(session.user.id, profile, club);
+          }
         }
       } else {
         setState({ session: null, user: null, profile: null, club: null, loading: false });
@@ -112,10 +130,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (session?.user) {
-        const { profile, club } = await fetchProfileAndClub(session.user.id);
+        const { profile, club, error } = await fetchProfileAndClub(session.user.id);
         if (mounted) {
-          setState({ session, user: session.user, profile, club, loading: false });
-          if (profile) persistCache(session.user.id, profile, club);
+          if (error) {
+            // Transient/network failure — leave the existing profile/club in state alone.
+            setState((prev) => ({ ...prev, session, user: session.user, loading: false }));
+          } else {
+            setState({ session, user: session.user, profile, club, loading: false });
+            if (profile) persistCache(session.user.id, profile, club);
+          }
         }
       } else {
         setState({ session: null, user: null, profile: null, club: null, loading: false });
@@ -134,7 +157,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshProfile() {
     if (!state.user) return;
-    const { profile, club } = await fetchProfileAndClub(state.user.id);
+    const { profile, club, error } = await fetchProfileAndClub(state.user.id);
+    if (error) {
+      // Transient/network failure — leave the existing cached profile/club alone.
+      return;
+    }
     setState((prev) => ({ ...prev, profile, club }));
     if (profile) persistCache(state.user.id, profile, club);
   }

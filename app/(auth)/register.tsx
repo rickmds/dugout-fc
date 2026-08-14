@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../hooks/useAuth';
 import { signInWithApple, signInWithGoogle } from '../../lib/auth';
+import { routeAfterAuth } from '../../lib/authRouting';
 import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
@@ -16,17 +17,9 @@ function mapAuthError(message: string): string {
   return message;
 }
 
-async function acceptInviteIfPending(): Promise<string | null> {
-  const token = await AsyncStorage.getItem('pendingInviteToken');
-  if (!token) return null;
-  await AsyncStorage.removeItem('pendingInviteToken');
-  const { data, error: rpcError } = await supabase.rpc('accept_invite', { p_token: token });
-  if (rpcError) return null;
-  return (data as { club_slug?: string } | null)?.club_slug ?? null;
-}
-
 export default function RegisterScreen() {
   const router = useRouter();
+  const { refreshProfile } = useAuth();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,13 +29,14 @@ export default function RegisterScreen() {
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
 
-  async function routeAfterRegister() {
-    const clubSlug = await acceptInviteIfPending();
-    if (!clubSlug) {
-      router.replace('/(auth)/find-team');
-      return;
+  async function routeAfterRegister(userId: string, isSso = false) {
+    const result = await routeAfterAuth(router, userId, refreshProfile, { isSso });
+    if (result.type === 'error' || result.type === 'info') {
+      // register.tsx has no separate info banner — an org_admin mid-web-setup
+      // account can't actually reach this screen (the email would already be
+      // registered), so surfacing it via the error banner is a safe fallback.
+      setError(result.message);
     }
-    router.replace(`/(app)/${clubSlug}/(tabs)` as never);
   }
 
   async function handleRegister() {
@@ -80,7 +74,7 @@ export default function RegisterScreen() {
     }
 
     if (data.user) {
-      await routeAfterRegister();
+      await routeAfterRegister(data.user.id);
     }
   }
 
@@ -94,7 +88,7 @@ export default function RegisterScreen() {
         setSocialLoading(null);
         return;
       }
-      await routeAfterRegister();
+      await routeAfterRegister(data.user.id, true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Google sign-in failed.');
     } finally {
@@ -112,7 +106,7 @@ export default function RegisterScreen() {
         setSocialLoading(null);
         return;
       }
-      await routeAfterRegister();
+      await routeAfterRegister(data.user.id, true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Apple sign-in failed.');
     } finally {

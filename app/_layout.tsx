@@ -7,6 +7,7 @@ import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider } from '../hooks/useAuth';
+import { TeamProvider } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 
 SplashScreen.preventAutoHideAsync();
@@ -79,6 +80,7 @@ function AppShell() {
         case 'fee_assigned':
         case 'fee_reminder':
         case 'payment_confirmed':
+        case 'fee_payment_claimed':
           router.push(`/(app)/${slug}/notifications` as any);
           break;
         // ── Fallback ─────────────────────────────────────────────────────────
@@ -136,8 +138,10 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <AppShell />
-      {!splashDone && <SplashVideo onFinished={() => setSplashDone(true)} />}
+      <TeamProvider>
+        <AppShell />
+        {!splashDone && <SplashVideo onFinished={() => setSplashDone(true)} />}
+      </TeamProvider>
     </AuthProvider>
   );
 }

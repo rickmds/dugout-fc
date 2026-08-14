@@ -12,6 +12,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { sendCoachInvites, sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
@@ -73,13 +74,6 @@ const PARSE_MESSAGES = [
   'Almost done…',
 ];
 
-function uuid(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ClubImportScreen() {
@@ -87,7 +81,7 @@ export default function ClubImportScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile, club } = useAuth();
   const { refetch: refetchTeam } = useTeam();
-  const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const { primaryColor, rgba } = useClub();
 
   const [phase, setPhase]             = useState<Phase>('idle');
   const [parseMsg, setParseMsg]       = useState(PARSE_MESSAGES[0]);
@@ -221,25 +215,6 @@ export default function ClubImportScreen() {
     setParseResult((prev) => prev ? { ...prev, uncertain_rows: prev.uncertain_rows.filter((_, i) => i !== idx) } : prev);
   }
 
-  // ── Send a single invite email ─────────────────────────────────────────────
-
-  async function sendInviteEmail(opts: {
-    email: string; role: 'coach' | 'parent'; token: string; teamName: string;
-  }) {
-    if (!profile?.full_name) return;
-    const deepLink = `https://pulse-fc.app/join?token=${opts.token}`;
-    const isCoach = opts.role === 'coach';
-    const subject = isCoach
-      ? `You've been invited to join ${opts.teamName} as a coach on Pulse FC`
-      : `Your child has been added to ${opts.teamName} on Pulse FC`;
-    const body = isCoach
-      ? `Hi,\n\nYou've been invited to join ${opts.teamName} as coaching staff on Pulse FC.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${opts.token}\n\n— ${profile.full_name}`
-      : `Hi,\n\nYour child has been added to ${opts.teamName} on Pulse FC — the app the team uses for schedules, lineups, and team chat.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${opts.token}\n\n— ${profile.full_name}`;
-    await supabase.functions.invoke('send-team-email', {
-      body: { to: [{ email: opts.email, name: '' }], cc: [], subject, body, reply_to: null, from_name: profile.full_name, team_name: opts.teamName, attachments: [], club_logo_url: logoUrl, club_name: clubName, primary_color: primaryColor },
-    });
-  }
-
   // ── Commit import + send invites ───────────────────────────────────────────
 
   async function handleImport() {
@@ -293,22 +268,27 @@ export default function ClubImportScreen() {
         stats.players++;
 
         if (playerData && p.parent_email?.trim()) {
-          const token = uuid();
-          await supabase.from('invites').insert({ team_id: teamId, player_id: playerData.id, email: p.parent_email.trim(), token, role: 'parent', created_by: profile.id });
-          await sendInviteEmail({ email: p.parent_email.trim(), role: 'parent', token, teamName: pt.name });
-          stats.invitesSent++;
+          const { data: inviteData } = await supabase
+            .from('invites')
+            .insert({ team_id: teamId, player_id: playerData.id, email: p.parent_email.trim(), role: 'parent', created_by: profile.id })
+            .select('id')
+            .single();
+          if (inviteData?.id) {
+            await sendParentInviteEmail(inviteData.id, p.full_name.trim());
+            stats.invitesSent++;
+          }
         }
       }
 
       // Coach invites
       setProgress({ current: i + 1, total, label: `Inviting coaches to ${pt.name}…` });
-      for (const c of pt.coaches) {
-        if (!c.email?.trim()) continue;
-        const token = uuid();
-        await supabase.from('invites').insert({ team_id: teamId, email: c.email.trim(), token, role: 'coach', created_by: profile.id });
-        await sendInviteEmail({ email: c.email.trim(), role: 'coach', token, teamName: pt.name });
-        stats.coaches++;
-        stats.invitesSent++;
+      const coachInputs = pt.coaches
+        .filter((c) => c.email?.trim())
+        .map((c) => ({ full_name: c.full_name?.trim() || c.email!.trim(), email: c.email!.trim(), team_ids: [teamId], role: 'coach' as const }));
+      if (coachInputs.length > 0 && profile.club_id) {
+        await sendCoachInvites(profile.club_id, coachInputs);
+        stats.coaches += coachInputs.length;
+        stats.invitesSent += coachInputs.length;
       }
     }
 

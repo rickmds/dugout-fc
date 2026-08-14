@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -43,6 +44,10 @@ type PlayerDetail = {
   is_injured: boolean;
   profile_id: string | null;
   profile_avatar_url: string | null; // from joined profiles row
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact_relationship: string | null;
+  medical_notes: string | null;
 };
 
 type EventRsvp = {
@@ -124,7 +129,7 @@ const FOOT_LABEL: Record<string, string> = { left: 'Left foot', right: 'Right fo
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function PlayerProfileScreen() {
-  const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const { primaryColor, rgba } = useClub();
   const { playerId } = useLocalSearchParams<{ playerId: string }>();
   const { team, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
@@ -157,6 +162,11 @@ export default function PlayerProfileScreen() {
   const [photoEditorUri, setPhotoEditorUri]           = useState('');
   const [photoEditorVisible, setPhotoEditorVisible]   = useState(false);
   const [reopenAfterPhoto, setReopenAfterPhoto]       = useState(false);
+  // Set right before dismissing the edit sheet on iOS — picked up by that
+  // Modal's onDismiss once it's ACTUALLY finished closing, rather than
+  // guessing with a timeout (iOS can't present a second Modal while the
+  // first is still mid-dismissal; a guessed delay that's too short crashes).
+  const pendingPhotoUriRef = useRef<string | null>(null);
   const [editPrivate, setEditPrivate]                 = useState(false);
   const [saving, setSaving]                           = useState(false);
   const [deleting, setDeleting]                       = useState(false);
@@ -171,8 +181,13 @@ export default function PlayerProfileScreen() {
   const [guardianRel, setGuardianRel]             = useState('');
   const [savingInvite, setSavingInvite]         = useState(false);
 
-  const isCoach    = profile?.role === 'org_admin' || profile?.role === 'coach';
-  const isMyPlayer = !!player?.profile_id && player.profile_id === profile?.id;
+  // A second (or later) guardian is linked via player_guardians, not the
+  // legacy players.profile_id column, which only ever holds the first
+  // guardian to accept an invite for this kid.
+  const [isSecondaryGuardian, setIsSecondaryGuardian] = useState(false);
+
+  const isCoach    = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  const isMyPlayer = (!!player?.profile_id && player.profile_id === profile?.id) || isSecondaryGuardian;
   const canEdit    = isCoach || isMyPlayer;
   // Other parents see limited info when player is private
   const canSeeDetails = isCoach || isMyPlayer || !player?.is_private;
@@ -182,6 +197,12 @@ export default function PlayerProfileScreen() {
     if (!playerId) return;
     fetchPlayer();
   }, [playerId]);
+
+  useEffect(() => {
+    if (!player?.id || !profile?.id) { setIsSecondaryGuardian(false); return; }
+    supabase.from('player_guardians').select('player_id').eq('player_id', player.id).eq('profile_id', profile.id).maybeSingle()
+      .then(({ data }) => setIsSecondaryGuardian(!!data));
+  }, [player?.id, profile?.id]);
 
   // Stats (events, RSVPs, playing time) need team — fires once both are ready
   useEffect(() => {
@@ -205,7 +226,7 @@ export default function PlayerProfileScreen() {
     // that may not be in the live DB yet — handled gracefully via cast
     const { data, error } = await (supabase as any)
       .from('players')
-      .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, profiles!players_profile_id_fkey(avatar_url)')
+      .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, medical_notes, profiles!players_profile_id_fkey(avatar_url)')
       .eq('id', playerId)
       .single();
 
@@ -227,6 +248,10 @@ export default function PlayerProfileScreen() {
           photo_url: null,
           is_private: false,
           is_injured: false,
+          emergency_contact_name: null,
+          emergency_contact_phone: null,
+          emergency_contact_relationship: null,
+          medical_notes: null,
           profile_avatar_url: (fallback as any).profiles?.avatar_url ?? null,
         } as PlayerDetail);
       }
@@ -368,15 +393,28 @@ export default function PlayerProfileScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
     if (!result.canceled && result.assets[0]) {
-      // iOS cannot show two RN Modals simultaneously — close edit sheet first,
-      // then open the fullScreen ImageEditor after the dismiss animation finishes.
-      setReopenAfterPhoto(true);
-      setShowEdit(false);
       const pickedUri = result.assets[0].uri;
-      setTimeout(() => {
+      setReopenAfterPhoto(true);
+      if (Platform.OS === 'ios') {
+        // iOS cannot show two RN Modals simultaneously — close the edit sheet
+        // and let its onDismiss (fired once the dismissal animation actually
+        // completes) open the ImageEditor, instead of guessing a delay.
+        pendingPhotoUriRef.current = pickedUri;
+        setShowEdit(false);
+      } else {
+        setShowEdit(false);
         setPhotoEditorUri(pickedUri);
         setPhotoEditorVisible(true);
-      }, 400);
+      }
+    }
+  }
+
+  function handleEditSheetDismiss() {
+    const pendingUri = pendingPhotoUriRef.current;
+    if (pendingUri) {
+      pendingPhotoUriRef.current = null;
+      setPhotoEditorUri(pendingUri);
+      setPhotoEditorVisible(true);
     }
   }
 
@@ -512,7 +550,12 @@ export default function PlayerProfileScreen() {
   async function handleDelete() {
     if (!player) return;
     setDeleting(true);
-    await supabase.from('players').delete().eq('id', player.id);
+    const { error } = await supabase.from('players').delete().eq('id', player.id);
+    if (error) {
+      setDeleting(false);
+      Alert.alert('Error', 'Could not remove player. Please try again.');
+      return;
+    }
     router.back();
   }
 
@@ -551,7 +594,7 @@ export default function PlayerProfileScreen() {
     } else {
       // Create new invite
       if (!guardianEmail.trim()) { setSavingInvite(false); return; }
-      const { error } = await (supabase as any).from('invites').insert({
+      const { data: inviteData, error } = await (supabase as any).from('invites').insert({
         team_id: team.id,
         player_id: player.id,
         email: guardianEmail.trim().toLowerCase(),
@@ -560,12 +603,13 @@ export default function PlayerProfileScreen() {
         address: guardianAddress.trim() || null,
         relationship: guardianRel || null,
         created_by: profile.id,
-      });
+      }).select('id').single();
       if (error) {
         setSavingInvite(false);
         Alert.alert('Error', 'Could not save guardian. Please try again.');
         return;
       }
+      if (inviteData?.id) await sendParentInviteEmail(inviteData.id, player.full_name);
     }
 
     setSavingInvite(false);
@@ -592,26 +636,10 @@ export default function PlayerProfileScreen() {
 
   async function handleResendInvite(invite: Invite) {
     if (!profile || !team || !player) return;
-    const teamName = team.name;
-    const deepLink = `https://pulse-fc.app/join?token=${invite.token}`;
-    const displayName = invite.guardian_name ?? 'there';
-    const subject = `Reminder: Your child has been added to ${teamName} on Pulse FC`;
-    const body = `Hi ${displayName},\n\nJust a reminder — ${player.full_name} has been added to ${teamName} on Pulse FC.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${invite.token}\n\n— ${profile.full_name ?? 'Your Coach'}`;
-    try {
-      await supabase.functions.invoke('send-team-email', {
-        body: {
-          to: [{ email: invite.email, name: invite.guardian_name ?? '' }],
-          cc: [], subject, body, reply_to: null,
-          from_name: profile.full_name ?? 'Pulse FC',
-          team_name: teamName,
-          attachments: [],
-          club_logo_url: logoUrl,
-          club_name: clubName,
-          primary_color: primaryColor,
-        },
-      });
+    const ok = await sendParentInviteEmail(invite.id, player.full_name);
+    if (ok) {
       Alert.alert('Invite resent', `Reminder sent to ${invite.email}.`);
-    } catch {
+    } else {
       Alert.alert('Failed', 'Could not resend the invite. Please try again.');
     }
   }
@@ -757,6 +785,27 @@ export default function PlayerProfileScreen() {
             <Text style={st.heroNotesText} numberOfLines={2}>{player.notes}</Text>
           </View>
         )}
+
+        {/* Emergency info — coaches only, right up top so it's fast to find
+            if it's ever actually needed */}
+        {isCoach && (player.emergency_contact_name || player.emergency_contact_phone || player.medical_notes) && (
+          <View style={st.emergencyCard}>
+            <View style={st.emergencyHeader}>
+              <Ionicons name="medkit-outline" size={13} color="#EF4444" />
+              <Text style={st.emergencyHeaderText}>EMERGENCY INFO</Text>
+            </View>
+            {(player.emergency_contact_name || player.emergency_contact_phone) && (
+              <Text style={st.emergencyLine}>
+                {player.emergency_contact_name ?? 'Contact'}
+                {player.emergency_contact_relationship ? ` (${player.emergency_contact_relationship})` : ''}
+                {player.emergency_contact_phone ? ` — ${player.emergency_contact_phone}` : ''}
+              </Text>
+            )}
+            {player.medical_notes && (
+              <Text style={st.emergencyNotes}>{player.medical_notes}</Text>
+            )}
+          </View>
+        )}
       </View>
 
       {/* ── Tab bar ── */}
@@ -808,7 +857,12 @@ export default function PlayerProfileScreen() {
       )}
 
       {/* ── Edit player modal ── */}
-      <Modal visible={showEdit} animationType="slide" transparent>
+      <Modal
+        visible={showEdit}
+        animationType="slide"
+        transparent
+        onDismiss={Platform.OS === 'ios' ? handleEditSheetDismiss : undefined}
+      >
         <KeyboardAvoidingView
           style={st.modalOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1186,20 +1240,26 @@ export default function PlayerProfileScreen() {
         uri={photoEditorUri}
         primaryColor={primaryColor}
         onSave={(uri) => {
-          setPhotoEditorVisible(false);
           setEditPhotoUri(uri);
-          if (reopenAfterPhoto) {
+          setPhotoEditorVisible(false);
+          if (Platform.OS !== 'ios' && reopenAfterPhoto) {
             setReopenAfterPhoto(false);
-            setTimeout(() => setShowEdit(true), 350);
+            setShowEdit(true);
           }
         }}
         onCancel={() => {
           setPhotoEditorVisible(false);
-          if (reopenAfterPhoto) {
+          if (Platform.OS !== 'ios' && reopenAfterPhoto) {
             setReopenAfterPhoto(false);
-            setTimeout(() => setShowEdit(true), 350);
+            setShowEdit(true);
           }
         }}
+        onDismiss={Platform.OS === 'ios' ? () => {
+          if (reopenAfterPhoto) {
+            setReopenAfterPhoto(false);
+            setShowEdit(true);
+          }
+        } : undefined}
       />
 
     </View>
@@ -1813,6 +1873,17 @@ const st = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10,
   },
   heroNotesText: { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18, fontStyle: 'italic' },
+
+  emergencyCard: {
+    marginTop: 12, marginHorizontal: 20,
+    backgroundColor: 'rgba(239,68,68,0.06)',
+    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
+    paddingHorizontal: 14, paddingVertical: 10, gap: 4,
+  },
+  emergencyHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+  emergencyHeaderText: { fontSize: 10, fontWeight: '800', color: '#EF4444', letterSpacing: 1 },
+  emergencyLine: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  emergencyNotes: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, lineHeight: 17 },
 
   // ── Tab bar
   tabBar: {

@@ -28,6 +28,17 @@ export async function geocodeAddress(query: string): Promise<string | null> {
   }
 }
 
+// Parse a Google Distance Matrix duration string (e.g. "1 hour 5 mins",
+// "45 mins") into total minutes.
+export function parseDurationText(durationText: string): number | null {
+  const hourMatch = durationText.match(/(\d+)\s*hour/);
+  const minMatch = durationText.match(/(\d+)\s*min/);
+  if (!hourMatch && !minMatch) return null;
+  const hours = hourMatch ? parseInt(hourMatch[1], 10) : 0;
+  const mins = minMatch ? parseInt(minMatch[1], 10) : 0;
+  return hours * 60 + mins;
+}
+
 // Single destination: "lat,lng" or address string
 export async function fetchDriveTime(destination: string): Promise<string | null> {
   if (!PLACES_KEY || !destination) return null;

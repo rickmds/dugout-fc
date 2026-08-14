@@ -111,9 +111,11 @@ What a brand new user sees before reaching the Home tab:
 
 1. Welcome screen — Pulse FC logo, tagline, Sign Up / Log In buttons
 2. Auth screen — email/password, Google, Apple
-3. Find your team — enter invite token (pre-filled if opened from invite email) or search by club slug
-4. Profile setup — full name, profile photo (optional)
-5. Home tab
+3. Auto invite-match — silently checks for a pending invite matching the email just used to sign up (covers the ~99% of parents/coaches who signed up with the same email their invite was sent to); if found, a one-tap confirm card joins the team(s) directly, skipping steps 4–5 below entirely
+4. If no invite matched — role picker (Parent/Player, Coach, Club Admin) → a short benefits screen for that role → the matching next step (join with a code, set up a solo team, or create a club)
+5. Welcome tour — role-aware swipeable run-through of what the app does for them, shown once, right after landing in the app for the first time (gated centrally in `(app)/_layout.tsx` via `profiles.onboarded_at`, not tied to any one join path)
+6. Profile completion — full name, phone, profile photo, "share my contact with team parents" toggle, emergency contact info (per-child for a parent, self for a coach/admin), optional "add another guardian"
+7. Home tab
 
 ---
 
@@ -153,7 +155,10 @@ What a brand new user sees before reaching the Home tab:
 
 ### Roster tab
 - Player photo, name, jersey number, position
-- Parent contact info visible to coaches only
+- Coach contact info (phone) always visible to team parents
+- Parent contact info (phone) shared with other team parents by default — each parent can opt out ("coach only") via `profiles.share_contact_with_team`, set during profile completion or in Settings. Coaches always see it regardless of the toggle. Server-filtered via the `get_team_contacts` RPC — never sent to a client that shouldn't see it.
+- Emergency contact info + medical notes are never covered by the sharing toggle — coach-only, always (`players.emergency_contact_*`/`medical_notes` for a player, `profiles.emergency_contact_*` for a coach/admin's own). Shown on the player detail screen's Emergency Info card.
+- A player can have more than one guardian (`player_guardians` table, additive to the legacy `players.profile_id` single-guardian column) — added via "Add another guardian" on the Guardians tab or during first-run profile completion.
 - Player profile page
 - Coach can add / remove players
 - Coach can send invite email to parent from roster screen

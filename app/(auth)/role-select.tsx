@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,29 +36,11 @@ const ROLES: {
 export default function RoleSelectScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = useState<RoleKey | null>(null);
 
-  async function handleSelect(role: RoleKey) {
-    setLoading(role);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      await supabase.from('profiles').update({ role }).eq('id', session.user.id);
-    }
-
-    setLoading(null);
-
-    if (role === 'org_admin') {
-      router.replace('/(auth)/create-team' as never);
-      return;
-    }
-
-    if (role === 'coach') {
-      router.replace('/(auth)/coach-options');
-      return;
-    }
-
-    router.replace('/(auth)/find-team');
+  function handleSelect(role: RoleKey) {
+    // The role write and final destination now live in role-benefits.tsx —
+    // this screen only decides which role's benefits to show next.
+    router.push({ pathname: '/(auth)/role-benefits', params: { role } } as never);
   }
 
   return (
@@ -81,7 +62,6 @@ export default function RoleSelectScreen() {
             style={styles.card}
             onPress={() => handleSelect(role.key)}
             activeOpacity={0.75}
-            disabled={loading !== null}
           >
             <View style={styles.cardIcon}>
               <Ionicons name={role.icon} size={22} color={PULSE_COLORS.brand.green} />
@@ -90,11 +70,7 @@ export default function RoleSelectScreen() {
               <Text style={styles.cardTitle}>{role.title}</Text>
               <Text style={styles.cardSubtitle}>{role.subtitle}</Text>
             </View>
-            {loading === role.key ? (
-              <ActivityIndicator color={PULSE_COLORS.brand.green} size="small" />
-            ) : (
-              <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
-            )}
+            <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
         ))}
       </View>

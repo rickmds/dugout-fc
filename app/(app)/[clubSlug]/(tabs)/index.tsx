@@ -20,6 +20,8 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { uniqueChannelName } from '../../../../lib/realtime';
+import { computeArriveBy } from '../../../../lib/eventTime';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
@@ -31,8 +33,11 @@ import PollCard, { type Poll } from '../../../../components/home/PollCard';
 import CreatePollModal from '../../../../components/home/CreatePollModal';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
 import { fetchDriveTime } from '../../../../lib/drivetime';
-import { sendProfilesPush } from '../../../../lib/push';
+import { sendProfilesPush, sendTeamPush } from '../../../../lib/push';
 import GalleryCard from '../../../../components/home/GalleryCard';
+import * as WebBrowser from 'expo-web-browser';
+
+const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
 type NextEvent = {
   id: string;
@@ -48,6 +53,7 @@ type NextEvent = {
   home_away: 'home' | 'away' | null;
   field_type: string | null;
   rsvp_lock_at: string | null;
+  arrival_buffer_minutes: number | null;
 };
 
 type Headcount = { going: number; notGoing: number; tbd: number; confirmedGuests?: number };
@@ -89,11 +95,21 @@ const CALLOUT_TEMPLATES = [
 
 type OutstandingFee = {
   id: string;
+  team_id: string;
   description: string;
   amount_due: number;
   discount: number;
   due_date: string | null;
   status: string;
+  payee_type: 'club' | 'coach';
+  payment_instructions: string | null;
+  payment_token: string | null;
+  claim_status: 'none' | 'pending';
+  claim_amount: number | null;
+  claim_method: string | null;
+  event_id: string | null;
+  event_title: string | null;
+  event_date: string | null;
 };
 
 type PendingGuestInvite = {
@@ -107,6 +123,7 @@ type PendingGuestInvite = {
   event_type: string;
   team_name: string;
   team_id: string;
+  club_id: string | null;
 };
 
 const DEV_ACCOUNTS = __DEV__ ? [
@@ -228,7 +245,7 @@ export default function HomeScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile, club, refreshProfile, signOut } = useAuth();
   const { team, allTeams, loading: teamLoading, selectTeam } = useTeam();
-  const { primaryColor, rgba, clubName, logoUrl, secondaryColor, secondaryRgba, headerPattern, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor } = useClub();
 
   const [playerCount, setPlayerCount]       = useState(0);
   const [upcomingCount, setUpcomingCount]   = useState(0);
@@ -256,6 +273,11 @@ export default function HomeScreen() {
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [outstandingFees, setOutstandingFees] = useState<OutstandingFee[]>([]);
   const [showFeeModal, setShowFeeModal]     = useState(false);
+  const [claimingFee, setClaimingFee]       = useState<OutstandingFee | null>(null);
+  const [claimAmount, setClaimAmount]       = useState('');
+  const [claimMethod, setClaimMethod]       = useState<'venmo' | 'cash' | 'other'>('venmo');
+  const [claimNote, setClaimNote]           = useState('');
+  const [claimSaving, setClaimSaving]       = useState(false);
   const [combinedStreak, setCombinedStreak]         = useState(0);
   const [combinedAtRisk, setCombinedAtRisk]         = useState(false);
   const [trainingStreak, setTrainingStreak]         = useState(0);
@@ -284,14 +306,14 @@ export default function HomeScreen() {
   const [showPollModal, setShowPollModal] = useState(false);
   const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
 
-  const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
+  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
   const slug = clubSlug ?? club?.slug ?? '';
 
   // Realtime: keep notification badge in sync without polling
   useEffect(() => {
     if (!profile?.id) return;
     const channel = supabase
-      .channel(`notif-badge-${profile.id}`)
+      .channel(uniqueChannelName(`notif-badge-${profile.id}`))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -319,7 +341,7 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!team?.id) return;
     const channel = supabase
-      .channel(`poll-votes-${team.id}`)
+      .channel(uniqueChannelName(`poll-votes-${team.id}`))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -348,7 +370,11 @@ export default function HomeScreen() {
 
   async function handleSelectTeam(teamId: string) {
     setTeamPickerOpen(false);
+    const newTeam = allTeams.find((t) => t.id === teamId);
     await selectTeam(teamId);
+    if (newTeam?.club?.slug && newTeam.club.slug !== slug) {
+      router.replace(`/(app)/${newTeam.club.slug}/(tabs)` as never);
+    }
   }
 
   // Dev switcher
@@ -357,6 +383,13 @@ export default function HomeScreen() {
   const tapCount = useRef(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFetchRef = useRef<number>(0);
+  // Once we've shown real content, later refetches (regaining focus after
+  // popping a screen, switching teams) shouldn't blank the screen back to
+  // the skeleton — that's the flash. Only the very first load should.
+  const hasLoadedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!loading) hasLoadedOnceRef.current = true;
+  }, [loading]);
 
   function handleGreetingTap() {
     if (process.env.EXPO_PUBLIC_APP_ENV !== 'development') return;
@@ -465,8 +498,8 @@ export default function HomeScreen() {
       playerRes,
       { data: calloutData },
     ] = await Promise.all([
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).eq('profile_id', profile.id).maybeSingle(),
       sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
@@ -553,11 +586,15 @@ export default function HomeScreen() {
     if (player && !isCoach) {
       const { data: feesData } = await (supabase as any)
         .from('player_fees')
-        .select('id, description, amount_due, discount, due_date, status')
+        .select('id, team_id, description, amount_due, discount, due_date, status, payee_type, payment_instructions, payment_token, claim_status, claim_amount, claim_method, event_id, events(title, event_date)')
         .eq('player_id', player.id)
         .in('status', ['outstanding', 'overdue', 'partial'])
         .order('due_date', { ascending: true, nullsFirst: false });
-      setOutstandingFees((feesData ?? []) as OutstandingFee[]);
+      setOutstandingFees((feesData ?? []).map((f: any) => ({
+        ...f,
+        event_title: f.events?.title ?? null,
+        event_date: f.events?.event_date ?? null,
+      })) as OutstandingFee[]);
     } else {
       setOutstandingFees([]);
     }
@@ -581,9 +618,13 @@ export default function HomeScreen() {
           const evMap: Record<string, any> = {};
           for (const e of (evData ?? [])) evMap[(e as any).id] = e;
           const teamIds = [...new Set((evData ?? []).map((e: any) => e.team_id as string))];
-          const { data: teamsData } = await supabase.from('teams').select('id, name').in('id', teamIds);
+          const { data: teamsData } = await supabase.from('teams').select('id, name, club_id').in('id', teamIds);
           const teamMap: Record<string, string> = {};
-          for (const t of (teamsData ?? [])) teamMap[(t as any).id] = (t as any).name;
+          const teamClubMap: Record<string, string | null> = {};
+          for (const t of (teamsData ?? [])) {
+            teamMap[(t as any).id] = (t as any).name;
+            teamClubMap[(t as any).id] = (t as any).club_id ?? null;
+          }
           const invites: PendingGuestInvite[] = (guestRows as any[])
             .filter((g) => evMap[g.event_id])
             .map((g) => {
@@ -592,7 +633,7 @@ export default function HomeScreen() {
                 id: g.id, event_id: g.event_id, player_id: g.player_id, full_name: g.full_name,
                 event_title: ev.title, event_date: ev.event_date, event_time: ev.event_time ?? null,
                 event_type: ev.type, team_name: teamMap[ev.team_id] ?? 'Guest Event',
-                team_id: ev.team_id,
+                team_id: ev.team_id, club_id: teamClubMap[ev.team_id] ?? null,
               };
             })
             .sort((a, b) => a.event_date.localeCompare(b.event_date));
@@ -844,15 +885,13 @@ export default function HomeScreen() {
     });
     // Notify parents
     const pushTitle = calloutUrgency === 'urgent' ? `🚨 Urgent: ${calloutTitle.trim()}` : `📢 ${calloutTitle.trim()}`;
-    supabase.functions.invoke('send-push', {
-      body: {
-        team_id: team.id,
-        title: pushTitle,
-        body: calloutBody.trim() || 'Tap to respond',
-        exclude_profile_id: profile.id,
-        data: { type: 'callout', team_id: team.id },
-      },
-    }).catch(() => {});
+    sendTeamPush({
+      teamId: team.id,
+      title: pushTitle,
+      body: calloutBody.trim() || 'Tap to respond',
+      excludeProfileId: profile.id,
+      data: { type: 'callout', team_id: team.id },
+    });
     setCalloutTitle('');
     setCalloutBody('');
     setCalloutUrgency('normal');
@@ -926,10 +965,14 @@ export default function HomeScreen() {
         Alert.alert('Error', 'Could not respond to invite. Please try again.');
         return;
       }
-      // Notify coaches and org admins
+      // Notify coaches and org admins — the invite's own event/team club, not
+      // the responding parent's home club (they may belong to several).
+      const clubId = invite.club_id;
       const [{ data: coachRows }, { data: adminRows }] = await Promise.all([
         supabase.from('team_members').select('profile_id').eq('team_id', invite.team_id).eq('role', 'coach'),
-        supabase.from('profiles').select('id').eq('club_id', profile!.club_id).in('role', ['org_admin', 'app_admin']),
+        clubId
+          ? supabase.from('profiles').select('id').eq('club_id', clubId).in('role', ['org_admin', 'app_admin'])
+          : Promise.resolve({ data: [] as { id: string }[] }),
       ]);
       const recipientIds = [
         ...((coachRows ?? []) as any[]).map(r => r.profile_id as string),
@@ -950,6 +993,62 @@ export default function HomeScreen() {
       Alert.alert('Error', 'Could not respond to invite. Please try again.');
     } finally {
       setGuestRespondLoading(null);
+    }
+  }
+
+  async function payNow(fee: OutstandingFee) {
+    if (!fee.payment_token) return;
+    await WebBrowser.openBrowserAsync(`${APP_BASE}/pay/${fee.payment_token}`, {
+      controlsColor: primaryColor,
+      dismissButtonStyle: 'close',
+    });
+    fetchData();
+  }
+
+  function openClaim(fee: OutstandingFee) {
+    const net = Math.max(0, fee.amount_due - (fee.discount ?? 0));
+    setShowFeeModal(false);
+    setClaimingFee(fee);
+    setClaimAmount(net.toFixed(2));
+    setClaimMethod('venmo');
+    setClaimNote('');
+  }
+
+  async function submitClaim() {
+    if (!claimingFee || !slug) return;
+    const amount = parseFloat(claimAmount);
+    if (!amount || amount <= 0) return;
+    setClaimSaving(true);
+    try {
+      const { error } = await supabase.rpc('claim_fee_payment', {
+        p_fee_id: claimingFee.id,
+        p_amount: amount,
+        p_method: claimMethod,
+        p_note: claimNote.trim() || undefined,
+      });
+      if (error) {
+        Alert.alert('Error', error.message ?? 'Could not submit — please try again.');
+        return;
+      }
+      setOutstandingFees(prev => prev.map(f => f.id === claimingFee.id
+        ? { ...f, claim_status: 'pending', claim_amount: amount, claim_method: claimMethod }
+        : f));
+
+      const { data: coachRows } = await supabase.from('team_members').select('profile_id').eq('team_id', claimingFee.team_id).eq('role', 'coach');
+      const recipientIds = ((coachRows ?? []) as { profile_id: string }[]).map(r => r.profile_id).filter(Boolean);
+      if (recipientIds.length > 0) {
+        await sendProfilesPush({
+          profileIds: recipientIds,
+          title: '💳 Payment claimed',
+          body: `${profile?.full_name ?? 'A parent'} says they paid $${amount.toFixed(2)} via ${claimMethod} for ${claimingFee.description}.`,
+          data: { type: 'fee_payment_claimed', player_fee_id: claimingFee.id, club_slug: slug },
+        });
+      }
+      setClaimingFee(null);
+    } catch {
+      Alert.alert('Error', 'Could not submit — please try again.');
+    } finally {
+      setClaimSaving(false);
     }
   }
 
@@ -992,11 +1091,24 @@ export default function HomeScreen() {
     }
   }
 
-  if (teamLoading || loading) {
+  if ((teamLoading || loading) && !hasLoadedOnceRef.current) {
     return <HomeSkeleton />;
   }
 
   const teamName = team?.name ?? club?.name ?? 'Your Team';
+
+  // Team-switcher grouping — only show club section headers once a second
+  // club's teams actually show up (e.g. a guest-coach assignment), so the
+  // common single-club case looks exactly as it always has.
+  const teamsByClub: { clubId: string; clubName: string; teams: typeof allTeams }[] = [];
+  for (const t of allTeams) {
+    const clubId = t.club?.id ?? 'unknown';
+    let group = teamsByClub.find((g) => g.clubId === clubId);
+    if (!group) { group = { clubId, clubName: t.club?.name ?? 'Other', teams: [] }; teamsByClub.push(group); }
+    group.teams.push(t);
+  }
+  const multiClub = teamsByClub.length > 1;
+
   const playerColor = positionColor(myPlayer?.position ?? null);
   const playerInitials = myPlayer?.full_name
     ? myPlayer.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
@@ -1074,6 +1186,9 @@ export default function HomeScreen() {
                 <Text style={styles.nextCardMetaText}>
                   {new Date(event.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   {event.event_time ? `  ·  ${formatTime(event.event_time)}` : ''}
+                  {event.event_time && event.arrival_buffer_minutes != null
+                    ? `  ·  Arrive ${computeArriveBy(event.event_time, event.arrival_buffer_minutes)}`
+                    : ''}
                 </Text>
               </View>
               {event.location ? (
@@ -1246,8 +1361,7 @@ export default function HomeScreen() {
 
         {/* ── Club Hero Banner ── */}
         <View style={[styles.heroBanner, { paddingTop: insets.top + 12, backgroundColor: primaryColor }]}>
-          <HeroBannerOverlay pattern={headerPattern} patternColor={secondaryRgba} />
-          {/* Dark tint so white text is always readable over any pattern */}
+          {/* Dark tint keeps white text readable across any club color */}
           <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.18)' }]} pointerEvents="none" />
           {/* Icon buttons top-right */}
           <View style={styles.heroActions}>
@@ -1354,7 +1468,7 @@ export default function HomeScreen() {
                   {hasOverdue && (
                     <View style={styles.feeOverdueBadge}>
                       <Ionicons name="alert-circle-outline" size={12} color={PULSE_COLORS.status.error} />
-                      <Text style={styles.feeOverdueText}>Payment overdue — contact your coach</Text>
+                      <Text style={styles.feeOverdueText}>Payment overdue — tap to view</Text>
                     </View>
                   )}
                 </View>
@@ -1569,12 +1683,12 @@ export default function HomeScreen() {
         })()}
 
         {/* ── Callouts ── */}
-        {callouts.length > 0 && (
+        {(callouts.length > 0 || isCoach) && (
           <>
             <View style={[styles.sectionTitleRow, { marginTop: isCoach ? 0 : 8 }]}>
               <View style={[styles.sectionTitleDot, { backgroundColor: '#F59E0B' }]} />
               <Text style={styles.sectionTitle}>TEAM CALLOUT</Text>
-              {isCoach && (
+              {isCoach && callouts.length > 0 && (
                 <TouchableOpacity
                   style={styles.calloutAddBtn}
                   onPress={() => setShowCalloutModal(true)}
@@ -1654,14 +1768,12 @@ export default function HomeScreen() {
           </>
         )}
         {isCoach && callouts.length === 0 && (
-          <TouchableOpacity
-            style={styles.calloutEmptyBtn}
+          <SectionEmptyCTA
+            icon="hand-right-outline"
+            color="#F59E0B"
+            label="Post a callout to parents"
             onPress={() => setShowCalloutModal(true)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="hand-right-outline" size={14} color={PULSE_COLORS.ui.muted} />
-            <Text style={styles.calloutEmptyBtnText}>Post a callout to parents</Text>
-          </TouchableOpacity>
+          />
         )}
 
         {/* ── Polls ── */}
@@ -1670,7 +1782,7 @@ export default function HomeScreen() {
             <View style={[styles.sectionTitleRow, { marginTop: 8 }]}>
               <View style={[styles.sectionTitleDot, { backgroundColor: '#818CF8' }]} />
               <Text style={styles.sectionTitle}>POLLS</Text>
-              {isCoach && (
+              {isCoach && polls.length > 0 && (
                 <TouchableOpacity
                   style={styles.calloutAddBtn}
                   onPress={() => setShowPollModal(true)}
@@ -1694,14 +1806,12 @@ export default function HomeScreen() {
                 onVoteChange={handleVoteChange}
               />
             )) : isCoach ? (
-              <TouchableOpacity
-                style={styles.calloutEmptyBtn}
+              <SectionEmptyCTA
+                icon="bar-chart-outline"
+                color="#818CF8"
+                label="Ask your team a question"
                 onPress={() => setShowPollModal(true)}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="bar-chart-outline" size={14} color={PULSE_COLORS.ui.muted} />
-                <Text style={styles.calloutEmptyBtnText}>Ask your team a question</Text>
-              </TouchableOpacity>
+              />
             ) : null}
           </>
         )}
@@ -1811,24 +1921,6 @@ export default function HomeScreen() {
 
         <GalleryCard onPress={() => router.push(`/(app)/${slug}/gallery` as never)} />
 
-        {/* Weekend Outlook entry — coaches only */}
-        {isCoach && (
-          <TouchableOpacity
-            style={[styles.weekendOutlookBtn, { borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]}
-            onPress={() => router.push(`/(app)/${slug}/weekend-outlook` as never)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.weekendOutlookIcon, { backgroundColor: primaryColor }]}>
-              <Ionicons name="calendar-outline" size={20} color="#ffffff" />
-            </View>
-            <View style={styles.weekendOutlookText}>
-              <Text style={[styles.weekendOutlookTitle, { color: '#ffffff' }]}>Weekend Outlook</Text>
-              <Text style={styles.weekendOutlookSub}>All your weekend games, travel times & lineup status</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.45)" />
-          </TouchableOpacity>
-        )}
-
         <View style={{ height: 32 }} />
 
       </ScrollView>
@@ -1841,28 +1933,36 @@ export default function HomeScreen() {
           <Text style={styles.devTitle}>Switch Team</Text>
           <Text style={styles.devSub}>Select which team to view</Text>
           <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false} bounces={false}>
-            {allTeams.map((t) => {
-              const isActive = t.id === team?.id;
-              return (
-                <TouchableOpacity
-                  key={t.id}
-                  style={[styles.teamPickerRow, isActive && styles.teamPickerRowActive]}
-                  onPress={() => handleSelectTeam(t.id)}
-                  activeOpacity={0.75}
-                >
-                  <View style={[styles.teamPickerIcon, { backgroundColor: rgba(isActive ? 0.18 : 0.08), borderColor: rgba(isActive ? 0.35 : 0.15) }]}>
-                    <Ionicons name="football-outline" size={18} color={primaryColor} />
-                  </View>
-                  <View style={styles.teamPickerBody}>
-                    <Text style={[styles.teamPickerName, isActive && { color: primaryColor }]}>{t.name}</Text>
-                    {(t.age_group || t.season) ? (
-                      <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
-                    ) : null}
-                  </View>
-                  {isActive && <Ionicons name="checkmark-circle" size={20} color={primaryColor} />}
-                </TouchableOpacity>
-              );
-            })}
+            {teamsByClub.map((group) => (
+              <View key={group.clubId}>
+                {multiClub && (
+                  <Text style={styles.teamPickerClubHeader}>{group.clubName}</Text>
+                )}
+                {group.teams.map((t) => {
+                  const isActive = t.id === team?.id;
+                  const teamColor = t.club?.primary_color ?? primaryColor;
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      style={[styles.teamPickerRow, isActive && styles.teamPickerRowActive]}
+                      onPress={() => handleSelectTeam(t.id)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={[styles.teamPickerIcon, { backgroundColor: rgba(isActive ? 0.18 : 0.08), borderColor: rgba(isActive ? 0.35 : 0.15) }]}>
+                        <Ionicons name="football-outline" size={18} color={teamColor} />
+                      </View>
+                      <View style={styles.teamPickerBody}>
+                        <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
+                        {(t.age_group || t.season) ? (
+                          <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
+                        ) : null}
+                      </View>
+                      {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
           </ScrollView>
         </View>
       </Modal>
@@ -1870,36 +1970,137 @@ export default function HomeScreen() {
       {/* Fee detail modal */}
       <Modal visible={showFeeModal} transparent animationType="slide" onRequestClose={() => setShowFeeModal(false)}>
         <TouchableOpacity style={styles.devOverlay} activeOpacity={1} onPress={() => setShowFeeModal(false)} />
-        <View style={styles.devSheet}>
+        <View style={[styles.devSheet, { maxHeight: '82%' }]}>
           <View style={styles.devHandle} />
           <Text style={styles.devTitle}>Outstanding Fees</Text>
-          <Text style={styles.devSub}>Contact your coach or club admin to arrange payment</Text>
-          {outstandingFees.map((fee) => {
-            const net = Math.max(0, fee.amount_due - (fee.discount ?? 0));
-            const isOverdue = fee.status === 'overdue' || (fee.due_date ? new Date(fee.due_date) < new Date() : false);
-            const statusColor = isOverdue ? PULSE_COLORS.status.error : fee.status === 'partial' ? PULSE_COLORS.status.info : PULSE_COLORS.status.warning;
-            const statusLabel = isOverdue ? 'Overdue' : fee.status === 'partial' ? 'Partial' : 'Outstanding';
-            const fmtDue = fee.due_date
-              ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-              : null;
-            return (
-              <View key={fee.id} style={styles.feeModalRow}>
-                <View style={[styles.feeModalAccent, { backgroundColor: statusColor }]} />
-                <View style={{ flex: 1, gap: 4, padding: 14 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Text style={styles.feeModalTitle}>{fee.description}</Text>
+          <Text style={styles.devSub}>Pay online, or pay your coach directly where noted</Text>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+            {outstandingFees.map((fee) => {
+              const net = Math.max(0, fee.amount_due - (fee.discount ?? 0));
+              const isOverdue = fee.status === 'overdue' || (fee.due_date ? new Date(fee.due_date) < new Date() : false);
+              const statusColor = isOverdue ? PULSE_COLORS.status.error : fee.status === 'partial' ? PULSE_COLORS.status.info : PULSE_COLORS.status.warning;
+              const statusLabel = isOverdue ? 'Overdue' : fee.status === 'partial' ? 'Partial' : 'Outstanding';
+              const fmtDue = fee.due_date
+                ? new Date(fee.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                : null;
+              const fmtEventDate = fee.event_date
+                ? new Date(fee.event_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                : null;
+              return (
+                <View key={fee.id} style={styles.feeModalRow}>
+                  <View style={styles.feeModalRowTop}>
+                    <View style={[styles.feeModalIconWrap, { backgroundColor: `${statusColor}18` }]}>
+                      <Ionicons name={isOverdue ? 'alert-circle-outline' : 'card-outline'} size={17} color={statusColor} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.feeModalTitle} numberOfLines={1}>{fee.description}</Text>
+                      <View style={styles.feeModalMetaRow}>
+                        <View style={[styles.feeStatusDot, { backgroundColor: statusColor }]} />
+                        <Text style={[styles.feeStatusText, { color: statusColor }]}>{statusLabel}</Text>
+                        {fmtDue && <Text style={styles.feeModalDue}>·  Due {fmtDue}</Text>}
+                      </View>
+                    </View>
                     <Text style={[styles.feeModalAmount, { color: statusColor }]}>${net.toFixed(2)}</Text>
                   </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={[styles.feeStatusChip, { backgroundColor: `${statusColor}20`, borderColor: `${statusColor}40` }]}>
-                      <Text style={[styles.feeStatusText, { color: statusColor }]}>{statusLabel}</Text>
+
+                  {fee.event_title && (
+                    <View style={styles.feeEventTag}>
+                      <Ionicons name="calendar-outline" size={11} color={PULSE_COLORS.ui.muted} />
+                      <Text style={styles.feeEventTagText} numberOfLines={1}>
+                        {fee.event_title}{fmtEventDate ? `  ·  ${fmtEventDate}` : ''}
+                      </Text>
                     </View>
-                    {fmtDue && <Text style={styles.feeModalDue}>Due {fmtDue}</Text>}
-                  </View>
+                  )}
+
+                  {fee.payee_type === 'coach' && (
+                    fee.claim_status === 'pending' ? (
+                      <View style={styles.claimPendingPill}>
+                        <Ionicons name="time-outline" size={12} color={PULSE_COLORS.status.info} />
+                        <Text style={styles.claimPendingText}>
+                          Marked paid{fee.claim_amount ? ` — $${Number(fee.claim_amount).toFixed(2)}` : ''}{fee.claim_method ? ` via ${fee.claim_method}` : ''} — awaiting coach confirmation
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        {fee.payment_instructions && (
+                          <Text style={styles.feePayInstructions}>Pay your coach: {fee.payment_instructions}</Text>
+                        )}
+                        <TouchableOpacity style={styles.claimBtn} onPress={() => openClaim(fee)} activeOpacity={0.8}>
+                          <Text style={styles.claimBtnText}>I&apos;ve paid</Text>
+                        </TouchableOpacity>
+                      </>
+                    )
+                  )}
+                  {fee.payee_type === 'club' && fee.payment_token && (
+                    <TouchableOpacity
+                      style={[styles.payNowBtn, { backgroundColor: primaryColor }]}
+                      onPress={() => payNow(fee)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="card-outline" size={14} color="#fff" />
+                      <Text style={styles.payNowBtnText}>Pay now</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-              </View>
-            );
-          })}
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Claim payment modal — "I've paid" for coach-collected fees */}
+      <Modal visible={!!claimingFee} transparent animationType="slide" onRequestClose={() => setClaimingFee(null)}>
+        <TouchableOpacity style={styles.devOverlay} activeOpacity={1} onPress={() => setClaimingFee(null)} />
+        <View style={styles.devSheet}>
+          <View style={styles.devHandle} />
+          <Text style={styles.devTitle}>Mark as paid</Text>
+          <Text style={styles.devSub}>
+            {claimingFee?.description} — your coach will be asked to confirm before this clears
+          </Text>
+
+          <Text style={styles.claimLabel}>Amount</Text>
+          <TextInput
+            value={claimAmount}
+            onChangeText={setClaimAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={PULSE_COLORS.ui.muted}
+            style={styles.claimInput}
+          />
+
+          <Text style={styles.claimLabel}>How did you pay?</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(['venmo', 'cash', 'other'] as const).map(m => {
+              const sel = claimMethod === m;
+              return (
+                <TouchableOpacity
+                  key={m}
+                  onPress={() => setClaimMethod(m)}
+                  style={[styles.claimMethodChip, sel && { borderColor: primaryColor, backgroundColor: `${primaryColor}18` }]}
+                >
+                  <Text style={[styles.claimMethodText, sel && { color: primaryColor }]}>{m === 'venmo' ? 'Venmo' : m === 'cash' ? 'Cash' : 'Other'}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.claimLabel}>Note (optional)</Text>
+          <TextInput
+            value={claimNote}
+            onChangeText={setClaimNote}
+            placeholder="e.g. Sent last night"
+            placeholderTextColor={PULSE_COLORS.ui.muted}
+            style={styles.claimInput}
+          />
+
+          <TouchableOpacity
+            style={[styles.claimSubmitBtn, { backgroundColor: primaryColor }, claimSaving && { opacity: 0.6 }]}
+            onPress={submitClaim}
+            disabled={claimSaving || !claimAmount}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.claimSubmitText}>{claimSaving ? 'Submitting…' : 'Submit'}</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -2186,151 +2387,21 @@ export default function HomeScreen() {
   );
 }
 
-function HeroBannerOverlay({ pattern, patternColor }: { pattern: string; patternColor: (a: number) => string }) {
-  if (pattern === 'solid') return null;
-
-  // Diagonal stripes — classic jersey
-  if (pattern === 'stripes') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: 20 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute',
-          top: -60 + i * 26, left: -100, right: -100, height: 13,
-          transform: [{ rotate: '-20deg' }],
-          backgroundColor: patternColor(0.6),
-        }} />
-      ))}
-    </View>
+// Shared empty-state row for a section that has nothing yet but a coach can
+// create — one card that's both the explanation and the only way to act,
+// instead of a header "+ New" pill duplicating a second CTA underneath it.
+function SectionEmptyCTA({ icon, color, label, onPress }: {
+  icon: React.ComponentProps<typeof Ionicons>['name']; color: string; label: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.sectionEmptyCta} onPress={onPress} activeOpacity={0.75}>
+      <View style={[styles.sectionEmptyIcon, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon} size={16} color={color} />
+      </View>
+      <Text style={styles.sectionEmptyText}>{label}</Text>
+      <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+    </TouchableOpacity>
   );
-
-  // Pinstripes
-  if (pattern === 'pinstripes') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: 40 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute',
-          top: -30 + i * 11, left: -100, right: -100, height: 5,
-          transform: [{ rotate: '-20deg' }],
-          backgroundColor: patternColor(0.55),
-        }} />
-      ))}
-    </View>
-  );
-
-  // Dots — retro print
-  if (pattern === 'dots') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: 18 }).flatMap((_, row) =>
-        Array.from({ length: 22 }).map((_, col) => (
-          <View key={`${row}-${col}`} style={{
-            position: 'absolute',
-            width: 5, height: 5, borderRadius: 2.5,
-            backgroundColor: patternColor(0.55),
-            left: col * 22 - 4,
-            top: row * 22 - 4 + (col % 2 === 0 ? 0 : 11),
-          }} />
-        ))
-      )}
-    </View>
-  );
-
-  // Grid — carbon feel
-  if (pattern === 'grid') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: 18 }).map((_, i) => (
-        <View key={`h${i}`} style={{
-          position: 'absolute', left: 0, right: 0,
-          top: i * 22, height: 1,
-          backgroundColor: patternColor(0.55),
-        }} />
-      ))}
-      {Array.from({ length: 24 }).map((_, i) => (
-        <View key={`v${i}`} style={{
-          position: 'absolute', top: 0, bottom: 0,
-          left: i * 20, width: 1,
-          backgroundColor: patternColor(0.55),
-        }} />
-      ))}
-    </View>
-  );
-
-  // Hoops — Celtic · QPR · Stoke
-  if (pattern === 'hoops') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: 14 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute', left: 0, right: 0,
-          top: i * 28, height: 12,
-          backgroundColor: patternColor(0.6),
-        }} />
-      ))}
-    </View>
-  );
-
-  // Vertical stripes — Inter Milan · Newcastle · West Brom
-  if (pattern === 'vstripes') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: 16 }).map((_, i) => (
-        <View key={i} style={{
-          position: 'absolute', top: 0, bottom: 0,
-          left: -17 + i * 34, width: 16,
-          backgroundColor: patternColor(0.6),
-        }} />
-      ))}
-    </View>
-  );
-
-  // Sash — River Plate · Paraguay
-  if (pattern === 'sash') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View style={{
-        position: 'absolute',
-        top: '20%', left: -80, right: -80, height: 60,
-        transform: [{ rotate: '-22deg' }],
-        backgroundColor: patternColor(0.65),
-      }} />
-    </View>
-  );
-
-  // Halves — Juventus
-  if (pattern === 'halves') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View style={{
-        position: 'absolute', top: 0, bottom: 0, left: 0, right: '50%',
-        backgroundColor: patternColor(0.55),
-      }} />
-      <View style={{
-        position: 'absolute', top: 0, bottom: 0, left: '50%', width: 2,
-        backgroundColor: patternColor(0.9),
-      }} />
-    </View>
-  );
-
-  // Diamond lattice — Argyle · retro Adidas
-  if (pattern === 'diamond') return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: 26 }).map((_, i) => (
-        <View key={`a${i}`} style={{
-          position: 'absolute',
-          top: -200, left: i * 26 - 13,
-          width: 1, height: 700,
-          transform: [{ rotate: '45deg' }],
-          backgroundColor: patternColor(0.55),
-        }} />
-      ))}
-      {Array.from({ length: 26 }).map((_, i) => (
-        <View key={`b${i}`} style={{
-          position: 'absolute',
-          top: -200, left: i * 26 - 13,
-          width: 1, height: 700,
-          transform: [{ rotate: '-45deg' }],
-          backgroundColor: patternColor(0.55),
-        }} />
-      ))}
-    </View>
-  );
-
-  return null;
 }
 
 const styles = StyleSheet.create({
@@ -2343,7 +2414,7 @@ const styles = StyleSheet.create({
     marginHorizontal: -20,
     paddingHorizontal: 20,
     paddingBottom: 44,
-    marginBottom: 0,
+    marginBottom: 24,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     overflow: 'hidden',
@@ -2397,19 +2468,6 @@ const styles = StyleSheet.create({
   statIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   statNumber: { fontSize: 36, fontWeight: '900', lineHeight: 40, letterSpacing: -1 },
   statLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', letterSpacing: 0.3 },
-
-  // Weekend Outlook button
-  weekendOutlookBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderRadius: 14, borderWidth: 1,
-    padding: 14, marginBottom: 8, marginTop: 8,
-  },
-  weekendOutlookIcon: {
-    width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center',
-  },
-  weekendOutlookText: { flex: 1, gap: 2 },
-  weekendOutlookTitle: { fontSize: 15, fontWeight: '700' },
-  weekendOutlookSub: { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
 
   // Team Pulse
   pulseCard: {
@@ -2567,6 +2625,11 @@ const styles = StyleSheet.create({
 
 
   // Team picker
+  teamPickerClubHeader: {
+    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    letterSpacing: 0.8, textTransform: 'uppercase',
+    marginTop: 14, marginBottom: 8,
+  },
   teamPickerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: PULSE_COLORS.ui.background, borderRadius: 14, padding: 14, marginBottom: 10,
@@ -2601,19 +2664,60 @@ const styles = StyleSheet.create({
 
   // Fee modal rows
   feeModalRow: {
-    flexDirection: 'row', alignItems: 'stretch',
-    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 14,
-    overflow: 'hidden', marginBottom: 10, padding: 0,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 16,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    padding: 14, marginBottom: 12,
   },
-  feeModalAccent: { width: 3, flexShrink: 0 },
-  feeModalTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  feeModalAmount: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
-  feeModalDue: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
-  feeStatusChip: {
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 8, borderWidth: 1,
+  feeModalRowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  feeModalIconWrap: {
+    width: 36, height: 36, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  feeStatusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  feeModalTitle: { fontSize: 14.5, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  feeModalMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  feeStatusDot: { width: 6, height: 6, borderRadius: 3 },
+  feeModalAmount: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  feeModalDue: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  feeStatusText: { fontSize: 11.5, fontWeight: '700' },
+  feeEventTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+  },
+  feeEventTagText: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, fontWeight: '500', flexShrink: 1 },
+  feePayInstructions: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, fontWeight: '500', marginTop: 10 },
+
+  // Fee payment claims
+  claimPendingPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: `${PULSE_COLORS.status.info}18`, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6, marginTop: 10,
+  },
+  claimPendingText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.status.info, flex: 1 },
+  claimBtn: {
+    alignSelf: 'flex-start', marginTop: 10,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 6,
+  },
+  claimBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  claimLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 14, marginBottom: 6 },
+  claimInput: {
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: PULSE_COLORS.ui.text,
+    backgroundColor: PULSE_COLORS.ui.surface,
+  },
+  claimMethodChip: {
+    flex: 1, alignItems: 'center', borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 10, paddingVertical: 10, backgroundColor: PULSE_COLORS.ui.surface,
+  },
+  claimMethodText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  claimSubmitBtn: { marginTop: 20, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  claimSubmitText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  payNowBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    alignSelf: 'flex-start', marginTop: 10,
+    borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  payNowBtnText: { fontSize: 12.5, fontWeight: '700', color: '#fff' },
 
   // Callouts
   calloutCard: {
@@ -2645,12 +2749,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(245,158,11,0.1)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)',
   },
   calloutAddBtnText: { fontSize: 11, fontWeight: '700', color: '#F59E0B' },
-  calloutEmptyBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12, marginBottom: 20,
-    borderWidth: 1, borderStyle: 'dashed' as any, borderColor: PULSE_COLORS.ui.border,
+  sectionEmptyCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 20,
   },
-  calloutEmptyBtnText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  sectionEmptyIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  sectionEmptyText: { flex: 1, fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
   // Modal
   calloutSheet: {
     flex: 1, marginTop: 60,

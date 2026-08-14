@@ -28,10 +28,14 @@ type Props = {
   onSave: (uri: string) => void;
   onCancel: () => void;
   primaryColor?: string;
+  /** iOS only — fires once this Modal has actually finished dismissing, so a
+   * caller that wants to present another Modal right after can wait for the
+   * real event instead of guessing a delay (iOS can't stack two Modals). */
+  onDismiss?: () => void;
 };
 
 export default function ImageEditor({
-  visible, uri, onSave, onCancel, primaryColor = '#22C55E',
+  visible, uri, onSave, onCancel, primaryColor = '#22C55E', onDismiss,
 }: Props) {
   const insets = useSafeAreaInsets();
 
@@ -315,7 +319,7 @@ export default function ImageEditor({
   const thumbSize   = 22;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onCancel}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onCancel} onDismiss={onDismiss}>
       <View style={[styles.root, { paddingTop: insets.top }]}>
 
         {/* Header */}

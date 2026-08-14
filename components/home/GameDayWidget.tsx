@@ -2,8 +2,19 @@ import { memo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../constants/colors';
-import { useGameDay, useUpcomingGameDates, localDateStr } from '../../hooks/useGameDay';
-import { useClub } from '../../hooks/useClub';
+import {
+  useGameDayFeed, localDateStr, detectClashes, upcomingDates, detectCoachClashes, getCoverageFlag,
+  type FeedEvent, type TeamCoach, type GuestCoachStatus,
+} from '../../hooks/useGameDayFeed';
+import { computeArriveBy } from '../../lib/eventTime';
+
+// Matches TYPE_CONFIG.game in the Home screen's "Next Game" card — this
+// widget is game-only, so it uses the same fixed amber accent rather than
+// the club's arbitrary primaryColor, keeping the two "game" surfaces visually consistent.
+const GAME_COLOR = PULSE_COLORS.status.warning;
+function gameRgba(alpha: number): string {
+  return `rgba(245, 158, 11, ${alpha})`;
+}
 
 function fmt12(time: string): string {
   const [h, m] = time.split(':').map(Number);
@@ -20,28 +31,31 @@ function fmtDateLabel(iso: string): string {
   return new Date(y, mo - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function hasClashes(events: ReturnType<typeof useGameDay>['events']): boolean {
-  return events.some((ev, i) => {
-    if (i === 0 || !ev.event_time) return false;
-    const prev = events[i - 1];
-    if (!prev.event_time) return false;
-    const [ph, pm] = prev.event_time.split(':').map(Number);
-    const [eh, em] = ev.event_time.split(':').map(Number);
-    const prevDur = prev.duration_minutes ?? (prev.type === 'game' ? 90 : 60);
-    return (ph * 60 + pm + prevDur) > (eh * 60 + em);
-  });
-}
+const GameDayWidget = memo(function GameDayWidget({ onPress }: { onPress: () => void }) {
+  const { events: allEvents, teamCoaches, guestCoachStatuses, loading } = useGameDayFeed(14);
+  if (loading || !allEvents.length) return null;
 
-function WidgetContent({ date, onPress }: { date: string; onPress: () => void }) {
-  const { events, loading } = useGameDay(date);
-  const { primaryColor, rgba } = useClub();
+  const dates = upcomingDates(allEvents);
+  const today = localDateStr(0);
+  const displayDate = dates.includes(today) ? today : dates[0];
+  const dayEvents = allEvents.filter((e) => e.event_date === displayDate);
+  if (!dayEvents.length) return null;
 
-  if (loading || !events.length) return null;
+  // Same split as the full Game Day Outlook screen: a club-wide admin's
+  // unconditional visibility into every team's games ('org_admin'-tagged)
+  // is never "my day" — otherwise every Saturday looks like one giant clash.
+  const events: FeedEvent[] = dayEvents.filter((e) => e.my_role !== 'org_admin');
+  const coverageEvents: FeedEvent[] = dayEvents.filter((e) => e.my_role === 'org_admin');
+
+  if (!events.length) {
+    if (!coverageEvents.length) return null;
+    return <AdminCoverageWidget events={coverageEvents} teamCoaches={teamCoaches} guestCoachStatuses={guestCoachStatuses} dateLabel={fmtDateLabel(displayDate)} onPress={onPress} />;
+  }
 
   const preview = events.slice(0, 3);
   const extra = events.length - 3;
-  const clash = hasClashes(events);
-  const dateLabel = fmtDateLabel(date);
+  const clash = detectClashes(events).size > 0;
+  const dateLabel = fmtDateLabel(displayDate);
 
   return (
     <>
@@ -49,23 +63,23 @@ function WidgetContent({ date, onPress }: { date: string; onPress: () => void })
       <Text style={styles.sectionLabel}>GAME DAY OUTLOOK</Text>
 
       <TouchableOpacity
-        style={[styles.card, { borderColor: rgba(0.2), backgroundColor: rgba(0.04) }]}
+        style={[styles.card, { borderColor: gameRgba(0.25), backgroundColor: gameRgba(0.05) }]}
         onPress={onPress}
         activeOpacity={0.78}
       >
         {/* Header */}
-        <View style={[styles.cardTop, { borderBottomColor: rgba(0.12) }]}>
+        <View style={[styles.cardTop, { borderBottomColor: gameRgba(0.15) }]}>
           <View style={styles.cardTopLeft}>
-            <View style={[styles.footballWrap, { backgroundColor: rgba(0.14) }]}>
-              <Ionicons name="football" size={17} color={primaryColor} />
+            <View style={[styles.footballWrap, { backgroundColor: gameRgba(0.16) }]}>
+              <Ionicons name="football" size={17} color={GAME_COLOR} />
             </View>
             <View>
               <View style={styles.titleRow}>
-                <Text style={[styles.cardTitle, { color: primaryColor }]}>
+                <Text style={[styles.cardTitle, { color: GAME_COLOR }]}>
                   {events.length} game{events.length !== 1 ? 's' : ''}
                 </Text>
-                <View style={[styles.dateBadge, { backgroundColor: rgba(0.12) }]}>
-                  <Text style={[styles.dateBadgeText, { color: primaryColor }]}>{dateLabel}</Text>
+                <View style={[styles.dateBadge, { backgroundColor: gameRgba(0.14) }]}>
+                  <Text style={[styles.dateBadgeText, { color: GAME_COLOR }]}>{dateLabel}</Text>
                 </View>
                 {clash && (
                   <View style={styles.clashBadge}>
@@ -80,60 +94,135 @@ function WidgetContent({ date, onPress }: { date: string; onPress: () => void })
               </Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={15} color={rgba(0.5)} />
+          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
         </View>
 
         {/* Event list */}
         <View style={styles.eventList}>
-          {preview.map((ev, i) => (
-            <View key={ev.id}>
-              {i > 0 && (
-                <View style={styles.connector}>
-                  <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
-                  <Ionicons name="car-outline" size={12} color={PULSE_COLORS.ui.muted} />
-                  <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
-                </View>
-              )}
-              <View style={styles.eventRow}>
-                <View style={[styles.teamBar, { backgroundColor: ev.team_color }]} />
-                <View style={styles.eventContent}>
-                  <Text style={styles.eventTime}>{ev.event_time ? fmt12(ev.event_time) : 'TBD'}</Text>
-                  <View style={styles.eventBottom}>
-                    <View style={[styles.teamBadge, { backgroundColor: `${ev.team_color}20` }]}>
-                      <Text style={[styles.teamBadgeText, { color: ev.team_color }]} numberOfLines={1}>
-                        {ev.team_name}
-                      </Text>
+          {preview.map((ev, i) => {
+            const color = ev.club?.primary_color ?? GAME_COLOR;
+            return (
+              <View key={ev.id}>
+                {i > 0 && (
+                  <View style={styles.connector}>
+                    <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
+                    <Ionicons name="car-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                    <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
+                  </View>
+                )}
+                <View style={styles.eventRow}>
+                  <View style={[styles.teamBar, { backgroundColor: color }]} />
+                  <View style={styles.eventContent}>
+                    {!ev.my_role && (
+                      <View style={styles.parentTag}>
+                        <Ionicons name="person-outline" size={9} color="#60A5FA" />
+                        <Text style={styles.parentTagText}>Parent</Text>
+                      </View>
+                    )}
+                    <Text style={styles.eventTime}>
+                      {ev.event_time ? fmt12(ev.event_time) : 'TBD'}
+                      {ev.event_time && ev.arrival_buffer_minutes != null && (
+                        <Text style={styles.eventArrive}>  ·  Arrive {computeArriveBy(ev.event_time, ev.arrival_buffer_minutes)}</Text>
+                      )}
+                    </Text>
+                    <View style={styles.eventBottom}>
+                      <View style={[styles.teamBadge, { backgroundColor: `${color}20` }]}>
+                        <Text style={[styles.teamBadgeText, { color }]} numberOfLines={1}>
+                          {ev.team_name}
+                        </Text>
+                      </View>
+                      <Text style={styles.eventGameTitle} numberOfLines={1}>{ev.title}</Text>
                     </View>
-                    <Text style={styles.eventGameTitle} numberOfLines={1}>{ev.title}</Text>
                   </View>
                 </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
           {extra > 0 && (
-            <Text style={[styles.extraText, { color: primaryColor }]}>+{extra} more game{extra !== 1 ? 's' : ''}</Text>
+            <Text style={[styles.extraText, { color: GAME_COLOR }]}>+{extra} more game{extra !== 1 ? 's' : ''}</Text>
           )}
         </View>
 
         {/* CTA strip */}
-        <View style={[styles.cta, { backgroundColor: rgba(0.08), borderTopColor: rgba(0.12) }]}>
-          <Ionicons name="navigate-outline" size={13} color={primaryColor} />
-          <Text style={[styles.ctaText, { color: primaryColor }]}>View drive times & travel plan</Text>
-          <Ionicons name="arrow-forward" size={13} color={primaryColor} />
+        <View style={[styles.cta, { backgroundColor: gameRgba(0.09), borderTopColor: gameRgba(0.15) }]}>
+          <Ionicons name="navigate-outline" size={13} color={GAME_COLOR} />
+          <Text style={[styles.ctaText, { color: GAME_COLOR }]}>View drive times & travel plan</Text>
+          <Ionicons name="arrow-forward" size={13} color={GAME_COLOR} />
+        </View>
+      </TouchableOpacity>
+    </>
+  );
+});
+export default GameDayWidget;
+
+// Compact club-wide variant for an org_admin with no personally-coached
+// games today — the full per-game breakdown lives on the Game Day Outlook
+// screen's "Club Coverage" section; this is just a teaser into it.
+function AdminCoverageWidget({ events, teamCoaches, guestCoachStatuses, dateLabel, onPress }: {
+  events: FeedEvent[];
+  teamCoaches: TeamCoach[];
+  guestCoachStatuses: GuestCoachStatus[];
+  dateLabel: string;
+  onPress: () => void;
+}) {
+  const guestCoachEventIds = new Set(guestCoachStatuses.map((g) => g.event_id));
+  const coachClashes = detectCoachClashes(events, teamCoaches, guestCoachEventIds);
+  const flaggedEvents = events.filter((e) => getCoverageFlag(e, coachClashes.get(e.id)));
+  const flaggedCount = flaggedEvents.length;
+
+  // Lead with whichever teams are actually flagged — more useful at a
+  // glance from Home than an arbitrary first-two-alphabetically list.
+  const flaggedTeamNames = [...new Set(flaggedEvents.map((e) => e.team_name))];
+  const otherTeamNames = [...new Set(events.map((e) => e.team_name))].filter((n) => !flaggedTeamNames.includes(n));
+  const teamNames = [...flaggedTeamNames, ...otherTeamNames];
+
+  return (
+    <>
+      <Text style={styles.sectionLabel}>GAME DAY OUTLOOK</Text>
+      <TouchableOpacity
+        style={[styles.card, { borderColor: gameRgba(0.25), backgroundColor: gameRgba(0.05) }]}
+        onPress={onPress}
+        activeOpacity={0.78}
+      >
+        <View style={[styles.cardTop, { borderBottomColor: gameRgba(0.15) }]}>
+          <View style={styles.cardTopLeft}>
+            <View style={[styles.footballWrap, { backgroundColor: gameRgba(0.16) }]}>
+              <Ionicons name="football" size={17} color={GAME_COLOR} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.titleRow}>
+                <Text style={[styles.cardTitle, { color: GAME_COLOR }]}>
+                  {events.length} game{events.length !== 1 ? 's' : ''} club-wide
+                </Text>
+                <View style={[styles.dateBadge, { backgroundColor: gameRgba(0.14) }]}>
+                  <Text style={[styles.dateBadgeText, { color: GAME_COLOR }]}>{dateLabel}</Text>
+                </View>
+              </View>
+              {flaggedCount > 0 && (
+                <View style={[styles.clashBadge, styles.clashBadgeStandalone]}>
+                  <Ionicons name="warning" size={10} color="#EF4444" />
+                  <Text style={styles.clashBadgeText}>{flaggedCount} need{flaggedCount === 1 ? 's' : ''} attention</Text>
+                </View>
+              )}
+              <Text style={styles.cardSub} numberOfLines={1}>
+                {teamNames.slice(0, 2).join(', ')}{teamNames.length > 2 ? ` +${teamNames.length - 2} more` : ''}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+        </View>
+
+        <View style={[styles.cta, { backgroundColor: gameRgba(0.09), borderTopColor: gameRgba(0.15) }]}>
+          <Ionicons name="shield-checkmark-outline" size={13} color={GAME_COLOR} />
+          <Text style={[styles.ctaText, { color: GAME_COLOR }]}>
+            {flaggedCount > 0 ? 'View club coverage' : 'All teams covered — view details'}
+          </Text>
+          <Ionicons name="arrow-forward" size={13} color={GAME_COLOR} />
         </View>
       </TouchableOpacity>
     </>
   );
 }
-
-const GameDayWidget = memo(function GameDayWidget({ onPress }: { onPress: () => void }) {
-  const { dates, loading } = useUpcomingGameDates(14);
-  if (loading || !dates.length) return null;
-  const today = localDateStr(0);
-  const displayDate = dates.includes(today) ? today : dates[0];
-  return <WidgetContent date={displayDate} onPress={onPress} />;
-});
-export default GameDayWidget;
 
 const styles = StyleSheet.create({
   sectionLabel: {
@@ -162,6 +251,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.12)',
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20,
   },
+  clashBadgeStandalone: { alignSelf: 'flex-start', marginTop: 4, marginBottom: 4 },
   clashBadgeText: { fontSize: 10, fontWeight: '700', color: '#EF4444' },
   cardSub: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
 
@@ -175,11 +265,20 @@ const styles = StyleSheet.create({
 
   eventRow: { flexDirection: 'row', alignItems: 'stretch' },
   teamBar: { width: 3, marginVertical: 4, marginLeft: 14, borderRadius: 2 },
-  eventContent: { flex: 1, paddingVertical: 10, paddingHorizontal: 12 },
+  eventContent: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, position: 'relative' },
   eventTime: { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
+  eventArrive: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.muted },
   eventBottom: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   teamBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
   teamBadgeText: { fontSize: 11, fontWeight: '700' },
+  parentTag: {
+    position: 'absolute', top: 8, right: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 20,
+    backgroundColor: 'rgba(96,165,250,0.16)',
+    borderWidth: 1, borderColor: 'rgba(96,165,250,0.35)',
+  },
+  parentTagText: { fontSize: 10, fontWeight: '800', color: '#60A5FA', letterSpacing: 0.2 },
   eventGameTitle: { fontSize: 12, color: PULSE_COLORS.ui.muted, flex: 1 },
 
   extraText: { fontSize: 12, fontWeight: '700', paddingHorizontal: 14, paddingVertical: 8 },

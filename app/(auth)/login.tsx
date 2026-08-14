@@ -15,7 +15,9 @@ import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../hooks/useAuth';
 import { signInWithApple, signInWithGoogle } from '../../lib/auth';
+import { routeAfterAuth as sharedRouteAfterAuth } from '../../lib/authRouting';
 import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
@@ -30,6 +32,7 @@ function mapAuthError(message: string): string {
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { refreshProfile } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -43,55 +46,9 @@ export default function LoginScreen() {
   }, []);
 
   async function routeAfterAuth(userId: string, isSso = false) {
-    const token = await AsyncStorage.getItem('pendingInviteToken');
-    if (token) {
-      await AsyncStorage.removeItem('pendingInviteToken');
-      const { data, error: rpcError } = await supabase.rpc('accept_invite', { p_token: token });
-      if (rpcError) { setLoading(false); setError('Failed to accept invite. Please try again.'); return; }
-      const slug = (data as { club_slug?: string } | null)?.club_slug;
-      if (!slug) { setLoading(false); setError('Club not found. Please contact your coach.'); return; }
-      router.replace(`/(app)/${slug}/(tabs)` as never);
-      return;
-    }
-
-    // SSO creates the profile row via a DB trigger; give it time to fire
-    let profile = null;
-    let profileError = null;
-    const attempts = isSso ? 4 : 1;
-    for (let i = 0; i < attempts; i++) {
-      if (i > 0) await new Promise((r) => setTimeout(r, 600));
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role, club_id')
-        .eq('id', userId)
-        .single();
-      profile = data;
-      profileError = error;
-      if (data) break;
-    }
-
-    if (profileError) { setError('Failed to load your profile. Please try again.'); return; }
-
-    if (profile?.club_id) {
-      const { data: club, error: clubError } = await supabase.from('clubs').select('slug').eq('id', profile.club_id).single();
-      if (clubError) { setError('Failed to load your club. Please try again.'); return; }
-      if (club?.slug) {
-        router.replace(`/(app)/${club.slug}/(tabs)`);
-        return;
-      }
-    }
-
-    if (!profile?.role) {
-      router.replace('/(auth)/role-select');
-      return;
-    }
-
-    if (profile.role === 'org_admin') {
-      setInfo('Your club setup is not finished yet. Visit pulse-fc.app/onboarding to complete setup. Or sign out below.');
-      return;
-    }
-
-    router.replace('/(auth)/find-team');
+    const result = await sharedRouteAfterAuth(router, userId, refreshProfile, { isSso });
+    if (result.type === 'error') { setLoading(false); setError(result.message); }
+    else if (result.type === 'info') { setInfo(result.message); }
   }
 
   async function handleLogin() {

@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { computeArriveBy } from '../../../../lib/eventTime';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
@@ -27,7 +28,6 @@ type GuestRequest = {
   id: string;
   event_id: string;
   requesting_team_id: string;
-  target_team_id: string;
   note: string | null;
   spots_needed: number;
   status: 'open' | 'filled' | 'cancelled';
@@ -66,16 +66,6 @@ function computeEndTime(timeStr: string, durationMins: number): string {
   return `${endH % 12 || 12}:${String(endM).padStart(2, '0')} ${period}`;
 }
 
-function computeArriveBy(timeStr: string, bufferMins: number): string {
-  const [h, m] = timeStr.split(':').map(Number);
-  const totalMins = h * 60 + m - bufferMins;
-  const normalized = ((totalMins % 1440) + 1440) % 1440;
-  const arrH = Math.floor(normalized / 60);
-  const arrM = normalized % 60;
-  const period = arrH >= 12 ? 'PM' : 'AM';
-  return `${arrH % 12 || 12}:${String(arrM).padStart(2, '0')} ${period}`;
-}
-
 export default function GuestRequestScreen() {
   const { requestId, clubSlug } = useLocalSearchParams<{ requestId: string; clubSlug: string }>();
   const { profile } = useAuth();
@@ -109,13 +99,13 @@ export default function GuestRequestScreen() {
     setRequest(req as unknown as GuestRequest);
 
     const r = req as unknown as GuestRequest;
-    const [eventRes, teamRes, guestsRes, myPlayerRes, coachesRes] = await Promise.all([
+    const [eventRes, teamRes, targetsRes, fillRes, coachesRes] = await Promise.all([
       supabase.from('events')
         .select('title,type,event_date,event_time,location,address,lat,lng,arrival_buffer_minutes,duration_minutes,home_away')
         .eq('id', r.event_id).single(),
       supabase.from('teams').select('name').eq('id', r.requesting_team_id).single(),
-      supabase.from('event_guests').select('player_id').eq('event_id', r.event_id).eq('role', 'player').neq('status', 'declined'),
-      supabase.from('players').select('id,full_name').eq('team_id', r.target_team_id).eq('profile_id', profile.id).maybeSingle(),
+      supabase.from('guest_request_targets').select('team_id').eq('request_id', r.id),
+      supabase.from('guest_request_fill').select('filled_count').eq('request_id', r.id).maybeSingle(),
       supabase.from('team_members').select('profile_id').eq('team_id', r.requesting_team_id).eq('role', 'coach'),
     ]);
     coachProfileIds.current = ((coachesRes.data ?? []) as any[]).map(c => c.profile_id).filter(Boolean) as string[];
@@ -131,22 +121,21 @@ export default function GuestRequestScreen() {
     }
     if (teamRes.data) setRequestingTeamName(teamRes.data.name);
 
-    const guestPlayerIds = ((guestsRes.data ?? []) as any[]).map(g => g.player_id).filter(Boolean) as string[];
+    const targetTeamIds = ((targetsRes.data ?? []) as any[]).map(t => t.team_id as string);
+    setSpotsLeft(Math.max(0, r.spots_needed - (fillRes.data?.filled_count ?? 0)));
 
-    let filledFromTargetTeam = 0;
-    if (guestPlayerIds.length > 0) {
-      const { count } = await supabase.from('players')
-        .select('id', { count: 'exact', head: true })
-        .in('id', guestPlayerIds).eq('team_id', r.target_team_id);
-      filledFromTargetTeam = count ?? 0;
-    }
-    setSpotsLeft(Math.max(0, r.spots_needed - filledFromTargetTeam));
+    const myPlayerRes = targetTeamIds.length > 0
+      ? await supabase.from('players').select('id,full_name')
+          .in('team_id', targetTeamIds).eq('profile_id', profile.id).limit(1).maybeSingle()
+      : { data: null };
 
     const myPlayer = myPlayerRes.data as any;
     if (myPlayer) {
       setMyPlayerId(myPlayer.id);
       setMyPlayerName(myPlayer.full_name);
-      setAlreadyVolunteered(guestPlayerIds.includes(myPlayer.id));
+      const { data: myGuestRow } = await supabase.from('event_guests').select('id')
+        .eq('event_id', r.event_id).eq('player_id', myPlayer.id).neq('status', 'declined').maybeSingle();
+      setAlreadyVolunteered(!!myGuestRow);
     }
 
     setLoading(false);
@@ -156,30 +145,24 @@ export default function GuestRequestScreen() {
     if (!myPlayerId || !request || !profile) return;
     setVolunteering(true);
 
-    const { error } = await supabase.from('event_guests').insert({
-      event_id:  request.event_id,
-      player_id: myPlayerId,
-      full_name: myPlayerName,
-      role:      'player',
-      status:    'confirmed',
-      added_by:  profile.id,
+    const { error } = await supabase.rpc('claim_guest_spot', {
+      p_request_id: request.id,
+      p_player_id:  myPlayerId,
     });
 
     if (error) {
-      Alert.alert('Error', 'Could not volunteer. Please try again.');
+      const alreadyFull = error.message?.includes('already full');
+      Alert.alert(
+        alreadyFull ? 'Spot already taken' : 'Error',
+        alreadyFull ? 'All spots were just filled by another parent.' : 'Could not volunteer. Please try again.'
+      );
+      if (alreadyFull) { setSpotsLeft(0); setRequest(r => r ? { ...r, status: 'filled' } : r); }
       setVolunteering(false);
       return;
     }
 
-    // Mirror to event_rsvps so the player appears in RSVP-based queries
-    await supabase.from('event_rsvps').upsert(
-      { event_id: request.event_id, player_id: myPlayerId, responded_by: profile.id, status: 'attending' },
-      { onConflict: 'event_id,player_id' }
-    );
-
     const newLeft = spotsLeft - 1;
     if (newLeft <= 0) {
-      await (supabase as any).from('guest_requests').update({ status: 'filled' }).eq('id', request.id);
       setRequest(r => r ? { ...r, status: 'filled' } : r);
     }
 

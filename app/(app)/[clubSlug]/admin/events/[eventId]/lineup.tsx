@@ -346,8 +346,9 @@ export default function LineupScreen() {
 
       let lineupId: string;
       if (existing) {
-        await supabase.from('lineups')
+        const { error } = await supabase.from('lineups')
           .update({ formation: lineup.selectedFormationId }).eq('id', existing.id);
+        if (error) throw error;
         lineupId = existing.id;
       } else {
         const { data: created, error } = await supabase

@@ -506,7 +506,10 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   // ── Score ─────────────────────────────────────────────────────────────────
 
   async function saveScore(home: number, away: number) {
-    await supabase.from('events').update({ score_home: home, score_away: away }).eq('id', eventId);
+    const { error } = await supabase.from('events').update({ score_home: home, score_away: away }).eq('id', eventId);
+    if (error) {
+      Alert.alert('Error', 'Could not update the score. Please check your connection and try again.');
+    }
   }
 
   function incHome() { const n = scoreHome + 1; setScoreHome(n); saveScore(n, scoreAway); }
@@ -711,7 +714,12 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
       }
     }
 
-    await supabase.from('lineups').update({ formation: newFm.id }).eq('id', lid);
+    const { error: formationError } = await supabase.from('lineups').update({ formation: newFm.id }).eq('id', lid);
+    if (formationError) {
+      Alert.alert('Error', 'Could not update the formation. Please try again.');
+      setSaving(false);
+      return;
+    }
     await supabase.from('lineup_positions').delete().eq('lineup_id', lid);
     const rows = next
       .map((pid, i) => pid ? { lineup_id: lid, player_id: pid, x: newFm.positions[i].x, y: newFm.positions[i].y, position_label: newFm.positions[i].label } : null)

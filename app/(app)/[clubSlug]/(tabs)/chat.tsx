@@ -23,6 +23,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../../lib/supabase';
+import { uniqueChannelName } from '../../../../lib/realtime';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -33,7 +34,7 @@ import ChatSkeleton from '../../../../components/chat/ChatSkeleton';
 import type { Database } from '../../../../types/database';
 import { sendTeamPush } from '../../../../lib/push';
 
-type Team    = Database['public']['Tables']['teams']['Row'];
+type Team    = Database['public']['Tables']['teams']['Row'] & { myRole?: 'coach' | 'parent' | 'org_admin' | null };
 type Profile = Database['public']['Tables']['profiles']['Row'];
 type Tab = 'chats' | 'announcements' | 'email';
 
@@ -64,7 +65,7 @@ export default function ChatScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { team, loading: teamLoading } = useTeam();
   const { profile, user } = useAuth();
-  const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
+  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
 
   const [activeTab, setActiveTab] = useState<Tab>('chats');
 
@@ -284,7 +285,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
 
   function subscribeToMessages() {
     const channel = supabase
-      .channel(`chats-list:${profile?.id}`)
+      .channel(uniqueChannelName(`chats-list:${profile?.id}`))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         const msg = payload.new as any;
         const convId = msg.conversation_id;
@@ -620,7 +621,7 @@ type AnnEmailRecipient = {
 
 function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; profile: Profile | null; coachEmail: string | null }) {
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
-  const isCoach = profile?.role === 'org_admin' || profile?.role === 'coach';
+  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
@@ -640,7 +641,7 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
   useEffect(() => {
     if (!team?.id) return;
     const channel = supabase
-      .channel(`announcements-${team.id}`)
+      .channel(uniqueChannelName(`announcements-${team.id}`))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements', filter: `team_id=eq.${team.id}` }, (payload) => {
         const a = payload.new as any;
         setAnnouncements(prev => {
@@ -1158,7 +1159,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
   }
 
   function toggleAll() {
-    const withEmail = recipients.filter((r) => r.parent_email).map((r) => r.player_id);
+    const withEmail = recipients.filter((r) => r.parent_emails.length > 0).map((r) => r.player_id);
     if (withEmail.every((id) => selected.has(id))) {
       setSelected(new Set());
     } else {

@@ -15,6 +15,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
+import { uniqueChannelName } from '../../../../lib/realtime';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -191,7 +192,7 @@ export default function ConversationScreen() {
 
   function subscribe() {
     const channel = supabase
-      .channel(`dm:${conversationId}`)
+      .channel(uniqueChannelName(`dm:${conversationId}`))
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'messages',
         filter: `conversation_id=eq.${conversationId}`,

@@ -13,6 +13,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../../lib/supabase';
+import { sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
@@ -43,13 +44,6 @@ type DoneStats = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function uuid(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
 const PROCESSING_MESSAGES = [
   'Reading your roster…',
   'Mapping columns to player fields…',
@@ -65,7 +59,7 @@ export default function RosterImportScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile } = useAuth();
   const { team } = useTeam();
-  const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const { primaryColor, rgba } = useClub();
 
   const [phase, setPhase]               = useState<Phase>('idle');
   const [players, setPlayers]           = useState<ParsedPlayer[]>([]);
@@ -167,17 +161,23 @@ export default function RosterImportScreen() {
       stats.added++;
 
       if (p.parent_email?.trim()) {
-        const token = uuid();
-        await supabase.from('invites').insert({
-          team_id: team.id,
-          player_id: playerData.id,
-          email: p.parent_email.trim(),
-          token,
-          role: 'parent',
-          created_by: profile.id,
-        });
-        await sendInviteEmail(p.parent_email.trim(), token, p.full_name);
-        stats.invitesSent++;
+        const { data: inviteData } = await supabase
+          .from('invites')
+          .insert({
+            team_id: team.id,
+            player_id: playerData.id,
+            email: p.parent_email.trim(),
+            role: 'parent',
+            created_by: profile.id,
+          })
+          .select('id')
+          .single();
+        if (inviteData?.id) {
+          await sendParentInviteEmail(inviteData.id, p.full_name);
+          stats.invitesSent++;
+        } else {
+          stats.noEmail++;
+        }
       } else {
         stats.noEmail++;
       }
@@ -185,26 +185,6 @@ export default function RosterImportScreen() {
 
     setDoneStats(stats);
     setPhase('done');
-  }
-
-  async function sendInviteEmail(email: string, token: string, playerName: string) {
-    if (!profile?.full_name || !team) return;
-    const deepLink = `https://pulse-fc.app/join?token=${token}`;
-    await supabase.functions.invoke('send-team-email', {
-      body: {
-        to: [{ email, name: '' }],
-        cc: [],
-        subject: `Your child has been added to ${team.name} on Pulse FC`,
-        body: `Hi,\n\n${playerName} has been added to ${team.name} on Pulse FC — the app the team uses for schedules, lineups, and team chat.\n\nAccept your invite and download the app:\n${deepLink}\n\nOr enter your invite code: ${token}\n\n— ${profile.full_name}`,
-        reply_to: null,
-        from_name: profile.full_name,
-        team_name: team.name,
-        attachments: [],
-        club_logo_url: logoUrl,
-        club_name: clubName,
-        primary_color: primaryColor,
-      },
-    });
   }
 
   // ── Review helpers ────────────────────────────────────────────────────────

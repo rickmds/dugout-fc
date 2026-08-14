@@ -18,9 +18,13 @@ export function usePushNotifications() {
   const { profile } = useAuth();
 
   useEffect(() => {
-    if (!profile?.id) return;
+    // Wait until onboarding is actually finished (they've joined or
+    // created a team) before hitting them with the OS permission prompt —
+    // asking the instant they sign up, before they've seen any value,
+    // tanks opt-in rates.
+    if (!profile?.id || !profile?.club_id) return;
     registerToken(profile.id);
-  }, [profile?.id]);
+  }, [profile?.id, profile?.club_id]);
 }
 
 async function registerToken(profileId: string) {

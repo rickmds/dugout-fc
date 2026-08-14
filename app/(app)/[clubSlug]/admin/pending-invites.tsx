@@ -11,6 +11,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { sendParentInviteEmail, resendCoachInvite } from '../../../../lib/inviteApi';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
@@ -50,7 +51,7 @@ function initials(email: string): string {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function PendingInvitesScreen() {
-  const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const { primaryColor, rgba } = useClub();
   const { profile } = useAuth();
   const { team } = useTeam();
   const router = useRouter();
@@ -88,27 +89,10 @@ export default function PendingInvitesScreen() {
 
   async function sendOne(invite: PendingInvite) {
     if (!profile || !team) return;
-    const deepLink = `https://pulse-fc.app/join?token=${invite.token}`;
-    const isCoach = invite.role === 'coach';
-    const subject = isCoach
-      ? `Action required — your coaching invite to ${team.name} · ${clubName}`
-      : `${invite.playerName ? `${invite.playerName}'s invite` : 'Your invite'} to ${team.name} is still pending · ${clubName}`;
-    const body = isCoach
-      ? `Hi,\n\nA quick follow-up — your invite to join ${team.name} as a member of the coaching staff is still waiting.\n\nThe squad is active. Use the link below to set up your account in under a minute.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}`
-      : `Hi,\n\nA quick follow-up — ${invite.playerName ? `${invite.playerName}'s invite` : 'your invite'} to ${team.name} at ${clubName} is still pending.\n\nThe season schedule is live. Use the link below to create your account and stay connected all season.\n\nAccept your invite:\n${deepLink}\n\nInvite code: ${invite.token}`;
-
-    await supabase.functions.invoke('send-team-email', {
-      body: {
-        to: [{ email: invite.email, name: '' }],
-        cc: [], subject, body, reply_to: null,
-        from_name: profile.full_name ?? 'Pulse FC',
-        team_name: team.name,
-        attachments: [],
-        club_logo_url: logoUrl,
-        club_name: clubName,
-        primary_color: primaryColor,
-      },
-    });
+    const ok = invite.role === 'coach'
+      ? await resendCoachInvite(invite.id)
+      : await sendParentInviteEmail(invite.id, invite.playerName ?? undefined);
+    if (!ok) throw new Error('Failed to send invite');
   }
 
   function setResending(id: string, value: boolean) {

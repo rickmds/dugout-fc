@@ -508,7 +508,12 @@ export default function EditEventScreen() {
 
   async function handleDelete() {
     setDeleting(true);
-    await supabase.from('events').delete().eq('id', eventId);
+    const { error } = await supabase.from('events').delete().eq('id', eventId);
+    if (error) {
+      setDeleting(false);
+      Alert.alert('Error', 'Could not delete event. Please try again.');
+      return;
+    }
     router.back();
     router.back(); // pop both edit and detail
   }
