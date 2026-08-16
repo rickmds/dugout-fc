@@ -28,6 +28,7 @@ import { useClub } from '../../../../hooks/useClub';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { positionColor } from '../../../../constants/positions';
 import ClubBadge from '../../../../components/ui/ClubBadge';
+import GroupedTeamList from '../../../../components/ui/GroupedTeamList';
 import GameDayWidget from '../../../../components/home/GameDayWidget';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
 import CreatePollModal from '../../../../components/home/CreatePollModal';
@@ -36,6 +37,7 @@ import { fetchDriveTime } from '../../../../lib/drivetime';
 import { sendProfilesPush, sendTeamPush } from '../../../../lib/push';
 import GalleryCard from '../../../../components/home/GalleryCard';
 import * as WebBrowser from 'expo-web-browser';
+import { formatCurrency } from '../../../../lib/formatCurrency';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -246,6 +248,7 @@ export default function HomeScreen() {
   const { profile, club, refreshProfile, signOut } = useAuth();
   const { team, allTeams, loading: teamLoading, selectTeam } = useTeam();
   const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const fmt = (n: number) => formatCurrency(n, club?.currency);
 
   const [playerCount, setPlayerCount]       = useState(0);
   const [upcomingCount, setUpcomingCount]   = useState(0);
@@ -1046,7 +1049,7 @@ export default function HomeScreen() {
         await sendProfilesPush({
           profileIds: recipientIds,
           title: '💳 Payment claimed',
-          body: `${profile?.full_name ?? 'A parent'} says they paid $${amount.toFixed(2)} via ${claimMethod} for ${claimingFee.description}.`,
+          body: `${profile?.full_name ?? 'A parent'} says they paid ${fmt(amount)} via ${claimMethod} for ${claimingFee.description}.`,
           data: { type: 'fee_payment_claimed', player_fee_id: claimingFee.id, club_slug: slug },
         });
       }
@@ -1458,14 +1461,14 @@ export default function HomeScreen() {
                         <>
                           <Text style={styles.feeTitle}>{single.description}</Text>
                           <Text style={[styles.feeAmount, { color: accentColor }]}>
-                            ${Math.max(0, single.amount_due - (single.discount ?? 0)).toFixed(2)}
+                            {fmt(Math.max(0, single.amount_due - (single.discount ?? 0)))}
                             {fmtDue(single.due_date) ? `  ·  Due ${fmtDue(single.due_date)}` : ''}
                           </Text>
                         </>
                       ) : (
                         <>
                           <Text style={styles.feeTitle}>{outstandingFees.length} fees outstanding</Text>
-                          <Text style={[styles.feeAmount, { color: accentColor }]}>${totalOwed.toFixed(2)} total</Text>
+                          <Text style={[styles.feeAmount, { color: accentColor }]}>{fmt(totalOwed)} total</Text>
                         </>
                       )}
                     </View>
@@ -1944,29 +1947,32 @@ export default function HomeScreen() {
                 {multiClub && (
                   <Text style={styles.teamPickerClubHeader}>{group.clubName}</Text>
                 )}
-                {group.teams.map((t) => {
-                  const isActive = t.id === team?.id;
-                  const teamColor = t.club?.primary_color ?? primaryColor;
-                  return (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[styles.teamPickerRow, isActive && styles.teamPickerRowActive]}
-                      onPress={() => handleSelectTeam(t.id)}
-                      activeOpacity={0.75}
-                    >
-                      <View style={[styles.teamPickerIcon, { backgroundColor: rgba(isActive ? 0.18 : 0.08), borderColor: rgba(isActive ? 0.35 : 0.15) }]}>
-                        <Ionicons name="football-outline" size={18} color={teamColor} />
-                      </View>
-                      <View style={styles.teamPickerBody}>
-                        <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
-                        {(t.age_group || t.season) ? (
-                          <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
-                        ) : null}
-                      </View>
-                      {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
-                    </TouchableOpacity>
-                  );
-                })}
+                <GroupedTeamList
+                  teams={group.teams}
+                  showDividers={false}
+                  renderRow={(t) => {
+                    const isActive = t.id === team?.id;
+                    const teamColor = t.club?.primary_color ?? primaryColor;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.teamPickerRow, isActive && styles.teamPickerRowActive]}
+                        onPress={() => handleSelectTeam(t.id)}
+                        activeOpacity={0.75}
+                      >
+                        <View style={[styles.teamPickerIcon, { backgroundColor: rgba(isActive ? 0.18 : 0.08), borderColor: rgba(isActive ? 0.35 : 0.15) }]}>
+                          <Ionicons name="football-outline" size={18} color={teamColor} />
+                        </View>
+                        <View style={styles.teamPickerBody}>
+                          <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
+                          {(t.age_group || t.season) ? (
+                            <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
+                          ) : null}
+                        </View>
+                        {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
               </View>
             ))}
           </ScrollView>
@@ -2006,7 +2012,7 @@ export default function HomeScreen() {
                         {fmtDue && <Text style={styles.feeModalDue}>·  Due {fmtDue}</Text>}
                       </View>
                     </View>
-                    <Text style={[styles.feeModalAmount, { color: statusColor }]}>${net.toFixed(2)}</Text>
+                    <Text style={[styles.feeModalAmount, { color: statusColor }]}>{fmt(net)}</Text>
                   </View>
 
                   {fee.event_title && (
@@ -2023,7 +2029,7 @@ export default function HomeScreen() {
                       <View style={styles.claimPendingPill}>
                         <Ionicons name="time-outline" size={12} color={PULSE_COLORS.status.info} />
                         <Text style={styles.claimPendingText}>
-                          Marked paid{fee.claim_amount ? ` — $${Number(fee.claim_amount).toFixed(2)}` : ''}{fee.claim_method ? ` via ${fee.claim_method}` : ''} — awaiting coach confirmation
+                          Marked paid{fee.claim_amount ? ` — ${fmt(Number(fee.claim_amount))}` : ''}{fee.claim_method ? ` via ${fee.claim_method}` : ''} — awaiting coach confirmation
                         </Text>
                       </View>
                     ) : (

@@ -25,6 +25,7 @@ type CoachData = {
   source: 'member' | 'invite';
   name: string;
   email: string | null;
+  phone: string | null;
   avatarUrl: string | null;
   role: string;
   teamId: string | null;
@@ -88,6 +89,7 @@ export default function CoachProfileScreen() {
         source: 'invite',
         name: data.email,
         email: data.email,
+        phone: null,
         avatarUrl: null,
         role: 'Coach',
         teamId: data.team_id,
@@ -101,7 +103,7 @@ export default function CoachProfileScreen() {
     } else {
       const { data, error } = await supabase
         .from('team_members')
-        .select('id, role, created_at, profiles!team_members_profile_id_fkey(id, full_name, avatar_url)')
+        .select('id, role, created_at, profiles!team_members_profile_id_fkey(id, full_name, avatar_url, phone)')
         .eq('id', coachId)
         .single();
 
@@ -115,6 +117,7 @@ export default function CoachProfileScreen() {
         source: 'member',
         name: p.full_name ?? 'Coach',
         email: null,
+        phone: p.phone ?? null,
         avatarUrl: p.avatar_url ?? null,
         role: data.role === 'coach' ? 'Coach' : (data.role ?? 'Coach'),
         teamId: null,
@@ -244,25 +247,55 @@ export default function CoachProfileScreen() {
         </View>
 
         {/* ── Contact ── */}
-        {coach.email && (
+        {(coach.phone || coach.email) && (
           <>
             <Text style={st.sectionLabel}>CONTACT</Text>
             <View style={st.card}>
-              <View style={st.contactRow}>
-                <View style={[st.contactIcon, { backgroundColor: 'rgba(59,130,246,0.1)' }]}>
-                  <Ionicons name="mail-outline" size={17} color="#3B82F6" />
+              {coach.phone && (
+                <View style={[st.contactRow, coach.email && st.contactRowDivider]}>
+                  <View style={[st.contactIcon, { backgroundColor: 'rgba(34,197,94,0.1)' }]}>
+                    <Ionicons name="call-outline" size={17} color={primaryColor} />
+                  </View>
+                  <View style={st.contactMeta}>
+                    <Text style={st.contactLabel}>Phone</Text>
+                    <Text style={st.contactValue} numberOfLines={1}>{coach.phone}</Text>
+                  </View>
+                  <View style={st.contactBtnGroup}>
+                    <TouchableOpacity
+                      style={st.contactBtn}
+                      onPress={() => Linking.openURL(`sms:${coach.phone}`)}
+                    >
+                      <Ionicons name="chatbubble-outline" size={13} color={primaryColor} />
+                      <Text style={[st.contactBtnText, { color: primaryColor }]}>Text</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={st.contactBtn}
+                      onPress={() => Linking.openURL(`tel:${coach.phone}`)}
+                    >
+                      <Ionicons name="call-outline" size={13} color={primaryColor} />
+                      <Text style={[st.contactBtnText, { color: primaryColor }]}>Call</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={st.contactMeta}>
-                  <Text style={st.contactLabel}>Email</Text>
-                  <Text style={st.contactValue} numberOfLines={1}>{coach.email}</Text>
+              )}
+              {coach.email && (
+                <View style={st.contactRow}>
+                  <View style={[st.contactIcon, { backgroundColor: 'rgba(59,130,246,0.1)' }]}>
+                    <Ionicons name="mail-outline" size={17} color="#3B82F6" />
+                  </View>
+                  <View style={st.contactMeta}>
+                    <Text style={st.contactLabel}>Email</Text>
+                    <Text style={st.contactValue} numberOfLines={1}>{coach.email}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={st.contactBtn}
+                    onPress={() => Linking.openURL(`mailto:${coach.email}`)}
+                  >
+                    <Ionicons name="mail-outline" size={13} color="#3B82F6" />
+                    <Text style={[st.contactBtnText, { color: '#3B82F6' }]}>Email</Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  style={st.contactBtn}
-                  onPress={() => Linking.openURL(`mailto:${coach.email}`)}
-                >
-                  <Text style={[st.contactBtnText, { color: primaryColor }]}>Send</Text>
-                </TouchableOpacity>
-              </View>
+              )}
             </View>
           </>
         )}
@@ -367,6 +400,9 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 14, paddingVertical: 14,
   },
+  contactRowDivider: {
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
   contactIcon: {
     width: 38, height: 38, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -374,8 +410,10 @@ const st = StyleSheet.create({
   contactMeta: { flex: 1 },
   contactLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', marginBottom: 2 },
   contactValue: { fontSize: 15, color: PULSE_COLORS.ui.text, fontWeight: '500' },
+  contactBtnGroup: { flexDirection: 'row', gap: 6, flexShrink: 0 },
   contactBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },

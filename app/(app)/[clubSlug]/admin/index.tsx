@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  SectionList,
   Modal,
   ScrollView,
   StyleSheet,
@@ -17,6 +17,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { groupTeamsByAgeGroup } from '../../../../lib/teamGrouping';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../../components/ui/TeamEditModal';
 
@@ -370,6 +371,7 @@ export default function AdminPanel() {
     () => allTeams.filter((t) => t.name.toLowerCase().includes(search.toLowerCase())),
     [allTeams, search],
   );
+  const teamSections = useMemo(() => groupTeamsByAgeGroup(filteredTeams), [filteredTeams]);
 
   return (
     <View style={st.root}>
@@ -424,11 +426,18 @@ export default function AdminPanel() {
               </TouchableOpacity>
             )}
           </View>
-          <FlatList
-            data={filteredTeams}
+          <SectionList
+            sections={teamSections}
             keyExtractor={(t) => t.id}
             contentContainerStyle={tp.list}
             keyboardShouldPersistTaps="handled"
+            stickySectionHeadersEnabled
+            renderSectionHeader={({ section: { title, data } }) => (
+              <View style={tp.sectionHeader}>
+                <Text style={tp.sectionHeaderText}>{title}</Text>
+                <Text style={tp.sectionHeaderCount}>{data.length}</Text>
+              </View>
+            )}
             renderItem={({ item }) => {
               const active = item.id === team?.id;
               return (
@@ -827,4 +836,7 @@ const tp = StyleSheet.create({
   rowMeta:     { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
   empty:       { padding: 40, alignItems: 'center' },
   emptyText:   { fontSize: 14, color: PULSE_COLORS.ui.muted },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8, backgroundColor: PULSE_COLORS.ui.background },
+  sectionHeaderText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  sectionHeaderCount: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted },
 });

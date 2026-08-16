@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
@@ -81,6 +82,34 @@ async function clearCache() {
   try { await AsyncStorage.removeItem(CACHE_KEY); } catch {}
 }
 
+// getSession() isn't a pure local-storage read — if the cached access
+// token has expired (routine on a cold launch after the app's been closed
+// a few hours), it makes a real network call to refresh it before
+// resolving, with no timeout anywhere in that chain. On shaky cold-launch
+// connectivity that call can just stall forever, which leaves `loading`
+// stuck true and the whole app on the loading spinner permanently — the
+// only fix a user has is force-quitting, which abandons the hung request
+// and lets a fresh one succeed. Retrying in-process after a timeout does
+// the same thing automatically instead of requiring that.
+const SESSION_TIMEOUT_MS = 5000;
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+async function getSessionWithRetry() {
+  const first = await withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
+  if (first) return first;
+  return withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
+}
+async function fetchProfileAndClubWithRetry(userId: string) {
+  const first = await withTimeout(fetchProfileAndClub(userId), SESSION_TIMEOUT_MS);
+  if (first) return first;
+  const second = await withTimeout(fetchProfileAndClub(userId), SESSION_TIMEOUT_MS);
+  return second ?? { profile: null, club: null, error: true as const };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     session: null,
@@ -93,8 +122,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    getSessionWithRetry().then(async (result) => {
       if (!mounted) return;
+
+      if (!result) {
+        // Both attempts stalled — a real connectivity problem, not just a
+        // one-off hiccup. Don't leave the spinner up forever: fall through
+        // to the signed-out state so (app)/_layout's own `!loading &&
+        // !session` check can redirect somewhere the user can actually act
+        // (retry, or the app's normal offline handling), rather than a
+        // screen with nothing to tap.
+        setState({ session: null, user: null, profile: null, club: null, loading: false });
+        return;
+      }
+
+      const { data: { session } } = result;
 
       if (session?.user) {
         // Restore from cache immediately — removes the loading spinner on return visits
@@ -104,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Revalidate in background (or full load if no cache)
-        const { profile, club, error } = await fetchProfileAndClub(session.user.id);
+        const { profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id);
         if (mounted) {
           if (error) {
             // Transient/network failure — keep whatever profile/club we already have
@@ -149,6 +191,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.subscription.unsubscribe();
     };
+  }, []);
+
+  // Club branding (colors, logo) and the user's own profile (avatar, etc.)
+  // are only fetched on session start and after specific in-app actions —
+  // a change made elsewhere (the web dashboard, another device) never
+  // pushes anything to an already-open app, so it just sits stale until
+  // the app is force-quit and relaunched. Refetch whenever the app
+  // returns to the foreground so those changes show up without that.
+  const userIdRef = useRef<string | null>(null);
+  useEffect(() => { userIdRef.current = state.user?.id ?? null; }, [state.user]);
+
+  useEffect(() => {
+    function onAppStateChange(next: AppStateStatus) {
+      if (next !== 'active' || !userIdRef.current) return;
+      const uid = userIdRef.current;
+      fetchProfileAndClub(uid).then(({ profile, club, error }) => {
+        if (error) return;
+        setState((prev) => (prev.user?.id === uid ? { ...prev, profile, club } : prev));
+        if (profile) persistCache(uid, profile, club);
+      });
+    }
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
   }, []);
 
   async function signOut() {

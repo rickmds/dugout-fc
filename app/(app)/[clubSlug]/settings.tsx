@@ -26,6 +26,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import { useActiveTeam } from '../../../hooks/TeamContext';
 import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import GroupedTeamList from '../../../components/ui/GroupedTeamList';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../components/ui/TeamEditModal';
 import ImageEditor from '../../../components/ui/ImageEditor';
@@ -106,7 +107,7 @@ function SettingsRow({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
-  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook, secondaryColor, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook } = useClub();
   const router = useRouter();
   const { profile, club, user, signOut, refreshProfile } = useAuth();
   const { allTeams, refetch: refetchTeams } = useActiveTeam();
@@ -137,9 +138,6 @@ export default function SettingsScreen() {
   const [logoEditorVisible, setLogoEditorVisible] = useState(false);
   const [avatarEditorUri, setAvatarEditorUri] = useState('');
   const [avatarEditorVisible, setAvatarEditorVisible] = useState(false);
-  const [colorTarget, setColorTarget]         = useState<'primary' | 'secondary' | 'home_kit' | 'away_kit' | 'training_kit' | null>(null);
-  const [colorDraft, setColorDraft]           = useState('');
-  const [savingColor, setSavingColor]         = useState(false);
 
   const [showPwForm, setShowPwForm]   = useState(false);
   const [newPw, setNewPw]             = useState('');
@@ -190,8 +188,9 @@ export default function SettingsScreen() {
   const [notifOpen, setNotifOpen]     = useState(false);
 
   const [editingTeam, setEditingTeam] = useState<{
-    id: string; name: string; age_group: string | null; season: string | null;
+    id: string; name: string; age_group: string | null; season: string | null; gender?: string | null;
   } | null>(null);
+  const [teamSearch, setTeamSearch] = useState('');
 
   const isParent = profile?.role === 'player';
   const authProvider  = (user?.app_metadata?.provider as string) ?? 'email';
@@ -368,24 +367,6 @@ export default function SettingsScreen() {
     }
   }
 
-  async function handleSaveColor() {
-    if (!club || !colorTarget) return;
-    const raw = colorDraft.startsWith('#') ? colorDraft : `#${colorDraft}`;
-    if (!/^#[0-9A-Fa-f]{6}$/.test(raw)) {
-      Alert.alert('Invalid colour', 'Enter a valid hex colour, e.g. #22C55E');
-      return;
-    }
-    setSavingColor(true);
-    const field = colorTarget === 'primary' ? 'primary_color'
-      : colorTarget === 'secondary' ? 'secondary_color'
-      : colorTarget === 'home_kit' ? 'home_kit_color'
-      : colorTarget === 'away_kit' ? 'away_kit_color'
-      : 'training_kit_color';
-    await (supabase as any).from('clubs').update({ [field]: raw }).eq('id', club.id);
-    await refreshProfile();
-    setSavingColor(false);
-    setColorTarget(null);
-  }
 
   async function handleLeaveTeam(teamId: string, teamName: string) {
     const isLast = allTeams.length === 1;
@@ -806,42 +787,54 @@ export default function SettingsScreen() {
         </Section>
       )}
 
-      {/* ── Club Branding (org_admins only) ── */}
+      {/* ── Club Branding (org_admins only) ──
+          Colors and kits always live on the web dashboard now — editing
+          them here meant an admin's own device could look right while the
+          new hex hadn't propagated anywhere else yet (a mid-air-collision
+          risk with no visibility into it), and multi-team clubs already
+          have a real admin using the web dashboard for everything else
+          anyway. Logo stays editable in-app only for a single-team setup,
+          since that's often a solo coach/admin who may never open the web
+          dashboard at all. */}
       {isOrgAdmin && (
         <Section label="CLUB BRANDING">
-          {/* ── Logo upload block ── */}
-          <View style={st.logoBlock}>
-            <TouchableOpacity
-              style={[st.logoCircle, { borderColor: primaryColor, backgroundColor: rgba(0.1) }]}
-              onPress={handleLogoUpload}
-              disabled={logoUploading}
-              activeOpacity={0.8}
-            >
-              {logoUploading ? (
-                <ActivityIndicator color={primaryColor} />
-              ) : logoUrl ? (
-                <Image source={{ uri: logoUrl }} style={st.logoImg} contentFit="contain" />
-              ) : (
-                <Ionicons name="image-outline" size={28} color={PULSE_COLORS.ui.muted} />
-              )}
-            </TouchableOpacity>
-            {logoUrl ? (
-              <View style={{ flexDirection: 'row', gap: 16 }}>
-                <TouchableOpacity onPress={handleLogoReEdit} disabled={logoUploading} activeOpacity={0.7}>
-                  <Text style={[st.logoHint, { color: primaryColor }]}>Edit crop</Text>
+          {allTeams.length <= 1 && (
+            <>
+              {/* ── Logo upload block ── */}
+              <View style={st.logoBlock}>
+                <TouchableOpacity
+                  style={[st.logoCircle, { borderColor: primaryColor, backgroundColor: rgba(0.1) }]}
+                  onPress={handleLogoUpload}
+                  disabled={logoUploading}
+                  activeOpacity={0.8}
+                >
+                  {logoUploading ? (
+                    <ActivityIndicator color={primaryColor} />
+                  ) : logoUrl ? (
+                    <Image source={{ uri: logoUrl }} style={st.logoImg} contentFit="contain" />
+                  ) : (
+                    <Ionicons name="image-outline" size={28} color={PULSE_COLORS.ui.muted} />
+                  )}
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
-                  <Text style={[st.logoHint, { color: PULSE_COLORS.ui.muted }]}>Change</Text>
-                </TouchableOpacity>
+                {logoUrl ? (
+                  <View style={{ flexDirection: 'row', gap: 16 }}>
+                    <TouchableOpacity onPress={handleLogoReEdit} disabled={logoUploading} activeOpacity={0.7}>
+                      <Text style={[st.logoHint, { color: primaryColor }]}>Edit crop</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
+                      <Text style={[st.logoHint, { color: PULSE_COLORS.ui.muted }]}>Change</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
+                    <Text style={[st.logoHint, { color: primaryColor }]}>Upload logo</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-            ) : (
-              <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
-                <Text style={[st.logoHint, { color: primaryColor }]}>Upload logo</Text>
-              </TouchableOpacity>
-            )}
-          </View>
 
-          <View style={st.divider} />
+              <View style={st.divider} />
+            </>
+          )}
 
           {/* Club name */}
           <View style={st.row}>
@@ -920,144 +913,88 @@ export default function SettingsScreen() {
 
           <View style={st.divider} />
 
-          {/* Primary colour */}
-          <TouchableOpacity
-            style={st.row}
-            onPress={() => { setColorDraft(primaryColor); setColorTarget('primary'); }}
-            activeOpacity={0.65}
-          >
-            <View style={[st.iconCell, { backgroundColor: rgba(0.15) }]}>
-              <Ionicons name="color-palette-outline" size={16} color={primaryColor} />
+          {/* Colors, kits, and (for multi-team clubs) the logo are web-only now */}
+          <View style={[st.row, { paddingVertical: 14 }]}>
+            <View style={[st.iconCell, { backgroundColor: 'rgba(2,132,199,0.12)' }]}>
+              <Ionicons name="color-palette-outline" size={16} color="#0284C7" />
             </View>
-            <Text style={[st.rowLabel, { flex: 1 }]}>Primary colour</Text>
-            <View style={[st.colorSwatch, { backgroundColor: primaryColor }]} />
-            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{primaryColor}</Text>
-            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
-
-          <View style={st.divider} />
-
-          {/* Secondary colour */}
-          <TouchableOpacity
-            style={st.row}
-            onPress={() => { setColorDraft(secondaryColor); setColorTarget('secondary'); }}
-            activeOpacity={0.65}
-          >
-            <View style={[st.iconCell, { backgroundColor: 'rgba(107,114,128,0.15)' }]}>
-              <Ionicons name="color-palette-outline" size={16} color={PULSE_COLORS.ui.textSecondary} />
-            </View>
-            <Text style={[st.rowLabel, { flex: 1 }]}>Secondary colour</Text>
-            <View style={[st.colorSwatch, { backgroundColor: secondaryColor, borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1 }]} />
-            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{secondaryColor}</Text>
-            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
-
-          <View style={st.divider} />
-
-          {/* Home kit colour */}
-          <TouchableOpacity
-            style={st.row}
-            onPress={() => { setColorDraft(homeKitColor); setColorTarget('home_kit'); }}
-            activeOpacity={0.65}
-          >
-            <View style={[st.iconCell, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
-              <Ionicons name="shirt" size={16} color="#22C55E" />
-            </View>
-            <Text style={[st.rowLabel, { flex: 1 }]}>Home kit colour</Text>
-            <View style={[st.colorSwatch, { backgroundColor: homeKitColor }]} />
-            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{homeKitColor}</Text>
-            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
-
-          <View style={st.divider} />
-
-          {/* Away kit colour */}
-          <TouchableOpacity
-            style={st.row}
-            onPress={() => { setColorDraft(awayKitColor); setColorTarget('away_kit'); }}
-            activeOpacity={0.65}
-          >
-            <View style={[st.iconCell, { backgroundColor: 'rgba(249,115,22,0.12)' }]}>
-              <Ionicons name="shirt" size={16} color="#F97316" />
-            </View>
-            <Text style={[st.rowLabel, { flex: 1 }]}>Away kit colour</Text>
-            <View style={[st.colorSwatch, { backgroundColor: awayKitColor, borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1 }]} />
-            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{awayKitColor}</Text>
-            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
-
-          <View style={st.divider} />
-
-          {/* Training kit colour */}
-          <TouchableOpacity
-            style={st.row}
-            onPress={() => { setColorDraft(trainingKitColor); setColorTarget('training_kit'); }}
-            activeOpacity={0.65}
-          >
-            <View style={[st.iconCell, { backgroundColor: `${trainingKitColor}18` }]}>
-              <Ionicons name="shirt" size={16} color={trainingKitColor} />
-            </View>
-            <Text style={[st.rowLabel, { flex: 1 }]}>Training kit colour</Text>
-            <View style={[st.colorSwatch, { backgroundColor: trainingKitColor }]} />
-            <Text style={[st.rowValue, { flex: 0, marginLeft: 8 }]}>{trainingKitColor}</Text>
-            <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
-          </TouchableOpacity>
+            <Text style={[st.rowValue, { flex: 1, color: PULSE_COLORS.ui.textSecondary, textAlign: 'left' }]}>
+              {allTeams.length <= 1
+                ? 'Manage colors and kits at pulse-fc.app/dashboard/settings'
+                : 'Manage your logo, colors, and kits at pulse-fc.app/dashboard/settings'}
+            </Text>
+          </View>
 
         </Section>
       )}
 
       {/* ── Teams (org_admins) ── */}
       {isOrgAdmin && (
-        <Section label="TEAMS">
+        <Section label={`TEAMS (${allTeams.length})`}>
           {allTeams.length === 0 ? (
             <View style={[st.row, { justifyContent: 'center' }]}>
               <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13 }}>No teams yet</Text>
             </View>
           ) : (
-            allTeams.map((t, i) => (
-              <View key={t.id}>
-                {i > 0 && <View style={st.divider} />}
-                <TouchableOpacity
-                  style={st.row}
-                  onPress={() => setEditingTeam(t)}
-                  activeOpacity={0.65}
-                >
-                  <View style={[st.iconCell, { backgroundColor: rgba(0.12) }]}>
-                    <Ionicons name="football-outline" size={16} color={primaryColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={st.rowLabel}>{t.name}</Text>
-                    {(t.age_group || t.season) && (
-                      <Text style={st.rowValue} numberOfLines={1}>
-                        {[t.age_group, t.season].filter(Boolean).join(' · ')}
-                      </Text>
+            <>
+              {allTeams.length > 6 && (
+                <View style={st.teamSearchWrap}>
+                  <Ionicons name="search-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                  <TextInput
+                    style={st.teamSearchInput}
+                    placeholder="Search teams…"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    value={teamSearch}
+                    onChangeText={setTeamSearch}
+                    autoCorrect={false}
+                  />
+                  {teamSearch.length > 0 && (
+                    <TouchableOpacity onPress={() => setTeamSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Ionicons name="close-circle" size={15} color={PULSE_COLORS.ui.muted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+              {(() => {
+                const filtered = allTeams.filter((t) => t.name.toLowerCase().includes(teamSearch.toLowerCase()));
+                if (filtered.length === 0) {
+                  return (
+                    <View style={[st.row, { justifyContent: 'center' }]}>
+                      <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13 }}>No teams match "{teamSearch}"</Text>
+                    </View>
+                  );
+                }
+                return (
+                  <GroupedTeamList
+                    teams={filtered}
+                    dividerInset={58}
+                    renderRow={(t) => (
+                      <TouchableOpacity
+                        style={st.row}
+                        onPress={() => setEditingTeam(t)}
+                        activeOpacity={0.65}
+                      >
+                        <View style={[st.iconCell, { backgroundColor: rgba(0.12) }]}>
+                          <Ionicons name="football-outline" size={16} color={primaryColor} />
+                        </View>
+                        <Text style={[st.rowLabel, { flex: 1 }]} numberOfLines={1}>{t.name}</Text>
+                        {(t.age_group || t.season) && (
+                          <View style={st.teamMetaPill}>
+                            <Text style={st.teamMetaPillText} numberOfLines={1}>
+                              {[t.age_group, t.season].filter(Boolean).join(' · ')}
+                            </Text>
+                          </View>
+                        )}
+                        <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                      </TouchableOpacity>
                     )}
-                  </View>
-                  <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
-                </TouchableOpacity>
-              </View>
-            ))
+                  />
+                );
+              })()}
+            </>
           )}
         </Section>
       )}
-
-      {/* ── Color picker modal ── */}
-      <ColorPickerModal
-        visible={colorTarget !== null}
-        title={
-          colorTarget === 'primary' ? 'Primary Colour'
-          : colorTarget === 'secondary' ? 'Secondary Colour'
-          : colorTarget === 'home_kit' ? 'Home Kit Colour'
-          : colorTarget === 'away_kit' ? 'Away Kit Colour'
-          : 'Training Kit Colour'
-        }
-        value={colorDraft}
-        saving={savingColor}
-        primaryColor={primaryColor}
-        onChangeValue={setColorDraft}
-        onCancel={() => setColorTarget(null)}
-        onApply={handleSaveColor}
-      />
 
       {/* ── Profile ── */}
       <Section label="PROFILE">
@@ -1679,95 +1616,8 @@ export default function SettingsScreen() {
 }
 
 
-const PRESET_COLORS = [
-  '#22C55E', '#16A34A', '#15803D', '#166534',
-  '#3B82F6', '#2563EB', '#1D4ED8', '#1E40AF',
-  '#8B5CF6', '#A855F7', '#7C3AED', '#6D28D9',
-  '#EF4444', '#DC2626', '#F87171', '#FB923C',
-  '#F59E0B', '#D97706', '#EC4899', '#6B7280',
-];
-
-function ColorPickerModal({
-  visible, title, value, saving, primaryColor, onChangeValue, onCancel, onApply,
-}: {
-  visible: boolean;
-  title: string;
-  value: string;
-  saving: boolean;
-  primaryColor: string;
-  onChangeValue: (v: string) => void;
-  onCancel: () => void;
-  onApply: () => void;
-}) {
-  const raw = value.startsWith('#') ? value : `#${value}`;
-  const isValid = /^#[0-9A-Fa-f]{6}$/.test(raw);
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onCancel}>
-      <View style={cp.overlay}>
-        <View style={cp.sheet}>
-
-          {/* Handle + title */}
-          <View style={cp.handle} />
-          <Text style={cp.title}>{title}</Text>
-
-          {/* Preview */}
-          <View style={[cp.preview, { backgroundColor: isValid ? raw : PULSE_COLORS.ui.surface }]}>
-            <Text style={[cp.previewLabel, { color: isValid ? '#fff' : PULSE_COLORS.ui.muted }]}>
-              {isValid ? raw : 'Enter a hex code'}
-            </Text>
-          </View>
-
-          {/* Presets */}
-          <View style={cp.grid}>
-            {PRESET_COLORS.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[cp.swatch, { backgroundColor: c }, value === c && cp.swatchSelected]}
-                onPress={() => onChangeValue(c)}
-                activeOpacity={0.8}
-              >
-                {value === c && <Ionicons name="checkmark" size={14} color="#fff" />}
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Hex input */}
-          <View style={cp.hexRow}>
-            <View style={[cp.hexSwatch, { backgroundColor: isValid ? raw : PULSE_COLORS.ui.border }]} />
-            <TextInput
-              style={cp.hexInput}
-              value={value}
-              onChangeText={onChangeValue}
-              placeholder="#22C55E"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
-              autoCapitalize="characters"
-              maxLength={7}
-            />
-          </View>
-
-          {/* Buttons */}
-          <View style={cp.btns}>
-            <TouchableOpacity style={cp.cancelBtn} onPress={onCancel}>
-              <Text style={cp.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[cp.applyBtn, { backgroundColor: primaryColor }, (!isValid || saving) && { opacity: 0.4 }]}
-              onPress={onApply}
-              disabled={!isValid || saving}
-            >
-              {saving
-                ? <ActivityIndicator color="#000" size="small" />
-                : <Text style={cp.applyText}>Apply</Text>}
-            </TouchableOpacity>
-          </View>
-
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
+// Shared bottom-sheet modal chrome — used by the certification, password,
+// and email-change modals below.
 const cp = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   sheet: {
@@ -1781,28 +1631,6 @@ const cp = StyleSheet.create({
     alignSelf: 'center', marginBottom: 20,
   },
   title: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.4, marginBottom: 16 },
-  preview: {
-    height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-    marginBottom: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  previewLabel: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  swatch: {
-    width: 44, height: 44, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  swatchSelected: { borderWidth: 3, borderColor: '#fff' },
-  hexRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: PULSE_COLORS.ui.background,
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, marginBottom: 24,
-  },
-  hexSwatch: { width: 24, height: 24, borderRadius: 6 },
-  hexInput: {
-    flex: 1, fontSize: 16, color: PULSE_COLORS.ui.text,
-    fontWeight: '600', letterSpacing: 0.5,
-  },
   btns: { flexDirection: 'row', gap: 12 },
   cancelBtn: {
     flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
@@ -1887,6 +1715,22 @@ const st = StyleSheet.create({
   },
   saveText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.brand.green },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: PULSE_COLORS.ui.border, marginLeft: 58 },
+
+  teamSearchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginTop: 10, marginBottom: 6,
+    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 10,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  teamSearchInput: { flex: 1, fontSize: 14, color: PULSE_COLORS.ui.text },
+  teamMetaPill: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+    backgroundColor: PULSE_COLORS.ui.background,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    maxWidth: 130,
+  },
+  teamMetaPillText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 
   // Icon cell
   iconCell: {
@@ -1986,7 +1830,6 @@ const st = StyleSheet.create({
   },
   logoImg: { width: 72, height: 72 },
   logoHint: { fontSize: 13, fontWeight: '700' },
-  colorSwatch: { width: 20, height: 20, borderRadius: 10 },
 
   // Parent avatar circle
   avatarCircle: {

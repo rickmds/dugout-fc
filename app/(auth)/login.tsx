@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,8 +12,6 @@ import {
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as Linking from 'expo-linking';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { signInWithApple, signInWithGoogle } from '../../lib/auth';
@@ -39,11 +37,6 @@ export default function LoginScreen() {
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
-  const [hasPendingInvite, setHasPendingInvite] = useState(false);
-
-  useEffect(() => {
-    AsyncStorage.getItem('pendingInviteToken').then((t) => setHasPendingInvite(!!t));
-  }, []);
 
   async function routeAfterAuth(userId: string, isSso = false) {
     const result = await sharedRouteAfterAuth(router, userId, refreshProfile, { isSso });
@@ -140,14 +133,6 @@ export default function LoginScreen() {
             </Text>
             <Text style={st.tagline}>Soccer club management</Text>
           </View>
-
-          {/* ── Pending invite ── */}
-          {hasPendingInvite && (
-            <View style={st.inviteBanner}>
-              <View style={st.inviteDot} />
-              <Text style={st.inviteText}>You've been invited to join a team. Log in to accept.</Text>
-            </View>
-          )}
 
           {/* ── Heading ── */}
           <Text style={st.heading}>Welcome back</Text>
@@ -266,19 +251,6 @@ const st = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.2,
   },
-
-  // Invite banner
-  inviteBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(34,197,94,0.08)',
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
-    borderRadius: 12, padding: 14, marginBottom: 20,
-  },
-  inviteDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: PULSE_COLORS.brand.green, flexShrink: 0,
-  },
-  inviteText: { color: PULSE_COLORS.brand.green, fontSize: 14, lineHeight: 20, flex: 1 },
 
   // Heading
   heading:    { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },

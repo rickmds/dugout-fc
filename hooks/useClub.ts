@@ -51,6 +51,7 @@ export function useClub() {
     slug: club?.slug ?? '',
     logoUrl: club?.logo_url ?? null,
     tagline: (club as any)?.tagline ?? null as string | null,
+    currency: (club as any)?.currency ?? 'USD' as string,
     primaryColor,
     secondaryColor,
     homeKitColor,

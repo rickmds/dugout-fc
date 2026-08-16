@@ -17,6 +17,7 @@ import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
 import { useTeam } from '../../../hooks/useTeam';
 import ClubHeader from '../../../components/ui/ClubHeader';
+import { formatCurrency } from '../../../lib/formatCurrency';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ function dayLabel(iso: string): string {
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function NotificationsScreen() {
-  const { primaryColor } = useClub();
+  const { primaryColor, currency } = useClub();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { profile } = useAuth();
@@ -259,7 +260,7 @@ export default function NotificationsScreen() {
       Alert.alert('Already resolved', 'This payment claim has already been handled.');
       return;
     }
-    const amountText = fee.claim_amount ? `$${Number(fee.claim_amount).toFixed(2)}` : 'an unspecified amount';
+    const amountText = fee.claim_amount ? formatCurrency(Number(fee.claim_amount), currency) : 'an unspecified amount';
     const methodText = fee.claim_method ? ` via ${fee.claim_method}` : '';
     const noteText = fee.claim_note ? `\n\n"${fee.claim_note}"` : '';
     Alert.alert(

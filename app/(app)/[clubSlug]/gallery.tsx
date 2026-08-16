@@ -18,7 +18,7 @@ import {
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../lib/supabase';
 import { useTeam } from '../../../hooks/useTeam';
@@ -71,6 +71,7 @@ function timeAgo(iso: string): string {
 
 export default function GalleryScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const router = useRouter();
   const { team } = useTeam();
   const { profile } = useAuth();
   const { primaryColor } = useClub();
@@ -230,7 +231,7 @@ export default function GalleryScreen() {
 
   return (
     <View style={st.root}>
-      <ClubHeader title="Gallery" />
+      <ClubHeader title="Gallery" onBack={() => router.back()} />
 
       {/* Filter bar */}
       <View style={st.filterBar}>

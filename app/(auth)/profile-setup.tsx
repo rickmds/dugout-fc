@@ -52,11 +52,6 @@ export default function ProfileSetupScreen() {
   const [avatarEditorVisible, setAvatarEditorVisible] = useState(false);
   const [avatarUploading, setAvatarUploading]     = useState(false);
 
-  // Coach/admin — their own emergency contact
-  const [ownEmergencyName, setOwnEmergencyName] = useState(profile?.emergency_contact_name ?? '');
-  const [ownEmergencyPhone, setOwnEmergencyPhone] = useState(profile?.emergency_contact_phone ?? '');
-  const [ownEmergencyRel, setOwnEmergencyRel]     = useState(profile?.emergency_contact_relationship ?? '');
-
   // Parent — per-child emergency info
   const [players, setPlayers]           = useState<GuardedPlayer[]>([]);
   const [childFields, setChildFields]   = useState<Record<string, ChildFields>>({});
@@ -182,11 +177,6 @@ export default function ProfileSetupScreen() {
         avatar_url: avatarUrl,
         share_contact_with_team: shareContact,
         onboarded_at: new Date().toISOString(),
-        ...(isCoachOrAdmin ? {
-          emergency_contact_name: ownEmergencyName.trim() || null,
-          emergency_contact_phone: ownEmergencyPhone.trim() || null,
-          emergency_contact_relationship: ownEmergencyRel.trim() || null,
-        } : {}),
       })
       .eq('id', user.id);
 
@@ -270,15 +260,7 @@ export default function ProfileSetupScreen() {
         </View>
 
         {/* Emergency info */}
-        {isCoachOrAdmin ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your emergency contact</Text>
-            <Text style={styles.sectionSub}>Visible to club admins only, in case something happens while you're coaching.</Text>
-            <AuthInput label="Contact name" value={ownEmergencyName} onChangeText={setOwnEmergencyName} placeholder="Who should we call?" />
-            <AuthInput label="Contact phone" value={ownEmergencyPhone} onChangeText={setOwnEmergencyPhone} placeholder="(555) 123-4567" keyboardType="phone-pad" />
-            <AuthInput label="Relationship" value={ownEmergencyRel} onChangeText={setOwnEmergencyRel} placeholder="e.g. Spouse" />
-          </View>
-        ) : players.length > 0 ? (
+        {!isCoachOrAdmin && players.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Emergency info</Text>
             <Text style={styles.sectionSub}>Visible to your coach only — the whole point is being able to find it fast if it's ever needed.</Text>

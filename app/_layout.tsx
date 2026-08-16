@@ -2,23 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
-import * as Linking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider } from '../hooks/useAuth';
 import { TeamProvider } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 
 SplashScreen.preventAutoHideAsync();
-
-async function storeInviteTokenFromUrl(url: string) {
-  const { queryParams } = Linking.parse(url);
-  const token = queryParams?.token;
-  if (typeof token === 'string') {
-    await AsyncStorage.setItem('pendingInviteToken', token);
-  }
-}
 
 function AppShell() {
   usePushNotifications();
@@ -127,14 +117,6 @@ function SplashVideo({ onFinished }: { onFinished: () => void }) {
 
 export default function RootLayout() {
   const [splashDone, setSplashDone] = useState(false);
-
-  useEffect(() => {
-    Linking.getInitialURL().then((url) => {
-      if (url) storeInviteTokenFromUrl(url);
-    });
-    const sub = Linking.addEventListener('url', ({ url }) => storeInviteTokenFromUrl(url));
-    return () => sub.remove();
-  }, []);
 
   return (
     <AuthProvider>

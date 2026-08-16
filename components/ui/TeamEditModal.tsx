@@ -12,7 +12,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
 import { PULSE_COLORS } from '../../constants/colors';
 
-type TeamSnap = { id: string; name: string; age_group: string | null; season: string | null };
+type Gender = 'boys' | 'girls' | 'mixed';
+const GENDER_OPTIONS: { value: Gender; label: string }[] = [
+  { value: 'boys', label: 'Boys' },
+  { value: 'girls', label: 'Girls' },
+  { value: 'mixed', label: 'Mixed' },
+];
+
+type TeamSnap = { id: string; name: string; age_group: string | null; season: string | null; gender?: string | null };
 
 export default function TeamEditModal({
   visible,
@@ -30,6 +37,7 @@ export default function TeamEditModal({
   const [name, setName]         = useState('');
   const [ageGroup, setAgeGroup] = useState('');
   const [season, setSeason]     = useState('');
+  const [gender, setGender]     = useState<Gender | null>(null);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
 
@@ -38,6 +46,7 @@ export default function TeamEditModal({
       setName(team.name);
       setAgeGroup(team.age_group ?? '');
       setSeason(team.season ?? '');
+      setGender((team.gender as Gender | null) ?? null);
       setError('');
     }
   }, [visible, team?.id]);
@@ -51,6 +60,7 @@ export default function TeamEditModal({
         name: name.trim(),
         age_group: ageGroup.trim() || null,
         season: season.trim() || null,
+        gender,
       })
       .eq('id', team.id);
     if (dbError) { setSaving(false); setError(dbError.message); return; }
@@ -114,6 +124,23 @@ export default function TeamEditModal({
             returnKeyType="next"
           />
 
+          <Text style={[st.label, { marginTop: 24 }]}>GENDER</Text>
+          <View style={st.genderRow}>
+            {GENDER_OPTIONS.map((opt) => {
+              const selected = gender === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[st.genderPill, selected && { backgroundColor: primaryColor, borderColor: primaryColor }]}
+                  onPress={() => setGender(selected ? null : opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[st.genderPillText, selected && st.genderPillTextSelected]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           <Text style={[st.label, { marginTop: 24 }]}>SEASON</Text>
           <TextInput
             style={st.input}
@@ -148,4 +175,13 @@ const st = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 16, color: PULSE_COLORS.ui.text,
   },
+  genderRow: { flexDirection: 'row', gap: 8 },
+  genderPill: {
+    flex: 1, alignItems: 'center',
+    paddingVertical: 11, borderRadius: 10,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  genderPillText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  genderPillTextSelected: { color: '#fff' },
 });

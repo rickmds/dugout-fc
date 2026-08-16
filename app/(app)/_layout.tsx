@@ -9,10 +9,10 @@ export default function AppLayout() {
   }
 
   // Central, one-time gate for first-run welcome + profile completion —
-  // every entry path (deep link, invite-match, find-team, create-team,
-  // coach-options) passes through here before reaching the tabs, so it
-  // can't be silently skipped by one path the way login.tsx vs
-  // register.tsx's post-auth routing once diverged.
+  // every entry path (web /join, find-team, create-team, coach-options)
+  // passes through here before reaching the tabs, so it can't be silently
+  // skipped by one path the way login.tsx vs register.tsx's post-auth
+  // routing once diverged.
   if (!loading && session && profile && club && !profile.onboarded_at) {
     return <Redirect href="/(auth)/club-welcome" />;
   }
