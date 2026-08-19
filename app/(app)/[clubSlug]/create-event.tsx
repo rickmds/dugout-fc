@@ -104,7 +104,10 @@ function fmtDuration(mins: number): string {
 function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
-  const eventAt = new Date(`${eventDate}T${eventTime}:00`);
+  // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
+  // appending our own ":00", otherwise this builds an invalid date string
+  // and every bucket comparison below silently falls through to 48.
+  const eventAt = new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`);
   const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
   if (diffHours <= 0)  return 0;
   if (diffHours <= 12) return 12;
@@ -252,14 +255,16 @@ type PlaceSuggestion = { place_id: string; description: string; structured_forma
 
 function SmartLocationInput({
   onResult,
+  initialValue = '',
 }: {
   onResult: (r: { name: string; address?: string; lat?: number; lng?: number }) => void;
+  initialValue?: string;
 }) {
   const { primaryColor } = useClub();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialValue);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [fetching, setFetching] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  const [pinned, setPinned] = useState(!!initialValue);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   function handleChange(val: string) {
@@ -793,31 +798,52 @@ export default function CreateEventScreen() {
             </Card>
           )}
           <Card>
-            {/* Venue name */}
-            <View style={styles.locationNameRow}>
-              <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
-              <TextInput
-                style={styles.inlineInput}
-                value={locationName}
-                onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
-                placeholder="Venue name (e.g. City Park)"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
-                returnKeyType="next"
-              />
-            </View>
-            <RowDivider />
-            {/* Address autocomplete */}
-            <View style={styles.locationInputRow}>
-              <SmartLocationInput
-                onResult={(r) => {
-                  setFieldId(null);
-                  if (!locationName) setLocationName(r.name);
-                  setAddress(r.address ?? '');
-                  setLat(r.lat ?? null);
-                  setLng(r.lng ?? null);
-                }}
-              />
-            </View>
+            {fieldId ? (
+              /* Confirmation view — shows exactly what will be saved so
+                 the coach can double-check the address before relying on
+                 it, instead of just trusting the chip label silently. */
+              <View style={styles.selectedFieldRow}>
+                <Ionicons name="checkmark-circle" size={20} color={primaryColor} style={styles.fieldIcon} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.selectedFieldName}>{locationName}</Text>
+                  <Text style={styles.selectedFieldAddress}>
+                    {address || 'No address on file for this field'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setFieldId(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Text style={[styles.changeLink, { color: primaryColor }]}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                {/* Venue name */}
+                <View style={styles.locationNameRow}>
+                  <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+                  <TextInput
+                    style={styles.inlineInput}
+                    value={locationName}
+                    onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
+                    placeholder="Venue name (e.g. City Park)"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    returnKeyType="next"
+                  />
+                </View>
+                <RowDivider />
+                {/* Address autocomplete */}
+                <View style={styles.locationInputRow}>
+                  <SmartLocationInput
+                    initialValue={address}
+                    onResult={(r) => {
+                      setFieldId(null);
+                      if (!locationName) setLocationName(r.name);
+                      setAddress(r.address ?? '');
+                      setLat(r.lat ?? null);
+                      setLng(r.lng ?? null);
+                    }}
+                  />
+                </View>
+              </>
+            )}
             <RowDivider />
             {/* Field notes */}
             <View style={styles.locationNameRow}>
@@ -1209,6 +1235,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
   },
+  selectedFieldRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14, gap: 4,
+  },
+  selectedFieldName: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  selectedFieldAddress: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  changeLink: { fontSize: 13, fontWeight: '700' },
   locationInputRow: {
     paddingHorizontal: 16, paddingVertical: 12,
   },

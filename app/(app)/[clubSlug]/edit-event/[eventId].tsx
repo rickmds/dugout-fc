@@ -31,6 +31,9 @@ const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 type EventType = 'game' | 'training' | 'other';
 type UniformOption = 'home' | 'away' | 'training';
 type FieldOption = 'turf' | 'grass' | 'indoor';
+// 'future' always starts at this occurrence's own original date and never
+// reaches backward — past events are never touched by any bulk action.
+type RecurringScope = 'this' | 'future';
 
 const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string }> = {
   game:     { label: 'Game',     color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
@@ -94,7 +97,12 @@ function parseGameTitle(title: string): { homeAway: 'home' | 'away'; opponent: s
 function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
-  const eventAt = new Date(`${eventDate}T${eventTime}:00`);
+  // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
+  // appending our own ":00", otherwise this builds an invalid date string
+  // ("...T18:00:00:00"), diffHours comes out NaN, and every comparison
+  // below silently falls through to the last bucket (48) regardless of
+  // what's actually saved.
+  const eventAt = new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`);
   const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
   if (diffHours <= 0)  return 0;
   if (diffHours <= 12) return 12;
@@ -370,14 +378,44 @@ export default function EditEventScreen() {
   // For SmartLocationInput remount when data loads
   const [locationKey, setLocationKey] = useState(0);
 
+  // Set only for events created as part of a recurring series (see
+  // create-event.tsx's generateRecurringDates).
+  const [recurrenceId, setRecurrenceId] = useState<string | null>(null);
+  // Chosen once, up front, the moment we learn this event repeats — not
+  // re-asked per action. Save/Delete/Cancel/Restore all just use whatever
+  // was picked here for the rest of this screen visit. null = not decided
+  // yet (recurring event, prompt still pending) or not applicable (a
+  // plain one-off event defaults straight to 'this', no prompt at all).
+  const [editScope, setEditScope] = useState<RecurringScope | null>(null);
+
   useEffect(() => {
     if (eventId) loadEvent();
   }, [eventId]);
 
+  // Shared by the initial on-load prompt and the "Change" link in the
+  // scope banner below — same choice, just re-openable if they change
+  // their mind partway through editing.
+  function promptEditScope(allowDismiss: boolean) {
+    Alert.alert(
+      'Edit Event',
+      'This event repeats. Edit just this event, or this and every future occurrence too? Past events are never affected.',
+      [
+        { text: 'Cancel', style: 'cancel', onPress: allowDismiss ? undefined : () => router.back() },
+        { text: 'This event', onPress: () => setEditScope('this') },
+        { text: 'This and future events', onPress: () => setEditScope('future') },
+      ]
+    );
+  }
+
+  useEffect(() => {
+    if (!recurrenceId || editScope) return;
+    promptEditScope(false);
+  }, [recurrenceId]);
+
   async function loadEvent() {
     const { data } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,teams(club_id)')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,teams(club_id)')
       .eq('id', eventId)
       .single();
     if (data) setEventTeamId((data as any).team_id ?? null);
@@ -431,6 +469,7 @@ export default function EditEventScreen() {
     setRequireRsvp(data.require_rsvp ?? true);
     setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time));
     setIsCancelled(!!(data as any).cancelled_at);
+    setRecurrenceId((data as any).recurrence_id ?? null);
 
     originalRef.current = {
       date: data.event_date,
@@ -443,16 +482,16 @@ export default function EditEventScreen() {
     setLoading(false);
   }
 
-  async function handleSave() {
+  async function handleSave(scope: RecurringScope) {
     if (!title.trim() || !eventId) return;
     setSaving(true);
 
     const eventDate = toDbDate(date);
     const eventTime = hasTime ? toDbTime(startTime) : null;
 
-    function computeLockAt(): string | null {
+    function computeLockAtFor(dateStr: string): string | null {
       if (!requireRsvp || !eventTime) return null;
-      const dt = new Date(`${eventDate}T${eventTime}:00`);
+      const dt = new Date(`${dateStr}T${eventTime}:00`);
       dt.setHours(dt.getHours() - rsvpLockHours);
       return dt.toISOString();
     }
@@ -461,10 +500,12 @@ export default function EditEventScreen() {
       ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
       : title.trim();
 
-    await supabase.from('events').update({
+    // event_date is deliberately excluded — bulk-applying to future
+    // occurrences only ever changes time-of-day and other details, never
+    // collapses the series onto one date.
+    const sharedFields = {
       title: savedTitle,
       type: eventType,
-      event_date: eventDate,
       event_time: eventTime,
       duration_minutes: duration ?? null,
       arrival_buffer_minutes: arrival ?? null,
@@ -481,56 +522,112 @@ export default function EditEventScreen() {
       coach_notes: coachNotes.trim() || null,
       video_url: videoUrl.trim() || null,
       require_rsvp: requireRsvp,
-      rsvp_lock_at: computeLockAt(),
-    }).eq('id', eventId);
+    };
+
+    if (scope === 'this') {
+      await supabase.from('events').update({
+        ...sharedFields,
+        event_date: eventDate,
+        rsvp_lock_at: computeLockAtFor(eventDate),
+      }).eq('id', eventId);
+    } else if (recurrenceId) {
+      // rsvp_lock_at depends on each row's own date, so this can't be one
+      // blanket update — fetch the affected rows and recompute it per row.
+      // event_date/team_id are passed back unchanged (not actually
+      // modified) just to satisfy upsert's insert-shaped row type.
+      const thresholdDate = originalRef.current?.date ?? eventDate;
+      const { data: rows } = await supabase
+        .from('events')
+        .select('id, event_date, team_id')
+        .eq('recurrence_id', recurrenceId)
+        .gte('event_date', thresholdDate);
+      const upsertRows = (rows ?? []).map((r) => ({
+        id: r.id,
+        team_id: r.team_id,
+        event_date: r.event_date,
+        ...sharedFields,
+        rsvp_lock_at: computeLockAtFor(r.event_date),
+      }));
+      if (upsertRows.length) await supabase.from('events').upsert(upsertRows);
+    }
 
     if (eventTeamId && notifyParents) {
-      const orig = originalRef.current;
-      let pushBody = `${savedTitle} has been updated`;
-      if (orig) {
-        const newDateStr = eventDate;
-        const newTimeStr = eventTime;
-        const newLocStr = locationName.trim();
-        if (newDateStr !== orig.date) {
-          pushBody = `${savedTitle} moved to ${fmtDate(date)}`;
-        } else if (newTimeStr !== orig.time) {
-          pushBody = `${savedTitle} time changed to ${hasTime ? fmtTime(startTime) : 'TBD'}`;
-        } else if (newLocStr !== orig.location) {
-          pushBody = `${savedTitle} location updated`;
-        }
-      }
-      sendTeamPush({
-        teamId: eventTeamId,
-        title: 'Schedule updated',
-        body: pushBody,
-        excludeProfileId: profile?.id,
-        data: { type: 'schedule_change', event_id: eventId },
-      });
-      // Extra push when a recording is newly added
-      if (videoUrl.trim() && orig && !orig.videoUrl) {
+      if (scope === 'future') {
         sendTeamPush({
           teamId: eventTeamId,
-          title: 'Recording available',
-          body: `Watch the recording for ${savedTitle}`,
+          title: 'Schedule updated',
+          body: `${savedTitle} — upcoming sessions updated`,
           excludeProfileId: profile?.id,
-          data: { type: 'video_added', event_id: eventId },
+          data: { type: 'schedule_change', event_id: eventId },
         });
+      } else {
+        const orig = originalRef.current;
+        let pushBody = `${savedTitle} has been updated`;
+        if (orig) {
+          const newDateStr = eventDate;
+          const newTimeStr = eventTime;
+          const newLocStr = locationName.trim();
+          if (newDateStr !== orig.date) {
+            pushBody = `${savedTitle} moved to ${fmtDate(date)}`;
+          } else if (newTimeStr !== orig.time) {
+            pushBody = `${savedTitle} time changed to ${hasTime ? fmtTime(startTime) : 'TBD'}`;
+          } else if (newLocStr !== orig.location) {
+            pushBody = `${savedTitle} location updated`;
+          }
+        }
+        sendTeamPush({
+          teamId: eventTeamId,
+          title: 'Schedule updated',
+          body: pushBody,
+          excludeProfileId: profile?.id,
+          data: { type: 'schedule_change', event_id: eventId },
+        });
+        // Extra push when a recording is newly added
+        if (videoUrl.trim() && orig && !orig.videoUrl) {
+          sendTeamPush({
+            teamId: eventTeamId,
+            title: 'Recording available',
+            body: `Watch the recording for ${savedTitle}`,
+            excludeProfileId: profile?.id,
+            data: { type: 'video_added', event_id: eventId },
+          });
+        }
       }
     }
     setSaving(false);
     router.back();
   }
 
-  function confirmDelete() {
-    Alert.alert('Delete Event', 'Delete this event? This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: handleDelete },
-    ]);
+  // Both "this" and "future" scopes resolve to the same filter shape
+  // below — future always starts at this occurrence's own original date,
+  // so it naturally includes "this" without any separate logic.
+  function recurringFilter(scope: RecurringScope) {
+    return scope === 'this'
+      ? { column: 'id' as const, value: eventId as string }
+      : { column: 'recurrence_id' as const, value: recurrenceId as string, from: originalRef.current?.date ?? toDbDate(date) };
   }
 
-  async function handleDelete() {
+  function confirmDelete() {
+    const scope = editScope ?? 'this';
+    Alert.alert(
+      'Delete Event',
+      scope === 'future'
+        ? 'Delete this event and every future occurrence? This cannot be undone.'
+        : 'Delete this event? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => handleDelete(scope) },
+      ]
+    );
+  }
+
+  async function handleDelete(scope: RecurringScope) {
     setDeleting(true);
-    const { error } = await supabase.from('events').delete().eq('id', eventId);
+    const f = recurringFilter(scope);
+    const base = supabase.from('events').delete();
+    const { error } = f.column === 'id'
+      ? await base.eq('id', f.value)
+      : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
     if (error) {
       setDeleting(false);
       Alert.alert('Error', 'Could not delete event. Please try again.');
@@ -541,25 +638,33 @@ export default function EditEventScreen() {
   }
 
   function confirmCancel() {
+    promptCancelReason(editScope ?? 'this');
+  }
+
+  function promptCancelReason(scope: RecurringScope) {
     Alert.prompt(
       'Cancel Event',
-      'Add a reason for parents (optional):',
+      scope === 'future'
+        ? 'This will cancel this event and every future occurrence. Add a reason for parents (optional):'
+        : 'Add a reason for parents (optional):',
       [
         { text: 'Keep Event', style: 'cancel' },
-        { text: 'Cancel Event', style: 'destructive', onPress: (reason: string | undefined) => handleCancelEvent(reason ?? '') },
+        { text: 'Cancel Event', style: 'destructive', onPress: (reason: string | undefined) => handleCancelEvent(reason ?? '', scope) },
       ],
       'plain-text',
       '',
     );
   }
 
-  async function handleCancelEvent(reason: string) {
+  async function handleCancelEvent(reason: string, scope: RecurringScope) {
     if (!eventId) return;
     setCancelling(true);
-    const { error } = await supabase.from('events').update({
-      cancelled_at: new Date().toISOString(),
-      cancellation_reason: reason.trim() || null,
-    } as any).eq('id', eventId);
+    const payload = { cancelled_at: new Date().toISOString(), cancellation_reason: reason.trim() || null } as any;
+    const f = recurringFilter(scope);
+    const base = supabase.from('events').update(payload);
+    const { error } = f.column === 'id'
+      ? await base.eq('id', f.value)
+      : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
     setCancelling(false);
     if (error) {
       Alert.alert('Error', 'Could not cancel the event. Please try again.');
@@ -572,7 +677,9 @@ export default function EditEventScreen() {
       sendTeamPush({
         teamId: eventTeamId,
         title: 'Event cancelled',
-        body: reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`,
+        body: scope === 'future'
+          ? `${titleLabel} and future sessions cancelled${reason.trim() ? `: ${reason.trim()}` : ''}`
+          : reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`,
         excludeProfileId: profile?.id,
         data: { type: 'event_cancelled', event_id: eventId },
       });
@@ -581,13 +688,19 @@ export default function EditEventScreen() {
     Alert.alert('Event cancelled', 'Parents have been notified by push notification.');
   }
 
-  async function handleUncancelEvent() {
+  function confirmRestore() {
+    handleUncancelEvent(editScope ?? 'this');
+  }
+
+  async function handleUncancelEvent(scope: RecurringScope) {
     if (!eventId) return;
     setCancelling(true);
-    const { error } = await supabase.from('events').update({
-      cancelled_at: null,
-      cancellation_reason: null,
-    } as any).eq('id', eventId);
+    const payload = { cancelled_at: null, cancellation_reason: null } as any;
+    const f = recurringFilter(scope);
+    const base = supabase.from('events').update(payload);
+    const { error } = f.column === 'id'
+      ? await base.eq('id', f.value)
+      : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
     setCancelling(false);
     if (error) {
       Alert.alert('Error', 'Could not restore the event. Please try again.');
@@ -615,7 +728,7 @@ export default function EditEventScreen() {
         right={
           <TouchableOpacity
             style={[headerBtnStyle as object, { backgroundColor: secondaryColor, opacity: canSave ? 1 : 0.4 }]}
-            onPress={handleSave}
+            onPress={() => handleSave(editScope ?? 'this')}
             disabled={!canSave}
           >
             {saving
@@ -635,6 +748,18 @@ export default function EditEventScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+
+          {recurrenceId && editScope && (
+            <View style={styles.scopeBanner}>
+              <Ionicons name="repeat" size={15} color={primaryColor} />
+              <Text style={[styles.scopeBannerText, { color: primaryColor }]}>
+                Editing: {editScope === 'future' ? 'This and future events' : 'This event only'}
+              </Text>
+              <TouchableOpacity onPress={() => promptEditScope(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={[styles.scopeBannerChange, { color: primaryColor }]}>Change</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* ── Event Info ──────────────────────────────── */}
           <SectionHeader title="Event" />
@@ -776,31 +901,51 @@ export default function EditEventScreen() {
             </Card>
           )}
           <Card>
-            <View style={styles.locationNameRow}>
-              <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
-              <TextInput
-                style={styles.inlineInput}
-                value={locationName}
-                onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
-                placeholder="Venue name (e.g. City Park)"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
-                returnKeyType="next"
-              />
-            </View>
-            <RowDivider />
-            <View style={styles.locationInputRow}>
-              <SmartLocationInput
-                key={locationKey}
-                initialValue={address}
-                onResult={(r) => {
-                  setFieldId(null);
-                  if (!locationName) setLocationName(r.name);
-                  setAddress(r.address ?? '');
-                  setLat(r.lat ?? null);
-                  setLng(r.lng ?? null);
-                }}
-              />
-            </View>
+            {fieldId ? (
+              /* Confirmation view — shows exactly what will be saved so
+                 the coach can double-check the address before relying on
+                 it, instead of just trusting the chip label silently. */
+              <View style={styles.selectedFieldRow}>
+                <Ionicons name="checkmark-circle" size={20} color={primaryColor} style={styles.fieldIcon} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.selectedFieldName}>{locationName}</Text>
+                  <Text style={styles.selectedFieldAddress}>
+                    {address || 'No address on file for this field'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setFieldId(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Text style={[styles.changeLink, { color: primaryColor }]}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={styles.locationNameRow}>
+                  <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+                  <TextInput
+                    style={styles.inlineInput}
+                    value={locationName}
+                    onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
+                    placeholder="Venue name (e.g. City Park)"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    returnKeyType="next"
+                  />
+                </View>
+                <RowDivider />
+                <View style={styles.locationInputRow}>
+                  <SmartLocationInput
+                    key={locationKey}
+                    initialValue={address}
+                    onResult={(r) => {
+                      setFieldId(null);
+                      if (!locationName) setLocationName(r.name);
+                      setAddress(r.address ?? '');
+                      setLat(r.lat ?? null);
+                      setLng(r.lng ?? null);
+                    }}
+                  />
+                </View>
+              </>
+            )}
             <RowDivider />
             <View style={styles.locationNameRow}>
               <Ionicons name="create-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
@@ -947,7 +1092,7 @@ export default function EditEventScreen() {
           {isCancelled ? (
             <TouchableOpacity
               style={styles.uncancelBtn}
-              onPress={handleUncancelEvent}
+              onPress={confirmRestore}
               disabled={cancelling}
             >
               {cancelling
@@ -1050,6 +1195,16 @@ const styles = StyleSheet.create({
 
   scroll: { paddingHorizontal: 16, paddingTop: 20 },
 
+  scopeBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 16, paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+  },
+  scopeBannerText: { flex: 1, fontSize: 13, fontWeight: '600' },
+  scopeBannerChange: { fontSize: 13, fontWeight: '700' },
+
   sectionHeader: {
     fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1, marginBottom: 8, marginTop: 4,
@@ -1108,6 +1263,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
   },
+  selectedFieldRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14, gap: 4,
+  },
+  selectedFieldName: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  selectedFieldAddress: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  changeLink: { fontSize: 13, fontWeight: '700' },
   locationInputRow: { paddingHorizontal: 16, paddingVertical: 12 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
