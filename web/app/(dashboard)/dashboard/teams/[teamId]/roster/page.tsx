@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 type Player = PlayerForPanel & { parent_email: string | null };
 type Invite  = { player_id: string; email: string; accepted_at: string | null };
 type Coach   = { profile_id: string; full_name: string | null; avatar_url: string | null };
+type PendingCoach = { id: string; email: string };
 
 export default function TeamRosterPage() {
   const { teamId } = useParams<{ teamId: string }>();
@@ -23,16 +24,21 @@ export default function TeamRosterPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [coaches, setCoaches] = useState<Coach[]>([]);
+  const [pendingCoaches, setPendingCoaches] = useState<PendingCoach[]>([]);
   const [loading, setLoading] = useState(true);
   const [panel,   setPanel]   = useState<Player | null>(null);
 
   const load = useCallback(async () => {
     if (!teamId) return;
     setLoading(true);
-    const [playersRes, invitesRes, coachesRes] = await Promise.all([
+    const [playersRes, invitesRes, coachesRes, pendingCoachesRes] = await Promise.all([
       supabase.from('players').select('id,full_name,jersey_number,position').eq('team_id', teamId).order('jersey_number', { ascending: true, nullsFirst: false }).order('full_name'),
       supabase.from('invites').select('player_id,email,accepted_at').eq('team_id', teamId),
       supabase.from('team_members').select('profile_id, profiles(full_name, avatar_url)').eq('team_id', teamId).eq('role', 'coach'),
+      // Coaches invited to this team who haven't accepted yet — without
+      // this, a freshly-invited coach is invisible on the roster page
+      // (team_members only gets a row once they actually accept).
+      supabase.from('invites').select('id, email').eq('team_id', teamId).eq('role', 'coach').is('accepted_at', null),
     ]);
 
     const inviteMap = Object.fromEntries((invitesRes.data ?? []).map(i => [i.player_id, i]));
@@ -45,6 +51,7 @@ export default function TeamRosterPage() {
       full_name:  (m.profiles as unknown as { full_name: string | null; avatar_url: string | null } | null)?.full_name ?? null,
       avatar_url: (m.profiles as unknown as { full_name: string | null; avatar_url: string | null } | null)?.avatar_url ?? null,
     })));
+    setPendingCoaches((pendingCoachesRes.data ?? []) as PendingCoach[]);
     setLoading(false);
   }, [teamId]);
 
@@ -71,7 +78,7 @@ export default function TeamRosterPage() {
       </div>
 
       {/* Coaching staff */}
-      {!loading && coaches.length > 0 && (
+      {!loading && (coaches.length > 0 || pendingCoaches.length > 0) && (
         <div style={{ marginBottom: '20px' }}>
           <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>Coaching Staff</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -83,6 +90,17 @@ export default function TeamRosterPage() {
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{c.full_name ?? 'Unknown'}</div>
                   <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '500' }}>Coach</div>
+                </div>
+              </div>
+            ))}
+            {pendingCoaches.map(c => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px' }}>
+                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '800', color: '#B45309', flexShrink: 0 }}>
+                  {c.email[0].toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{c.email}</div>
+                  <div style={{ fontSize: '11px', color: '#B45309', fontWeight: '600' }}>Invited · Pending</div>
                 </div>
               </div>
             ))}
@@ -163,6 +181,7 @@ export default function TeamRosterPage() {
           player={panel}
           teamName={teamName}
           clubName={clubName}
+          clubId={club?.id}
           primary={primary}
           profileId={profile?.id}
           onClose={() => setPanel(null)}

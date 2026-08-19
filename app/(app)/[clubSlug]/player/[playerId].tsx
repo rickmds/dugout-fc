@@ -619,6 +619,7 @@ export default function PlayerProfileScreen() {
       if (!guardianEmail.trim()) { setSavingInvite(false); return; }
       const { data: inviteData, error } = await (supabase as any).from('invites').insert({
         team_id: team.id,
+        club_id: profile.club_id,
         player_id: player.id,
         email: guardianEmail.trim().toLowerCase(),
         guardian_name: guardianName.trim() || null,

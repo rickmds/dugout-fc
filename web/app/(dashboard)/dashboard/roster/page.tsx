@@ -237,6 +237,7 @@ export default function RosterPage() {
       .from('invites')
       .insert({
         team_id: selectedPlayer.team_id,
+        club_id: club?.id,
         player_id: selectedPlayer.id,
         email: inviteEmail.trim(),
         created_by: profile?.id,
@@ -341,6 +342,7 @@ export default function RosterPage() {
       if (form.parent_email.trim() && (data as { id: string } | null)?.id) {
         const { data: inviteRow } = await supabase.from('invites').insert({
           team_id: form.team_id,
+          club_id: club?.id,
           player_id: (data as { id: string }).id,
           email: form.parent_email.trim(),
           created_by: profile?.id,

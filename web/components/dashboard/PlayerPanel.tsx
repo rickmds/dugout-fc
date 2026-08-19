@@ -24,6 +24,7 @@ interface PlayerPanelProps {
   player: PlayerForPanel;
   teamName: string;
   clubName: string;
+  clubId: string | undefined;
   primary: string;
   profileId: string | undefined;
   onClose: () => void;
@@ -52,7 +53,7 @@ function hex2rgb(hex: string) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function PlayerPanel({ player, teamName, clubName, primary, profileId, onClose, onSaved, onDeleted }: PlayerPanelProps) {
+export default function PlayerPanel({ player, teamName, clubName, clubId, primary, profileId, onClose, onSaved, onDeleted }: PlayerPanelProps) {
   const posStyle = positionStyle(player.position);
   const initials = player.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const { r, g, b } = hex2rgb(primary.startsWith('#') ? primary : '#22C55E');
@@ -131,7 +132,7 @@ export default function PlayerPanel({ player, teamName, clubName, primary, profi
     if (!inviteEmail.trim()) return;
     setSendingInvite(true); setInviteError('');
     const { data: newRow, error: dbErr } = await supabase.from('invites')
-      .insert({ team_id: player.team_id, player_id: player.id, email: inviteEmail.trim(), created_by: profileId })
+      .insert({ team_id: player.team_id, club_id: clubId, player_id: player.id, email: inviteEmail.trim(), created_by: profileId })
       .select('id,token,email,guardian_name,phone,relationship,accepted_at,created_at').single();
     if (dbErr) { setInviteError('Could not save invite: ' + dbErr.message); setSendingInvite(false); return; }
     const { data: { session } } = await supabase.auth.getSession();

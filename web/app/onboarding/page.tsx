@@ -1138,7 +1138,7 @@ function ReviewStep({
         if (playerErr || !pd) { failedPlayers.push(p.full_name.trim()); continue; }
         if (p.parent_email.trim()) {
           const { data: inv, error: inviteErr } = await supabase.from('invites')
-            .insert({ team_id: tId, player_id: (pd as { id: string }).id, email: p.parent_email.trim(), created_by: user?.id })
+            .insert({ team_id: tId, club_id: clubId, player_id: (pd as { id: string }).id, email: p.parent_email.trim(), created_by: user?.id })
             .select('id').single();
           if (inviteErr || !inv) { failedInvites.push(`${p.full_name.trim()} (${p.parent_email.trim()})`); continue; }
           invites.push({ inviteId: (inv as { id: string }).id, playerName: p.full_name.trim(), email: p.parent_email.trim() });

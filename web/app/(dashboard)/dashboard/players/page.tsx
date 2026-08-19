@@ -208,6 +208,7 @@ export default function PlayersPage() {
           player={panel}
           teamName={panel.team_name}
           clubName={club?.name ?? ''}
+          clubId={club?.id}
           primary={primary}
           profileId={profile?.id}
           onClose={() => setPanel(null)}

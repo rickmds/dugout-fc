@@ -421,7 +421,7 @@ function Step3({ primary, createdTeams, onDone, onSkip }: {
       if (!tId) continue;
       const { data: pd } = await supabase.from('players').insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: p.jersey_number ? parseInt(p.jersey_number) : null, position: p.position || null }).select('id').single();
       if (pd && p.parent_email.trim()) {
-        await supabase.from('invites').insert({ team_id: tId, player_id: (pd as { id: string }).id, email: p.parent_email.trim(), created_by: profile?.id }).select().single();
+        await supabase.from('invites').insert({ team_id: tId, club_id: profile?.club_id, player_id: (pd as { id: string }).id, email: p.parent_email.trim(), created_by: profile?.id }).select().single();
       }
     }
     setSaving(false);

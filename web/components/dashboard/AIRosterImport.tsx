@@ -238,7 +238,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
         stats.players++;
         if (p.parent_email?.trim()) {
           await supabase.from('invites').insert({
-            team_id: p.teamId, player_id: pd.id,
+            team_id: p.teamId, club_id: profile?.club_id, player_id: pd.id,
             email: p.parent_email.trim(), created_by: profile?.id,
           });
           stats.invites++;
@@ -274,7 +274,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
           stats.players++;
           if (p.parent_email?.trim()) {
             await supabase.from('invites').insert({
-              team_id: resolvedTeamId, player_id: pd.id,
+              team_id: resolvedTeamId, club_id: profile?.club_id, player_id: pd.id,
               email: p.parent_email.trim(), created_by: profile?.id,
             });
             stats.invites++;

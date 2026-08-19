@@ -165,6 +165,7 @@ export default function RosterImportScreen() {
           .from('invites')
           .insert({
             team_id: team.id,
+            club_id: team.club_id,
             player_id: playerData.id,
             email: p.parent_email.trim(),
             role: 'parent',

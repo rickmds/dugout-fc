@@ -270,7 +270,7 @@ export default function ClubImportScreen() {
         if (playerData && p.parent_email?.trim()) {
           const { data: inviteData } = await supabase
             .from('invites')
-            .insert({ team_id: teamId, player_id: playerData.id, email: p.parent_email.trim(), role: 'parent', created_by: profile.id })
+            .insert({ team_id: teamId, club_id: profile.club_id, player_id: playerData.id, email: p.parent_email.trim(), role: 'parent', created_by: profile.id })
             .select('id')
             .single();
           if (inviteData?.id) {
