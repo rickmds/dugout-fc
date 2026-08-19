@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
+import { sendWebPush } from '@/lib/webPush';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -57,6 +58,8 @@ export async function POST(req: NextRequest) {
     .from('push_tokens')
     .select('token')
     .in('profile_id', profileIds);
+
+  await sendWebPush(profileIds, { title, body, data: pushData });
 
   if (!tokens?.length) return NextResponse.json({ sent: 0 });
 

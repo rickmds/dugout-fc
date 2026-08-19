@@ -7,6 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from '../hooks/useAuth';
 import { TeamProvider } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import WebPushPrompt from '../components/ui/WebPushPrompt';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,6 +39,14 @@ function AppShell() {
         case 'event_cancelled':
         case 'field_closure':
           router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+          break;
+        case 'reflection_prompt':
+          if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
+          else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+          break;
+        case 'player_shoutout':
+          if (data.player_id) router.push({ pathname: `/(app)/${slug}/player/shoutouts` as any, params: { playerId: data.player_id as string } });
+          else router.push(`/(app)/${slug}/(tabs)` as any);
           break;
         // ── Chat notifications ───────────────────────────────────────────────
         case 'new_announcement':
@@ -81,26 +90,43 @@ function AppShell() {
     return () => sub.remove();
   }, []);
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }} />
+      <WebPushPrompt />
+    </>
+  );
 }
 
 function SplashVideo({ onFinished }: { onFinished: () => void }) {
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const finishedRef = useRef(false);
   const player = useVideoPlayer(require('../assets/Splash.mp4'), (p) => {
     p.loop = false;
     p.muted = true;
     p.play();
   });
 
+  const finish = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 400,
+      useNativeDriver: true,
+    }).start(() => onFinished());
+  };
+
   useEffect(() => {
-    const sub = player.addListener('playToEnd', () => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => onFinished());
-    });
-    return () => sub.remove();
+    const sub = player.addListener('playToEnd', finish);
+    // Safety net: the splash video is ~5s. If playback never completes for any
+    // reason (codec/autoplay differences on some devices), don't leave the app
+    // stuck behind a permanent full-screen black overlay.
+    const fallback = setTimeout(finish, 7000);
+    return () => {
+      sub.remove();
+      clearTimeout(fallback);
+    };
   }, [player]);
 
   return (

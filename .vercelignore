@@ -1,0 +1,10 @@
+ios
+android
+dist-ios
+web
+supabase
+scripts
+.claude
+.expo
+.expo-shared
+*.jsbundle

@@ -46,7 +46,13 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "Pulse FC",
+      "shortName": "Pulse FC",
+      "display": "standalone",
+      "themeColor": "#000000",
+      "backgroundColor": "#000000",
+      "orientation": "portrait"
     },
     "plugins": [
       "expo-router",
