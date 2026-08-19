@@ -34,18 +34,6 @@ type Message = {
 
 const COACH_ROLES = new Set(['coach', 'org_admin', 'app_admin']);
 
-function buildDemoMessages(myId: string): Message[] {
-  if (process.env.EXPO_PUBLIC_APP_ENV !== 'development') return [];
-  return [
-    { id: 'demo-1', body: "Don't forget shin guards and water tomorrow — it's going to be a warm one ☀️", created_at: new Date(Date.now() - 3_600_000 * 20).toISOString(), sender_id: myId, sender_name: 'Coach Mike' },
-    { id: 'demo-2', body: "Will the game be on the main field or the training pitch?", created_at: new Date(Date.now() - 3_600_000 * 19).toISOString(), sender_id: 'parent1', sender_name: 'Sarah M.' },
-    { id: 'demo-3', body: "Main field. Gates open at 9:00am, kickoff 10:00am sharp", created_at: new Date(Date.now() - 3_600_000 * 18).toISOString(), sender_id: myId, sender_name: 'Coach Mike' },
-    { id: 'demo-4', body: "Jake will be there early to help set up ✅", created_at: new Date(Date.now() - 3_600_000 * 3).toISOString(), sender_id: 'parent2', sender_name: 'David P.' },
-    { id: 'demo-5', body: "My son is running a bit late — should be there by 9:45", created_at: new Date(Date.now() - 1_800_000).toISOString(), sender_id: 'parent3', sender_name: 'Lisa T.' },
-    { id: 'demo-6', body: "No worries, warm up starts at 9:30. Tell him to join straight in 👍", created_at: new Date(Date.now() - 900_000).toISOString(), sender_id: myId, sender_name: 'Coach Mike' },
-  ];
-}
-
 function timeLabel(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -338,7 +326,7 @@ export default function ConversationScreen() {
       ) : (
         <FlatList
           ref={listRef}
-          data={messages.length > 0 ? messages : buildDemoMessages(profile?.id ?? '')}
+          data={messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={st.list}
           initialNumToRender={20}
