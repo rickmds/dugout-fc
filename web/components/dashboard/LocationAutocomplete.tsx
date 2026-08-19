@@ -64,6 +64,7 @@ export default function LocationAutocomplete({
           value={value}
           onChange={(e) => handleChange(e.target.value)}
           placeholder={placeholder}
+          autoComplete="off"
           style={{ ...inputStyle, paddingRight: fetching ? '36px' : '13px' }}
         />
         {fetching && (
