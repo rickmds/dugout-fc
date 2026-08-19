@@ -29,9 +29,6 @@ type GuardedPlayer = {
   id: string;
   full_name: string;
   team_id: string;
-  emergency_contact_name: string | null;
-  emergency_contact_phone: string | null;
-  emergency_contact_relationship: string | null;
   medical_notes: string | null;
 };
 
@@ -55,6 +52,10 @@ export default function ProfileSetupScreen() {
   // Parent — per-child emergency info
   const [players, setPlayers]           = useState<GuardedPlayer[]>([]);
   const [childFields, setChildFields]   = useState<Record<string, ChildFields>>({});
+  // First existing emergency-contact row per child, if any — this screen
+  // only ever captures one contact; more can be added later from the
+  // player's Guardians tab.
+  const [existingContactId, setExistingContactId] = useState<Record<string, string>>({});
 
   // Add another guardian (parent only, first linked child)
   const [guardianEmail, setGuardianEmail] = useState('');
@@ -71,16 +72,29 @@ export default function ProfileSetupScreen() {
       const { data } = await supabase.rpc('get_my_guarded_players');
       const rows = (data ?? []) as GuardedPlayer[];
       setPlayers(rows);
+
+      const { data: contacts } = rows.length
+        ? await supabase
+            .from('player_emergency_contacts')
+            .select('id, player_id, name, phone, relationship')
+            .in('player_id', rows.map((p) => p.id))
+            .order('created_at', { ascending: true })
+        : { data: [] };
+
       const fields: Record<string, ChildFields> = {};
+      const ids: Record<string, string> = {};
       for (const p of rows) {
+        const existing = (contacts ?? []).find((c) => c.player_id === p.id);
         fields[p.id] = {
-          name: p.emergency_contact_name ?? '',
-          phone: p.emergency_contact_phone ?? '',
-          rel: p.emergency_contact_relationship ?? '',
+          name: existing?.name ?? '',
+          phone: existing?.phone ?? '',
+          rel: existing?.relationship ?? '',
           notes: p.medical_notes ?? '',
         };
+        if (existing) ids[p.id] = existing.id;
       }
       setChildFields(fields);
+      setExistingContactId(ids);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, []);
@@ -190,12 +204,30 @@ export default function ProfileSetupScreen() {
       await Promise.all(players.map((p) => {
         const f = childFields[p.id];
         if (!f) return Promise.resolve();
-        return supabase.from('players').update({
-          emergency_contact_name: f.name.trim() || null,
-          emergency_contact_phone: f.phone.trim() || null,
-          emergency_contact_relationship: f.rel.trim() || null,
-          medical_notes: f.notes.trim() || null,
-        }).eq('id', p.id);
+        const tasks: PromiseLike<unknown>[] = [
+          supabase.from('players').update({ medical_notes: f.notes.trim() || null }).eq('id', p.id),
+        ];
+        const existingId = existingContactId[p.id];
+        if (f.name.trim()) {
+          tasks.push(
+            existingId
+              ? supabase.from('player_emergency_contacts').update({
+                  name: f.name.trim(),
+                  phone: f.phone.trim() || null,
+                  relationship: f.rel.trim() || null,
+                }).eq('id', existingId)
+              : supabase.from('player_emergency_contacts').insert({
+                  player_id: p.id,
+                  name: f.name.trim(),
+                  phone: f.phone.trim() || null,
+                  relationship: f.rel.trim() || null,
+                })
+          );
+        } else if (existingId) {
+          // Name cleared — remove the contact rather than leaving a nameless row.
+          tasks.push(supabase.from('player_emergency_contacts').delete().eq('id', existingId));
+        }
+        return Promise.all(tasks);
       }));
     }
 

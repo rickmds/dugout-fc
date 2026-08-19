@@ -1864,6 +1864,41 @@ export type Database = {
           },
         ]
       }
+      player_emergency_contacts: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          phone: string | null
+          player_id: string
+          relationship: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          player_id: string
+          relationship?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          player_id?: string
+          relationship?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_emergency_contacts_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_evaluations: {
         Row: {
           ai_draft: string | null
@@ -2362,9 +2397,6 @@ export type Database = {
         Row: {
           created_at: string | null
           date_of_birth: string | null
-          emergency_contact_name: string | null
-          emergency_contact_phone: string | null
-          emergency_contact_relationship: string | null
           full_name: string
           id: string
           is_injured: boolean
@@ -2382,9 +2414,6 @@ export type Database = {
         Insert: {
           created_at?: string | null
           date_of_birth?: string | null
-          emergency_contact_name?: string | null
-          emergency_contact_phone?: string | null
-          emergency_contact_relationship?: string | null
           full_name: string
           id?: string
           is_injured?: boolean
@@ -2402,9 +2431,6 @@ export type Database = {
         Update: {
           created_at?: string | null
           date_of_birth?: string | null
-          emergency_contact_name?: string | null
-          emergency_contact_phone?: string | null
-          emergency_contact_relationship?: string | null
           full_name?: string
           id?: string
           is_injured?: boolean
@@ -4996,9 +5022,6 @@ export type Database = {
         Returns: {
           created_at: string | null
           date_of_birth: string | null
-          emergency_contact_name: string | null
-          emergency_contact_phone: string | null
-          emergency_contact_relationship: string | null
           full_name: string
           id: string
           is_injured: boolean

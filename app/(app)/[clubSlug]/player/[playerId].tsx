@@ -25,6 +25,7 @@ import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { formatPhone } from '../../../../lib/formatPhone';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import ImageEditor from '../../../../components/ui/ImageEditor';
 
@@ -44,10 +45,14 @@ type PlayerDetail = {
   is_injured: boolean;
   profile_id: string | null;
   profile_avatar_url: string | null; // from joined profiles row
-  emergency_contact_name: string | null;
-  emergency_contact_phone: string | null;
-  emergency_contact_relationship: string | null;
   medical_notes: string | null;
+};
+
+type EmergencyContact = {
+  id: string;
+  name: string;
+  phone: string | null;
+  relationship: string | null;
 };
 
 type EventRsvp = {
@@ -159,6 +164,15 @@ export default function PlayerProfileScreen() {
   const [invites, setInvites]                   = useState<Invite[]>([]);
   const [guardianAccess, setGuardianAccess]     = useState<GuardianAccess[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+
+  // Add/edit emergency contact modal
+  const [showEmergencyModal, setShowEmergencyModal]     = useState(false);
+  const [editingEmergencyContact, setEditingEmergencyContact] = useState<EmergencyContact | null>(null);
+  const [emergencyName, setEmergencyName]         = useState('');
+  const [emergencyPhone, setEmergencyPhone]       = useState('');
+  const [emergencyRel, setEmergencyRel]           = useState('');
+  const [savingEmergency, setSavingEmergency]     = useState(false);
 
   // Edit player modal
   const [showEdit, setShowEdit]                       = useState(false);
@@ -238,7 +252,7 @@ export default function PlayerProfileScreen() {
     // that may not be in the live DB yet — handled gracefully via cast
     const { data, error } = await (supabase as any)
       .from('players')
-      .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, medical_notes, profiles!players_profile_id_fkey(avatar_url)')
+      .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, medical_notes, profiles!players_profile_id_fkey(avatar_url)')
       .eq('id', playerId)
       .single();
 
@@ -260,9 +274,6 @@ export default function PlayerProfileScreen() {
           photo_url: null,
           is_private: false,
           is_injured: false,
-          emergency_contact_name: null,
-          emergency_contact_phone: null,
-          emergency_contact_relationship: null,
           medical_notes: null,
           profile_avatar_url: (fallback as any).profiles?.avatar_url ?? null,
         } as PlayerDetail);
@@ -361,7 +372,7 @@ export default function PlayerProfileScreen() {
     if (!player || !team) return;
     setGuardiansLoading(true);
 
-    const [profileRes, inviteRes, accessRes] = await Promise.all([
+    const [profileRes, inviteRes, accessRes, emergencyRes] = await Promise.all([
       player.profile_id
         ? supabase
             .from('profiles')
@@ -381,6 +392,11 @@ export default function PlayerProfileScreen() {
         .from('player_guardians')
         .select('profile_id, profiles(id, full_name, avatar_url)')
         .eq('player_id', player.id),
+      supabase
+        .from('player_emergency_contacts')
+        .select('id, name, phone, relationship')
+        .eq('player_id', player.id)
+        .order('created_at', { ascending: true }),
     ]);
 
     setGuardianProfile((profileRes.data as GuardianProfile | null) ?? null);
@@ -389,6 +405,7 @@ export default function PlayerProfileScreen() {
         .map((g) => ({ profileId: g.profile_id, fullName: g.profiles?.full_name ?? null, avatarUrl: g.profiles?.avatar_url ?? null }))
     );
     setInvites(((inviteRes as any).data as Invite[]) ?? []);
+    setEmergencyContacts((emergencyRes.data as EmergencyContact[]) ?? []);
     setGuardiansLoading(false);
   }
 
@@ -650,6 +667,64 @@ export default function PlayerProfileScreen() {
     loadGuardians();
   }
 
+  function openAddEmergencyContact() {
+    setEditingEmergencyContact(null);
+    setEmergencyName('');
+    setEmergencyPhone('');
+    setEmergencyRel('');
+    setShowEmergencyModal(true);
+  }
+
+  function openEditEmergencyContact(contact: EmergencyContact) {
+    setEditingEmergencyContact(contact);
+    setEmergencyName(contact.name);
+    setEmergencyPhone(contact.phone ?? '');
+    setEmergencyRel(contact.relationship ?? '');
+    setShowEmergencyModal(true);
+  }
+
+  async function handleSaveEmergencyContact() {
+    if (!player || !emergencyName.trim()) return;
+    setSavingEmergency(true);
+
+    if (editingEmergencyContact) {
+      await supabase.from('player_emergency_contacts').update({
+        name: emergencyName.trim(),
+        phone: emergencyPhone.trim() || null,
+        relationship: emergencyRel || null,
+      }).eq('id', editingEmergencyContact.id);
+    } else {
+      await supabase.from('player_emergency_contacts').insert({
+        player_id: player.id,
+        name: emergencyName.trim(),
+        phone: emergencyPhone.trim() || null,
+        relationship: emergencyRel || null,
+      });
+    }
+
+    setSavingEmergency(false);
+    setShowEmergencyModal(false);
+    loadGuardians();
+  }
+
+  function confirmDeleteEmergencyContact(contact: EmergencyContact) {
+    Alert.alert(
+      'Remove emergency contact?',
+      `Remove ${contact.name} from ${player?.full_name ?? "this player"}'s emergency contacts?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            await supabase.from('player_emergency_contacts').delete().eq('id', contact.id);
+            loadGuardians();
+          },
+        },
+      ]
+    );
+  }
+
   // Real, currently-active access — a player_guardians row. Goes through
   // the revoke_guardian_access RPC, which resolves and removes the grant
   // server-side regardless of whether a matching invite record still
@@ -851,26 +926,6 @@ export default function PlayerProfileScreen() {
           </View>
         )}
 
-        {/* Emergency info — coaches only, right up top so it's fast to find
-            if it's ever actually needed */}
-        {isCoach && (player.emergency_contact_name || player.emergency_contact_phone || player.medical_notes) && (
-          <View style={st.emergencyCard}>
-            <View style={st.emergencyHeader}>
-              <Ionicons name="medkit-outline" size={13} color="#EF4444" />
-              <Text style={st.emergencyHeaderText}>EMERGENCY INFO</Text>
-            </View>
-            {(player.emergency_contact_name || player.emergency_contact_phone) && (
-              <Text style={st.emergencyLine}>
-                {player.emergency_contact_name ?? 'Contact'}
-                {player.emergency_contact_relationship ? ` (${player.emergency_contact_relationship})` : ''}
-                {player.emergency_contact_phone ? ` — ${player.emergency_contact_phone}` : ''}
-              </Text>
-            )}
-            {player.medical_notes && (
-              <Text style={st.emergencyNotes}>{player.medical_notes}</Text>
-            )}
-          </View>
-        )}
       </View>
 
       {/* ── Tab bar ── */}
@@ -913,6 +968,8 @@ export default function PlayerProfileScreen() {
           guardianProfile={guardianProfile}
           guardianAccess={guardianAccess}
           invites={invites}
+          emergencyContacts={emergencyContacts}
+          medicalNotes={player.medical_notes}
           playerName={player.full_name}
           teamName={team?.name ?? ''}
           onAddGuardian={openAddGuardian}
@@ -920,6 +977,9 @@ export default function PlayerProfileScreen() {
           onRevokeAccess={confirmRevokeAccess}
           onCancelInvite={confirmCancelInvite}
           onResendInvite={handleResendInvite}
+          onAddEmergencyContact={openAddEmergencyContact}
+          onEditEmergencyContact={openEditEmergencyContact}
+          onDeleteEmergencyContact={confirmDeleteEmergencyContact}
         />
       )}
 
@@ -1302,6 +1362,95 @@ export default function PlayerProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      <Modal visible={showEmergencyModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          style={st.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={st.editSheet}>
+            <View style={st.editSheetHeader}>
+              <View style={st.sheetHandle} />
+              <View style={st.editSheetTitleRow}>
+                <Text style={st.sheetTitle}>
+                  {editingEmergencyContact ? 'Edit Emergency Contact' : 'Add Emergency Contact'}
+                </Text>
+                <TouchableOpacity onPress={() => setShowEmergencyModal(false)}>
+                  <Ionicons name="close" size={22} color={PULSE_COLORS.ui.muted} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView
+              style={st.editSheetScroll}
+              contentContainerStyle={st.editSheetContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={st.editSection}>CONTACT</Text>
+
+              <Text style={st.inputLabel}>Full name *</Text>
+              <TextInput
+                style={st.input}
+                value={emergencyName}
+                onChangeText={setEmergencyName}
+                placeholder="Grandma Sue"
+                placeholderTextColor={PULSE_COLORS.ui.muted}
+                autoFocus
+              />
+
+              <Text style={st.inputLabel}>Phone number</Text>
+              <TextInput
+                style={st.input}
+                value={emergencyPhone}
+                onChangeText={setEmergencyPhone}
+                placeholder="+1 (555) 000-0000"
+                placeholderTextColor={PULSE_COLORS.ui.muted}
+                keyboardType="phone-pad"
+              />
+
+              <Text style={[st.editSection, { marginTop: 24 }]}>RELATIONSHIP</Text>
+              <Text style={st.inputLabel}>Role</Text>
+              <View style={st.chipRow}>
+                {['Mother', 'Father', 'Grandparent', 'Guardian', 'Other'].map((rel) => (
+                  <TouchableOpacity
+                    key={rel}
+                    style={[st.posChip, emergencyRel === rel && [st.posChipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
+                    onPress={() => setEmergencyRel(emergencyRel === rel ? '' : rel)}
+                  >
+                    <Text style={[st.posChipText, emergencyRel === rel && [st.posChipTextActive, { color: primaryColor }]]}>
+                      {rel}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={[st.modalBtns, { marginTop: 28 }]}>
+                <TouchableOpacity style={st.cancelBtn} onPress={() => setShowEmergencyModal(false)}>
+                  <Text style={st.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    st.saveBtn,
+                    { backgroundColor: primaryColor },
+                    !emergencyName.trim() && { opacity: 0.4 },
+                  ]}
+                  onPress={handleSaveEmergencyContact}
+                  disabled={!emergencyName.trim() || savingEmergency}
+                >
+                  {savingEmergency
+                    ? <ActivityIndicator color="#000" size="small" />
+                    : <Text style={st.saveBtnText}>
+                        {editingEmergencyContact ? 'Save Changes' : 'Add Contact'}
+                      </Text>}
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ height: 24 }} />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <ImageEditor
         visible={photoEditorVisible}
         uri={photoEditorUri}
@@ -1583,7 +1732,7 @@ function PlayerTab({
                   >
                     <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
                     <Ionicons name="call-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
-                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.phone}</Text>
+                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{formatPhone(primaryInvite.phone)}</Text>
                     <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
                   </TouchableOpacity>
                 </>
@@ -1670,6 +1819,8 @@ function GuardiansTab({
   guardianProfile,
   guardianAccess,
   invites,
+  emergencyContacts,
+  medicalNotes,
   playerName,
   teamName,
   onAddGuardian,
@@ -1677,6 +1828,9 @@ function GuardiansTab({
   onRevokeAccess,
   onCancelInvite,
   onResendInvite,
+  onAddEmergencyContact,
+  onEditEmergencyContact,
+  onDeleteEmergencyContact,
 }: {
   isCoach: boolean;
   isMyPlayer: boolean;
@@ -1684,6 +1838,8 @@ function GuardiansTab({
   guardianProfile: GuardianProfile | null;
   guardianAccess: GuardianAccess[];
   invites: Invite[];
+  emergencyContacts: EmergencyContact[];
+  medicalNotes: string | null;
   playerName: string;
   teamName: string;
   onAddGuardian: () => void;
@@ -1691,10 +1847,14 @@ function GuardiansTab({
   onRevokeAccess: (access: GuardianAccess) => void;
   onCancelInvite: (invite: Invite) => void;
   onResendInvite: (invite: Invite) => void;
+  onAddEmergencyContact: () => void;
+  onEditEmergencyContact: (contact: EmergencyContact) => void;
+  onDeleteEmergencyContact: (contact: EmergencyContact) => void;
 }) {
   const { primaryColor, rgba } = useClub();
   const canManage = isCoach || isMyPlayer;
   const hasAny = guardianProfile || guardianAccess.length > 0 || invites.some(i => !i.accepted_at);
+  const primaryInvite = invites.find((i) => i.accepted_by === guardianProfile?.id) ?? invites[0] ?? null;
 
   if (loading) {
     return (
@@ -1763,7 +1923,99 @@ function GuardiansTab({
                 <Text style={[st.linkedBadgeText, { color: primaryColor }]}>Linked</Text>
               </View>
             </View>
+
+            {/* Contact details — same shape as the secondary-guardian cards
+                below; this primary card used to stop at name + badge, which
+                meant the actual contact info was never shown anywhere. */}
+            {canManage && (primaryInvite?.email || primaryInvite?.phone) && (
+              <View style={st.contactRows}>
+                {primaryInvite?.email && (
+                  <View style={st.contactRow}>
+                    <Ionicons name="mail-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                    <Text style={st.contactText} numberOfLines={1}>{primaryInvite.email}</Text>
+                    <View style={st.contactBtns}>
+                      <TouchableOpacity
+                        style={st.contactBtn}
+                        onPress={() => Linking.openURL(`mailto:${primaryInvite.email}`)}
+                      >
+                        <Text style={st.contactBtnText}>Email</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+                {primaryInvite?.phone && (
+                  <View style={[st.contactRow, primaryInvite?.email && st.contactRowTop]}>
+                    <Ionicons name="call-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                    <Text style={st.contactText}>{formatPhone(primaryInvite.phone)}</Text>
+                    <View style={st.contactBtns}>
+                      <TouchableOpacity
+                        style={st.contactBtn}
+                        onPress={() => Linking.openURL(`tel:${primaryInvite.phone}`)}
+                      >
+                        <Text style={st.contactBtnText}>Call</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[st.contactBtn, { marginLeft: 6 }]}
+                        onPress={() => Linking.openURL(`sms:${primaryInvite.phone}`)}
+                      >
+                        <Text style={st.contactBtnText}>Text</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
+        </>
+      )}
+
+      {/* ── Emergency info — coach-visible always, guardian-editable ── */}
+      {(isCoach || isMyPlayer) && (emergencyContacts.length > 0 || medicalNotes || isMyPlayer) && (
+        <>
+          <Text style={[st.sectionLabel, { marginTop: 24 }]}>EMERGENCY INFO</Text>
+          <View style={st.emergencyCard}>
+            <View style={st.emergencyHeader}>
+              <Ionicons name="medkit-outline" size={13} color="#EF4444" />
+              <Text style={st.emergencyHeaderText}>IN CASE OF EMERGENCY</Text>
+            </View>
+            {emergencyContacts.length === 0 ? (
+              <Text style={[st.emergencyNotes, { marginTop: 2 }]}>No emergency contacts added yet.</Text>
+            ) : (
+              emergencyContacts.map((c, i) => (
+                <View key={c.id} style={[st.emergencyContactRow, i > 0 && { marginTop: 8 }]}>
+                  <Text style={st.emergencyLine} numberOfLines={1}>
+                    {c.name}
+                    {c.relationship ? ` (${c.relationship})` : ''}
+                    {c.phone ? ` — ${formatPhone(c.phone)}` : ''}
+                  </Text>
+                  {isMyPlayer && (
+                    <View style={st.emergencyContactActions}>
+                      {c.phone && (
+                        <TouchableOpacity onPress={() => Linking.openURL(`tel:${c.phone}`)} hitSlop={6}>
+                          <Ionicons name="call-outline" size={15} color={primaryColor} />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity onPress={() => onEditEmergencyContact(c)} hitSlop={6}>
+                        <Ionicons name="pencil-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => onDeleteEmergencyContact(c)} hitSlop={6}>
+                        <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ))
+            )}
+            {medicalNotes && (
+              <Text style={[st.emergencyNotes, { marginTop: emergencyContacts.length ? 8 : 2 }]}>{medicalNotes}</Text>
+            )}
+          </View>
+          {isMyPlayer && (
+            <TouchableOpacity style={st.addEmergencyBtn} onPress={onAddEmergencyContact}>
+              <Ionicons name="add-circle-outline" size={16} color="#EF4444" />
+              <Text style={st.addEmergencyText}>Add emergency contact</Text>
+            </TouchableOpacity>
+          )}
         </>
       )}
 
@@ -1848,7 +2100,7 @@ function GuardiansTab({
                     {row.phone ? (
                       <View style={[st.contactRow, st.contactRowTop]}>
                         <Ionicons name="call-outline" size={15} color={PULSE_COLORS.ui.muted} />
-                        <Text style={st.contactText}>{row.phone}</Text>
+                        <Text style={st.contactText}>{formatPhone(row.phone)}</Text>
                         <View style={st.contactBtns}>
                           <TouchableOpacity
                             style={st.contactBtn}
@@ -1997,15 +2249,23 @@ const st = StyleSheet.create({
   heroNotesText: { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18, fontStyle: 'italic' },
 
   emergencyCard: {
-    marginTop: 12, marginHorizontal: 20,
     backgroundColor: 'rgba(239,68,68,0.06)',
     borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
     paddingHorizontal: 14, paddingVertical: 10, gap: 4,
   },
   emergencyHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
   emergencyHeaderText: { fontSize: 10, fontWeight: '800', color: '#EF4444', letterSpacing: 1 },
-  emergencyLine: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  emergencyLine: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text, flex: 1 },
   emergencyNotes: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, lineHeight: 17 },
+  emergencyContactRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  emergencyContactActions: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 },
+  addEmergencyBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 10, paddingVertical: 12, borderRadius: 12,
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
+    backgroundColor: 'rgba(239,68,68,0.06)',
+  },
+  addEmergencyText: { fontSize: 13, fontWeight: '700', color: '#EF4444' },
 
   // ── Tab bar
   tabBar: {
