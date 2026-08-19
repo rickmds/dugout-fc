@@ -224,8 +224,10 @@ export default function Sidebar() {
           </div>
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '8px 12px', marginTop: '2px' }}>
-          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: accent, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: accentText }}>
-            {userInitials}
+          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: accent, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: accentText, overflow: 'hidden' }}>
+            {profile?.avatar_url
+              ? <img src={profile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : userInitials}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.75)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

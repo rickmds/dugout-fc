@@ -27,7 +27,7 @@ export default function PlayersPage() {
     setLoading(true);
     const { data } = await supabase
       .from('players')
-      .select('id,full_name,jersey_number,position,team_id,teams(name,age_group)')
+      .select('id,full_name,jersey_number,position,team_id,photo_url,teams(name,age_group)')
       .in('team_id', teams.map(t => t.id))
       .order('full_name');
 
@@ -179,8 +179,10 @@ export default function PlayersPage() {
                 >
                   <td style={{ padding: '11px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}20`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: primary }}>
-                        {p.full_name[0]}
+                      <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}20`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', color: primary, overflow: 'hidden' }}>
+                        {p.photo_url
+                          ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : p.full_name[0]}
                       </div>
                       <span style={{ fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</span>
                     </div>

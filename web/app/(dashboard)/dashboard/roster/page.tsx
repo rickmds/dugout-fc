@@ -17,6 +17,7 @@ type Player = {
   jersey_number: number | null;
   position: string | null;
   team_id: string;
+  photo_url: string | null;
 };
 
 type Invite = {
@@ -143,7 +144,7 @@ export default function RosterPage() {
     const targetTeamId = teamFilter || (teams[0]?.id ?? '');
     const { data } = await supabase
       .from('players')
-      .select('id, full_name, jersey_number, position, team_id')
+      .select('id, full_name, jersey_number, position, team_id, photo_url')
       .eq('team_id', targetTeamId)
       .order('jersey_number', { ascending: true, nullsFirst: false });
     setPlayers((data ?? []) as Player[]);
@@ -931,8 +932,10 @@ function PlayerRow({ player: p, primary, pos, initials, isLast, isSelected, onCl
         {p.jersey_number != null ? p.jersey_number : <span style={{ fontSize: '13px', color: '#CBD5E1' }}>—</span>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0 }}>
-        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}15`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: primary, border: `1.5px solid ${primary}20` }}>
-          {initials}
+        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}15`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: primary, border: `1.5px solid ${primary}20`, overflow: 'hidden' }}>
+          {p.photo_url
+            ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : initials}
         </div>
         <div style={{ fontSize: '14px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.full_name}</div>
       </div>

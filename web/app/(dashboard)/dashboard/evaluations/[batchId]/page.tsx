@@ -28,7 +28,7 @@ type EvalRow = {
   report_data:  ReportData | null;
   final_text:   string | null;
   published_at: string | null;
-  players: { full_name: string; jersey_number: number | null } | null;
+  players: { full_name: string; jersey_number: number | null; photo_url: string | null } | null;
 };
 
 type BatchMeta = {
@@ -297,7 +297,7 @@ export default function BatchReviewPage() {
     setLoading(true);
     const [bRes, eRes] = await Promise.all([
       supabase.from('evaluation_batches').select('*, teams(name)').eq('id', batchId).single(),
-      supabase.from('player_evaluations').select('*, players(full_name, jersey_number)').eq('batch_id', batchId).order('players(full_name)'),
+      supabase.from('player_evaluations').select('*, players(full_name, jersey_number, photo_url)').eq('batch_id', batchId).order('players(full_name)'),
     ]);
     if (bRes.data) setBatch(bRes.data as BatchMeta);
     setEvals((eRes.data ?? []) as EvalRow[]);
@@ -393,8 +393,10 @@ export default function BatchReviewPage() {
               style={{ background: '#fff', borderRadius: '14px', border: `1px solid ${isSelected ? primary : ready ? '#E2E8F0' : '#FCA5A5'}`, overflow: 'hidden', boxShadow: isSelected ? `0 0 0 3px ${primary}22` : '0 1px 4px rgba(0,0,0,0.04)', cursor: 'pointer', transition: 'box-shadow 0.15s, border-color 0.15s' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: isSelected ? primary : `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: isSelected ? '#fff' : primary, flexShrink: 0, transition: 'background 0.15s' }}>
-                  {ev.players?.full_name?.[0] ?? '?'}
+                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: isSelected ? primary : `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: isSelected ? '#fff' : primary, flexShrink: 0, transition: 'background 0.15s', overflow: 'hidden' }}>
+                  {ev.players?.photo_url
+                    ? <img src={ev.players.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : (ev.players?.full_name?.[0] ?? '?')}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>

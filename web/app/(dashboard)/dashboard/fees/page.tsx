@@ -20,7 +20,7 @@ type PageTab     = 'ledger' | 'families' | 'analytics';
 type Team        = { id: string; name: string };
 type FeeCategory = { id: string; name: string; amount: number; description: string | null };
 type ClubFee     = {
-  id: string; player_id: string; player_name: string;
+  id: string; player_id: string; player_name: string; player_photo_url: string | null;
   team_id: string; team_name: string;
   description: string; amount_due: number; amount_paid: number;
   discount: number; discount_reason: string | null;
@@ -358,7 +358,7 @@ export default function ClubFeesPage() {
 
     const { data: fd } = await supabase
       .from('player_fees')
-      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,payment_token,payee_type,payment_instructions,events(title),players(full_name)')
+      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,payment_token,payee_type,payment_instructions,events(title),players(full_name,photo_url)')
       .in('team_id', tList.map(t => t.id))
       .order('due_date', { ascending: true, nullsFirst: false })
       .returns<{
@@ -369,12 +369,13 @@ export default function ClubFeesPage() {
         last_reminded_at: string | null; payment_token: string | null;
         payee_type: 'club' | 'coach'; payment_instructions: string | null;
         events: { title: string } | null;
-        players: { full_name: string } | null;
+        players: { full_name: string; photo_url: string | null } | null;
       }[]>();
 
     const mapped: ClubFee[] = (fd ?? []).map(f => ({
       id: f.id, player_id: f.player_id,
       player_name: f.players?.full_name ?? 'Unknown',
+      player_photo_url: f.players?.photo_url ?? null,
       team_id: f.team_id, team_name: tMap[f.team_id] ?? 'Unknown',
       description: f.description,
       amount_due: +f.amount_due, amount_paid: +f.amount_paid, discount: +f.discount,
@@ -524,6 +525,7 @@ export default function ClubFeesPage() {
         }),
   [fees, playerPanel]);
   const panelName = panelFees[0]?.player_name ?? '';
+  const panelPhotoUrl = panelFees[0]?.player_photo_url ?? null;
   const panelOwed = panelFees.reduce((s, f) => s + Math.max(f.amount_due - f.discount - f.amount_paid, 0), 0);
 
   // Cash mode fees
@@ -1343,8 +1345,10 @@ export default function ClubFeesPage() {
         <div onClick={() => setPlayerPanel(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '460px', maxHeight: '85vh', boxShadow: '0 24px 64px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', animation: 'popIn 0.2s ease' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
-              <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px', fontWeight: '800', color: '#fff', flexShrink: 0 }}>
-                {initials(panelName)}
+              <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px', fontWeight: '800', color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+                {panelPhotoUrl
+                  ? <img src={panelPhotoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : initials(panelName)}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{panelName}</div>
@@ -1645,8 +1649,10 @@ export default function ClubFeesPage() {
                         const mc   = METHOD_COLORS[cashMethod];
                         return (
                           <div key={fee.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 24px', borderBottom: i < cashFees.length - 1 ? '1px solid #F8FAFC' : 'none' }}>
-                            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: primary, flexShrink: 0 }}>
-                              {initials(fee.player_name)}
+                            <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: primary, flexShrink: 0, overflow: 'hidden' }}>
+                              {fee.player_photo_url
+                                ? <img src={fee.player_photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : initials(fee.player_name)}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: '13.5px', fontWeight: '700', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fee.player_name}</div>

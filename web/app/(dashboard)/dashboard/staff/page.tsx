@@ -324,8 +324,12 @@ export default function StaffPage() {
             return (
               <div key={s.id} style={{ background: '#fff', borderRadius: '8px', border: `1px solid ${isPending ? '#FDE68A' : '#E2E8F0'}`, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
 
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: isPending ? '#FEF3C7' : aColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: isPending ? '#B45309' : '#fff', flexShrink: 0, boxShadow: isPending ? 'none' : `0 0 0 3px ${aColor}22` }}>
-                  {isPending ? <Mail size={17} /> : initials(s.full_name)}
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: isPending ? '#FEF3C7' : aColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '800', color: isPending ? '#B45309' : '#fff', flexShrink: 0, boxShadow: isPending ? 'none' : `0 0 0 3px ${aColor}22`, overflow: 'hidden' }}>
+                  {isPending
+                    ? <Mail size={17} />
+                    : s.avatar_url
+                      ? <img src={s.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : initials(s.full_name)}
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -440,8 +444,10 @@ export default function StaffPage() {
 
             {/* Avatar hero */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 24px 16px', flexShrink: 0 }}>
-              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: '800', color: '#fff', marginBottom: '8px', boxShadow: `0 0 0 4px ${primary}22` }}>
-                {initials(editModal.name || editModal.staff.full_name)}
+              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: '800', color: '#fff', marginBottom: '8px', boxShadow: `0 0 0 4px ${primary}22`, overflow: 'hidden' }}>
+                {editModal.staff.avatar_url
+                  ? <img src={editModal.staff.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : initials(editModal.name || editModal.staff.full_name)}
               </div>
               {editModal.staff.createdAt && (
                 <div style={{ fontSize: '12px', color: '#94A3B8' }}>Joined {formatDate(editModal.staff.createdAt)}</div>

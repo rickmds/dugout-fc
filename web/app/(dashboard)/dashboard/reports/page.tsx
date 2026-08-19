@@ -12,6 +12,7 @@ type PlayerStat = {
   jersey_number: number | null;
   position: string | null;
   team_id: string;
+  photo_url: string | null;
   team_name: string;
   // RSVP-based
   total_events: number;
@@ -106,7 +107,7 @@ export default function ReportsPage() {
 
     // Which events have at least 1 attendance record? (per team)
     const [playerRes, rsvpRes, attRes, lineupRes] = await Promise.all([
-      supabase.from('players').select('id, full_name, jersey_number, position, team_id').in('team_id', teamIdSet),
+      supabase.from('players').select('id, full_name, jersey_number, position, team_id, photo_url').in('team_id', teamIdSet),
       supabase.from('event_rsvps').select('player_id, event_id, status').in('event_id', allEventIds).limit(20000),
       supabase.from('event_attendance').select('player_id, event_id, status').in('event_id', allEventIds).limit(20000),
       gameEventIds.length
@@ -332,8 +333,10 @@ export default function ReportsPage() {
         style={{ background: hasGhost ? '#FFFBEB' : '#fff' }}>
         <td style={tdSt}>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', cursor: 'pointer' }} onClick={() => openPlayer(p)}>
-            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '800', color: '#fff', flexShrink: 0 }}>
-              {p.full_name.charAt(0).toUpperCase()}
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '800', color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+              {p.photo_url
+                ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : p.full_name.charAt(0).toUpperCase()}
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -559,8 +562,10 @@ export default function ReportsPage() {
                         onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}>
                         {/* Avatar + name */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '10px' }}>
-                          <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: accentBg, border: `2px solid ${accentColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: accentColor, flexShrink: 0 }}>
-                            {p.full_name.charAt(0).toUpperCase()}
+                          <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: accentBg, border: `2px solid ${accentColor}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: accentColor, flexShrink: 0, overflow: 'hidden' }}>
+                            {p.photo_url
+                              ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : p.full_name.charAt(0).toUpperCase()}
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.full_name}</div>
@@ -703,8 +708,10 @@ export default function ReportsPage() {
               {/* Header */}
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexShrink: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '900', color: '#fff', flexShrink: 0 }}>
-                    {p.full_name.charAt(0).toUpperCase()}
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '900', color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+                    {p.photo_url
+                      ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : p.full_name.charAt(0).toUpperCase()}
                   </div>
                   <div>
                     <div style={{ fontSize: '17px', fontWeight: '800', color: '#0F172A', lineHeight: 1.2 }}>{p.full_name}</div>

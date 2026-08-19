@@ -12,6 +12,7 @@ type Result = {
   jersey_number: number | null;
   position: string | null;
   team_id: string;
+  photo_url: string | null;
   team_name: string;
   matched_email?: string;
   matched_jersey?: boolean;
@@ -51,7 +52,7 @@ export default function SearchPage() {
       const [nameRes, emailRes, posRes] = await Promise.all([
         supabase
           .from('players')
-          .select('id, full_name, jersey_number, position, team_id')
+          .select('id, full_name, jersey_number, position, team_id, photo_url')
           .in('team_id', teamIds)
           .ilike('full_name', `%${q}%`)
           .order('full_name')
@@ -64,7 +65,7 @@ export default function SearchPage() {
           .limit(60),
         supabase
           .from('players')
-          .select('id, full_name, jersey_number, position, team_id')
+          .select('id, full_name, jersey_number, position, team_id, photo_url')
           .in('team_id', teamIds)
           .ilike('position', `%${q}%`)
           .order('full_name')
@@ -75,12 +76,12 @@ export default function SearchPage() {
       const jerseyRes = isJerseyQuery
         ? await supabase
             .from('players')
-            .select('id, full_name, jersey_number, position, team_id')
+            .select('id, full_name, jersey_number, position, team_id, photo_url')
             .in('team_id', teamIds)
             .eq('jersey_number', jerseyNum)
             .order('full_name')
             .limit(60)
-        : { data: [] as { id: string; full_name: string; jersey_number: number | null; position: string | null; team_id: string }[] };
+        : { data: [] as { id: string; full_name: string; jersey_number: number | null; position: string | null; team_id: string; photo_url: string | null }[] };
 
       const teamMap = Object.fromEntries(teams.map((t) => [t.id, t.name]));
       const byId = new Map<string, Result>();
@@ -117,7 +118,7 @@ export default function SearchPage() {
         if (newIds.length) {
           const { data: extra } = await supabase
             .from('players')
-            .select('id, full_name, jersey_number, position, team_id')
+            .select('id, full_name, jersey_number, position, team_id, photo_url')
             .in('id', newIds);
           for (const p of extra ?? []) {
             byId.set(p.id, { ...p, team_name: teamMap[p.team_id] ?? '—', matched_email: emailMap[p.id] });
@@ -220,8 +221,10 @@ export default function SearchPage() {
                     onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#FAFBFF'}
                     onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'transparent'}
                   >
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: primary, flexShrink: 0 }}>
-                      {p.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: `${primary}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: primary, flexShrink: 0, overflow: 'hidden' }}>
+                      {p.photo_url
+                        ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : p.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#0F172A' }}>

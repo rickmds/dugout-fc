@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 
 export type PlayerForPanel = {
   id: string; full_name: string; jersey_number: number | null;
-  position: string | null; team_id: string;
+  position: string | null; team_id: string; photo_url: string | null;
 };
 
 type Invite = {
@@ -231,9 +231,11 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
               border: `1.5px solid rgba(${r},${g},${b},0.2)`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '22px', fontWeight: '900', color: primary, flexShrink: 0,
-              letterSpacing: '-0.5px',
+              letterSpacing: '-0.5px', overflow: 'hidden',
             }}>
-              {initials}
+              {player.photo_url
+                ? <img src={player.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : initials}
             </div>
 
             {/* Name + badges */}

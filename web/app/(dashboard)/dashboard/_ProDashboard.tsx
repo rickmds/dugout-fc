@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import SetupWizard from '@/components/dashboard/SetupWizard';
 import SetupProgressCard from '@/components/dashboard/SetupProgressCard';
+import { formatCurrencyRounded } from '@/lib/formatCurrency';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type FieldClosure  = { id: string; field_name: string; reason: string | null; closed_from: string; closed_until: string | null };
@@ -31,16 +32,13 @@ type TeamHealth = {
 
 type CoachRow = {
   profile_id: string; team_id: string; role: string;
-  profiles: { full_name: string | null }[] | null;
+  profiles: { full_name: string | null; avatar_url: string | null }[] | null;
 };
 
 type AgeGroupFee = { age_group: string; outstanding: number; total_due: number; rate: number };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtMoney(n: number, currency = 'USD'): string {
-  try { return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n); }
-  catch { return `$${Math.round(n).toLocaleString()}`; }
-}
+const fmtMoney = formatCurrencyRounded;
 function greeting(name: string): string {
   const h = new Date().getHours();
   return `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${name}`;
@@ -134,7 +132,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
 
   // Panels
   const [teamHealthList,    setTeamHealthList]    = useState<TeamHealth[]>([]);
-  const [coachActivity,     setCoachActivity]     = useState<{ profile_id: string; full_name: string; teams: string[]; last_active: string | null }[]>([]);
+  const [coachActivity,     setCoachActivity]     = useState<{ profile_id: string; full_name: string; avatar_url: string | null; teams: string[]; last_active: string | null }[]>([]);
   const [ageGroupFees,      setAgeGroupFees]      = useState<AgeGroupFee[]>([]);
   const [yoyGrowth,         setYoyGrowth]         = useState<{ thisYear: number; lastYear: number } | null>(null);
   const [tryoutRegs,        setTryoutRegs]        = useState(0);
@@ -179,7 +177,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
     const [playerRes, inviteRes, coachRes, feeRes, annRes, profileRes] = await Promise.all([
       supabase.from('players').select('id,team_id,jersey_number,position').in('team_id', teamIds),
       supabase.from('invites').select('id,team_id,accepted_at').in('team_id', teamIds),
-      supabase.from('team_members').select('profile_id,team_id,role,profiles(full_name)').in('team_id', teamIds).in('role', ['coach', 'org_admin']),
+      supabase.from('team_members').select('profile_id,team_id,role,profiles(full_name,avatar_url)').in('team_id', teamIds).in('role', ['coach', 'org_admin']),
       supabase.from('player_fees').select('player_id,team_id,amount_due,amount_paid,discount,status').in('team_id', teamIds),
       supabase.from('announcements').select('id,team_id,created_by,created_at').in('team_id', teamIds).order('created_at', { ascending: false }).limit(500),
       supabase.from('profiles').select('id,created_at').eq('club_id', club.id).eq('role', 'player').gte('created_at', twoYearsAgo),
@@ -290,15 +288,17 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
 
     const coachTeams: Record<string, string[]> = {};
     const coachNames: Record<string, string>   = {};
+    const coachAvatars: Record<string, string | null> = {};
     for (const c of coaches) {
       const name = c.profiles?.[0]?.full_name ?? 'Unknown';
-      if (!coachTeams[c.profile_id]) { coachTeams[c.profile_id] = []; coachNames[c.profile_id] = name; }
+      if (!coachTeams[c.profile_id]) { coachTeams[c.profile_id] = []; coachNames[c.profile_id] = name; coachAvatars[c.profile_id] = c.profiles?.[0]?.avatar_url ?? null; }
       const tm = teamMap.get(c.team_id);
       if (tm && !coachTeams[c.profile_id].includes(tm.name)) coachTeams[c.profile_id].push(tm.name);
     }
     const activityList = Object.keys(coachTeams).map(pid => ({
       profile_id:  pid,
       full_name:   coachNames[pid],
+      avatar_url:  coachAvatars[pid],
       teams:       coachTeams[pid],
       last_active: lastActivityByCoach[pid] ?? null,
     })).sort((a, b) => {
@@ -592,8 +592,10 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                     const actLabel = days === null ? 'Never posted' : days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days}d ago`;
                     return (
                       <div key={coach.profile_id} className="hr" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 18px', borderBottom: i < coachActivity.length - 1 ? '1px solid #F8FAFC' : 'none', background: '#fff', transition: 'background 0.15s' }}>
-                        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '13px', fontWeight: '800', color: primary }}>
-                          {coach.full_name.charAt(0).toUpperCase()}
+                        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '13px', fontWeight: '800', color: primary, overflow: 'hidden' }}>
+                          {coach.avatar_url
+                            ? <img src={coach.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : coach.full_name.charAt(0).toUpperCase()}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{coach.full_name}</div>

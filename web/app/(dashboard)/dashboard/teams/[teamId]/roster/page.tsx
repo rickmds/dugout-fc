@@ -32,7 +32,7 @@ export default function TeamRosterPage() {
     if (!teamId) return;
     setLoading(true);
     const [playersRes, invitesRes, coachesRes, pendingCoachesRes] = await Promise.all([
-      supabase.from('players').select('id,full_name,jersey_number,position').eq('team_id', teamId).order('jersey_number', { ascending: true, nullsFirst: false }).order('full_name'),
+      supabase.from('players').select('id,full_name,jersey_number,position,photo_url').eq('team_id', teamId).order('jersey_number', { ascending: true, nullsFirst: false }).order('full_name'),
       supabase.from('invites').select('player_id,email,accepted_at').eq('team_id', teamId),
       supabase.from('team_members').select('profile_id, profiles(full_name, avatar_url)').eq('team_id', teamId).eq('role', 'coach'),
       // Coaches invited to this team who haven't accepted yet — without
@@ -84,8 +84,10 @@ export default function TeamRosterPage() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {coaches.map(c => (
               <div key={c.profile_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
-                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '800', color: primary, flexShrink: 0 }}>
-                  {c.full_name ? c.full_name[0].toUpperCase() : '?'}
+                <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '800', color: primary, flexShrink: 0, overflow: 'hidden' }}>
+                  {c.avatar_url
+                    ? <img src={c.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : (c.full_name ? c.full_name[0].toUpperCase() : '?')}
                 </div>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{c.full_name ?? 'Unknown'}</div>
@@ -146,8 +148,10 @@ export default function TeamRosterPage() {
                   >
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: primary, flexShrink: 0 }}>
-                          {p.full_name[0].toUpperCase()}
+                        <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${primary}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: primary, flexShrink: 0, overflow: 'hidden' }}>
+                          {p.photo_url
+                            ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : p.full_name[0].toUpperCase()}
                         </div>
                         <span style={{ fontSize: '14px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</span>
                       </div>
