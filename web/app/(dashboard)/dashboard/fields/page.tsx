@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapPin, Plus, X, Trash2, Pencil, AlertOctagon, CheckCircle, CloudRain, Sun, Cloud, Zap, Snowflake, Wind, Sparkles, ChevronDown, ChevronUp, Upload, Check } from 'lucide-react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
+import LocationAutocomplete from '@/components/dashboard/LocationAutocomplete';
+import { sendEventPush } from '@/lib/pushEvent';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -14,6 +16,7 @@ type TryoutField = {
   scheduler_split: number; scheduler_format: string;
   half_a_name: string | null; half_b_name: string | null;
   has_lights: boolean; surface_type: string | null; field_notes: string | null;
+  address: string | null; lat: number | null; lng: number | null;
 };
 type FieldClosure = {
   id: string; club_id: string; field_name: string; sub_zones: string[];
@@ -674,6 +677,7 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
   club:{id:string;name:string}&Record<string,unknown>|null;
   primary:string; onClose:()=>void; onSaved:()=>void;
 }) {
+  const { profile } = useDashboard();
   const [selectedFields, setSelectedFields] = useState<string[]>(target ? [target.name] : []);
   const [duration,       setDuration]       = useState('rest_of_day');
   const [customHours,    setCustomHours]    = useState('2');
@@ -687,6 +691,12 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
   const [sending,        setSending]        = useState(false);
   const [step,           setStep]           = useState<'config'|'preview'>('config');
   const [blastCount,     setBlastCount]     = useState<{sessions:number;coaches:number;parents:number}|null>(null);
+  // Events linked to the closed field(s) via field_id (see Add Field's
+  // address picker) — game_slots (Game Scheduler) and events (the actual
+  // team calendar) are two separate systems, so both need checking to
+  // find everything a closure actually affects.
+  const [affectedEvents, setAffectedEvents] = useState<{ id: string; title: string; team_id: string; team_name: string }[]>([]);
+  const [cancelEvents,   setCancelEvents]   = useState(true);
 
 
   // AI draft
@@ -756,6 +766,31 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
     const coaches = new Set((teamMembers ?? []).filter(m => m.role === 'coach').map(m => m.profile_id)).size;
     const parents = (teamMembers ?? []).filter(m => m.role === 'parent' || m.role === 'player').length;
     setBlastCount({ sessions, coaches, parents });
+
+    // Same window, but against the actual team calendar (events.field_id)
+    // rather than the Game Scheduler's slots.
+    const fieldIds = fields.filter(f => selectedFields.includes(f.name)).map(f => f.id);
+    if (fieldIds.length > 0) {
+      let evQuery = supabase
+        .from('events')
+        .select('id, title, team_id, teams(name)')
+        .in('field_id', fieldIds)
+        .is('cancelled_at', null);
+      if (duration === 'rest_of_day' || duration === 'hours') {
+        evQuery = evQuery.eq('event_date', todayStr);
+      } else if (duration === 'date_range' && dateFrom && dateTo) {
+        evQuery = evQuery.gte('event_date', dateFrom).lte('event_date', dateTo);
+      } else {
+        evQuery = evQuery.gte('event_date', todayStr);
+      }
+      const { data: evRows } = await evQuery;
+      setAffectedEvents((evRows ?? []).map((e: any) => ({
+        id: e.id, title: e.title, team_id: e.team_id, team_name: e.teams?.name ?? 'a team',
+      })));
+    } else {
+      setAffectedEvents([]);
+    }
+
     setStep('preview');
   }
 
@@ -772,6 +807,26 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
         duration_label: duration, reason, notify_message: message,
       }),
     }).then(r=>r.json());
+
+    // Cancel the actual calendar events at this field too — the closure
+    // API above only notifies Game Scheduler slots, it never touches events.
+    if (!error && cancelEvents && affectedEvents.length > 0) {
+      const cancellationReason = reason.trim() || 'Field closed';
+      await supabase.from('events')
+        .update({ cancelled_at: new Date().toISOString(), cancellation_reason: cancellationReason })
+        .in('id', affectedEvents.map(e => e.id));
+      const notifiedTeams = new Set<string>();
+      for (const ev of affectedEvents) {
+        if (notifiedTeams.has(ev.team_id)) continue;
+        notifiedTeams.add(ev.team_id);
+        sendEventPush({
+          team_id: ev.team_id, exclude_profile_id: profile?.id, type: 'event_cancelled',
+          title: '❌ Event cancelled', body: `${ev.title} cancelled: ${cancellationReason}`,
+          data: { type: 'event_cancelled' },
+        }).catch(() => {});
+      }
+    }
+
     setSending(false);
     if (!error) onSaved();
   }
@@ -895,6 +950,28 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
                 ))}
               </div>
             </div>
+            {/* Scheduled events at this field (via the "Your fields" picker on events) */}
+            {affectedEvents.length > 0 && (
+              <div style={{ background:'#FFF7ED', borderRadius:'10px', border:'1px solid #FDE68A', padding:'14px' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px' }}>
+                  <div style={{ fontSize:'13px', fontWeight:'800', color:'#92400E' }}>
+                    {affectedEvents.length} scheduled event{affectedEvents.length===1?'':'s'} at this field
+                  </div>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'4px', marginBottom:'10px' }}>
+                  {affectedEvents.slice(0, 5).map(e => (
+                    <div key={e.id} style={{ fontSize:'12px', color:'#78350F' }}>{e.title} · {e.team_name}</div>
+                  ))}
+                  {affectedEvents.length > 5 && (
+                    <div style={{ fontSize:'12px', color:'#92400E', fontWeight:'600' }}>+{affectedEvents.length - 5} more</div>
+                  )}
+                </div>
+                <label style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer' }}>
+                  <input type="checkbox" checked={cancelEvents} onChange={e=>setCancelEvents(e.target.checked)} style={{ width:'16px', height:'16px', cursor:'pointer' }}/>
+                  <span style={{ fontSize:'12.5px', color:'#78350F', fontWeight:'600' }}>Also cancel these events and notify their teams</span>
+                </label>
+              </div>
+            )}
             {/* Duration summary */}
             <div>
               {lbl('Duration')}
@@ -965,6 +1042,9 @@ function FieldModal({ field, fields, club, primary, onClose, onSaved }: {
 }) {
   const [form, setForm] = useState({
     name:                 field?.name??'',
+    address:              field?.address??'',
+    lat:                  field?.lat??null as number|null,
+    lng:                  field?.lng??null as number|null,
     sub_zones:            field?.sub_zones?.join(', ')??'',
     rental_cost_per_hour: field?.rental_cost_per_hour?.toString()??'',
     field_group:          field?.field_group??'',
@@ -985,7 +1065,8 @@ function FieldModal({ field, fields, club, primary, onClose, onSaved }: {
     const cost  = form.rental_cost_per_hour ? parseFloat(form.rental_cost_per_hour) : null;
     const newName = form.name.trim();
     const payload = {
-      name: newName, sub_zones: zones, rental_cost_per_hour: cost,
+      name: newName, address: form.address.trim() || null, lat: form.lat, lng: form.lng,
+      sub_zones: zones, rental_cost_per_hour: cost,
       field_group: form.field_group.trim() || null, is_full_field: form.is_full_field,
       scheduler_format: form.scheduler_format,
       scheduler_split:  form.scheduler_split,
@@ -1022,6 +1103,18 @@ function FieldModal({ field, fields, club, primary, onClose, onSaved }: {
 
           {/* Basic info */}
           <div>{lbl('Field name *')}<input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Vets Field" style={inp} autoFocus/></div>
+          <div>
+            {lbl('Address')}
+            <LocationAutocomplete
+              value={form.address}
+              onChange={v=>setForm(f=>({...f,address:v,lat:null,lng:null}))}
+              onSelect={({address,lat,lng})=>setForm(f=>({...f,address,lat,lng}))}
+              placeholder="Search for this field's address…"
+            />
+            <div style={{fontSize:'11px',color:'#94A3B8',marginTop:'4px'}}>
+              Lets events created at this field share its location — map, directions, and drive time carry over automatically.
+            </div>
+          </div>
           <div>{lbl('Zones (comma-separated)')}<input value={form.sub_zones} onChange={e=>setForm(f=>({...f,sub_zones:e.target.value}))} placeholder="e.g. Zone 1A, Zone 1B, Zone 1C" style={inp}/></div>
           <div>{lbl('Rental cost per hour ($)')}<input type="number" min="0" step="5" value={form.rental_cost_per_hour} onChange={e=>setForm(f=>({...f,rental_cost_per_hour:e.target.value}))} placeholder="0" style={inp}/></div>
 

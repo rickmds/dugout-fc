@@ -106,6 +106,7 @@ export type Database = {
           allow_partial_payments: boolean | null
           away_kit_color: string | null
           contact_email: string | null
+          country: string
           created_at: string | null
           currency: string
           hardship_fund_enabled: boolean | null
@@ -138,6 +139,7 @@ export type Database = {
           allow_partial_payments?: boolean | null
           away_kit_color?: string | null
           contact_email?: string | null
+          country?: string
           created_at?: string | null
           currency?: string
           hardship_fund_enabled?: boolean | null
@@ -170,6 +172,7 @@ export type Database = {
           allow_partial_payments?: boolean | null
           away_kit_color?: string | null
           contact_email?: string | null
+          country?: string
           created_at?: string | null
           currency?: string
           hardship_fund_enabled?: boolean | null
@@ -321,7 +324,7 @@ export type Database = {
           approved_at: string | null
           approved_by: string | null
           club_id: string
-          coach_id: string
+          coach_id: string | null
           completed_count: number | null
           created_at: string | null
           id: string
@@ -336,7 +339,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           club_id: string
-          coach_id: string
+          coach_id?: string | null
           completed_count?: number | null
           created_at?: string | null
           id?: string
@@ -351,7 +354,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           club_id?: string
-          coach_id?: string
+          coach_id?: string | null
           completed_count?: number | null
           created_at?: string | null
           id?: string
@@ -666,7 +669,9 @@ export type Database = {
           created_by: string | null
           duration_minutes: number | null
           event_date: string
+          event_group_id: string | null
           event_time: string | null
+          field_id: string | null
           field_notes: string | null
           field_type: string | null
           home_away: string | null
@@ -676,6 +681,7 @@ export type Database = {
           location: string | null
           notes: string | null
           recurrence_id: string | null
+          reflection_prompt_sent_at: string | null
           require_rsvp: boolean
           rsvp_lock_at: string | null
           score_away: number | null
@@ -700,7 +706,9 @@ export type Database = {
           created_by?: string | null
           duration_minutes?: number | null
           event_date: string
+          event_group_id?: string | null
           event_time?: string | null
+          field_id?: string | null
           field_notes?: string | null
           field_type?: string | null
           home_away?: string | null
@@ -710,6 +718,7 @@ export type Database = {
           location?: string | null
           notes?: string | null
           recurrence_id?: string | null
+          reflection_prompt_sent_at?: string | null
           require_rsvp?: boolean
           rsvp_lock_at?: string | null
           score_away?: number | null
@@ -734,7 +743,9 @@ export type Database = {
           created_by?: string | null
           duration_minutes?: number | null
           event_date?: string
+          event_group_id?: string | null
           event_time?: string | null
+          field_id?: string | null
           field_notes?: string | null
           field_type?: string | null
           home_away?: string | null
@@ -744,6 +755,7 @@ export type Database = {
           location?: string | null
           notes?: string | null
           recurrence_id?: string | null
+          reflection_prompt_sent_at?: string | null
           require_rsvp?: boolean
           rsvp_lock_at?: string | null
           score_away?: number | null
@@ -826,39 +838,60 @@ export type Database = {
       fee_payments: {
         Row: {
           amount: number
+          fee_charged: number | null
           id: string
           method: string | null
           notes: string | null
           paid_at: string | null
+          payment_rail: string | null
+          platform_cost: number | null
+          platform_fee_collected: number | null
           player_fee_id: string
           recorded_by: string | null
           reference: string | null
+          refunded_amount: number
+          refunded_surcharge: number
           stripe_charge_id: string | null
           stripe_payment_intent_id: string | null
+          surcharge_passed_to_payer: boolean
         }
         Insert: {
           amount: number
+          fee_charged?: number | null
           id?: string
           method?: string | null
           notes?: string | null
           paid_at?: string | null
+          payment_rail?: string | null
+          platform_cost?: number | null
+          platform_fee_collected?: number | null
           player_fee_id: string
           recorded_by?: string | null
           reference?: string | null
+          refunded_amount?: number
+          refunded_surcharge?: number
           stripe_charge_id?: string | null
           stripe_payment_intent_id?: string | null
+          surcharge_passed_to_payer?: boolean
         }
         Update: {
           amount?: number
+          fee_charged?: number | null
           id?: string
           method?: string | null
           notes?: string | null
           paid_at?: string | null
+          payment_rail?: string | null
+          platform_cost?: number | null
+          platform_fee_collected?: number | null
           player_fee_id?: string
           recorded_by?: string | null
           reference?: string | null
+          refunded_amount?: number
+          refunded_surcharge?: number
           stripe_charge_id?: string | null
           stripe_payment_intent_id?: string | null
+          surcharge_passed_to_payer?: boolean
         }
         Relationships: [
           {
@@ -871,6 +904,67 @@ export type Database = {
           {
             foreignKeyName: "fee_payments_recorded_by_fkey"
             columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fee_refunds: {
+        Row: {
+          amount: number
+          created_at: string | null
+          fee_payment_id: string
+          id: string
+          mode: string
+          player_fee_id: string
+          reason: string | null
+          refunded_by: string | null
+          stripe_refund_id: string | null
+          surcharge_amount: number
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          fee_payment_id: string
+          id?: string
+          mode: string
+          player_fee_id: string
+          reason?: string | null
+          refunded_by?: string | null
+          stripe_refund_id?: string | null
+          surcharge_amount?: number
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          fee_payment_id?: string
+          id?: string
+          mode?: string
+          player_fee_id?: string
+          reason?: string | null
+          refunded_by?: string | null
+          stripe_refund_id?: string | null
+          surcharge_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fee_refunds_fee_payment_id_fkey"
+            columns: ["fee_payment_id"]
+            isOneToOne: false
+            referencedRelation: "fee_payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fee_refunds_player_fee_id_fkey"
+            columns: ["player_fee_id"]
+            isOneToOne: false
+            referencedRelation: "player_fees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fee_refunds_refunded_by_fkey"
+            columns: ["refunded_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1393,6 +1487,7 @@ export type Database = {
           accepted_at: string | null
           accepted_by: string | null
           address: string | null
+          club_id: string | null
           created_at: string | null
           created_by: string | null
           email: string | null
@@ -1402,13 +1497,15 @@ export type Database = {
           player_id: string | null
           relationship: string | null
           role: string
-          team_id: string
+          team_id: string | null
+          team_ids: string[]
           token: string
         }
         Insert: {
           accepted_at?: string | null
           accepted_by?: string | null
           address?: string | null
+          club_id?: string | null
           created_at?: string | null
           created_by?: string | null
           email?: string | null
@@ -1418,13 +1515,15 @@ export type Database = {
           player_id?: string | null
           relationship?: string | null
           role?: string
-          team_id: string
+          team_id?: string | null
+          team_ids?: string[]
           token?: string
         }
         Update: {
           accepted_at?: string | null
           accepted_by?: string | null
           address?: string | null
+          club_id?: string | null
           created_at?: string | null
           created_by?: string | null
           email?: string | null
@@ -1434,7 +1533,8 @@ export type Database = {
           player_id?: string | null
           relationship?: string | null
           role?: string
-          team_id?: string
+          team_id?: string | null
+          team_ids?: string[]
           token?: string
         }
         Relationships: [
@@ -1443,6 +1543,13 @@ export type Database = {
             columns: ["accepted_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invites_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
             referencedColumns: ["id"]
           },
           {
@@ -1757,7 +1864,7 @@ export type Database = {
           approved_by: string | null
           batch_id: string
           club_id: string
-          coach_id: string
+          coach_id: string | null
           created_at: string | null
           final_text: string | null
           id: string
@@ -1783,7 +1890,7 @@ export type Database = {
           approved_by?: string | null
           batch_id: string
           club_id: string
-          coach_id: string
+          coach_id?: string | null
           created_at?: string | null
           final_text?: string | null
           id?: string
@@ -1809,7 +1916,7 @@ export type Database = {
           approved_by?: string | null
           batch_id?: string
           club_id?: string
-          coach_id?: string
+          coach_id?: string | null
           created_at?: string | null
           final_text?: string | null
           id?: string
@@ -1892,6 +1999,7 @@ export type Database = {
           discount_reason: string | null
           due_date: string | null
           event_id: string | null
+          fee_model_version: string
           id: string
           installment_number: number | null
           installment_total: number | null
@@ -1924,6 +2032,7 @@ export type Database = {
           discount_reason?: string | null
           due_date?: string | null
           event_id?: string | null
+          fee_model_version?: string
           id?: string
           installment_number?: number | null
           installment_total?: number | null
@@ -1956,6 +2065,7 @@ export type Database = {
           discount_reason?: string | null
           due_date?: string | null
           event_id?: string | null
+          fee_model_version?: string
           id?: string
           installment_number?: number | null
           installment_total?: number | null
@@ -2104,6 +2214,136 @@ export type Database = {
           },
           {
             foreignKeyName: "player_match_periods_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_reflections: {
+        Row: {
+          created_at: string | null
+          event_id: string
+          id: string
+          needs_improvement: string | null
+          player_id: string
+          rating: number
+          submitted_by: string | null
+          team_id: string
+          updated_at: string | null
+          went_well: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          event_id: string
+          id?: string
+          needs_improvement?: string | null
+          player_id: string
+          rating: number
+          submitted_by?: string | null
+          team_id: string
+          updated_at?: string | null
+          went_well?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          event_id?: string
+          id?: string
+          needs_improvement?: string | null
+          player_id?: string
+          rating?: number
+          submitted_by?: string | null
+          team_id?: string
+          updated_at?: string | null
+          went_well?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_reflections_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_reflections_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_reflections_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_reflections_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_shoutouts: {
+        Row: {
+          coach_id: string | null
+          created_at: string | null
+          event_id: string
+          id: string
+          note: string | null
+          player_id: string
+          tag: string
+          team_id: string
+        }
+        Insert: {
+          coach_id?: string | null
+          created_at?: string | null
+          event_id: string
+          id?: string
+          note?: string | null
+          player_id: string
+          tag: string
+          team_id: string
+        }
+        Update: {
+          coach_id?: string | null
+          created_at?: string | null
+          event_id?: string
+          id?: string
+          note?: string | null
+          player_id?: string
+          tag?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_shoutouts_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_shoutouts_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_shoutouts_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_shoutouts_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
@@ -3633,6 +3873,8 @@ export type Database = {
           is_active: boolean | null
           is_closed: boolean | null
           is_full_field: boolean
+          lat: number | null
+          lng: number | null
           name: string
           rental_cost_per_hour: number | null
           scheduler_format: string
@@ -3660,6 +3902,8 @@ export type Database = {
           is_active?: boolean | null
           is_closed?: boolean | null
           is_full_field?: boolean
+          lat?: number | null
+          lng?: number | null
           name: string
           rental_cost_per_hour?: number | null
           scheduler_format?: string
@@ -3687,6 +3931,8 @@ export type Database = {
           is_active?: boolean | null
           is_closed?: boolean | null
           is_full_field?: boolean
+          lat?: number | null
+          lng?: number | null
           name?: string
           rental_cost_per_hour?: number | null
           scheduler_format?: string
@@ -4373,6 +4619,7 @@ export type Database = {
               discount_reason: string | null
               due_date: string | null
               event_id: string | null
+              fee_model_version: string
               id: string
               installment_number: number | null
               installment_total: number | null
@@ -4423,6 +4670,7 @@ export type Database = {
               discount_reason: string | null
               due_date: string | null
               event_id: string | null
+              fee_model_version: string
               id: string
               installment_number: number | null
               installment_total: number | null
@@ -4474,6 +4722,7 @@ export type Database = {
               discount_reason: string | null
               due_date: string | null
               event_id: string | null
+              fee_model_version: string
               id: string
               installment_number: number | null
               installment_total: number | null
@@ -4496,6 +4745,10 @@ export type Database = {
               isSetofReturn: true
             }
           }
+      can_manage_player_photo: {
+        Args: { p_object_name: string }
+        Returns: boolean
+      }
       claim_fee_payment: {
         Args: {
           p_amount: number
@@ -4520,6 +4773,7 @@ export type Database = {
           discount_reason: string | null
           due_date: string | null
           event_id: string | null
+          fee_model_version: string
           id: string
           installment_number: number | null
           installment_total: number | null
@@ -4587,6 +4841,7 @@ export type Database = {
           discount_reason: string | null
           due_date: string | null
           event_id: string | null
+          fee_model_version: string
           id: string
           installment_number: number | null
           installment_total: number | null
@@ -4655,6 +4910,7 @@ export type Database = {
           discount_reason: string | null
           due_date: string | null
           event_id: string | null
+          fee_model_version: string
           id: string
           installment_number: number | null
           installment_total: number | null
@@ -4732,6 +4988,19 @@ export type Database = {
           player_name: string
         }[]
       }
+      get_team_reflection_trends: {
+        Args: { p_team_id: string }
+        Returns: {
+          avg_rating: number
+          last_rating: number
+          last_reflected_at: string
+          player_id: string
+          player_name: string
+          recent_avg_rating: number
+          reflection_count: number
+          trend: string
+        }[]
+      }
       is_club_admin: { Args: { cid: string }; Returns: boolean }
       is_club_conversation: {
         Args: { p_conversation_id: string }
@@ -4747,9 +5016,18 @@ export type Database = {
         Args: { p_event_id: string }
         Returns: boolean
       }
+      is_invite_manageable: {
+        Args: { p_club_id: string; p_team_id: string }
+        Returns: boolean
+      }
       is_player_guardian: { Args: { p_player_id: string }; Returns: boolean }
       is_team_coach: { Args: { p_team_id: string }; Returns: boolean }
       is_team_member: { Args: { p_team_id: string }; Returns: boolean }
+      owns_registration_form: { Args: { p_form_id: string }; Returns: boolean }
+      revoke_guardian_access: {
+        Args: { p_player_id: string; p_profile_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

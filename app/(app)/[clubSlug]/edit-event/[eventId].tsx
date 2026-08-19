@@ -171,7 +171,7 @@ const ps = StyleSheet.create({
 
 // ─── Smart Location Input ─────────────────────────────────────────────────────
 
-type PlaceSuggestion = { place_id: string; description: string };
+type PlaceSuggestion = { place_id: string; description: string; structured_formatting?: { main_text: string; secondary_text?: string } };
 
 function SmartLocationInput({
   onResult,
@@ -190,7 +190,11 @@ function SmartLocationInput({
   function handleChange(val: string) {
     setText(val);
     setPinned(false);
-    onResult({ name: val });
+    // Only a real selection (pick, below) should ever populate the venue
+    // name — echoing every keystroke here used to "poison" the parent's
+    // locationName with just the first character typed, which then
+    // permanently blocked pick() from ever filling in the real name
+    // (see the !locationName guard where onResult is consumed).
     if (timer.current) clearTimeout(timer.current);
     if (val.length < 3) { setSuggestions([]); return; }
     timer.current = setTimeout(() => search(val), 350);
@@ -212,15 +216,18 @@ function SmartLocationInput({
     setText(s.description);
     setPinned(true);
     setSuggestions([]);
+    // The place's own name (e.g. "Williams Field"), not the full
+    // description string (which also has the street/city tacked on).
+    const name = s.structured_formatting?.main_text ?? s.description;
     try {
       const res = await fetch(
         `https://maps.googleapis.com/maps/api/place/details/json?place_id=${s.place_id}&fields=geometry&key=${PLACES_KEY}`
       );
       const json = await res.json();
       const loc = json.result?.geometry?.location;
-      onResult({ name: s.description, address: s.description, lat: loc?.lat, lng: loc?.lng });
+      onResult({ name, address: s.description, lat: loc?.lat, lng: loc?.lng });
     } catch {
-      onResult({ name: s.description, address: s.description });
+      onResult({ name, address: s.description });
     }
   }
 
@@ -348,6 +355,8 @@ export default function EditEventScreen() {
   const [lng, setLng] = useState<number | null>(null);
   const [fieldType, setFieldType] = useState<FieldOption | null>(null);
   const [fieldNotes, setFieldNotes] = useState('');
+  const [fieldId, setFieldId] = useState<string | null>(null);
+  const [savedFields, setSavedFields] = useState<{ id: string; name: string; address: string | null; lat: number | null; lng: number | null }[]>([]);
 
   // Details
   const [uniform, setUniform] = useState<UniformOption | null>(null);
@@ -368,12 +377,23 @@ export default function EditEventScreen() {
   async function loadEvent() {
     const { data } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,teams(club_id)')
       .eq('id', eventId)
       .single();
     if (data) setEventTeamId((data as any).team_id ?? null);
 
     if (!data) { setLoading(false); return; }
+
+    const clubId = ((data as any).teams as { club_id: string } | null)?.club_id;
+    if (clubId) {
+      supabase
+        .from('tryout_fields')
+        .select('id,name,address,lat,lng')
+        .eq('club_id', clubId)
+        .eq('is_active', true)
+        .order('sort_order')
+        .then(({ data: fieldsData }) => setSavedFields((fieldsData ?? []) as typeof savedFields));
+    }
 
     setEventType(data.type as EventType);
 
@@ -401,6 +421,7 @@ export default function EditEventScreen() {
     setAddress(data.address ?? '');
     setLat(data.lat ?? null);
     setLng(data.lng ?? null);
+    setFieldId((data as any).field_id ?? null);
     setFieldType((data.field_type as FieldOption) ?? null);
     setFieldNotes(data.field_notes ?? '');
     setUniform((data.uniform as UniformOption) ?? null);
@@ -451,6 +472,7 @@ export default function EditEventScreen() {
       address: address || null,
       lat: lat ?? null,
       lng: lng ?? null,
+      field_id: fieldId,
       field_type: fieldType ?? null,
       field_notes: fieldNotes.trim() || null,
       uniform: uniform ?? null,
@@ -723,13 +745,43 @@ export default function EditEventScreen() {
 
           {/* ── Location ────────────────────────────────── */}
           <SectionHeader title="Location" />
+          {savedFields.length > 0 && (
+            <Card>
+              <View style={{ padding: 12 }}>
+                <Text style={styles.savedFieldsLabel}>YOUR FIELDS</Text>
+                <View style={styles.typeRow}>
+                  {savedFields.map((f) => {
+                    const active = fieldId === f.id;
+                    return (
+                      <TouchableOpacity
+                        key={f.id}
+                        style={[styles.typeChip, active && { borderColor: primaryColor, backgroundColor: rgba(0.12) }]}
+                        onPress={() => {
+                          setFieldId(f.id);
+                          setLocationName(f.name);
+                          setAddress(f.address ?? '');
+                          setLat(f.lat ?? null);
+                          setLng(f.lng ?? null);
+                          setLocationKey((k) => k + 1);
+                        }}
+                      >
+                        <Text style={[styles.typeChipText, active && { color: primaryColor }]}>
+                          {f.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </Card>
+          )}
           <Card>
             <View style={styles.locationNameRow}>
               <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
               <TextInput
                 style={styles.inlineInput}
                 value={locationName}
-                onChangeText={setLocationName}
+                onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
                 placeholder="Venue name (e.g. City Park)"
                 placeholderTextColor={PULSE_COLORS.ui.muted}
                 returnKeyType="next"
@@ -741,6 +793,7 @@ export default function EditEventScreen() {
                 key={locationKey}
                 initialValue={address}
                 onResult={(r) => {
+                  setFieldId(null);
                   if (!locationName) setLocationName(r.name);
                   setAddress(r.address ?? '');
                   setLat(r.lat ?? null);
@@ -1000,6 +1053,10 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1, marginBottom: 8, marginTop: 4,
+  },
+  savedFieldsLabel: {
+    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    letterSpacing: 1, marginBottom: 8,
   },
 
   card: {

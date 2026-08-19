@@ -13,6 +13,7 @@ import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
 import GuestCalloutSection from '@/components/dashboard/GuestCalloutSection';
 import AttendanceFeeModal from '@/components/dashboard/AttendanceFeeModal';
+import LocationAutocomplete from '@/components/dashboard/LocationAutocomplete';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ type Event = {
   location: string | null; address: string | null;
   lat: number | null; lng: number | null;
   duration_minutes: number | null; arrival_buffer_minutes: number | null;
-  field_type: string | null; field_notes: string | null;
+  field_type: string | null; field_notes: string | null; field_id: string | null;
   uniform: string | null; notes: string | null; coach_notes: string | null;
   require_rsvp: boolean; rsvp_lock_at: string | null; team_id: string;
   attending: number; not_attending: number; total: number;
@@ -43,7 +44,7 @@ type FormState = {
   event_date: string; event_time: string; hasTime: boolean;
   duration_minutes: number | null; arrival_buffer_minutes: number | null;
   location: string; address: string; lat: number | null; lng: number | null;
-  field_type: 'turf' | 'grass' | null; field_notes: string;
+  field_type: 'turf' | 'grass' | null; field_notes: string; field_id: string | null;
   uniform: 'home' | 'away' | 'training' | null;
   notes: string; coach_notes: string;
   require_rsvp: boolean; rsvp_lock_hours: number; push_notify: boolean;
@@ -115,72 +116,10 @@ function emptyForm(teamId: string): FormState {
     event_time: '10:00', hasTime: true,
     duration_minutes: null, arrival_buffer_minutes: null,
     location: '', address: '', lat: null, lng: null,
-    field_type: null, field_notes: '', uniform: null,
+    field_type: null, field_notes: '', field_id: null, uniform: null,
     notes: '', coach_notes: '',
     require_rsvp: true, rsvp_lock_hours: 24, push_notify: false,
   };
-}
-
-// ── LocationAutocomplete ────────────────────────────────────────────────────────
-
-type PlaceSuggestion = { place_id: string; description: string };
-
-function LocationAutocomplete({ value, onChange, onSelect }: {
-  value: string;
-  onChange: (v: string) => void;
-  onSelect: (r: { address: string; name: string; lat: number | null; lng: number | null }) => void;
-}) {
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [fetching, setFetching] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  function handleChange(v: string) {
-    onChange(v);
-    if (timer.current) clearTimeout(timer.current);
-    if (v.length < 3) { setSuggestions([]); return; }
-    timer.current = setTimeout(async () => {
-      setFetching(true);
-      try {
-        const res = await fetch(`/api/places?input=${encodeURIComponent(v)}`);
-        const json = await res.json();
-        setSuggestions((json.predictions ?? []).slice(0, 5));
-      } catch { setSuggestions([]); }
-      setFetching(false);
-    }, 350);
-  }
-
-  async function pick(s: PlaceSuggestion) {
-    onChange(s.description); setSuggestions([]);
-    try {
-      const res = await fetch(`/api/places?place_id=${encodeURIComponent(s.place_id)}`);
-      const json = await res.json();
-      const loc = json.result?.geometry?.location;
-      onSelect({ address: s.description, name: json.result?.name ?? s.description, lat: loc?.lat ?? null, lng: loc?.lng ?? null });
-    } catch { onSelect({ address: s.description, name: s.description, lat: null, lng: null }); }
-  }
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ position: 'relative' }}>
-        <input value={value} onChange={e => handleChange(e.target.value)} placeholder="Street address or location…"
-          style={{ ...inputStyle, paddingRight: fetching ? '36px' : '13px' }} />
-        {fetching && <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', border: '2px solid #E2E8F0', borderTopColor: '#64748B', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />}
-      </div>
-      {suggestions.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, marginTop: '4px', overflow: 'hidden' }}>
-          {suggestions.map((s, i) => (
-            <button key={s.place_id} onClick={() => pick(s)}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', borderBottom: i < suggestions.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
-              <MapPin size={13} color="#94A3B8" style={{ marginTop: '2px', flexShrink: 0 }} />
-              <span style={{ fontSize: '13px', color: '#374151', lineHeight: '1.4' }}>{s.description}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── EventInfoPills ─────────────────────────────────────────────────────────────
@@ -322,12 +261,24 @@ export default function TeamSchedulePage() {
   const dialogRef    = useRef<HTMLDialogElement>(null);
   const delDialogRef = useRef<HTMLDialogElement>(null);
 
+  const [savedFields, setSavedFields] = useState<{ id: string; name: string; address: string | null; lat: number | null; lng: number | null }[]>([]);
+  useEffect(() => {
+    if (!club?.id) return;
+    supabase
+      .from('tryout_fields')
+      .select('id,name,address,lat,lng')
+      .eq('club_id', club.id)
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setSavedFields((data ?? []) as typeof savedFields));
+  }, [club?.id]);
+
   const load = useCallback(async () => {
     if (!teamId) return;
     setLoading(true);
     const { data: evs } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,require_rsvp,rsvp_lock_at,team_id')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,field_id,uniform,notes,coach_notes,require_rsvp,rsvp_lock_at,team_id')
       .eq('team_id', teamId)
       .order('event_date', { ascending: tab === 'upcoming' })
       .order('event_time', { ascending: true });
@@ -472,6 +423,7 @@ export default function TeamSchedulePage() {
       location: ev.location ?? '', address: ev.address ?? '', lat: ev.lat, lng: ev.lng,
       field_type: (ev.field_type as 'turf' | 'grass') ?? null,
       field_notes: ev.field_notes ?? '',
+      field_id: ev.field_id,
       uniform: (ev.uniform as 'home' | 'away' | 'training') ?? null,
       notes: ev.notes ?? '', coach_notes: ev.coach_notes ?? '',
       require_rsvp: ev.require_rsvp ?? true,
@@ -501,7 +453,7 @@ export default function TeamSchedulePage() {
         title: savedTitle, type: form.type, team_id: teamId,
         event_date: form.event_date, event_time: eventTime,
         location: form.location.trim() || null, address: form.address.trim() || null,
-        lat: form.lat, lng: form.lng,
+        lat: form.lat, lng: form.lng, field_id: form.field_id,
         duration_minutes: form.duration_minutes, arrival_buffer_minutes: form.arrival_buffer_minutes,
         field_type: form.field_type, field_notes: form.field_notes.trim() || null,
         uniform: form.uniform, notes: form.notes.trim() || null,
@@ -970,15 +922,33 @@ export default function TeamSchedulePage() {
 
             <div style={sectionStyle}>LOCATION</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+              {savedFields.length > 0 && (
+                <div>
+                  <label style={labelStyle}>Your fields</label>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {savedFields.map(sf => {
+                      const active = form.field_id === sf.id;
+                      return (
+                        <button key={sf.id} onClick={() => setForm(f => ({
+                          ...f, field_id: sf.id, location: sf.name, address: sf.address ?? '', lat: sf.lat, lng: sf.lng,
+                        }))}
+                          style={{ padding: '7px 14px', borderRadius: '20px', border: `2px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}12` : '#fff', color: active ? primary : '#64748B', fontWeight: active ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                          {sf.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div>
                 <label style={labelStyle}>Venue name</label>
-                <input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="e.g. City Park" style={inputStyle} />
+                <input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value, field_id: null }))} placeholder="e.g. City Park" style={inputStyle} />
               </div>
               <div>
                 <label style={labelStyle}>Address</label>
                 <LocationAutocomplete value={form.address}
-                  onChange={v => setForm(f => ({ ...f, address: v, lat: null, lng: null }))}
-                  onSelect={({ address, name, lat, lng }) => setForm(f => ({ ...f, address, lat, lng, location: f.location.trim() ? f.location : name }))}
+                  onChange={v => setForm(f => ({ ...f, address: v, lat: null, lng: null, field_id: null }))}
+                  onSelect={({ address, name, lat, lng }) => setForm(f => ({ ...f, address, lat, lng, field_id: null, location: f.location.trim() ? f.location : name }))}
                 />
               </div>
               <div>

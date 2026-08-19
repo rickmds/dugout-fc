@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import {
   Plus, CalendarDays, MapPin, Clock, Bell, BellOff, Pencil, Trash2, X,
   ChevronDown, Sparkles, Users, Check, ChevronLeft, ChevronRight, List,
+  Ban, RotateCcw,
 } from 'lucide-react';
 
 const TEAM_PALETTE = ['#6366F1', '#F59E0B', '#10B981', '#EC4899', '#14B8A6', '#F97316', '#8B5CF6', '#DC2626'];
@@ -16,6 +17,7 @@ import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
 import GuestCalloutSection from '@/components/dashboard/GuestCalloutSection';
 import AttendanceFeeModal from '@/components/dashboard/AttendanceFeeModal';
+import LocationAutocomplete from '@/components/dashboard/LocationAutocomplete';
 
 type Event = {
   id: string;
@@ -31,6 +33,7 @@ type Event = {
   arrival_buffer_minutes: number | null;
   field_type: string | null;
   field_notes: string | null;
+  field_id: string | null;
   uniform: string | null;
   notes: string | null;
   coach_notes: string | null;
@@ -38,6 +41,9 @@ type Event = {
   rsvp_lock_at: string | null;
   team_id: string;
   team_name?: string;
+  event_group_id: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
 };
 
 type RsvpPlayer = {
@@ -65,6 +71,7 @@ type FormState = {
   lng: number | null;
   field_type: 'turf' | 'grass' | null;
   field_notes: string;
+  field_id: string | null;
   uniform: 'home' | 'away' | 'training' | null;
   notes: string;
   coach_notes: string;
@@ -138,7 +145,7 @@ const emptyForm = (teamId: string): FormState => ({
   event_time: '10:00', hasTime: true,
   duration_minutes: null, arrival_buffer_minutes: null,
   location: '', address: '', lat: null, lng: null,
-  field_type: null, field_notes: '',
+  field_type: null, field_notes: '', field_id: null,
   uniform: null, notes: '', coach_notes: '',
   require_rsvp: true, rsvp_lock_hours: 24,
   push_notify: true,
@@ -153,8 +160,24 @@ export default function SchedulePage() {
   const [showAI, setShowAI]         = useState(false);
   const [editId, setEditId]         = useState<string | null>(null);
   const [form, setForm]             = useState<FormState>(emptyForm(selectedTeamId ?? teams[0]?.id ?? ''));
+  // Only used when creating (not editing) — lets an admin on multiple teams
+  // create the same event for several at once, each getting its own
+  // independent copy (own RSVP list, lock time, attendance).
+  const [createTeamIds, setCreateTeamIds] = useState<string[]>([]);
+  // Only used when editing — set when the event being edited was created
+  // together with other teams' copies via the multi-team picker. Only an
+  // org_admin gets to propagate a save across the group; a coach's save
+  // always stays scoped to their own row (plain .eq('id', editId)).
+  const [editGroupId, setEditGroupId] = useState<string | null>(null);
+  const [linkedTeams, setLinkedTeams] = useState<{ id: string; name: string }[]>([]);
+  const isOrgAdmin = profile?.role === 'org_admin';
   const [saving, setSaving]         = useState(false);
+  const [savedFields, setSavedFields] = useState<{ id: string; name: string; address: string | null; lat: number | null; lng: number | null }[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);
+  const [cancelConfirm, setCancelConfirm] = useState<{ id: string; title: string } | null>(null);
+  const [cancelReason, setCancelReason]   = useState('');
+  const [cancelling, setCancelling]       = useState(false);
+  const [restoringId, setRestoringId]     = useState<string | null>(null);
   const [filterTeam, setFilterTeam] = useState<string>(searchParams.get('team') ?? 'all');
   const [filterType, setFilterType] = useState<'all' | 'game' | 'training' | 'other'>('all');
   const [tab, setTab]               = useState<'upcoming' | 'past'>('upcoming');
@@ -199,7 +222,7 @@ export default function SchedulePage() {
     const teamIds = teams.map((t) => t.id);
 
     let q = supabase.from('events')
-      .select('id, title, type, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, field_type, field_notes, uniform, notes, coach_notes, require_rsvp, rsvp_lock_at, team_id, teams(name)')
+      .select('id, title, type, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, field_type, field_notes, field_id, uniform, notes, coach_notes, require_rsvp, rsvp_lock_at, team_id, teams(name), event_group_id, cancelled_at, cancellation_reason')
       .in('team_id', teamIds)
       .order('event_date', { ascending: true })
       .order('event_time', { ascending: true });
@@ -247,6 +270,17 @@ export default function SchedulePage() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  useEffect(() => {
+    if (!club?.id) return;
+    supabase
+      .from('tryout_fields')
+      .select('id,name,address,lat,lng')
+      .eq('club_id', club.id)
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setSavedFields((data ?? []) as typeof savedFields));
+  }, [club?.id]);
 
   // Reset guest count + panel tab when event changes
   useEffect(() => {
@@ -337,8 +371,17 @@ export default function SchedulePage() {
   function openCreate() {
     const tid = filterTeam !== 'all' ? filterTeam : (selectedTeamId ?? teams[0]?.id ?? '');
     setForm(emptyForm(tid));
+    setCreateTeamIds(tid ? [tid] : []);
     setEditId(null);
+    setEditGroupId(null);
+    setLinkedTeams([]);
     setShowModal(true);
+  }
+
+  function toggleCreateTeam(teamId: string) {
+    setCreateTeamIds((prev) =>
+      prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId]
+    );
   }
 
   function openEdit(ev: Event) {
@@ -358,6 +401,7 @@ export default function SchedulePage() {
       lng: ev.lng,
       field_type: (ev.field_type as 'turf' | 'grass') ?? null,
       field_notes: ev.field_notes ?? '',
+      field_id: ev.field_id,
       uniform: (ev.uniform as 'home' | 'away' | 'training') ?? null,
       notes: ev.notes ?? '',
       coach_notes: ev.coach_notes ?? '',
@@ -366,23 +410,104 @@ export default function SchedulePage() {
       push_notify: true,
     });
     setEditId(ev.id);
+    setEditGroupId(ev.event_group_id);
+    // Sibling copies (other teams, same occurrence) share event_group_id
+    // and the same event_date, so they're already in the loaded `events`
+    // list alongside this one — no extra fetch needed. Only org_admins
+    // can propagate, so coaches never see or compute this.
+    setLinkedTeams(
+      isOrgAdmin && ev.event_group_id
+        ? events
+            .filter((e) => e.event_group_id === ev.event_group_id && e.id !== ev.id)
+            .map((e) => ({ id: e.team_id, name: e.team_name ?? 'another team' }))
+        : []
+    );
     setShowModal(true);
+  }
+
+  // Other teams' copies of this same occurrence — already in the loaded
+  // `events` list (see openEdit). Only org_admins get to act on the whole
+  // group; anyone else only ever acts on the one row they clicked.
+  function siblingTeamIds(ev: Event): string[] {
+    if (!isOrgAdmin || !ev.event_group_id) return [];
+    return events.filter((e) => e.event_group_id === ev.event_group_id && e.id !== ev.id).map((e) => e.team_id);
   }
 
   async function handleDelete(id: string) {
     const ev = events.find((e) => e.id === id);
-    const { error } = await supabase.from('events').delete().eq('id', id);
+    const linkedIds = ev ? siblingTeamIds(ev) : [];
+    const propagate = !!ev?.event_group_id && linkedIds.length > 0;
+
+    const { error } = propagate
+      ? await supabase.from('events').delete().eq('event_group_id', ev!.event_group_id)
+      : await supabase.from('events').delete().eq('id', id);
     if (error) { alert(`Could not delete event: ${error.message}`); return; }
-    setEvents((prev) => prev.filter((e) => e.id !== id));
-    if (selectedEvent?.id === id) setSelectedEvent(null);
+
+    setEvents((prev) => prev.filter((e) => propagate ? e.event_group_id !== ev!.event_group_id : e.id !== id));
+    if (selectedEvent && (propagate ? selectedEvent.event_group_id === ev!.event_group_id : selectedEvent.id === id)) {
+      setSelectedEvent(null);
+    }
     setDeleteConfirm(null);
     if (ev) {
-      sendEventPush({ team_id: ev.team_id, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }).catch(() => {});
+      const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
+      for (const teamId of notifyTeamIds) {
+        sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }).catch(() => {});
+      }
     }
   }
 
+  function openCancel(ev: Event) {
+    setCancelReason('');
+    setCancelConfirm({ id: ev.id, title: ev.title });
+  }
+
+  async function handleCancelEvent() {
+    if (!cancelConfirm) return;
+    const ev = events.find((e) => e.id === cancelConfirm.id);
+    if (!ev) { setCancelConfirm(null); return; }
+    setCancelling(true);
+
+    const linkedIds = siblingTeamIds(ev);
+    const propagate = !!ev.event_group_id && linkedIds.length > 0;
+    const payload = { cancelled_at: new Date().toISOString(), cancellation_reason: cancelReason.trim() || null };
+
+    const { error } = propagate
+      ? await supabase.from('events').update(payload).eq('event_group_id', ev.event_group_id)
+      : await supabase.from('events').update(payload).eq('id', ev.id);
+    setCancelling(false);
+    if (error) { alert(`Could not cancel event: ${error.message}`); return; }
+
+    const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
+    for (const teamId of notifyTeamIds) {
+      sendEventPush({
+        team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled',
+        title: '❌ Event cancelled',
+        body: cancelReason.trim() ? `${ev.title} cancelled: ${cancelReason.trim()}` : `${ev.title} has been cancelled`,
+        data: { type: 'event_cancelled', event_id: ev.id },
+      }).catch(() => {});
+    }
+
+    setCancelConfirm(null);
+    loadEvents();
+  }
+
+  async function handleRestoreEvent(ev: Event) {
+    setRestoringId(ev.id);
+    const linkedIds = siblingTeamIds(ev);
+    const propagate = !!ev.event_group_id && linkedIds.length > 0;
+    const payload = { cancelled_at: null, cancellation_reason: null };
+
+    const { error } = propagate
+      ? await supabase.from('events').update(payload).eq('event_group_id', ev.event_group_id)
+      : await supabase.from('events').update(payload).eq('id', ev.id);
+    setRestoringId(null);
+    if (error) { alert(`Could not restore event: ${error.message}`); return; }
+    loadEvents();
+  }
+
   async function handleSave() {
-    if (!form.title.trim() || !form.team_id) return;
+    if (!form.title.trim()) return;
+    if (editId ? !form.team_id : createTeamIds.length === 0) return;
     setSaving(true);
     const eventDate = form.event_date;
     const eventTime = form.hasTime ? form.event_time : null;
@@ -396,13 +521,14 @@ export default function SchedulePage() {
       dt.setHours(dt.getHours() - form.rsvp_lock_hours);
       return dt.toISOString();
     }
-    const payload = {
-      title: savedTitle, type: form.type, team_id: form.team_id,
+    const basePayload = {
+      title: savedTitle, type: form.type,
       event_date: eventDate, event_time: eventTime,
       location: form.location.trim() || null,
       address: form.address.trim() || null,
       lat: form.lat,
       lng: form.lng,
+      field_id: form.field_id,
       duration_minutes: form.duration_minutes,
       arrival_buffer_minutes: form.arrival_buffer_minutes,
       field_type: form.field_type,
@@ -414,36 +540,77 @@ export default function SchedulePage() {
       rsvp_lock_at: computeLockAt(),
       created_by: profile?.id,
     };
-    let eventId = editId;
+    const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+    // An org_admin editing an event that's linked to other teams (created
+    // via the multi-team picker) propagates the save to every linked
+    // team's copy of this same occurrence. A coach's save (isOrgAdmin
+    // false, or linkedTeams never populated for them in openEdit) always
+    // stays scoped to just this row.
+    const propagate = isOrgAdmin && !!editGroupId && linkedTeams.length > 0;
+
+    let shouldClose = false;
     try {
       if (editId) {
-        const { error } = await supabase.from('events').update(payload).eq('id', editId);
+        const { error } = propagate
+          ? await supabase.from('events').update(basePayload).eq('event_group_id', editGroupId)
+          : await supabase.from('events').update({ ...basePayload, team_id: form.team_id }).eq('id', editId);
         if (error) { alert(`Could not save event: ${error.message}`); return; }
+        shouldClose = true;
+
+        if (form.push_notify) {
+          const notifyTeamIds = propagate ? [form.team_id, ...linkedTeams.map((t) => t.id)] : [form.team_id];
+          for (const teamId of notifyTeamIds) {
+            const teamName = teams.find((t) => t.id === teamId)?.name ?? 'your team';
+            try {
+              await sendEventPush({
+                team_id: teamId,
+                exclude_profile_id: profile?.id,
+                type: 'event_updated',
+                title: `📝 Event updated — ${teamName}`,
+                body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
+                data: { event_id: editId },
+              });
+            } catch { /* non-critical */ }
+          }
+        }
       } else {
-        const { data, error } = await supabase.from('events').insert(payload).select('id').single<{ id: string }>();
-        if (error) { alert(`Could not create event: ${error.message}`); return; }
-        eventId = data?.id ?? null;
+        // Each selected team gets its own independent copy of the event —
+        // own RSVP list, lock time, and attendance — same as creating them
+        // one at a time. When more than one team is selected they share an
+        // event_group_id, so an org_admin editing one later can update
+        // every team's copy of this occurrence at once.
+        const groupId = createTeamIds.length > 1 ? crypto.randomUUID() : null;
+        const failed: string[] = [];
+        for (const teamId of createTeamIds) {
+          const { data, error } = await supabase.from('events').insert({ ...basePayload, team_id: teamId, event_group_id: groupId }).select('id').single<{ id: string }>();
+          if (error) { failed.push(teams.find((t) => t.id === teamId)?.name ?? teamId); continue; }
+          shouldClose = true;
+          const eventId = data?.id ?? null;
+
+          if (form.push_notify && eventId) {
+            const teamName = teams.find((t) => t.id === teamId)?.name ?? 'your team';
+            try {
+              await sendEventPush({
+                team_id: teamId,
+                exclude_profile_id: profile?.id,
+                type: 'new_event',
+                title: `New ${TYPE_LABELS[form.type]} — ${teamName}`,
+                body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
+                data: { event_id: eventId },
+              });
+            } catch { /* non-critical */ }
+          }
+        }
+        if (failed.length) alert(`Could not create event for: ${failed.join(', ')}`);
       }
     } finally {
       setSaving(false);
     }
-    if (form.push_notify && eventId) {
-      const teamName = teams.find((t) => t.id === form.team_id)?.name ?? 'your team';
-      const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      const isEdit = !!editId;
-      try {
-        await sendEventPush({
-          team_id: form.team_id,
-          exclude_profile_id: profile?.id,
-          type: isEdit ? 'event_updated' : 'new_event',
-          title: isEdit ? `📝 Event updated — ${teamName}` : `New ${TYPE_LABELS[form.type]} — ${teamName}`,
-          body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
-          data: { event_id: eventId },
-        });
-      } catch { /* non-critical */ }
+    if (shouldClose) {
+      setShowModal(false);
+      loadEvents();
     }
-    setShowModal(false);
-    loadEvents();
   }
 
   const displayed = events.filter((e) =>
@@ -787,14 +954,20 @@ export default function SchedulePage() {
                           return (
                             <div key={ev.id}
                               onClick={() => setSelectedEvent(isActive ? null : ev)}
-                              style={{ display: 'flex', alignItems: 'center', gap: '0', background: isActive ? `${primary}08` : '#fff', border: `1.5px solid ${isActive ? primary : '#E2E8F0'}`, borderRadius: '10px', overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.1s' }}>
-                              <div style={{ width: '4px', alignSelf: 'stretch', background: teamColor, flexShrink: 0 }} />
+                              style={{ display: 'flex', alignItems: 'center', gap: '0', background: isActive ? `${primary}08` : '#fff', border: `1.5px solid ${isActive ? primary : '#E2E8F0'}`, borderRadius: '10px', overflow: 'hidden', cursor: 'pointer', transition: 'border-color 0.1s', opacity: ev.cancelled_at ? 0.6 : 1 }}>
+                              <div style={{ width: '4px', alignSelf: 'stretch', background: ev.cancelled_at ? '#EF4444' : teamColor, flexShrink: 0 }} />
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
-                                <span style={{ fontSize: '11px', fontWeight: '700', color: TYPE_COLORS[ev.type], background: TYPE_BG[ev.type], borderRadius: '5px', padding: '2px 7px', flexShrink: 0 }}>
-                                  {TYPE_LABELS[ev.type]}
-                                </span>
+                                {ev.cancelled_at ? (
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700', color: '#EF4444', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '5px', padding: '2px 7px', flexShrink: 0 }}>
+                                    <Ban size={11} color="#EF4444" /> Cancelled
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: '11px', fontWeight: '700', color: TYPE_COLORS[ev.type], background: TYPE_BG[ev.type], borderRadius: '5px', padding: '2px 7px', flexShrink: 0 }}>
+                                    {TYPE_LABELS[ev.type]}
+                                  </span>
+                                )}
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.title}</div>
+                                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: ev.cancelled_at ? 'line-through' : 'none' }}>{ev.title}</div>
                                   <div style={{ display: 'flex', gap: '8px', marginTop: '2px', flexWrap: 'wrap' }}>
                                     {ev.event_time && <span style={{ fontSize: '11px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} color="#94A3B8" />{fmtTime(ev.event_time)}</span>}
                                     {ev.location   && <span style={{ fontSize: '11px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '3px' }}><MapPin size={10} color="#94A3B8" />{ev.location}</span>}
@@ -810,6 +983,19 @@ export default function SchedulePage() {
                                     onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
                                     <Pencil size={13} color="#64748B" />
                                   </button>
+                                  {ev.cancelled_at ? (
+                                    <button onClick={() => handleRestoreEvent(ev)} disabled={restoringId === ev.id} style={{ background: 'none', border: 'none', cursor: restoringId === ev.id ? 'not-allowed' : 'pointer', padding: '5px', borderRadius: '6px', display: 'flex' }}
+                                      onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#F0FDF4'}
+                                      onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                                      <RotateCcw size={13} color="#22C55E" />
+                                    </button>
+                                  ) : (
+                                    <button onClick={() => openCancel(ev)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', borderRadius: '6px', display: 'flex' }}
+                                      onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#FFFBEB'}
+                                      onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                                      <Ban size={13} color="#94A3B8" />
+                                    </button>
+                                  )}
                                   <button onClick={() => setDeleteConfirm({ id: ev.id, title: ev.title })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', borderRadius: '6px', display: 'flex' }}
                                     onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#FEF2F2'}
                                     onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
@@ -869,9 +1055,12 @@ export default function SchedulePage() {
                             showTeam={teams.length > 1}
                             selected={selectedEvent?.id === ev.id}
                             rsvpSummary={rsvpSummaries[ev.id] ?? null}
+                            restoring={restoringId === ev.id}
                             onSelect={() => setSelectedEvent(selectedEvent?.id === ev.id ? null : ev)}
                             onEdit={() => openEdit(ev)}
                             onDelete={() => setDeleteConfirm({ id: ev.id, title: ev.title })}
+                            onCancel={() => openCancel(ev)}
+                            onRestore={() => handleRestoreEvent(ev)}
                           />
                         ))}
                       </div>
@@ -1131,6 +1320,13 @@ export default function SchedulePage() {
             <div style={{ overflowY: 'auto', flex: 1 }}>
               <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '0' }}>
 
+                {linkedTeams.length > 0 && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '10px 14px', borderRadius: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', marginBottom: '20px', fontSize: '13px', color: '#475569', lineHeight: '1.5' }}>
+                    <span>🔗</span>
+                    <span>Also scheduled for <strong>{linkedTeams.map((t) => t.name).join(', ')}</strong> — saving will update all of them.</span>
+                  </div>
+                )}
+
                 {/* ── EVENT ── */}
                 <div style={modalSectionStyle}>EVENT</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
@@ -1168,16 +1364,38 @@ export default function SchedulePage() {
                     </div>
                   </div>
                   {teams.length > 1 && (
-                    <div>
-                      <label style={labelStyle}>Team</label>
-                      <div style={{ position: 'relative' }}>
-                        <select value={form.team_id} onChange={(e) => setForm((f) => ({ ...f, team_id: e.target.value }))}
-                          style={{ ...inputStyle, appearance: 'none', paddingRight: '32px', cursor: 'pointer' }}>
-                          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
-                        <ChevronDown size={14} color="#64748B" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                    editId ? (
+                      <div>
+                        <label style={labelStyle}>Team</label>
+                        <div style={{ position: 'relative' }}>
+                          <select value={form.team_id} onChange={(e) => setForm((f) => ({ ...f, team_id: e.target.value }))}
+                            style={{ ...inputStyle, appearance: 'none', paddingRight: '32px', cursor: 'pointer' }}>
+                            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                          <ChevronDown size={14} color="#64748B" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div>
+                        <label style={labelStyle}>Teams</label>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {teams.map((t) => {
+                            const active = createTeamIds.includes(t.id);
+                            return (
+                              <button key={t.id} onClick={() => toggleCreateTeam(t.id)}
+                                style={{ padding: '8px 14px', borderRadius: '8px', border: `2px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}12` : '#fff', color: active ? primary : '#64748B', fontWeight: active ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                {t.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {createTeamIds.length > 1 && (
+                          <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px' }}>
+                            Creates {createTeamIds.length} independent copies — one per team, each with its own RSVP list.
+                          </div>
+                        )}
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -1234,20 +1452,39 @@ export default function SchedulePage() {
                 {/* ── LOCATION ── */}
                 <div style={modalSectionStyle}>LOCATION</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+                  {savedFields.length > 0 && (
+                    <div>
+                      <label style={labelStyle}>Your fields</label>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {savedFields.map((sf) => {
+                          const active = form.field_id === sf.id;
+                          return (
+                            <button key={sf.id} onClick={() => setForm((f) => ({
+                              ...f, field_id: sf.id, location: sf.name, address: sf.address ?? '', lat: sf.lat, lng: sf.lng,
+                            }))}
+                              style={{ padding: '7px 14px', borderRadius: '20px', border: `2px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}12` : '#fff', color: active ? primary : '#64748B', fontWeight: active ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                              {sf.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label style={labelStyle}>Venue name</label>
-                    <input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} placeholder="e.g. City Park" style={inputStyle} />
+                    <input value={form.location} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value, field_id: null }))} placeholder="e.g. City Park" style={inputStyle} />
                   </div>
                   <div>
                     <label style={labelStyle}>Address</label>
                     <LocationAutocomplete
                       value={form.address}
-                      onChange={(v) => setForm((f) => ({ ...f, address: v, lat: null, lng: null }))}
+                      onChange={(v) => setForm((f) => ({ ...f, address: v, lat: null, lng: null, field_id: null }))}
                       onSelect={({ address, name, lat, lng }) => setForm((f) => ({
                         ...f,
                         address,
                         lat,
                         lng,
+                        field_id: null,
                         location: f.location.trim() ? f.location : name,
                       }))}
                     />
@@ -1332,9 +1569,14 @@ export default function SchedulePage() {
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-                <button onClick={handleSave} disabled={saving || !form.title.trim()} style={{ flex: 2, padding: '11px', background: saving || !form.title.trim() ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: saving || !form.title.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                  {saving ? 'Saving…' : editId ? 'Save changes' : 'Create Event'}
-                </button>
+                {(() => {
+                  const disabled = saving || !form.title.trim() || (editId ? !form.team_id : createTeamIds.length === 0);
+                  return (
+                    <button onClick={handleSave} disabled={disabled} style={{ flex: 2, padding: '11px', background: disabled ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                      {saving ? 'Saving…' : editId ? 'Save changes' : createTeamIds.length > 1 ? `Create ${createTeamIds.length} Events` : 'Create Event'}
+                    </button>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -1345,99 +1587,56 @@ export default function SchedulePage() {
 
       {showAI && <AIScheduleImport onClose={() => setShowAI(false)} onDone={() => loadEvents()} />}
 
-      {deleteConfirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => setDeleteConfirm(null)}>
-          <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '380px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-              <Trash2 size={20} color="#EF4444" />
-            </div>
-            <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>Delete event?</div>
-            <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '24px', lineHeight: '1.5' }}>
-              <strong style={{ color: '#0F172A' }}>{deleteConfirm.title}</strong> will be permanently deleted including all RSVPs.
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              <button onClick={() => handleDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+      {deleteConfirm && (() => {
+        const ev = events.find((e) => e.id === deleteConfirm.id);
+        const linkedCount = ev ? siblingTeamIds(ev).length : 0;
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => setDeleteConfirm(null)}>
+            <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '380px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                <Trash2 size={20} color="#EF4444" />
+              </div>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>Delete event{linkedCount > 0 ? ` for all ${linkedCount + 1} teams` : ''}?</div>
+              <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '24px', lineHeight: '1.5' }}>
+                <strong style={{ color: '#0F172A' }}>{deleteConfirm.title}</strong> will be permanently deleted including all RSVPs{linkedCount > 0 ? ', for every linked team' : ''}.
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={() => handleDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {cancelConfirm && (() => {
+        const ev = events.find((e) => e.id === cancelConfirm.id);
+        const linkedCount = ev ? siblingTeamIds(ev).length : 0;
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => setCancelConfirm(null)}>
+            <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '380px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                <Ban size={20} color="#D97706" />
+              </div>
+              <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>Cancel event{linkedCount > 0 ? ` for all ${linkedCount + 1} teams` : ''}?</div>
+              <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '16px', lineHeight: '1.5' }}>
+                <strong style={{ color: '#0F172A' }}>{cancelConfirm.title}</strong> will be marked cancelled and parents{linkedCount > 0 ? ' on every linked team' : ''} will be notified. It stays in the schedule and can be restored later.
+              </div>
+              <label style={labelStyle}>Reason for parents (optional)</label>
+              <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="e.g. Field closed for weather" rows={2}
+                style={{ ...inputStyle, resize: 'vertical', marginBottom: '20px' }} />
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setCancelConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Keep Event</button>
+                <button onClick={handleCancelEvent} disabled={cancelling} style={{ flex: 1, padding: '11px', background: cancelling ? '#FCD34D' : '#D97706', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: cancelling ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                  {cancelling ? 'Cancelling…' : 'Cancel Event'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
-
-type PlaceSuggestion = { place_id: string; description: string };
-
-function LocationAutocomplete({
-  value, onChange, onSelect,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSelect: (r: { address: string; name: string; lat: number | null; lng: number | null }) => void;
-}) {
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [fetching, setFetching] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  function handleChange(v: string) {
-    onChange(v);
-    if (timer.current) clearTimeout(timer.current);
-    if (v.length < 3) { setSuggestions([]); return; }
-    timer.current = setTimeout(() => fetchSuggestions(v), 350);
-  }
-
-  async function fetchSuggestions(q: string) {
-    setFetching(true);
-    try {
-      const res  = await fetch(`/api/places?input=${encodeURIComponent(q)}`);
-      const json = await res.json();
-      setSuggestions((json.predictions ?? []).slice(0, 5));
-    } catch { setSuggestions([]); }
-    setFetching(false);
-  }
-
-  async function pick(s: PlaceSuggestion) {
-    onChange(s.description);
-    setSuggestions([]);
-    try {
-      const res  = await fetch(`/api/places?place_id=${encodeURIComponent(s.place_id)}`);
-      const json = await res.json();
-      const loc  = json.result?.geometry?.location;
-      onSelect({ address: s.description, name: json.result?.name ?? s.description, lat: loc?.lat ?? null, lng: loc?.lng ?? null });
-    } catch {
-      onSelect({ address: s.description, name: s.description, lat: null, lng: null });
-    }
-  }
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ position: 'relative' }}>
-        <input
-          value={value}
-          onChange={(e) => handleChange(e.target.value)}
-          placeholder="Street address or location…"
-          style={{ ...inputStyle, paddingRight: fetching ? '36px' : '13px' }}
-        />
-        {fetching && (
-          <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', border: '2px solid #E2E8F0', borderTopColor: '#64748B', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        )}
-      </div>
-      {suggestions.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200, marginTop: '4px', overflow: 'hidden' }}>
-          {suggestions.map((s, i) => (
-            <button key={s.place_id} onClick={() => pick(s)}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', borderBottom: i < suggestions.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
-              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}
-            >
-              <MapPin size={13} color="#94A3B8" style={{ marginTop: '2px', flexShrink: 0 }} />
-              <span style={{ fontSize: '13px', color: '#374151', lineHeight: '1.4' }}>{s.description}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -1487,14 +1686,16 @@ function EventInfoPills({ ev, primary }: { ev: Event; primary: string }) {
   );
 }
 
-function EventRow({ ev, primary, showTeam, selected, rsvpSummary, onSelect, onEdit, onDelete }: {
+function EventRow({ ev, primary, showTeam, selected, rsvpSummary, restoring, onSelect, onEdit, onDelete, onCancel, onRestore }: {
   ev: Event; primary: string; showTeam: boolean; selected: boolean;
   rsvpSummary: { attending: number; not_attending: number; total: number } | null;
-  onSelect: () => void; onEdit: () => void; onDelete: () => void;
+  restoring: boolean;
+  onSelect: () => void; onEdit: () => void; onDelete: () => void; onCancel: () => void; onRestore: () => void;
 }) {
   const [hover, setHover] = useState(false);
   const color = TYPE_COLORS[ev.type];
   const bg    = TYPE_BG[ev.type];
+  const isCancelled = !!ev.cancelled_at;
 
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
@@ -1505,10 +1706,11 @@ function EventRow({ ev, primary, showTeam, selected, rsvpSummary, onSelect, onEd
         display: 'flex', alignItems: 'stretch', overflow: 'hidden',
         boxShadow: hover ? '0 4px 12px rgba(0,0,0,0.1)' : '0 1px 4px rgba(0,0,0,0.04)',
         transition: 'box-shadow 0.15s, transform 0.15s', transform: hover ? 'translateY(-1px)' : 'none', cursor: 'pointer',
+        opacity: isCancelled ? 0.6 : 1,
       }}
       onClick={onSelect}
     >
-      <div style={{ width: '3px', flexShrink: 0, background: color }} />
+      <div style={{ width: '3px', flexShrink: 0, background: isCancelled ? '#EF4444' : color }} />
       <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '14px 16px 14px 14px', borderRight: '1px solid #F8FAFC', minWidth: '72px' }}>
         <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A', lineHeight: 1 }}>{ev.event_time ? fmtTime(ev.event_time).split(' ')[0] : '—'}</span>
         {ev.event_time && <span style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8', marginTop: '2px' }}>{fmtTime(ev.event_time).split(' ')[1]}</span>}
@@ -1516,12 +1718,19 @@ function EventRow({ ev, primary, showTeam, selected, rsvpSummary, onSelect, onEd
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {/* Top row */}
         <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px', background: bg, borderRadius: '7px', padding: '5px 9px', border: `1px solid ${color}20` }}>
-            <span style={{ fontSize: '13px', lineHeight: 1 }}>{TYPE_EMOJI[ev.type]}</span>
-            <span style={{ fontSize: '11px', fontWeight: '700', color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{TYPE_LABELS[ev.type]}</span>
-          </div>
+          {isCancelled ? (
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px', background: '#FEF2F2', borderRadius: '7px', padding: '5px 9px', border: '1px solid #FECACA' }}>
+              <Ban size={12} color="#EF4444" />
+              <span style={{ fontSize: '11px', fontWeight: '700', color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Cancelled</span>
+            </div>
+          ) : (
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px', background: bg, borderRadius: '7px', padding: '5px 9px', border: `1px solid ${color}20` }}>
+              <span style={{ fontSize: '13px', lineHeight: 1 }}>{TYPE_EMOJI[ev.type]}</span>
+              <span style={{ fontSize: '11px', fontWeight: '700', color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{TYPE_LABELS[ev.type]}</span>
+            </div>
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.title}</div>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: isCancelled ? 'line-through' : 'none' }}>{ev.title}</div>
             {ev.location && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
                 <MapPin size={11} color="#94A3B8" />
@@ -1539,6 +1748,19 @@ function EventRow({ ev, primary, showTeam, selected, rsvpSummary, onSelect, onEd
               onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
               <Pencil size={14} color="#64748B" />
             </button>
+            {isCancelled ? (
+              <button onClick={(e) => { e.stopPropagation(); onRestore(); }} disabled={restoring} style={{ background: 'none', border: 'none', cursor: restoring ? 'not-allowed' : 'pointer', padding: '7px', borderRadius: '7px', display: 'flex' }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#F0FDF4'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                <RotateCcw size={14} color="#22C55E" />
+              </button>
+            ) : (
+              <button onClick={(e) => { e.stopPropagation(); onCancel(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '7px', borderRadius: '7px', display: 'flex' }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#FFFBEB'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
+                <Ban size={14} color="#94A3B8" />
+              </button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '7px', borderRadius: '7px', display: 'flex' }}
               onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#FEF2F2'}
               onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>

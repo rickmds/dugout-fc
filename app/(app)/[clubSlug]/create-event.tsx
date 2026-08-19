@@ -99,6 +99,19 @@ function fmtDuration(mins: number): string {
   return h > 0 && m > 0 ? `${h}h ${m}min` : h > 0 ? `${h}h` : `${m}min`;
 }
 
+// Same bucketing as edit-event's computeLockHours — reconstructs which
+// RSVP_LOCK_OPTIONS chip a saved rsvp_lock_at corresponds to.
+function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null): number {
+  if (!rsvpLockAt || !eventTime) return 24;
+  const lockAt = new Date(rsvpLockAt);
+  const eventAt = new Date(`${eventDate}T${eventTime}:00`);
+  const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
+  if (diffHours <= 0)  return 0;
+  if (diffHours <= 12) return 12;
+  if (diffHours <= 24) return 24;
+  return 48;
+}
+
 function ordinalWeekdayLabel(d: Date): string {
   const nth = Math.ceil(d.getDate() / 7);
   const ordinals = ['1st', '2nd', '3rd', '4th', '5th'];
@@ -235,7 +248,7 @@ const ps = StyleSheet.create({
 
 // ─── Smart Location Input ─────────────────────────────────────────────────────
 
-type PlaceSuggestion = { place_id: string; description: string };
+type PlaceSuggestion = { place_id: string; description: string; structured_formatting?: { main_text: string; secondary_text?: string } };
 
 function SmartLocationInput({
   onResult,
@@ -252,7 +265,11 @@ function SmartLocationInput({
   function handleChange(val: string) {
     setText(val);
     setPinned(false);
-    onResult({ name: val });
+    // Only a real selection (pick, below) should ever populate the venue
+    // name — echoing every keystroke here used to "poison" the parent's
+    // locationName with just the first character typed, which then
+    // permanently blocked pick() from ever filling in the real name
+    // (see the !locationName guard where onResult is consumed).
     if (timer.current) clearTimeout(timer.current);
     if (val.length < 3) { setSuggestions([]); return; }
     timer.current = setTimeout(() => search(val), 350);
@@ -275,15 +292,18 @@ function SmartLocationInput({
     setText(s.description);
     setPinned(true);
     setSuggestions([]);
+    // The place's own name (e.g. "Williams Field"), not the full
+    // description string (which also has the street/city tacked on).
+    const name = s.structured_formatting?.main_text ?? s.description;
     try {
       const res = await fetch(
         `https://maps.googleapis.com/maps/api/place/details/json?place_id=${s.place_id}&fields=geometry&key=${PLACES_KEY}`
       );
       const json = await res.json();
       const loc = json.result?.geometry?.location;
-      onResult({ name: s.description, address: s.description, lat: loc?.lat, lng: loc?.lng });
+      onResult({ name, address: s.description, lat: loc?.lat, lng: loc?.lng });
     } catch {
-      onResult({ name: s.description, address: s.description });
+      onResult({ name, address: s.description });
     }
   }
 
@@ -377,7 +397,7 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 export default function CreateEventScreen() {
   const { primaryColor, secondaryColor, onSecondary, rgba } = useClub();
   const router = useRouter();
-  const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const { clubSlug, duplicateFrom } = useLocalSearchParams<{ clubSlug: string; duplicateFrom?: string }>();
   const { team } = useTeam();
   const { profile } = useAuth();
 
@@ -408,6 +428,12 @@ export default function CreateEventScreen() {
   const [lng, setLng] = useState<number | null>(null);
   const [fieldType, setFieldType] = useState<FieldOption | null>(null);
   const [fieldNotes, setFieldNotes] = useState('');
+  // Links this event to a saved club field (Fields & Venues) so a closure
+  // there can find and flag events happening at it. Only set by tapping a
+  // saved-field chip below — any manual edit to the venue/address means
+  // it may no longer match, so it's cleared rather than left stale.
+  const [fieldId, setFieldId] = useState<string | null>(null);
+  const [savedFields, setSavedFields] = useState<{ id: string; name: string; address: string | null; lat: number | null; lng: number | null }[]>([]);
 
   // Details
   const [uniform, setUniform] = useState<UniformOption | null>(null);
@@ -429,6 +455,77 @@ export default function CreateEventScreen() {
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [loadingDuplicate, setLoadingDuplicate] = useState(!!duplicateFrom);
+
+  useEffect(() => {
+    const clubId = team?.club?.id;
+    if (!clubId) return;
+    supabase
+      .from('tryout_fields')
+      .select('id,name,address,lat,lng')
+      .eq('club_id', clubId)
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setSavedFields((data ?? []) as typeof savedFields));
+  }, [team?.club?.id]);
+
+  // Pre-fills the form from an existing event — everything except the
+  // date (pushed a week forward, since "same thing again next week" is
+  // the common case) and the recording link (never relevant to a future
+  // event that hasn't happened yet).
+  useEffect(() => {
+    if (!duplicateFrom) return;
+    (async () => {
+      const { data } = await supabase
+        .from('events')
+        .select('title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,require_rsvp,rsvp_lock_at')
+        .eq('id', duplicateFrom)
+        .single();
+      if (!data) { setLoadingDuplicate(false); return; }
+
+      setEventType(data.type as EventType);
+      if (data.type === 'game') {
+        const { homeAway: ha, opponent } = (function parse(t: string) {
+          if (t.startsWith('vs ')) return { homeAway: 'home' as const, opponent: t.slice(3) };
+          if (t.startsWith('@ '))  return { homeAway: 'away' as const, opponent: t.slice(2) };
+          return { homeAway: 'home' as const, opponent: t };
+        })(data.title);
+        setHomeAway((data.home_away as 'home' | 'away') ?? ha);
+        setTitle(opponent);
+      } else {
+        setTitle(data.title);
+      }
+
+      const nextWeek = new Date(data.event_date + 'T00:00:00');
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      setDate(nextWeek);
+
+      if (data.event_time) {
+        const [h, m] = data.event_time.split(':').map(Number);
+        const t = new Date(); t.setHours(h, m, 0, 0);
+        setStartTime(t);
+        setHasTime(true);
+      } else {
+        setHasTime(false);
+      }
+
+      setDuration(data.duration_minutes ?? null);
+      setArrival(data.arrival_buffer_minutes ?? null);
+      setLocationName(data.location ?? '');
+      setAddress(data.address ?? '');
+      setLat(data.lat ?? null);
+      setLng(data.lng ?? null);
+      setFieldId((data as any).field_id ?? null);
+      setFieldType((data.field_type as FieldOption) ?? null);
+      setFieldNotes(data.field_notes ?? '');
+      setUniform((data.uniform as UniformOption) ?? null);
+      setPlayerNotes(data.notes ?? '');
+      setCoachNotes(data.coach_notes ?? '');
+      setRequireRsvp(data.require_rsvp ?? true);
+      setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time));
+      setLoadingDuplicate(false);
+    })();
+  }, [duplicateFrom]);
 
   function toggleWeekDay(day: number) {
     setWeekDays((prev) =>
@@ -465,6 +562,7 @@ export default function CreateEventScreen() {
       address: address || null,
       lat: lat ?? null,
       lng: lng ?? null,
+      field_id: fieldId,
       field_type: fieldType ?? null,
       field_notes: fieldNotes.trim() || null,
       uniform: uniform ?? null,
@@ -518,6 +616,14 @@ export default function CreateEventScreen() {
   }
 
   const canSave = title.trim().length > 0 && !saving;
+
+  if (loadingDuplicate) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={primaryColor} size="large" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -657,6 +763,35 @@ export default function CreateEventScreen() {
 
           {/* ── Location ────────────────────────────────── */}
           <SectionHeader title="Location" />
+          {savedFields.length > 0 && (
+            <Card>
+              <View style={{ padding: 12 }}>
+                <Text style={styles.savedFieldsLabel}>YOUR FIELDS</Text>
+                <View style={styles.typeRow}>
+                  {savedFields.map((f) => {
+                    const active = fieldId === f.id;
+                    return (
+                      <TouchableOpacity
+                        key={f.id}
+                        style={[styles.typeChip, active && [styles.typeChipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
+                        onPress={() => {
+                          setFieldId(f.id);
+                          setLocationName(f.name);
+                          setAddress(f.address ?? '');
+                          setLat(f.lat ?? null);
+                          setLng(f.lng ?? null);
+                        }}
+                      >
+                        <Text style={[styles.typeChipText, active && [styles.typeChipTextActive, { color: primaryColor }]]}>
+                          {f.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </Card>
+          )}
           <Card>
             {/* Venue name */}
             <View style={styles.locationNameRow}>
@@ -664,7 +799,7 @@ export default function CreateEventScreen() {
               <TextInput
                 style={styles.inlineInput}
                 value={locationName}
-                onChangeText={setLocationName}
+                onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
                 placeholder="Venue name (e.g. City Park)"
                 placeholderTextColor={PULSE_COLORS.ui.muted}
                 returnKeyType="next"
@@ -675,6 +810,7 @@ export default function CreateEventScreen() {
             <View style={styles.locationInputRow}>
               <SmartLocationInput
                 onResult={(r) => {
+                  setFieldId(null);
                   if (!locationName) setLocationName(r.name);
                   setAddress(r.address ?? '');
                   setLat(r.lat ?? null);
@@ -1003,6 +1139,7 @@ const styles = StyleSheet.create({
   eventCountBold: { fontWeight: '700' },
 
   container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1023,6 +1160,10 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 1, marginBottom: 8, marginTop: 4,
+  },
+  savedFieldsLabel: {
+    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    letterSpacing: 1, marginBottom: 8,
   },
 
   card: {
