@@ -1988,19 +1988,23 @@ function GuardiansTab({
                     {c.relationship ? ` (${c.relationship})` : ''}
                     {c.phone ? ` — ${formatPhone(c.phone)}` : ''}
                   </Text>
-                  {isMyPlayer && (
+                  {(c.phone || isMyPlayer) && (
                     <View style={st.emergencyContactActions}>
                       {c.phone && (
                         <TouchableOpacity onPress={() => Linking.openURL(`tel:${c.phone}`)} hitSlop={6}>
                           <Ionicons name="call-outline" size={15} color={primaryColor} />
                         </TouchableOpacity>
                       )}
-                      <TouchableOpacity onPress={() => onEditEmergencyContact(c)} hitSlop={6}>
-                        <Ionicons name="pencil-outline" size={15} color={PULSE_COLORS.ui.muted} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => onDeleteEmergencyContact(c)} hitSlop={6}>
-                        <Ionicons name="trash-outline" size={15} color="#EF4444" />
-                      </TouchableOpacity>
+                      {isMyPlayer && (
+                        <>
+                          <TouchableOpacity onPress={() => onEditEmergencyContact(c)} hitSlop={6}>
+                            <Ionicons name="pencil-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => onDeleteEmergencyContact(c)} hitSlop={6}>
+                            <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
                   )}
                 </View>

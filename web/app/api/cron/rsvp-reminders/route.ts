@@ -3,6 +3,15 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
+// No per-club timezone in the schema yet — every club so far is US-based,
+// so Eastern is the reference clock for "is it nighttime" purposes.
+function easternHour(date: Date): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(date),
+    10
+  );
+}
+
 type ReminderEvent = {
   id: string;
   title: string;
@@ -21,21 +30,31 @@ export async function GET(req: NextRequest) {
   const supabase = supabaseAdmin();
   const now = new Date();
 
-  // Two reminder windows (cron runs hourly — each window is 1h wide so each event hits once):
-  // 1. 24h reminder  — lock_at between 23h and 25h from now
-  // 2. Last-chance   — lock_at between now and 2h from now
+  // Runs hourly (see vercel.json) — skip entirely during quiet hours rather
+  // than sending. Nothing is lost: each reminder type only fires once
+  // (tracked via events.rsvp_reminder_*_sent_at), so an event that becomes
+  // "due" overnight just sits eligible until the next daytime run.
+  const hour = easternHour(now);
+  if (hour >= 21 || hour < 7) {
+    return NextResponse.json({ sent: 0, reason: 'quiet_hours' });
+  }
+
+  // A reminder is "due" once the event comes within its threshold of
+  // rsvp_lock_at (and hasn't closed yet) and hasn't already been sent —
+  // a wide, idempotent window rather than a narrow one tied to exactly
+  // when the cron happens to run.
   const windows = [
     {
-      from: new Date(now.getTime() + 23 * 60 * 60 * 1000),
-      to:   new Date(now.getTime() + 25 * 60 * 60 * 1000),
+      column: 'rsvp_reminder_24h_sent_at' as const,
+      thresholdHours: 25,
       title: '⏰ RSVP closes tomorrow',
-      body:  (label: string) => `RSVP closes in 24 hours for ${label}`,
+      body: (label: string) => `RSVP closes in 24 hours for ${label}`,
     },
     {
-      from: now,
-      to:   new Date(now.getTime() + 2 * 60 * 60 * 1000),
+      column: 'rsvp_reminder_2h_sent_at' as const,
+      thresholdHours: 2,
       title: '🚨 Last chance to RSVP',
-      body:  (label: string) => `RSVP closes in 2 hours for ${label}`,
+      body: (label: string) => `RSVP closes in 2 hours for ${label}`,
     },
   ];
 
@@ -54,11 +73,13 @@ export async function GET(req: NextRequest) {
   }
 
   for (const window of windows) {
+    const threshold = new Date(now.getTime() + window.thresholdHours * 60 * 60 * 1000);
     const { data: events } = await supabase
       .from('events')
       .select('id, title, team_id, rsvp_lock_at, event_time, teams(clubs(slug))')
-      .gte('rsvp_lock_at', window.from.toISOString())
-      .lte('rsvp_lock_at', window.to.toISOString())
+      .is(window.column, null)
+      .gt('rsvp_lock_at', now.toISOString())
+      .lte('rsvp_lock_at', threshold.toISOString())
       .returns<ReminderEvent[]>();
 
     if (!events?.length) continue;
@@ -66,22 +87,27 @@ export async function GET(req: NextRequest) {
     for (const ev of events) {
       const { data: players } = await supabase
         .from('players').select('id').eq('team_id', ev.team_id);
-      if (!players?.length) continue;
+      if (!players?.length) { await supabase.from('events').update({ [window.column]: now.toISOString() }).eq('id', ev.id); continue; }
 
       const { data: rsvps } = await supabase
         .from('event_rsvps').select('player_id').eq('event_id', ev.id);
       const rsvpedIds = new Set((rsvps ?? []).map(r => r.player_id));
 
       const pendingPlayerIds = players.map(p => p.id).filter(id => !rsvpedIds.has(id));
-      if (!pendingPlayerIds.length) continue;
+      if (!pendingPlayerIds.length) { await supabase.from('events').update({ [window.column]: now.toISOString() }).eq('id', ev.id); continue; }
 
       const { data: invites } = await supabase
         .from('invites').select('player_id, email').in('player_id', pendingPlayerIds);
-      if (!invites?.length) continue;
 
-      const parentProfileIds = invites
+      const parentProfileIds = (invites ?? [])
         .map(inv => emailToUserId[inv.email?.toLowerCase()])
         .filter(Boolean) as string[];
+
+      // Mark sent regardless of whether anyone ended up eligible for a
+      // push — the reminder was "due" for this event either way, and we
+      // never want to re-check it every hour for the rest of the day.
+      await supabase.from('events').update({ [window.column]: now.toISOString() }).eq('id', ev.id);
+
       if (!parentProfileIds.length) continue;
 
       const eventLabel = ev.event_time
