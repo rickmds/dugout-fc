@@ -131,7 +131,10 @@ function parseGameTitle(title: string): { homeAway: 'home' | 'away'; opponent: s
 function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
-  const eventAt = new Date(`${eventDate}T${eventTime}:00`);
+  // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
+  // appending our own ":00", otherwise this builds an invalid date string
+  // and every bucket comparison below silently falls through to 48.
+  const eventAt = new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`);
   const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
   if (diffHours <= 0) return 0;
   if (diffHours <= 12) return 12;
