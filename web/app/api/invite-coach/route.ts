@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
-import { inviteFirst, instantCreate, resolveAccent } from '@/lib/coachInvite';
+import { inviteFirst, inviteClubWide, resolveAccent } from '@/lib/coachInvite';
 
 type CoachInput = { full_name: string; email: string; team_ids: string[]; role?: 'coach' | 'org_admin' };
 
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       if (role === 'coach' && teamIds.length === 1) {
         await inviteFirst({ db, club_id, clubName, logoUrl: club.logo_url, slug: club.slug, accent, email, full_name, teamId: teamIds[0], createdBy: auth.userId });
       } else {
-        await instantCreate({ db, club_id, clubName, logoUrl: club.logo_url, accent, email, full_name, teamIds, role });
+        await inviteClubWide({ db, club_id, clubName, logoUrl: club.logo_url, slug: club.slug, accent, email, full_name, teamIds, role, createdBy: auth.userId });
       }
       results.push({ email, ok: true });
     } catch (err) {

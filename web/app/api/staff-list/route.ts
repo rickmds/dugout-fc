@@ -46,19 +46,23 @@ export async function GET(req: NextRequest) {
   }));
 
   const { data: teams } = await db.from('teams').select('id, name').eq('club_id', club_id);
-  const teamIds = (teams ?? []).map(t => t.id);
   const teamNameById = new Map((teams ?? []).map(t => [t.id, t.name]));
 
-  const { data: pendingInvites } = teamIds.length
-    ? await db.from('invites').select('id, email, team_id, created_at').in('team_id', teamIds).eq('role', 'coach').is('accepted_at', null)
-    : { data: [] };
+  const { data: pendingInvites } = await db
+    .from('invites')
+    .select('id, email, role, team_id, team_ids, created_at')
+    .eq('club_id', club_id)
+    .in('role', ['coach', 'org_admin'])
+    .is('accepted_at', null);
 
   const pendingRows = (pendingInvites ?? []).map(inv => ({
     kind: 'pending' as const,
     inviteId: inv.id,
     email: inv.email,
+    role: inv.role,
     teamId: inv.team_id,
-    teamName: teamNameById.get(inv.team_id) ?? 'Unknown team',
+    teamIds: inv.team_id ? [inv.team_id] : (inv.team_ids ?? []),
+    teamName: inv.team_id ? (teamNameById.get(inv.team_id) ?? 'Unknown team') : null,
     createdAt: inv.created_at,
   }));
 

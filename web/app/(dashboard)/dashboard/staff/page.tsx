@@ -78,7 +78,7 @@ export default function StaffPage() {
     const data = await res.json() as { staff?: Array<{
       kind: 'active' | 'pending'; id?: string; inviteId?: string; full_name?: string | null; role?: string | null;
       avatar_url?: string | null; email?: string | null; createdAt?: string | null; lastSignInAt?: string | null;
-      invitedAt?: string | null; assigned_teams?: string[]; teamId?: string;
+      invitedAt?: string | null; assigned_teams?: string[]; teamIds?: string[];
     }> };
     if (!res.ok || !data.staff) { setLoading(false); return; }
 
@@ -92,7 +92,7 @@ export default function StaffPage() {
       createdAt: s.createdAt ?? null,
       lastSignInAt: s.lastSignInAt ?? null,
       invitedAt: s.invitedAt ?? null,
-      assigned_teams: (s.kind === 'active' ? s.assigned_teams : (s.teamId ? [s.teamId] : [])) ?? [],
+      assigned_teams: (s.kind === 'active' ? s.assigned_teams : s.teamIds) ?? [],
     })));
     setLoading(false);
   }, [club]);
@@ -333,7 +333,7 @@ export default function StaffPage() {
                     <span style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A' }}>
                       {isPending ? s.email : (s.full_name ?? 'Unnamed')}
                     </span>
-                    {!isPending && (
+                    {s.role && (
                       <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${s.role === 'org_admin' ? '#DDD6FE' : `${primary}30`}` }}>
                         {s.role === 'org_admin' ? 'Admin' : 'Coach'}
                       </span>

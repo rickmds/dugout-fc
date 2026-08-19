@@ -4,13 +4,16 @@ import { resolveAccent, esc, brandedEmailShell } from '@/lib/emailBranding';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// A coach tied to exactly one team goes through the same invite-first flow
-// as parents (an `invites` row, accepted via /join) — that's what makes
-// "pending vs joined" status possible at all. `invites.team_id` is NOT NULL
-// in the schema, so a club-wide coach (no team, or assigned to several)
-// can't get an invite row without a migration — those fall back to the
-// original instant-account-creation mechanism instead, just with the same
-// branded email everyone else gets now.
+// A coach tied to exactly one team goes through the invite-first flow as
+// parents (an `invites` row, accepted via /join) — that's what makes
+// "pending vs joined" status possible at all, and it's the only flow that
+// asks the invitee to actually set a password before an account exists.
+// Club-wide staff (org_admins, and coaches assigned to several teams or
+// none yet) go through the same invite-first flow via inviteClubWide below
+// — `invites.team_id` is nullable and `club_id`/`team_ids` carry the
+// club-wide shape. The one case that still creates an account immediately
+// is someone who already has a Pulse FC account elsewhere: no password
+// setup needed, just attach them and say hello (see inviteClubWide).
 
 // ── Invite-first: creates/reuses an `invites` row, sends a /join link.
 // Calling this again for the same email+team reuses the existing pending
@@ -37,7 +40,7 @@ export async function inviteFirst({ db, club_id, clubName, logoUrl, slug, accent
   } else {
     const { data: inserted, error: insErr } = await db
       .from('invites')
-      .insert({ team_id: teamId, email, role: 'coach', created_by: createdBy })
+      .insert({ team_id: teamId, club_id, email, role: 'coach', created_by: createdBy })
       .select('token')
       .single();
     if (insErr || !inserted) throw new Error(insErr?.message ?? 'Failed to create invite');
@@ -79,88 +82,133 @@ export async function inviteFirst({ db, club_id, clubName, logoUrl, slug, accent
   if (sendErr) throw new Error('Failed to send email');
 }
 
-// ── Instant-create: club-wide coaches (no single team), multi-team
-// coaches, and org_admins — an `invites` row can't represent these without
-// a schema change, so the account is created immediately and the email
-// carries a password-setup (recovery) link straight to the dashboard.
-export async function instantCreate({ db, club_id, clubName, logoUrl, accent, email, full_name, teamIds, role }: {
-  db: ReturnType<typeof supabaseAdmin>; club_id: string; clubName: string; logoUrl: string | null; accent: string;
-  email: string; full_name: string; teamIds: string[]; role: 'coach' | 'org_admin';
+// Looks up an existing auth user by email without creating one — used to
+// tell "already has a Pulse FC account" apart from "needs to set one up".
+async function findUserIdByEmail(db: ReturnType<typeof supabaseAdmin>, email: string): Promise<string | null> {
+  let page = 1;
+  while (page < 20) {
+    const { data } = await db.auth.admin.listUsers({ page, perPage: 200 });
+    if (!data?.users?.length) return null;
+    const found = data.users.find(u => u.email?.toLowerCase() === email);
+    if (found) return found.id;
+    if (data.users.length < 200) return null;
+    page++;
+  }
+  return null;
+}
+
+// ── Club-wide invite: org_admins, and coaches assigned to several teams
+// or none yet — an `invites` row can't be scoped to a single team_id for
+// these, so it carries club_id + team_ids instead. Same invite-first shape
+// as inviteFirst: reusing this for the same email+club+role resends
+// instead of duplicating. If the invitee already has an account, there's
+// nothing to set up — just attach them and send a heads-up instead.
+export async function inviteClubWide({ db, club_id, clubName, logoUrl, slug, accent, email, full_name, teamIds, role, createdBy }: {
+  db: ReturnType<typeof supabaseAdmin>; club_id: string; clubName: string; logoUrl: string | null; slug: string | null;
+  accent: string; email: string; full_name: string; teamIds: string[]; role: 'coach' | 'org_admin'; createdBy: string;
 }) {
-  let userId: string | null = null;
-  let isNewUser = true;
-  const { data: created, error: createErr } = await db.auth.admin.createUser({
-    email, email_confirm: false, user_metadata: { full_name },
+  const existingUserId = await findUserIdByEmail(db, email);
+
+  if (existingUserId) {
+    // Never relocate club_id away from a club they already genuinely
+    // belong to — that would be wrong. But an existing account with NO
+    // club at all (an orphaned/incomplete signup — e.g. a role was set
+    // once but the club attach step never happened) has nothing to
+    // protect, and leaving club_id null here silently strands them:
+    // granted a role, invited, emailed "you've been added" — but with no
+    // club, invisible on the Staff page and no dashboard access. Also
+    // raise their global role if they've never been elevated before (e.g.
+    // they were only ever a parent) — team_members access alone isn't
+    // enough, since a few things (editing a team's own details, the "My
+    // Teams" list in Settings) still key off profiles.role directly.
+    // Never downgrade someone who's already coach/org_admin/app_admin.
+    const { data: existing } = await db.from('profiles').select('role, club_id').eq('id', existingUserId).single();
+    const currentRole = existing?.role ?? 'player';
+    const updates: { role?: string; club_id?: string } = {};
+    if (!['coach', 'org_admin', 'app_admin'].includes(currentRole)) updates.role = role;
+    if (!existing?.club_id) updates.club_id = club_id;
+    if (Object.keys(updates).length) {
+      await db.from('profiles').update(updates).eq('id', existingUserId);
+    }
+    for (const teamId of teamIds) {
+      await db.from('team_members').upsert(
+        { team_id: teamId, profile_id: existingUserId, role: 'coach' },
+        { onConflict: 'team_id,profile_id', ignoreDuplicates: true },
+      );
+    }
+    await sendAddedToTeamEmail({ clubName, logoUrl, accent, email, full_name, role });
+    return;
+  }
+
+  const { data: existingInvite } = await db
+    .from('invites')
+    .select('id, token')
+    .eq('email', email)
+    .eq('club_id', club_id)
+    .eq('role', role)
+    .is('team_id', null)
+    .is('accepted_at', null)
+    .maybeSingle();
+
+  let token: string;
+  if (existingInvite) {
+    token = existingInvite.token;
+    if (teamIds.length) await db.from('invites').update({ team_ids: teamIds }).eq('id', existingInvite.id);
+  } else {
+    const { data: inserted, error: insErr } = await db
+      .from('invites')
+      .insert({ team_id: null, club_id, team_ids: teamIds, email, role, created_by: createdBy })
+      .select('token')
+      .single();
+    if (insErr || !inserted) throw new Error(insErr?.message ?? 'Failed to create invite');
+    token = inserted.token;
+  }
+
+  const joinUrl = `https://pulse-fc.app/join?token=${token}${slug ? `&club=${encodeURIComponent(slug)}` : ''}`;
+  const roleLabel = role === 'org_admin' ? 'an admin' : 'a coach';
+
+  const html = brandedEmailShell({
+    clubName, logoUrl, accent,
+    title: `You've been added as ${roleLabel} at ${clubName}`,
+    kicker: `You've been added as ${roleLabel}`,
+    heading: `Welcome to ${esc(clubName)}, ${esc(full_name.split(' ')[0] || full_name)} 👋`,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-size:15px;color:#d1d5db;line-height:1.75;">
+        You've been set up as ${roleLabel} at <strong style="color:#f9fafb;">${esc(clubName)}</strong> on Pulse FC.
+      </p>
+      <p style="margin:0;font-size:15px;color:#d1d5db;line-height:1.75;">
+        Click below to create your account — the roster, schedule, and dashboard are already set up and waiting.
+      </p>`,
+    ctaLabel: 'Set up my account →',
+    ctaUrl: joinUrl,
   });
 
-  if (createErr) {
-    isNewUser = false;
-    let page = 1;
-    while (!userId && page < 20) {
-      const { data } = await db.auth.admin.listUsers({ page, perPage: 200 });
-      if (!data?.users?.length) break;
-      const found = data.users.find(u => u.email?.toLowerCase() === email);
-      if (found) userId = found.id;
-      if (data.users.length < 200) break;
-      page++;
-    }
-    if (!userId) throw new Error(createErr.message);
-  } else {
-    userId = created.user.id;
-  }
-
-  if (isNewUser) {
-    // Fresh auth user — the on_auth_user_created trigger already inserted a
-    // bare profiles row keyed to this club; fill in their identity fields.
-    await db.from('profiles').upsert(
-      { id: userId, full_name, role, club_id },
-      { onConflict: 'id', ignoreDuplicates: false },
-    );
-  } else {
-    // Existing user: never touch club_id — they may already belong to a
-    // different club, and relocating their home club here would be wrong.
-    // But DO raise their global role if they've never been elevated before
-    // (e.g. they were only ever a parent) — team_members access alone isn't
-    // enough, since a few things (editing a team's own details, the "My
-    // Teams" list in Settings) still key off profiles.role directly. Never
-    // downgrade someone who's already coach/org_admin/app_admin.
-    const { data: existing } = await db.from('profiles').select('role').eq('id', userId).single();
-    const currentRole = existing?.role ?? 'player';
-    if (!['coach', 'org_admin', 'app_admin'].includes(currentRole)) {
-      await db.from('profiles').update({ role }).eq('id', userId);
-    }
-  }
-
-  for (const teamId of teamIds) {
-    await db.from('team_members').upsert(
-      { team_id: teamId, profile_id: userId, role: 'coach' },
-      { onConflict: 'team_id,profile_id', ignoreDuplicates: true },
-    );
-  }
-
-  if (isNewUser) {
-    await resendSetupEmail({ db, clubName, logoUrl, accent, email, full_name, role });
-  } else {
-    await sendAddedToTeamEmail({ clubName, logoUrl, accent, email, full_name });
-  }
+  const { error: sendErr } = await resend.emails.send({
+    from: `${clubName} <support@pulse-fc.app>`,
+    to: email,
+    subject: `You've been added as ${roleLabel} at ${clubName}`,
+    html,
+  });
+  if (sendErr) throw new Error('Failed to send email');
 }
 
 // For a person who already has an account (possibly at another club) —
 // no password/setup step needed, just a heads-up that they now also have
 // access here. Distinct from resendSetupEmail, which implies a first-time
 // account that still needs a password.
-export async function sendAddedToTeamEmail({ clubName, logoUrl, accent, email, full_name }: {
+export async function sendAddedToTeamEmail({ clubName, logoUrl, accent, email, full_name, role }: {
   clubName: string; logoUrl: string | null; accent: string;
-  email: string; full_name: string;
+  email: string; full_name: string; role: 'coach' | 'org_admin';
 }) {
+  const roleLabel = role === 'org_admin' ? 'an admin' : 'a coach';
   const html = brandedEmailShell({
     clubName, logoUrl, accent,
     title: `You've been added at ${clubName}`,
-    kicker: "You've been added as a coach",
+    kicker: `You've been added as ${roleLabel}`,
     heading: `Welcome to ${esc(clubName)}, ${esc(full_name.split(' ')[0] || full_name)} 👋`,
     bodyHtml: `
       <p style="margin:0 0 16px;font-size:15px;color:#d1d5db;line-height:1.75;">
-        You've been added as a coach at <strong style="color:#f9fafb;">${esc(clubName)}</strong> on Pulse FC,
+        You've been added as ${roleLabel} at <strong style="color:#f9fafb;">${esc(clubName)}</strong> on Pulse FC,
         using your existing account.
       </p>
       <p style="margin:0;font-size:15px;color:#d1d5db;line-height:1.75;">
@@ -173,15 +221,16 @@ export async function sendAddedToTeamEmail({ clubName, logoUrl, accent, email, f
   const { error: sendErr } = await resend.emails.send({
     from: `${clubName} <support@pulse-fc.app>`,
     to: email,
-    subject: `You've been added as a coach at ${clubName}`,
+    subject: `You've been added as ${roleLabel} at ${clubName}`,
     html,
   });
   if (sendErr) throw new Error('Failed to send email');
 }
 
 // Regenerates a fresh recovery link and re-sends the branded setup email —
-// used both by instantCreate (first send) and the standalone resend action
-// for an account that exists but has never signed in.
+// only reachable today via the standalone "Resend" action on a legacy
+// account that already exists but has never signed in (pre-dating
+// inviteClubWide, which no longer creates the account up front).
 export async function resendSetupEmail({ db, clubName, logoUrl, accent, email, full_name, role }: {
   db: ReturnType<typeof supabaseAdmin>; clubName: string; logoUrl: string | null; accent: string;
   email: string; full_name: string; role: 'coach' | 'org_admin';
