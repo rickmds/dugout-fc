@@ -52,7 +52,31 @@ export default function LoginScreen() {
       return;
     }
     setLoading(true);
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+    // No timeout on the SDK call itself, so a stalled request (e.g. the
+    // app backgrounded mid-request) can leave this awaiting forever even
+    // though the sign-in actually completed server-side — a force-quit and
+    // reopen lands on Home, not back at login, confirming the session was
+    // created. Race a timeout and self-heal by checking for a real session
+    // rather than leaving the button stuck spinning.
+    const TIMEOUT = Symbol('timeout');
+    const result = await Promise.race([
+      supabase.auth.signInWithPassword({ email, password }),
+      new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), 6000)),
+    ]);
+
+    if (result === TIMEOUT) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      setLoading(false);
+      if (sessionData.session?.user) {
+        await routeAfterAuth(sessionData.session.user.id);
+      } else {
+        setError('This is taking longer than expected. Check your connection and try again.');
+      }
+      return;
+    }
+
+    const { data, error: signInError } = result;
     setLoading(false);
     if (signInError) { setError(mapAuthError(signInError.message)); return; }
     if (data.user) await routeAfterAuth(data.user.id);
@@ -74,6 +98,19 @@ export default function LoginScreen() {
     setInfo('Check your email for a link to reset your password.');
   }
 
+  // If a network leg inside signInWithGoogle/Apple times out, the request
+  // can still have completed server-side — check for a real session before
+  // showing an error the person would find confusing if they're actually
+  // already signed in.
+  async function recoverOrShowError(message: string, isSso: boolean) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData.session?.user) {
+      await routeAfterAuth(sessionData.session.user.id, isSso);
+    } else {
+      setError(message);
+    }
+  }
+
   async function handleGoogle() {
     setError(null); setInfo(null);
     setSocialLoading('google');
@@ -87,7 +124,7 @@ export default function LoginScreen() {
         return;
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Google sign-in failed.');
+      await recoverOrShowError(e instanceof Error ? e.message : 'Google sign-in failed.', true);
     } finally { setSocialLoading(null); }
   }
 
@@ -104,7 +141,7 @@ export default function LoginScreen() {
         return;
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Apple sign-in failed.');
+      await recoverOrShowError(e instanceof Error ? e.message : 'Apple sign-in failed.', true);
     } finally { setSocialLoading(null); }
   }
 
