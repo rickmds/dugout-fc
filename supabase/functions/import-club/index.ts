@@ -13,7 +13,10 @@ Your job:
 2. For each team, extract all coaches/staff (role indicates coach, manager, or staff).
 3. For each team, extract all players (role indicates player, or player-like fields with no role).
 4. Detect age group (e.g. "U12", "U14 Girls") and season (e.g. "2025/26", "Fall 2025") from any column or header.
-5. For parent info: look for columns like "Parent Name", "Guardian", "Parent Email", "Contact Email". Parent info may be on the same row as the player or the row below.
+5. For parent info: look for columns like "Parent Name", "Guardian", "Parent Email", "Contact Email", "Secondary Email", "Parent Phone", "DOB"/"Date of Birth". Parent info may be on the same row as the player or the row below.
+6. A player row may list a second guardian email (e.g. a "Secondary Email" column, or two email addresses in one cell/row) — capture it separately as secondary_parent_email, never merge two emails into one field.
+7. Date of birth: normalize to YYYY-MM-DD if a full date is present; null if not present or ambiguous.
+8. Parent phone: extract digits as given (don't reformat); null if not present.
 
 Normalize positions to: GK, CB, LB, RB, CM, DM, AM, LM, RM, LW, RW, ST. Use closest match or null.
 Normalize coach roles to: "Head Coach", "Assistant Coach", or "Manager".
@@ -30,7 +33,7 @@ Return ONLY valid JSON — no explanation, no markdown:
         { "full_name": "James Walsh", "email": "james@example.com", "role": "Head Coach", "uncertain": false, "uncertainty_reason": null }
       ],
       "players": [
-        { "full_name": "Tom Smith", "jersey_number": 7, "position": "CM", "parent_name": "Sarah Smith", "parent_email": "sarah@example.com", "uncertain": false, "uncertainty_reason": null }
+        { "full_name": "Tom Smith", "jersey_number": 7, "position": "CM", "parent_name": "Sarah Smith", "parent_email": "sarah@example.com", "secondary_parent_email": null, "date_of_birth": "2014-03-12", "parent_phone": "5551234567", "uncertain": false, "uncertainty_reason": null }
       ]
     }
   ],

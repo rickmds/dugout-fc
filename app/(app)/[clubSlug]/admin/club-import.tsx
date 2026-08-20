@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -29,30 +29,41 @@ type ParsedCoach = {
   uncertainty_reason: string | null;
 };
 
+// Flat, not nested under a team — assignedTeamName is mutable (the review
+// screen lets an admin move a player to a different team than the AI
+// guessed), so grouping by team is derived at render time instead of
+// being the storage shape.
 type ParsedPlayer = {
+  uid: string;
   full_name: string;
   jersey_number: number | null;
   position: string | null;
   parent_name: string | null;
   parent_email: string | null;
+  secondary_parent_email: string | null;
+  date_of_birth: string | null;
+  parent_phone: string | null;
   uncertain: boolean;
   uncertainty_reason: string | null;
+  assignedTeamName: string;
 };
 
-// isDuplicate is set client-side after checking existing teams
+// matchedTeamId is resolved client-side (exact, case-insensitive name match
+// against the club's real teams) — non-null means this row group merges
+// onto an existing team rather than creating a new one.
 type ReviewTeam = {
   name: string;
   age_group: string | null;
   season: string | null;
   coaches: ParsedCoach[];
-  players: ParsedPlayer[];
-  isDuplicate: boolean;
+  matchedTeamId: string | null;
 };
 
 type UncertainRow = { raw: string; issue: string };
 
 type ParseResult = {
   teams: ReviewTeam[];
+  players: ParsedPlayer[];
   uncertain_rows: UncertainRow[];
   warnings: string[];
 };
@@ -74,6 +85,16 @@ const PARSE_MESSAGES = [
   'Almost done…',
 ];
 
+let uidCounter = 0;
+function nextUid(): string {
+  uidCounter += 1;
+  return `p${uidCounter}-${Date.now()}`;
+}
+
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ClubImportScreen() {
@@ -86,17 +107,20 @@ export default function ClubImportScreen() {
   const [phase, setPhase]             = useState<Phase>('idle');
   const [parseMsg, setParseMsg]       = useState(PARSE_MESSAGES[0]);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [existingNamesByTeam, setExistingNamesByTeam] = useState<Record<string, Set<string>>>({});
   const [progress, setProgress]       = useState<ImportProgress>({ current: 0, total: 0, label: '' });
   const [doneStats, setDoneStats]     = useState<DoneStats | null>(null);
   const [warningsOpen, setWarningsOpen] = useState(false);
-  const [expandedTeams, setExpandedTeams] = useState<Set<number>>(new Set());
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+  const [pickerOpenForUid, setPickerOpenForUid] = useState<string | null>(null);
+  const [teamPickerOpenFor, setTeamPickerOpenFor] = useState<string | null>(null);
   const msgTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
-  const importedRef = useRef<Set<string>>(new Set());
+  const importedTeamNames = useRef<Set<string>>(new Set());
 
-  const toggleTeam = useCallback((idx: number) => {
+  const toggleTeam = useCallback((name: string) => {
     setExpandedTeams((prev) => {
       const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      if (next.has(name)) next.delete(name); else next.add(name);
       return next;
     });
   }, []);
@@ -131,19 +155,17 @@ export default function ClubImportScreen() {
       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
       const base64 = btoa(binary);
 
-      // Fetch existing team names in parallel so AI and duplicate check happen together
-      const [invokeRes, existingRes] = await Promise.all([
-        supabase.functions.invoke('import-club', {
-          body: {
-            file_base64: base64,
-            file_type: asset.mimeType ?? 'text/csv',
-            existing_teams: await getExistingTeamNames(),
-          },
-        }),
-        profile?.club_id
-          ? supabase.from('teams').select('name').eq('club_id', profile.club_id)
-          : Promise.resolve({ data: [] as { name: string }[] }),
-      ]);
+      const existingTeamNames = profile?.club_id
+        ? (await supabase.from('teams').select('id, name').eq('club_id', profile.club_id)).data ?? []
+        : [];
+
+      const invokeRes = await supabase.functions.invoke('import-club', {
+        body: {
+          file_base64: base64,
+          file_type: asset.mimeType ?? 'text/csv',
+          existing_teams: existingTeamNames.map((t) => t.name),
+        },
+      });
 
       if (msgTimer.current) clearInterval(msgTimer.current);
       if (invokeRes.error) {
@@ -156,17 +178,51 @@ export default function ClubImportScreen() {
         return;
       }
 
-      const existingNames = new Set(
-        ((existingRes as any).data ?? []).map((t: { name: string }) => t.name.toLowerCase().trim())
-      );
+      const existingByName = new Map(existingTeamNames.map((t) => [normalizeName(t.name), t.id]));
 
-      const teams: ReviewTeam[] = (invokeRes.data.teams as ReviewTeam[]).map((t) => ({
-        ...t,
-        isDuplicate: existingNames.has(t.name.toLowerCase().trim()),
+      const rawTeams = invokeRes.data.teams as (ReviewTeam & { players: Omit<ParsedPlayer, 'uid' | 'assignedTeamName'>[] })[];
+
+      const teams: ReviewTeam[] = rawTeams.map((t) => ({
+        name: t.name,
+        age_group: t.age_group,
+        season: t.season,
+        coaches: t.coaches,
+        matchedTeamId: existingByName.get(normalizeName(t.name)) ?? null,
       }));
 
-      setParseResult({ ...invokeRes.data, teams });
-      importedRef.current = new Set();
+      const players: ParsedPlayer[] = rawTeams.flatMap((t) =>
+        t.players.map((p) => ({
+          ...p,
+          uid: nextUid(),
+          secondary_parent_email: p.secondary_parent_email ?? null,
+          date_of_birth: p.date_of_birth ?? null,
+          parent_phone: p.parent_phone ?? null,
+          assignedTeamName: t.name,
+        }))
+      );
+
+      // Existing roster names for any team we matched, so duplicate players
+      // can be flagged before import rather than silently double-added.
+      const matchedTeamIds = teams.map((t) => t.matchedTeamId).filter((id): id is string => !!id);
+      const namesByTeam: Record<string, Set<string>> = {};
+      if (matchedTeamIds.length) {
+        const { data: existingPlayers } = await supabase
+          .from('players')
+          .select('team_id, full_name')
+          .in('team_id', matchedTeamIds);
+        for (const t of teams) {
+          if (!t.matchedTeamId) continue;
+          namesByTeam[t.name] = new Set(
+            (existingPlayers ?? [])
+              .filter((p) => p.team_id === t.matchedTeamId)
+              .map((p) => normalizeName(p.full_name))
+          );
+        }
+      }
+
+      setExistingNamesByTeam(namesByTeam);
+      setParseResult({ ...invokeRes.data, teams, players });
+      importedTeamNames.current = new Set();
       setPhase('review');
     } catch (e) {
       if (msgTimer.current) clearInterval(msgTimer.current);
@@ -175,102 +231,152 @@ export default function ClubImportScreen() {
     }
   }
 
-  async function getExistingTeamNames(): Promise<string[]> {
-    if (!profile?.club_id) return [];
-    const { data } = await supabase.from('teams').select('name').eq('club_id', profile.club_id);
-    return (data ?? []).map((t) => t.name);
-  }
-
   // ── Review helpers ─────────────────────────────────────────────────────────
 
-  function removeTeam(idx: number) {
-    setParseResult((prev) => prev ? { ...prev, teams: prev.teams.filter((_, i) => i !== idx) } : prev);
+  function removeTeam(name: string) {
+    setParseResult((prev) => prev ? {
+      ...prev,
+      teams: prev.teams.filter((t) => t.name !== name),
+      players: prev.players.filter((p) => p.assignedTeamName !== name),
+    } : prev);
   }
 
-  function removeCoach(teamIdx: number, coachIdx: number) {
+  function removeCoach(teamName: string, coachIdx: number) {
     setParseResult((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        teams: prev.teams.map((t, ti) =>
-          ti === teamIdx ? { ...t, coaches: t.coaches.filter((_, ci) => ci !== coachIdx) } : t
+        teams: prev.teams.map((t) =>
+          t.name === teamName ? { ...t, coaches: t.coaches.filter((_, ci) => ci !== coachIdx) } : t
         ),
       };
     });
   }
 
-  function removePlayer(teamIdx: number, playerIdx: number) {
-    setParseResult((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        teams: prev.teams.map((t, ti) =>
-          ti === teamIdx ? { ...t, players: t.players.filter((_, pi) => pi !== playerIdx) } : t
-        ),
-      };
-    });
+  function removePlayer(uid: string) {
+    setParseResult((prev) => prev ? { ...prev, players: prev.players.filter((p) => p.uid !== uid) } : prev);
   }
 
   function removeUncertain(idx: number) {
     setParseResult((prev) => prev ? { ...prev, uncertain_rows: prev.uncertain_rows.filter((_, i) => i !== idx) } : prev);
   }
 
+  function reassignPlayer(uid: string, toTeamName: string) {
+    setParseResult((prev) => prev ? {
+      ...prev,
+      players: prev.players.map((p) => p.uid === uid ? { ...p, assignedTeamName: toTeamName } : p),
+    } : prev);
+    setPickerOpenForUid(null);
+    setExpandedTeams((prev) => new Set(prev).add(toTeamName));
+  }
+
+  function reassignWholeTeam(fromTeamName: string, toTeamName: string) {
+    if (fromTeamName === toTeamName) return;
+    setParseResult((prev) => prev ? {
+      ...prev,
+      players: prev.players.map((p) => p.assignedTeamName === fromTeamName ? { ...p, assignedTeamName: toTeamName } : p),
+    } : prev);
+    setTeamPickerOpenFor(null);
+    setExpandedTeams((prev) => new Set(prev).add(toTeamName));
+  }
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const playersByTeam = useMemo(() => {
+    const map: Record<string, ParsedPlayer[]> = {};
+    for (const p of parseResult?.players ?? []) {
+      (map[p.assignedTeamName] ??= []).push(p);
+    }
+    return map;
+  }, [parseResult?.players]);
+
+  const uncertainCount = (parseResult?.uncertain_rows ?? []).length;
+  const teamNames = (parseResult?.teams ?? []).map((t) => t.name);
+  const visibleTeams = (parseResult?.teams ?? []).filter((t) =>
+    t.coaches.length > 0 || (playersByTeam[t.name]?.length ?? 0) > 0
+  );
+  const newTeamCount = visibleTeams.filter((t) => !t.matchedTeamId).length;
+  const totalPlayers = parseResult?.players.length ?? 0;
+  const totalCoaches = visibleTeams.reduce((s, t) => s + t.coaches.length, 0);
+  const inviteCount = visibleTeams.reduce((s, t) => {
+    const players = playersByTeam[t.name] ?? [];
+    const playerInvites = players.reduce((n, p) => n + [p.parent_email, p.secondary_parent_email].filter(Boolean).length, 0);
+    return s + t.coaches.filter((c) => c.email).length + playerInvites;
+  }, 0);
+
   // ── Commit import + send invites ───────────────────────────────────────────
 
   async function handleImport() {
     if (!parseResult || !profile?.club_id) return;
-
-    const teamsToImport = parseResult.teams.filter((t) => !t.isDuplicate);
-    if (teamsToImport.length === 0) return;
+    if (visibleTeams.length === 0) return;
 
     setPhase('importing');
     const stats: DoneStats = { teams: 0, coaches: 0, players: 0, invitesSent: 0 };
-    const total = teamsToImport.length;
+    const total = visibleTeams.length;
 
-    for (let i = 0; i < teamsToImport.length; i++) {
-      const pt = teamsToImport[i];
-      setProgress({ current: i + 1, total, label: `Creating ${pt.name}…` });
+    for (let i = 0; i < visibleTeams.length; i++) {
+      const pt = visibleTeams[i];
+      const players = playersByTeam[pt.name] ?? [];
+      let teamId = pt.matchedTeamId;
 
-      const { data: teamData, error: teamErr } = await supabase
-        .from('teams')
-        .insert({ club_id: profile.club_id, name: pt.name, age_group: pt.age_group ?? null, season: pt.season ?? null })
-        .select('id')
-        .single();
+      if (!teamId) {
+        setProgress({ current: i + 1, total, label: `Creating ${pt.name}…` });
+        const { data: teamData, error: teamErr } = await supabase
+          .from('teams')
+          .insert({ club_id: profile.club_id, name: pt.name, age_group: pt.age_group ?? null, season: pt.season ?? null })
+          .select('id')
+          .single();
 
-      if (teamErr || !teamData) {
-        // Partial recovery: remove successfully imported teams from the review list
-        const done = importedRef.current;
-        setParseResult((prev) => prev ? {
-          ...prev,
-          teams: prev.teams.filter((t) => !done.has(t.name)),
-        } : prev);
-        Alert.alert(
-          'Import interrupted',
-          `${stats.teams} of ${total} teams were created before the error on "${pt.name}".\n\nThe completed teams have been removed from the list — tap Import to continue with the remaining ones.`,
-        );
-        setPhase('review');
-        return;
+        if (teamErr || !teamData) {
+          const done = importedTeamNames.current;
+          setParseResult((prev) => prev ? {
+            ...prev,
+            teams: prev.teams.filter((t) => !done.has(t.name)),
+            players: prev.players.filter((p) => !done.has(p.assignedTeamName)),
+          } : prev);
+          Alert.alert(
+            'Import interrupted',
+            `${stats.teams} of ${total} teams were created before the error on "${pt.name}".\n\nThe completed teams have been removed from the list — tap Import to continue with the remaining ones.`,
+          );
+          setPhase('review');
+          return;
+        }
+
+        teamId = teamData.id;
+        stats.teams++;
       }
+      importedTeamNames.current.add(pt.name);
 
-      const teamId = teamData.id;
-      importedRef.current.add(pt.name);
-      stats.teams++;
-
-      // Players + parent invites
+      // Players + guardian invites (one row per non-empty email, so a
+      // second guardian on the same player gets their own invite/account)
       setProgress({ current: i + 1, total, label: `Adding players to ${pt.name}…` });
-      for (const p of pt.players) {
+      for (const p of players) {
         if (!p.full_name.trim()) continue;
         const { data: playerData } = await supabase
           .from('players')
-          .insert({ team_id: teamId, full_name: p.full_name.trim(), jersey_number: p.jersey_number ?? null, position: p.position ?? null })
+          .insert({
+            team_id: teamId, full_name: p.full_name.trim(),
+            jersey_number: p.jersey_number ?? null, position: p.position ?? null,
+            date_of_birth: p.date_of_birth ?? null,
+          })
           .select('id')
           .single();
         stats.players++;
+        if (!playerData) continue;
 
-        if (playerData && p.parent_email?.trim()) {
+        const guardianEmails = [p.parent_email, p.secondary_parent_email]
+          .map((e) => e?.trim())
+          .filter((e): e is string => !!e);
+
+        for (const email of guardianEmails) {
           const { data: inviteData } = await supabase
             .from('invites')
-            .insert({ team_id: teamId, club_id: profile.club_id, player_id: playerData.id, email: p.parent_email.trim(), role: 'parent', created_by: profile.id })
+            .insert({
+              team_id: teamId, club_id: profile.club_id, player_id: playerData.id,
+              email, role: 'parent', created_by: profile.id,
+              guardian_name: p.parent_name?.trim() || null,
+              phone: p.parent_phone?.trim() || null,
+            })
             .select('id')
             .single();
           if (inviteData?.id) {
@@ -284,7 +390,7 @@ export default function ClubImportScreen() {
       setProgress({ current: i + 1, total, label: `Inviting coaches to ${pt.name}…` });
       const coachInputs = pt.coaches
         .filter((c) => c.email?.trim())
-        .map((c) => ({ full_name: c.full_name?.trim() || c.email!.trim(), email: c.email!.trim(), team_ids: [teamId], role: 'coach' as const }));
+        .map((c) => ({ full_name: c.full_name?.trim() || c.email!.trim(), email: c.email!.trim(), team_ids: [teamId!], role: 'coach' as const }));
       if (coachInputs.length > 0 && profile.club_id) {
         await sendCoachInvites(profile.club_id, coachInputs);
         stats.coaches += coachInputs.length;
@@ -296,14 +402,6 @@ export default function ClubImportScreen() {
     await refetchTeam();
     setPhase('done');
   }
-
-  // ── Derived ────────────────────────────────────────────────────────────────
-
-  const uncertainCount  = (parseResult?.uncertain_rows ?? []).length;
-  const newTeams        = (parseResult?.teams ?? []).filter((t) => !t.isDuplicate);
-  const duplicateTeams  = (parseResult?.teams ?? []).filter((t) => t.isDuplicate);
-  const inviteCount     = newTeams.reduce((s, t) =>
-    s + t.coaches.filter((c) => c.email).length + t.players.filter((p) => p.parent_email).length, 0);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -319,7 +417,8 @@ export default function ClubImportScreen() {
           </View>
           <Text style={styles.heroTitle}>Import your whole club</Text>
           <Text style={styles.heroSub}>
-            Upload one spreadsheet — AI reads it, creates all your teams, adds coaches and players to the right squads, and automatically sends invite emails to everyone.
+            Upload one spreadsheet — AI reads it, matches players onto your existing teams (or creates new
+            ones), and sends invite emails once you've reviewed everything.
           </Text>
 
           <View style={styles.formatBox}>
@@ -328,8 +427,8 @@ export default function ClubImportScreen() {
               ['people-outline',   'Teams grouped by name, section, or column'],
               ['shield-outline',   'Coaches and their roles per team'],
               ['football-outline', 'Players with jersey number and position'],
-              ['mail-outline',     'Parent email addresses per player'],
-              ['calendar-outline', 'Age group and season'],
+              ['mail-outline',     'Parent email(s) — a second guardian email invites them too'],
+              ['calendar-outline', 'Date of birth, phone, age group, and season'],
             ].map(([icon, label]) => (
               <View key={label} style={styles.formatRow}>
                 <Ionicons name={icon as any} size={15} color={primaryColor} />
@@ -367,10 +466,14 @@ export default function ClubImportScreen() {
 
             {/* Summary chips */}
             <View style={styles.summaryBar}>
-              <SummaryChip icon="football-outline" value={newTeams.length} label="New teams" color={primaryColor} />
-              <SummaryChip icon="shield-outline"   value={newTeams.reduce((s, t) => s + t.coaches.length, 0)} label="Coaches" color="#3B82F6" />
-              <SummaryChip icon="people-outline"   value={newTeams.reduce((s, t) => s + t.players.length, 0)} label="Players" color="#22C55E" />
+              <SummaryChip icon="football-outline" value={visibleTeams.length} label="Teams" color={primaryColor} />
+              <SummaryChip icon="shield-outline"   value={totalCoaches} label="Coaches" color="#3B82F6" />
+              <SummaryChip icon="people-outline"   value={totalPlayers} label="Players" color="#22C55E" />
             </View>
+
+            {newTeamCount > 0 && (
+              <Text style={styles.newTeamsNote}>{newTeamCount} new team{newTeamCount !== 1 ? 's' : ''} will be created; the rest merge onto your existing teams.</Text>
+            )}
 
             {/* Collapsible warnings */}
             {(parseResult.warnings?.length ?? 0) > 0 && (
@@ -395,34 +498,32 @@ export default function ClubImportScreen() {
               </TouchableOpacity>
             )}
 
-            {/* Duplicate notice */}
-            {duplicateTeams.length > 0 && (
-              <View style={styles.infoBanner}>
-                <Ionicons name="copy-outline" size={14} color="#60A5FA" />
-                <Text style={styles.infoText}>
-                  <Text style={{ fontWeight: '700' }}>{duplicateTeams.map((t) => t.name).join(', ')}</Text>
-                  {' '}already exist{duplicateTeams.length === 1 ? 's' : ''} and will be skipped.
-                </Text>
-              </View>
-            )}
-
-            {/* New teams */}
-            {newTeams.length > 0 && (
+            {/* Teams — matched (existing) and new both shown and reviewable */}
+            {visibleTeams.length > 0 && (
               <>
-                <Text style={styles.sectionLabel}>NEW TEAMS</Text>
-                {newTeams.map((team, ti) => {
-                  const realIdx = parseResult.teams.indexOf(team);
-                  const expanded = expandedTeams.has(realIdx);
+                <Text style={styles.sectionLabel}>TEAMS</Text>
+                {visibleTeams.map((team) => {
+                  const expanded = expandedTeams.has(team.name);
+                  const players = playersByTeam[team.name] ?? [];
                   return (
                     <TeamSection
-                      key={realIdx}
+                      key={team.name}
                       team={team}
+                      players={players}
+                      teamNames={teamNames}
                       primaryColor={primaryColor}
                       expanded={expanded}
-                      onToggle={() => toggleTeam(realIdx)}
-                      onRemoveTeam={() => removeTeam(realIdx)}
-                      onRemoveCoach={(ci) => removeCoach(realIdx, ci)}
-                      onRemovePlayer={(pi) => removePlayer(realIdx, pi)}
+                      existingNames={existingNamesByTeam[team.name]}
+                      pickerOpenForUid={pickerOpenForUid}
+                      teamPickerOpen={teamPickerOpenFor === team.name}
+                      onToggle={() => toggleTeam(team.name)}
+                      onRemoveTeam={() => removeTeam(team.name)}
+                      onRemoveCoach={(ci) => removeCoach(team.name, ci)}
+                      onRemovePlayer={(uid) => removePlayer(uid)}
+                      onOpenPicker={(uid) => setPickerOpenForUid(pickerOpenForUid === uid ? null : uid)}
+                      onReassignPlayer={(uid, toTeam) => reassignPlayer(uid, toTeam)}
+                      onOpenTeamPicker={() => setTeamPickerOpenFor(teamPickerOpenFor === team.name ? null : team.name)}
+                      onReassignWholeTeam={(toTeam) => reassignWholeTeam(team.name, toTeam)}
                     />
                   );
                 })}
@@ -456,15 +557,15 @@ export default function ClubImportScreen() {
               <Text style={styles.cancelBtnText}>Start over</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.importBtn, { backgroundColor: primaryColor }, newTeams.length === 0 && { opacity: 0.4 }]}
+              style={[styles.importBtn, { backgroundColor: primaryColor }, visibleTeams.length === 0 && { opacity: 0.4 }]}
               onPress={handleImport}
-              disabled={newTeams.length === 0}
+              disabled={visibleTeams.length === 0}
               activeOpacity={0.85}
             >
               <Text style={styles.importBtnText}>
                 {inviteCount > 0
                   ? `Import & Send ${inviteCount} invite${inviteCount !== 1 ? 's' : ''}`
-                  : `Import ${newTeams.length} team${newTeams.length !== 1 ? 's' : ''}`}
+                  : `Import ${visibleTeams.length} team${visibleTeams.length !== 1 ? 's' : ''}`}
               </Text>
             </TouchableOpacity>
           </View>
@@ -496,7 +597,7 @@ export default function ClubImportScreen() {
           <Text style={styles.heroSub}>Everything is set up and ready to go.</Text>
 
           <View style={styles.doneStats}>
-            <DoneStat value={doneStats.teams}       label="Teams created"  color={primaryColor} />
+            <DoneStat value={doneStats.teams}       label="New teams"      color={primaryColor} />
             <DoneStat value={doneStats.players}     label="Players added"  color="#22C55E" />
             <DoneStat value={doneStats.invitesSent} label="Invites sent"   color="#60A5FA" />
           </View>
@@ -548,20 +649,35 @@ const doneStyles = StyleSheet.create({
   label: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, textAlign: 'center' },
 });
 
-function TeamSection({ team, primaryColor, expanded, onToggle, onRemoveTeam, onRemoveCoach, onRemovePlayer }: {
-  team: { name: string; age_group: string | null; season: string | null; coaches: ParsedCoach[]; players: ParsedPlayer[] };
+function TeamSection({
+  team, players, teamNames, primaryColor, expanded, existingNames,
+  pickerOpenForUid, teamPickerOpen,
+  onToggle, onRemoveTeam, onRemoveCoach, onRemovePlayer,
+  onOpenPicker, onReassignPlayer, onOpenTeamPicker, onReassignWholeTeam,
+}: {
+  team: { name: string; age_group: string | null; season: string | null; coaches: ParsedCoach[]; matchedTeamId: string | null };
+  players: ParsedPlayer[];
+  teamNames: string[];
   primaryColor: string;
   expanded: boolean;
+  existingNames?: Set<string>;
+  pickerOpenForUid: string | null;
+  teamPickerOpen: boolean;
   onToggle: () => void;
   onRemoveTeam: () => void;
   onRemoveCoach: (i: number) => void;
-  onRemovePlayer: (i: number) => void;
+  onRemovePlayer: (uid: string) => void;
+  onOpenPicker: (uid: string) => void;
+  onReassignPlayer: (uid: string, toTeam: string) => void;
+  onOpenTeamPicker: () => void;
+  onReassignWholeTeam: (toTeam: string) => void;
 }) {
   const meta = [team.age_group, team.season].filter(Boolean).join(' · ');
   const counts = [
     team.coaches.length > 0 ? `${team.coaches.length} coach${team.coaches.length !== 1 ? 'es' : ''}` : null,
-    team.players.length > 0 ? `${team.players.length} player${team.players.length !== 1 ? 's' : ''}` : null,
+    players.length > 0 ? `${players.length} player${players.length !== 1 ? 's' : ''}` : null,
   ].filter(Boolean).join(' · ');
+  const otherTeamNames = teamNames.filter((n) => n !== team.name);
 
   return (
     <View style={styles.teamSection}>
@@ -572,11 +688,32 @@ function TeamSection({ team, primaryColor, expanded, onToggle, onRemoveTeam, onR
           <Text style={styles.teamName}>{team.name}</Text>
           <Text style={styles.teamMeta}>{[meta, counts].filter(Boolean).join('  ·  ')}</Text>
         </View>
-        <TouchableOpacity onPress={onRemoveTeam} hitSlop={{ top: 8, bottom: 8, left: 12, right: 4 }} style={styles.removeTeamBtn}>
+        {team.matchedTeamId
+          ? <View style={styles.matchedBadge}><Text style={styles.matchedBadgeText}>✓ Matched</Text></View>
+          : <View style={styles.newBadge}><Text style={styles.newBadgeText}>New team</Text></View>}
+        {otherTeamNames.length > 0 && (
+          <TouchableOpacity onPress={onOpenTeamPicker} hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }} style={styles.moveTeamBtn}>
+            <Ionicons name="swap-horizontal-outline" size={15} color={PULSE_COLORS.ui.muted} />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity onPress={onRemoveTeam} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }} style={styles.removeTeamBtn}>
           <Ionicons name="trash-outline" size={15} color={PULSE_COLORS.ui.muted} />
         </TouchableOpacity>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 2 }} />
       </TouchableOpacity>
+
+      {teamPickerOpen && otherTeamNames.length > 0 && (
+        <View style={styles.movePicker}>
+          <Text style={styles.movePickerLabel}>Move everyone in this group to:</Text>
+          <View style={styles.chipRow}>
+            {otherTeamNames.map((name) => (
+              <TouchableOpacity key={name} style={styles.teamChip} onPress={() => onReassignWholeTeam(name)}>
+                <Text style={styles.teamChipText}>{name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
 
       {expanded && (
         <>
@@ -584,24 +721,44 @@ function TeamSection({ team, primaryColor, expanded, onToggle, onRemoveTeam, onR
             <View style={styles.personGroup}>
               <Text style={styles.groupLabel}>COACHES</Text>
               {team.coaches.map((c, ci) => (
-                <ReviewPersonRow key={ci} name={c.full_name} detail={c.role} email={c.email}
+                <ReviewPersonRow key={ci} name={c.full_name} detail={c.role} email={c.email} secondaryEmail={null}
                   iconName="shield-half-outline" iconColor="#3B82F6"
-                  uncertain={c.uncertain} reason={c.uncertainty_reason}
+                  uncertain={c.uncertain} reason={c.uncertainty_reason} duplicate={false}
                   onRemove={() => onRemoveCoach(ci)} />
               ))}
             </View>
           )}
-          {team.players.length > 0 && (
+          {players.length > 0 && (
             <View style={styles.personGroup}>
               <Text style={styles.groupLabel}>PLAYERS</Text>
-              {team.players.map((p, pi) => (
-                <ReviewPersonRow key={pi}
-                  name={p.full_name}
-                  detail={[p.jersey_number != null ? `#${p.jersey_number}` : null, p.position].filter(Boolean).join(' · ')}
-                  email={p.parent_email}
-                  iconName="person-outline" iconColor="#22C55E"
-                  uncertain={p.uncertain} reason={p.uncertainty_reason}
-                  onRemove={() => onRemovePlayer(pi)} />
+              {players.map((p) => (
+                <View key={p.uid}>
+                  <ReviewPersonRow
+                    name={p.full_name}
+                    detail={[p.jersey_number != null ? `#${p.jersey_number}` : null, p.position].filter(Boolean).join(' · ')}
+                    email={p.parent_email}
+                    secondaryEmail={p.secondary_parent_email}
+                    iconName="person-outline" iconColor="#22C55E"
+                    uncertain={p.uncertain} reason={p.uncertainty_reason}
+                    duplicate={!!existingNames?.has(normalizeName(p.full_name))}
+                    onRemove={() => onRemovePlayer(p.uid)} />
+                  <TouchableOpacity style={styles.playerTeamPill} onPress={() => onOpenPicker(p.uid)} activeOpacity={0.7}>
+                    <Text style={styles.playerTeamPillText}>{team.name}</Text>
+                    <Ionicons name="chevron-down" size={10} color={PULSE_COLORS.ui.muted} />
+                  </TouchableOpacity>
+                  {pickerOpenForUid === p.uid && (
+                    <View style={styles.movePicker}>
+                      <Text style={styles.movePickerLabel}>Move to:</Text>
+                      <View style={styles.chipRow}>
+                        {teamNames.filter((n) => n !== team.name).map((name) => (
+                          <TouchableOpacity key={name} style={styles.teamChip} onPress={() => onReassignPlayer(p.uid, name)}>
+                            <Text style={styles.teamChipText}>{name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
               ))}
             </View>
           )}
@@ -611,9 +768,9 @@ function TeamSection({ team, primaryColor, expanded, onToggle, onRemoveTeam, onR
   );
 }
 
-function ReviewPersonRow({ name, detail, email, iconName, iconColor, uncertain, reason, onRemove }: {
-  name: string; detail: string; email: string | null;
-  iconName: any; iconColor: string; uncertain: boolean; reason: string | null;
+function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconColor, uncertain, reason, duplicate, onRemove }: {
+  name: string; detail: string; email: string | null; secondaryEmail: string | null;
+  iconName: any; iconColor: string; uncertain: boolean; reason: string | null; duplicate: boolean;
   onRemove: () => void;
 }) {
   return (
@@ -625,12 +782,20 @@ function ReviewPersonRow({ name, detail, email, iconName, iconColor, uncertain, 
         <View style={rpStyles.nameRow}>
           <Text style={rpStyles.name}>{name}</Text>
           {detail ? <Text style={rpStyles.detail}>{detail}</Text> : null}
+          {secondaryEmail && <View style={rpStyles.guardianBadge}><Text style={rpStyles.guardianBadgeText}>2 guardians</Text></View>}
+          {duplicate && <View style={rpStyles.dupBadge}><Text style={rpStyles.dupBadgeText}>Already on roster</Text></View>}
           {uncertain && <View style={rpStyles.badge}><Text style={rpStyles.badgeText}>?</Text></View>}
         </View>
         {email && (
           <View style={rpStyles.emailRow}>
             <Ionicons name="mail-outline" size={10} color="#60A5FA" />
             <Text style={rpStyles.email}>{email}</Text>
+          </View>
+        )}
+        {secondaryEmail && (
+          <View style={rpStyles.emailRow}>
+            <Ionicons name="mail-outline" size={10} color="#60A5FA" />
+            <Text style={rpStyles.email}>{secondaryEmail}</Text>
           </View>
         )}
         {uncertain && reason ? <Text style={rpStyles.reason}>{reason}</Text> : null}
@@ -651,6 +816,10 @@ const rpStyles = StyleSheet.create({
   name:        { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
   badge:       { backgroundColor: 'rgba(245,158,11,0.2)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   badgeText:   { fontSize: 10, fontWeight: '800', color: '#F59E0B' },
+  dupBadge:     { backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
+  dupBadgeText: { fontSize: 10, fontWeight: '700', color: '#60A5FA' },
+  guardianBadge:     { backgroundColor: 'rgba(236,72,153,0.15)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
+  guardianBadgeText: { fontSize: 10, fontWeight: '700', color: '#EC4899' },
   detail:      { fontSize: 12, color: PULSE_COLORS.ui.muted },
   emailRow:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
   email:       { fontSize: 11, color: '#60A5FA' },
@@ -685,16 +854,9 @@ const styles = StyleSheet.create({
   uploadBtnText: { fontSize: 16, fontWeight: '800', color: '#000' },
 
   reviewContent: { padding: 16, paddingBottom: 40 },
-  summaryBar:    { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  summaryBar:    { flexDirection: 'row', gap: 8, marginBottom: 10 },
   sectionLabel:  { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
-
-  infoBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: 'rgba(96,165,250,0.08)', borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(96,165,250,0.2)',
-    padding: 10, marginBottom: 14,
-  },
-  infoText: { flex: 1, fontSize: 12, color: '#60A5FA', lineHeight: 17 },
+  newTeamsNote:  { fontSize: 12, color: PULSE_COLORS.ui.muted, marginBottom: 14, lineHeight: 17 },
 
   warningBanner: {
     backgroundColor: 'rgba(245,158,11,0.08)', borderRadius: 10,
@@ -715,12 +877,24 @@ const styles = StyleSheet.create({
   teamName:       { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.2 },
   teamMeta:       { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
   removeTeamBtn:  { padding: 4 },
+  moveTeamBtn:    { padding: 4 },
 
-  dupBadge:     { backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, marginLeft: 8 },
-  dupBadgeText: { fontSize: 10, fontWeight: '700', color: '#60A5FA' },
+  matchedBadge:     { backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
+  matchedBadgeText: { fontSize: 10, fontWeight: '700', color: '#22C55E' },
+  newBadge:         { backgroundColor: 'rgba(139,92,246,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
+  newBadgeText:     { fontSize: 10, fontWeight: '700', color: '#8B5CF6' },
 
   personGroup: { paddingHorizontal: 14, paddingBottom: 8, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
   groupLabel:  { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginTop: 10, marginBottom: 2 },
+
+  playerTeamPill:     { flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-start', backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 8, marginLeft: 36 },
+  playerTeamPillText: { fontSize: 10.5, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+
+  movePicker:      { marginHorizontal: 14, marginBottom: 10, padding: 10, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  movePickerLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginBottom: 6, fontWeight: '600' },
+  chipRow:         { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  teamChip:        { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  teamChipText:    { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.text },
 
   uncertainCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', borderRadius: 10, padding: 10, marginBottom: 6 },
   uncertainBody:  { flex: 1 },
