@@ -188,8 +188,16 @@ export default function TeamRosterPage() {
           clubId={club?.id}
           primary={primary}
           profileId={profile?.id}
+          teams={teams}
           onClose={() => setPanel(null)}
           onSaved={updated => {
+            if (updated.team_id !== teamId) {
+              // Moved to a different team — no longer belongs in this
+              // team-scoped list.
+              setPlayers(prev => prev.filter(p => p.id !== updated.id));
+              setPanel(null);
+              return;
+            }
             setPlayers(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
             setPanel(prev => prev ? { ...prev, ...updated } : null);
           }}

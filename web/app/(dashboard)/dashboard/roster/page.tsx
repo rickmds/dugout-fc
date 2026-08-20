@@ -10,6 +10,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import AIRosterImport from '@/components/dashboard/AIRosterImport';
+import { movePlayerToTeam } from '@/lib/movePlayer';
 
 type Player = {
   id: string;
@@ -115,9 +116,10 @@ export default function RosterPage() {
 
   // Player profile panel
   const [selectedPlayer, setSelectedPlayer]   = useState<Player | null>(null);
-  const [panelForm, setPanelForm]             = useState<{ full_name: string; jersey_number: string; position: string }>({ full_name: '', jersey_number: '', position: '' });
+  const [panelForm, setPanelForm]             = useState<{ full_name: string; jersey_number: string; position: string; team_id: string }>({ full_name: '', jersey_number: '', position: '', team_id: '' });
   const [panelSaving, setPanelSaving]         = useState(false);
   const [panelSaved, setPanelSaved]           = useState(false);
+  const [moveError, setMoveError]             = useState('');
   const [invites, setInvites]                 = useState<Invite[]>([]);
   const [inviteLoading, setInviteLoading]     = useState(false);
   const [parentLastActive, setParentLastActive] = useState<string | null>(null);
@@ -162,8 +164,10 @@ export default function RosterPage() {
       full_name: selectedPlayer.full_name,
       jersey_number: selectedPlayer.jersey_number?.toString() ?? '',
       position: selectedPlayer.position ?? '',
+      team_id: selectedPlayer.team_id,
     });
     setPanelSaved(false);
+    setMoveError('');
     setInviteSent(false);
     setInviteEmail('');
     setInviteError('');
@@ -212,7 +216,7 @@ export default function RosterPage() {
 
   async function savePanel() {
     if (!selectedPlayer || !panelForm.full_name.trim()) return;
-    setPanelSaving(true);
+    setPanelSaving(true); setMoveError('');
     try {
       const updates = {
         full_name: panelForm.full_name.trim(),
@@ -221,8 +225,20 @@ export default function RosterPage() {
       };
       const { error } = await supabase.from('players').update(updates).eq('id', selectedPlayer.id);
       if (error) { alert(`Could not save player: ${error.message}`); return; }
-      setPlayers((prev) => prev.map((p) => p.id === selectedPlayer.id ? { ...p, ...updates } : p));
-      setSelectedPlayer((prev) => prev ? { ...prev, ...updates } : null);
+
+      if (panelForm.team_id !== selectedPlayer.team_id) {
+        const { error: moveErr } = await movePlayerToTeam(selectedPlayer.id, selectedPlayer.team_id, panelForm.team_id);
+        if (moveErr) { setMoveError(`Details saved, but couldn't move the team: ${moveErr}`); return; }
+        if (panelForm.team_id !== teamFilter) {
+          // Moved off the team this page is currently filtered to.
+          setPlayers((prev) => prev.filter((p) => p.id !== selectedPlayer.id));
+          setSelectedPlayer(null);
+          return;
+        }
+      }
+
+      setPlayers((prev) => prev.map((p) => p.id === selectedPlayer.id ? { ...p, ...updates, team_id: panelForm.team_id } : p));
+      setSelectedPlayer((prev) => prev ? { ...prev, ...updates, team_id: panelForm.team_id } : null);
       setPanelSaved(true);
       setTimeout(() => setPanelSaved(false), 2500);
     } finally {
@@ -599,6 +615,23 @@ export default function RosterPage() {
                     </datalist>
                   </div>
                 </div>
+
+                {teams.length > 1 && (
+                  <div>
+                    <label style={labelStyle}>Team</label>
+                    <select value={panelForm.team_id}
+                      onChange={(e) => { setPanelForm((f) => ({ ...f, team_id: e.target.value })); setPanelSaved(false); setMoveError(''); }}
+                      style={{ ...inputStyle, cursor: 'pointer' }}>
+                      {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                {moveError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '9px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '9px', fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
+                    <AlertCircle size={12} />{moveError}
+                  </div>
+                )}
 
                 <button onClick={savePanel} disabled={panelSaving || !panelForm.full_name.trim()}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', width: '100%', padding: '10px', background: panelSaved ? '#22C55E' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.2s' }}>

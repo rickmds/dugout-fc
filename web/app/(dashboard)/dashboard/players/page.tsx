@@ -213,10 +213,13 @@ export default function PlayersPage() {
           clubId={club?.id}
           primary={primary}
           profileId={profile?.id}
+          teams={teams}
           onClose={() => setPanel(null)}
           onSaved={updated => {
-            setPlayers(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
-            setPanel(prev => prev ? { ...prev, ...updated } : null);
+            const matchedTeam = teams.find(t => t.id === updated.team_id);
+            const merged = { ...updated, team_name: matchedTeam?.name ?? '—', age_group: matchedTeam?.age_group ?? null };
+            setPlayers(prev => prev.map(p => p.id === updated.id ? { ...p, ...merged } : p));
+            setPanel(prev => prev ? { ...prev, ...merged } : null);
           }}
           onDeleted={id => {
             setPlayers(prev => prev.filter(p => p.id !== id));

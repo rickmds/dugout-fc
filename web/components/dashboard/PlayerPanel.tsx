@@ -6,6 +6,7 @@ import {
   Clock, RotateCcw, Plus, TrendingUp,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { movePlayerToTeam } from '@/lib/movePlayer';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ interface PlayerPanelProps {
   clubId: string | undefined;
   primary: string;
   profileId: string | undefined;
+  teams: { id: string; name: string }[];
   onClose: () => void;
   onSaved: (updated: PlayerForPanel) => void;
   onDeleted: (id: string) => void;
@@ -53,7 +55,7 @@ function hex2rgb(hex: string) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function PlayerPanel({ player, teamName, clubName, clubId, primary, profileId, onClose, onSaved, onDeleted }: PlayerPanelProps) {
+export default function PlayerPanel({ player, teamName, clubName, clubId, primary, profileId, teams, onClose, onSaved, onDeleted }: PlayerPanelProps) {
   const posStyle = positionStyle(player.position);
   const initials = player.full_name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
   const { r, g, b } = hex2rgb(primary.startsWith('#') ? primary : '#22C55E');
@@ -63,9 +65,11 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
     full_name:     player.full_name,
     jersey_number: player.jersey_number?.toString() ?? '',
     position:      player.position ?? '',
+    team_id:       player.team_id,
   });
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
+  const [moveError, setMoveError] = useState('');
 
   // Invites
   const [invites,          setInvites]          = useState<Invite[]>([]);
@@ -95,8 +99,8 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
-    setPanelForm({ full_name: player.full_name, jersey_number: player.jersey_number?.toString() ?? '', position: player.position ?? '' });
-    setSaved(false); setInviteSent(false); setInviteEmail(''); setInviteError('');
+    setPanelForm({ full_name: player.full_name, jersey_number: player.jersey_number?.toString() ?? '', position: player.position ?? '', team_id: player.team_id });
+    setSaved(false); setMoveError(''); setInviteSent(false); setInviteEmail(''); setInviteError('');
     setEditingInviteId(null); setShowAddGuardian(false);
 
     setInviteLoading(true);
@@ -117,15 +121,26 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
 
   async function savePanel() {
     if (!panelForm.full_name.trim()) return;
-    setSaving(true);
+    setSaving(true); setMoveError('');
     const updates = {
       full_name:     panelForm.full_name.trim(),
       jersey_number: panelForm.jersey_number ? parseInt(panelForm.jersey_number) : null,
       position:      panelForm.position || null,
     };
     await supabase.from('players').update(updates).eq('id', player.id);
+
+    if (panelForm.team_id !== player.team_id) {
+      const { error } = await movePlayerToTeam(player.id, player.team_id, panelForm.team_id);
+      if (error) {
+        setSaving(false);
+        setMoveError(`Details saved, but couldn't move the team: ${error}`);
+        onSaved({ ...player, ...updates });
+        return;
+      }
+    }
+
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500);
-    onSaved({ ...player, ...updates });
+    onSaved({ ...player, ...updates, team_id: panelForm.team_id });
   }
 
   async function sendInviteFromPanel() {
@@ -288,6 +303,21 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
                   </datalist>
                 </div>
               </div>
+              {teams.length > 1 && (
+                <div>
+                  <label style={labelStyle}>Team</label>
+                  <select value={panelForm.team_id}
+                    onChange={e => { setPanelForm(f => ({ ...f, team_id: e.target.value })); setSaved(false); setMoveError(''); }}
+                    style={{ ...inputStyle, cursor: 'pointer' }}>
+                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {moveError && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '9px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '9px', fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
+                  <AlertCircle size={12} />{moveError}
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={savePanel} disabled={saving || !panelForm.full_name.trim()}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 20px', background: saved ? '#22C55E' : primary, border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.2s', opacity: (!panelForm.full_name.trim() || saving) ? 0.6 : 1 }}>
