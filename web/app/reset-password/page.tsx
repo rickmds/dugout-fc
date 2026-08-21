@@ -53,7 +53,14 @@ function ResetContent() {
     subscribed.current = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setPhase('form');
+      if (event !== 'PASSWORD_RECOVERY') return;
+      // The event can fire a moment before the session is actually
+      // readable back from storage — confirm it's really there before
+      // showing the form, instead of trusting the event alone and having
+      // updateUser() fail later with a raw "Auth session missing!" error.
+      supabase.auth.getSession().then(({ data }) => {
+        setPhase(data.session ? 'form' : 'invalid');
+      });
     });
 
     // If no code and no fragment, show invalid after a short wait
@@ -72,8 +79,27 @@ function ResetContent() {
     if (password !== confirm) { setError('Passwords do not match.'); return; }
 
     setPhase('saving');
+
+    // Re-check right before the write — the recovery session can land a
+    // moment after PASSWORD_RECOVERY fires, and this is the last chance to
+    // catch that gap with a clear message instead of a raw SDK error.
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      setError('Your reset link session has expired. Please request a new password reset email and try again.');
+      setPhase('form');
+      return;
+    }
+
     const { error: updateErr } = await supabase.auth.updateUser({ password });
-    if (updateErr) { setError(updateErr.message); setPhase('form'); return; }
+    if (updateErr) {
+      setError(
+        updateErr.message.toLowerCase().includes('session')
+          ? 'Your reset link session has expired. Please request a new password reset email and try again.'
+          : updateErr.message
+      );
+      setPhase('form');
+      return;
+    }
 
     // Sign out all other sessions — invalidates the old password everywhere
     await supabase.auth.signOut({ scope: 'others' });
