@@ -1075,6 +1075,8 @@ type Recipient = {
   parent_emails: string[];
 };
 
+type EmailLog = Database['public']['Tables']['email_logs']['Row'];
+
 type Attachment = {
   uri: string;
   name: string;
@@ -1102,6 +1104,10 @@ function fmtBytes(n: number): string {
 
 function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: Profile | null; coachEmail: string | null }) {
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const [mode, setMode]                 = useState<'list' | 'compose'>('list');
+  const [logs, setLogs]                 = useState<EmailLog[]>([]);
+  const [logsLoading, setLogsLoading]   = useState(true);
+  const [expandedLog, setExpandedLog]   = useState<string | null>(null);
   const [recipients, setRecipients]     = useState<Recipient[]>([]);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [subject, setSubject]           = useState('');
@@ -1117,6 +1123,21 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
   const [recipientsOpen, setRecipientsOpen] = useState(false);
 
   useEffect(() => { if (team) fetchRecipients(); }, [team?.id]);
+  useEffect(() => { if (team) fetchLogs(); }, [team?.id]);
+
+  async function fetchLogs() {
+    if (!team) return;
+    setLogsLoading(true);
+    const { data } = await supabase
+      .from('email_logs')
+      .select('*')
+      .eq('club_id', team.club_id)
+      .contains('team_ids', [team.id])
+      .order('sent_at', { ascending: false })
+      .limit(50);
+    setLogs(data ?? []);
+    setLogsLoading(false);
+  }
 
   async function fetchRecipients() {
     if (!team) return;
@@ -1295,10 +1316,27 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
           if (error) {
             Alert.alert('Failed to send', 'Email service not yet configured. Set up the send-team-email Edge Function.');
           } else {
+            if (team) {
+              const { data: logged } = await supabase
+                .from('email_logs')
+                .insert({
+                  club_id: team.club_id,
+                  sent_by: profile?.id ?? null,
+                  subject: subject.trim(),
+                  body: body.trim(),
+                  recipient_count: toSend.length,
+                  team_ids: [team.id],
+                  team_names: [team.name],
+                })
+                .select('*')
+                .single();
+              if (logged) setLogs((prev) => [logged, ...prev]);
+            }
             Alert.alert('Sent!', `Email delivered to ${recipientLabel}.`);
             setSubject('');
             setBody('');
             setAttachments([]);
+            setMode('list');
           }
         },
       },
@@ -1311,8 +1349,68 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
 
   if (loading) return <View style={st.center}><ActivityIndicator color={primaryColor} /></View>;
 
+  if (mode === 'list') {
+    return (
+      <View style={{ flex: 1 }}>
+        <View style={st.emailListHeader}>
+          <Text style={st.emailListHeaderTitle}>Sent Emails</Text>
+          <TouchableOpacity style={[st.newEmailBtn, { backgroundColor: primaryColor }]} onPress={() => setMode('compose')}>
+            <Ionicons name="add" size={16} color="#000" />
+            <Text style={st.newEmailBtnText}>New Email</Text>
+          </TouchableOpacity>
+        </View>
+        {logsLoading ? (
+          <View style={st.center}><ActivityIndicator color={primaryColor} /></View>
+        ) : (
+          <FlatList
+            data={logs}
+            keyExtractor={(l) => l.id}
+            contentContainerStyle={st.aList}
+            ListEmptyComponent={
+              <View style={st.empty}>
+                <View style={st.emptyIcon}><Ionicons name="mail-outline" size={32} color={PULSE_COLORS.ui.muted} /></View>
+                <Text style={st.emptyTitle}>No emails sent yet</Text>
+                <Text style={st.emptySub}>Emails you send to parents will appear here.</Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              const open = expandedLog === item.id;
+              const sentDate = item.sent_at ? new Date(item.sent_at) : null;
+              return (
+                <TouchableOpacity style={[st.aCard, { borderLeftWidth: 4, borderLeftColor: primaryColor }]} onPress={() => setExpandedLog(open ? null : item.id)} activeOpacity={0.75}>
+                  <View style={st.aCardTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={st.aTitle}>{item.subject}</Text>
+                      <Text style={st.aMeta}>
+                        {item.recipient_count} recipient{item.recipient_count !== 1 ? 's' : ''}
+                        {sentDate ? ` · ${sentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
+                  </View>
+                  {open && (
+                    <View style={st.aBody}>
+                      <Text style={st.aBodyText}>{item.body}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+        )}
+      </View>
+    );
+  }
+
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={st.emailComposeTopHeader}>
+        <TouchableOpacity onPress={() => setMode('list')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.text} />
+        </TouchableOpacity>
+        <Text style={st.emailListHeaderTitle}>New Email</Text>
+        <View style={{ width: 22 }} />
+      </View>
       <ScrollView contentContainerStyle={st.emailScroll} keyboardShouldPersistTaps="handled">
 
         {/* Recipients — collapsible */}
@@ -1630,6 +1728,11 @@ const st = StyleSheet.create({
   pinLabel: { fontSize: 15, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary },
 
   // Email tab
+  emailListHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 },
+  emailListHeaderTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  newEmailBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
+  newEmailBtnText: { fontSize: 13, fontWeight: '700', color: '#000' },
+  emailComposeTopHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   emailScroll: { padding: 16, paddingBottom: 60 },
   emailSection: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 8 },
   emailCard: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, overflow: 'hidden' },
