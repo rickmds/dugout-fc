@@ -30,10 +30,19 @@ type TeamHealth = {
   risk_score: number; risk_reasons: string[];
 };
 
+type ProfileEmbed = { full_name: string | null; avatar_url: string | null };
 type CoachRow = {
   profile_id: string; team_id: string; role: string;
-  profiles: { full_name: string | null; avatar_url: string | null }[] | null;
+  // Postgrest's join-cardinality inference isn't guaranteed to stay a
+  // single object vs. an array — same ambiguity normalizeClub() works
+  // around in TeamContext.tsx.
+  profiles: ProfileEmbed | ProfileEmbed[] | null;
 };
+
+function normalizeProfileEmbed(p: CoachRow['profiles']): ProfileEmbed | null {
+  if (!p) return null;
+  return Array.isArray(p) ? (p[0] ?? null) : p;
+}
 
 type AgeGroupFee = { age_group: string; outstanding: number; total_due: number; rate: number };
 
@@ -290,8 +299,9 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
     const coachNames: Record<string, string>   = {};
     const coachAvatars: Record<string, string | null> = {};
     for (const c of coaches) {
-      const name = c.profiles?.[0]?.full_name ?? 'Unknown';
-      if (!coachTeams[c.profile_id]) { coachTeams[c.profile_id] = []; coachNames[c.profile_id] = name; coachAvatars[c.profile_id] = c.profiles?.[0]?.avatar_url ?? null; }
+      const profile = normalizeProfileEmbed(c.profiles);
+      const name = profile?.full_name ?? 'Unknown';
+      if (!coachTeams[c.profile_id]) { coachTeams[c.profile_id] = []; coachNames[c.profile_id] = name; coachAvatars[c.profile_id] = profile?.avatar_url ?? null; }
       const tm = teamMap.get(c.team_id);
       if (tm && !coachTeams[c.profile_id].includes(tm.name)) coachTeams[c.profile_id].push(tm.name);
     }

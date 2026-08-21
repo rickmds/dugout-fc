@@ -42,7 +42,6 @@ type Player = {
   photo_url: string | null;
   is_private: boolean;
   profile_id: string | null;
-  profiles: { avatar_url: string | null } | null;
 };
 
 type Coach = {
@@ -92,8 +91,10 @@ const PlayerCard = memo(function PlayerCard({
   const [imgErr, setImgErr] = useState(false);
   const isMyPlayer   = item.profile_id !== null && item.profile_id === myProfileId;
   const canSeeDetail = isCoach || isMyPlayer || !item.is_private;
-  // Hide photo from other parents when private
-  const url     = canSeeDetail ? (item.photo_url ?? item.profiles?.avatar_url) : null;
+  // Hide photo from other parents when private. Only the player's own
+  // photo_url — never the linked guardian's avatar as a stand-in, which
+  // showed an adult's face on a child's roster row.
+  const url     = canSeeDetail ? item.photo_url : null;
   const hasImg  = !!url && !imgErr;
   const pc      = item.position ? (POS[item.position] ?? POSITION_DEFAULT) : POSITION_DEFAULT;
   const [first, last] = splitName(item.full_name);
@@ -320,7 +321,7 @@ export default function RosterScreen() {
     // Try full select including columns added in later migrations
     let playersRes = await (supabase as any)
       .from('players')
-      .select('id, full_name, jersey_number, position, photo_url, is_private, profile_id, profiles!players_profile_id_fkey(avatar_url)')
+      .select('id, full_name, jersey_number, position, photo_url, is_private, profile_id')
       .eq('team_id', team.id)
       .order('jersey_number', { ascending: true, nullsFirst: false });
 
@@ -328,7 +329,7 @@ export default function RosterScreen() {
     if (playersRes.error?.message?.includes('schema cache')) {
       playersRes = await supabase
         .from('players')
-        .select('id, full_name, jersey_number, position, profile_id, profiles!players_profile_id_fkey(avatar_url)')
+        .select('id, full_name, jersey_number, position, profile_id')
         .eq('team_id', team.id)
         .order('jersey_number', { ascending: true, nullsFirst: false });
 
@@ -361,8 +362,7 @@ export default function RosterScreen() {
 
     // Prefetch player photos in background so card opens are instant
     newPlayers.forEach(p => {
-      const url = p.photo_url ?? (p as any).profiles?.avatar_url;
-      if (url) Image.prefetch(url);
+      if (p.photo_url) Image.prefetch(p.photo_url);
     });
   }
 
