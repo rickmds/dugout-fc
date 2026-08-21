@@ -96,9 +96,10 @@ export default function NotificationsScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { profile } = useAuth();
-  const { team } = useTeam();
+  const { team, allTeams } = useTeam();
 
   const [notifications, setNotifications] = useState<Notif[]>([]);
+  const [teamNameByNotifId, setTeamNameByNotifId] = useState<Record<string, string>>({});
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);
   const [hasMore, setHasMore]             = useState(false);
@@ -107,6 +108,48 @@ export default function NotificationsScreen() {
   const [deletingId, setDeletingId]       = useState<string | null>(null);
 
   const PAGE = 50;
+
+  // Notifications never carried which team they're about, so on someone
+  // with more than one team a reminder/announcement looked identical
+  // regardless of team — resolved here (not at insert time) so it covers
+  // every existing notification type/row without touching every cron job
+  // and edge function that creates one. event_id/conversation_id are
+  // already the two fields handleNotifPress below relies on to route taps,
+  // so they're also the two team-bearing references worth resolving.
+  const resolveTeamNames = useCallback(async (rows: Notif[]): Promise<Record<string, string>> => {
+    if (allTeams.length < 2) return {};
+    const eventIds = new Set<string>();
+    const conversationIds = new Set<string>();
+    for (const n of rows) {
+      const eid = n.data?.event_id as string | undefined;
+      const cid = n.data?.conversation_id as string | undefined;
+      if (eid) eventIds.add(eid);
+      if (cid) conversationIds.add(cid);
+    }
+    if (!eventIds.size && !conversationIds.size) return {};
+
+    const [eventsRes, convRes] = await Promise.all([
+      eventIds.size
+        ? supabase.from('events').select('id, team_id').in('id', [...eventIds])
+        : Promise.resolve({ data: [] as { id: string; team_id: string }[] }),
+      conversationIds.size
+        ? supabase.from('conversations').select('id, team_id').in('id', [...conversationIds])
+        : Promise.resolve({ data: [] as { id: string; team_id: string | null }[] }),
+    ]);
+    const teamIdByEvent = new Map((eventsRes.data ?? []).map((e) => [e.id, e.team_id]));
+    const teamIdByConv  = new Map((convRes.data ?? []).map((c) => [c.id, c.team_id]));
+    const teamNameById  = new Map(allTeams.map((t) => [t.id, t.name]));
+
+    const out: Record<string, string> = {};
+    for (const n of rows) {
+      const eid = n.data?.event_id as string | undefined;
+      const cid = n.data?.conversation_id as string | undefined;
+      const tid = (eid && teamIdByEvent.get(eid)) || (cid && teamIdByConv.get(cid)) || null;
+      const name = tid ? teamNameById.get(tid) : null;
+      if (name) out[n.id] = name;
+    }
+    return out;
+  }, [allTeams]);
 
   const load = useCallback(async () => {
     if (!profile) return;
@@ -119,11 +162,12 @@ export default function NotificationsScreen() {
       .order('created_at', { ascending: false })
       .limit(PAGE + 1);
 
-    const rows = data ?? [];
-    setHasMore(rows.length > PAGE);
-    setNotifications(rows.slice(0, PAGE) as unknown as Notif[]);
+    const rows = (data ?? []).slice(0, PAGE) as unknown as Notif[];
+    setHasMore((data ?? []).length > PAGE);
+    setNotifications(rows);
     setLoading(false);
-  }, [profile?.id]);
+    resolveTeamNames(rows).then(setTeamNameByNotifId);
+  }, [profile?.id, resolveTeamNames]);
 
   async function onRefresh() {
     if (!profile) return;
@@ -134,10 +178,11 @@ export default function NotificationsScreen() {
       .eq('profile_id', profile.id)
       .order('created_at', { ascending: false })
       .limit(PAGE + 1);
-    const rows = data ?? [];
-    setHasMore(rows.length > PAGE);
-    setNotifications(rows.slice(0, PAGE) as unknown as Notif[]);
+    const rows = (data ?? []).slice(0, PAGE) as unknown as Notif[];
+    setHasMore((data ?? []).length > PAGE);
+    setNotifications(rows);
     setRefreshing(false);
+    resolveTeamNames(rows).then(setTeamNameByNotifId);
   }
 
   async function loadMore() {
@@ -151,10 +196,11 @@ export default function NotificationsScreen() {
       .lt('created_at', oldest)
       .order('created_at', { ascending: false })
       .limit(PAGE + 1);
-    const rows = data ?? [];
-    setHasMore(rows.length > PAGE);
-    setNotifications((prev) => [...prev, ...(rows.slice(0, PAGE) as unknown as Notif[])]);
+    const rows = (data ?? []).slice(0, PAGE) as unknown as Notif[];
+    setHasMore((data ?? []).length > PAGE);
+    setNotifications((prev) => [...prev, ...rows]);
     setLoadingMore(false);
+    resolveTeamNames(rows).then((more) => setTeamNameByNotifId((prev) => ({ ...prev, ...more })));
   }
 
   async function markAll() {
@@ -390,7 +436,14 @@ export default function NotificationsScreen() {
 
                   {/* Content */}
                   <View style={styles.notifContent}>
-                    <Text style={[styles.notifTitle, !n.read && styles.notifTitleUnread]}>{n.title}</Text>
+                    <View style={styles.notifTitleRow}>
+                      <Text style={[styles.notifTitle, !n.read && styles.notifTitleUnread]}>{n.title}</Text>
+                      {teamNameByNotifId[n.id] ? (
+                        <View style={styles.notifTeamBadge}>
+                          <Text style={styles.notifTeamBadgeText} numberOfLines={1}>{teamNameByNotifId[n.id]}</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     {n.body ? <Text style={styles.notifBody} numberOfLines={2}>{n.body}</Text> : null}
                     <Text style={styles.notifTime}>{relativeTime(n.created_at ?? '')}</Text>
                   </View>
@@ -479,8 +532,11 @@ const styles = StyleSheet.create({
   },
 
   notifContent:     { flex: 1, gap: 2 },
-  notifTitle:       { fontSize: 14, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary },
+  notifTitleRow:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  notifTitle:       { fontSize: 14, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary, flexShrink: 1 },
   notifTitleUnread: { fontWeight: '700', color: PULSE_COLORS.ui.text },
+  notifTeamBadge:   { flexShrink: 0, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' },
+  notifTeamBadgeText: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
   notifBody:        { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
   notifTime:        { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
 
