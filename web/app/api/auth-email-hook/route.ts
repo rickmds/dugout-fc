@@ -77,7 +77,7 @@ export async function POST(req: Request) {
   }
 
   const { user, email_data } = event;
-  const { token_hash, redirect_to, email_action_type, site_url } = email_data;
+  const { token_hash, redirect_to, email_action_type } = email_data;
 
   const db = supabaseAdmin();
   const { data: profile } = await db
@@ -104,8 +104,14 @@ export async function POST(req: Request) {
 
   if (email_action_type === 'recovery') {
     // Redeems only on a real tap on the reset-password page — see
-    // web/app/reset-password/page.tsx.
-    const ctaUrl = `${site_url}/reset-password?token_hash=${token_hash}&type=recovery`;
+    // web/app/reset-password/page.tsx. Built off redirect_to (the exact
+    // value login.tsx passes to resetPasswordForEmail), not site_url —
+    // site_url just mirrors the dashboard's Auth "Site URL" setting, which
+    // is currently misconfigured to the project's own API URL.
+    const recoveryUrl = new URL(redirect_to);
+    recoveryUrl.searchParams.set('token_hash', token_hash);
+    recoveryUrl.searchParams.set('type', 'recovery');
+    const ctaUrl = recoveryUrl.toString();
     subject = `Reset your password — ${clubName}`;
     html = brandedEmailShell({
       clubName, logoUrl, accent,
