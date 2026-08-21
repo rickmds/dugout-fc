@@ -56,7 +56,11 @@ export async function POST(req: Request) {
 
   let event: HookPayload;
   try {
-    const wh = new Webhook(secret);
+    // Supabase's dashboard-generated secret is "v1,whsec_<base64>", but the
+    // standardwebhooks lib only strips a bare "whsec_" prefix — leaving the
+    // "v1," on breaks base64 decoding, which GoTrue then reports as the
+    // unrelated-sounding "Hook requires authorization token".
+    const wh = new Webhook(secret.replace(/^v1,whsec_/, ''));
     event = wh.verify(payload, headers) as HookPayload;
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 401 });
