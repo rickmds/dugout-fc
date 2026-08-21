@@ -140,7 +140,7 @@ export default function StaffPage() {
     const toAdd    = teamDraft.filter((id) => !s.assigned_teams.includes(id));
     const toRemove = s.assigned_teams.filter((id) => !teamDraft.includes(id));
 
-    const [profileRes] = await Promise.all([
+    const [profileRes, ...teamResults] = await Promise.all([
       supabase.from('profiles').update({ full_name: name.trim() || null, role }).eq('id', s.id),
       ...toAdd.map((teamId) =>
         supabase.from('team_members').insert({ profile_id: s.id, team_id: teamId, role: 'coach' })
@@ -150,8 +150,9 @@ export default function StaffPage() {
       ),
     ]);
 
-    if (profileRes.error) {
-      setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not save: ${profileRes.error!.message}` } : null);
+    const firstError = profileRes.error ?? teamResults.find((r) => r.error)?.error;
+    if (firstError) {
+      setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not save: ${firstError.message}` } : null);
       return;
     }
 
@@ -422,7 +423,7 @@ export default function StaffPage() {
                     >
                       <X size={13} />
                     </button>
-                  ) : !isMe && (
+                  ) : (
                     <button
                       onClick={() => openEdit(s)}
                       style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: '#374151', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '8px 16px', cursor: 'pointer', fontFamily: 'inherit' }}
@@ -581,8 +582,9 @@ export default function StaffPage() {
                 </div>
               </div>
 
-              {/* ── DANGER ZONE ── */}
-              {!editModal.confirmRemove ? (
+              {/* ── DANGER ZONE — not for your own row, to avoid an
+                   accidental self-lockout from the club dashboard ── */}
+              {editModal.staff.id === profile?.id ? null : !editModal.confirmRemove ? (
                 <button
                   onClick={() => setEditModal((m) => m ? { ...m, confirmRemove: true } : null)}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '12px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '12px', color: '#EF4444', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}
