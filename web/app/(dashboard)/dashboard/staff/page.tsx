@@ -25,6 +25,7 @@ type EditModal = {
   name: string;
   email: string;
   emailError: string | null;
+  saveError: string | null;
   role: 'coach' | 'org_admin';
   teamDraft: string[];
   teamSearch: string;
@@ -107,6 +108,7 @@ export default function StaffPage() {
       name: s.full_name ?? '',
       email: s.email ?? '',
       emailError: null,
+      saveError: null,
       role: (s.role as 'coach' | 'org_admin'),
       teamDraft: [...s.assigned_teams],
       teamSearch: '',
@@ -118,7 +120,7 @@ export default function StaffPage() {
   // ── Save edit ────────────────────────────────────────────────────────────────
   async function saveEdit() {
     if (!editModal) return;
-    setEditModal((m) => m ? { ...m, saving: true, emailError: null } : null);
+    setEditModal((m) => m ? { ...m, saving: true, emailError: null, saveError: null } : null);
 
     const { staff: s, name, email, role, teamDraft } = editModal;
 
@@ -138,7 +140,7 @@ export default function StaffPage() {
     const toAdd    = teamDraft.filter((id) => !s.assigned_teams.includes(id));
     const toRemove = s.assigned_teams.filter((id) => !teamDraft.includes(id));
 
-    await Promise.all([
+    const [profileRes] = await Promise.all([
       supabase.from('profiles').update({ full_name: name.trim() || null, role }).eq('id', s.id),
       ...toAdd.map((teamId) =>
         supabase.from('team_members').insert({ profile_id: s.id, team_id: teamId, role: 'coach' })
@@ -147,6 +149,11 @@ export default function StaffPage() {
         supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)
       ),
     ]);
+
+    if (profileRes.error) {
+      setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not save: ${profileRes.error!.message}` } : null);
+      return;
+    }
 
     setStaff((prev) => prev.map((m) =>
       m.id !== s.id ? m : { ...m, full_name: name.trim() || null, email: email.trim() || m.email, role, assigned_teams: teamDraft }
@@ -157,7 +164,12 @@ export default function StaffPage() {
   // ── Remove staff ─────────────────────────────────────────────────────────────
   async function removeStaff() {
     if (!editModal) return;
-    await supabase.from('profiles').update({ club_id: null, role: 'player' }).eq('id', editModal.staff.id);
+    setEditModal((m) => m ? { ...m, saving: true, saveError: null } : null);
+    const { error } = await supabase.from('profiles').update({ club_id: null, role: 'player' }).eq('id', editModal.staff.id);
+    if (error) {
+      setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not remove: ${error.message}` } : null);
+      return;
+    }
     setStaff((prev) => prev.filter((s) => s.id !== editModal.staff.id));
     setEditModal(null);
   }
@@ -586,10 +598,16 @@ export default function StaffPage() {
                     <strong style={{ color: '#0F172A' }}>{editModal.staff.full_name ?? 'This person'}</strong> will lose access to the dashboard and all team data immediately.
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => setEditModal((m) => m ? { ...m, confirmRemove: false } : null)} style={{ flex: 1, padding: '9px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '9px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-                    <button onClick={removeStaff} style={{ flex: 1, padding: '9px', background: '#EF4444', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Yes, remove</button>
+                    <button onClick={() => setEditModal((m) => m ? { ...m, confirmRemove: false } : null)} disabled={editModal.saving} style={{ flex: 1, padding: '9px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '9px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                    <button onClick={removeStaff} disabled={editModal.saving} style={{ flex: 1, padding: '9px', background: editModal.saving ? '#FCA5A5' : '#EF4444', border: 'none', borderRadius: '9px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: editModal.saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                      {editModal.saving ? 'Removing…' : 'Yes, remove'}
+                    </button>
                   </div>
                 </div>
+              )}
+
+              {editModal.saveError && (
+                <p style={{ fontSize: '12px', color: '#EF4444', margin: '10px 0 0', lineHeight: '1.5' }}>{editModal.saveError}</p>
               )}
 
             </div>
