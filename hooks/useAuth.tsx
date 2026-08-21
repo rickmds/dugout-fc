@@ -172,7 +172,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (session?.user) {
-        const { profile, club, error } = await fetchProfileAndClub(session.user.id);
+        // Same stall risk as the mount-time fetch above — an unprotected
+        // call here left session/profile/club stuck at their pre-login
+        // values (still null right after signing in), so a screen gated on
+        // any of them just sat on its own loading state indefinitely.
+        const { profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id);
         if (mounted) {
           if (error) {
             // Transient/network failure — leave the existing profile/club in state alone.

@@ -8,6 +8,21 @@ export type PostAuthResult =
   | { type: 'info'; message: string }
   | { type: 'error'; message: string };
 
+// Neither query below has a timeout on the SDK call itself, so on a flaky
+// connection one can stall forever — same class of bug already hardened
+// against in login.tsx's own sign-in call and useAuth.tsx's session
+// restore. Since this runs on every login (not just SSO), a stuck call
+// here reads as "login just hangs," fixed only by a force-quit that
+// abandons the request. Race a timeout instead so it surfaces as a
+// retryable error.
+const TIMEOUT = Symbol('timeout');
+function withTimeout<T>(promise: PromiseLike<T>, ms = 6000): Promise<T | typeof TIMEOUT> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), ms)),
+  ]);
+}
+
 // Single source of truth for "what happens right after someone
 // authenticates" — used by both login.tsx and register.tsx, which used to
 // each maintain their own copy. That drift is exactly how fresh signups
@@ -31,15 +46,18 @@ export async function routeAfterAuth(
   const attempts = opts.isSso ? 4 : 1;
   for (let i = 0; i < attempts; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, 600));
-    const { data } = await supabase.from('profiles').select('role, club_id').eq('id', userId).single();
-    profile = data;
-    if (data) break;
+    const result = await withTimeout(supabase.from('profiles').select('role, club_id').eq('id', userId).single());
+    if (result === TIMEOUT) continue;
+    profile = result.data;
+    if (result.data) break;
   }
   if (!profile) return { type: 'error', message: 'Failed to load your profile. Please try again.' };
 
   // 2. Already fully onboarded (returning user) — straight into the app.
   if (profile.club_id) {
-    const { data: club, error: clubError } = await supabase.from('clubs').select('slug').eq('id', profile.club_id).single();
+    const clubResult = await withTimeout(supabase.from('clubs').select('slug').eq('id', profile.club_id).single());
+    if (clubResult === TIMEOUT) return { type: 'error', message: 'Failed to load your club. Please try again.' };
+    const { data: club, error: clubError } = clubResult;
     if (clubError) return { type: 'error', message: 'Failed to load your club. Please try again.' };
     if (club?.slug) {
       router.replace(`/(app)/${club.slug}/(tabs)`);
