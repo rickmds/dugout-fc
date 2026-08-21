@@ -42,9 +42,14 @@ export async function POST(req: NextRequest) {
   // actually guard right now (not just the one they personally created —
   // e.g. a coach originally added the roster invite, or a different
   // guardian is the one resending); coach/org_admin/app_admin keep the
-  // existing club-wide check.
+  // existing club-wide check. This guardian-ownership fallback must apply
+  // regardless of the caller's global role, not only role === 'player' —
+  // an org_admin or coach at their own club can still be a plain guest
+  // parent on a *different* club's team (the same "home club" vs "guest
+  // team" split TeamContext.tsx's own myRole already models), and was
+  // otherwise blocked from managing their own child's invite there.
   let authorized = auth.role === 'app_admin' || team?.club_id === auth.clubId;
-  if (!authorized && auth.role === 'player' && invite.player_id) {
+  if (!authorized && invite.player_id) {
     const { data: player } = await supabase.from('players').select('profile_id').eq('id', invite.player_id).single();
     if (player?.profile_id === auth.userId) {
       authorized = true;
@@ -100,16 +105,6 @@ export async function POST(req: NextRequest) {
       </div>`,
     ctaLabel: 'Set up your account →',
     ctaUrl: joinUrl,
-    secondaryHtml: `
-      <tr>
-        <td style="padding:0 32px 8px;text-align:center;">
-          <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
-            Or open the app and enter code &nbsp;
-            <strong style="color:#9ca3af;font-family:'Courier New',Courier,monospace;
-                           letter-spacing:1.5px;">${esc(invite.token)}</strong>
-          </p>
-        </td>
-      </tr>`,
   });
 
   const subject = player_name
