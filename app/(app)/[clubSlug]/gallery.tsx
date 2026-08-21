@@ -75,7 +75,10 @@ export default function GalleryScreen() {
   const { team } = useTeam();
   const { profile } = useAuth();
   const { primaryColor } = useClub();
-  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club — an
+  // org_admin at their home club who's just a guest/parent elsewhere must
+  // not get coach-level UI there just because profile.role is org_admin globally.
+  const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
   const [photos, setPhotos]         = useState<Photo[]>([]);
   const [loading, setLoading]       = useState(true);

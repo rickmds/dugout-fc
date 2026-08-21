@@ -259,6 +259,11 @@ export default function HomeScreen() {
   const [nextGameDriveTime, setNextGameDriveTime]       = useState<string | null>(null);
   const [nextTrainingDriveTime, setNextTrainingDriveTime] = useState<string | null>(null);
   const [myPlayer, setMyPlayer]             = useState<MyPlayer | null>(null);
+  // True when a guardian has more than one player on this team (e.g. twins) —
+  // the hero/quick-RSVP card below only ever shows one of them, so this
+  // drives a small "+N more" note pointing at the event screen, where every
+  // guarded player gets their own independent RSVP.
+  const [hasMultipleGuardedPlayers, setHasMultipleGuardedPlayers] = useState(false);
   const [myGameRsvpStatus, setMyGameRsvpStatus]         = useState<string | null>(null);
   const [myTrainingRsvpStatus, setMyTrainingRsvpStatus] = useState<string | null>(null);
   const [myRsvpCount, setMyRsvpCount]       = useState(0);
@@ -309,7 +314,11 @@ export default function HomeScreen() {
   const [showPollModal, setShowPollModal] = useState(false);
   const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
 
-  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club (see
+  // TeamContext.tsx) — an org_admin at their home club who's just a
+  // guest/parent elsewhere must not get coach-level UI there just because
+  // profile.role is org_admin globally.
+  const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
   const slug = clubSlug ?? club?.slug ?? '';
 
   // Realtime: keep notification badge in sync without polling
@@ -477,7 +486,7 @@ export default function HomeScreen() {
       ? `${event.lat},${event.lng}`
       : (event.address ?? event.location ?? '');
     if (!loc) return;
-    fetchDriveTime(loc).then(t => { if (t) setDrive(t); });
+    fetchDriveTime(loc, event.event_date, event.event_time).then(t => { if (t) setDrive(t); });
     if (isWeatherForecastable(event.event_date)) {
       fetchEventWeather(loc, event.event_date, event.event_time ?? null).then(w => { if (w) setWeather(w); });
     }
@@ -508,13 +517,20 @@ export default function HomeScreen() {
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       // get_my_guarded_players() also checks player_guardians — a second
       // guardian otherwise never saw their own kid's card/RSVP on Home at all.
-      (supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).maybeSingle(),
+      // Not .maybeSingle() — a guardian can have more than one player on this
+      // team (e.g. twins), which would otherwise error and blank the whole
+      // card. The Home hero/quick-RSVP still only surfaces one child today
+      // (the full per-child RSVP picture always lives on the event screen);
+      // pick deterministically by name rather than whatever order the DB returns.
+      (supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).order('full_name'),
       sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
     ]);
 
     const nextG = (gameEvents as NextEvent[])?.[0] ?? null;
     const nextT = (trainingEvents as NextEvent[])?.[0] ?? null;
-    const player = (playerRes as any).data as MyPlayer | null;
+    const guardedPlayers = ((playerRes as any).data as MyPlayer[] | null) ?? [];
+    const player = guardedPlayers[0] ?? null;
+    setHasMultipleGuardedPlayers(guardedPlayers.length > 1);
     const activeCallouts = (calloutData ?? []) as Callout[];
 
     setNextGame(nextG);
@@ -1179,12 +1195,6 @@ export default function HomeScreen() {
                     {formatDate(event.event_date).toUpperCase()}
                   </Text>
                 </View>
-                {driveTime ? (
-                  <View style={styles.nextCardDrivePill}>
-                    <Ionicons name="car-outline" size={11} color={PULSE_COLORS.ui.muted} />
-                    <Text style={styles.nextCardDrivePillText}>{driveTime}</Text>
-                  </View>
-                ) : null}
               </View>
             </View>
 
@@ -1209,8 +1219,14 @@ export default function HomeScreen() {
             </View>
 
             {/* Context chips: weather + surface + kit — unified row */}
-            {(weather || event.field_type || kitColor) ? (
+            {(weather || event.field_type || kitColor || driveTime) ? (
               <View style={styles.nextCardChipRow}>
+                {driveTime ? (
+                  <View style={[styles.nextCardChip, styles.nextCardChipWeather]}>
+                    <Ionicons name="car-outline" size={11} color={PULSE_COLORS.ui.muted} />
+                    <Text style={[styles.nextCardChipText, { color: PULSE_COLORS.ui.textSecondary }]}>{driveTime}</Text>
+                  </View>
+                ) : null}
                 {weather ? (
                   <View style={[styles.nextCardChip, styles.nextCardChipWeather]}>
                     <Text style={styles.nextCardChipEmoji}>{weather.icon}</Text>
@@ -1900,6 +1916,16 @@ export default function HomeScreen() {
 
               <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
             </TouchableOpacity>
+            {hasMultipleGuardedPlayers && (
+              <TouchableOpacity
+                style={styles.multiPlayerNote}
+                onPress={() => router.push(`/(app)/${slug}/(tabs)/roster` as never)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="people-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                <Text style={styles.multiPlayerNoteText}>You have another player on this team — see the roster, or RSVP for both from an event's page</Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 
@@ -2528,13 +2554,6 @@ const styles = StyleSheet.create({
   nextCardTopRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
   nextCardBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   nextCardBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: '#fff' },
-  nextCardDrivePill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 20, borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-  },
-  nextCardDrivePillText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
 
   // Meta rows (time + location)
   nextCardMeta: { gap: 5, marginBottom: 12 },
@@ -2608,6 +2627,11 @@ const styles = StyleSheet.create({
   playerAvatarPhoto: { width: '100%', height: '100%' },
   playerAvatarFill: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   playerAvatarText: { fontSize: 18, fontWeight: '800' },
+  multiPlayerNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    marginTop: -20, marginBottom: 28, paddingHorizontal: 4,
+  },
+  multiPlayerNoteText: { flex: 1, fontSize: 11.5, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
   myPlayerBody: { flex: 1, gap: 6 },
   myPlayerName: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text },
   myPlayerBadges: { flexDirection: 'row', gap: 8 },

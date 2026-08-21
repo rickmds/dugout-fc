@@ -65,7 +65,9 @@ export default function ChatScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { team, loading: teamLoading } = useTeam();
   const { profile, user } = useAuth();
-  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club — see
+  // TeamContext.tsx's Team type comment.
+  const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
   const [activeTab, setActiveTab] = useState<Tab>('chats');
 
@@ -621,7 +623,9 @@ type AnnEmailRecipient = {
 
 function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; profile: Profile | null; coachEmail: string | null }) {
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
-  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club — see
+  // TeamContext.tsx's Team type comment.
+  const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading]             = useState(true);
   const [refreshing, setRefreshing]       = useState(false);

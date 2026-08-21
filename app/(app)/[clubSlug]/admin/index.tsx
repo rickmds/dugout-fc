@@ -366,7 +366,11 @@ export default function AdminPanel() {
   useFocusEffect(useCallback(() => { load(); }, [load, teamLoading]));
 
   const slug = clubSlug ?? '';
-  const isOrgAdmin = profile?.role === 'org_admin';
+  // Keyed off team.myRole (properly scoped to the currently-active team's own
+  // club), not the raw global profile.role — an org_admin at their home club
+  // who's merely a guest/parent on another club's team must not see that
+  // other club's admin tools just because their home-club role is org_admin.
+  const isOrgAdmin = team?.myRole === 'org_admin';
   const filteredTeams = useMemo(
     () => allTeams.filter((t) => t.name.toLowerCase().includes(search.toLowerCase())),
     [allTeams, search],
@@ -654,6 +658,12 @@ export default function AdminPanel() {
               desc="Browse and manage all team photos"
               onPress={() => router.push(`/(app)/${slug}/gallery` as any)}
               showDivider
+            />
+            <AiToolCard
+              icon="happy-outline" color="#22c55e" bg="rgba(34,197,94,0.12)"
+              label="Team Pulse"
+              desc="How players are feeling after games, trending up or down"
+              onPress={() => router.push(`/(app)/${slug}/admin/reflections` as any)}
             />
           </View>
 

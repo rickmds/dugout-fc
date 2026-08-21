@@ -137,9 +137,11 @@ export default function ScheduleScreen() {
 
   const [events, setEvents] = useState<Event[]>([]);
   const [rsvpCounts, setRsvpCounts] = useState<Record<string, RsvpCounts>>({});
-  const [myRsvps, setMyRsvps] = useState<Record<string, MyRsvp>>({});
-  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
-  const [playerIdMap, setPlayerIdMap] = useState<Map<string, string>>(new Map()); // team_id -> player_id
+  // event_id -> player_id -> status. A guardian can have more than one
+  // player on the same team (e.g. twins) — every RSVP row below is keyed
+  // per player rather than assuming a single "my player".
+  const [myRsvpsByPlayer, setMyRsvpsByPlayer] = useState<Record<string, Record<string, MyRsvp>>>({});
+  const [myPlayersByTeam, setMyPlayersByTeam] = useState<Map<string, { id: string; full_name: string }[]>>(new Map());
   const [playerCount, setPlayerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   // Once we've shown real content, later refetches (regaining focus after
@@ -165,7 +167,11 @@ export default function ScheduleScreen() {
   const [calMonth, setCalMonth] = useState(todayDate.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(getTodayStr);
 
-  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club (see
+  // TeamContext.tsx) — an org_admin at their home club who's just a
+  // guest/parent elsewhere must not get coach-level UI there just because
+  // profile.role is org_admin globally.
+  const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
   useFocusEffect(
     useCallback(() => {
@@ -196,8 +202,10 @@ export default function ScheduleScreen() {
       // legacy players.profile_id column — a direct .eq('profile_id', ...)
       // query here missed a second (or later) guardian's own kid entirely,
       // silently hiding their RSVP controls for every one of that child's games.
+      // Not deduped to one-per-team — a guardian can have more than one
+      // player on the same team (e.g. twins), and each gets their own row.
       profile?.id
-        ? (supabase as any).rpc('get_my_guarded_players').select('id, team_id').in('team_id', teamIds)
+        ? (supabase as any).rpc('get_my_guarded_players').select('id, team_id, full_name').in('team_id', teamIds).order('full_name')
         : Promise.resolve({ data: [] }),
       supabase.from('players').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
     ]);
@@ -205,19 +213,22 @@ export default function ScheduleScreen() {
     const evs = (eventsRes.data as unknown as Event[]) ?? [];
     setPlayerCount(countRes.count ?? 0);
 
-    const pRows = (playersRes as any).data ?? [];
-    const pidMap = new Map<string, string>(pRows.map((p: any) => [p.team_id, p.id]));
-    const pid = pidMap.get(team.id) ?? null;
-    setPlayerIdMap(pidMap);
-    setMyPlayerId(pid);
+    const pRows = ((playersRes as any).data ?? []) as { id: string; team_id: string; full_name: string }[];
+    const playersByTeam = new Map<string, { id: string; full_name: string }[]>();
+    for (const p of pRows) {
+      const arr = playersByTeam.get(p.team_id) ?? [];
+      arr.push({ id: p.id, full_name: p.full_name });
+      playersByTeam.set(p.team_id, arr);
+    }
+    setMyPlayersByTeam(playersByTeam);
 
     // Set events immediately so they render even if guest/RSVP loading fails
     setEvents(evs);
     setLoading(false);
 
-    const allPlayerIds = !isCoach ? [...pidMap.values()] : [];
+    const allPlayerIds = !isCoach ? pRows.map((p) => p.id) : [];
     const [, guestEvs] = await Promise.all([
-      evs.length > 0 ? fetchRsvpData(evs, pidMap) : Promise.resolve(),
+      evs.length > 0 ? fetchRsvpData(evs, playersByTeam) : Promise.resolve(),
       (async () => {
         try {
           return allPlayerIds.length > 0 ? await loadGuestEvents(evs, allPlayerIds) : ([] as Event[]);
@@ -267,6 +278,8 @@ export default function ScheduleScreen() {
         location: (e.lat != null && e.lng != null)
           ? `${e.lat},${e.lng}`
           : (e.address ?? e.location ?? ''),
+        eventDate: e.event_date,
+        eventTime: e.event_time,
       }));
       const dtMap = await fetchDriveTimes(items);
       setDriveTimeMap(dtMap);
@@ -326,9 +339,9 @@ export default function ScheduleScreen() {
     setRefreshing(false);
   }
 
-  async function fetchRsvpData(evs: Event[], pidMap: Map<string, string>) {
+  async function fetchRsvpData(evs: Event[], playersByTeam: Map<string, { id: string; full_name: string }[]>) {
     const eventIds = evs.map((e) => e.id);
-    const playerIds = [...pidMap.values()];
+    const playerIds = [...playersByTeam.values()].flat().map((p) => p.id);
 
     const [countsRes, myRes, guestRes] = await Promise.all([
       supabase.from('event_rsvps').select('event_id, status').in('event_id', eventIds),
@@ -352,37 +365,31 @@ export default function ScheduleScreen() {
     }
     setRsvpCounts(counts);
 
-    const evTeamMap = new Map(evs.map((e) => [e.id, e.team_id]));
-    const mine: Record<string, MyRsvp> = {};
+    const mine: Record<string, Record<string, MyRsvp>> = {};
     for (const row of (myRes.data ?? []) as { event_id: string; player_id: string; status: string }[]) {
-      const teamId = evTeamMap.get(row.event_id);
-      if (teamId && pidMap.get(teamId) === row.player_id) {
-        mine[row.event_id] = row.status as MyRsvp;
-      }
+      (mine[row.event_id] ??= {})[row.player_id] = row.status as MyRsvp;
     }
-    setMyRsvps(mine);
+    setMyRsvpsByPlayer(mine);
   }
 
-  async function handleRsvp(eventId: string, status: 'attending' | 'not_attending') {
+  async function handleRsvp(eventId: string, playerId: string, status: 'attending' | 'not_attending') {
     const ev = events.find((e) => e.id === eventId);
-    const pid = ev ? (playerIdMap.get(ev.team_id) ?? myPlayerId) : myPlayerId;
-    if (!pid) return;
     if (ev?.rsvp_lock_at && new Date(ev.rsvp_lock_at) <= new Date()) {
       Alert.alert('RSVP closed', 'The RSVP window for this event has closed. Contact your coach if you need to make a change.');
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const current = myRsvps[eventId];
+    const current = myRsvpsByPlayer[eventId]?.[playerId] ?? null;
     try {
       if (current === status) {
-        const { error } = await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', pid);
+        const { error } = await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', playerId);
         if (error) {
           Alert.alert('Error', 'Could not update RSVP. Please try again.');
           return;
         }
       } else {
         const { error } = await supabase.from('event_rsvps').upsert(
-          { event_id: eventId, player_id: pid, responded_by: profile?.id, status },
+          { event_id: eventId, player_id: playerId, responded_by: profile?.id, status },
           { onConflict: 'event_id,player_id' }
         );
         if (error) {
@@ -390,7 +397,7 @@ export default function ScheduleScreen() {
           return;
         }
       }
-      await fetchRsvpData(events, playerIdMap);
+      await fetchRsvpData(events, myPlayersByTeam);
     } catch (e) {
       console.error('handleRsvp error', e);
     }
@@ -416,7 +423,10 @@ export default function ScheduleScreen() {
   function renderCard(item: Event) {
     const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.other;
     const counts = rsvpCounts[item.id];
-    const myStatus = myRsvps[item.id];
+    // A guardian can have more than one player on this team (e.g. twins) —
+    // every one of them gets their own status chip and RSVP row below.
+    const myPlayers = myPlayersByTeam.get(item.team_id) ?? [];
+    const isMultiPlayer = myPlayers.length > 1;
     const isPast = !isUpcoming(item.event_date);
     const today = isToday(item.event_date);
     const isCancelled = !!item.cancelled_at;
@@ -472,9 +482,12 @@ export default function ScheduleScreen() {
 
         <View style={styles.eventBody}>
 
-          {/* Top row: badges (left) + drive time pill (right) */}
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.badgeRow}>
+          {/* Badges + drive time all wrap together as one flowing group —
+              keeping the drive time pill in a separate space-between
+              column meant its reserved width applied to every wrapped
+              line, so an overflow badge like "Grass" could end up alone
+              on a line with a big stranded gap next to it. */}
+          <View style={styles.badgeRow}>
               {isMultiView && item.team_id !== team?.id && teamNameMap.has(item.team_id) && (
                 <View style={[styles.typeBadge, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
                   <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]} numberOfLines={1}>
@@ -533,7 +546,11 @@ export default function ScheduleScreen() {
                   </Text>
                 </View>
               )}
-              {/* Status chip — "Confirmed" for guests, RSVP status for team members */}
+              {/* Status chip — "Confirmed" for guests, single-player RSVP status
+                  for team members. Skipped when there's more than one guarded
+                  player on this team (e.g. twins) — one small chip can't
+                  represent two independent statuses, and the full per-child
+                  rows below already cover that case. */}
               {!isCoach && !isPast && (
                 isGuest ? (
                   item.guestStatus === 'pending' ? (
@@ -547,34 +564,36 @@ export default function ScheduleScreen() {
                       <Text style={[styles.myStatusChipText, { color: PULSE_COLORS.rsvp.attending }]}>Confirmed</Text>
                     </View>
                   )
-                ) : (playerIdMap.get(item.team_id) ?? myPlayerId) && myStatus ? (
-                  <View style={[
-                    styles.myStatusChip,
-                    { backgroundColor: myStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
-                  ]}>
-                    <Ionicons
-                      name={myStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
-                      size={11}
-                      color={myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
-                    />
-                    <Text style={[
-                      styles.myStatusChipText,
-                      { color: myStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
+                ) : (() => {
+                  if (isMultiPlayer || myPlayers.length === 0) return null;
+                  const soloStatus = myRsvpsByPlayer[item.id]?.[myPlayers[0].id] ?? null;
+                  if (!soloStatus) return null;
+                  return (
+                    <View style={[
+                      styles.myStatusChip,
+                      { backgroundColor: soloStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
                     ]}>
-                      {myStatus === 'attending' ? 'Going' : "Can't go"}
-                    </Text>
-                  </View>
-                ) : null
+                      <Ionicons
+                        name={soloStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
+                        size={11}
+                        color={soloStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
+                      />
+                      <Text style={[
+                        styles.myStatusChipText,
+                        { color: soloStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
+                      ]}>
+                        {soloStatus === 'attending' ? 'Going' : "Can't go"}
+                      </Text>
+                    </View>
+                  );
+                })()
               )}
-            </View>
-
-            {/* Drive time pill — top right */}
-            {!isPast && !isCancelled && driveTimeMap[item.id] && (
-              <View style={styles.driveTimePill}>
-                <Ionicons name="car-outline" size={10} color={PULSE_COLORS.ui.textSecondary} />
-                <Text style={styles.driveTimePillText}>{driveTimeMap[item.id]}</Text>
-              </View>
-            )}
+              {!isPast && !isCancelled && driveTimeMap[item.id] && (
+                <View style={styles.driveTimePill}>
+                  <Ionicons name="car-outline" size={10} color={PULSE_COLORS.ui.textSecondary} />
+                  <Text style={styles.driveTimePillText}>{driveTimeMap[item.id]}</Text>
+                </View>
+              )}
           </View>
 
           <Text style={[styles.eventTitle, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>{item.title}</Text>
@@ -664,31 +683,45 @@ export default function ScheduleScreen() {
             );
           })()}
 
-          {/* Parent RSVP buttons */}
-          {!isCoach && !isGuest && (playerIdMap.get(item.team_id) ?? myPlayerId) && !isPast && !isCancelled && (
-            <View style={styles.rsvpRow}>
-              <TouchableOpacity
-                style={[styles.rsvpBtn, myStatus === 'attending' && styles.rsvpBtnGoing]}
-                onPress={() => handleRsvp(item.id, 'attending')}
-              >
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={13}
-                  color={myStatus === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
-                />
-                <Text style={[styles.rsvpBtnText, myStatus === 'attending' && { color: '#000' }]}>Going</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.rsvpBtn, myStatus === 'not_attending' && styles.rsvpBtnNotGoing]}
-                onPress={() => handleRsvp(item.id, 'not_attending')}
-              >
-                <Ionicons
-                  name="close-circle-outline"
-                  size={13}
-                  color={myStatus === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
-                />
-                <Text style={[styles.rsvpBtnText, myStatus === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
-              </TouchableOpacity>
+          {/* Parent RSVP buttons — one row per guarded player on this team, so
+              a family with more than one (e.g. twins) gets independent,
+              always-visible controls for each rather than picking just one. */}
+          {!isCoach && !isGuest && myPlayers.length > 0 && !isPast && !isCancelled && (
+            <View style={{ gap: 6, marginTop: 6 }}>
+              {myPlayers.map((p) => {
+                const status = myRsvpsByPlayer[item.id]?.[p.id] ?? null;
+                return (
+                  <View key={p.id} style={isMultiPlayer ? styles.childRsvpRow : undefined}>
+                    {isMultiPlayer && (
+                      <Text style={styles.childRsvpName} numberOfLines={1}>{p.full_name.split(' ')[0]}</Text>
+                    )}
+                    <View style={[styles.rsvpRow, { marginTop: 0 }]}>
+                      <TouchableOpacity
+                        style={[styles.rsvpBtn, status === 'attending' && styles.rsvpBtnGoing]}
+                        onPress={() => handleRsvp(item.id, p.id, 'attending')}
+                      >
+                        <Ionicons
+                          name="checkmark-circle-outline"
+                          size={13}
+                          color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
+                        />
+                        <Text style={[styles.rsvpBtnText, status === 'attending' && { color: '#000' }]}>Going</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.rsvpBtn, status === 'not_attending' && styles.rsvpBtnNotGoing]}
+                        onPress={() => handleRsvp(item.id, p.id, 'not_attending')}
+                      >
+                        <Ionicons
+                          name="close-circle-outline"
+                          size={13}
+                          color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
+                        />
+                        <Text style={[styles.rsvpBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>
@@ -1192,8 +1225,7 @@ const styles = StyleSheet.create({
   dateMon: { fontSize: 10, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 0.5 },
   todayText: { color: PULSE_COLORS.brand.green },
   eventBody: { flex: 1, paddingHorizontal: 12, paddingVertical: 11, gap: 5 },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, flex: 1 },
+  badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5 },
   driveTimePill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,
@@ -1263,6 +1295,8 @@ const styles = StyleSheet.create({
   },
   guestCountPillText: { fontSize: 9, fontWeight: '800', color: '#f97316' },
   rsvpRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  childRsvpRow: { gap: 4 },
+  childRsvpName: { fontSize: 11.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
   rsvpBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 12, paddingVertical: 12, borderRadius: 20,

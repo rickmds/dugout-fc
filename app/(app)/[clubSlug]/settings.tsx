@@ -31,6 +31,7 @@ import ClubHeader from '../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../components/ui/TeamEditModal';
 import ImageEditor from '../../../components/ui/ImageEditor';
 import { useMapApp } from '../../../hooks/useMapApp';
+import { formatPhone } from '../../../lib/formatPhone';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ export default function SettingsScreen() {
   const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook } = useClub();
   const router = useRouter();
   const { profile, club, user, signOut, refreshProfile } = useAuth();
-  const { allTeams, refetch: refetchTeams } = useActiveTeam();
+  const { team, allTeams, refetch: refetchTeams } = useActiveTeam();
   const mapApp = useMapApp();
 
   const [editingName, setEditingName] = useState(false);
@@ -125,7 +126,10 @@ export default function SettingsScreen() {
   const [address, setAddress]               = useState((profile as any)?.address ?? '');
   const [savingAddress, setSavingAddress]   = useState(false);
 
-  const isOrgAdmin = profile?.role === 'org_admin';
+  // team.myRole is scoped to the currently-viewed club specifically — this
+  // gates editing THAT club's branding, so an org_admin at their home club
+  // who's just a guest/parent elsewhere must not be able to edit it.
+  const isOrgAdmin = team?.myRole === 'org_admin';
   const [tagline, setTagline]                 = useState(clubTagline ?? '');
   const [editingTagline, setEditingTagline]   = useState(false);
   const [savingTagline, setSavingTagline]     = useState(false);
@@ -1074,7 +1078,7 @@ export default function SettingsScreen() {
               style={{ flex: 1, alignItems: 'flex-end' }}
             >
               <Text style={[st.rowValue, !((profile as any)?.phone) && { color: PULSE_COLORS.ui.muted }]}>
-                {(profile as any)?.phone ?? 'Add number'}
+                {formatPhone((profile as any)?.phone) ?? 'Add number'}
               </Text>
             </TouchableOpacity>
           )}

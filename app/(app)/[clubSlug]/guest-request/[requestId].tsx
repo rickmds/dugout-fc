@@ -77,11 +77,12 @@ export default function GuestRequestScreen() {
   const [event,              setEvent]              = useState<EventInfo | null>(null);
   const [requestingTeamName, setRequestingTeamName] = useState('');
   const [spotsLeft,          setSpotsLeft]          = useState(0);
-  const [myPlayerId,         setMyPlayerId]         = useState<string | null>(null);
-  const [myPlayerName,       setMyPlayerName]       = useState('');
-  const [alreadyVolunteered, setAlreadyVolunteered] = useState(false);
+  // A guardian can have more than one eligible player on the target team(s)
+  // (e.g. twins) — each gets its own volunteer row/status rather than the
+  // screen arbitrarily picking just one of them.
+  const [myPlayers,          setMyPlayers]          = useState<{ id: string; full_name: string; alreadyVolunteered: boolean }[]>([]);
   const [loading,            setLoading]            = useState(true);
-  const [volunteering,       setVolunteering]       = useState(false);
+  const [volunteeringId,     setVolunteeringId]     = useState<string | null>(null);
   const [driveTime,          setDriveTime]          = useState<string | null>(null);
   const [mapImgLoaded,       setMapImgLoaded]       = useState(false);
   const [mapImgError,        setMapImgError]        = useState(false);
@@ -116,7 +117,7 @@ export default function GuestRequestScreen() {
       // Kick off drive time fetch
       const dest = ev.lat != null && ev.lng != null ? `${ev.lat},${ev.lng}` : (ev.address ?? '');
       if (dest && PLACES_KEY) {
-        fetchDriveTime(dest).then(t => { if (t) setDriveTime(t); });
+        fetchDriveTime(dest, ev.event_date, ev.event_time).then(t => { if (t) setDriveTime(t); });
       }
     }
     if (teamRes.data) setRequestingTeamName(teamRes.data.name);
@@ -126,30 +127,33 @@ export default function GuestRequestScreen() {
 
     // get_my_guarded_players() also checks player_guardians — otherwise a
     // second guardian couldn't respond to a guest request for their own kid.
-    const myPlayerRes = targetTeamIds.length > 0
+    // Not .limit(1).maybeSingle() — a guardian can have more than one
+    // eligible player (e.g. twins on the same target team), and picking
+    // just one arbitrarily would silently block them from volunteering
+    // the other.
+    const myPlayersRes = targetTeamIds.length > 0
       ? await (supabase as any).rpc('get_my_guarded_players').select('id,full_name')
-          .in('team_id', targetTeamIds).limit(1).maybeSingle()
-      : { data: null };
+          .in('team_id', targetTeamIds).order('full_name')
+      : { data: [] };
 
-    const myPlayer = myPlayerRes.data as any;
-    if (myPlayer) {
-      setMyPlayerId(myPlayer.id);
-      setMyPlayerName(myPlayer.full_name);
-      const { data: myGuestRow } = await supabase.from('event_guests').select('id')
-        .eq('event_id', r.event_id).eq('player_id', myPlayer.id).neq('status', 'declined').maybeSingle();
-      setAlreadyVolunteered(!!myGuestRow);
+    const eligiblePlayers = (myPlayersRes.data ?? []) as { id: string; full_name: string }[];
+    if (eligiblePlayers.length > 0) {
+      const { data: myGuestRows } = await supabase.from('event_guests').select('player_id')
+        .eq('event_id', r.event_id).in('player_id', eligiblePlayers.map(p => p.id)).neq('status', 'declined');
+      const volunteeredIds = new Set((myGuestRows ?? []).map((g: any) => g.player_id as string));
+      setMyPlayers(eligiblePlayers.map(p => ({ ...p, alreadyVolunteered: volunteeredIds.has(p.id) })));
     }
 
     setLoading(false);
   }
 
-  async function handleVolunteer() {
-    if (!myPlayerId || !request || !profile) return;
-    setVolunteering(true);
+  async function handleVolunteer(playerId: string, playerName: string) {
+    if (!playerId || !request || !profile) return;
+    setVolunteeringId(playerId);
 
     const { error } = await supabase.rpc('claim_guest_spot', {
       p_request_id: request.id,
-      p_player_id:  myPlayerId,
+      p_player_id:  playerId,
     });
 
     if (error) {
@@ -159,7 +163,7 @@ export default function GuestRequestScreen() {
         alreadyFull ? 'All spots were just filled by another parent.' : 'Could not volunteer. Please try again.'
       );
       if (alreadyFull) { setSpotsLeft(0); setRequest(r => r ? { ...r, status: 'filled' } : r); }
-      setVolunteering(false);
+      setVolunteeringId(null);
       return;
     }
 
@@ -172,17 +176,17 @@ export default function GuestRequestScreen() {
       await sendProfilesPush({
         profileIds: coachProfileIds.current,
         title: 'Guest spot filled',
-        body: `${myPlayerName} has volunteered to guest play for ${requestingTeamName}${event?.title ? ` — ${event.title}` : ''}.`,
+        body: `${playerName} has volunteered to guest play for ${requestingTeamName}${event?.title ? ` — ${event.title}` : ''}.`,
         data: { type: 'guest_accepted', event_id: request.event_id, club_slug: clubSlug },
       });
     }
 
-    setAlreadyVolunteered(true);
+    setMyPlayers(prev => prev.map(p => p.id === playerId ? { ...p, alreadyVolunteered: true } : p));
     setSpotsLeft(Math.max(0, newLeft));
-    setVolunteering(false);
+    setVolunteeringId(null);
     Alert.alert(
       "You're in! ✓",
-      `${myPlayerName} has been added as a guest player for ${requestingTeamName}. Their coach will be in touch.`,
+      `${playerName} has been added as a guest player for ${requestingTeamName}. Their coach will be in touch.`,
     );
   }
 
@@ -209,7 +213,7 @@ export default function GuestRequestScreen() {
 
   const isFilled    = request.status === 'filled';
   const isCancelled = request.status === 'cancelled';
-  const canVolunteer = !isFilled && !isCancelled && !alreadyVolunteered && !!myPlayerId;
+  const requestOpen = !isFilled && !isCancelled;
   const hasLocation = !!(event.location || event.address);
   const hasMap      = !!(event.lat || event.address);
   const mapDest     = event.lat != null && event.lng != null ? `${event.lat},${event.lng}` : encodeURIComponent(event.address ?? '');
@@ -391,40 +395,49 @@ export default function GuestRequestScreen() {
           )}
         </View>
 
-        {/* Volunteer / status section */}
-        {!myPlayerId ? (
+        {/* Volunteer / status section — one row per eligible player, since a
+            guardian can have more than one (e.g. twins on the same team) */}
+        {myPlayers.length === 0 ? (
           <View style={st.noPlayerCard}>
             <Ionicons name="information-circle-outline" size={20} color={PULSE_COLORS.ui.muted} />
             <Text style={st.noPlayerText}>
               You don't have a player on the team that was asked. If you think this is wrong, contact your coach.
             </Text>
           </View>
-        ) : alreadyVolunteered ? (
-          <View style={[st.volunteerConfirmed, { backgroundColor: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.25)' }]}>
-            <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
-            <View style={{ flex: 1 }}>
-              <Text style={[st.volunteerConfirmedTitle, { color: '#22c55e' }]}>You're in!</Text>
-              <Text style={st.volunteerConfirmedSub}>{myPlayerName} has been added. The coach will be in touch.</Text>
-            </View>
-          </View>
         ) : (
-          <TouchableOpacity
-            style={[st.volunteerBtn, { backgroundColor: canVolunteer ? primaryColor : '#E2E8F0' }]}
-            onPress={handleVolunteer}
-            disabled={!canVolunteer || volunteering}
-            activeOpacity={0.85}
-          >
-            {volunteering
-              ? <ActivityIndicator color="#fff" size="small" />
-              : (
-                <>
-                  <Ionicons name="hand-right-outline" size={18} color={canVolunteer ? '#fff' : '#94A3B8'} />
-                  <Text style={[st.volunteerBtnText, { color: canVolunteer ? '#fff' : '#94A3B8' }]}>
-                    Volunteer {myPlayerName}
-                  </Text>
-                </>
-              )}
-          </TouchableOpacity>
+          <View style={{ gap: 10 }}>
+            {myPlayers.map((p) => {
+              const canVolunteer = requestOpen && !p.alreadyVolunteered;
+              return p.alreadyVolunteered ? (
+                <View key={p.id} style={[st.volunteerConfirmed, { backgroundColor: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.25)' }]}>
+                  <Ionicons name="checkmark-circle" size={22} color="#22c55e" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[st.volunteerConfirmedTitle, { color: '#22c55e' }]}>You're in!</Text>
+                    <Text style={st.volunteerConfirmedSub}>{p.full_name} has been added. The coach will be in touch.</Text>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[st.volunteerBtn, { backgroundColor: canVolunteer ? primaryColor : '#E2E8F0' }]}
+                  onPress={() => handleVolunteer(p.id, p.full_name)}
+                  disabled={!canVolunteer || volunteeringId === p.id}
+                  activeOpacity={0.85}
+                >
+                  {volunteeringId === p.id
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : (
+                      <>
+                        <Ionicons name="hand-right-outline" size={18} color={canVolunteer ? '#fff' : '#94A3B8'} />
+                        <Text style={[st.volunteerBtnText, { color: canVolunteer ? '#fff' : '#94A3B8' }]}>
+                          Volunteer {p.full_name}
+                        </Text>
+                      </>
+                    )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         )}
 
         <Text style={st.disclaimer}>

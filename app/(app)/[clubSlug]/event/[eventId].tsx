@@ -28,6 +28,8 @@ import { useMapApp } from '../../../../hooks/useMapApp';
 import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
 import { MatchTrackerContent } from '../admin/events/[eventId]/match-tracker';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
+import ReflectionSheet, { FACES } from '../../../../components/reflection/ReflectionSheet';
+import ShoutoutSheet from '../../../../components/shoutout/ShoutoutSheet';
 import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
 import { sendProfilesPush } from '../../../../lib/push';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -37,11 +39,13 @@ import CreatePollModal from '../../../../components/home/CreatePollModal';
 const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 function LocationMap({
-  lat, lng, address, onPress, onDriveTime,
+  lat, lng, address, eventDate, eventTime, onPress, onDriveTime,
 }: {
   lat: number | null;
   lng: number | null;
   address: string | null;
+  eventDate?: string;
+  eventTime?: string | null;
   onPress: () => void;
   onDriveTime?: (t: string) => void;
 }) {
@@ -53,7 +57,7 @@ function LocationMap({
   useEffect(() => {
     if (!PLACES_KEY) return;
     const dest = lat != null && lng != null ? `${lat},${lng}` : (address ?? '');
-    fetchDriveTime(dest).then(t => {
+    fetchDriveTime(dest, eventDate, eventTime).then(t => {
       if (t) { setDrivingTime(t); onDriveTime?.(t); }
     });
   }, []);
@@ -301,6 +305,17 @@ function isUpcoming(dateStr: string): boolean {
   return new Date(dateStr + 'T00:00:00') >= today;
 }
 
+// Same conservative-fallback logic as the reflection-prompts cron
+// (web/app/api/cron/reflection-prompts/route.ts) — uses the real
+// duration_minutes when the coach set one, otherwise assumes 2 hours is
+// long enough to clear any age group's warmup/halftime/game length.
+function hasGameEnded(event: { event_date: string; event_time: string | null; duration_minutes: number | null }): boolean {
+  if (!event.event_time) return false;
+  const start = new Date(`${event.event_date}T${event.event_time}`);
+  const end = new Date(start.getTime() + (event.duration_minutes ?? 120) * 60000);
+  return Date.now() >= end.getTime();
+}
+
 function rsvpDeadlineLabel(lockAt: string): string {
   const lock = new Date(lockAt);
   const now = new Date();
@@ -323,10 +338,15 @@ export default function EventDetailScreen() {
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [rsvps, setRsvps] = useState<RsvpRow[]>([]);
-  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
-  const [myStatus, setMyStatus] = useState<RsvpStatus | null>(null);
+  // A guardian can have more than one player on this team (e.g. twins) —
+  // every RSVP/reflection control below is keyed per player id rather than
+  // assuming a single "my player", so each child gets independent controls.
+  const [myPlayerIds, setMyPlayerIds] = useState<string[]>([]);
+  const [myReflections, setMyReflections] = useState<Record<string, { rating: number; went_well: string | null; needs_improvement: string | null }>>({});
+  const [reflectionPlayerId, setReflectionPlayerId] = useState<string | null>(null);
+  const [shoutoutSheetOpen, setShoutoutSheetOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [rsvpSaving, setRsvpSaving] = useState(false);
+  const [rsvpSavingPlayerId, setRsvpSavingPlayerId] = useState<string | null>(null);
   const [nudging, setNudging] = useState(false);
   const [guests, setGuests] = useState<GuestEntry[]>([]);
   const [callouts, setCallouts] = useState<GuestCallout[]>([]);
@@ -379,7 +399,11 @@ export default function EventDetailScreen() {
   const [eventPolls, setEventPolls] = useState<Poll[]>([]);
   const [showEventPollModal, setShowEventPollModal] = useState(false);
 
-  const isCoach = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club (see
+  // TeamContext.tsx) — this screen shows coach-only data (coach notes,
+  // attendance overrides), so an org_admin merely guesting elsewhere must
+  // not trip this just because their home-club role is org_admin.
+  const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
   const mapApp = useMapApp();
 
   useEffect(() => {
@@ -401,7 +425,9 @@ export default function EventDetailScreen() {
       supabase.from('event_rsvps').select('player_id,status').eq('event_id', eventId),
       // get_my_guarded_players() also checks player_guardians — otherwise a
       // second guardian never saw their own kid's RSVP controls on this screen.
-      (supabase as any).rpc('get_my_guarded_players').select('id').eq('team_id', team.id).maybeSingle(),
+      // Not .maybeSingle() — a guardian can have more than one player on
+      // this team (e.g. twins), so this can legitimately return several rows.
+      (supabase as any).rpc('get_my_guarded_players').select('id').eq('team_id', team.id),
       supabase.from('game_sessions').select('id')
         .eq('event_id', eventId).eq('status', 'full_time').maybeSingle(),
       supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId),
@@ -412,11 +438,18 @@ export default function EventDetailScreen() {
     setPlayers((playersRes.data ?? []) as Player[]);
     setRsvps((rsvpsRes.data ?? []) as RsvpRow[]);
 
-    const pid = (playerRes.data as any)?.id ?? null;
-    setMyPlayerId(pid);
-    if (pid) {
-      const mine = (rsvpsRes.data ?? []).find((r: any) => r.player_id === pid);
-      setMyStatus((mine?.status as RsvpStatus) ?? null);
+    const pids = ((playerRes.data as any[]) ?? []).map((p) => p.id as string);
+    setMyPlayerIds(pids);
+    if (pids.length > 0) {
+      const { data: reflectionRows } = await supabase
+        .from('player_reflections')
+        .select('player_id,rating,went_well,needs_improvement')
+        .eq('event_id', eventId).in('player_id', pids);
+      const reflectionMap: Record<string, { rating: number; went_well: string | null; needs_improvement: string | null }> = {};
+      for (const r of (reflectionRows ?? []) as any[]) {
+        reflectionMap[r.player_id] = { rating: r.rating, went_well: r.went_well, needs_improvement: r.needs_improvement };
+      }
+      setMyReflections(reflectionMap);
     }
 
     // Load match stats if game is complete
@@ -460,7 +493,7 @@ export default function EventDetailScreen() {
 
     // Load active call-outs for this event (coaches only, games only)
     const evType = (eventRes.data as any)?.type;
-    const isCoachRole = profile.role === 'org_admin' || team?.myRole === 'coach';
+    const isCoachRole = team?.myRole === 'org_admin' || team?.myRole === 'coach';
     if (isCoachRole && evType === 'game') {
       const { data: calloutData } = await (supabase as any).from('guest_requests')
         .select('id,spots_needed,status,note')
@@ -536,34 +569,33 @@ export default function EventDetailScreen() {
     }
   }
 
-  async function handleRsvp(status: RsvpStatus) {
-    if (!myPlayerId || !eventId) return;
-    setRsvpSaving(true);
+  async function handleRsvp(playerId: string, status: RsvpStatus) {
+    if (!playerId || !eventId) return;
+    setRsvpSavingPlayerId(playerId);
     try {
-      if (myStatus === status) {
+      const current = rsvps.find((r) => r.player_id === playerId)?.status ?? null;
+      if (current === status) {
         const { error } = await supabase.from('event_rsvps').delete()
-          .eq('event_id', eventId).eq('player_id', myPlayerId);
+          .eq('event_id', eventId).eq('player_id', playerId);
         if (!error) {
-          setMyStatus(null);
-          setRsvps((prev) => prev.filter((r) => r.player_id !== myPlayerId));
+          setRsvps((prev) => prev.filter((r) => r.player_id !== playerId));
         }
       } else {
         const { error } = await supabase.from('event_rsvps').upsert(
-          { event_id: eventId, player_id: myPlayerId, responded_by: profile?.id, status },
+          { event_id: eventId, player_id: playerId, responded_by: profile?.id, status },
           { onConflict: 'event_id,player_id' }
         );
         if (!error) {
-          setMyStatus(status);
           setRsvps((prev) => {
-            const filtered = prev.filter((r) => r.player_id !== myPlayerId);
-            return [...filtered, { player_id: myPlayerId, status }];
+            const filtered = prev.filter((r) => r.player_id !== playerId);
+            return [...filtered, { player_id: playerId, status }];
           });
         }
       }
     } catch (e) {
       console.error('handleRsvp error', e);
     } finally {
-      setRsvpSaving(false);
+      setRsvpSavingPlayerId(null);
     }
   }
 
@@ -620,6 +652,11 @@ export default function EventDetailScreen() {
   function openEdit() {
     if (!event) return;
     router.push(`/(app)/${clubSlug}/edit-event/${event.id}` as any);
+  }
+
+  function openDuplicate() {
+    if (!event) return;
+    router.push(`/(app)/${clubSlug}/create-event?duplicateFrom=${event.id}` as any);
   }
 
   function openLineup() {
@@ -1249,13 +1286,22 @@ export default function EventDetailScreen() {
         title="Event Details"
         onBack={() => router.back()}
         right={isCoach ? (
-          <TouchableOpacity
-            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' }}
-            onPress={openEdit}
-            disabled={deleting}
-          >
-            <Ionicons name="pencil-outline" size={20} color="#fff" />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' }}
+              onPress={openDuplicate}
+              disabled={deleting}
+            >
+              <Ionicons name="copy-outline" size={20} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' }}
+              onPress={openEdit}
+              disabled={deleting}
+            >
+              <Ionicons name="pencil-outline" size={20} color="#fff" />
+            </TouchableOpacity>
+          </>
         ) : undefined}
       />
 
@@ -1374,6 +1420,56 @@ export default function EventDetailScreen() {
             </View>
           )}
 
+          {/* Post-game reflection — self-directed only; the "never before
+              the game ends" rule lives in hasGameEnded(), same estimate the
+              push-notification cron uses. */}
+          {myPlayerIds.length > 0 && event.type === 'game' && !event.cancelled_at && hasGameEnded(event) && (
+            myPlayerIds.map((pid) => {
+              const reflection = myReflections[pid];
+              const firstName = players.find(p => p.id === pid)?.full_name.split(' ')[0] ?? 'them';
+              const label = myPlayerIds.length > 1 ? firstName : 'you';
+              return reflection ? (
+                <TouchableOpacity key={pid} style={styles.reflectionBannerDone} onPress={() => setReflectionPlayerId(pid)} activeOpacity={0.8}>
+                  <Text style={styles.reflectionEmoji}>{FACES.find(f => f.rating === reflection.rating)?.emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reflectionDoneTitle}>
+                      {myPlayerIds.length > 1 ? `${firstName} reflected` : 'You reflected'}: {FACES.find(f => f.rating === reflection.rating)?.label}
+                    </Text>
+                    <Text style={styles.reflectionDoneSub}>Tap to edit</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity key={pid} style={styles.reflectionBanner} onPress={() => setReflectionPlayerId(pid)} activeOpacity={0.8}>
+                  <Text style={styles.reflectionEmoji}>🎯</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reflectionTitle}>How did today's game go{myPlayerIds.length > 1 ? ` for ${firstName}` : ''}?</Text>
+                    <Text style={styles.reflectionSub}>Takes 30 seconds — just for {label}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.brand.green} />
+                </TouchableOpacity>
+              );
+            })
+          )}
+
+          {/* Coach shoutouts — coach-initiated only, never auto-prompted.
+              A forced popup after every game would turn into a chore and
+              dilute how genuine it feels; this is just a door left open.
+              Past games only — there's nothing to recognize before the
+              game has actually happened. */}
+          {isCoach && event.type === 'game' && !event.cancelled_at && hasGameEnded(event) && (
+            <TouchableOpacity style={styles.shoutoutBanner} onPress={() => setShoutoutSheetOpen(true)} activeOpacity={0.8}>
+              <View style={styles.shoutoutIconChip}>
+                <Text style={styles.shoutoutEmoji}>🏅</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.shoutoutTitle}>Give a shoutout</Text>
+                <Text style={styles.shoutoutSub}>Recognize a player who stood out today</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#F59E0B" />
+            </TouchableOpacity>
+          )}
+
           {/* Type badge + home/away + title */}
           <View style={styles.typeBadgeRow}>
             <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
@@ -1463,6 +1559,8 @@ export default function EventDetailScreen() {
                 lat={event.lat}
                 lng={event.lng}
                 address={event.address ?? event.location}
+                eventDate={event.event_date}
+                eventTime={event.event_time}
                 onPress={openMaps}
                 onDriveTime={setDriveTime}
               />
@@ -1513,7 +1611,6 @@ export default function EventDetailScreen() {
                           <View style={styles.leaveByRow}>
                             <Ionicons name="alarm-outline" size={14} color="#F59E0B" />
                             <Text style={styles.leaveByText}>Leave by {leaveByTime}</Text>
-                            <Text style={styles.leaveByHint}>incl. 5 min for parking</Text>
                           </View>
                         )}
                       </View>
@@ -1583,69 +1680,79 @@ export default function EventDetailScreen() {
               </>
             )}
 
-            {/* ── RSVP inside card — parents only (not shown for guest events; invite banner covers status) ── */}
-            {!isCoach && myPlayerId && !isGuestEvent && (
+            {/* ── RSVP inside card — parents only (not shown for guest events; invite banner covers status) ──
+                 One row per guarded player on this team, so a parent with more than one
+                 child here (e.g. twins) gets independent controls for each. ── */}
+            {!isCoach && myPlayerIds.length > 0 && !isGuestEvent && (
               <>
                 <View style={styles.metaDivider} />
-                <View style={[styles.metaRow, { alignItems: 'flex-start', paddingVertical: 14 }]}>
-                  <View style={styles.metaIconWrap}>
-                    <Ionicons
-                      name={
-                        myStatus === 'attending' ? 'checkmark-circle'
-                        : myStatus === 'not_attending' ? 'close-circle'
-                        : 'radio-button-off-outline'
-                      }
-                      size={18}
-                      color={
-                        myStatus === 'attending' ? PULSE_COLORS.rsvp.attending
-                        : myStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending
-                        : PULSE_COLORS.ui.muted
-                      }
-                    />
-                  </View>
-                  <View style={[styles.metaTextBlock, { flex: 1 }]}>
-                    <Text style={[
-                      styles.metaPrimary,
-                      myStatus === 'attending' && { color: PULSE_COLORS.rsvp.attending },
-                      myStatus === 'not_attending' && { color: PULSE_COLORS.rsvp.not_attending },
-                    ]}>
-                      {myStatus === 'attending' ? "You're going"
-                       : myStatus === 'not_attending' ? "Can't make it"
-                       : 'Your RSVP'}
-                    </Text>
-                    {deadlineLabel && (
-                      <Text style={[styles.metaSecondary, rsvpClosed && { color: PULSE_COLORS.status.error }]}>
-                        {deadlineLabel}
-                      </Text>
-                    )}
-                    {!rsvpClosed && upcoming && (
-                      <View style={[styles.rsvpInlineRow, { marginTop: 10 }]}>
-                        <TouchableOpacity
-                          style={[styles.rsvpInlineBtn, myStatus === 'attending' && styles.rsvpInlineBtnGoing]}
-                          onPress={() => handleRsvp('attending')}
-                          disabled={rsvpSaving}
-                          activeOpacity={0.8}
-                        >
-                          {rsvpSaving && myStatus !== 'attending'
-                            ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
-                            : <><Ionicons name="checkmark" size={14} color={myStatus === 'attending' ? '#000' : PULSE_COLORS.ui.muted} />
-                               <Text style={[styles.rsvpInlineBtnText, myStatus === 'attending' && { color: '#000' }]}>Going</Text></>}
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.rsvpInlineBtn, myStatus === 'not_attending' && styles.rsvpInlineBtnNotGoing]}
-                          onPress={() => handleRsvp('not_attending')}
-                          disabled={rsvpSaving}
-                          activeOpacity={0.8}
-                        >
-                          {rsvpSaving && myStatus !== 'not_attending'
-                            ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
-                            : <><Ionicons name="close" size={14} color={myStatus === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted} />
-                               <Text style={[styles.rsvpInlineBtnText, myStatus === 'not_attending' && { color: '#fff' }]}>Can't go</Text></>}
-                        </TouchableOpacity>
+                {myPlayerIds.map((pid) => {
+                  const status = rsvps.find((r) => r.player_id === pid)?.status ?? null;
+                  const firstName = players.find((p) => p.id === pid)?.full_name.split(' ')[0] ?? 'Player';
+                  const isPlural = myPlayerIds.length > 1;
+                  const saving = rsvpSavingPlayerId === pid;
+                  return (
+                    <View key={pid} style={[styles.metaRow, { alignItems: 'flex-start', paddingVertical: 14 }]}>
+                      <View style={styles.metaIconWrap}>
+                        <Ionicons
+                          name={
+                            status === 'attending' ? 'checkmark-circle'
+                            : status === 'not_attending' ? 'close-circle'
+                            : 'radio-button-off-outline'
+                          }
+                          size={18}
+                          color={
+                            status === 'attending' ? PULSE_COLORS.rsvp.attending
+                            : status === 'not_attending' ? PULSE_COLORS.rsvp.not_attending
+                            : PULSE_COLORS.ui.muted
+                          }
+                        />
                       </View>
-                    )}
-                  </View>
-                </View>
+                      <View style={[styles.metaTextBlock, { flex: 1 }]}>
+                        <Text style={[
+                          styles.metaPrimary,
+                          status === 'attending' && { color: PULSE_COLORS.rsvp.attending },
+                          status === 'not_attending' && { color: PULSE_COLORS.rsvp.not_attending },
+                        ]}>
+                          {status === 'attending' ? (isPlural ? `${firstName} is going` : "You're going")
+                           : status === 'not_attending' ? (isPlural ? `${firstName} can't make it` : "Can't make it")
+                           : (isPlural ? `${firstName}'s RSVP` : 'Your RSVP')}
+                        </Text>
+                        {deadlineLabel && (
+                          <Text style={[styles.metaSecondary, rsvpClosed && { color: PULSE_COLORS.status.error }]}>
+                            {deadlineLabel}
+                          </Text>
+                        )}
+                        {!rsvpClosed && upcoming && (
+                          <View style={[styles.rsvpInlineRow, { marginTop: 10 }]}>
+                            <TouchableOpacity
+                              style={[styles.rsvpInlineBtn, status === 'attending' && styles.rsvpInlineBtnGoing]}
+                              onPress={() => handleRsvp(pid, 'attending')}
+                              disabled={saving}
+                              activeOpacity={0.8}
+                            >
+                              {saving && status !== 'attending'
+                                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                                : <><Ionicons name="checkmark" size={14} color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted} />
+                                   <Text style={[styles.rsvpInlineBtnText, status === 'attending' && { color: '#000' }]}>Going</Text></>}
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.rsvpInlineBtn, status === 'not_attending' && styles.rsvpInlineBtnNotGoing]}
+                              onPress={() => handleRsvp(pid, 'not_attending')}
+                              disabled={saving}
+                              activeOpacity={0.8}
+                            >
+                              {saving && status !== 'not_attending'
+                                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                                : <><Ionicons name="close" size={14} color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted} />
+                                   <Text style={[styles.rsvpInlineBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't go</Text></>}
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
               </>
             )}
           </View>
@@ -1712,7 +1819,7 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {!isCoach && !myPlayerId && (
+          {!isCoach && myPlayerIds.length === 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>RSVP</Text>
               <Text style={styles.noPlayerText}>No player linked to your account. Contact your coach.</Text>
@@ -1984,7 +2091,7 @@ export default function EventDetailScreen() {
                   poll={poll}
                   myProfileId={profile?.id ?? ''}
                   isCoach={isCoach}
-                  myRsvpEventIds={myStatus === 'attending' && myPlayerId ? new Set([eventId]) : new Set()}
+                  myRsvpEventIds={myPlayerIds.some((pid) => rsvps.find((r) => r.player_id === pid)?.status === 'attending') ? new Set([eventId]) : new Set()}
                   primaryColor={primaryColor}
                   rgba={rgba}
                   onDelete={async (pollId) => {
@@ -2817,6 +2924,40 @@ export default function EventDetailScreen() {
           onCreated={() => { setShowEventPollModal(false); load(); }}
         />
       )}
+
+      {event && myPlayerIds.length > 0 && team && (
+        <ReflectionSheet
+          visible={reflectionPlayerId !== null}
+          onClose={() => setReflectionPlayerId(null)}
+          eventId={event.id}
+          playerId={reflectionPlayerId ?? myPlayerIds[0]}
+          teamId={team.id}
+          playerName={players.find(p => p.id === (reflectionPlayerId ?? myPlayerIds[0]))?.full_name ?? 'them'}
+          eventSubtitle={`${event.title || (event.home_away === 'away' ? 'Away game' : 'Home game')} · ${formatDay(event.event_date)}`}
+          existing={reflectionPlayerId ? (myReflections[reflectionPlayerId] ?? null) : null}
+          onSaved={(rating) => {
+            const pid = reflectionPlayerId ?? myPlayerIds[0];
+            setMyReflections(prev => ({ ...prev, [pid]: { rating, went_well: null, needs_improvement: null } }));
+            setReflectionPlayerId(null);
+            load();
+          }}
+        />
+      )}
+
+      {event && team && isCoach && (
+        <ShoutoutSheet
+          visible={shoutoutSheetOpen}
+          onClose={() => setShoutoutSheetOpen(false)}
+          eventId={event.id}
+          teamId={team.id}
+          eventTitle={event.title || (event.home_away === 'away' ? 'Away game' : 'Home game')}
+          clubSlug={clubSlug!}
+          players={(() => {
+            const attending = players.filter(p => rsvps.some(r => r.player_id === p.id && r.status === 'attending'));
+            return attending.length > 0 ? attending : players;
+          })()}
+        />
+      )}
     </View>
   );
 }
@@ -2930,7 +3071,6 @@ const styles = StyleSheet.create({
   driveLabel: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
   leaveByRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 40 },
   leaveByText: { fontSize: 13, fontWeight: '800', color: '#F59E0B' },
-  leaveByHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   uniformChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -3239,6 +3379,44 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   guestDeclineText: { color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', fontSize: 14 },
+
+  // Post-game reflection banner
+  reflectionBanner: {
+    marginHorizontal: 16, marginTop: 12, marginBottom: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 11,
+    backgroundColor: 'rgba(34,197,94,0.09)',
+    borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
+    borderRadius: 14, padding: 13,
+  },
+  reflectionBannerDone: {
+    marginHorizontal: 16, marginTop: 12, marginBottom: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 11,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 14, padding: 13,
+  },
+  reflectionEmoji: { fontSize: 22 },
+  reflectionTitle: { fontSize: 13, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  reflectionSub: { fontSize: 11.5, color: '#A7F3C5', marginTop: 1 },
+  reflectionDoneTitle: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  reflectionDoneSub: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+
+  // Coach shoutout banner
+  shoutoutBanner: {
+    marginHorizontal: 16, marginTop: 12, marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 14, padding: 14,
+  },
+  shoutoutIconChip: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: 'rgba(245,158,11,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  shoutoutEmoji: { fontSize: 17 },
+  shoutoutTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  shoutoutSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, lineHeight: 18 },
 
   // Guests card in Details tab
   guestCardAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },

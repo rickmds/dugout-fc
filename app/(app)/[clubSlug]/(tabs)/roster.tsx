@@ -30,6 +30,7 @@ import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../components/ui/ClubHeader';
 import RosterSkeleton from '../../../../components/roster/RosterSkeleton';
+import { formatPhone } from '../../../../lib/formatPhone';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -212,7 +213,7 @@ function ListHeader({
                   <CoachAvatar uri={c.profiles?.avatar_url ?? null} name={n} />
                   <View style={st.coachMeta}>
                     <Text style={st.coachName}>{n}</Text>
-                    <Text style={st.coachRole} numberOfLines={1}>{c.profiles?.phone ? `Coach · ${c.profiles.phone}` : 'Coach'}</Text>
+                    <Text style={st.coachRole} numberOfLines={1}>{c.profiles?.phone ? `Coach · ${formatPhone(c.profiles.phone)}` : 'Coach'}</Text>
                   </View>
                   <View style={[st.coachTag, { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.18)' }]}>
                     <Ionicons name="shield-checkmark" size={10} color="#ffffff" />
@@ -298,7 +299,9 @@ export default function RosterScreen() {
   const [coachRole, setCoachRole]   = useState('');
   const [coachPhone, setCoachPhone] = useState('');
 
-  const isCoach   = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club — see
+  // TeamContext.tsx's Team type comment.
+  const isCoach   = team?.myRole === 'org_admin' || team?.myRole === 'coach';
   const myProfileId = profile?.id ?? null;
 
 

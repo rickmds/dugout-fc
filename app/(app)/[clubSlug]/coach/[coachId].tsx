@@ -17,6 +17,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
 import { PULSE_COLORS } from '../../../../constants/colors';
+import { formatPhone } from '../../../../lib/formatPhone';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -63,7 +64,10 @@ export default function CoachProfileScreen() {
   const [removing, setRemoving] = useState(false);
   const [resending, setResending] = useState(false);
 
-  const isOrgAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
+  // team.myRole is scoped to the currently-active team's own club (see
+  // TeamContext.tsx) — app_admin is a genuine platform-wide role, so that
+  // half stays a direct profile check.
+  const isOrgAdmin = team?.myRole === 'org_admin' || profile?.role === 'app_admin';
 
   useEffect(() => {
     if (!coachId) return;
@@ -258,7 +262,7 @@ export default function CoachProfileScreen() {
                   </View>
                   <View style={st.contactMeta}>
                     <Text style={st.contactLabel}>Phone</Text>
-                    <Text style={st.contactValue} numberOfLines={1}>{coach.phone}</Text>
+                    <Text style={st.contactValue} numberOfLines={1}>{formatPhone(coach.phone)}</Text>
                   </View>
                   <View style={st.contactBtnGroup}>
                     <TouchableOpacity

@@ -212,7 +212,11 @@ export default function PlayerProfileScreen() {
   // guardian to accept an invite for this kid.
   const [isSecondaryGuardian, setIsSecondaryGuardian] = useState(false);
 
-  const isCoach    = profile?.role === 'org_admin' || team?.myRole === 'coach';
+  // team.myRole is scoped to the currently-active team's own club (see
+  // TeamContext.tsx) — this screen shows coach-only data (emergency info,
+  // medical notes), so an org_admin merely guesting elsewhere must not
+  // trip this just because their home-club role is org_admin.
+  const isCoach    = team?.myRole === 'org_admin' || team?.myRole === 'coach';
   const isMyPlayer = (!!player?.profile_id && player.profile_id === profile?.id) || isSecondaryGuardian;
   const canEdit    = isCoach || isMyPlayer;
   // Other parents see limited info when player is private
@@ -1776,6 +1780,47 @@ function PlayerTab({
           <View style={st.evalMeta}>
             <Text style={st.evalLabel}>Player Evaluations</Text>
             <Text style={st.evalSub}>Seasonal reports from your coach</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+        </TouchableOpacity>
+      )}
+
+      {/* ── Shoutouts — guardian-only. Coaches see the send flow on the
+          event screen, not a history view here; keeps this screen's scope
+          to what the family experiences. ── */}
+      {isMyPlayer && (
+        <TouchableOpacity
+          style={[st.evalBtn, { borderColor: 'rgba(245,158,11,0.3)', backgroundColor: 'rgba(245,158,11,0.06)' }]}
+          onPress={() => router.push({ pathname: `/(app)/${clubSlug}/player/shoutouts` as any, params: { playerId: player.id } })}
+          activeOpacity={0.8}
+        >
+          <View style={[st.evalIcon, { backgroundColor: 'rgba(245,158,11,0.12)' }]}>
+            <Ionicons name="star-outline" size={18} color="#F59E0B" />
+          </View>
+          <View style={st.evalMeta}>
+            <Text style={st.evalLabel}>Shoutouts</Text>
+            <Text style={st.evalSub}>Moments your coach has recognized</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+        </TouchableOpacity>
+      )}
+
+      {/* ── My Reflections — guardian-only, never shown to a coach viewing
+          someone else's kid. The raw entries are private (see RLS on
+          player_reflections); a coach only ever sees aggregated trends,
+          from the team admin panel, never here. ── */}
+      {isMyPlayer && (
+        <TouchableOpacity
+          style={[st.evalBtn, { borderColor: 'rgba(34,197,94,0.3)', backgroundColor: 'rgba(34,197,94,0.06)' }]}
+          onPress={() => router.push({ pathname: `/(app)/${clubSlug}/player/reflections` as any, params: { playerId: player.id } })}
+          activeOpacity={0.8}
+        >
+          <View style={[st.evalIcon, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+            <Ionicons name="happy-outline" size={18} color={PULSE_COLORS.brand.green} />
+          </View>
+          <View style={st.evalMeta}>
+            <Text style={st.evalLabel}>My Reflections</Text>
+            <Text style={st.evalSub}>How you've felt after each game</Text>
           </View>
           <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
         </TouchableOpacity>

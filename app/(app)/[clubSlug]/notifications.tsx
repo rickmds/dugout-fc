@@ -225,7 +225,7 @@ export default function NotificationsScreen() {
           : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
         break;
       case 'invite_accepted':
-        (profile?.role === 'org_admin' || team?.myRole === 'coach')
+        (team?.myRole === 'org_admin' || team?.myRole === 'coach')
           ? router.push(`/(app)/${slug}/admin` as any)
           : router.push(`/(app)/${slug}/(tabs)/roster` as any);
         break;
