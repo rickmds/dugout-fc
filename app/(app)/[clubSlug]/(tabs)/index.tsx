@@ -112,6 +112,26 @@ type OutstandingFee = {
   event_id: string | null;
   event_title: string | null;
   event_date: string | null;
+  player_id: string;
+  player_name: string;
+};
+
+type AttendanceEntry = { id: string; type: string; date: string; status: string | null; title: string | null };
+
+// Per-guarded-player season stats — a guardian can have more than one
+// player on the same team (e.g. twins), so this is keyed by player id
+// rather than assumed singular.
+type PlayerSeasonStats = {
+  combinedStreak: number;
+  combinedAtRisk: boolean;
+  trainingStreak: number;
+  trainingAtRisk: boolean;
+  gameStreak: number;
+  gameAtRisk: boolean;
+  gamesAttended: number;
+  gamesTotal: number;
+  seasonTotalMarked: number;
+  attendanceHistory: AttendanceEntry[];
 };
 
 type PendingGuestInvite = {
@@ -258,18 +278,15 @@ export default function HomeScreen() {
   const [nextTrainingWeather, setNextTrainingWeather]   = useState<WeatherData | null>(null);
   const [nextGameDriveTime, setNextGameDriveTime]       = useState<string | null>(null);
   const [nextTrainingDriveTime, setNextTrainingDriveTime] = useState<string | null>(null);
-  const [myPlayer, setMyPlayer]             = useState<MyPlayer | null>(null);
-  // True when a guardian has more than one player on this team (e.g. twins) —
-  // the hero/quick-RSVP card below only ever shows one of them, so this
-  // drives a small "+N more" note pointing at the event screen, where every
-  // guarded player gets their own independent RSVP.
-  const [hasMultipleGuardedPlayers, setHasMultipleGuardedPlayers] = useState(false);
-  const [myGameRsvpStatus, setMyGameRsvpStatus]         = useState<string | null>(null);
-  const [myTrainingRsvpStatus, setMyTrainingRsvpStatus] = useState<string | null>(null);
-  const [myRsvpCount, setMyRsvpCount]       = useState(0);
+  // A guardian can have more than one player on this team (e.g. twins) —
+  // every section below (hero card, quick RSVP, season stats, fees) is
+  // keyed per player rather than assuming a single "my player".
+  const [myPlayers, setMyPlayers]           = useState<MyPlayer[]>([]);
+  const [myGameRsvpStatusByPlayer, setMyGameRsvpStatusByPlayer]         = useState<Record<string, string | null>>({});
+  const [myTrainingRsvpStatusByPlayer, setMyTrainingRsvpStatusByPlayer] = useState<Record<string, string | null>>({});
   const [latestAnnouncement, setLatestAnnouncement] = useState<Announcement | null>(null);
-  const [gameRsvpLoading, setGameRsvpLoading]       = useState(false);
-  const [trainingRsvpLoading, setTrainingRsvpLoading] = useState(false);
+  const [gameRsvpSavingId, setGameRsvpSavingId]         = useState<string | null>(null);
+  const [trainingRsvpSavingId, setTrainingRsvpSavingId] = useState<string | null>(null);
   const [gameHeadcount, setGameHeadcount]             = useState<Headcount | null>(null);
   const [trainingHeadcount, setTrainingHeadcount]     = useState<Headcount | null>(null);
   const [pulseGamePct, setPulseGamePct]               = useState<number | null>(null);
@@ -286,17 +303,8 @@ export default function HomeScreen() {
   const [claimMethod, setClaimMethod]       = useState<'venmo' | 'cash' | 'other'>('venmo');
   const [claimNote, setClaimNote]           = useState('');
   const [claimSaving, setClaimSaving]       = useState(false);
-  const [combinedStreak, setCombinedStreak]         = useState(0);
-  const [combinedAtRisk, setCombinedAtRisk]         = useState(false);
-  const [trainingStreak, setTrainingStreak]         = useState(0);
-  const [trainingAtRisk, setTrainingAtRisk]         = useState(false);
-  const [gameStreak, setGameStreak]                 = useState(0);
-  const [gameAtRisk, setGameAtRisk]                 = useState(false);
-  const [gamesAttended, setGamesAttended]           = useState(0);
-  const [gamesTotal, setGamesTotal]                 = useState(0);
-  const [seasonTotalMarked, setSeasonTotalMarked]   = useState(0);
-  const [attendanceHistory, setAttendanceHistory]   = useState<{ id: string; type: string; date: string; status: string | null; title: string | null }[]>([]);
-  const [showAttendanceSheet, setShowAttendanceSheet] = useState(false);
+  const [seasonStatsByPlayer, setSeasonStatsByPlayer] = useState<Record<string, PlayerSeasonStats>>({});
+  const [seasonSheetPlayerId, setSeasonSheetPlayerId] = useState<string | null>(null);
 
   const [callouts, setCallouts] = useState<Callout[]>([]);
   const [calloutResponses, setCalloutResponses] = useState<Record<string, 'helping' | 'dismissed'>>({});
@@ -519,9 +527,8 @@ export default function HomeScreen() {
       // guardian otherwise never saw their own kid's card/RSVP on Home at all.
       // Not .maybeSingle() — a guardian can have more than one player on this
       // team (e.g. twins), which would otherwise error and blank the whole
-      // card. The Home hero/quick-RSVP still only surfaces one child today
-      // (the full per-child RSVP picture always lives on the event screen);
-      // pick deterministically by name rather than whatever order the DB returns.
+      // card. Every section below (hero, quick RSVP, season stats, fees) is
+      // rendered once per guarded player.
       (supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).order('full_name'),
       sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
     ]);
@@ -529,8 +536,6 @@ export default function HomeScreen() {
     const nextG = (gameEvents as NextEvent[])?.[0] ?? null;
     const nextT = (trainingEvents as NextEvent[])?.[0] ?? null;
     const guardedPlayers = ((playerRes as any).data as MyPlayer[] | null) ?? [];
-    const player = guardedPlayers[0] ?? null;
-    setHasMultipleGuardedPlayers(guardedPlayers.length > 1);
     const activeCallouts = (calloutData ?? []) as Callout[];
 
     setNextGame(nextG);
@@ -539,7 +544,7 @@ export default function HomeScreen() {
     setNextTrainingWeather(null);
     setNextGameDriveTime(null);
     setNextTrainingDriveTime(null);
-    setMyPlayer(player);
+    setMyPlayers(guardedPlayers);
     setLatestAnnouncement((announcementRes as any).data ?? null);
     setCallouts(activeCallouts);
     setCalloutResponses({});
@@ -558,15 +563,12 @@ export default function HomeScreen() {
       { count: pc },
       { count: ec },
       { count: unreadNotifs },
-      { data: upcomingEventsData },
     ] = await Promise.all([
       supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', team.id),
       supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
       supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).eq('read', false),
-      supabase.from('events').select('id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
     ]);
 
-    const upcomingEventIds = (upcomingEventsData ?? []).map((e: { id: string }) => e.id);
     setPlayerCount(pc ?? 0);
     setUpcomingCount(ec ?? 0);
     setUnreadNotifCount(unreadNotifs ?? 0);
@@ -606,27 +608,26 @@ export default function HomeScreen() {
       }
     }
 
-    if (player && !isCoach) {
+    if (guardedPlayers.length > 0 && !isCoach) {
+      const playerNameById = new Map(guardedPlayers.map((p) => [p.id, p.full_name]));
       const { data: feesData } = await (supabase as any)
         .from('player_fees')
-        .select('id, team_id, description, amount_due, discount, due_date, status, payee_type, payment_instructions, payment_token, claim_status, claim_amount, claim_method, event_id, events(title, event_date)')
-        .eq('player_id', player.id)
+        .select('id, team_id, player_id, description, amount_due, discount, due_date, status, payee_type, payment_instructions, payment_token, claim_status, claim_amount, claim_method, event_id, events(title, event_date)')
+        .in('player_id', guardedPlayers.map((p) => p.id))
         .in('status', ['outstanding', 'overdue', 'partial'])
         .order('due_date', { ascending: true, nullsFirst: false });
       setOutstandingFees((feesData ?? []).map((f: any) => ({
         ...f,
         event_title: f.events?.title ?? null,
         event_date: f.events?.event_date ?? null,
+        player_name: playerNameById.get(f.player_id) ?? '',
       })) as OutstandingFee[]);
     } else {
       setOutstandingFees([]);
     }
 
     if (!isCoach && profile?.id) {
-      // get_my_guarded_players() also checks player_guardians — otherwise
-      // a second guardian's guest-RSVP requests for their own kid never matched.
-      const { data: allPlayerRows } = await (supabase as any).rpc('get_my_guarded_players').select('id');
-      const allPlayerIds = (allPlayerRows ?? []).map((p: { id: string }) => p.id);
+      const allPlayerIds = guardedPlayers.map((p) => p.id);
       if (allPlayerIds.length > 0) {
         const { data: guestRows } = await supabase
           .from('event_guests')
@@ -673,35 +674,36 @@ export default function HomeScreen() {
       setPendingGuestInvites([]);
     }
 
-    if (player) {
+    if (guardedPlayers.length > 0) {
+      const playerIds = guardedPlayers.map((p) => p.id);
       const rsvpFetches: PromiseLike<void>[] = [];
       if (nextG) {
         rsvpFetches.push(
-          supabase.from('event_rsvps').select('status').eq('event_id', nextG.id).eq('player_id', player.id).maybeSingle()
-            .then(({ data }) => { setMyGameRsvpStatus((data as any)?.status ?? null); })
+          supabase.from('event_rsvps').select('player_id, status').eq('event_id', nextG.id).in('player_id', playerIds)
+            .then(({ data }) => {
+              const map: Record<string, string | null> = {};
+              for (const row of (data ?? []) as { player_id: string; status: string }[]) map[row.player_id] = row.status;
+              setMyGameRsvpStatusByPlayer(map);
+            })
         );
       } else {
-        setMyGameRsvpStatus(null);
+        setMyGameRsvpStatusByPlayer({});
       }
       if (nextT) {
         rsvpFetches.push(
-          supabase.from('event_rsvps').select('status').eq('event_id', nextT.id).eq('player_id', player.id).maybeSingle()
-            .then(({ data }) => { setMyTrainingRsvpStatus((data as any)?.status ?? null); })
+          supabase.from('event_rsvps').select('player_id, status').eq('event_id', nextT.id).in('player_id', playerIds)
+            .then(({ data }) => {
+              const map: Record<string, string | null> = {};
+              for (const row of (data ?? []) as { player_id: string; status: string }[]) map[row.player_id] = row.status;
+              setMyTrainingRsvpStatusByPlayer(map);
+            })
         );
       } else {
-        setMyTrainingRsvpStatus(null);
-      }
-      if (upcomingEventIds.length > 0) {
-        rsvpFetches.push(
-          supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).eq('player_id', player.id).eq('status', 'attending').in('event_id', upcomingEventIds)
-            .then(({ count: rc }) => { setMyRsvpCount(rc ?? 0); })
-        );
-      } else {
-        setMyRsvpCount(0);
+        setMyTrainingRsvpStatusByPlayer({});
       }
       await Promise.all(rsvpFetches);
 
-      // Attendance streak + season stats — players only
+      // Attendance streak + season stats — players only, one entry per guarded player
       if (!isCoach) {
         const { data: pastEvtsData } = await supabase
           .from('events')
@@ -716,19 +718,17 @@ export default function HomeScreen() {
         if (pastIds.length > 0) {
           const { data: attRows } = await supabase
             .from('event_attendance')
-            .select('event_id, status')
-            .eq('player_id', player.id)
+            .select('event_id, player_id, status')
+            .in('player_id', playerIds)
             .in('event_id', pastIds);
-          const attMap = new Map((attRows ?? []).map((r: any) => [r.event_id as string, r.status as string]));
-          // Only coach-marked sessions, most-recent-first
-          const history = pastEvts
-            .filter((e) => attMap.has(e.id))
-            .map((e) => ({ id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null }));
-          setAttendanceHistory(history);
-          setSeasonTotalMarked(history.length);
+          const attRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
+          for (const row of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+            if (!attRowsByPlayer.has(row.player_id)) attRowsByPlayer.set(row.player_id, []);
+            attRowsByPlayer.get(row.player_id)!.push(row);
+          }
           // WHOOP-style streak: one grace period allowed, but grace must be re-earned
           // with 3 consecutive clean sessions before it can be used again.
-          function whoopStreak(evts: typeof history) {
+          function whoopStreak(evts: AttendanceEntry[]) {
             let streak = 0;
             let atRisk = false;
             let graceAvailable = true;
@@ -760,25 +760,37 @@ export default function HomeScreen() {
             }
             return { streak, atRisk };
           }
-          const trainingHistory = history.filter((e) => e.type !== 'game');
-          const gameHistory     = history.filter((e) => e.type === 'game');
-          const cResult = whoopStreak(history);
-          const tResult = whoopStreak(trainingHistory);
-          const gResult = whoopStreak(gameHistory);
-          setCombinedStreak(cResult.streak);
-          setCombinedAtRisk(cResult.atRisk);
-          setTrainingStreak(tResult.streak);
-          setTrainingAtRisk(tResult.atRisk);
-          setGameStreak(gResult.streak);
-          setGameAtRisk(gResult.atRisk);
-          setGamesTotal(gameHistory.length);
-          setGamesAttended(gameHistory.filter((e) => e.status === 'present').length);
+
+          const statsByPlayer: Record<string, PlayerSeasonStats> = {};
+          for (const p of guardedPlayers) {
+            const attMap = new Map((attRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
+            const history: AttendanceEntry[] = pastEvts
+              .filter((e) => attMap.has(e.id))
+              .map((e) => ({ id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null }));
+            const trainingHistory = history.filter((e) => e.type !== 'game');
+            const gameHistory     = history.filter((e) => e.type === 'game');
+            const cResult = whoopStreak(history);
+            const tResult = whoopStreak(trainingHistory);
+            const gResult = whoopStreak(gameHistory);
+            statsByPlayer[p.id] = {
+              combinedStreak: cResult.streak, combinedAtRisk: cResult.atRisk,
+              trainingStreak: tResult.streak, trainingAtRisk: tResult.atRisk,
+              gameStreak: gResult.streak, gameAtRisk: gResult.atRisk,
+              gamesTotal: gameHistory.length,
+              gamesAttended: gameHistory.filter((e) => e.status === 'present').length,
+              seasonTotalMarked: history.length,
+              attendanceHistory: history,
+            };
+          }
+          setSeasonStatsByPlayer(statsByPlayer);
+        } else {
+          setSeasonStatsByPlayer({});
         }
       }
     } else {
-      setMyGameRsvpStatus(null);
-      setMyTrainingRsvpStatus(null);
-      setMyRsvpCount(0);
+      setMyGameRsvpStatusByPlayer({});
+      setMyTrainingRsvpStatusByPlayer({});
+      setSeasonStatsByPlayer({});
     }
 
     {
@@ -854,12 +866,12 @@ export default function HomeScreen() {
       const gatedEventIds = [...new Set((pollRows as any[])
         .filter((p: any) => p.rsvp_gated && p.event_id)
         .map((p: any) => p.event_id as string))];
-      if (gatedEventIds.length > 0 && player) {
+      if (gatedEventIds.length > 0 && guardedPlayers.length > 0) {
         const { data: rsvpRows } = await supabase
           .from('event_rsvps')
           .select('event_id')
           .in('event_id', gatedEventIds)
-          .eq('player_id', player.id)
+          .in('player_id', guardedPlayers.map((p) => p.id))
           .eq('status', 'attending');
         setMyRsvpEventIds(new Set((rsvpRows ?? []).map((r: any) => r.event_id as string)));
       }
@@ -1079,40 +1091,33 @@ export default function HomeScreen() {
 
   async function handleRsvp(
     event: NextEvent,
+    playerId: string,
     status: 'attending' | 'not_attending',
     currentStatus: string | null,
-    setStatus: (s: string | null) => void,
-    setLoading: (b: boolean) => void,
+    setStatus: (playerId: string, s: string | null) => void,
+    setSavingId: (id: string | null) => void,
   ) {
-    if (!myPlayer) return;
     if (event.rsvp_lock_at && new Date(event.rsvp_lock_at) <= new Date()) {
       Alert.alert('RSVP closed', 'The RSVP window for this event has closed. Contact your coach if you need to make a change.');
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setLoading(true);
+    setSavingId(playerId);
     try {
       if (currentStatus === status) {
-        const { error } = await supabase.from('event_rsvps').delete().eq('event_id', event.id).eq('player_id', myPlayer.id);
-        if (!error) {
-          setStatus(null);
-          if (status === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
-        }
+        const { error } = await supabase.from('event_rsvps').delete().eq('event_id', event.id).eq('player_id', playerId);
+        if (!error) setStatus(playerId, null);
       } else {
         const { error } = await supabase.from('event_rsvps').upsert(
-          { event_id: event.id, player_id: myPlayer.id, responded_by: profile?.id, status },
+          { event_id: event.id, player_id: playerId, responded_by: profile?.id, status },
           { onConflict: 'event_id,player_id' }
         );
-        if (!error) {
-          if (status === 'attending') setMyRsvpCount((c) => c + 1);
-          else if (currentStatus === 'attending') setMyRsvpCount((c) => Math.max(0, c - 1));
-          setStatus(status);
-        }
+        if (!error) setStatus(playerId, status);
       }
     } catch (e) {
       console.error('handleRsvp error', e);
     } finally {
-      setLoading(false);
+      setSavingId(null);
     }
   }
 
@@ -1134,21 +1139,15 @@ export default function HomeScreen() {
   }
   const multiClub = teamsByClub.length > 1;
 
-  const playerColor = positionColor(myPlayer?.position ?? null);
-  const playerInitials = myPlayer?.full_name
-    ? myPlayer.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
-    : '?';
-  const playerAvatarUrl = myPlayer?.photo_url ?? null;
-
   function renderNextCard(
     label: string,
     event: NextEvent | null,
     weather: WeatherData | null,
     driveTime: string | null,
     headcount: Headcount | null,
-    rsvpStatus: string | null,
-    rsvpLoading: boolean,
-    onRsvp: (s: 'attending' | 'not_attending') => void,
+    rsvpStatusByPlayer: Record<string, string | null>,
+    rsvpSavingId: string | null,
+    onRsvp: (playerId: string, s: 'attending' | 'not_attending') => void,
     topMargin = 0,
   ) {
     const cfg = event ? (TYPE_CONFIG[event.type] ?? TYPE_CONFIG.other) : null;
@@ -1311,47 +1310,61 @@ export default function HomeScreen() {
               );
             })() : null}
 
-            {/* RSVP — parents with a linked player */}
-            {!isCoach && myPlayer ? (
-              <View style={styles.nextEventRsvpRow}>
-                <TouchableOpacity
-                  style={[styles.rsvpBtn,
-                    rsvpStatus === 'attending'
-                      ? { backgroundColor: rgba(0.14), borderColor: rgba(0.35) }
-                      : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
-                  ]}
-                  onPress={() => onRsvp('attending')}
-                  disabled={rsvpLoading}
-                  activeOpacity={rsvpStatus === 'attending' ? 1 : 0.75}
-                >
-                  <Ionicons
-                    name={rsvpStatus === 'attending' ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                    size={15}
-                    color={rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted}
-                  />
-                  <Text style={[styles.rsvpBtnText,
-                    { color: rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted },
-                  ]}>Going</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.rsvpBtn,
-                    rsvpStatus === 'not_attending'
-                      ? { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)' }
-                      : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
-                  ]}
-                  onPress={() => onRsvp('not_attending')}
-                  disabled={rsvpLoading}
-                  activeOpacity={rsvpStatus === 'not_attending' ? 1 : 0.75}
-                >
-                  <Ionicons
-                    name={rsvpStatus === 'not_attending' ? 'close-circle' : 'close-circle-outline'}
-                    size={15}
-                    color={rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted}
-                  />
-                  <Text style={[styles.rsvpBtnText,
-                    { color: rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted },
-                  ]}>Can't go</Text>
-                </TouchableOpacity>
+            {/* RSVP — one row per guarded player, so a family with more than
+                one on this team (e.g. twins) gets independent controls */}
+            {!isCoach && myPlayers.length > 0 ? (
+              <View style={{ gap: 8 }}>
+                {myPlayers.map((p) => {
+                  const rsvpStatus = rsvpStatusByPlayer[p.id] ?? null;
+                  const rsvpLoading = rsvpSavingId === p.id;
+                  return (
+                    <View key={p.id}>
+                      {myPlayers.length > 1 && (
+                        <Text style={styles.nextEventRsvpName}>{p.full_name.split(' ')[0]}</Text>
+                      )}
+                      <View style={styles.nextEventRsvpRow}>
+                        <TouchableOpacity
+                          style={[styles.rsvpBtn,
+                            rsvpStatus === 'attending'
+                              ? { backgroundColor: rgba(0.14), borderColor: rgba(0.35) }
+                              : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
+                          ]}
+                          onPress={() => onRsvp(p.id, 'attending')}
+                          disabled={rsvpLoading}
+                          activeOpacity={rsvpStatus === 'attending' ? 1 : 0.75}
+                        >
+                          <Ionicons
+                            name={rsvpStatus === 'attending' ? 'checkmark-circle' : 'checkmark-circle-outline'}
+                            size={15}
+                            color={rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted}
+                          />
+                          <Text style={[styles.rsvpBtnText,
+                            { color: rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted },
+                          ]}>Going</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.rsvpBtn,
+                            rsvpStatus === 'not_attending'
+                              ? { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)' }
+                              : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
+                          ]}
+                          onPress={() => onRsvp(p.id, 'not_attending')}
+                          disabled={rsvpLoading}
+                          activeOpacity={rsvpStatus === 'not_attending' ? 1 : 0.75}
+                        >
+                          <Ionicons
+                            name={rsvpStatus === 'not_attending' ? 'close-circle' : 'close-circle-outline'}
+                            size={15}
+                            color={rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted}
+                          />
+                          <Text style={[styles.rsvpBtnText,
+                            { color: rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted },
+                          ]}>Can't go</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             ) : null}
           </TouchableOpacity>
@@ -1436,9 +1449,9 @@ export default function HomeScreen() {
 
           {/* Greeting */}
           <Text style={styles.heroGreeting}>{greeting(profile?.full_name)}</Text>
-          {!isCoach && myPlayer && (
+          {!isCoach && myPlayers.length > 0 && (
             <Text style={styles.heroPlayerName}>
-              {myPlayer.full_name}{myPlayer.jersey_number != null ? ` · #${myPlayer.jersey_number}` : ''}
+              {myPlayers.map((p) => `${p.full_name}${p.jersey_number != null ? ` · #${p.jersey_number}` : ''}`).join(', ')}
             </Text>
           )}
         </View>
@@ -1642,8 +1655,11 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* MY SEASON — players with coach-marked attendance */}
-        {!isCoach && myPlayer && seasonTotalMarked > 0 && (() => {
+        {/* MY SEASON — one card per guarded player with coach-marked attendance */}
+        {!isCoach && myPlayers.map((p) => {
+          const stats = seasonStatsByPlayer[p.id];
+          if (!stats || stats.seasonTotalMarked === 0) return null;
+          const { combinedStreak, combinedAtRisk, gamesTotal, gamesAttended } = stats;
           const superStreak = combinedStreak >= 10 && (gamesTotal === 0 || gamesAttended === gamesTotal);
           // Flame tier — WHOOP-style color progression
           const flameTier = combinedAtRisk
@@ -1659,15 +1675,17 @@ export default function HomeScreen() {
                     : { color: PULSE_COLORS.ui.muted, glow: 'transparent', label: 'No streak yet' };
           const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
           return (
-            <>
+            <View key={p.id}>
               <View style={[styles.sectionTitleRow, { marginTop: 16 }]}>
                 <View style={[styles.sectionTitleDot, { backgroundColor: superStreak ? '#F59E0B' : primaryColor }]} />
-                <Text style={styles.sectionTitle}>{(myPlayer?.full_name?.split(' ')[0] ?? 'MY').toUpperCase()}'S SEASON</Text>
+                <Text style={styles.sectionTitle}>
+                  {p.full_name.split(' ')[0].toUpperCase()}'S SEASON
+                </Text>
                 {superStreak && <Text style={styles.superStreakChip}>⭐ SUPER STREAK</Text>}
               </View>
               <TouchableOpacity
                 style={[styles.seasonCard, { borderLeftWidth: 3, borderLeftColor: superStreak ? '#F59E0B' : flameTier.color }]}
-                onPress={() => setShowAttendanceSheet(true)}
+                onPress={() => setSeasonSheetPlayerId(p.id)}
                 activeOpacity={0.85}
               >
                 {/* Streak — bare emoji with glow, no container */}
@@ -1703,9 +1721,9 @@ export default function HomeScreen() {
                   <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
                 </View>
               </TouchableOpacity>
-            </>
+            </View>
           );
-        })()}
+        })}
 
         {/* ── Callouts ── */}
         {(callouts.length > 0 || isCoach) && (
@@ -1847,16 +1865,21 @@ export default function HomeScreen() {
           const gameFirst = !nextGame ? false
             : !nextTraining ? true
             : eventDateTime(nextGame) <= eventDateTime(nextTraining);
-          const firstMargin = isCoach ? 20 : (myPlayer && seasonTotalMarked > 0 ? 20 : 28);
+          const hasSeasonStats = Object.values(seasonStatsByPlayer).some((s) => s.seasonTotalMarked > 0);
+          const firstMargin = isCoach ? 20 : (myPlayers.length > 0 && hasSeasonStats ? 20 : 28);
           const gameCard = renderNextCard(
             'NEXT GAME',
             nextGame,
             nextGameWeather,
             nextGameDriveTime,
             gameHeadcount,
-            myGameRsvpStatus,
-            gameRsvpLoading,
-            (s) => nextGame && handleRsvp(nextGame, s, myGameRsvpStatus, setMyGameRsvpStatus, setGameRsvpLoading),
+            myGameRsvpStatusByPlayer,
+            gameRsvpSavingId,
+            (playerId, s) => nextGame && handleRsvp(
+              nextGame, playerId, s, myGameRsvpStatusByPlayer[playerId] ?? null,
+              (pid, st) => setMyGameRsvpStatusByPlayer((prev) => ({ ...prev, [pid]: st })),
+              setGameRsvpSavingId,
+            ),
             gameFirst ? firstMargin : 0,
           );
           const trainingCard = renderNextCard(
@@ -1865,67 +1888,71 @@ export default function HomeScreen() {
             nextTrainingWeather,
             nextTrainingDriveTime,
             trainingHeadcount,
-            myTrainingRsvpStatus,
-            trainingRsvpLoading,
-            (s) => nextTraining && handleRsvp(nextTraining, s, myTrainingRsvpStatus, setMyTrainingRsvpStatus, setTrainingRsvpLoading),
+            myTrainingRsvpStatusByPlayer,
+            trainingRsvpSavingId,
+            (playerId, s) => nextTraining && handleRsvp(
+              nextTraining, playerId, s, myTrainingRsvpStatusByPlayer[playerId] ?? null,
+              (pid, st) => setMyTrainingRsvpStatusByPlayer((prev) => ({ ...prev, [pid]: st })),
+              setTrainingRsvpSavingId,
+            ),
             gameFirst ? 0 : firstMargin,
           );
           return gameFirst ? <>{gameCard}{trainingCard}</> : <>{trainingCard}{gameCard}</>;
         })()}
 
 
-        {/* My Player — parents only */}
-        {!isCoach && myPlayer && (
+        {/* My Player(s) — parents only, one card per guarded player (e.g. twins) */}
+        {!isCoach && myPlayers.length > 0 && (
           <>
             <View style={styles.sectionTitleRow}>
               <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
-              <Text style={styles.sectionTitle}>MY PLAYER</Text>
+              <Text style={styles.sectionTitle}>{myPlayers.length > 1 ? 'MY PLAYERS' : 'MY PLAYER'}</Text>
             </View>
-            <TouchableOpacity
-              style={styles.myPlayerCard}
-              onPress={() => router.push(`/(app)/${slug}/player/${myPlayer.id}` as never)}
-              activeOpacity={0.8}
-            >
-              {/* Avatar */}
-              <View style={[styles.playerAvatarRing, { borderColor: playerColor }]}>
-                {playerAvatarUrl ? (
-                  <Image source={{ uri: playerAvatarUrl }} style={styles.playerAvatarPhoto} />
-                ) : (
-                  <View style={[styles.playerAvatarFill, { backgroundColor: `${playerColor}20` }]}>
-                    <Text style={[styles.playerAvatarText, { color: playerColor }]}>{playerInitials}</Text>
+            {myPlayers.map((p) => {
+              const playerColor = positionColor(p.position ?? null);
+              const playerInitials = p.full_name
+                ? p.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
+                : '?';
+              const playerAvatarUrl = p.photo_url ?? null;
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.myPlayerCard}
+                  onPress={() => router.push(`/(app)/${slug}/player/${p.id}` as never)}
+                  activeOpacity={0.8}
+                >
+                  {/* Avatar */}
+                  <View style={[styles.playerAvatarRing, { borderColor: playerColor }]}>
+                    {playerAvatarUrl ? (
+                      <Image source={{ uri: playerAvatarUrl }} style={styles.playerAvatarPhoto} />
+                    ) : (
+                      <View style={[styles.playerAvatarFill, { backgroundColor: `${playerColor}20` }]}>
+                        <Text style={[styles.playerAvatarText, { color: playerColor }]}>{playerInitials}</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
 
-              {/* Info */}
-              <View style={styles.myPlayerBody}>
-                <Text style={styles.myPlayerName}>{myPlayer.full_name}</Text>
-                <View style={styles.myPlayerBadges}>
-                  {myPlayer.jersey_number != null && (
-                    <View style={[styles.jerseyBadge, { backgroundColor: rgba(0.1), borderColor: rgba(0.2) }]}>
-                      <Text style={[styles.jerseyBadgeText, { color: primaryColor }]}>#{myPlayer.jersey_number}</Text>
+                  {/* Info */}
+                  <View style={styles.myPlayerBody}>
+                    <Text style={styles.myPlayerName}>{p.full_name}</Text>
+                    <View style={styles.myPlayerBadges}>
+                      {p.jersey_number != null && (
+                        <View style={[styles.jerseyBadge, { backgroundColor: rgba(0.1), borderColor: rgba(0.2) }]}>
+                          <Text style={[styles.jerseyBadgeText, { color: primaryColor }]}>#{p.jersey_number}</Text>
+                        </View>
+                      )}
+                      {p.position && (
+                        <View style={[styles.posBadge, { backgroundColor: `${playerColor}18`, borderColor: `${playerColor}35` }]}>
+                          <Text style={[styles.posBadgeText, { color: playerColor }]}>{p.position.toUpperCase()}</Text>
+                        </View>
+                      )}
                     </View>
-                  )}
-                  {myPlayer.position && (
-                    <View style={[styles.posBadge, { backgroundColor: `${playerColor}18`, borderColor: `${playerColor}35` }]}>
-                      <Text style={[styles.posBadgeText, { color: playerColor }]}>{myPlayer.position.toUpperCase()}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
+                  </View>
 
-              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
-            </TouchableOpacity>
-            {hasMultipleGuardedPlayers && (
-              <TouchableOpacity
-                style={styles.multiPlayerNote}
-                onPress={() => router.push(`/(app)/${slug}/(tabs)/roster` as never)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="people-outline" size={13} color={PULSE_COLORS.ui.muted} />
-                <Text style={styles.multiPlayerNoteText}>You have another player on this team — see the roster, or RSVP for both from an event's page</Text>
-              </TouchableOpacity>
-            )}
+                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                </TouchableOpacity>
+              );
+            })}
           </>
         )}
 
@@ -2032,6 +2059,9 @@ export default function HomeScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.feeModalTitle} numberOfLines={1}>{fee.description}</Text>
+                      {myPlayers.length > 1 && fee.player_name ? (
+                        <Text style={styles.feePlayerTag}>{fee.player_name.split(' ')[0]}</Text>
+                      ) : null}
                       <View style={styles.feeModalMetaRow}>
                         <View style={[styles.feeStatusDot, { backgroundColor: statusColor }]} />
                         <Text style={[styles.feeStatusText, { color: statusColor }]}>{statusLabel}</Text>
@@ -2273,12 +2303,14 @@ export default function HomeScreen() {
       </Modal>
 
       {/* Attendance detail sheet */}
-      <Modal visible={showAttendanceSheet} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowAttendanceSheet(false)}>
+      <Modal visible={seasonSheetPlayerId !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSeasonSheetPlayerId(null)}>
         <View style={styles.attSheet}>
           {/* Header */}
           <View style={styles.attSheetHeader}>
-            <Text style={styles.attSheetTitle}>{myPlayer?.full_name?.split(' ')[0]}'s Season</Text>
-            <TouchableOpacity onPress={() => setShowAttendanceSheet(false)} style={styles.attSheetClose}>
+            <Text style={styles.attSheetTitle}>
+              {(seasonSheetPlayerId && myPlayers.find((p) => p.id === seasonSheetPlayerId)?.full_name.split(' ')[0]) ?? 'Player'}'s Season
+            </Text>
+            <TouchableOpacity onPress={() => setSeasonSheetPlayerId(null)} style={styles.attSheetClose}>
               <Ionicons name="close" size={20} color={PULSE_COLORS.ui.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -2286,6 +2318,9 @@ export default function HomeScreen() {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
             {/* Streak hero */}
             {(() => {
+              const stats = seasonSheetPlayerId ? seasonStatsByPlayer[seasonSheetPlayerId] : undefined;
+              if (!stats) return null;
+              const { combinedStreak, combinedAtRisk, gamesTotal, gamesAttended, attendanceHistory } = stats;
               const superStreak = combinedStreak >= 10 && (gamesTotal === 0 || gamesAttended === gamesTotal);
               const trainingsTotal = attendanceHistory.filter(e => e.type !== 'game').length;
               const trainingsAttended = attendanceHistory.filter(e => e.type !== 'game' && e.status === 'present').length;
@@ -2366,14 +2401,14 @@ export default function HomeScreen() {
             })()}
 
             {/* Session history */}
-            {attendanceHistory.length > 0 && (
+            {(seasonSheetPlayerId && seasonStatsByPlayer[seasonSheetPlayerId]?.attendanceHistory.length) ? (
               <>
                 <View style={[styles.sectionTitleRow, { marginTop: 24, marginHorizontal: 20 }]}>
                   <View style={[styles.sectionTitleDot, { backgroundColor: primaryColor }]} />
                   <Text style={styles.sectionTitle}>RECENT SESSIONS</Text>
                 </View>
                 <View style={styles.attSheetList}>
-                  {attendanceHistory.map((entry) => {
+                  {seasonStatsByPlayer[seasonSheetPlayerId].attendanceHistory.map((entry) => {
                     const isGame = entry.type === 'game';
                     const present = entry.status === 'present';
                     const d = new Date(entry.date + 'T00:00:00');
@@ -2405,7 +2440,7 @@ export default function HomeScreen() {
                   })}
                 </View>
               </>
-            )}
+            ) : null}
           </ScrollView>
         </View>
       </Modal>
@@ -2586,6 +2621,7 @@ const styles = StyleSheet.create({
   attendanceBarLegendText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   // Inline RSVP
+  nextEventRsvpName: { fontSize: 11.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginBottom: 4 },
   nextEventRsvpRow: {
     flexDirection: 'row', gap: 10,
     borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
@@ -2627,11 +2663,6 @@ const styles = StyleSheet.create({
   playerAvatarPhoto: { width: '100%', height: '100%' },
   playerAvatarFill: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   playerAvatarText: { fontSize: 18, fontWeight: '800' },
-  multiPlayerNote: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
-    marginTop: -20, marginBottom: 28, paddingHorizontal: 4,
-  },
-  multiPlayerNoteText: { flex: 1, fontSize: 11.5, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
   myPlayerBody: { flex: 1, gap: 6 },
   myPlayerName: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text },
   myPlayerBadges: { flexDirection: 'row', gap: 8 },
@@ -2710,6 +2741,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   feeModalTitle: { fontSize: 14.5, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  feePlayerTag: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 1 },
   feeModalMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   feeStatusDot: { width: 6, height: 6, borderRadius: 3 },
   feeModalAmount: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
