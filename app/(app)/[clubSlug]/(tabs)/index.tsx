@@ -1249,9 +1249,12 @@ export default function HomeScreen() {
                   </View>
                 ) : null}
                 {kitColor ? (
-                  <View style={[styles.nextCardChip, { borderColor: `${kitColor}35`, backgroundColor: `${kitColor}12` }]}>
-                    <Ionicons name="shirt" size={11} color={kitColor} />
-                    <Text style={[styles.nextCardChipText, { color: kitColor, fontWeight: '700' }]}>
+                  // Fixed neutral chip + a bordered swatch, not the literal kit
+                  // color as border/text — a black kit (a valid club color)
+                  // otherwise disappears entirely against the dark theme.
+                  <View style={[styles.nextCardChip, { borderColor: PULSE_COLORS.ui.border, backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+                    <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
+                    <Text style={[styles.nextCardChipText, { color: PULSE_COLORS.ui.textSecondary }]}>
                       {event.uniform === 'home' ? 'Home' : event.uniform === 'away' ? 'Away' : 'Training'} Kit
                     </Text>
                   </View>
@@ -2605,6 +2608,7 @@ const styles = StyleSheet.create({
     borderRadius: 20, borderWidth: 1,
   },
   nextCardChipText: { fontSize: 11, fontWeight: '700' },
+  kitSwatch: { width: 9, height: 9, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
 
   // Attendance bar
   attendanceBarWrap: {

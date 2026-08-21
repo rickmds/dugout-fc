@@ -1649,9 +1649,14 @@ export default function EventDetailScreen() {
                       : event.uniform === 'away' ? 'Away Kit'
                       : 'Training Kit';
                     return (
-                      <View style={[styles.uniformChip, { backgroundColor: `${kitColor}18`, borderColor: `${kitColor}30` }]}>
-                        <Ionicons name="shirt" size={13} color={kitColor} />
-                        <Text style={[styles.uniformChipText, { color: kitColor }]}>{kitLabel}</Text>
+                      // A colored border/text derived from the kit color disappears
+                      // entirely for a black (or near-black) kit, which is a real,
+                      // valid club color choice — so the swatch below carries the
+                      // actual color (always visible via its border ring) while the
+                      // chip itself stays a fixed, always-readable neutral.
+                      <View style={[styles.uniformChip, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: PULSE_COLORS.ui.border }]}>
+                        <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
+                        <Text style={[styles.uniformChipText, { color: PULSE_COLORS.ui.textSecondary }]}>{kitLabel}</Text>
                       </View>
                     );
                   })()}
@@ -3079,6 +3084,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   uniformChipText: { fontSize: 13, fontWeight: '700' },
+  kitSwatch: { width: 10, height: 10, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
 
   divider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 20 },
 

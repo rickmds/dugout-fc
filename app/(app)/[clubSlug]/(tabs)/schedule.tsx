@@ -470,12 +470,14 @@ export default function ScheduleScreen() {
           </Text>
           {item.type === 'game' && item.uniform === 'home' && (
             <View style={styles.homeAwayTag}>
-              <Text style={[styles.homeAwayTagText, { color: homeKitColor }]}>HOME</Text>
+              <View style={[styles.homeAwaySwatch, { backgroundColor: homeKitColor }]} />
+              <Text style={styles.homeAwayTagText}>HOME</Text>
             </View>
           )}
           {item.type === 'game' && item.uniform === 'away' && (
             <View style={styles.homeAwayTag}>
-              <Text style={[styles.homeAwayTagText, { color: awayKitColor }]}>AWAY</Text>
+              <View style={[styles.homeAwaySwatch, { backgroundColor: awayKitColor }]} />
+              <Text style={styles.homeAwayTagText}>AWAY</Text>
             </View>
           )}
         </View>
@@ -531,9 +533,9 @@ export default function ScheduleScreen() {
                   : item.uniform === 'away' ? 'Away Kit'
                   : 'Training Kit';
                 return (
-                  <View style={[styles.kitBadge, { backgroundColor: `${kitColor}22` }]}>
-                    <Ionicons name="shirt" size={11} color={kitColor} />
-                    <Text style={[styles.typeText, { color: kitColor }]}>{kitLabel}</Text>
+                  <View style={styles.kitBadge}>
+                    <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
+                    <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]}>{kitLabel}</Text>
                   </View>
                 );
               })()}
@@ -1218,8 +1220,15 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: 14, gap: 1,
   },
-  homeAwayTag: { marginTop: 4 },
-  homeAwayTagText: { fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  homeAwayTag: { marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 3 },
+  // Kit color swatches are always bordered so a black (or any very dark)
+  // club kit still reads as a visible shape against the dark theme, instead
+  // of relying on the kit color itself as text/icon color — which
+  // disappears entirely when that color is black. See homeAwayTagText and
+  // the kit badge below, which for the same reason use a fixed readable
+  // color rather than the literal kit hex.
+  homeAwaySwatch: { width: 6, height: 6, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+  homeAwayTagText: { fontSize: 8, fontWeight: '900', letterSpacing: 1, color: PULSE_COLORS.ui.textSecondary },
   dateWday: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5 },
   dateDay: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, lineHeight: 26 },
   dateMon: { fontSize: 10, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 0.5 },
@@ -1235,7 +1244,8 @@ const styles = StyleSheet.create({
   },
   driveTimePillText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  kitBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  kitBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.08)' },
+  kitSwatch: { width: 9, height: 9, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
   typeText: { fontSize: 11, fontWeight: '700' },
   videoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: 'rgba(168,85,247,0.10)' },
   videoBadgeText: { fontSize: 11, fontWeight: '700', color: '#A855F7' },
