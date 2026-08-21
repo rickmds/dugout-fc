@@ -14,6 +14,34 @@ async function authHeaders() {
   };
 }
 
+// None of these had a timeout or a try/catch — a real network error (not
+// just a bad HTTP status) threw out of the fetch, and since none of their
+// callers wrap the call in try/catch either, that exception propagated all
+// the way up as an unhandled rejection. In the Guardians tab specifically,
+// that left the save button's spinner stuck forever with no alert shown at
+// all (the invite row itself still gets created earlier, so it looked like
+// "the invite just didn't go through" with nothing indicating why). Same
+// class of bug as today's login-hang fix — bound the request and turn a
+// thrown error into a clean `false` instead.
+async function postWithTimeout(url: string, body: unknown, ms = 10000): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return res.ok;
+  } catch (e) {
+    console.error(`[inviteApi] POST ${url} failed`, e);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type CoachInviteInput = {
   full_name: string;
   email: string;
@@ -24,36 +52,36 @@ export type CoachInviteInput = {
 // Creates (or reuses) the coach account/invite server-side and sends the
 // branded invite email. Returns true only if every coach in the batch succeeded.
 export async function sendCoachInvites(clubId: string, coaches: CoachInviteInput[]): Promise<boolean> {
-  const res = await fetch(`${APP_URL}/api/invite-coach`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify({ club_id: clubId, coaches }),
-  });
-  if (!res.ok) return false;
-  const { results } = await res.json();
-  return Array.isArray(results) && results.every((r: { ok: boolean }) => r.ok);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(`${APP_URL}/api/invite-coach`, {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({ club_id: clubId, coaches }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return false;
+    const { results } = await res.json();
+    return Array.isArray(results) && results.every((r: { ok: boolean }) => r.ok);
+  } catch (e) {
+    console.error('[inviteApi] sendCoachInvites failed', e);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Sends the branded email for an `invites` row that already exists
 // (parent invites are still created client-side — only the email is shared).
 export async function sendParentInviteEmail(inviteId: string, playerName?: string): Promise<boolean> {
-  const res = await fetch(`${APP_URL}/api/send-invite`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify({ invite_id: inviteId, player_name: playerName }),
-  });
-  return res.ok;
+  return postWithTimeout(`${APP_URL}/api/send-invite`, { invite_id: inviteId, player_name: playerName });
 }
 
 // Resends the branded "you've been added as a coach" email for a still-pending
 // coach invite — same route the web Staff page uses for its Resend action.
 export async function resendCoachInvite(inviteId: string): Promise<boolean> {
-  const res = await fetch(`${APP_URL}/api/staff-resend`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify({ kind: 'pending', invite_id: inviteId }),
-  });
-  return res.ok;
+  return postWithTimeout(`${APP_URL}/api/staff-resend`, { kind: 'pending', invite_id: inviteId });
 }
 
 // Creates a parent-role invite for a player and sends the email — the
