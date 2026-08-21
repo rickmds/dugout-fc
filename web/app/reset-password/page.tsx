@@ -9,7 +9,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
-type Phase = 'loading' | 'form' | 'saving' | 'success' | 'invalid';
+type Phase = 'loading' | 'confirm' | 'confirming' | 'form' | 'saving' | 'success' | 'invalid';
 
 const ACCENT  = '#22C55E';
 const SURFACE = '#111111';
@@ -39,16 +39,29 @@ function ResetContent() {
 
   useEffect(() => {
     const code = searchParams.get('code');
+    const tokenHash = searchParams.get('token_hash');
+
+    // Preferred link shape — nothing is redeemed yet just from this page
+    // loading. Supabase's default {{ .ConfirmationURL }} points straight at
+    // /auth/v1/verify, which consumes the one-time token the instant
+    // anything requests it — email link scanners, previews, or prefetching
+    // all silently "use up" the link before a real person ever taps it.
+    // This shape defers the actual verifyOtp() call to a real button press.
+    if (tokenHash) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reading the recovery link shape from the URL on mount, not derivable at render time
+      setPhase('confirm');
+      return;
+    }
 
     if (code) {
-      // PKCE flow — exchange code for session
+      // Legacy PKCE link — exchange code for session
       supabase.auth.exchangeCodeForSession(code).then(({ error: e }) => {
         setPhase(e ? 'invalid' : 'form');
       });
       return;
     }
 
-    // Implicit flow — wait for PASSWORD_RECOVERY event from fragment
+    // Legacy implicit flow — wait for PASSWORD_RECOVERY event from fragment
     if (subscribed.current) return;
     subscribed.current = true;
 
@@ -70,6 +83,14 @@ function ResetContent() {
 
     return () => { subscription.unsubscribe(); clearTimeout(timer); };
   }, [searchParams]);
+
+  async function handleConfirm() {
+    const tokenHash = searchParams.get('token_hash');
+    if (!tokenHash) return;
+    setPhase('confirming');
+    const { error: verifyErr } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+    setPhase(verifyErr ? 'invalid' : 'form');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -180,6 +201,32 @@ function ResetContent() {
     <div style={{ textAlign: 'center', padding: '20px 0' }}>
       <div style={{ width: '28px', height: '28px', border: `2px solid ${ACCENT}33`, borderTopColor: ACCENT, borderRadius: '50%', margin: '0 auto', animation: 'spin 0.75s linear infinite' }} />
       <div style={{ marginTop: '14px', fontSize: '13px', color: '#6b7280' }}>Verifying link…</div>
+    </div>
+  );
+
+  // ── Confirm — a real tap, so an email scanner or link preview can't
+  //     silently redeem the one-time token before you do ──────────────────
+  if (phase === 'confirm' || phase === 'confirming') return shell(
+    <div style={{ textAlign: 'center', animation: 'fadeUp 0.3s ease both' }}>
+      <div style={{
+        width: '48px', height: '48px', borderRadius: '50%', margin: '0 auto 16px',
+        background: `${ACCENT}18`, border: `1px solid ${ACCENT}33`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
+      }}>
+        🔒
+      </div>
+      <div style={{ fontSize: '18px', fontWeight: '800', color: '#f3f4f6', marginBottom: '8px' }}>Reset your password</div>
+      <div style={{ fontSize: '14px', color: '#6b7280', lineHeight: '1.65', maxWidth: '300px', margin: '0 auto 24px' }}>
+        Tap below to continue. This confirms it&apos;s really you before we open the link.
+      </div>
+      <button className="rp-btn" onClick={handleConfirm} disabled={phase === 'confirming'}>
+        {phase === 'confirming'
+          ? <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+              <span style={{ width: '16px', height: '16px', border: '2px solid #00000033', borderTopColor: '#000', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.75s linear infinite' }} />
+              Verifying…
+            </span>
+          : 'Continue'}
+      </button>
     </div>
   );
 
