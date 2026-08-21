@@ -169,6 +169,7 @@ type RsvpStatus = 'attending' | 'not_attending';
 
 type EventDetail = {
   id: string;
+  team_id: string;
   title: string;
   type: EventType;
   event_date: string;
@@ -331,7 +332,7 @@ function rsvpDeadlineLabel(lockAt: string): string {
 export default function EventDetailScreen() {
   const { primaryColor, rgba, homeKitColor, awayKitColor, trainingKitColor } = useClub();
   const { eventId, clubSlug, section } = useLocalSearchParams<{ eventId: string; clubSlug: string; section?: string }>();
-  const { team, loading: teamLoading } = useTeam();
+  const { team, allTeams, selectTeam, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
 
@@ -414,12 +415,31 @@ export default function EventDetailScreen() {
   async function load() {
     if (!team || !profile || !eventId) return;
     setLoading(true);
+
+    const { data: eventRow } = await supabase.from('events')
+      .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away')
+      .eq('id', eventId).single();
+
+    // A notification tap lands here without ever switching the active team
+    // (see app/_layout.tsx's notification-response handler — it only
+    // navigates), so the context team can be whatever was last active on a
+    // totally different team. Every query below keys off `team.id`, so
+    // realign the active team to the event's own team first — otherwise
+    // Availability/Attendance show the wrong roster entirely. This check
+    // sits outside the try/finally below (which unconditionally clears
+    // `loading`) so bailing out here keeps the spinner up instead of
+    // flashing "Event not found" — team?.id changing re-triggers this same
+    // load() with the right team, and that pass is the one that actually
+    // finishes and clears loading.
+    const eventTeamId = eventRow?.team_id ?? null;
+    if (eventTeamId && eventTeamId !== team.id && allTeams.some((t) => t.id === eventTeamId)) {
+      await selectTeam(eventTeamId);
+      return;
+    }
+
     try {
 
-    const [eventRes, playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
-      supabase.from('events')
-        .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away')
-        .eq('id', eventId).single(),
+    const [playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
       supabase.from('players').select('id,full_name,jersey_number,position,profile_id')
         .eq('team_id', team.id).order('jersey_number'),
       supabase.from('event_rsvps').select('player_id,status').eq('event_id', eventId),
@@ -434,7 +454,7 @@ export default function EventDetailScreen() {
       supabase.from('event_attendance').select('player_id,status').eq('event_id', eventId),
     ]);
 
-    setEvent(eventRes.data as unknown as EventDetail);
+    setEvent(eventRow as unknown as EventDetail);
     setPlayers((playersRes.data ?? []) as Player[]);
     setRsvps((rsvpsRes.data ?? []) as RsvpRow[]);
 
@@ -492,7 +512,7 @@ export default function EventDetailScreen() {
     setAttendanceMap(attMap);
 
     // Load active call-outs for this event (coaches only, games only)
-    const evType = (eventRes.data as any)?.type;
+    const evType = (eventRow as any)?.type;
     const isCoachRole = team?.myRole === 'org_admin' || team?.myRole === 'coach';
     if (isCoachRole && evType === 'game') {
       const { data: calloutData } = await (supabase as any).from('guest_requests')
@@ -523,7 +543,7 @@ export default function EventDetailScreen() {
     }
 
     // Fetch weather — pass lat/lng or address; WeatherAPI handles both
-    const ev = eventRes.data as unknown as EventDetail;
+    const ev = eventRow as unknown as EventDetail;
     if (ev?.event_date && isWeatherForecastable(ev.event_date)) {
       const location = (ev.lat != null && ev.lng != null)
         ? `${ev.lat},${ev.lng}`
