@@ -44,11 +44,21 @@ function normalizeClubEmbed(c: ClubBranding | ClubBranding[] | null | undefined)
   return Array.isArray(c) ? (c[0] ?? null) : c;
 }
 
+// GoTrue requires application/json on every response from the hook — a bare
+// Response(JSON.stringify(...)) defaults to text/plain and is rejected with
+// "hook_payload_invalid_content_type", even on a 200.
+function jsonResponse(body: unknown, status: number) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 export async function POST(req: Request) {
   const secret = process.env.SUPABASE_AUTH_HOOK_SECRET;
   if (!secret) {
     console.error('SUPABASE_AUTH_HOOK_SECRET not set');
-    return new Response(JSON.stringify({ error: 'Hook not configured' }), { status: 500 });
+    return jsonResponse({ error: 'Hook not configured' }, 500);
   }
 
   const payload = await req.text();
@@ -63,7 +73,7 @@ export async function POST(req: Request) {
     const wh = new Webhook(secret.replace(/^v1,whsec_/, ''));
     event = wh.verify(payload, headers) as HookPayload;
   } catch {
-    return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 401 });
+    return jsonResponse({ error: 'Invalid signature' }, 401);
   }
 
   const { user, email_data } = event;
@@ -173,8 +183,8 @@ export async function POST(req: Request) {
 
   if (sendErr) {
     console.error('auth-email-hook send failed', sendErr);
-    return new Response(JSON.stringify({ error: 'Failed to send email' }), { status: 500 });
+    return jsonResponse({ error: 'Failed to send email' }, 500);
   }
 
-  return new Response(JSON.stringify({}), { status: 200 });
+  return jsonResponse({}, 200);
 }
