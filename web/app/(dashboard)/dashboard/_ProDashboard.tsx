@@ -27,6 +27,7 @@ type TeamHealth = {
   player_count: number; has_coach: boolean;
   invite_sent: number; invite_accepted: number;
   outstanding: number; last_activity: string | null;
+  roster_tier: RosterTier;
   risk_score: number; risk_reasons: string[];
 };
 
@@ -61,6 +62,29 @@ function isActiveClosure(c: FieldClosure): boolean {
 function daysSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
+// No explicit "format" field exists on teams yet — inferred from age_group
+// via the standard youth-soccer age progression (U9-10 -> 7v7, U11-12 -> 9v9,
+// U13+ -> 11v11). Falls back to 11v11 for anything unparseable, since that's
+// the format least likely to falsely flag a small-sided team as short.
+type RosterFormat = '7v7' | '9v9' | '11v11';
+function rosterFormat(ageGroup: string | null): RosterFormat {
+  const n = ageGroup ? parseInt(ageGroup.replace(/\D/g, ''), 10) : NaN;
+  if (!isNaN(n) && n <= 10) return '7v7';
+  if (!isNaN(n) && n <= 12) return '9v9';
+  return '11v11';
+}
+// Red = at or below the format's actual on-field minimum (real risk of not
+// being able to field a team at all). Orange = exactly one spare (enough to
+// play, but no cushion). Green = comfortably staffed.
+const ROSTER_MIN: Record<RosterFormat, number> = { '7v7': 7, '9v9': 9, '11v11': 11 };
+type RosterTier = 'red' | 'orange' | 'green';
+function rosterTier(playerCount: number, format: RosterFormat): RosterTier {
+  const min = ROSTER_MIN[format];
+  if (playerCount <= min) return 'red';
+  if (playerCount === min + 1) return 'orange';
+  return 'green';
+}
+
 function weatherEmoji(cond: string): string {
   const c = cond.toLowerCase();
   if (c.includes('sunny') || c.includes('clear')) return '☀️';
@@ -135,7 +159,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
   const [coachCoverage,     setCoachCoverage]     = useState(0);
   const [parentAdoption,    setParentAdoption]    = useState(0);
   const [feeCollectionRate, setFeeCollectionRate] = useState(0);
-  const [rosterCompleteness, setRosterCompleteness] = useState(0);
+  const [rosterTierCounts, setRosterTierCounts]   = useState({ red: 0, orange: 0, green: 0 });
   const [totalOutstanding,  setTotalOutstanding]  = useState(0);
   const [healthScore,       setHealthScore]       = useState(0);
 
@@ -232,14 +256,6 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
     setFeeCollectionRate(collRate);
     setTotalOutstanding(outstanding);
 
-    // ── Roster completeness ───────────────────────────────────────────────────
-    const complete     = players.filter(p => p.jersey_number != null && p.position).length;
-    const completeness = players.length > 0 ? complete / players.length : 1;
-    setRosterCompleteness(completeness);
-
-    // ── Health score ──────────────────────────────────────────────────────────
-    setHealthScore(Math.round((completeness * 25) + (adoptionRate * 25) + (coverageRate * 25) + (collRate * 25)));
-
     // ── Lookup maps ───────────────────────────────────────────────────────────
     const inviteByTeam: Record<string, { sent: number; accepted: number }> = {};
     for (const inv of invites) {
@@ -282,11 +298,14 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
       const last_ann     = lastAnnByTeam[team.id] ?? null;
       const last_chat    = lastChatByTeam[team.id] ?? null;
       const last_activity = last_ann && last_chat ? (last_ann > last_chat ? last_ann : last_chat) : (last_ann ?? last_chat);
+      const format       = rosterFormat(team.age_group);
+      const roster_tier  = rosterTier(player_count, format);
 
       const risk_reasons: string[] = [];
       let risk_score = 0;
       if (!has_coach)          { risk_reasons.push('No coach assigned');       risk_score += 40; }
       if (player_count === 0)  { risk_reasons.push('No players on roster');    risk_score += 35; }
+      else if (roster_tier === 'red') { risk_reasons.push(`Only ${player_count} players — ${format} needs ${ROSTER_MIN[format] + 1}+`); risk_score += 30; }
       if (player_count > 0 && inv.accepted === 0) { risk_reasons.push('No parents in app'); risk_score += 20; }
       if (fees.outstanding > 500) { risk_reasons.push(`${fmtMoney(fees.outstanding, currency)} outstanding`); risk_score += 10; }
       if (last_activity) {
@@ -296,9 +315,20 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
         risk_reasons.push('No coach activity yet'); risk_score += 10;
       }
 
-      return { id: team.id, name: team.name, age_group: team.age_group, player_count, has_coach, invite_sent: inv.sent, invite_accepted: inv.accepted, outstanding: fees.outstanding, last_activity, risk_score, risk_reasons };
+      return { id: team.id, name: team.name, age_group: team.age_group, player_count, has_coach, invite_sent: inv.sent, invite_accepted: inv.accepted, outstanding: fees.outstanding, last_activity, roster_tier, risk_score, risk_reasons };
     }).sort((a, b) => b.risk_score - a.risk_score);
     setTeamHealthList(healthList);
+
+    // ── Roster size (traffic light) ───────────────────────────────────────────
+    const tierCounts = { red: 0, orange: 0, green: 0 };
+    for (const t of healthList) tierCounts[t.roster_tier]++;
+    setRosterTierCounts(tierCounts);
+    // Orange still counts as "enough to play" toward the overall score —
+    // only red (at/below the format's bare minimum) drags it down.
+    const rosterHealthRate = (tierCounts.orange + tierCounts.green) / teams.length;
+
+    // ── Health score ──────────────────────────────────────────────────────────
+    setHealthScore(Math.round((rosterHealthRate * 25) + (adoptionRate * 25) + (coverageRate * 25) + (collRate * 25)));
 
     // ── Coach activity — most recent of: announcement, chat message ──────────
     const lastActivityByCoach: Record<string, string> = {};
@@ -457,7 +487,6 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                 { label: 'Coach coverage',  value: coachCoverage },
                 { label: 'Parent adoption', value: parentAdoption },
                 { label: 'Fee collection',  value: feeCollectionRate },
-                { label: 'Roster quality',  value: rosterCompleteness },
               ].map(c => (
                 <div key={c.label} style={{ minWidth: '110px', flex: 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -469,6 +498,25 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                   </div>
                 </div>
               ))}
+
+              {/* Roster size — traffic light rather than a single %, since a
+                  team either has enough players or it doesn't per its own
+                  format's minimum, not a blended average worth collapsing. */}
+              <div style={{ minWidth: '110px', flex: 1 }}>
+                <div style={{ fontSize: '11px', color: '#64748B', fontWeight: '500', marginBottom: '6px' }}>Roster size</div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {([
+                    ['red', '#DC2626', rosterTierCounts.red],
+                    ['orange', '#D97706', rosterTierCounts.orange],
+                    ['green', '#16A34A', rosterTierCounts.green],
+                  ] as const).map(([tier, color, count]) => (
+                    <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+                      <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#0F172A' }}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Active closure in banner */}
