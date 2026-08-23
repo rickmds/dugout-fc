@@ -34,28 +34,15 @@ export async function fetchEventWeather(
   if (!WEATHER_KEY || !location) return null;
   try {
     const q = encodeURIComponent(location);
-    const todayStr = new Date().toISOString().split('T')[0];
 
-    if (eventDate === todayStr) {
-      // forecast.json with dt=today is unreliable — use current conditions instead
-      const res = await fetch(`https://api.weatherapi.com/v1/current.json?key=${WEATHER_KEY}&q=${q}&aqi=no`);
-      if (!res.ok) return null;
-      const json = await res.json();
-      const cur = json.current;
-      if (!cur) return null;
-      const conditionText: string = cur.condition?.text ?? '';
-      return {
-        temp_c: Math.round(cur.temp_c),
-        temp_f: Math.round(cur.temp_f),
-        condition: conditionText,
-        icon: conditionToEmoji(conditionText, cur.is_day === 1),
-        precip_chance: 0,
-        wind_kph: Math.round(cur.wind_kph),
-        wind_mph: Math.round(cur.wind_mph),
-      };
-    }
-
-    // Future event: use forecast.json. The hours array is indexed 0-23 by hour of day.
+    // forecast.json?dt=<today> returns a full, valid 24-hour array (verified
+    // directly against the live API) — the earlier special-casing of "today"
+    // to current.json meant an event later today always showed whatever the
+    // weather happened to be right now instead of a forecast for its actual
+    // start time, which can be a completely different condition/temperature
+    // by evening. It also compared eventDate against a UTC-based "today"
+    // (toISOString() is always UTC), which silently rolls over to the next
+    // calendar day ~4-5 hours before local midnight in US Eastern.
     const targetHour = eventTime ? parseInt(eventTime.split(':')[0], 10) : 12;
     const res = await fetch(
       `https://api.weatherapi.com/v1/forecast.json?key=${WEATHER_KEY}&q=${q}&dt=${eventDate}&aqi=no`
