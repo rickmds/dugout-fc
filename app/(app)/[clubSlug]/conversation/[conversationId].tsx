@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   StyleSheet,
   Text,
@@ -32,7 +33,10 @@ type Message = {
   edited?: boolean;
 };
 
+type ReactionSummary = { emoji: string; count: number; mine: boolean };
+
 const COACH_ROLES = new Set(['coach', 'org_admin', 'app_admin']);
+const REACTION_EMOJIS = ['👍', '👎', '❤️', '⚽', '😂', '🔥'];
 
 function timeLabel(iso: string): string {
   const d = new Date(iso);
@@ -46,6 +50,24 @@ function timeLabel(iso: string): string {
 function initials(name: string | null): string {
   if (!name) return '?';
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function groupReactions(
+  rows: { message_id: string; emoji: string; profile_id: string }[],
+  myProfileId: string,
+): Record<string, ReactionSummary[]> {
+  const byMessage: Record<string, Record<string, ReactionSummary>> = {};
+  for (const r of rows) {
+    const forMsg = (byMessage[r.message_id] ??= {});
+    const entry = (forMsg[r.emoji] ??= { emoji: r.emoji, count: 0, mine: false });
+    entry.count += 1;
+    if (r.profile_id === myProfileId) entry.mine = true;
+  }
+  const out: Record<string, ReactionSummary[]> = {};
+  for (const [messageId, byEmoji] of Object.entries(byMessage)) {
+    out[messageId] = Object.values(byEmoji);
+  }
+  return out;
 }
 
 export default function ConversationScreen() {
@@ -67,6 +89,8 @@ export default function ConversationScreen() {
   const [sending, setSending]         = useState(false);
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [editText, setEditText]       = useState('');
+  const [reactions, setReactions]     = useState<Record<string, ReactionSummary[]>>({});
+  const [reactionSheetMsg, setReactionSheetMsg] = useState<Message | null>(null);
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
   // Set right before the initial batch loads, cleared the first time the
@@ -176,6 +200,16 @@ export default function ConversationScreen() {
     }));
     awaitingInitialLayoutRef.current = true;
     setMessages(mapped);
+    fetchReactions(mapped.map((m) => m.id));
+  }
+
+  async function fetchReactions(messageIds: string[]) {
+    if (!messageIds.length) return;
+    const { data } = await supabase
+      .from('message_reactions')
+      .select('message_id, emoji, profile_id')
+      .in('message_id', messageIds);
+    setReactions((prev) => ({ ...prev, ...groupReactions(data ?? [], profile?.id ?? '') }));
   }
 
   async function loadEarlier() {
@@ -200,6 +234,7 @@ export default function ConversationScreen() {
       edited: m.edited ?? false,
     }));
     setMessages((prev) => [...older, ...prev]);
+    fetchReactions(older.map((m) => m.id));
   }
 
   function subscribe() {
@@ -235,8 +270,54 @@ export default function ConversationScreen() {
         const raw = payload.old as any;
         setMessages((prev) => prev.filter((m) => m.id !== raw.id));
       })
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'message_reactions',
+        filter: `conversation_id=eq.${conversationId}`,
+      }, (payload) => {
+        const raw = payload.new as any;
+        setReactions((prev) => {
+          const existing = prev[raw.message_id] ?? [];
+          const i = existing.findIndex((r) => r.emoji === raw.emoji);
+          const mine = raw.profile_id === profile?.id;
+          const next = i === -1
+            ? [...existing, { emoji: raw.emoji, count: 1, mine }]
+            : existing.map((r, idx) => idx === i ? { ...r, count: r.count + 1, mine: r.mine || mine } : r);
+          return { ...prev, [raw.message_id]: next };
+        });
+      })
+      .on('postgres_changes', {
+        event: 'DELETE', schema: 'public', table: 'message_reactions',
+        filter: `conversation_id=eq.${conversationId}`,
+      }, (payload) => {
+        const raw = payload.old as any;
+        setReactions((prev) => {
+          const existing = prev[raw.message_id];
+          if (!existing) return prev;
+          const i = existing.findIndex((r) => r.emoji === raw.emoji);
+          if (i === -1) return prev;
+          const wasMine = raw.profile_id === profile?.id;
+          const nextCount = existing[i].count - 1;
+          const next = nextCount <= 0
+            ? existing.filter((_, idx) => idx !== i)
+            : existing.map((r, idx) => idx === i ? { ...r, count: nextCount, mine: wasMine ? false : r.mine } : r);
+          return { ...prev, [raw.message_id]: next };
+        });
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
+  }
+
+  async function toggleReaction(messageId: string, emoji: string) {
+    if (!profile) return;
+    const existing = reactions[messageId]?.find((r) => r.emoji === emoji);
+    if (existing?.mine) {
+      await supabase.from('message_reactions').delete()
+        .eq('message_id', messageId).eq('profile_id', profile.id).eq('emoji', emoji);
+    } else {
+      await supabase.from('message_reactions').insert({
+        message_id: messageId, conversation_id: conversationId, profile_id: profile.id, emoji,
+      });
+    }
   }
 
   async function handleSend() {
@@ -286,23 +367,11 @@ export default function ConversationScreen() {
     }
   }
 
+  // Used to just no-op for anyone who couldn't edit/delete (most people, on
+  // most messages) — now opens the reaction sheet for everyone, with
+  // Edit/Delete added below the emoji row only when applicable.
   function onLongPress(msg: Message) {
-    const isMe = msg.sender_id === profile?.id;
-    const canDelete = isMe || isCoach;
-
-    if (!isMe && !canDelete) return;
-
-    const options: { text: string; style?: 'destructive' | 'cancel'; onPress?: () => void }[] = [];
-
-    if (isMe) {
-      options.push({ text: 'Edit', onPress: () => { setEditingId(msg.id); setEditText(msg.body); } });
-    }
-    if (canDelete) {
-      options.push({ text: 'Delete', style: 'destructive', onPress: () => confirmDelete(msg) });
-    }
-    options.push({ text: 'Cancel', style: 'cancel' });
-
-    Alert.alert('Message', undefined, options);
+    setReactionSheetMsg(msg);
   }
 
   function confirmDelete(msg: Message) {
@@ -433,6 +502,22 @@ export default function ConversationScreen() {
                     </TouchableWithoutFeedback>
                   )}
 
+                  {!!reactions[item.id]?.length && (
+                    <View style={[st.reactionRow, isMe && { justifyContent: 'flex-end' }]}>
+                      {reactions[item.id].map((r) => (
+                        <TouchableOpacity
+                          key={r.emoji}
+                          style={[st.reactionPill, r.mine && { borderColor: primaryColor, backgroundColor: rgba(0.12) }]}
+                          onPress={() => toggleReaction(item.id, r.emoji)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={st.reactionPillEmoji}>{r.emoji}</Text>
+                          <Text style={[st.reactionPillCount, r.mine && { color: primaryColor }]}>{r.count}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
                   <View style={[st.timestampRow, isMe && { justifyContent: 'flex-end' }]}>
                     <Text style={st.timestamp}>{timeLabel(item.created_at)}</Text>
                     {item.edited && <Text style={st.editedLabel}>edited</Text>}
@@ -467,6 +552,61 @@ export default function ConversationScreen() {
             : <Ionicons name="send" size={16} color={sending ? '#4b5563' : '#000'} />}
         </TouchableOpacity>
       </View>
+
+      <Modal visible={!!reactionSheetMsg} animationType="slide" transparent onRequestClose={() => setReactionSheetMsg(null)}>
+        <TouchableWithoutFeedback onPress={() => setReactionSheetMsg(null)}>
+          <View style={st.reactionSheetOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={st.reactionSheet}>
+                <View style={st.sheetHandle} />
+                <View style={st.reactionEmojiRow}>
+                  {REACTION_EMOJIS.map((emoji) => (
+                    <TouchableOpacity
+                      key={emoji}
+                      style={st.reactionEmojiBtn}
+                      onPress={() => {
+                        if (reactionSheetMsg) toggleReaction(reactionSheetMsg.id, emoji);
+                        setReactionSheetMsg(null);
+                      }}
+                    >
+                      <Text style={st.reactionEmojiBtnText}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {reactionSheetMsg && reactionSheetMsg.sender_id === profile?.id && (
+                  <TouchableOpacity
+                    style={st.reactionSheetAction}
+                    onPress={() => {
+                      setEditingId(reactionSheetMsg.id);
+                      setEditText(reactionSheetMsg.body);
+                      setReactionSheetMsg(null);
+                    }}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color={PULSE_COLORS.ui.text} />
+                    <Text style={st.reactionSheetActionText}>Edit</Text>
+                  </TouchableOpacity>
+                )}
+                {reactionSheetMsg && (reactionSheetMsg.sender_id === profile?.id || isCoach) && (
+                  <TouchableOpacity
+                    style={st.reactionSheetAction}
+                    onPress={() => {
+                      const msg = reactionSheetMsg;
+                      setReactionSheetMsg(null);
+                      if (msg) confirmDelete(msg);
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={PULSE_COLORS.status.error} />
+                    <Text style={[st.reactionSheetActionText, { color: PULSE_COLORS.status.error }]}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={st.reactionSheetCancel} onPress={() => setReactionSheetMsg(null)}>
+                  <Text style={st.reactionSheetCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -532,6 +672,16 @@ const st = StyleSheet.create({
   timestamp: { fontSize: 10, color: PULSE_COLORS.ui.muted },
   editedLabel: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
 
+  reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 4, marginHorizontal: 4 },
+  reactionPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 12,
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  reactionPillEmoji: { fontSize: 12 },
+  reactionPillCount: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+
   // Inline edit
   editWrap: { borderRadius: 14, borderWidth: 1.5, borderColor: PULSE_COLORS.brand.green, overflow: 'hidden' },
   editInput: {
@@ -563,4 +713,32 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   sendBtnOff: { opacity: 0.4 },
+
+  // Reaction sheet
+  reactionSheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  reactionSheet: {
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 10, paddingBottom: 32, paddingHorizontal: 16,
+  },
+  sheetHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: PULSE_COLORS.ui.border,
+    alignSelf: 'center', marginBottom: 16,
+  },
+  reactionEmojiRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 16,
+    paddingVertical: 10, paddingHorizontal: 6, marginBottom: 8,
+  },
+  reactionEmojiBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  reactionEmojiBtnText: { fontSize: 26 },
+  reactionSheetAction: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 14, paddingHorizontal: 6,
+    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+  },
+  reactionSheetActionText: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  reactionSheetCancel: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  reactionSheetCancelText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.muted },
 });
