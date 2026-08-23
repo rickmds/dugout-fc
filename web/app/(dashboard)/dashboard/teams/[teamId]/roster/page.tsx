@@ -41,7 +41,15 @@ export default function TeamRosterPage() {
       supabase.from('invites').select('id, email').eq('team_id', teamId).eq('role', 'coach').is('accepted_at', null),
     ]);
 
-    const inviteMap = Object.fromEntries((invitesRes.data ?? []).map(i => [i.player_id, i]));
+    // A player can have more than one invite (e.g. a second guardian invited
+    // after the first already joined) — prefer whichever is accepted so the
+    // email shown is the parent who's actually in the app, not just
+    // whichever invite happened to load last.
+    const inviteMap: Record<string, Invite> = {};
+    for (const inv of invitesRes.data ?? []) {
+      const existing = inviteMap[inv.player_id];
+      if (!existing || (inv.accepted_at && !existing.accepted_at)) inviteMap[inv.player_id] = inv;
+    }
     setPlayers(((playersRes.data ?? []) as Omit<Player, 'team_id' | 'parent_email'>[]).map(p => ({
       ...p, team_id: teamId, parent_email: inviteMap[p.id]?.email ?? null,
     })));
@@ -59,9 +67,13 @@ export default function TeamRosterPage() {
   useEffect(() => { load(); }, [load]);
 
   const inviteStatus = (p: Player) => {
-    const inv = invites.find(i => i.player_id === p.id);
-    if (!inv) return null;
-    return inv.accepted_at
+    const playerInvites = invites.filter(i => i.player_id === p.id);
+    if (!playerInvites.length) return null;
+    // "Joined" if ANY guardian has actually accepted — a second/co-parent
+    // invite that's still pending shouldn't undo that the player already
+    // has a parent in the app.
+    const joined = playerInvites.some(i => i.accepted_at);
+    return joined
       ? { label: 'Joined',  color: '#166534', bg: '#F0FDF4' }
       : { label: 'Invited', color: '#92400E', bg: '#FFFBEB' };
   };
