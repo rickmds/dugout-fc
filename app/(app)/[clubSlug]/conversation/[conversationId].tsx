@@ -69,6 +69,13 @@ export default function ConversationScreen() {
   const [editText, setEditText]       = useState('');
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
+  // Set right before the initial batch loads, cleared the first time the
+  // list actually reports a real layout — scrollToEnd() only works once
+  // FlatList knows the content's true height, which a fixed setTimeout can
+  // only ever guess at (wrong on a slow device or a long history). Left
+  // false afterward so loading earlier messages or a new message arriving
+  // doesn't re-trigger this — only the initial open should force-scroll.
+  const awaitingInitialLayoutRef = useRef(false);
 
   const isCoach = COACH_ROLES.has(profile?.role ?? '');
 
@@ -121,9 +128,26 @@ export default function ConversationScreen() {
     );
     if (partErr) console.error('[Conversation] participant upsert error:', partErr.message);
 
+    markConversationRead();
     await fetchMessages();
     setLoading(false);
     return subscribe();
+  }
+
+  // Opening this screen is the only real signal that a message got read —
+  // nothing else ever clears new_message/new_dm notification rows (only
+  // the separate Notification Centre screen does, when a specific
+  // notification there gets tapped), so the Chat tab's badge count stayed
+  // stuck even after someone had actually read the conversation.
+  async function markConversationRead() {
+    if (!conversationId || !profile) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .in('type', ['new_message', 'new_dm'])
+      .filter('data->>conversation_id', 'eq', conversationId);
   }
 
   const PAGE = 80;
@@ -150,8 +174,8 @@ export default function ConversationScreen() {
       sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
       edited: m.edited ?? false,
     }));
+    awaitingInitialLayoutRef.current = true;
     setMessages(mapped);
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100);
   }
 
   async function loadEarlier() {
@@ -332,7 +356,16 @@ export default function ConversationScreen() {
           initialNumToRender={20}
           maxToRenderPerBatch={10}
           windowSize={7}
-          removeClippedSubviews
+          onContentSizeChange={() => {
+            if (!awaitingInitialLayoutRef.current) return;
+            awaitingInitialLayoutRef.current = false;
+            listRef.current?.scrollToEnd({ animated: false });
+            // Android can report content size before the list has fully
+            // settled (removeClippedSubviews made this worse, so it's been
+            // removed above) — a second pass after layout truly finishes
+            // catches the cases where the first scrollToEnd lands short.
+            setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 150);
+          }}
           ListHeaderComponent={hasMore ? (
             <TouchableOpacity
               onPress={loadEarlier}
