@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, StyleSheet } from 'react-native';
+import { Animated, AppState, Dimensions, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
@@ -8,15 +8,29 @@ import { AuthProvider } from '../hooks/useAuth';
 import { TeamProvider } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import WebPushPrompt from '../components/ui/WebPushPrompt';
+import UpdateRequiredModal from '../components/ui/UpdateRequiredModal';
+import { checkVersionGate } from '../lib/versionGate';
 
 SplashScreen.preventAutoHideAsync();
 
 function AppShell() {
   usePushNotifications();
   const router = useRouter();
+  const [updateRequired, setUpdateRequired] = useState(false);
 
   useEffect(() => {
     SplashScreen.hideAsync();
+  }, []);
+
+  // Checked on launch and again whenever the app returns to the foreground,
+  // so someone who updates and reopens (or who had it open when the floor
+  // was raised) sees it clear without needing a fresh cold start.
+  useEffect(() => {
+    checkVersionGate().then(setUpdateRequired);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkVersionGate().then(setUpdateRequired);
+    });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -94,6 +108,7 @@ function AppShell() {
     <>
       <Stack screenOptions={{ headerShown: false }} />
       <WebPushPrompt />
+      {updateRequired && <UpdateRequiredModal />}
     </>
   );
 }
