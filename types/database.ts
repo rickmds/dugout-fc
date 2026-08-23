@@ -101,6 +101,27 @@ export type Database = {
           },
         ]
       }
+      app_version_gate: {
+        Row: {
+          id: number
+          min_android_version: string
+          min_ios_version: string
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          min_android_version?: string
+          min_ios_version?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          min_android_version?: string
+          min_ios_version?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       clubs: {
         Row: {
           allow_partial_payments: boolean | null
