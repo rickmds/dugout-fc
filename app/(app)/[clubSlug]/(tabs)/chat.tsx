@@ -683,12 +683,30 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
       .eq('team_id', team.id)
       .order('pinned', { ascending: false })
       .order('created_at', { ascending: false });
-    setAnnouncements((data ?? []).map((a: any) => ({
+    const rows = (data ?? []).map((a: any) => ({
       id: a.id, title: a.title, body: a.body, pinned: a.pinned,
       created_at: a.created_at, created_by: a.created_by,
       creator_name: a.profiles?.full_name ?? null,
-    })));
+    }));
+    setAnnouncements(rows);
     setLoading(false);
+    markAnnouncementsRead(rows.map((a) => a.id));
+  }
+
+  // Same stuck-badge bug as messages — opening this tab is the only real
+  // signal someone's seen these announcements, but nothing cleared
+  // new_announcement notification rows for it. Scoped to this team's own
+  // announcement ids so viewing this tab doesn't clear a badge earned by a
+  // DIFFERENT team's post, for a coach/org_admin managing more than one team.
+  async function markAnnouncementsRead(announcementIds: string[]) {
+    if (!profile || !announcementIds.length) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .eq('type', 'new_announcement')
+      .filter('data->>announcement_id', 'in', `(${announcementIds.join(',')})`);
   }
 
   async function handleDelete(id: string) {
