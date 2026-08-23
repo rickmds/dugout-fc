@@ -26,7 +26,7 @@ type TeamHealth = {
   id: string; name: string; age_group: string | null;
   player_count: number; has_coach: boolean;
   invite_sent: number; invite_accepted: number;
-  outstanding: number; last_announcement: string | null;
+  outstanding: number; last_activity: string | null;
   risk_score: number; risk_reasons: string[];
 };
 
@@ -183,19 +183,25 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
 
     if (!teamIds.length) { setLoading(false); return; }
 
-    const [playerRes, inviteRes, coachRes, feeRes, annRes, profileRes] = await Promise.all([
+    const [playerRes, inviteRes, coachRes, feeRes, annRes, profileRes, teamConvRes] = await Promise.all([
       supabase.from('players').select('id,team_id,jersey_number,position').in('team_id', teamIds),
       supabase.from('invites').select('id,team_id,accepted_at').in('team_id', teamIds),
       supabase.from('team_members').select('profile_id,team_id,role,profiles(full_name,avatar_url)').in('team_id', teamIds).in('role', ['coach', 'org_admin']),
       supabase.from('player_fees').select('player_id,team_id,amount_due,amount_paid,discount,status').in('team_id', teamIds),
       supabase.from('announcements').select('id,team_id,created_by,created_at').in('team_id', teamIds).order('created_at', { ascending: false }).limit(500),
       supabase.from('profiles').select('id,created_at').eq('club_id', club.id).eq('role', 'player').gte('created_at', twoYearsAgo),
+      supabase.from('conversations').select('id,team_id').in('team_id', teamIds).eq('type', 'team_group'),
     ]);
+    const teamIdByConv = new Map((teamConvRes.data ?? []).map((c: { id: string; team_id: string }) => [c.id, c.team_id]));
 
-    // Messages — fetched after coaches so we can filter by coach profile IDs
+    // Messages — fetched after coaches so we can filter by coach profile IDs.
+    // Team Chat is used more than the formal Announcements feature in
+    // practice, so a coach actively chatting with the team shouldn't be
+    // flagged as if they'd gone silent — conversation_id lets each message
+    // be attributed back to its team the same way announcements already are.
     const coachProfileIds = [...new Set((coachRes.data ?? []).map((c: { profile_id: string }) => c.profile_id))];
     const { data: msgData } = coachProfileIds.length
-      ? await supabase.from('messages').select('sender_id,created_at').in('sender_id', coachProfileIds).order('created_at', { ascending: false }).limit(500)
+      ? await supabase.from('messages').select('sender_id,conversation_id,created_at').in('sender_id', coachProfileIds).order('created_at', { ascending: false }).limit(500)
       : { data: [] };
 
     const players       = (playerRes.data   ?? []) as PlayerRow[];
@@ -255,6 +261,15 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
       if (!lastAnnByTeam[ann.team_id]) lastAnnByTeam[ann.team_id] = ann.created_at;
     }
 
+    // Team Chat counts the same as an announcement for "has the coach been
+    // communicating" — messages are already ordered newest-first, so the
+    // first one seen per team is its most recent.
+    const lastChatByTeam: Record<string, string> = {};
+    for (const msg of (msgData ?? []) as { sender_id: string; conversation_id: string; created_at: string }[]) {
+      const tid = teamIdByConv.get(msg.conversation_id);
+      if (tid && !lastChatByTeam[tid]) lastChatByTeam[tid] = msg.created_at;
+    }
+
     const playersByTeam: Record<string, number> = {};
     for (const p of players) playersByTeam[p.team_id] = (playersByTeam[p.team_id] ?? 0) + 1;
 
@@ -265,6 +280,8 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
       const inv          = inviteByTeam[team.id] ?? { sent: 0, accepted: 0 };
       const fees         = feeByTeam[team.id] ?? { outstanding: 0, total_due: 0 };
       const last_ann     = lastAnnByTeam[team.id] ?? null;
+      const last_chat    = lastChatByTeam[team.id] ?? null;
+      const last_activity = last_ann && last_chat ? (last_ann > last_chat ? last_ann : last_chat) : (last_ann ?? last_chat);
 
       const risk_reasons: string[] = [];
       let risk_score = 0;
@@ -272,14 +289,14 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
       if (player_count === 0)  { risk_reasons.push('No players on roster');    risk_score += 35; }
       if (player_count > 0 && inv.accepted === 0) { risk_reasons.push('No parents in app'); risk_score += 20; }
       if (fees.outstanding > 500) { risk_reasons.push(`${fmtMoney(fees.outstanding, currency)} outstanding`); risk_score += 10; }
-      if (last_ann) {
-        const days = daysSince(last_ann);
+      if (last_activity) {
+        const days = daysSince(last_activity);
         if (days > 21) { risk_reasons.push(`Silent ${days}d`); risk_score += 15; }
       } else if (player_count > 0) {
-        risk_reasons.push('Never posted'); risk_score += 10;
+        risk_reasons.push('No coach activity yet'); risk_score += 10;
       }
 
-      return { id: team.id, name: team.name, age_group: team.age_group, player_count, has_coach, invite_sent: inv.sent, invite_accepted: inv.accepted, outstanding: fees.outstanding, last_announcement: last_ann, risk_score, risk_reasons };
+      return { id: team.id, name: team.name, age_group: team.age_group, player_count, has_coach, invite_sent: inv.sent, invite_accepted: inv.accepted, outstanding: fees.outstanding, last_activity, risk_score, risk_reasons };
     }).sort((a, b) => b.risk_score - a.risk_score);
     setTeamHealthList(healthList);
 
@@ -798,7 +815,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                 ) : (
                   <div style={{ padding: '4px 0' }}>
                     {teamHealthList.map((team, i) => {
-                      const days       = team.last_announcement ? daysSince(team.last_announcement) : null;
+                      const days       = team.last_activity ? daysSince(team.last_activity) : null;
                       const dotColor   = days === null ? '#CBD5E1' : days <= 7 ? '#22C55E' : days <= 14 ? '#F59E0B' : '#EF4444';
                       const labelColor = days === null ? '#94A3B8' : days <= 7 ? '#16A34A' : days <= 14 ? '#D97706' : '#DC2626';
                       const labelText  = days === null ? 'Never' : days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days}d ago`;
