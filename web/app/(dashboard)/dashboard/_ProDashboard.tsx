@@ -17,15 +17,15 @@ import { formatCurrencyRounded } from '@/lib/formatCurrency';
 type FieldClosure  = { id: string; field_name: string; reason: string | null; closed_from: string; closed_until: string | null };
 type TodayWeather  = { rain: number; condition: string; tempC: number };
 type FeeRow        = { player_id: string; team_id: string; amount_due: number; amount_paid: number; discount: number; status: string };
-type PlayerRow     = { id: string; team_id: string; jersey_number: number | null; position: string | null };
-type InviteRow     = { id: string; team_id: string; accepted_at: string | null };
+type PlayerRow     = { id: string; team_id: string; jersey_number: number | null; position: string | null; profile_id: string | null };
+type InviteRow     = { id: string; team_id: string; player_id: string | null; accepted_at: string | null };
 type AnnRow        = { id: string; team_id: string; created_by: string | null; created_at: string };
 type ProfileRow    = { id: string; created_at: string };
 
 type TeamHealth = {
   id: string; name: string; age_group: string | null;
   player_count: number; has_coach: boolean;
-  invite_sent: number; invite_accepted: number;
+  with_parent: number;
   outstanding: number; last_activity: string | null;
   roster_tier: RosterTier;
   risk_score: number; risk_reasons: string[];
@@ -208,8 +208,8 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
     if (!teamIds.length) { setLoading(false); return; }
 
     const [playerRes, inviteRes, coachRes, feeRes, annRes, profileRes, teamConvRes] = await Promise.all([
-      supabase.from('players').select('id,team_id,jersey_number,position').in('team_id', teamIds),
-      supabase.from('invites').select('id,team_id,accepted_at').in('team_id', teamIds),
+      supabase.from('players').select('id,team_id,jersey_number,position,profile_id').in('team_id', teamIds),
+      supabase.from('invites').select('id,team_id,player_id,accepted_at').in('team_id', teamIds),
       supabase.from('team_members').select('profile_id,team_id,role,profiles(full_name,avatar_url)').in('team_id', teamIds).in('role', ['coach', 'org_admin']),
       supabase.from('player_fees').select('player_id,team_id,amount_due,amount_paid,discount,status').in('team_id', teamIds),
       supabase.from('announcements').select('id,team_id,created_by,created_at').in('team_id', teamIds).order('created_at', { ascending: false }).limit(500),
@@ -238,9 +238,15 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
     setPlayerCount(players.length);
 
     // ── Adoption ─────────────────────────────────────────────────────────────
-    const totalSent     = invites.length;
-    const totalAccepted = invites.filter(i => i.accepted_at).length;
-    const adoptionRate  = totalSent > 0 ? totalAccepted / totalSent : 0;
+    // Only "does this player have at least one parent in the app" matters —
+    // a second/third guardian invite that never gets claimed (e.g. a co-parent
+    // who never signs up) shouldn't drag this down when the player already
+    // has one. profile_id covers the primary guardian; an accepted invite
+    // covers any guardian (primary or additional) who's actually signed up.
+    const playersWithParent = new Set<string>();
+    for (const p of players) if (p.profile_id) playersWithParent.add(p.id);
+    for (const inv of invites) if (inv.accepted_at && inv.player_id) playersWithParent.add(inv.player_id);
+    const adoptionRate = players.length > 0 ? playersWithParent.size / players.length : 1;
     setParentAdoption(adoptionRate);
 
     // ── Coach coverage ────────────────────────────────────────────────────────
@@ -257,11 +263,9 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
     setTotalOutstanding(outstanding);
 
     // ── Lookup maps ───────────────────────────────────────────────────────────
-    const inviteByTeam: Record<string, { sent: number; accepted: number }> = {};
-    for (const inv of invites) {
-      if (!inviteByTeam[inv.team_id]) inviteByTeam[inv.team_id] = { sent: 0, accepted: 0 };
-      inviteByTeam[inv.team_id].sent++;
-      if (inv.accepted_at) inviteByTeam[inv.team_id].accepted++;
+    const withParentByTeam: Record<string, number> = {};
+    for (const p of players) {
+      if (playersWithParent.has(p.id)) withParentByTeam[p.team_id] = (withParentByTeam[p.team_id] ?? 0) + 1;
     }
 
     const feeByTeam: Record<string, { outstanding: number; total_due: number }> = {};
@@ -293,7 +297,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
     const healthList: TeamHealth[] = teams.map(team => {
       const player_count = playersByTeam[team.id] ?? 0;
       const has_coach    = teamsWithCoach.has(team.id);
-      const inv          = inviteByTeam[team.id] ?? { sent: 0, accepted: 0 };
+      const with_parent  = withParentByTeam[team.id] ?? 0;
       const fees         = feeByTeam[team.id] ?? { outstanding: 0, total_due: 0 };
       const last_ann     = lastAnnByTeam[team.id] ?? null;
       const last_chat    = lastChatByTeam[team.id] ?? null;
@@ -307,7 +311,8 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
       if (player_count === 0)  { risk_reasons.push('No players on roster');    risk_score += 35; }
       else if (roster_tier === 'red')    { risk_reasons.push(`Only ${player_count} players — ${format} needs ${ROSTER_MIN[format] + 1}+`); risk_score += 30; }
       else if (roster_tier === 'orange') { risk_reasons.push(`${player_count} players — ${format} runs best with ${ROSTER_MIN[format] + 2}+`); risk_score += 10; }
-      if (player_count > 0 && inv.accepted === 0) { risk_reasons.push('No parents in app'); risk_score += 20; }
+      if (player_count > 0 && with_parent === 0) { risk_reasons.push('No parents in app'); risk_score += 20; }
+      else if (player_count > 0 && with_parent < player_count) { risk_reasons.push(`${with_parent}/${player_count} players have a parent in app`); risk_score += 10; }
       if (fees.outstanding > 500) { risk_reasons.push(`${fmtMoney(fees.outstanding, currency)} outstanding`); risk_score += 10; }
       if (last_activity) {
         const days = daysSince(last_activity);
@@ -316,7 +321,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
         risk_reasons.push('No coach activity yet'); risk_score += 10;
       }
 
-      return { id: team.id, name: team.name, age_group: team.age_group, player_count, has_coach, invite_sent: inv.sent, invite_accepted: inv.accepted, outstanding: fees.outstanding, last_activity, roster_tier, risk_score, risk_reasons };
+      return { id: team.id, name: team.name, age_group: team.age_group, player_count, has_coach, with_parent, outstanding: fees.outstanding, last_activity, roster_tier, risk_score, risk_reasons };
     }).sort((a, b) => b.risk_score - a.risk_score);
     setTeamHealthList(healthList);
 
@@ -748,12 +753,12 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                 ) : (
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 64px', gap: '8px', padding: '9px 18px', borderBottom: '1px solid #F1F5F9' }}>
-                      {['Team', 'Progress', 'Accepted', 'Rate'].map((h, idx) => (
+                      {['Team', 'Progress', 'Players', 'Rate'].map((h, idx) => (
                         <div key={h} style={{ fontSize: '10px', fontWeight: '800', color: '#CBD5E1', textTransform: 'uppercase', letterSpacing: '0.8px', textAlign: idx > 0 ? 'right' : 'left' }}>{h}</div>
                       ))}
                     </div>
                     {teamHealthList.map((team, i) => {
-                      const rate = team.invite_sent > 0 ? team.invite_accepted / team.invite_sent : 0;
+                      const rate = team.player_count > 0 ? team.with_parent / team.player_count : 1;
                       return (
                         <div key={team.id} className="hr" style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 64px', gap: '8px', padding: '9px 18px', borderBottom: i < teamHealthList.length - 1 ? '1px solid #F8FAFC' : 'none', alignItems: 'center', background: '#fff', transition: 'background 0.15s' }}>
                           <div>
@@ -761,7 +766,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                             {team.age_group && <div style={{ fontSize: '10.5px', color: '#CBD5E1' }}>{team.age_group}</div>}
                           </div>
                           <ProgressBar rate={rate} />
-                          <div style={{ fontSize: '11.5px', color: '#64748B', textAlign: 'right' }}>{team.invite_accepted} / {team.invite_sent}</div>
+                          <div style={{ fontSize: '11.5px', color: '#64748B', textAlign: 'right' }}>{team.with_parent} / {team.player_count}</div>
                           <div style={{ textAlign: 'right' }}><RatePill rate={rate} /></div>
                         </div>
                       );
