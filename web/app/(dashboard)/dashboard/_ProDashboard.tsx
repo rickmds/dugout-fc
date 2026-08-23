@@ -499,21 +499,26 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                 </div>
               ))}
 
-              {/* Roster size — traffic light rather than a single %, since a
+              {/* Roster size — a segmented bar rather than a single %, since a
                   team either has enough players or it doesn't per its own
-                  format's minimum, not a blended average worth collapsing. */}
+                  format's minimum, not a blended average worth collapsing.
+                  Segments keep the same label-then-bar rhythm as the other
+                  three so it reads as one family instead of a bolted-on
+                  widget. */}
               <div style={{ minWidth: '110px', flex: 1 }}>
-                <div style={{ fontSize: '11px', color: '#64748B', fontWeight: '500', marginBottom: '6px' }}>Roster size</div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748B', fontWeight: '500' }}>Roster size</span>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: healthStatus.color }}>
+                    {rosterTierCounts.green + rosterTierCounts.orange}/{teams.length} ready
+                  </span>
+                </div>
+                <div style={{ height: '4px', borderRadius: '2px', overflow: 'hidden', display: 'flex', gap: '2px' }}>
                   {([
                     ['red', '#DC2626', rosterTierCounts.red],
                     ['orange', '#D97706', rosterTierCounts.orange],
                     ['green', '#16A34A', rosterTierCounts.green],
-                  ] as const).map(([tier, color, count]) => (
-                    <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0 }} />
-                      <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#0F172A' }}>{count}</span>
-                    </div>
+                  ] as const).map(([tier, color, count]) => count > 0 && (
+                    <div key={tier} style={{ flex: count, background: color, borderRadius: '2px' }} />
                   ))}
                 </div>
               </div>
@@ -537,32 +542,34 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
         )}
 
         {/* ── KPI tiles (6-up) ────────────────────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px' }}>
-          {loading ? Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} style={{ padding: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px' }}>
+          {loading ? Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} style={{ padding: '18px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <Sk w="30px" h="30px" r="8px" />
-                <Sk w="44px" h="24px" r="4px" />
-                <Sk w="70px" h="10px" />
+                <Sk w="34px" h="34px" r="9px" />
+                <Sk w="50px" h="28px" r="4px" />
+                <Sk w="80px" h="10px" />
               </div>
             </Card>
           )) : [
+            // Coach coverage / Parent adoption are already shown in the
+            // health banner above — repeating them here as tiles too was
+            // the same two numbers twice in two different visual
+            // treatments on the same screen.
             { icon: Users,       color: primary,    value: playerCount,                              label: 'Total players',    sub: `across ${teams.length} teams` },
-            { icon: UserCheck,   color: '#8B5CF6',  value: `${Math.round(coachCoverage * 100)}%`,    label: 'Coach coverage',   sub: `${Math.round(coachCoverage * teams.length)} of ${teams.length} staffed` },
-            { icon: Users,       color: '#06B6D4',  value: `${Math.round(parentAdoption * 100)}%`,   label: 'Parent adoption',  sub: 'on the app' },
             { icon: DollarSign,  color: totalOutstanding > 0 ? '#F59E0B' : '#16A34A', value: fmtMoney(totalOutstanding, currency), label: 'Outstanding fees', sub: `${Math.round(feeCollectionRate * 100)}% collected` },
             { icon: Layers,      color: teamsAtRisk.length > 0 ? '#EF4444' : '#16A34A', value: teamsAtRisk.length > 0 ? teamsAtRisk.length : '✓', label: 'Teams at risk', sub: teamsAtRisk.length > 0 ? 'need intervention' : 'all teams healthy' },
             { icon: CalendarDays, color: '#F59E0B', value: eventsThisWeek,                           label: 'Events this week',  sub: null },
           ].map(({ icon: Icon, color, value, label, sub }) => (
             <Card key={label} style={{ overflow: 'hidden' }}>
               <div style={{ height: '3px', background: color }} />
-              <div style={{ padding: '16px' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
-                  <Icon size={15} color={color} />
+              <div style={{ padding: '18px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
+                  <Icon size={17} color={color} />
                 </div>
-                <div style={{ fontSize: typeof value === 'string' && value.length > 5 ? '18px' : '26px', fontWeight: '900', color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1, marginBottom: '4px' }}>{value}</div>
-                <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: '500' }}>{label}</div>
-                {sub && <div style={{ fontSize: '10.5px', color, fontWeight: '600', marginTop: '2px' }}>{sub}</div>}
+                <div style={{ fontSize: typeof value === 'string' && value.length > 5 ? '20px' : '30px', fontWeight: '900', color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1, marginBottom: '5px' }}>{value}</div>
+                <div style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: '500' }}>{label}</div>
+                {sub && <div style={{ fontSize: '11px', color, fontWeight: '600', marginTop: '3px' }}>{sub}</div>}
               </div>
             </Card>
           ))}
