@@ -541,7 +541,7 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
                     const riskLabel = team.risk_score >= 60 ? 'Critical' : team.risk_score >= 30 ? 'High' : 'Medium';
                     const isLast    = i === Math.min(teamsAtRisk.length, 10) - 1;
                     return (
-                      <Link key={team.id} href="/dashboard/teams" className="hr" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 18px', borderBottom: !isLast ? '1px solid #F8FAFC' : 'none', textDecoration: 'none', background: '#fff', transition: 'background 0.15s' }}>
+                      <Link key={team.id} href={`/dashboard/teams/${team.id}`} className="hr" style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 18px', borderBottom: !isLast ? '1px solid #F8FAFC' : 'none', textDecoration: 'none', background: '#fff', transition: 'background 0.15s' }}>
                         <div style={{ width: '36px', height: '36px', borderRadius: '9px', background: riskBg, border: `1.5px solid ${riskColor}25`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <AlertTriangle size={15} color={riskColor} />
                         </div>
