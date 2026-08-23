@@ -305,7 +305,8 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
       let risk_score = 0;
       if (!has_coach)          { risk_reasons.push('No coach assigned');       risk_score += 40; }
       if (player_count === 0)  { risk_reasons.push('No players on roster');    risk_score += 35; }
-      else if (roster_tier === 'red') { risk_reasons.push(`Only ${player_count} players — ${format} needs ${ROSTER_MIN[format] + 1}+`); risk_score += 30; }
+      else if (roster_tier === 'red')    { risk_reasons.push(`Only ${player_count} players — ${format} needs ${ROSTER_MIN[format] + 1}+`); risk_score += 30; }
+      else if (roster_tier === 'orange') { risk_reasons.push(`${player_count} players — ${format} runs best with ${ROSTER_MIN[format] + 2}+`); risk_score += 10; }
       if (player_count > 0 && inv.accepted === 0) { risk_reasons.push('No parents in app'); risk_score += 20; }
       if (fees.outstanding > 500) { risk_reasons.push(`${fmtMoney(fees.outstanding, currency)} outstanding`); risk_score += 10; }
       if (last_activity) {
@@ -545,10 +546,12 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px' }}>
           {loading ? Array.from({ length: 4 }).map((_, i) => (
             <Card key={i} style={{ padding: '18px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <Sk w="34px" h="34px" r="9px" />
-                <Sk w="50px" h="28px" r="4px" />
-                <Sk w="80px" h="10px" />
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                <Sk w="44px" h="44px" r="12px" />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <Sk w="50px" h="24px" r="4px" />
+                  <Sk w="80px" h="10px" />
+                </div>
               </div>
             </Card>
           )) : [
@@ -563,13 +566,15 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
           ].map(({ icon: Icon, color, value, label, sub }) => (
             <Card key={label} style={{ overflow: 'hidden' }}>
               <div style={{ height: '3px', background: color }} />
-              <div style={{ padding: '18px' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
-                  <Icon size={17} color={color} />
+              <div style={{ padding: '18px', display: 'flex', gap: '14px', alignItems: 'center' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon size={20} color={color} />
                 </div>
-                <div style={{ fontSize: typeof value === 'string' && value.length > 5 ? '20px' : '30px', fontWeight: '900', color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1, marginBottom: '5px' }}>{value}</div>
-                <div style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: '500' }}>{label}</div>
-                {sub && <div style={{ fontSize: '11px', color, fontWeight: '600', marginTop: '3px' }}>{sub}</div>}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: typeof value === 'string' && value.length > 5 ? '20px' : '26px', fontWeight: '900', color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.15 }}>{value}</div>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: '500', marginTop: '3px' }}>{label}</div>
+                  {sub && <div style={{ fontSize: '11px', color, fontWeight: '600', marginTop: '2px' }}>{sub}</div>}
+                </div>
               </div>
             </Card>
           ))}
