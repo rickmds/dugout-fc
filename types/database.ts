@@ -4736,6 +4736,7 @@ export type Database = {
     }
     Functions: {
       accept_invite: { Args: { p_token: string }; Returns: Json }
+      admin_delete_club: { Args: { p_club_id: string }; Returns: undefined }
       assign_fee_to_attendees:
         | {
             Args: {

@@ -22,57 +22,26 @@ export async function DELETE(req: NextRequest) {
   const { clubId } = await req.json() as { clubId: string };
   if (!clubId) return NextResponse.json({ error: 'Missing clubId' }, { status: 400 });
 
-  // Get all teams
-  const { data: teams } = await admin.from('teams').select('id').eq('club_id', clubId);
-  const teamIds = (teams ?? []).map((t: { id: string }) => t.id);
-
-  if (teamIds.length > 0) {
-    // Events + dependent records
-    const { data: events } = await admin.from('events').select('id').in('team_id', teamIds);
-    const eventIds = (events ?? []).map((e: { id: string }) => e.id);
-
-    if (eventIds.length > 0) {
-      const { data: lineups } = await admin.from('lineups').select('id').in('event_id', eventIds);
-      const lineupIds = (lineups ?? []).map((l: { id: string }) => l.id);
-      if (lineupIds.length > 0) {
-        await admin.from('lineup_positions').delete().in('lineup_id', lineupIds);
-        await admin.from('sub_plans').delete().in('lineup_id', lineupIds);
-        await admin.from('lineups').delete().in('id', lineupIds);
-      }
-      await admin.from('event_rsvps').delete().in('event_id', eventIds);
-      await admin.from('events').delete().in('id', eventIds);
-    }
-
-    // Players + roster
-    await admin.from('player_development_notes').delete().in('team_id', teamIds);
-    await admin.from('players').delete().in('team_id', teamIds);
-    await admin.from('team_members').delete().in('team_id', teamIds);
-    await admin.from('invites').delete().in('team_id', teamIds);
-    await admin.from('announcements').delete().in('team_id', teamIds);
-
-    // Conversations
-    const { data: convs } = await admin.from('conversations').select('id').in('team_id', teamIds);
-    const convIds = (convs ?? []).map((c: { id: string }) => c.id);
-    if (convIds.length > 0) {
-      await admin.from('messages').delete().in('conversation_id', convIds);
-      await admin.from('conversation_participants').delete().in('conversation_id', convIds);
-      await admin.from('conversations').delete().in('id', convIds);
-    }
-
-    await admin.from('teams').delete().eq('club_id', clubId);
-  }
-
-  // Detach profiles and delete their notifications
+  // push_tokens/notifications reference profiles, not clubs, so they'd
+  // survive a club delete untouched unless cleared explicitly — a
+  // now-clubless account shouldn't keep stale notifications/push targets
+  // for a club that no longer exists.
   const { data: clubProfiles } = await admin.from('profiles').select('id').eq('club_id', clubId);
   const memberIds = (clubProfiles ?? []).map((p: { id: string }) => p.id);
   if (memberIds.length > 0) {
     await admin.from('push_tokens').delete().in('profile_id', memberIds);
     await admin.from('notifications').delete().in('profile_id', memberIds);
   }
-  await admin.from('profiles').update({ club_id: null }).eq('club_id', clubId);
 
-  // Delete club
-  const { error } = await admin.from('clubs').delete().eq('id', clubId);
+  // admin_delete_club (see migration 20260824000001) runs as one atomic
+  // Postgres function instead of dozens of sequential app-level deletes —
+  // nearly every table already has ON DELETE CASCADE back to
+  // clubs/teams/events/players/conversations (profiles.club_id is ON
+  // DELETE SET NULL), so this resolves the whole graph in a single
+  // transaction: either the entire club is gone, or none of it is,
+  // instead of a partial delete failing halfway through and leaving teams
+  // stripped of players/invites/conversations but still existing.
+  const { error } = await admin.rpc('admin_delete_club', { p_club_id: clubId });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ success: true });
