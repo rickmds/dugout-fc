@@ -114,6 +114,8 @@ export default function ClubImportScreen() {
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
   const [pickerOpenForUid, setPickerOpenForUid] = useState<string | null>(null);
   const [teamPickerOpenFor, setTeamPickerOpenFor] = useState<string | null>(null);
+  const [linkPickerOpenFor, setLinkPickerOpenFor] = useState<string | null>(null);
+  const [existingTeams, setExistingTeams] = useState<{ id: string; name: string }[]>([]);
   const msgTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
   const importedTeamNames = useRef<Set<string>>(new Set());
 
@@ -221,6 +223,7 @@ export default function ClubImportScreen() {
       }
 
       setExistingNamesByTeam(namesByTeam);
+      setExistingTeams(existingTeamNames);
       setParseResult({ ...invokeRes.data, teams, players });
       importedTeamNames.current = new Set();
       setPhase('review');
@@ -278,6 +281,35 @@ export default function ClubImportScreen() {
     } : prev);
     setTeamPickerOpenFor(null);
     setExpandedTeams((prev) => new Set(prev).add(toTeamName));
+  }
+
+  // Manually point a parsed team group at a real existing team — overrides
+  // the auto-match (or sets one where the AI found none), so this group's
+  // players/coaches merge onto that team on import instead of creating a
+  // new one. Passing null reverts to "create as new team".
+  async function linkExistingTeam(teamName: string, existingTeamId: string | null) {
+    setParseResult((prev) => prev ? {
+      ...prev,
+      teams: prev.teams.map((t) => t.name === teamName ? { ...t, matchedTeamId: existingTeamId } : t),
+    } : prev);
+    setLinkPickerOpenFor(null);
+
+    if (!existingTeamId) {
+      setExistingNamesByTeam((prev) => {
+        const next = { ...prev };
+        delete next[teamName];
+        return next;
+      });
+      return;
+    }
+    const { data: existingPlayers } = await supabase
+      .from('players')
+      .select('full_name')
+      .eq('team_id', existingTeamId);
+    setExistingNamesByTeam((prev) => ({
+      ...prev,
+      [teamName]: new Set((existingPlayers ?? []).map((p) => normalizeName(p.full_name))),
+    }));
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -511,19 +543,35 @@ export default function ClubImportScreen() {
                       team={team}
                       players={players}
                       teamNames={teamNames}
+                      existingTeams={existingTeams}
                       primaryColor={primaryColor}
                       expanded={expanded}
                       existingNames={existingNamesByTeam[team.name]}
                       pickerOpenForUid={pickerOpenForUid}
                       teamPickerOpen={teamPickerOpenFor === team.name}
+                      linkPickerOpen={linkPickerOpenFor === team.name}
                       onToggle={() => toggleTeam(team.name)}
                       onRemoveTeam={() => removeTeam(team.name)}
                       onRemoveCoach={(ci) => removeCoach(team.name, ci)}
                       onRemovePlayer={(uid) => removePlayer(uid)}
-                      onOpenPicker={(uid) => setPickerOpenForUid(pickerOpenForUid === uid ? null : uid)}
+                      onOpenPicker={(uid) => {
+                        setTeamPickerOpenFor(null);
+                        setLinkPickerOpenFor(null);
+                        setPickerOpenForUid(pickerOpenForUid === uid ? null : uid);
+                      }}
                       onReassignPlayer={(uid, toTeam) => reassignPlayer(uid, toTeam)}
-                      onOpenTeamPicker={() => setTeamPickerOpenFor(teamPickerOpenFor === team.name ? null : team.name)}
+                      onOpenTeamPicker={() => {
+                        setPickerOpenForUid(null);
+                        setLinkPickerOpenFor(null);
+                        setTeamPickerOpenFor(teamPickerOpenFor === team.name ? null : team.name);
+                      }}
                       onReassignWholeTeam={(toTeam) => reassignWholeTeam(team.name, toTeam)}
+                      onOpenLinkPicker={() => {
+                        setPickerOpenForUid(null);
+                        setTeamPickerOpenFor(null);
+                        setLinkPickerOpenFor(linkPickerOpenFor === team.name ? null : team.name);
+                      }}
+                      onLinkExisting={(id) => linkExistingTeam(team.name, id)}
                     />
                   );
                 })}
@@ -650,19 +698,22 @@ const doneStyles = StyleSheet.create({
 });
 
 function TeamSection({
-  team, players, teamNames, primaryColor, expanded, existingNames,
-  pickerOpenForUid, teamPickerOpen,
+  team, players, teamNames, existingTeams, primaryColor, expanded, existingNames,
+  pickerOpenForUid, teamPickerOpen, linkPickerOpen,
   onToggle, onRemoveTeam, onRemoveCoach, onRemovePlayer,
   onOpenPicker, onReassignPlayer, onOpenTeamPicker, onReassignWholeTeam,
+  onOpenLinkPicker, onLinkExisting,
 }: {
   team: { name: string; age_group: string | null; season: string | null; coaches: ParsedCoach[]; matchedTeamId: string | null };
   players: ParsedPlayer[];
   teamNames: string[];
+  existingTeams: { id: string; name: string }[];
   primaryColor: string;
   expanded: boolean;
   existingNames?: Set<string>;
   pickerOpenForUid: string | null;
   teamPickerOpen: boolean;
+  linkPickerOpen: boolean;
   onToggle: () => void;
   onRemoveTeam: () => void;
   onRemoveCoach: (i: number) => void;
@@ -671,6 +722,8 @@ function TeamSection({
   onReassignPlayer: (uid: string, toTeam: string) => void;
   onOpenTeamPicker: () => void;
   onReassignWholeTeam: (toTeam: string) => void;
+  onOpenLinkPicker: () => void;
+  onLinkExisting: (existingTeamId: string | null) => void;
 }) {
   const meta = [team.age_group, team.season].filter(Boolean).join(' · ');
   const counts = [
@@ -678,6 +731,8 @@ function TeamSection({
     players.length > 0 ? `${players.length} player${players.length !== 1 ? 's' : ''}` : null,
   ].filter(Boolean).join(' · ');
   const otherTeamNames = teamNames.filter((n) => n !== team.name);
+  const matchedTeamName = team.matchedTeamId ? existingTeams.find((et) => et.id === team.matchedTeamId)?.name ?? null : null;
+  const matchedLabel = matchedTeamName && matchedTeamName !== team.name ? `✓ ${matchedTeamName}` : '✓ Matched';
 
   return (
     <View style={styles.teamSection}>
@@ -689,10 +744,15 @@ function TeamSection({
           <Text style={styles.teamMeta}>{[meta, counts].filter(Boolean).join('  ·  ')}</Text>
         </View>
         {team.matchedTeamId
-          ? <View style={styles.matchedBadge}><Text style={styles.matchedBadgeText}>✓ Matched</Text></View>
+          ? <View style={styles.matchedBadge}><Text style={styles.matchedBadgeText} numberOfLines={1}>{matchedLabel}</Text></View>
           : <View style={styles.newBadge}><Text style={styles.newBadgeText}>New team</Text></View>}
+        {existingTeams.length > 0 && (
+          <TouchableOpacity onPress={onOpenLinkPicker} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }} style={styles.moveTeamBtn}>
+            <Ionicons name="link-outline" size={15} color={PULSE_COLORS.ui.muted} />
+          </TouchableOpacity>
+        )}
         {otherTeamNames.length > 0 && (
-          <TouchableOpacity onPress={onOpenTeamPicker} hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }} style={styles.moveTeamBtn}>
+          <TouchableOpacity onPress={onOpenTeamPicker} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }} style={styles.moveTeamBtn}>
             <Ionicons name="swap-horizontal-outline" size={15} color={PULSE_COLORS.ui.muted} />
           </TouchableOpacity>
         )}
@@ -701,6 +761,28 @@ function TeamSection({
         </TouchableOpacity>
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 2 }} />
       </TouchableOpacity>
+
+      {linkPickerOpen && existingTeams.length > 0 && (
+        <View style={styles.movePicker}>
+          <Text style={styles.movePickerLabel}>Link to an existing team in your club:</Text>
+          <View style={styles.chipRow}>
+            {existingTeams.map((et) => (
+              <TouchableOpacity
+                key={et.id}
+                style={[styles.teamChip, et.id === team.matchedTeamId && styles.teamChipActive]}
+                onPress={() => onLinkExisting(et.id)}
+              >
+                <Text style={[styles.teamChipText, et.id === team.matchedTeamId && styles.teamChipActiveText]}>{et.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {team.matchedTeamId && (
+            <TouchableOpacity onPress={() => onLinkExisting(null)} style={styles.unlinkBtn}>
+              <Text style={styles.unlinkBtnText}>Create as a new team instead</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {teamPickerOpen && otherTeamNames.length > 0 && (
         <View style={styles.movePicker}>
@@ -732,33 +814,37 @@ function TeamSection({
             <View style={styles.personGroup}>
               <Text style={styles.groupLabel}>PLAYERS</Text>
               {players.map((p) => (
-                <View key={p.uid}>
-                  <ReviewPersonRow
-                    name={p.full_name}
-                    detail={[p.jersey_number != null ? `#${p.jersey_number}` : null, p.position].filter(Boolean).join(' · ')}
-                    email={p.parent_email}
-                    secondaryEmail={p.secondary_parent_email}
-                    iconName="person-outline" iconColor="#22C55E"
-                    uncertain={p.uncertain} reason={p.uncertainty_reason}
-                    duplicate={!!existingNames?.has(normalizeName(p.full_name))}
-                    onRemove={() => onRemovePlayer(p.uid)} />
-                  <TouchableOpacity style={styles.playerTeamPill} onPress={() => onOpenPicker(p.uid)} activeOpacity={0.7}>
-                    <Text style={styles.playerTeamPillText}>{team.name}</Text>
-                    <Ionicons name="chevron-down" size={10} color={PULSE_COLORS.ui.muted} />
-                  </TouchableOpacity>
-                  {pickerOpenForUid === p.uid && (
-                    <View style={styles.movePicker}>
-                      <Text style={styles.movePickerLabel}>Move to:</Text>
-                      <View style={styles.chipRow}>
-                        {teamNames.filter((n) => n !== team.name).map((name) => (
-                          <TouchableOpacity key={name} style={styles.teamChip} onPress={() => onReassignPlayer(p.uid, name)}>
-                            <Text style={styles.teamChipText}>{name}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                </View>
+                <ReviewPersonRow
+                  key={p.uid}
+                  name={p.full_name}
+                  detail={[p.jersey_number != null ? `#${p.jersey_number}` : null, p.position].filter(Boolean).join(' · ')}
+                  email={p.parent_email}
+                  secondaryEmail={p.secondary_parent_email}
+                  iconName="person-outline" iconColor="#22C55E"
+                  uncertain={p.uncertain} reason={p.uncertainty_reason}
+                  duplicate={!!existingNames?.has(normalizeName(p.full_name))}
+                  onRemove={() => onRemovePlayer(p.uid)}
+                  footer={
+                    <>
+                      <TouchableOpacity style={styles.playerTeamPill} onPress={() => onOpenPicker(p.uid)} activeOpacity={0.7}>
+                        <Text style={styles.playerTeamPillText}>{team.name}</Text>
+                        <Ionicons name="chevron-down" size={10} color={PULSE_COLORS.ui.muted} />
+                      </TouchableOpacity>
+                      {pickerOpenForUid === p.uid && (
+                        <View style={styles.nestedMovePicker}>
+                          <Text style={styles.movePickerLabel}>Move to:</Text>
+                          <View style={styles.chipRow}>
+                            {teamNames.filter((n) => n !== team.name).map((name) => (
+                              <TouchableOpacity key={name} style={styles.teamChip} onPress={() => onReassignPlayer(p.uid, name)}>
+                                <Text style={styles.teamChipText}>{name}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                    </>
+                  }
+                />
               ))}
             </View>
           )}
@@ -768,10 +854,11 @@ function TeamSection({
   );
 }
 
-function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconColor, uncertain, reason, duplicate, onRemove }: {
+function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconColor, uncertain, reason, duplicate, onRemove, footer }: {
   name: string; detail: string; email: string | null; secondaryEmail: string | null;
   iconName: any; iconColor: string; uncertain: boolean; reason: string | null; duplicate: boolean;
   onRemove: () => void;
+  footer?: React.ReactNode;
 }) {
   return (
     <View style={[rpStyles.row, uncertain && rpStyles.rowUncertain]}>
@@ -784,7 +871,7 @@ function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconCo
           {detail ? <Text style={rpStyles.detail}>{detail}</Text> : null}
           {secondaryEmail && <View style={rpStyles.guardianBadge}><Text style={rpStyles.guardianBadgeText}>2 guardians</Text></View>}
           {duplicate && <View style={rpStyles.dupBadge}><Text style={rpStyles.dupBadgeText}>Already on roster</Text></View>}
-          {uncertain && <View style={rpStyles.badge}><Text style={rpStyles.badgeText}>?</Text></View>}
+          {uncertain && <View style={rpStyles.badge}><Text style={rpStyles.badgeText}>Review</Text></View>}
         </View>
         {email && (
           <View style={rpStyles.emailRow}>
@@ -799,8 +886,9 @@ function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconCo
           </View>
         )}
         {uncertain && reason ? <Text style={rpStyles.reason}>{reason}</Text> : null}
+        {footer}
       </View>
-      <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={rpStyles.removeBtn}>
         <Ionicons name="close" size={15} color={PULSE_COLORS.ui.muted} />
       </TouchableOpacity>
     </View>
@@ -808,14 +896,15 @@ function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconCo
 }
 
 const rpStyles = StyleSheet.create({
-  row:         { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  rowUncertain:{ backgroundColor: 'rgba(245,158,11,0.04)' },
-  icon:        { width: 26, height: 26, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  body:        { flex: 1, gap: 1 },
+  row:         { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, paddingLeft: 8, borderLeftWidth: 3, borderLeftColor: 'transparent', borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  rowUncertain:{ backgroundColor: 'rgba(245,158,11,0.06)', borderLeftColor: '#F59E0B' },
+  icon:        { width: 26, height: 26, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 },
+  body:        { flex: 1, gap: 3 },
+  removeBtn:   { marginTop: 2 },
   nameRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   name:        { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  badge:       { backgroundColor: 'rgba(245,158,11,0.2)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
-  badgeText:   { fontSize: 10, fontWeight: '800', color: '#F59E0B' },
+  badge:       { backgroundColor: 'rgba(245,158,11,0.2)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
+  badgeText:   { fontSize: 10, fontWeight: '700', color: '#F59E0B' },
   dupBadge:     { backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
   dupBadgeText: { fontSize: 10, fontWeight: '700', color: '#60A5FA' },
   guardianBadge:     { backgroundColor: 'rgba(236,72,153,0.15)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
@@ -879,7 +968,7 @@ const styles = StyleSheet.create({
   removeTeamBtn:  { padding: 4 },
   moveTeamBtn:    { padding: 4 },
 
-  matchedBadge:     { backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
+  matchedBadge:     { backgroundColor: 'rgba(34,197,94,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1, maxWidth: 120 },
   matchedBadgeText: { fontSize: 10, fontWeight: '700', color: '#22C55E' },
   newBadge:         { backgroundColor: 'rgba(139,92,246,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
   newBadgeText:     { fontSize: 10, fontWeight: '700', color: '#8B5CF6' },
@@ -887,14 +976,19 @@ const styles = StyleSheet.create({
   personGroup: { paddingHorizontal: 14, paddingBottom: 8, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
   groupLabel:  { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginTop: 10, marginBottom: 2 },
 
-  playerTeamPill:     { flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-start', backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, marginBottom: 8, marginLeft: 36 },
+  playerTeamPill:     { flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-start', backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, marginTop: 3 },
   playerTeamPillText: { fontSize: 10.5, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 
-  movePicker:      { marginHorizontal: 14, marginBottom: 10, padding: 10, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  movePicker:       { marginHorizontal: 14, marginBottom: 10, padding: 10, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  nestedMovePicker: { marginTop: 8, padding: 10, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
   movePickerLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginBottom: 6, fontWeight: '600' },
   chipRow:         { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   teamChip:        { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   teamChipText:    { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  teamChipActive:     { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.4)' },
+  teamChipActiveText: { color: '#22C55E' },
+  unlinkBtn:     { marginTop: 8, alignSelf: 'flex-start' },
+  unlinkBtnText: { fontSize: 11.5, fontWeight: '600', color: PULSE_COLORS.ui.muted, textDecorationLine: 'underline' },
 
   uncertainCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', borderRadius: 10, padding: 10, marginBottom: 6 },
   uncertainBody:  { flex: 1 },

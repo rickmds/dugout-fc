@@ -7,12 +7,100 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../constants/colors';
 
-const ITEM_H    = 54;
-const SIDE      = 2;
-const COL_H     = ITEM_H * (SIDE * 2 + 1);
-const DATE_DAYS = 730; // 2 years
+const ITEM_H = 60; // bigger, easier-to-hit touch targets than the old 54
+const SIDE   = 2;
+const COL_H  = ITEM_H * (SIDE * 2 + 1);
+
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// Month grid — replaces a day-by-day wheel (which meant scrolling through
+// every single day to reach anything more than a couple weeks out) with
+// the standard calendar pattern: jump by month, tap the day directly.
+function MonthCalendar({
+  viewYear, viewMonth, selected, minimumDate, today, onPrevMonth, onNextMonth, onSelectDay,
+}: {
+  viewYear: number; viewMonth: number; selected: Date; minimumDate?: Date; today: Date;
+  onPrevMonth: () => void; onNextMonth: () => void; onSelectDay: (day: number) => void;
+}) {
+  const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+  const numDays  = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: numDays }, (_, i) => i + 1)];
+
+  const minDateOnly = minimumDate ? new Date(minimumDate.getFullYear(), minimumDate.getMonth(), minimumDate.getDate()) : null;
+  const prevDisabled = minDateOnly ? (viewYear < minDateOnly.getFullYear() || (viewYear === minDateOnly.getFullYear() && viewMonth <= minDateOnly.getMonth())) : false;
+
+  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  return (
+    <View style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12 }}>
+      <View style={cs.navRow}>
+        <TouchableOpacity onPress={onPrevMonth} disabled={prevDisabled} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-back" size={20} color={prevDisabled ? '#333' : '#FFF'} />
+        </TouchableOpacity>
+        <Text style={cs.monthLabel}>{monthLabel}</Text>
+        <TouchableOpacity onPress={onNextMonth} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-forward" size={20} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={cs.weekdayRow}>
+        {WEEKDAY_LABELS.map((d, i) => (
+          <View key={i} style={cs.cell}><Text style={cs.weekdayText}>{d}</Text></View>
+        ))}
+      </View>
+
+      <View style={cs.grid}>
+        {cells.map((day, i) => {
+          if (day === null) return <View key={i} style={cs.cell} />;
+          const cellDate = new Date(viewYear, viewMonth, day);
+          const disabled = minDateOnly ? cellDate.getTime() < minDateOnly.getTime() : false;
+          const isSelected = sameDay(cellDate, selected);
+          const isToday = sameDay(cellDate, today);
+          return (
+            <View key={i} style={cs.cell}>
+              <TouchableOpacity
+                disabled={disabled}
+                onPress={() => onSelectDay(day)}
+                style={[
+                  cs.dayBtn,
+                  isSelected && { backgroundColor: PULSE_COLORS.brand.green },
+                  !isSelected && isToday && cs.dayBtnToday,
+                ]}
+              >
+                <Text style={[
+                  cs.dayText,
+                  disabled && cs.dayTextDisabled,
+                  isSelected && cs.dayTextSelected,
+                ]}>{day}</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const cs = StyleSheet.create({
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  monthLabel: { fontSize: 16, fontWeight: '700', color: '#FFF' },
+  weekdayRow: { flexDirection: 'row' },
+  weekdayText: { fontSize: 12, fontWeight: '600', color: '#666' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+  dayBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  dayBtnToday: { borderWidth: 1, borderColor: PULSE_COLORS.brand.green },
+  dayText: { fontSize: 15, fontWeight: '500', color: '#FFF' },
+  dayTextDisabled: { color: '#3A3A3A' },
+  dayTextSelected: { fontWeight: '700', color: '#000' },
+});
 
 const HOURS = ['1','2','3','4','5','6','7','8','9','10','11','12'];
 
@@ -50,22 +138,34 @@ function WheelCol({
         keyExtractor={(_, i) => String(i)}
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_H}
-        decelerationRate="fast"
+        decelerationRate={0.96}
         bounces={false}
         getItemLayout={(_, i) => ({ length: ITEM_H, offset: ITEM_H * i, index: i })}
         onMomentumScrollEnd={settle}
         renderItem={({ item, index: i }) => {
           const dist = Math.abs((i - SIDE) - sel);
+          const itemIdx = i - SIDE;
+          // Tapping any visible row jumps straight to it, instead of
+          // requiring an exactly-tuned flick to land on it.
           return (
-            <View style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}>
+            <TouchableOpacity
+              activeOpacity={item ? 0.5 : 1}
+              disabled={!item}
+              onPress={() => {
+                listRef.current?.scrollToOffset({ offset: itemIdx * ITEM_H, animated: true });
+                setSel(itemIdx);
+                onSelect(itemIdx);
+              }}
+              style={{ height: ITEM_H, justifyContent: 'center', alignItems: 'center' }}
+            >
               {item ? (
                 <Text style={{
-                  fontSize: dist === 0 ? 20 : 16,
+                  fontSize: dist === 0 ? 22 : 17,
                   fontWeight: dist === 0 ? '700' : '400',
-                  color: dist === 0 ? '#FFF' : dist === 1 ? '#555' : '#2B2B2B',
+                  color: dist === 0 ? '#FFF' : dist === 1 ? '#666' : '#2B2B2B',
                 }}>{item}</Text>
               ) : null}
-            </View>
+            </TouchableOpacity>
           );
         }}
       />
@@ -100,32 +200,12 @@ export function DateTimeSheet({
     [minuteInterval]
   );
 
-  // Build a flat list of Date objects starting from minimumDate (or today)
-  const dateList = useMemo(() => {
-    const base = new Date(minimumDate ?? new Date());
-    base.setHours(0, 0, 0, 0);
-    return Array.from({ length: DATE_DAYS }, (_, i) => {
-      const d = new Date(base);
-      d.setDate(base.getDate() + i);
-      return d;
-    });
-  }, []);
+  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
-  // "Wed, Jun 18" — weekday sits right next to the date as you scroll
-  const dateLabels = useMemo(() =>
-    dateList.map(d =>
-      d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    ),
-    [dateList]
-  );
+  const [selectedDate, setSelectedDate] = useState(() => new Date(value.getFullYear(), value.getMonth(), value.getDate()));
+  const [viewYear,     setViewYear]     = useState(() => value.getFullYear());
+  const [viewMonth,    setViewMonth]    = useState(() => value.getMonth());
 
-  function findDateIdx(v: Date) {
-    const target = new Date(v.getFullYear(), v.getMonth(), v.getDate()).getTime();
-    const idx = dateList.findIndex(d => d.getTime() === target);
-    return Math.max(0, idx);
-  }
-
-  const [dateIdx,   setDateIdx]   = useState(() => findDateIdx(value));
   const h0 = value.getHours();
   // index 0='1', ..., index 10='11', index 11='12'
   const [hourIdx,   setHourIdx]   = useState(h0 % 12 === 0 ? 11 : (h0 % 12) - 1);
@@ -138,14 +218,23 @@ export function DateTimeSheet({
   useEffect(() => {
     if (!visible) return;
     const hh = value.getHours();
-    setDateIdx(findDateIdx(value));
+    setSelectedDate(new Date(value.getFullYear(), value.getMonth(), value.getDate()));
+    setViewYear(value.getFullYear());
+    setViewMonth(value.getMonth());
     setHourIdx(hh % 12 === 0 ? 11 : (hh % 12) - 1);
     setMinIdx(Math.min(Math.round(value.getMinutes() / minuteInterval), mins.length - 1));
     setPeriodIdx(hh >= 12 ? 1 : 0);
     setColKey(k => k + 1);
   }, [visible]);
 
-  function buildDate() { return new Date(dateList[dateIdx]); }
+  function goPrevMonth() {
+    setViewMonth(m => { if (m === 0) { setViewYear(y => y - 1); return 11; } return m - 1; });
+  }
+  function goNextMonth() {
+    setViewMonth(m => { if (m === 11) { setViewYear(y => y + 1); return 0; } return m + 1; });
+  }
+
+  function buildDate() { return new Date(selectedDate); }
 
   function buildTime() {
     const out = new Date(value);
@@ -172,24 +261,24 @@ export function DateTimeSheet({
           </TouchableOpacity>
         </View>
 
-        <View style={s.wheelRow}>
-          {mode === 'date' ? (
-            // Single column — "Wed, Jun 18" rolls together, weekday always visible next to date
-            <WheelCol
-              key={`date${colKey}`}
-              items={dateLabels}
-              initIndex={dateIdx}
-              onSelect={setDateIdx}
-              flex={1}
-            />
-          ) : (
-            <>
-              <WheelCol key={`h${colKey}`}  items={HOURS}       initIndex={hourIdx}   onSelect={setHourIdx}   flex={2} />
-              <WheelCol key={`mn${colKey}`} items={mins}        initIndex={minIdx}    onSelect={setMinIdx}    flex={2} />
-              <WheelCol key={`p${colKey}`}  items={['AM','PM']} initIndex={periodIdx} onSelect={setPeriodIdx} flex={2} />
-            </>
-          )}
-        </View>
+        {mode === 'date' ? (
+          <MonthCalendar
+            viewYear={viewYear}
+            viewMonth={viewMonth}
+            selected={selectedDate}
+            minimumDate={minimumDate}
+            today={today}
+            onPrevMonth={goPrevMonth}
+            onNextMonth={goNextMonth}
+            onSelectDay={(day) => setSelectedDate(new Date(viewYear, viewMonth, day))}
+          />
+        ) : (
+          <View style={s.wheelRow}>
+            <WheelCol key={`h${colKey}`}  items={HOURS}       initIndex={hourIdx}   onSelect={setHourIdx}   flex={2} />
+            <WheelCol key={`mn${colKey}`} items={mins}        initIndex={minIdx}    onSelect={setMinIdx}    flex={2} />
+            <WheelCol key={`p${colKey}`}  items={['AM','PM']} initIndex={periodIdx} onSelect={setPeriodIdx} flex={2} />
+          </View>
+        )}
       </View>
     </Modal>
   );

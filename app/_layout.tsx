@@ -4,11 +4,12 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { AuthProvider } from '../hooks/useAuth';
+import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { TeamProvider } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import WebPushPrompt from '../components/ui/WebPushPrompt';
 import UpdateRequiredModal from '../components/ui/UpdateRequiredModal';
+import ClubSuspendedModal from '../components/ui/ClubSuspendedModal';
 import { checkVersionGate } from '../lib/versionGate';
 
 SplashScreen.preventAutoHideAsync();
@@ -16,6 +17,7 @@ SplashScreen.preventAutoHideAsync();
 function AppShell() {
   usePushNotifications();
   const router = useRouter();
+  const { club } = useAuth();
   const [updateRequired, setUpdateRequired] = useState(false);
 
   useEffect(() => {
@@ -109,6 +111,7 @@ function AppShell() {
       <Stack screenOptions={{ headerShown: false }} />
       <WebPushPrompt />
       {updateRequired && <UpdateRequiredModal />}
+      {!updateRequired && club?.suspended_at && <ClubSuspendedModal />}
     </>
   );
 }

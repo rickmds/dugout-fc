@@ -27,7 +27,7 @@ function buildLabeledRows<T extends BaseTeam>(data: T[], showDividers: boolean):
   for (const t of data) {
     const g = t.gender ?? null;
     const isNewCluster = useLabels && g !== lastGender && g && g in GENDER_LABELS;
-    if (isNewCluster) rows.push({ key: `label-${g}`, label: GENDER_LABELS[g!], divider: false });
+    if (isNewCluster) rows.push({ key: `label-${g}-${t.id}`, label: GENDER_LABELS[g!], divider: false });
     rows.push({ key: t.id, team: t, divider: showDividers && seenAny && !isNewCluster });
     lastGender = g;
     seenAny = true;
