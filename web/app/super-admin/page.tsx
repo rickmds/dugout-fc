@@ -1,8 +1,15 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import {
+  Building2, Users, Layers, CalendarDays, TrendingUp, HeartPulse,
+  CreditCard, FlaskConical, ShieldCheck, ClipboardList, FileText,
+  Globe2, Smartphone, Mail, Download, LogOut, Search,
+  AlertTriangle, UserX, UserRoundX, MailWarning, ChevronDown,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { PLAN_PRICING } from '@/lib/plans';
+import { COUNTRIES } from '@/lib/countries';
 import type { User } from '@supabase/supabase-js';
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
@@ -11,6 +18,12 @@ const C = {
   textDark: '#0F172A', textMid: '#374151', textLight: '#64748B', textMuted: '#94A3B8',
   selectedBg: '#F0FDF4', inputBg: '#F8FAFC', green: '#22C55E',
   shadow: '0 1px 4px rgba(0,0,0,0.06)',
+  shadowMd: '0 4px 16px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+  shadowLg: '0 12px 32px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.05)',
+  // Command-center header — deliberately distinct from the light club-level
+  // dashboards so this reads as "you're in the platform-wide tool," not
+  // just another club page.
+  headerBg: '#0A0F1A', headerBorder: '#1C2534', headerText: '#E2E8F0', headerMuted: '#7C8CA6',
 };
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -18,17 +31,28 @@ type Club = {
   id: string; name: string; slug: string;
   primary_color: string | null; logo_url: string | null;
   suspended_at: string | null; created_at: string;
+  country: string | null;
+  stripe_connect_onboarded: boolean | null;
   team_count: number; member_count: number; event_count: number;
   player_count: number; rsvp_count: number;
   plan: string | null; sub_status: string | null;
   last_active_at: string | null; contacted_at: string | null;
   health_score: number;
+  tryouts_used: boolean; waivers_used: boolean; evaluations_used: boolean; registrations_used: boolean;
 };
 
 type Stats = {
   clubs: number; active: number; suspended: number;
   members: number; teams: number; events: number;
   messages: number; clubs30d: number; members30d: number;
+};
+
+type DeviceStats = { ios: number; android: number };
+
+type FlagItem = { id: string; title: string; detail: string; createdAt: string };
+type Flags = {
+  orphanedStaff: FlagItem[]; unclaimedPlayers: FlagItem[];
+  staleInvites: FlagItem[]; paymentMisconfig: FlagItem[];
 };
 
 type ActivityItem = {
@@ -39,6 +63,8 @@ type TeamRow = { id: string; name: string; age_group: string | null; season: str
 type MemberRow = { id: string; full_name: string | null; role: string | null; created_at: string; };
 type RecentMember = MemberRow & { club_name: string | null };
 type StaffWithEmail = MemberRow & { email: string | null };
+type PlayerGuardian = { name: string | null; email: string | null };
+type PlayerWithGuardians = { id: string; full_name: string; jersey_number: number | null; team_id: string; team_name: string; guardians: PlayerGuardian[] };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const accentOf = (c: Club) =>
@@ -63,6 +89,9 @@ const lastActiveLabel = (iso: string | null) => {
   if (d === 0) return 'active today'; if (d === 1) return 'active 1d ago';
   if (d < 30) return `active ${d}d ago`; return `active ${Math.floor(d / 30)}mo ago`;
 };
+
+const countryLabel = (code: string | null) => COUNTRIES.find(c => c.code === code)?.label ?? 'United States';
+const countryFlag: Record<string, string> = { US: '🇺🇸', GB: '🇬🇧', CA: '🇨🇦', AU: '🇦🇺', IE: '🇮🇪' };
 
 const healthOf = (c: Club): 'active' | 'quiet' | 'new' => {
   if (c.health_score >= 60) return 'active';
@@ -144,6 +173,34 @@ export default function SuperAdminPage() {
       }
       setLoading(false);
     });
+
+    // getSession() above only checks once, on mount — if the session dies
+    // later (refresh token expired, signed out elsewhere), nothing else
+    // here would notice and this would keep rendering <App> with a dead
+    // session underneath it. React to Supabase's own SIGNED_OUT event
+    // instead of leaving stale UI up; falls back to <AuthScreen /> below.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') { setUser(null); setRole(null); }
+    });
+
+    // SIGNED_OUT only fires when Supabase's client actively decides the
+    // session is dead, which needs its background refresh timer to run —
+    // and browsers throttle or fully pause that timer for a backgrounded
+    // tab (laptop asleep, tab unfocused a while). Re-validate with the
+    // server the moment the tab is looked at again instead of waiting on
+    // a push that may never come.
+    function onVisible() {
+      if (document.visibilityState !== 'visible') return;
+      supabase.auth.getUser().then(({ data: { user: u } }) => {
+        if (!u) { setUser(null); setRole(null); }
+      });
+    }
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.pageBg }}><Spinner /></div>;
@@ -232,6 +289,8 @@ function BroadcastModal({ onClose }: { onClose: () => void }) {
 function App({ user }: { user: User }) {
   const [clubs, setClubs]       = useState<Club[]>([]);
   const [stats, setStats]       = useState<Stats | null>(null);
+  const [devices, setDevices]   = useState<DeviceStats | null>(null);
+  const [flags, setFlags]       = useState<Flags | null>(null);
   const [recentMembers, setRecent] = useState<RecentMember[]>([]);
   const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([]);
   const [liveConnected, setLiveConnected] = useState(false);
@@ -257,7 +316,7 @@ function App({ user }: { user: User }) {
       { data: rawClubs }, { data: allProfiles }, { data: allTeams },
       { count: eventCount }, { count: msgCount }, { data: recentRows }, { data: allSubs },
     ] = await Promise.all([
-      supabase.from('clubs').select('id, name, slug, primary_color, logo_url, suspended_at, created_at').order('created_at', { ascending: false }),
+      supabase.from('clubs').select('id, name, slug, primary_color, logo_url, suspended_at, created_at, country, stripe_connect_onboarded').order('created_at', { ascending: false }),
       supabase.from('profiles').select('id, club_id, role, full_name, created_at'),
       supabase.from('teams').select('id, club_id'),
       supabase.from('events').select('*', { count: 'exact', head: true }),
@@ -295,11 +354,31 @@ function App({ user }: { user: User }) {
       }
     }
 
-    const [{ data: allPlayers }, { data: allRsvps }, { data: allNotes }] = await Promise.all([
+    const [
+      { data: allPlayers }, { data: allRsvps }, { data: allNotes },
+      { data: tryoutRows }, { data: waiverRows }, { data: evalRows }, { data: regRows },
+      { data: pushRows },
+    ] = await Promise.all([
       supabase.from('players').select('team_id'),
       supabase.from('event_rsvps').select('event_id'),
       supabase.from('admin_club_notes').select('club_id, contacted_at'),
+      supabase.from('tryout_players').select('club_id'),
+      supabase.from('waivers').select('club_id'),
+      supabase.from('player_evaluations').select('club_id'),
+      supabase.from('registration_forms').select('club_id'),
+      supabase.from('push_tokens').select('platform'),
     ]);
+
+    const tryoutClubs = new Set((tryoutRows ?? []).map((r: { club_id: string | null }) => r.club_id));
+    const waiverClubs = new Set((waiverRows ?? []).map((r: { club_id: string | null }) => r.club_id));
+    const evalClubs   = new Set((evalRows   ?? []).map((r: { club_id: string | null }) => r.club_id));
+    const regClubs    = new Set((regRows    ?? []).map((r: { club_id: string | null }) => r.club_id));
+    const deviceCounts = { ios: 0, android: 0 };
+    for (const t of pushRows ?? []) {
+      if (t.platform === 'ios') deviceCounts.ios++;
+      else if (t.platform === 'android') deviceCounts.android++;
+    }
+    setDevices(deviceCounts);
 
     const playerMap: Record<string, number> = {};
     for (const p of allPlayers ?? []) {
@@ -329,11 +408,13 @@ function App({ user }: { user: User }) {
       const rc = rsvpMap[c.id as string]   ?? 0;
       const hs = (tc > 0 ? 20 : 0) + (pc > 0 ? 20 : 0) + (ec > 0 ? 20 : 0) + (mc > 1 ? 20 : 0) + (rc > 0 ? 20 : 0);
       return {
-        ...(c as Omit<Club, 'team_count'|'member_count'|'event_count'|'player_count'|'rsvp_count'|'plan'|'sub_status'|'last_active_at'|'contacted_at'|'health_score'>),
+        ...(c as Omit<Club, 'team_count'|'member_count'|'event_count'|'player_count'|'rsvp_count'|'plan'|'sub_status'|'last_active_at'|'contacted_at'|'health_score'|'tryouts_used'|'waivers_used'|'evaluations_used'|'registrations_used'>),
         team_count: tc, member_count: mc, event_count: ec, player_count: pc, rsvp_count: rc,
         plan: subMap[c.id as string]?.plan ?? null, sub_status: subMap[c.id as string]?.status ?? null,
         last_active_at: lastActiveMap[c.id as string] ?? null,
         contacted_at: contactedMap[c.id as string] ?? null,
+        tryouts_used: tryoutClubs.has(c.id as string), waivers_used: waiverClubs.has(c.id as string),
+        evaluations_used: evalClubs.has(c.id as string), registrations_used: regClubs.has(c.id as string),
         health_score: hs,
       };
     });
@@ -373,6 +454,49 @@ function App({ user }: { user: User }) {
     }
     seedItems.sort((a, b) => b.ts.getTime() - a.ts.getTime());
     setActivityFeed(seedItems.slice(0, 20));
+
+    // ── Health flags — surfaces the exact "orphaned data" bug shapes this
+    // codebase has actually hit: a staff account with a role but no club
+    // (inviteClubWide once left these behind), a player nobody ever
+    // claimed (broken/ignored guardian invite), an invite that's sat
+    // unopened, and a club charging fees with no Stripe account to
+    // actually receive them.
+    const [
+      { data: orphanedStaffRows }, { data: guardianRows },
+      { data: fullPlayerRows }, { data: pendingInviteRows }, { data: feeTeamRows },
+    ] = await Promise.all([
+      supabase.from('profiles').select('id, full_name, role, created_at').is('club_id', null).in('role', ['coach', 'org_admin']).order('created_at', { ascending: false }),
+      supabase.from('player_guardians').select('player_id'),
+      supabase.from('players').select('id, full_name, team_id, profile_id, created_at'),
+      supabase.from('invites').select('id, email, role, created_at, team_id, club_id').is('accepted_at', null),
+      supabase.from('player_fees').select('team_id'),
+    ]);
+
+    const staleCutoff = new Date(Date.now() - 14 * 86400000).toISOString();
+    const guardedIds  = new Set((guardianRows ?? []).map((g: { player_id: string }) => g.player_id));
+
+    const orphanedStaff: FlagItem[] = (orphanedStaffRows ?? []).map((p: { id: string; full_name: string | null; role: string | null; created_at: string }) => ({
+      id: p.id, title: p.full_name ?? 'Unnamed', detail: `${p.role} · no club`, createdAt: p.created_at,
+    }));
+
+    const unclaimedPlayers: FlagItem[] = (fullPlayerRows ?? [])
+      .filter((p: { profile_id: string | null; id: string; created_at: string }) => !p.profile_id && !guardedIds.has(p.id) && p.created_at < staleCutoff)
+      .map((p: { id: string; full_name: string; team_id: string; created_at: string }) => ({
+        id: p.id, title: p.full_name, detail: clubNameMap[teamToClub[p.team_id]] ?? 'Unknown club', createdAt: p.created_at,
+      }));
+
+    const staleInvites: FlagItem[] = (pendingInviteRows ?? [])
+      .filter((i: { created_at: string }) => i.created_at < staleCutoff)
+      .map((i: { id: string; email: string; role: string; created_at: string; team_id: string | null; club_id: string | null }) => ({
+        id: i.id, title: i.email, detail: `${i.role} invite · ${clubNameMap[(i.team_id ? teamToClub[i.team_id] : i.club_id) ?? ''] ?? 'Unknown club'}`, createdAt: i.created_at,
+      }));
+
+    const feeClubIds = new Set((feeTeamRows ?? []).map((f: { team_id: string }) => teamToClub[f.team_id]).filter(Boolean));
+    const paymentMisconfig: FlagItem[] = processed
+      .filter(c => feeClubIds.has(c.id) && !c.stripe_connect_onboarded)
+      .map(c => ({ id: c.id, title: c.name, detail: 'Fees created, Stripe not connected', createdAt: c.created_at }));
+
+    setFlags({ orphanedStaff, unclaimedPlayers, staleInvites, paymentMisconfig });
     setLoading(false);
   }, []);
 
@@ -418,6 +542,21 @@ function App({ user }: { user: User }) {
 
   function handleDelete() { setSelected(null); load(); }
 
+  async function handleDeleteFlag(kind: 'orphaned_staff' | 'stale_invite', id: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/admin/delete-flag', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, id }),
+    });
+    if (!res.ok) { const { error } = await res.json(); alert(error ?? 'Could not delete'); return; }
+    setFlags(prev => prev && {
+      ...prev,
+      orphanedStaff: kind === 'orphaned_staff' ? prev.orphanedStaff.filter(f => f.id !== id) : prev.orphanedStaff,
+      staleInvites:  kind === 'stale_invite'   ? prev.staleInvites.filter(f => f.id !== id)  : prev.staleInvites,
+    });
+  }
+
   const filtered = clubs.filter(c => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.slug.toLowerCase().includes(search.toLowerCase())) return false;
     if (filter === 'active')    return !c.suspended_at;
@@ -440,37 +579,69 @@ function App({ user }: { user: User }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: C.pageBg, fontFamily: 'system-ui, -apple-system, sans-serif', overflow: 'hidden' }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+        @keyframes fadeIn { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform: translateY(0); } }
+        .sa-tile { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+        .sa-tile:hover { transform: translateY(-2px); box-shadow: ${C.shadowMd}; }
+        .sa-hbtn, .sa-hbtn-primary { transition: filter 0.15s ease, transform 0.1s ease; }
+        .sa-hbtn:hover { filter: brightness(1.25); }
+        .sa-hbtn-primary:hover { filter: brightness(1.08); }
+        .sa-hbtn:active, .sa-hbtn-primary:active { transform: scale(0.97); }
+        .sa-row { transition: background 0.12s ease; }
+      `}</style>
       {showBroadcast && <BroadcastModal onClose={() => setShowBroadcast(false)} />}
 
-      <header style={{ height: 56, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', paddingInline: 24, gap: 20, flexShrink: 0, background: C.cardBg, boxShadow: C.shadow }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 28, height: 28, background: C.green, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900, color: '#fff' }}>D</div>
-          <span style={{ fontWeight: 800, fontSize: 15, color: C.textDark }}>Pulse FC</span>
-          <span style={{ color: C.border }}>·</span>
-          <span style={{ color: C.textLight, fontSize: 13 }}>Super Admin</span>
+      <header style={{
+        height: 60, display: 'flex', alignItems: 'center', paddingInline: 24, gap: 20, flexShrink: 0,
+        background: `linear-gradient(180deg, ${C.headerBg} 0%, #0D131F 100%)`,
+        borderBottom: `1px solid ${C.headerBorder}`,
+        boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.18)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- small static brand asset, next/image is unnecessary overhead here */}
+          <img src="/pulse-mark.png" alt="Pulse FC" style={{ width: 30, height: 30, borderRadius: 8, boxShadow: '0 2px 8px rgba(34,197,94,0.35)' }} />
+          <span style={{ fontWeight: 800, fontSize: 15, color: '#fff', letterSpacing: -0.2 }}>Pulse FC</span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, color: '#8AF0AE', background: 'rgba(34,197,94,0.14)',
+            border: '1px solid rgba(34,197,94,0.3)', borderRadius: 5, padding: '2px 7px', letterSpacing: '0.06em',
+          }}>COMMAND CENTER</span>
         </div>
         {stats && !loading && (
-          <div style={{ display: 'flex', gap: 18, paddingLeft: 16, borderLeft: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, paddingLeft: 18, borderLeft: `1px solid ${C.headerBorder}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E', animation: 'pulse 2s infinite', boxShadow: '0 0 6px #22C55E' }} />
+              <span style={{ fontSize: 11, color: '#8AF0AE', fontWeight: 600 }}>Live</span>
+            </div>
             {([{ v: stats.clubs, l: 'clubs' }, { v: stats.members, l: 'members' }, { v: stats.teams, l: 'teams' }, { v: stats.events, l: 'events' }] as { v: number; l: string }[]).map(({ v, l }) => (
-              <span key={l} style={{ fontSize: 12, color: C.textLight }}><span style={{ color: C.textDark, fontWeight: 700 }}>{v.toLocaleString()}</span> {l}</span>
+              <span key={l} style={{ fontSize: 12.5, color: C.headerMuted }}><span style={{ color: '#fff', fontWeight: 700 }}>{v.toLocaleString()}</span> {l}</span>
             ))}
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => setShowBroadcast(true)} style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: C.green, border: 'none', borderRadius: 7, padding: '6px 14px', cursor: 'pointer' }}>Broadcast email</button>
-          {!loading && clubs.length > 0 && <button onClick={() => exportClubsCSV(clubs)} style={{ fontSize: 12, fontWeight: 600, color: C.textMid, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 7, padding: '5px 12px', cursor: 'pointer' }}>Export CSV</button>}
-          <span style={{ fontSize: 12, color: C.textMuted, marginLeft: 4 }}>{user.email}</span>
-          <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())} style={{ fontSize: 12, color: C.textLight, background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 7, padding: '5px 12px', cursor: 'pointer' }}>Sign out</button>
+          <button onClick={() => setShowBroadcast(true)} className="sa-hbtn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: '#04140A', background: `linear-gradient(135deg, #4ADE80, ${C.green})`, border: 'none', borderRadius: 7, padding: '7px 14px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(34,197,94,0.3)' }}>
+            <Mail size={13} /> Broadcast
+          </button>
+          {!loading && clubs.length > 0 && (
+            <button onClick={() => exportClubsCSV(clubs)} className="sa-hbtn" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: C.headerText, background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.headerBorder}`, borderRadius: 7, padding: '7px 12px', cursor: 'pointer' }}>
+              <Download size={13} /> Export
+            </button>
+          )}
+          <span style={{ fontSize: 12, color: C.headerMuted, marginLeft: 4, paddingLeft: 12, borderLeft: `1px solid ${C.headerBorder}` }}>{user.email}</span>
+          <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())} className="sa-hbtn" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.headerMuted, background: 'transparent', border: `1px solid ${C.headerBorder}`, borderRadius: 7, padding: '7px 12px', cursor: 'pointer' }}>
+            <LogOut size={13} />
+          </button>
         </div>
       </header>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Sidebar */}
         <div style={{ width: 320, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0, background: C.cardBg }}>
-          <div style={{ padding: '12px 12px 0' }}>
+          <div style={{ padding: '12px 12px 0', position: 'relative' }}>
+            <Search size={14} color={C.textMuted} style={{ position: 'absolute', left: 24, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             <input placeholder="Search clubs…" value={search} onChange={e => setSearch(e.target.value)}
-              style={{ background: C.inputBg, border: `1.5px solid ${C.border}`, borderRadius: 9, padding: '8px 12px', color: C.textDark, fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' }} />
+              style={{ background: C.inputBg, border: `1.5px solid ${C.border}`, borderRadius: 9, padding: '8px 12px 8px 32px', color: C.textDark, fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' }} />
           </div>
           <div style={{ padding: '8px 12px 5px', display: 'flex', gap: 5 }}>
             {(['all', 'active', 'quiet', 'suspended'] as const).map(f => (
@@ -503,7 +674,7 @@ function App({ user }: { user: User }) {
               onClose={() => setSelected(null)} onSuspend={() => handleSuspend(selected)}
               onMarkContacted={() => handleMarkContacted(selected.id)} onDelete={handleDelete} />
           ) : (
-            <PlatformOverview stats={stats} recentMembers={recentMembers} clubs={clubs} loading={loading} activityFeed={activityFeed} liveConnected={liveConnected} />
+            <PlatformOverview stats={stats} recentMembers={recentMembers} clubs={clubs} loading={loading} activityFeed={activityFeed} liveConnected={liveConnected} devices={devices} flags={flags} onDeleteFlag={handleDeleteFlag} />
           )}
         </div>
       </div>
@@ -519,8 +690,9 @@ function ClubListItem({ club, selected, acting, onClick, onMarkContacted }: {
   const col = accentOf(club);
   const s   = club.health_score;
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.border}`, background: selected ? C.selectedBg : C.cardBg, borderLeft: `3px solid ${selected ? C.green : 'transparent'}` }}>
-      <div style={{ width: 34, height: 34, borderRadius: 8, background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+    <div onClick={onClick} className="sa-row" onMouseEnter={e => { if (!selected) (e.currentTarget as HTMLElement).style.background = C.pageBg; }} onMouseLeave={e => { if (!selected) (e.currentTarget as HTMLElement).style.background = C.cardBg; }}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.border}`, background: selected ? C.selectedBg : C.cardBg, borderLeft: `3px solid ${selected ? C.green : 'transparent'}` }}>
+      <div style={{ width: 34, height: 34, borderRadius: 8, background: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: '#fff', flexShrink: 0, overflow: 'hidden', boxShadow: `0 2px 6px ${col}40` }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
         {club.logo_url ? <img src={club.logo_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" /> : club.name.slice(0, 2).toUpperCase()}
       </div>
@@ -783,7 +955,10 @@ function IncomeCalculator({ clubs }: { clubs: Club[] }) {
 
 // ── Platform overview ──────────────────────────────────────────────────────────
 // ── Payment volume widget ──────────────────────────────────────────────────────
-type PayVol = { total: number; thisMonth: number; platformFees: number; byClub: { name: string; amount: number }[] };
+type PayVol = {
+  total: number; thisMonth: number; platformFees: number; byClub: { name: string; amount: number }[];
+  achCount: number; cardCount: number; achVolume: number; cardVolume: number;
+};
 
 function PaymentVolumeWidget() {
   const [data, setData] = useState<PayVol | null>(null);
@@ -796,7 +971,7 @@ function PaymentVolumeWidget() {
       const [rowsRes, pctRes] = await Promise.all([
         supabase
           .from('fee_payments')
-          .select('amount, created_at, player_fees!inner(teams!inner(clubs!inner(id, name, stripe_connect_onboarded)))'),
+          .select('amount, created_at, method, payment_rail, player_fees!inner(teams!inner(clubs!inner(id, name, stripe_connect_onboarded)))'),
         fetch('/api/admin/platform-fee-pct', { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } })
           .then(r => r.ok ? r.json() : { pct: 0 })
           .catch(() => ({ pct: 0 })),
@@ -808,8 +983,9 @@ function PaymentVolumeWidget() {
       const pFeePct = (pctRes.pct ?? 0) / 100;
       const byClubMap: Record<string, { name: string; amount: number }> = {};
       let total = 0, thisMonth = 0, platformFees = 0;
+      let achCount = 0, cardCount = 0, achVolume = 0, cardVolume = 0;
 
-      for (const r of rows as unknown as { amount: number; created_at: string; player_fees: { teams: { clubs: { id: string; name: string; stripe_connect_onboarded: boolean | null } | null } | null } | null }[]) {
+      for (const r of rows as unknown as { amount: number; created_at: string; method: string | null; payment_rail: 'card' | 'ach' | null; player_fees: { teams: { clubs: { id: string; name: string; stripe_connect_onboarded: boolean | null } | null } | null } | null }[]) {
         const club = r.player_fees?.teams?.clubs;
         const amt  = Number(r.amount ?? 0);
         total += amt;
@@ -818,10 +994,12 @@ function PaymentVolumeWidget() {
         if (club?.id) {
           byClubMap[club.id] = { name: club.name, amount: (byClubMap[club.id]?.amount ?? 0) + amt };
         }
+        if (r.method === 'stripe' && r.payment_rail === 'ach')  { achCount++;  achVolume  += amt; }
+        if (r.method === 'stripe' && r.payment_rail === 'card') { cardCount++; cardVolume += amt; }
       }
 
       const byClub = Object.values(byClubMap).sort((a, b) => b.amount - a.amount).slice(0, 6);
-      setData({ total, thisMonth, platformFees, byClub });
+      setData({ total, thisMonth, platformFees, byClub, achCount, cardCount, achVolume, cardVolume });
       setLoading(false);
     }
     load();
@@ -850,6 +1028,17 @@ function PaymentVolumeWidget() {
                 <div style={{ fontSize: 11, color: C.textMuted }}>{sub}</div>
               </div>
             ))}
+            {(data.achCount + data.cardCount) > 0 && (() => {
+              const totalCount  = data.achCount + data.cardCount;
+              const achPct      = Math.round((data.achCount / totalCount) * 100);
+              return (
+                <div style={{ background: C.inputBg, borderRadius: 8, padding: '12px 16px', minWidth: 140 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.textDark }}>{achPct}%</div>
+                  <div style={{ fontSize: 12, color: C.textMid, marginTop: 2 }}>ACH adoption</div>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>{data.achCount} of {totalCount} txns · {fmt(data.achVolume)} of {fmt(data.achVolume + data.cardVolume)} volume</div>
+                </div>
+              );
+            })()}
           </div>
           {data.byClub.length > 0 && (
             <div style={{ flex: 1, minWidth: 200 }}>
@@ -878,9 +1067,197 @@ function PaymentVolumeWidget() {
   );
 }
 
-function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, liveConnected }: {
+// ── Feature adoption ───────────────────────────────────────────────────────────
+function FeatureAdoptionCard({ clubs }: { clubs: Club[] }) {
+  const total = clubs.length || 1;
+  const rows = [
+    { label: 'Payments (Stripe)', icon: CreditCard, n: clubs.filter(c => c.stripe_connect_onboarded).length, color: '#16a34a' },
+    { label: 'Tryouts',           icon: FlaskConical, n: clubs.filter(c => c.tryouts_used).length,          color: '#7c3aed' },
+    { label: 'Waivers',           icon: ShieldCheck, n: clubs.filter(c => c.waivers_used).length,            color: '#0284c7' },
+    { label: 'Evaluations',       icon: ClipboardList, n: clubs.filter(c => c.evaluations_used).length,      color: '#d97706' },
+    { label: 'Registration forms',icon: FileText, n: clubs.filter(c => c.registrations_used).length,         color: '#db2777' },
+  ].sort((a, b) => b.n - a.n);
+
+  return (
+    <div style={{ ...card, padding: 20 }}>
+      <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16 }}>Feature adoption</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {rows.map(({ label, icon: Icon, n, color }) => {
+          const pct = Math.round((n / total) * 100);
+          return (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon size={14} color={color} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 12.5, color: C.textMid, fontWeight: 500 }}>{label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.textDark }}>{n} club{n !== 1 ? 's' : ''} <span style={{ color: C.textMuted, fontWeight: 500 }}>· {pct}%</span></span>
+                </div>
+                <div style={{ height: 5, background: C.inputBg, borderRadius: 3 }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.5s ease' }} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Geography ──────────────────────────────────────────────────────────────────
+function GeographyCard({ clubs }: { clubs: Club[] }) {
+  const byCountry: Record<string, number> = {};
+  for (const c of clubs) byCountry[c.country ?? 'US'] = (byCountry[c.country ?? 'US'] ?? 0) + 1;
+  const rows = Object.entries(byCountry).sort((a, b) => b[1] - a[1]);
+  const max = rows[0]?.[1] ?? 1;
+
+  return (
+    <div style={{ ...card, padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <Globe2 size={13} color={C.textMuted} />
+        <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Geography</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {rows.map(([code, n]) => (
+          <div key={code} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 16, flexShrink: 0, width: 20 }}>{countryFlag[code] ?? '🏳️'}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <span style={{ fontSize: 12.5, color: C.textMid }}>{countryLabel(code)}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.textDark }}>{n}</span>
+              </div>
+              <div style={{ height: 4, background: C.inputBg, borderRadius: 2 }}>
+                <div style={{ height: '100%', width: `${(n / max) * 100}%`, background: C.green, borderRadius: 2, opacity: 0.75 }} />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Device platform split ──────────────────────────────────────────────────────
+function PlatformSplitCard({ devices }: { devices: DeviceStats | null }) {
+  const total = (devices?.ios ?? 0) + (devices?.android ?? 0);
+  const iosPct = total > 0 ? Math.round(((devices?.ios ?? 0) / total) * 100) : 0;
+
+  return (
+    <div style={{ ...card, padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <Smartphone size={13} color={C.textMuted} />
+        <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Devices</div>
+      </div>
+      {total === 0 ? (
+        <div style={{ fontSize: 13, color: C.textMuted, textAlign: 'center', padding: '12px 0' }}>No registered devices yet</div>
+      ) : (
+        <>
+          <div style={{ height: 10, borderRadius: 5, overflow: 'hidden', display: 'flex', marginBottom: 14 }}>
+            <div style={{ width: `${iosPct}%`, background: '#0F172A' }} />
+            <div style={{ width: `${100 - iosPct}%`, background: '#22C55E' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: 2, background: '#0F172A' }} /><span style={{ fontSize: 12, color: C.textMid }}>iOS</span></div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: C.textDark, marginTop: 2 }}>{devices?.ios ?? 0}</div>
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 8, height: 8, borderRadius: 2, background: '#22C55E' }} /><span style={{ fontSize: 12, color: C.textMid }}>Android</span></div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: C.textDark, marginTop: 2 }}>{devices?.android ?? 0}</div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Health flags — bug / broken-flow detector ─────────────────────────────────
+function FlagRow({ label, icon: Icon, items, hint, onDelete }: { label: string; icon: typeof UserX; items: FlagItem[]; hint: string; onDelete?: (id: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const n = items.length;
+  const color = n === 0 ? '#16a34a' : n <= 2 ? '#d97706' : '#dc2626';
+  const bg    = n === 0 ? '#F0FDF4' : n <= 2 ? '#FFFBEB' : '#FFF5F5';
+
+  async function handleDeleteClick(e: React.MouseEvent, id: string, title: string) {
+    e.stopPropagation();
+    if (!onDelete) return;
+    if (!confirm(`Delete "${title}"? This can't be undone.`)) return;
+    setDeletingId(id);
+    await onDelete(id);
+    setDeletingId(null);
+  }
+
+  return (
+    <div style={{ borderRadius: 10, border: `1px solid ${n === 0 ? C.border : bg === '#FFF5F5' ? '#FECACA' : '#FDE68A'}`, overflow: 'hidden' }}>
+      <button onClick={() => n > 0 && setOpen(o => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: n === 0 ? C.cardBg : bg, border: 'none', cursor: n > 0 ? 'pointer' : 'default', fontFamily: 'inherit', textAlign: 'left' }}>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: n === 0 ? C.inputBg : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={15} color={color} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>{label}</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>{hint}</div>
+        </div>
+        <span style={{ fontSize: 15, fontWeight: 800, color, flexShrink: 0 }}>{n}</span>
+        {n > 0 && <ChevronDown size={14} color={C.textMuted} style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />}
+      </button>
+      {open && n > 0 && (
+        <div style={{ borderTop: `1px solid ${C.border}`, maxHeight: 220, overflowY: 'auto' }}>
+          {items.map((it, i) => (
+            <div key={it.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: i < items.length - 1 ? `1px solid ${C.border}` : 'none', background: C.cardBg }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: C.textDark, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>{it.detail}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <span style={{ fontSize: 10, color: C.textMuted }}>{timeAgo(it.createdAt)}</span>
+                {onDelete && (
+                  deletingId === it.id
+                    ? <Spinner size={12} />
+                    : (
+                      <button onClick={e => handleDeleteClick(e, it.id, it.title)} title="Delete" style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2, display: 'flex', fontFamily: 'inherit' }}>
+                        <UserRoundX size={13} />
+                      </button>
+                    )
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HealthFlagsCard({ flags, onDeleteFlag }: { flags: Flags | null; onDeleteFlag: (kind: 'orphaned_staff' | 'stale_invite', id: string) => Promise<void> }) {
+  if (!flags) return null;
+  const total = flags.orphanedStaff.length + flags.unclaimedPlayers.length + flags.staleInvites.length + flags.paymentMisconfig.length;
+
+  return (
+    <div style={{ ...card, padding: 20, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <AlertTriangle size={14} color={total === 0 ? '#16a34a' : '#dc2626'} />
+        <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Health flags</div>
+        {total > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#FFF5F5', borderRadius: 5, padding: '2px 8px' }}>{total} to review</span>}
+      </div>
+      <p style={{ fontSize: 12, color: C.textLight, margin: '0 0 14px' }}>Catches the exact kinds of broken data this app has actually hit — click a row to see who.</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+        <FlagRow label="Orphaned staff" icon={UserX} items={flags.orphanedStaff} hint="Role set, no club — stranded account" onDelete={id => onDeleteFlag('orphaned_staff', id)} />
+        <FlagRow label="Unclaimed players" icon={UserRoundX} items={flags.unclaimedPlayers} hint="On a roster 14d+, no guardian linked" />
+        <FlagRow label="Stale invites" icon={MailWarning} items={flags.staleInvites} hint="Sent 14d+ ago, never accepted" onDelete={id => onDeleteFlag('stale_invite', id)} />
+        <FlagRow label="Payment misconfig" icon={CreditCard} items={flags.paymentMisconfig} hint="Fees exist, Stripe not connected" />
+      </div>
+    </div>
+  );
+}
+
+function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, liveConnected, devices, flags, onDeleteFlag }: {
   stats: Stats | null; recentMembers: RecentMember[]; clubs: Club[]; loading: boolean;
-  activityFeed: ActivityItem[]; liveConnected: boolean;
+  activityFeed: ActivityItem[]; liveConnected: boolean; devices: DeviceStats | null; flags: Flags | null;
+  onDeleteFlag: (kind: 'orphaned_staff' | 'stale_invite', id: string) => Promise<void>;
 }) {
   if (loading || !stats) return <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><Spinner /></div>;
   const topClubs   = [...clubs].sort((a, b) => b.member_count - a.member_count).slice(0, 6);
@@ -888,29 +1265,34 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
   const avgScore   = clubs.length > 0 ? Math.round(clubs.reduce((s, c) => s + c.health_score, 0) / clubs.length) : 0;
 
   return (
-    <div style={{ padding: 32, maxWidth: 960 }}>
+    <div style={{ padding: 32, maxWidth: 1180 }}>
       <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 900, color: C.textDark, margin: 0, letterSpacing: -0.5 }}>Platform Overview</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 900, color: C.textDark, margin: 0, letterSpacing: -0.6 }}>Platform Overview</h2>
         <p style={{ color: C.textLight, fontSize: 13, margin: '4px 0 0' }}>Live stats across all clubs on Pulse FC</p>
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 16 }}>
         {[
-          { label: 'Total clubs',    val: stats.clubs,    sub: `+${stats.clubs30d} this month`,   color: '#16a34a' },
-          { label: 'Active clubs',   val: stats.active,   sub: `${stats.suspended} suspended`,    color: '#16a34a' },
-          { label: 'Total members',  val: stats.members,  sub: `+${stats.members30d} this month`, color: '#0284c7' },
-          { label: 'Teams',          val: stats.teams,    sub: 'across all clubs',                color: '#7c3aed' },
-          { label: 'Events',         val: stats.events,   sub: 'all time',                        color: '#d97706' },
-          { label: 'Avg health',     val: `${avgScore}`,  sub: 'activation score /100',           color: scoreColor(avgScore) },
-        ].map(({ label, val, sub, color }) => (
-          <div key={label} style={{ ...card, padding: '16px 18px' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color, letterSpacing: -1 }}>{val.toLocaleString()}</div>
-            <div style={{ fontSize: 13, color: C.textMid, marginTop: 2 }}>{label}</div>
-            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{sub}</div>
+          { label: 'Total clubs',    val: stats.clubs,    sub: `+${stats.clubs30d} this month`,   color: '#16a34a', icon: Building2 },
+          { label: 'Active clubs',   val: stats.active,   sub: `${stats.suspended} suspended`,    color: '#16a34a', icon: HeartPulse },
+          { label: 'Total members',  val: stats.members,  sub: `+${stats.members30d} this month`, color: '#0284c7', icon: Users },
+          { label: 'Teams',          val: stats.teams,    sub: 'across all clubs',                color: '#7c3aed', icon: Layers },
+          { label: 'Events',         val: stats.events,   sub: 'all time',                        color: '#d97706', icon: CalendarDays },
+          { label: 'Avg health',     val: `${avgScore}`,  sub: 'activation score /100',           color: scoreColor(avgScore), icon: TrendingUp },
+        ].map(({ label, val, sub, color, icon: Icon }) => (
+          <div key={label} className="sa-tile" style={{ ...card, padding: '16px 16px', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: -14, right: -14, width: 56, height: 56, borderRadius: 16, background: `${color}12` }} />
+            <Icon size={16} color={color} style={{ position: 'relative', marginBottom: 10 }} />
+            <div style={{ fontSize: 26, fontWeight: 800, color: C.textDark, letterSpacing: -1, position: 'relative' }}>{val.toLocaleString()}</div>
+            <div style={{ fontSize: 12.5, color: C.textMid, marginTop: 2, position: 'relative' }}>{label}</div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, position: 'relative' }}>{sub}</div>
           </div>
         ))}
       </div>
+
+      {/* Health flags — bug / broken-flow detector */}
+      <HealthFlagsCard flags={flags} onDeleteFlag={onDeleteFlag} />
 
       {/* Growth chart */}
       <div style={{ ...card, padding: '16px 20px', marginBottom: 16 }}>
@@ -968,6 +1350,13 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Feature adoption + Geography + Devices */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <FeatureAdoptionCard clubs={clubs} />
+        <GeographyCard clubs={clubs} />
+        <PlatformSplitCard devices={devices} />
       </div>
 
       {/* Cohort table */}
@@ -1028,6 +1417,42 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
   );
 }
 
+// ── Team roster row (expandable — players + linked guardian emails) ───────────
+function TeamRosterRow({ team, players }: { team: TeamRow; players: PlayerWithGuardians[] }) {
+  const [open, setOpen] = useState(false);
+  const unclaimed = players.filter(p => p.guardians.length === 0).length;
+  return (
+    <div style={{ background: C.pageBg, borderRadius: 8, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'transparent', border: 'none', cursor: players.length > 0 ? 'pointer' : 'default', fontFamily: 'inherit', textAlign: 'left' }}>
+        <div><div style={{ fontSize: 13, color: C.textDark, fontWeight: 500 }}>{team.name}</div><div style={{ fontSize: 11, color: C.textMuted }}>{[team.age_group, team.gender, team.season].filter(Boolean).join(' · ')}</div></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {unclaimed > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#d97706', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 5, padding: '1px 6px' }}>{unclaimed} unclaimed</span>}
+          <span style={{ fontSize: 12, color: C.textLight }}>{team.player_count}p</span>
+          {players.length > 0 && <ChevronDown size={12} color={C.textMuted} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />}
+        </div>
+      </button>
+      {open && players.length > 0 && (
+        <div style={{ borderTop: `1px solid ${C.border}` }}>
+          {players.map((p, i) => (
+            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '7px 12px 7px 20px', borderBottom: i < players.length - 1 ? `1px solid ${C.border}` : 'none', background: C.cardBg }}>
+              <span style={{ fontSize: 12.5, color: C.textDark, flexShrink: 0 }}>{p.jersey_number != null ? `#${p.jersey_number} ` : ''}{p.full_name}</span>
+              {p.guardians.length === 0 ? (
+                <span style={{ fontSize: 11, color: '#d97706', flexShrink: 0 }}>No guardian linked</span>
+              ) : (
+                <span style={{ fontSize: 11, color: C.textLight, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  {p.guardians.map((g, gi) => (
+                    <span key={gi}>{gi > 0 ? ', ' : ''}{g.email ? <a href={`mailto:${g.email}`} style={{ color: '#0284c7', textDecoration: 'none' }}>{g.name ?? g.email}</a> : (g.name ?? 'Linked')}</span>
+                  ))}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Club detail ────────────────────────────────────────────────────────────────
 function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onDelete }: {
   club: Club; acting: boolean;
@@ -1035,6 +1460,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
 }) {
   const [teams, setTeams]                 = useState<TeamRow[]>([]);
   const [staff, setStaff]                 = useState<StaffWithEmail[]>([]);
+  const [players, setPlayers]             = useState<PlayerWithGuardians[]>([]);
   const [recent, setRecent]               = useState<MemberRow[]>([]);
   const [detailLoading, setDetailLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -1068,6 +1494,8 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
       if (!session || cancelled) return;
       const res = await fetch(`/api/admin/club-staff?clubId=${club.id}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
       if (res.ok && !cancelled) { const json = await res.json(); setStaff(json.staff ?? []); }
+      const pRes = await fetch(`/api/admin/club-players?clubId=${club.id}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+      if (pRes.ok && !cancelled) { const json = await pRes.json(); setPlayers(json.players ?? []); }
     }
     load();
     return () => { cancelled = true; };
@@ -1118,6 +1546,10 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
               <h2 style={{ fontSize: 20, fontWeight: 800, color: C.textDark, margin: 0 }}>{club.name}</h2>
               <PlanBadge plan={club.plan} status={club.sub_status} size="md" />
               <span style={{ fontSize: 12, fontWeight: 800, color: scoreColor(club.health_score), background: scoreBg(club.health_score), borderRadius: 7, padding: '3px 10px' }}>Score {club.health_score}/100</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.textMid, background: C.pageBg, border: `1px solid ${C.border}`, borderRadius: 7, padding: '3px 10px' }}>{countryFlag[club.country ?? 'US'] ?? '🏳️'} {countryLabel(club.country)}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: club.stripe_connect_onboarded ? '#16a34a' : C.textMuted, background: club.stripe_connect_onboarded ? '#F0FDF4' : C.pageBg, border: `1px solid ${club.stripe_connect_onboarded ? '#86EFAC' : C.border}`, borderRadius: 7, padding: '3px 10px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <CreditCard size={11} /> {club.stripe_connect_onboarded ? 'Stripe connected' : 'No Stripe'}
+              </span>
               {club.suspended_at && <span style={{ fontSize: 10, fontWeight: 700, background: '#FEE2E2', color: '#dc2626', borderRadius: 6, padding: '3px 8px' }}>SUSPENDED</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -1159,10 +1591,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
               <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}` }}><div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Teams ({teams.length})</div></div>
               <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {teams.length === 0 ? <p style={{ color: C.textMuted, fontSize: 13, margin: 0 }}>No teams yet</p> : teams.map(t => (
-                  <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: C.pageBg, borderRadius: 8 }}>
-                    <div><div style={{ fontSize: 13, color: C.textDark, fontWeight: 500 }}>{t.name}</div><div style={{ fontSize: 11, color: C.textMuted }}>{[t.age_group, t.gender, t.season].filter(Boolean).join(' · ')}</div></div>
-                    <span style={{ fontSize: 12, color: C.textLight }}>{t.player_count}p</span>
-                  </div>
+                  <TeamRosterRow key={t.id} team={t} players={players.filter(p => p.team_id === t.id)} />
                 ))}
               </div>
             </div>
