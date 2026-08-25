@@ -32,6 +32,7 @@ type CoachData = {
   teamId: string | null;
   // member-only
   profileId: string | null;
+  teamMemberId: string | null;
   joinedAt: string | null;
   // invite-only
   inviteId: string | null;
@@ -71,8 +72,12 @@ export default function CoachProfileScreen() {
 
   useEffect(() => {
     if (!coachId) return;
+    // The member branch below needs team.id to scope its lookup — wait for
+    // TeamContext rather than firing with an empty team_id and (correctly)
+    // finding nothing.
+    if (source !== 'invite' && !team?.id) return;
     fetchCoach();
-  }, [coachId, source]);
+  }, [coachId, source, team?.id]);
 
   async function fetchCoach() {
     setLoading(true);
@@ -98,6 +103,7 @@ export default function CoachProfileScreen() {
         role: 'Coach',
         teamId: data.team_id,
         profileId: null,
+        teamMemberId: null,
         joinedAt: null,
         inviteId: data.id,
         inviteToken: data.token,
@@ -105,10 +111,17 @@ export default function CoachProfileScreen() {
         createdAt: data.created_at,
       });
     } else {
+      // roster.tsx passes the coach's *profile_id* here (from the
+      // get_team_coaches RPC, which returns profile-scoped rows, not
+      // team_members rows) — looking this up by team_members.id, as this
+      // screen originally did, never matched, so every coach profile
+      // showed "Coach not found." Scoped to team.id too since a profile
+      // can coach more than one team.
       const { data, error } = await supabase
         .from('team_members')
         .select('id, role, created_at, profiles!team_members_profile_id_fkey(id, full_name, avatar_url, phone)')
-        .eq('id', coachId)
+        .eq('profile_id', coachId)
+        .eq('team_id', team!.id)
         .single();
 
       if (error || !data) {
@@ -126,6 +139,7 @@ export default function CoachProfileScreen() {
         role: data.role === 'coach' ? 'Coach' : (data.role ?? 'Coach'),
         teamId: null,
         profileId: p.id ?? null,
+        teamMemberId: data.id,
         joinedAt: data.created_at,
         inviteId: null,
         inviteToken: null,
@@ -173,7 +187,7 @@ export default function CoachProfileScreen() {
     const { error } =
       coach.source === 'invite'
         ? await (supabase as any).from('invites').delete().eq('id', coach.inviteId)
-        : await supabase.from('team_members').delete().eq('id', coachId);
+        : await supabase.from('team_members').delete().eq('id', coach.teamMemberId ?? '');
 
     if (error) {
       setRemoving(false);
