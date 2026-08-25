@@ -19,6 +19,14 @@ export async function GET(req: NextRequest) {
 
   let applied = 0;
   let failed  = 0;
+  // Collected across every club so the notification lookup/send below can
+  // run as a handful of batched round trips instead of 3-5 per fee — with
+  // clubs each running full fee schedules, that per-row shape scaled
+  // directly with club count and got proportionally slower every month.
+  // Only the CAS update itself (the correctness-critical part, guarding
+  // against overlapping cron runs double-applying the same penalty) stays
+  // per-row.
+  const appliedFees: { id: string; description: string; player_id: string; penalty: number }[] = [];
 
   for (const club of clubs as { id: string; late_fee_type: string; late_fee_amount: number; late_fee_grace_days: number }[]) {
     const { data: teams } = await supabase.from('teams').select('id').eq('club_id', club.id);
@@ -69,39 +77,59 @@ export async function GET(req: NextRequest) {
       if (!claimed?.length) continue;
 
       applied++;
+      appliedFees.push({ id: fee.id, description: fee.description, player_id: fee.player_id, penalty });
+    }
+  }
 
-      // Nothing ever told the parent a late fee was applied — a family
-      // mid-way through paying (a payment intent created against the old,
-      // lower balance) would see the fee land in 'partial' status with an
-      // unexplained remainder that's actually just this penalty, with no
-      // way to tell that apart from having simply underpaid.
-      const { data: guardianRows } = await supabase
-        .from('player_guardians').select('profile_id').eq('player_id', fee.player_id);
-      const { data: playerRow } = await supabase
-        .from('players').select('profile_id').eq('id', fee.player_id).single();
-      const parentProfileIds = [...new Set([
-        ...(guardianRows ?? []).map((g: { profile_id: string }) => g.profile_id),
-        ...(playerRow?.profile_id ? [playerRow.profile_id] : []),
-      ])];
+  // Nothing ever told the parent a late fee was applied — a family mid-way
+  // through paying (a payment intent created against the old, lower
+  // balance) would see the fee land in 'partial' status with an
+  // unexplained remainder that's actually just this penalty, with no way
+  // to tell that apart from having simply underpaid.
+  if (appliedFees.length) {
+    const playerIds = [...new Set(appliedFees.map(f => f.player_id))];
+    const [{ data: guardianRows }, { data: playerRows }] = await Promise.all([
+      supabase.from('player_guardians').select('player_id, profile_id').in('player_id', playerIds),
+      supabase.from('players').select('id, profile_id').in('id', playerIds),
+    ]);
 
-      if (parentProfileIds.length) {
-        const title = '⏰ Late fee applied';
-        const body  = `A $${penalty.toFixed(2)} late fee was added to "${fee.description}" for being overdue.`;
-        await supabase.from('notifications').insert(
-          parentProfileIds.map((profile_id) => ({
-            profile_id, type: 'fee_reminder', title, body,
-            data: { type: 'fee_reminder', player_fee_id: fee.id },
-          }))
-        );
-        const { data: tokens } = await supabase
-          .from('push_tokens').select('token').in('profile_id', parentProfileIds);
-        if (tokens?.length) {
-          await sendExpoPush(tokens.map((t: { token: string }) => ({
-            to: t.token, title, body, sound: 'default',
-            data: { type: 'fee_reminder', player_fee_id: fee.id },
-          })));
-        }
+    const parentsByPlayer = new Map<string, Set<string>>();
+    for (const g of guardianRows ?? []) {
+      if (!parentsByPlayer.has(g.player_id)) parentsByPlayer.set(g.player_id, new Set());
+      parentsByPlayer.get(g.player_id)!.add(g.profile_id);
+    }
+    for (const p of playerRows ?? []) {
+      if (!p.profile_id) continue;
+      if (!parentsByPlayer.has(p.id)) parentsByPlayer.set(p.id, new Set());
+      parentsByPlayer.get(p.id)!.add(p.profile_id);
+    }
+
+    const notificationRows: { profile_id: string; type: string; title: string; body: string; data: Record<string, unknown> }[] = [];
+    for (const fee of appliedFees) {
+      const title = '⏰ Late fee applied';
+      const body  = `A $${fee.penalty.toFixed(2)} late fee was added to "${fee.description}" for being overdue.`;
+      for (const profile_id of parentsByPlayer.get(fee.player_id) ?? []) {
+        notificationRows.push({ profile_id, type: 'fee_reminder', title, body, data: { type: 'fee_reminder', player_fee_id: fee.id } });
       }
+    }
+
+    if (notificationRows.length) {
+      await supabase.from('notifications').insert(notificationRows);
+
+      const allProfileIds = [...new Set(notificationRows.map(n => n.profile_id))];
+      const { data: tokenRows } = await supabase.from('push_tokens').select('token, profile_id').in('profile_id', allProfileIds);
+      const tokensByProfile = new Map<string, string[]>();
+      for (const t of tokenRows ?? []) {
+        if (!tokensByProfile.has(t.profile_id)) tokensByProfile.set(t.profile_id, []);
+        tokensByProfile.get(t.profile_id)!.push(t.token);
+      }
+
+      const pushMessages = notificationRows.flatMap(n =>
+        (tokensByProfile.get(n.profile_id) ?? []).map(token => ({
+          to: token, title: n.title, body: n.body, sound: 'default' as const, data: n.data,
+        }))
+      );
+      if (pushMessages.length) await sendExpoPush(pushMessages);
     }
   }
 

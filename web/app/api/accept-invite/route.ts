@@ -13,11 +13,11 @@ export async function POST(req: NextRequest) {
   // 1. Fetch and validate the invite
   const { data: invite, error: invErr } = await db
     .from('invites')
-    .select('id, team_id, club_id, team_ids, player_id, role, accepted_at, teams(club_id, clubs(slug)), clubs(slug)')
+    .select('id, email, team_id, club_id, team_ids, player_id, role, accepted_at, teams(club_id, clubs(slug)), clubs(slug)')
     .eq('token', token)
     .is('accepted_at', null)
     .single<{
-      id: string; team_id: string | null; club_id: string | null; team_ids: string[] | null;
+      id: string; email: string | null; team_id: string | null; club_id: string | null; team_ids: string[] | null;
       player_id: string | null; role: string; accepted_at: string | null;
       teams: { club_id: string; clubs: { slug: string } | null } | null;
       clubs: { slug: string } | null;
@@ -27,7 +27,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This invite link is invalid or has already been used.' }, { status: 400 });
   }
 
-  const inv       = invite;
+  const inv = invite;
+
+  // Every real invite in this app is created with the recipient's actual
+  // email (invite-coach, roster-import, and the guardian-invite screens
+  // all reject an empty email before insert) — without this check, a
+  // fully anonymous caller could redeem any club's invite token by simply
+  // declaring whatever email they wanted in the POST body, no account or
+  // prior auth required at all.
+  if (!inv.email || inv.email.trim().toLowerCase() !== String(email).trim().toLowerCase()) {
+    return NextResponse.json({ error: 'This invite was sent to a different email address. Ask your club for a new invite addressed to you.' }, { status: 403 });
+  }
   const club_id   = inv.team_id ? inv.teams?.club_id : inv.club_id;
   const club_slug = inv.team_id ? inv.teams?.clubs?.slug : inv.clubs?.slug;
   const role      = inv.role === 'coach' ? 'coach' : inv.role === 'org_admin' ? 'org_admin' : 'player';

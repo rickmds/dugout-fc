@@ -26,7 +26,14 @@ export async function GET(req: NextRequest) {
   });
   const account = await res.json();
 
-  if (account.details_submitted) {
+  // Must match the ongoing sync check in the account.updated webhook
+  // handler exactly (web/app/api/stripe/webhook/route.ts) — details_submitted
+  // alone can be true while Stripe still hasn't enabled charges (pending
+  // verification, which can take days). Marking the club "onboarded" on
+  // details_submitted alone let create-payment-intent route real payments
+  // to an account that couldn't yet accept them, with no other path to
+  // self-correct if the account.updated event that would fix it is missed.
+  if (account.details_submitted && account.charges_enabled) {
     await supabase.from('clubs').update({ stripe_connect_onboarded: true }).eq('id', club_id);
     return NextResponse.redirect(new URL(`${baseUrl}/dashboard/settings?tab=club&section=Payments&connect=success`));
   }

@@ -197,9 +197,19 @@ export async function POST(req: NextRequest) {
     if (applicationFeeAmount > 0) piBody.set('application_fee_amount', String(applicationFeeAmount));
   }
 
+  // A client-side network timeout doesn't mean the server-side call to
+  // Stripe failed — without an idempotency key, a retry (or a double-tap
+  // on a slow connection) creates a second, real PaymentIntent instead of
+  // replaying the first. Deterministic from the exact request being made:
+  // same fee + same amount + same rail + same donation is the same logical
+  // request, so Stripe returns the still-open PaymentIntent from the first
+  // attempt rather than minting a new one. A genuinely different request
+  // (different amount, different rail) gets a different key and a fresh PI.
+  const idempotencyKey = `pi_${payment_token}_${chargeAmount}_${rail ?? 'legacy'}_${donationAmount}`;
+
   const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey },
     body: piBody,
   });
   let pi: { id?: string; client_secret?: string; error?: { message?: string } } | null;

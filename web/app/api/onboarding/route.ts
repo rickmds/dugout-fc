@@ -15,6 +15,14 @@ export async function POST(req: NextRequest) {
   if (action === 'create_club') {
     const { name, slug, primary_color, secondary_color, tagline, logo_base64, logo_mime, logo_name } = body;
 
+    // Without this, a replayed request (a duplicate tab left open from a
+    // previous onboarding session, a retried click) from an org_admin who
+    // already has a club silently creates a second club and reassigns them
+    // to it, orphaning the one they actually run.
+    if (auth.clubId) {
+      return NextResponse.json({ error: 'You already belong to a club.' }, { status: 409 });
+    }
+
     // Check slug is available
     const { data: existing } = await db.from('clubs').select('id').eq('slug', slug).maybeSingle();
     if (existing) return NextResponse.json({ error: 'That URL slug is already taken.' }, { status: 409 });

@@ -90,12 +90,27 @@ export async function applyRefund(params: {
     return { ok: false, error: `Could not record refund: ${insertErr.message}` };
   }
 
-  await supabase.from('fee_payments')
-    .update({
-      refunded_amount:    round2(Number(payment.refunded_amount ?? 0) + amount),
-      refunded_surcharge: round2(Number(payment.refunded_surcharge ?? 0) + surchargeAmount),
-    })
-    .eq('id', feePaymentId);
+  // Same concurrency exposure as the Stripe webhook's payment-credit path
+  // (a manual refund via the API route can race a charge.refunded webhook
+  // for a dashboard-issued refund on the same payment) — compare-and-swap
+  // with a retry, instead of a plain read-then-write that can silently
+  // drop one of the two concurrent updates.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: current } = await supabase
+      .from('fee_payments').select('refunded_amount, refunded_surcharge').eq('id', feePaymentId).single();
+    const prevRefunded = Number(current?.refunded_amount ?? 0);
+    const prevRefundedSurcharge = Number(current?.refunded_surcharge ?? 0);
+    const { data: claimed, error: updateErr } = await supabase.from('fee_payments')
+      .update({
+        refunded_amount:    round2(prevRefunded + amount),
+        refunded_surcharge: round2(prevRefundedSurcharge + surchargeAmount),
+      })
+      .eq('id', feePaymentId)
+      .eq('refunded_amount', prevRefunded)
+      .select('id');
+    if (updateErr) { console.error('fee_payments refund update failed', updateErr, { feePaymentId }); break; }
+    if (claimed?.length) break;
+  }
 
   const { data: fee } = await supabase
     .from('player_fees')
@@ -104,13 +119,23 @@ export async function applyRefund(params: {
     .single<FeeWithClub>();
   if (!fee) return { ok: true };
 
-  // The surcharge was never part of amount_due/amount_paid — only the
-  // base-fee portion moves the ledger.
-  const newPaid   = Math.max(0, (fee.amount_paid ?? 0) - amount);
-  const balance   = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
-  const newStatus = newPaid <= 0 ? 'outstanding' : newPaid >= balance - 0.01 ? 'paid' : 'partial';
-
-  await supabase.from('player_fees').update({ amount_paid: newPaid, status: newStatus }).eq('id', fee.id);
+  const balance = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: current } = await supabase
+      .from('player_fees').select('amount_paid').eq('id', fee.id).single();
+    const prevPaid = Number(current?.amount_paid ?? fee.amount_paid ?? 0);
+    // The surcharge was never part of amount_due/amount_paid — only the
+    // base-fee portion moves the ledger.
+    const newPaid   = Math.max(0, prevPaid - amount);
+    const newStatus = newPaid <= 0 ? 'outstanding' : newPaid >= balance - 0.01 ? 'paid' : 'partial';
+    const { data: claimed, error: updateErr } = await supabase.from('player_fees')
+      .update({ amount_paid: newPaid, status: newStatus })
+      .eq('id', fee.id)
+      .eq('amount_paid', prevPaid)
+      .select('id');
+    if (updateErr) { console.error('player_fees refund update failed', updateErr, { feeId: fee.id }); break; }
+    if (claimed?.length) break;
+  }
 
   await notifyParent(supabase, fee, round2(amount + surchargeAmount));
 

@@ -23,17 +23,23 @@ export async function GET(req: NextRequest) {
 
   if (!events?.length) return NextResponse.json({ sent: 0, reason: 'no_events_today' });
 
-  let totalSent = 0;
+  // Batched across the whole day's events instead of one round trip per
+  // event for team_members / notifications / push_tokens each — this cron
+  // scales with (clubs × games/trainings scheduled that day), which grows
+  // with every club onboarded.
+  const teamIds = [...new Set(events.map(ev => ev.team_id))];
+  const { data: allMembers } = await supabase.from('team_members').select('team_id, profile_id').in('team_id', teamIds);
+  const membersByTeam = new Map<string, string[]>();
+  for (const m of allMembers ?? []) {
+    if (!m.profile_id) continue;
+    if (!membersByTeam.has(m.team_id)) membersByTeam.set(m.team_id, []);
+    membersByTeam.get(m.team_id)!.push(m.profile_id);
+  }
 
+  const notificationRows: { profile_id: string; type: string; title: string; body: string; data: Record<string, unknown> }[] = [];
   for (const ev of events) {
-    // All team members
-    const { data: members } = await supabase
-      .from('team_members')
-      .select('profile_id')
-      .eq('team_id', ev.team_id);
-    if (!members?.length) continue;
-
-    const profileIds = members.map(m => m.profile_id).filter(Boolean);
+    const profileIds = membersByTeam.get(ev.team_id) ?? [];
+    if (!profileIds.length) continue;
 
     const timeStr = ev.event_time ? ev.event_time.slice(0, 5) : null;
     const icon    = ev.type === 'game' ? '🏟️' : ev.type === 'training' ? '⚽' : '📅';
@@ -42,36 +48,32 @@ export async function GET(req: NextRequest) {
     const pushTitle = `${icon} ${kind}`;
     const pushBody  = parts.join(' · ');
 
-    // In-app notifications
-    await supabase.from('notifications').insert(
-      profileIds.map(profile_id => ({
-        profile_id,
-        type: 'event_day_reminder',
-        title: pushTitle,
-        body: pushBody,
+    for (const profile_id of profileIds) {
+      notificationRows.push({
+        profile_id, type: 'event_day_reminder', title: pushTitle, body: pushBody,
         data: { type: 'event_day_reminder', event_id: ev.id, club_slug: ev.teams?.clubs?.slug ?? '' },
-      }))
-    );
-
-    // Push tokens
-    const { data: tokens } = await supabase
-      .from('push_tokens')
-      .select('token')
-      .in('profile_id', profileIds);
-    if (!tokens?.length) continue;
-
-    const messages = tokens.map(t => ({
-      to: t.token,
-      title: pushTitle,
-      body: pushBody,
-      sound: 'default',
-      data: { type: 'event_day_reminder', event_id: ev.id },
-    }));
-
-    await sendExpoPush(messages);
-
-    totalSent += messages.length;
+      });
+    }
   }
 
-  return NextResponse.json({ sent: totalSent, events: events.length });
+  if (!notificationRows.length) return NextResponse.json({ sent: 0, events: events.length });
+
+  await supabase.from('notifications').insert(notificationRows);
+
+  const allProfileIds = [...new Set(notificationRows.map(n => n.profile_id))];
+  const { data: tokenRows } = await supabase.from('push_tokens').select('token, profile_id').in('profile_id', allProfileIds);
+  const tokensByProfile = new Map<string, string[]>();
+  for (const t of tokenRows ?? []) {
+    if (!tokensByProfile.has(t.profile_id)) tokensByProfile.set(t.profile_id, []);
+    tokensByProfile.get(t.profile_id)!.push(t.token);
+  }
+
+  const messages = notificationRows.flatMap(n =>
+    (tokensByProfile.get(n.profile_id) ?? []).map(token => ({
+      to: token, title: n.title, body: n.body, sound: 'default' as const, data: n.data,
+    }))
+  );
+  if (messages.length) await sendExpoPush(messages);
+
+  return NextResponse.json({ sent: messages.length, events: events.length });
 }

@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
   // Mark those events as cancelled
   if (matchingEvents.length > 0) {
     await sb.from('events')
-      .update({ cancelled_at: new Date().toISOString(), cancelled_reason: `Field closure: ${reason}` })
+      .update({ cancelled_at: new Date().toISOString(), cancellation_reason: `Field closure: ${reason}` })
       .in('id', matchingEvents.map(e => e.id));
   }
 

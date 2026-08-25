@@ -36,18 +36,26 @@ export async function POST(req: NextRequest) {
     const pi = event.data.object;
     const { player_fee_id, pay_amount, club_slug, club_id, donation_amount, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected } = pi.metadata ?? {};
     if (player_fee_id) {
-      const amountPaid = pay_amount ? parseFloat(pay_amount) : pi.amount_received / 100;
-      await handlePaymentComplete({
-        player_fee_id, pay_amount: amountPaid, club_slug, reference: pi.id, payment_intent_id: pi.id,
+      const { credited } = await handlePaymentComplete({
+        player_fee_id, pay_amount: pay_amount ? parseFloat(pay_amount) : pi.amount_received / 100, club_slug, reference: pi.id, payment_intent_id: pi.id,
         payment_rail: payment_rail === 'card' || payment_rail === 'ach' ? payment_rail : null,
         fee_charged:   fee_charged   ? parseFloat(fee_charged)   : null,
         platform_cost: platform_cost ? parseFloat(platform_cost) : null,
         surcharge_passed_to_payer: surcharge_passed_to_payer === 'true',
         platform_fee_collected: platform_fee_collected ? parseFloat(platform_fee_collected) : null,
       });
-      if (club_id && donation_amount && parseFloat(donation_amount) > 0) {
+      // Only credit the hardship fund on the delivery that actually credited
+      // the fee — `handlePaymentComplete` is idempotent on
+      // stripe_payment_intent_id and no-ops on a redelivered event, but this
+      // insert had no such guard of its own, so a Stripe retry (realistic
+      // here: handlePaymentComplete does ~10 sequential round trips plus a
+      // synchronous email send before returning) silently double-counted the
+      // donation into the club's displayed hardship-fund balance.
+      if (credited && club_id && donation_amount && parseFloat(donation_amount) > 0) {
         const supabase = supabaseAdmin();
-        await supabase.from('hardship_contributions').insert({ club_id, player_fee_id, amount: parseFloat(donation_amount) });
+        await supabase.from('hardship_contributions').insert({
+          club_id, player_fee_id, amount: parseFloat(donation_amount), stripe_payment_intent_id: pi.id,
+        });
       }
     }
   }
@@ -73,6 +81,17 @@ export async function POST(req: NextRequest) {
     await handleChargeRefunded(event.data.object);
   }
 
+  // Disputes/chargebacks debit the connected account's balance immediately —
+  // without these handlers, fee_payments/player_fees keeps showing the fee
+  // as paid forever with no record of the clawback and no one told.
+  if (event.type === 'charge.dispute.created') {
+    await handleDisputeCreated(event.data.object);
+  }
+
+  if (event.type === 'charge.dispute.closed') {
+    await handleDisputeClosed(event.data.object);
+  }
+
   return NextResponse.json({ received: true });
 }
 
@@ -90,7 +109,10 @@ async function handleChargeRefunded(charge: StripeCharge) {
     .select('id, amount, fee_charged, surcharge_passed_to_payer, refunded_amount, refunded_surcharge')
     .eq('stripe_payment_intent_id', charge.payment_intent)
     .single();
-  if (!paymentRow) return;
+  if (!paymentRow) {
+    console.error('charge.refunded: no matching fee_payments row — refund not recorded', { payment_intent: charge.payment_intent });
+    return;
+  }
 
   for (const refund of charge.refunds?.data ?? []) {
     // Stripe only gives us the lump-sum total for a refund issued outside
@@ -114,6 +136,104 @@ async function handleChargeRefunded(charge: StripeCharge) {
       refundedBy:      null,
     });
   }
+}
+
+type StripeDispute = {
+  id: string;
+  payment_intent: string | null;
+  amount: number; // cents
+  reason?: string | null;
+  status: string;
+};
+
+// A dispute debits the account immediately, win or lose — flag it right
+// away so an admin isn't relying on noticing a Stripe balance change on
+// their own. The actual ledger walk-back only happens on handleDisputeClosed
+// (a "lost" outcome), since the fee is still legitimately "paid" while the
+// dispute is open.
+async function handleDisputeCreated(dispute: StripeDispute) {
+  if (!dispute.payment_intent) return;
+  const supabase = supabaseAdmin();
+
+  const { data: paymentRow } = await supabase
+    .from('fee_payments')
+    .select('id, player_fee_id, disputed_at')
+    .eq('stripe_payment_intent_id', dispute.payment_intent)
+    .single();
+  if (!paymentRow) {
+    console.error('charge.dispute.created: no matching fee_payments row', { payment_intent: dispute.payment_intent });
+    return;
+  }
+  if (paymentRow.disputed_at) return; // already flagged (redelivered event)
+
+  await supabase.from('fee_payments')
+    .update({ disputed_at: new Date().toISOString(), dispute_status: dispute.status })
+    .eq('id', paymentRow.id);
+
+  const { data: fee } = await supabase
+    .from('player_fees')
+    .select('id, description, teams!inner(club_id)')
+    .eq('id', paymentRow.player_fee_id)
+    .single<{ id: string; description: string; teams: { club_id: string } | null }>();
+  if (!fee) return;
+
+  const { data: admins } = await supabase
+    .from('profiles').select('id').eq('club_id', fee.teams?.club_id ?? '').in('role', ['org_admin', 'app_admin']);
+  if (!admins?.length) return;
+
+  const amount = `$${(dispute.amount / 100).toFixed(2)}`;
+  await supabase.from('notifications').insert(
+    admins.map(a => ({
+      profile_id: a.id,
+      type:  'payment_disputed',
+      title: '⚠️ Payment disputed',
+      body:  `${fee.description} · ${amount} — the payer's bank has disputed this charge. It's already been withdrawn from your balance pending the outcome.`,
+      data:  { player_fee_id: fee.id, type: 'payment_disputed' },
+    }))
+  );
+  const { data: adminTokens } = await supabase.from('push_tokens').select('token').in('profile_id', admins.map(a => a.id));
+  if (adminTokens?.length) {
+    await sendExpoPush(adminTokens.map(t => ({
+      to: t.token, title: '⚠️ Payment disputed', body: `${fee.description} · ${amount} disputed`,
+      sound: 'default', data: { type: 'payment_disputed', player_fee_id: fee.id },
+    })));
+  }
+}
+
+// On a lost dispute the money is gone for good — walk player_fees back down
+// the same way a real refund would (reusing applyRefund, keyed on the
+// dispute id so redelivery is a no-op via the existing fee_refunds unique
+// constraint on stripe_refund_id). On a win, just record the outcome.
+async function handleDisputeClosed(dispute: StripeDispute) {
+  if (!dispute.payment_intent) return;
+  const supabase = supabaseAdmin();
+
+  const { data: paymentRow } = await supabase
+    .from('fee_payments')
+    .select('id, amount, refunded_amount')
+    .eq('stripe_payment_intent_id', dispute.payment_intent)
+    .single();
+  if (!paymentRow) return;
+
+  await supabase.from('fee_payments').update({ dispute_status: dispute.status }).eq('id', paymentRow.id);
+
+  if (dispute.status !== 'lost') return;
+
+  const stillOwed = round2Cents(Number(paymentRow.amount) - Number(paymentRow.refunded_amount ?? 0));
+  if (stillOwed <= 0) return;
+
+  await applyRefund({
+    feePaymentId:   paymentRow.id,
+    amount:         stillOwed,
+    mode:           'external',
+    stripeRefundId: `dispute_${dispute.id}`,
+    reason:         'dispute_lost',
+    refundedBy:     null,
+  });
+}
+
+function round2Cents(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
 // Stripe fires this whenever a connected account's status changes — the
@@ -158,6 +278,21 @@ async function handlePaymentFailed({ player_fee_id, club_slug, declineReason }: 
   const parentProfileId = player?.profile_id as string | null;
   if (!parentProfileId) return;
 
+  // No unique constraint backs this the way stripe_payment_intent_id does
+  // for a successful payment — a redelivered payment_intent.payment_failed
+  // (transient 5xx, slow handler triggering a Stripe retry) would otherwise
+  // send the same "your card was declined" push twice. Cheap short-lived
+  // dedupe: skip if we already notified for this fee in the last 10 minutes.
+  const { data: recent } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('profile_id', parentProfileId)
+    .eq('type', 'payment_failed')
+    .contains('data', { player_fee_id })
+    .gte('created_at', new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .limit(1);
+  if (recent?.length) return;
+
   await supabase.from('notifications').insert({
     profile_id: parentProfileId,
     type:       'payment_failed',
@@ -183,11 +318,11 @@ type FeeWithClub = {
   teams: { id: string; name: string; clubs: { id: string; name: string; slug: string | null; logo_url: string | null; primary_color: string | null; stripe_fee_handling: string | null } | null } | null;
 };
 
-async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, club_slug, reference, payment_intent_id, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected }: {
+export async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, club_slug, reference, payment_intent_id, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected }: {
   player_fee_id: string; pay_amount: number; club_slug?: string; reference: string; payment_intent_id: string;
   payment_rail: 'card' | 'ach' | null; fee_charged: number | null; platform_cost: number | null; surcharge_passed_to_payer: boolean;
   platform_fee_collected: number | null;
-}) {
+}): Promise<{ credited: boolean }> {
   const supabase = supabaseAdmin();
   const paymentIntentId = payment_intent_id;
 
@@ -198,7 +333,7 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
     .eq('id', player_fee_id)
     .single<FeeWithClub>();
 
-  if (!fee) return;
+  if (!fee) return { credited: false };
 
   const balance = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
 
@@ -223,9 +358,9 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
     platform_fee_collected,
   });
   if (insertErr) {
-    if (insertErr.code === '23505') return; // already processed this payment intent
+    if (insertErr.code === '23505') return { credited: false }; // already processed this payment intent
     console.error('fee_payments insert failed', insertErr);
-    return;
+    return { credited: false };
   }
 
   // Two payment intents on the same fee (e.g. a double-submit, or a family
@@ -238,6 +373,7 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
   // on conflict, so both payments always end up accumulated.
   let newPaid = 0;
   let newStatus: 'paid' | 'partial' = 'partial';
+  let wonRace = false;
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data: current } = await supabase
       .from('player_fees').select('amount_paid').eq('id', player_fee_id).single();
@@ -251,9 +387,12 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
       .eq('amount_paid', prevPaid)
       .select('id');
     if (updateErr) { console.error('player_fees update failed', updateErr, { player_fee_id }); break; }
-    if (claimed?.length) break; // won the race
+    if (claimed?.length) { wonRace = true; break; } // won the race
     // Lost the race — another concurrent payment updated amount_paid
     // between our read and write. Retry against its now-current value.
+  }
+  if (!wonRace) {
+    console.error('player_fees CAS retry exhausted — amount_paid was NOT updated for this payment', { player_fee_id, payment_intent_id: paymentIntentId, amountPaid });
   }
 
   // Load parent + coach details for notifications
@@ -397,6 +536,8 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
       html,
     });
   }
+
+  return { credited: true };
 }
 
 // ── Stripe webhook signature verification (no SDK) ────────────────────────────

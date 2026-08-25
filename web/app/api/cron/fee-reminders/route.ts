@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   const { data: fees, error } = await supabase
     .from('player_fees')
     .select('id')
-    .in('status', ['pending', 'partial'])
+    .in('status', ['outstanding', 'partial'])
     .lt('created_at', sevenDaysAgo)
     .or(`last_reminded_at.is.null,last_reminded_at.lt.${sevenDaysAgo}`);
 
