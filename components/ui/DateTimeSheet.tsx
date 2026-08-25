@@ -20,6 +20,24 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+// Math.round(minutes / interval), clamped to the last valid step, silently
+// picked the wrong nearest mark whenever minutes rounded up past the final
+// step (e.g. 6:58 with a 5-min interval: true nearest snap is 7:00, but
+// clamping landed on 6:55 — 3-4 min off and stuck in the same hour). Roll
+// the extra step into the next hour instead of clamping it away.
+function roundToInterval(hours24: number, minutes: number, interval: number): { hourIdx: number; minIdx: number; periodIdx: number } {
+  const stepsPerHour = 60 / interval;
+  let minIdx = Math.round(minutes / interval);
+  let h = hours24;
+  if (minIdx >= stepsPerHour) {
+    minIdx = 0;
+    h = (h + 1) % 24;
+  }
+  const hourIdx = h % 12 === 0 ? 11 : (h % 12) - 1;
+  const periodIdx = h >= 12 ? 1 : 0;
+  return { hourIdx, minIdx, periodIdx };
+}
+
 // Month grid — replaces a day-by-day wheel (which meant scrolling through
 // every single day to reach anything more than a couple weeks out) with
 // the standard calendar pattern: jump by month, tap the day directly.
@@ -206,24 +224,22 @@ export function DateTimeSheet({
   const [viewYear,     setViewYear]     = useState(() => value.getFullYear());
   const [viewMonth,    setViewMonth]    = useState(() => value.getMonth());
 
-  const h0 = value.getHours();
   // index 0='1', ..., index 10='11', index 11='12'
-  const [hourIdx,   setHourIdx]   = useState(h0 % 12 === 0 ? 11 : (h0 % 12) - 1);
-  const [minIdx,    setMinIdx]    = useState(
-    Math.min(Math.round(value.getMinutes() / minuteInterval), mins.length - 1)
-  );
-  const [periodIdx, setPeriodIdx] = useState(h0 >= 12 ? 1 : 0);
+  const init0 = roundToInterval(value.getHours(), value.getMinutes(), minuteInterval);
+  const [hourIdx,   setHourIdx]   = useState(init0.hourIdx);
+  const [minIdx,    setMinIdx]    = useState(init0.minIdx);
+  const [periodIdx, setPeriodIdx] = useState(init0.periodIdx);
   const [colKey,    setColKey]    = useState(0);
 
   useEffect(() => {
     if (!visible) return;
-    const hh = value.getHours();
     setSelectedDate(new Date(value.getFullYear(), value.getMonth(), value.getDate()));
     setViewYear(value.getFullYear());
     setViewMonth(value.getMonth());
-    setHourIdx(hh % 12 === 0 ? 11 : (hh % 12) - 1);
-    setMinIdx(Math.min(Math.round(value.getMinutes() / minuteInterval), mins.length - 1));
-    setPeriodIdx(hh >= 12 ? 1 : 0);
+    const init = roundToInterval(value.getHours(), value.getMinutes(), minuteInterval);
+    setHourIdx(init.hourIdx);
+    setMinIdx(init.minIdx);
+    setPeriodIdx(init.periodIdx);
     setColKey(k => k + 1);
   }, [visible]);
 

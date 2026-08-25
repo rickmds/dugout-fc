@@ -85,10 +85,26 @@ function computeEndTime(timeStr: string, durationMins: number): string {
   return `${displayH}:${String(endM).padStart(2, '0')} ${period}`;
 }
 
-function isUpcoming(dateStr: string): boolean {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return new Date(dateStr + 'T00:00:00') >= today;
+// Conservative fallback so an event with no duration set doesn't flip to
+// "Past" partway through — errs toward staying "Upcoming" a bit too long
+// rather than too short, matching the same fallback already used for the
+// reflection-prompt cron's own end-time estimate.
+const DEFAULT_EVENT_DURATION_MINUTES = 120;
+
+function eventEndsAt(ev: { event_date: string; event_time: string | null; duration_minutes: number | null }): Date {
+  if (!ev.event_time) return new Date(ev.event_date + 'T23:59:59');
+  const [h, m] = ev.event_time.split(':').map(Number);
+  const durationMins = ev.duration_minutes ?? DEFAULT_EVENT_DURATION_MINUTES;
+  const end = new Date(ev.event_date + 'T00:00:00');
+  end.setMinutes(end.getMinutes() + h * 60 + m + durationMins);
+  return end;
+}
+
+// "Upcoming" now means "hasn't ended yet" (start time + duration), not just
+// "dated today or later" — a training that ran 6-7:30pm no longer lingers
+// under Upcoming/TODAY for the rest of the evening once it's actually over.
+function isUpcoming(ev: { event_date: string; event_time: string | null; duration_minutes: number | null }): boolean {
+  return eventEndsAt(ev) >= new Date();
 }
 
 function isToday(dateStr: string): boolean {
@@ -129,7 +145,7 @@ function getGameResult(event: Event): { label: 'W' | 'L' | 'D'; ourScore: number
 }
 
 export default function ScheduleScreen() {
-  const { primaryColor, rgba, secondaryColor, onSecondary, logoUrl, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const { primaryColor, rgba, secondaryColor, onSecondary, logoUrl, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
   const { team, allTeams, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
@@ -244,7 +260,7 @@ export default function ScheduleScreen() {
     });
     if (guestEvs && guestEvs.length > 0) setEvents(mergedEvs);
 
-    fetchContextData(mergedEvs.filter(e => isUpcoming(e.event_date) && !e.cancelled_at));
+    fetchContextData(mergedEvs.filter(e => isUpcoming(e) && !e.cancelled_at));
   }
 
   async function fetchContextData(upcomingEvs: Event[]) {
@@ -281,7 +297,7 @@ export default function ScheduleScreen() {
         eventDate: e.event_date,
         eventTime: e.event_time,
       }));
-      const dtMap = await fetchDriveTimes(items);
+      const dtMap = await fetchDriveTimes(items, timezone);
       setDriveTimeMap(dtMap);
     }
   }
@@ -427,7 +443,7 @@ export default function ScheduleScreen() {
     // every one of them gets their own status chip and RSVP row below.
     const myPlayers = myPlayersByTeam.get(item.team_id) ?? [];
     const isMultiPlayer = myPlayers.length > 1;
-    const isPast = !isUpcoming(item.event_date);
+    const isPast = !isUpcoming(item);
     const today = isToday(item.event_date);
     const isCancelled = !!item.cancelled_at;
     const isGuest = !!item.isGuest;
@@ -749,11 +765,11 @@ export default function ScheduleScreen() {
 
   // ── Data splits ──
   const upcomingEvents = useMemo(
-    () => events.filter((e) => isUpcoming(e.event_date)),
+    () => events.filter((e) => isUpcoming(e)),
     [events]
   );
   const pastEvents = useMemo(
-    () => events.filter((e) => !isUpcoming(e.event_date)).reverse(),
+    () => events.filter((e) => !isUpcoming(e)).reverse(),
     [events]
   );
   const upcomingSections = useMemo(() => groupByMonth(upcomingEvents), [upcomingEvents]);

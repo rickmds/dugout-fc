@@ -15,17 +15,17 @@ export async function GET(req: NextRequest) {
   const { data, error } = await db
     .from('player_fees')
     .select(`
-      id, payment_token, description, amount_due, amount_paid, discount, due_date, status, installment_number, installment_total, payee_type, payment_instructions,
+      id, payment_token, description, amount_due, amount_paid, discount, due_date, status, installment_number, installment_total, payee_type, payment_instructions, fee_model_version,
       players!inner(full_name),
-      teams!inner(name, clubs!inner(name, logo_url, primary_color, slug, stripe_fee_handling, allow_partial_payments, hardship_fund_enabled))
+      teams!inner(name, clubs!inner(name, logo_url, primary_color, slug, currency, stripe_fee_handling, allow_partial_payments, hardship_fund_enabled))
     `)
     .eq('payment_token', token)
     .single<{
       id: string; payment_token: string | null; description: string; amount_due: number; amount_paid: number;
       discount: number | null; due_date: string | null; status: string; installment_number: number | null; installment_total: number | null;
-      payee_type: 'club' | 'coach'; payment_instructions: string | null;
+      payee_type: 'club' | 'coach'; payment_instructions: string | null; fee_model_version: string;
       players: { full_name: string } | null;
-      teams: { name: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string; stripe_fee_handling: string | null; allow_partial_payments: boolean | null; hardship_fund_enabled: boolean | null } | null } | null;
+      teams: { name: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string; currency: string | null; stripe_fee_handling: string | null; allow_partial_payments: boolean | null; hardship_fund_enabled: boolean | null } | null } | null;
     }>();
 
   if (error || !data) return NextResponse.json({ error: 'Fee not found' }, { status: 404 });
@@ -47,11 +47,13 @@ export async function GET(req: NextRequest) {
     installment_total:      data.installment_total ?? null,
     payee_type:             data.payee_type ?? 'club',
     payment_instructions:   data.payment_instructions ?? null,
+    fee_model_version:      data.fee_model_version,
     player_name:            data.players?.full_name ?? 'Player',
     team_name:              data.teams?.name ?? 'Team',
     club_name:              club?.name ?? 'Club',
     club_logo:              club?.logo_url ?? null,
     club_color:             club?.primary_color ?? '#22C55E',
     club_slug:              club?.slug ?? '',
+    currency:               club?.currency ?? 'USD',
   });
 }

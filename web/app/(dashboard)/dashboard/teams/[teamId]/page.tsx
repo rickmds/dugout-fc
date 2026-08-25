@@ -7,6 +7,7 @@ import { Users, CalendarDays, DollarSign, CheckCircle, Clock, MapPin, ChevronRig
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { FlipBoard } from '@/components/FlipBoard';
+import { formatCurrencyRounded } from '@/lib/formatCurrency';
 
 type Event = {
   id: string; title: string; type: string;
@@ -130,7 +131,7 @@ export default function TeamSummaryPage() {
         {[
           { icon: Users,       label: 'Players',          value: data?.playerCount ?? 0, color: primary,    href: `${base}/roster`,     sub: 'on roster' },
           { icon: TrendingUp,  label: 'Attendance Rate',  value: `${data?.attendanceRate ?? 0}%`, color: '#22C55E', href: `${base}/attendance`, sub: 'last 30 days' },
-          { icon: DollarSign,  label: 'Outstanding Fees', value: data?.outstandingCount ?? 0, color: '#F59E0B', href: `${base}/fees`,       sub: data?.outstandingFees ? `$${data.outstandingFees.toFixed(0)} owed` : 'all clear' },
+          { icon: DollarSign,  label: 'Outstanding Fees', value: data?.outstandingCount ?? 0, color: '#F59E0B', href: `${base}/fees`,       sub: data?.outstandingFees ? `${formatCurrencyRounded(data.outstandingFees, club?.currency)} owed` : 'all clear' },
           { icon: CalendarDays,label: 'Next Event',       value: data?.nextEvent ? fmtDate(data.nextEvent.event_date) : '—', color: '#8B5CF6', href: `${base}/schedule`, sub: data?.nextEvent?.title ?? 'No upcoming events' },
         ].map(({ icon: Icon, label, value, color, href, sub }) => (
           <Link key={label} href={href} style={{ textDecoration: 'none' }}>

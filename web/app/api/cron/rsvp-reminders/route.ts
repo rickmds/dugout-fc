@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { sendExpoPush } from '@/lib/expoPush';
 
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-
-// No per-club timezone in the schema yet — every club so far is US-based,
-// so Eastern is the reference clock for "is it nighttime" purposes.
-function easternHour(date: Date): number {
+// This cron scans events across every club in one batch, so quiet hours
+// have to be judged per event against that event's own club timezone, not
+// one global gate — otherwise a club outside US Eastern either gets woken
+// at 2am their time or has its daytime window silently skipped.
+function localHour(date: Date, timeZone: string): number {
   return parseInt(
-    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false }).format(date),
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).format(date),
     10
   );
 }
@@ -18,7 +19,7 @@ type ReminderEvent = {
   team_id: string;
   rsvp_lock_at: string | null;
   event_time: string | null;
-  teams: { clubs: { slug: string } | null } | null;
+  teams: { clubs: { slug: string; timezone: string | null } | null } | null;
 };
 
 export async function GET(req: NextRequest) {
@@ -29,15 +30,6 @@ export async function GET(req: NextRequest) {
 
   const supabase = supabaseAdmin();
   const now = new Date();
-
-  // Runs hourly (see vercel.json) — skip entirely during quiet hours rather
-  // than sending. Nothing is lost: each reminder type only fires once
-  // (tracked via events.rsvp_reminder_*_sent_at), so an event that becomes
-  // "due" overnight just sits eligible until the next daytime run.
-  const hour = easternHour(now);
-  if (hour >= 21 || hour < 7) {
-    return NextResponse.json({ sent: 0, reason: 'quiet_hours' });
-  }
 
   // A reminder is "due" once the event comes within its threshold of
   // rsvp_lock_at (and hasn't closed yet) and hasn't already been sent —
@@ -60,23 +52,11 @@ export async function GET(req: NextRequest) {
 
   let totalSent = 0;
 
-  // Resolve all auth users once (paginated — listUsers caps at 1000 per page)
-  const emailToUserId: Record<string, string> = {};
-  let page = 1;
-  while (true) {
-    const { data } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
-    const users = data?.users ?? [];
-    users.forEach((u) => { if (u.email) emailToUserId[u.email.toLowerCase()] = u.id; });
-    const nextPage = data && 'nextPage' in data ? data.nextPage : null;
-    if (!nextPage) break;
-    page = nextPage;
-  }
-
   for (const window of windows) {
     const threshold = new Date(now.getTime() + window.thresholdHours * 60 * 60 * 1000);
     const { data: events } = await supabase
       .from('events')
-      .select('id, title, team_id, rsvp_lock_at, event_time, teams(clubs(slug))')
+      .select('id, title, team_id, rsvp_lock_at, event_time, teams(clubs(slug, timezone))')
       .is(window.column, null)
       .gt('rsvp_lock_at', now.toISOString())
       .lte('rsvp_lock_at', threshold.toISOString())
@@ -85,23 +65,37 @@ export async function GET(req: NextRequest) {
     if (!events?.length) continue;
 
     for (const ev of events) {
+      // Skip entirely during this event's own club's quiet hours rather
+      // than sending. Nothing is lost: not marked sent, so it just sits
+      // eligible until the next hourly run lands in daytime for that club.
+      const clubTimeZone = ev.teams?.clubs?.timezone ?? 'America/New_York';
+      const hour = localHour(now, clubTimeZone);
+      if (hour >= 21 || hour < 7) continue;
+
       const { data: players } = await supabase
-        .from('players').select('id').eq('team_id', ev.team_id);
+        .from('players').select('id, profile_id').eq('team_id', ev.team_id);
       if (!players?.length) { await supabase.from('events').update({ [window.column]: now.toISOString() }).eq('id', ev.id); continue; }
 
       const { data: rsvps } = await supabase
         .from('event_rsvps').select('player_id').eq('event_id', ev.id);
       const rsvpedIds = new Set((rsvps ?? []).map(r => r.player_id));
 
-      const pendingPlayerIds = players.map(p => p.id).filter(id => !rsvpedIds.has(id));
-      if (!pendingPlayerIds.length) { await supabase.from('events').update({ [window.column]: now.toISOString() }).eq('id', ev.id); continue; }
+      const pendingPlayers = players.filter(p => !rsvpedIds.has(p.id));
+      if (!pendingPlayers.length) { await supabase.from('events').update({ [window.column]: now.toISOString() }).eq('id', ev.id); continue; }
 
-      const { data: invites } = await supabase
-        .from('invites').select('player_id, email').in('player_id', pendingPlayerIds);
+      // A player can have more than one guardian (player_guardians,
+      // additive to the legacy single-column players.profile_id) — this
+      // used to resolve "who's the parent" via invites.email -> auth user,
+      // a fragile path that misses second guardians entirely and can drift
+      // if an email changes. Read the real guardian relationships instead.
+      const { data: guardianRows } = await supabase
+        .from('player_guardians').select('player_id, profile_id')
+        .in('player_id', pendingPlayers.map(p => p.id));
 
-      const parentProfileIds = (invites ?? [])
-        .map(inv => emailToUserId[inv.email?.toLowerCase()])
-        .filter(Boolean) as string[];
+      const parentProfileIds = [...new Set([
+        ...pendingPlayers.map(p => p.profile_id).filter(Boolean),
+        ...(guardianRows ?? []).map(g => g.profile_id),
+      ])] as string[];
 
       // Mark sent regardless of whether anyone ended up eligible for a
       // push — the reminder was "due" for this event either way, and we
@@ -138,13 +132,7 @@ export async function GET(req: NextRequest) {
         data: { type: 'rsvp_reminder', event_id: ev.id },
       }));
 
-      for (let i = 0; i < messages.length; i += 100) {
-        await fetch(EXPO_PUSH_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(messages.slice(i, i + 100)),
-        });
-      }
+      await sendExpoPush(messages);
 
       totalSent += messages.length;
     }

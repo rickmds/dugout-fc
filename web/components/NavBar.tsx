@@ -3,10 +3,11 @@
 import Link from 'next/link';
 
 const NAV_LINKS = [
-  { href: '/for-clubs',  label: 'For club directors' },
-  { href: '/pricing',    label: 'Pricing' },
-  { href: '/compare',    label: 'Compare' },
-  { href: '/dashboard',  label: 'Log in' },
+  { href: '/clubs',   label: 'Clubs' },
+  { href: '/coaches', label: 'Coaches' },
+  { href: '/players', label: 'Players' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/compare', label: 'Compare' },
 ];
 
 export default function NavBar() {
@@ -38,6 +39,16 @@ export default function NavBar() {
             ))}
           </div>
           <Link
+            href="/login"
+            className="hidden md:inline hover:!text-white"
+            style={{
+              fontSize: '13px', fontWeight: '600', color: '#888',
+              textDecoration: 'none', transition: 'color 0.15s', whiteSpace: 'nowrap',
+            }}
+          >
+            Log in
+          </Link>
+          <Link
             href="/onboarding"
             style={{
               fontSize: '13px', fontWeight: '700', color: '#000',
@@ -45,7 +56,7 @@ export default function NavBar() {
               textDecoration: 'none', whiteSpace: 'nowrap',
             }}
           >
-            Set up tonight
+            Sign up
           </Link>
         </div>
       </div>

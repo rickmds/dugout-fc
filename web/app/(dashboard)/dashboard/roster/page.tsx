@@ -389,7 +389,10 @@ export default function RosterPage() {
   }
 
   async function confirmDelete(player: Player) {
-    const { error } = await supabase.from('players').delete().eq('id', player.id);
+    // Raw delete used to fail hard the moment a player had any evaluations
+    // or match-tracker data — routed through the same self-healing RPC
+    // used for club/team deletes.
+    const { error } = await supabase.rpc('admin_delete_player', { p_player_id: player.id });
     if (error) { alert(`Could not delete player: ${error.message}`); return; }
     setPlayers((prev) => prev.filter((p) => p.id !== player.id));
     setDeleteModal(null);

@@ -168,7 +168,10 @@ export default function TeamsPage() {
 
   // ── Delete ──────────────────────────────────────────────────────────────────
   async function confirmDelete(id: string) {
-    const { error } = await supabase.from('teams').delete().eq('id', id);
+    // Raw delete used to fail hard the moment a team had any evaluations or
+    // match-tracker data (same class of bug the club-delete flow had) —
+    // routed through the same self-healing RPC used there.
+    const { error } = await supabase.rpc('admin_delete_team', { p_team_id: id });
     if (error) { alert(`Could not delete team: ${error.message}`); return; }
     setDeleteConfirm(null);
     reload();

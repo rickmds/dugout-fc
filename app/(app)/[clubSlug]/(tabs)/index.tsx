@@ -267,7 +267,7 @@ export default function HomeScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile, club, refreshProfile, signOut } = useAuth();
   const { team, allTeams, loading: teamLoading, selectTeam } = useTeam();
-  const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
   const fmt = (n: number) => formatCurrency(n, club?.currency);
 
   const [playerCount, setPlayerCount]       = useState(0);
@@ -494,7 +494,7 @@ export default function HomeScreen() {
       ? `${event.lat},${event.lng}`
       : (event.address ?? event.location ?? '');
     if (!loc) return;
-    fetchDriveTime(loc, event.event_date, event.event_time).then(t => { if (t) setDrive(t); });
+    fetchDriveTime(loc, event.event_date, event.event_time, timezone).then(t => { if (t) setDrive(t); });
     if (isWeatherForecastable(event.event_date)) {
       fetchEventWeather(loc, event.event_date, event.event_time ?? null).then(w => { if (w) setWeather(w); });
     }

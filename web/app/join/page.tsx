@@ -13,7 +13,7 @@ const supabase = createClient(
 
 type InviteDetails = {
   player_name:      string | null;
-  team_name:        string;
+  team_name:        string | null;
   team_age_group:   string | null;
   club_name:        string;
   club_logo_url:    string | null;
@@ -60,6 +60,7 @@ function JoinContent() {
   const [invite,        setInvite]       = useState<InviteDetails | null>(null);
   const [fallbackClub,  setFallbackClub] = useState<FallbackClub | null>(null);
   const [successEmail,  setSuccessEmail] = useState('');
+  const [successWarning, setSuccessWarning] = useState<string | null>(null);
 
   // Form state
   const [fullName,      setFullName]     = useState('');
@@ -147,6 +148,7 @@ function JoinContent() {
     }
 
     setSuccessEmail(email.trim().toLowerCase());
+    setSuccessWarning(data.warning ?? null);
     setStep('success');
   }
 
@@ -168,15 +170,17 @@ function JoinContent() {
       return;
     }
 
-    const { error: rpcErr } = await supabase.rpc('accept_invite', { p_token: token });
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('accept_invite', { p_token: token });
+    const result = rpcData as { error?: string; warning?: string | null } | null;
 
-    if (rpcErr) {
+    if (rpcErr || result?.error) {
       setError('Could not join the team. The invite may have expired or already been used.');
       setSubmitting(false);
       return;
     }
 
     setSuccessEmail(email.trim().toLowerCase());
+    setSuccessWarning(result?.warning ?? null);
     setSubmitting(false);
     setStep('success');
   }
@@ -234,8 +238,12 @@ function JoinContent() {
             {effectiveClub && (
               <div style={{ marginBottom: 20 }}>
                 {effectiveClub.logo_url
-                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
-                  ? <img src={effectiveClub.logo_url} alt="" style={{ height: 52, borderRadius: 12, objectFit: 'contain' }} />
+                  ? (
+                    <div style={{ width: 52, height: 52, borderRadius: 14, overflow: 'hidden', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 0 3px ${accent}33` }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+                      <img src={effectiveClub.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )
                   : (
                     <div style={{ width: 52, height: 52, borderRadius: 14, background: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: accentText, boxShadow: `0 0 0 3px ${accent}33` }}>
                       {effectiveClub.name.split(' ').slice(0,2).map(w => w[0] ?? '').join('').toUpperCase()}
@@ -256,8 +264,12 @@ function JoinContent() {
             {effectiveClub && (
               <div style={{ marginBottom: 20 }}>
                 {effectiveClub.logo_url
-                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
-                  ? <img src={effectiveClub.logo_url} alt="" style={{ height: 52, borderRadius: 12, objectFit: 'contain' }} />
+                  ? (
+                    <div style={{ width: 52, height: 52, borderRadius: 14, overflow: 'hidden', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 0 3px ${accent}33` }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+                      <img src={effectiveClub.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )
                   : (
                     <div style={{ width: 52, height: 52, borderRadius: 14, background: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: accentText, boxShadow: `0 0 0 3px ${accent}33` }}>
                       {effectiveClub.name.split(' ').slice(0,2).map(w => w[0] ?? '').join('').toUpperCase()}
@@ -288,8 +300,8 @@ function JoinContent() {
                   </div>
                 )}
                 <div style={{ marginBottom: invite.team_age_group ? 12 : 0, paddingBottom: invite.team_age_group ? 12 : 0, borderBottom: invite.team_age_group ? '1px solid #1C1C1C' : 'none' }}>
-                  <div style={s.metaLabel}>Team</div>
-                  <div style={s.metaValue}>{invite.team_name}</div>
+                  <div style={s.metaLabel}>{invite.team_name ? 'Team' : 'Role'}</div>
+                  <div style={s.metaValue}>{invite.team_name ?? (invite.role === 'org_admin' ? 'Club Admin' : 'Coach — all teams')}</div>
                 </div>
                 {invite.team_age_group && (
                   <div>
@@ -389,7 +401,7 @@ function JoinContent() {
               >
                 {submitting
                   ? <><Spinner color={accentText} />Creating account…</>
-                  : `Join ${invite.team_name} →`}
+                  : invite.team_name ? `Join ${invite.team_name} →` : 'Create my account →'}
               </button>
 
               <button style={s.ghostBtn} onClick={() => { setStep('welcome'); setError(null); }}>
@@ -495,8 +507,14 @@ function JoinContent() {
                   : "You've joined"}
               </p>
               <p style={{ fontSize: 17, fontWeight: 700, color: accent, marginBottom: 32 }}>
-                {invite.team_name} · {invite.club_name}
+                {invite.team_name ? `${invite.team_name} · ${invite.club_name}` : invite.club_name}
               </p>
+
+              {successWarning && (
+                <div style={{ margin: '0 0 24px', padding: '12px 16px', background: '#2A1B0D', border: '1px solid #7C4A0F', borderRadius: 10, textAlign: 'left' }}>
+                  <p style={{ fontSize: 13, color: '#FBBF24', margin: 0, lineHeight: 1.5 }}>{successWarning}</p>
+                </div>
+              )}
             </div>
 
             {/* Download section */}

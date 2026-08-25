@@ -63,10 +63,10 @@ const rows: ComparisonRow[] = [
     playmetricsNote: 'Visual lineups, formations, depth charts, sub ordering — no AI suggestions found',
   },
   {
-    category: 'AI features',
-    feature: 'AI substitution planner',
+    category: 'Operations',
+    feature: 'Equal playing time calculator',
     pulse: true,
-    pulseNote: 'Automated equal-playing-time rotation plan, formatted for the sideline',
+    pulseNote: 'Automatic rotation plan for equal play time — pure maths, works instantly offline, no AI call needed',
     playmetrics: false,
     playmetricsNote: 'Manual sub ordering only — no automated equal-time calculator found',
   },
@@ -232,7 +232,7 @@ export default async function PulseVsPlaymetricsPage() {
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 24px 64px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           {[
-            { label: 'AI features', pulse: 4, playmetrics: 0 },
+            { label: 'AI features', pulse: 3, playmetrics: 0 },
             { label: 'Soccer-specific', pulse: '✓', playmetrics: '✗' },
             { label: 'Pricing model', pulse: 'Public $9.99/mo', playmetrics: 'Custom quote' },
           ].map(({ label, pulse, playmetrics }) => (

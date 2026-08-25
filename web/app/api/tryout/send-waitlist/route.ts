@@ -24,6 +24,9 @@ export async function POST(req: NextRequest) {
   if (!player?.email_primary) return NextResponse.json({ error: 'No email' }, { status: 400 });
 
   const clubId = (a as { club_id: string }).club_id;
+  if (auth.role !== 'app_admin' && clubId !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   const { data: tmpl } = await sb.from('tryout_email_templates').select('*').eq('club_id', clubId).eq('template_key', 'waitlist').single();
   const { data: club } = await sb.from('clubs').select('name').eq('id', clubId).single();
 

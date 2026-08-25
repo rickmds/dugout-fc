@@ -10,18 +10,20 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
+import { COUNTRIES, countryInfo } from '@/lib/countries';
+import { calculateFee } from '@/lib/feeCalculator';
 
 type Toast = { type: 'success' | 'error'; msg: string };
 
 const CLUB_SECTIONS = ['Club Profile', 'Branding', 'Tryout Season', 'Payments', 'Notifications', 'Data Exports', 'Subscription', 'Danger Zone'];
 
-const CURRENCIES = [
-  { code: 'USD', symbol: '$', label: 'USD — US Dollar ($)' },
-  { code: 'GBP', symbol: '£', label: 'GBP — British Pound (£)' },
-  { code: 'EUR', symbol: '€', label: 'EUR — Euro (€)' },
-  { code: 'CAD', symbol: 'CA$', label: 'CAD — Canadian Dollar (CA$)' },
-  { code: 'AUD', symbol: 'A$', label: 'AUD — Australian Dollar (A$)' },
-];
+// Surcharging card fees to parents runs into card-network registration
+// requirements (Visa/Mastercard need ~30 days' notice) and state-level
+// rules that haven't been reviewed per-state yet — turned back on
+// 2026-08-17 as a knowing call while that review is still pending, not
+// because the review is done. Revisit if self-serve signups expand
+// beyond states already known to be compatible.
+const PASS_ON_SURCHARGE_ENABLED = true;
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
@@ -255,7 +257,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   const [connectingStripe, setConnectingStripe] = useState(false);
 
   const [profileForm, setProfileForm] = useState({
-    name: '', slug: '', website: '', contact_email: '', tagline: '', currency: 'USD',
+    name: '', slug: '', website: '', contact_email: '', tagline: '', country: 'US',
   });
   const [brandForm, setBrandForm] = useState({
     primary_color: '#22C55E', secondary_color: '#ffffff',
@@ -275,7 +277,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   useEffect(() => {
     if (!club) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
-    setProfileForm({ name: club.name ?? '', slug: club.slug ?? '', website: club.website ?? '', contact_email: club.contact_email ?? '', tagline: club.tagline ?? '', currency: club.currency ?? 'USD' });
+    setProfileForm({ name: club.name ?? '', slug: club.slug ?? '', website: club.website ?? '', contact_email: club.contact_email ?? '', tagline: club.tagline ?? '', country: club.country ?? 'US' });
     setBrandForm({
       primary_color: club.primary_color ?? '#22C55E', secondary_color: club.secondary_color ?? '#ffffff',
       home_kit_color: club.home_kit_color ?? club.primary_color ?? '#22C55E',
@@ -300,10 +302,16 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   async function saveProfile() {
     if (!club) return;
     setSaving(true);
+    // Once a Stripe Connect account exists, its country can never be
+    // changed on Stripe's side — so country (and the currency it derives)
+    // is locked from here on, regardless of what the disabled UI already
+    // prevents. Belt-and-suspenders against stale client state.
+    const countryLocked = !!club.stripe_connect_account_id;
     const { error } = await supabase.from('clubs').update({
       name: profileForm.name, slug: profileForm.slug,
       website: profileForm.website, contact_email: profileForm.contact_email,
-      tagline: profileForm.tagline, currency: profileForm.currency,
+      tagline: profileForm.tagline,
+      ...(countryLocked ? {} : { country: profileForm.country, currency: countryInfo(profileForm.country).currency }),
     }).eq('id', club.id);
     setSaving(false);
     if (error) { showToast('error', `Save failed: ${error.message}`); return; }
@@ -450,17 +458,25 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                 <label style={labelStyle}>Contact email<input type="email" value={profileForm.contact_email} onChange={e => setProfileForm(f => ({ ...f, contact_email: e.target.value }))} style={{ ...inputStyle, marginTop: '5px' }} /></label>
               </div>
               <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '16px' }}>
-                <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Currency</div>
+                <div style={{ fontSize: '12px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>Country</div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {CURRENCIES.map(c => (
-                    <button key={c.code} onClick={() => setProfileForm(f => ({ ...f, currency: c.code }))}
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '9px', border: `2px solid ${profileForm.currency === c.code ? primary : '#E2E8F0'}`, background: profileForm.currency === c.code ? `${primary}10` : '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: profileForm.currency === c.code ? '700' : '500', color: profileForm.currency === c.code ? primary : '#374151', transition: 'all 0.15s' }}>
-                      <span style={{ fontSize: '15px', fontWeight: '700' }}>{c.symbol}</span>
-                      <span>{c.code}</span>
-                    </button>
-                  ))}
+                  {COUNTRIES.map(c => {
+                    const countryLocked = !!club?.stripe_connect_account_id;
+                    const selected = profileForm.country === c.code;
+                    return (
+                      <button key={c.code} disabled={countryLocked} onClick={() => setProfileForm(f => ({ ...f, country: c.code }))}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '9px', border: `2px solid ${selected ? primary : '#E2E8F0'}`, background: selected ? `${primary}10` : '#fff', cursor: countryLocked ? 'not-allowed' : 'pointer', opacity: countryLocked && !selected ? 0.5 : 1, fontSize: '13px', fontWeight: selected ? '700' : '500', color: selected ? primary : '#374151', transition: 'all 0.15s' }}>
+                        <span style={{ fontSize: '15px', fontWeight: '700' }}>{c.symbol}</span>
+                        <span>{c.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '8px' }}>Applies to all fees and offer letters across the club.</div>
+                <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '8px' }}>
+                  {club?.stripe_connect_account_id
+                    ? `Locked to ${countryInfo(profileForm.country).label} (${countryInfo(profileForm.country).currency}) — Stripe doesn't allow changing a connected account's country. Contact support if this club needs to move.`
+                    : `Sets the club's currency (${countryInfo(profileForm.country).currency}) and where Stripe payouts go. Choose carefully — this can't be changed once Stripe is connected.`}
+                </div>
               </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
@@ -681,32 +697,55 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
               {/* Fee handling */}
               <div>
                 <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>Who covers transaction fees?</div>
-                <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '12px' }}>Online payment fees (~4.4% per transaction) are either absorbed by the club or passed entirely to parents — no manual percentages to set.</div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {(['absorb', 'pass_on'] as const).map(opt => (
-                    <button
-                      key={opt}
-                      onClick={() => setPaymentForm(f => ({ ...f, stripe_fee_handling: opt }))}
-                      style={{
-                        flex: 1, padding: '14px 16px', borderRadius: '10px', border: `2px solid ${paymentForm.stripe_fee_handling === opt ? primary : '#E2E8F0'}`,
-                        background: paymentForm.stripe_fee_handling === opt ? `${primary}10` : '#F8FAFC',
-                        cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                      }}
-                    >
-                      <div style={{ fontSize: '13px', fontWeight: '700', color: paymentForm.stripe_fee_handling === opt ? primary : '#374151', marginBottom: '4px' }}>
-                        {opt === 'absorb' ? 'Club covers all fees' : 'Parents cover all fees'}
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#64748B' }}>
-                        {opt === 'absorb'
-                          ? 'Parents pay exactly the stated amount. Club absorbs ~4.4% in fees.'
-                          : 'Parents pay a ~4.5% surcharge. Club nets the full fee amount.'}
-                      </div>
-                      <div style={{ marginTop: '8px', fontSize: '11px', fontWeight: '700', color: paymentForm.stripe_fee_handling === opt ? primary : '#94A3B8' }}>
-                        {opt === 'absorb' ? 'e.g. $100 fee → parent pays $100, club nets ~$95.60' : 'e.g. $100 fee → parent pays ~$104.50, club nets $100.00'}
-                      </div>
-                    </button>
-                  ))}
+                <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '12px' }}>
+                  Card and bank transfer (ACH) are priced separately — ACH costs a lot less to process, so it&apos;s the default parents see at checkout.
                 </div>
+                {(() => {
+                  const ach100  = calculateFee(100, 'ach');
+                  const card100 = calculateFee(100, 'card');
+                  // Grandfathered: a club already on pass_on before this flag existed keeps
+                  // its own working setting — checked against the saved value, not the
+                  // in-progress form state, so it can't flicker away mid-edit.
+                  const passOnVisible = PASS_ON_SURCHARGE_ENABLED || club?.stripe_fee_handling === 'pass_on';
+                  const options = passOnVisible ? (['absorb', 'pass_on'] as const) : (['absorb'] as const);
+                  return (
+                    <>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        {options.map(opt => (
+                          <button
+                            key={opt}
+                            onClick={() => setPaymentForm(f => ({ ...f, stripe_fee_handling: opt }))}
+                            style={{
+                              flex: 1, padding: '14px 16px', borderRadius: '10px', border: `2px solid ${paymentForm.stripe_fee_handling === opt ? primary : '#E2E8F0'}`,
+                              background: paymentForm.stripe_fee_handling === opt ? `${primary}10` : '#F8FAFC',
+                              cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                            }}
+                          >
+                            <div style={{ fontSize: '13px', fontWeight: '700', color: paymentForm.stripe_fee_handling === opt ? primary : '#374151', marginBottom: '4px' }}>
+                              {opt === 'absorb' ? 'Club covers all fees' : 'Parents cover all fees'}
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: '#64748B' }}>
+                              {opt === 'absorb'
+                                ? 'Parents always pay exactly the stated amount, by bank or card. The club absorbs the processing fee.'
+                                : 'Parents pay a surcharge on top — less by bank account, more by card. The club nets the full fee amount either way.'}
+                            </div>
+                            <div style={{ marginTop: '8px', fontSize: '11px', fontWeight: '700', color: paymentForm.stripe_fee_handling === opt ? primary : '#94A3B8' }}>
+                              {opt === 'absorb'
+                                ? `e.g. $100 fee → parent pays $100 · club nets ~$${(100 - ach100.feeCharged).toFixed(2)} by bank, ~$${(100 - card100.feeCharged).toFixed(2)} by card`
+                                : `e.g. $100 fee → parent pays ~$${ach100.totalCharge.toFixed(2)} by bank, ~$${card100.totalCharge.toFixed(2)} by card · club nets $100.00`
+                              }
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                      {!passOnVisible && (
+                        <div style={{ marginTop: '10px', fontSize: '11px', color: '#94A3B8' }}>
+                          Passing fees on to parents isn&apos;t available yet — surcharging card payments has network compliance rules that vary by state, and we haven&apos;t cleared that for every club yet.
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <div style={{ height: '1px', background: '#F1F5F9' }} />

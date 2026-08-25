@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { formatCurrency } from '@/lib/formatCurrency';
+import { symbolForCurrency } from '@/lib/countries';
+import { calculateFee, LEGACY_BLENDED_FEE_MODEL, type PaymentRail } from '@/lib/feeCalculator';
 
 type FeeData = {
   id: string;
@@ -21,50 +24,153 @@ type FeeData = {
   installment_total: number | null;
   payee_type: 'club' | 'coach';
   payment_instructions: string | null;
+  fee_model_version: string;
   player_name: string;
   team_name: string;
   club_name: string;
   club_logo: string | null;
   club_color: string;
   club_slug: string;
+  currency: string;
 };
 
-function fmt(n: number) { return `$${n.toFixed(2)}`; }
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+type SurchargeCheck = { eligible: boolean; base_amount: number; surcharge_amount: number; total: number };
+
 // ── Inner checkout form (uses Stripe hooks — must be inside <Elements>) ────────
-function CheckoutForm({ chargeAmount, payAmount, accent, onSuccess }: {
-  chargeAmount: number; payAmount: number; accent: string; onSuccess: () => void;
+function CheckoutForm({ chargeAmount, payAmount, currency, accent, onSuccess, surchargePending, paymentToken, paymentIntentId, clientSecret, clubName }: {
+  chargeAmount: number; payAmount: number; currency: string; accent: string; onSuccess: () => void;
+  surchargePending: boolean; paymentToken: string; paymentIntentId: string | null; clientSecret: string; clubName: string;
 }) {
+  const fmt = (n: number) => formatCurrency(n, currency);
   const stripe   = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [ready, setReady]           = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!stripe || !elements || processing) return;
+  // Only card + pass_on fees go through this — the real, card-network-
+  // validated surcharge (and whether it applies at all, since debit cards
+  // can never be surcharged) isn't known until a specific card is entered.
+  const [surchargeCheck, setSurchargeCheck] = useState<SurchargeCheck | null>(null);
+  const [pendingPaymentMethodId, setPendingPaymentMethodId] = useState<string | null>(null);
+  const [checkingSurcharge, setCheckingSurcharge] = useState(false);
+
+  async function finishPayment(paymentMethodId?: string) {
     setProcessing(true);
     setError(null);
 
-    const { error: submitErr } = await elements.submit();
-    if (submitErr) { setError(submitErr.message ?? 'Please check your card details.'); setProcessing(false); return; }
-
-    const { error: confirmErr, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: { return_url: window.location.href + '?paid=1' },
-      redirect: 'if_required',
-    });
+    const { error: confirmErr, paymentIntent } = paymentMethodId
+      ? await stripe!.confirmCardPayment(clientSecret, { payment_method: paymentMethodId })
+      : await stripe!.confirmPayment({
+          elements: elements!,
+          confirmParams: { return_url: window.location.href + '?paid=1' },
+          redirect: 'if_required',
+        });
 
     if (confirmErr) {
       setError(confirmErr.message ?? 'Payment failed. Please try again.');
       setProcessing(false);
     } else if (paymentIntent?.status === 'succeeded') {
       onSuccess();
+    } else {
+      setProcessing(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements || processing || checkingSurcharge) return;
+
+    const { error: submitErr } = await elements.submit();
+    if (submitErr) { setError(submitErr.message ?? 'Please check your card details.'); return; }
+
+    if (!surchargePending) {
+      await finishPayment();
+      return;
+    }
+
+    // Card + pass_on: create the PaymentMethod first, then ask Stripe
+    // whether this specific card can be surcharged and for how much,
+    // before disclosing a final number and letting the payer confirm.
+    setCheckingSurcharge(true);
+    setError(null);
+    const { error: pmErr, paymentMethod } = await stripe.createPaymentMethod({ elements });
+    if (pmErr || !paymentMethod) {
+      setError(pmErr?.message ?? 'Please check your card details.');
+      setCheckingSurcharge(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/stripe/check-surcharge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_token: paymentToken, payment_intent_id: paymentIntentId, payment_method_id: paymentMethod.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Could not validate this card. Please try again.');
+        setCheckingSurcharge(false);
+        return;
+      }
+      setSurchargeCheck(data as SurchargeCheck);
+      setPendingPaymentMethodId(paymentMethod.id);
+    } catch {
+      setError('Something went wrong validating your card. Please try again.');
+    }
+    setCheckingSurcharge(false);
+  }
+
+  // ── Disclosure step: card is validated, real surcharge is known — show
+  // it plainly and let the payer confirm or go back and use a different
+  // card, per card network disclosure requirements.
+  if (surchargeCheck && pendingPaymentMethodId) {
+    return (
+      <div>
+        <div style={{ background: '#1C1C1E', border: '1px solid #2A2A2A', borderRadius: '12px', padding: '16px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#9CA3AF' }}>
+            <span>Amount to {clubName}</span><span>{fmt(surchargeCheck.base_amount)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#9CA3AF' }}>
+            <span>Processing fee{!surchargeCheck.eligible ? ' — none for debit cards' : ''}</span>
+            <span>{surchargeCheck.surcharge_amount > 0 ? `+${fmt(surchargeCheck.surcharge_amount)}` : fmt(0)}</span>
+          </div>
+          <div style={{ height: '1px', background: '#2A2A2A', margin: '2px 0' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: '800', color: '#F9FAFB' }}>
+            <span>Total</span><span>{fmt(surchargeCheck.total)}</span>
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ background: '#7F1D1D', border: '1px solid #EF4444', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#FCA5A5' }}>
+            {error}
+          </div>
+        )}
+
+        <button
+          onClick={() => finishPayment(pendingPaymentMethodId)}
+          disabled={processing}
+          style={{
+            width: '100%', padding: '16px', borderRadius: '12px', border: 'none',
+            background: processing ? '#374151' : accent, color: '#fff', fontSize: '16px', fontWeight: '800',
+            cursor: processing ? 'not-allowed' : 'pointer', fontFamily: 'inherit', letterSpacing: '-0.2px',
+          }}
+        >
+          {processing ? 'Processing…' : `Confirm & pay ${fmt(surchargeCheck.total)}`}
+        </button>
+        <button
+          onClick={() => { setSurchargeCheck(null); setPendingPaymentMethodId(null); setError(null); }}
+          disabled={processing}
+          style={{ width: '100%', marginTop: '10px', padding: '8px', background: 'transparent', border: 'none', color: '#6B7280', fontSize: '13px', cursor: processing ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+        >
+          ← Use a different card
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -84,23 +190,32 @@ function CheckoutForm({ chargeAmount, payAmount, accent, onSuccess }: {
 
       <button
         type="submit"
-        disabled={!stripe || !elements || processing || !ready}
+        disabled={!stripe || !elements || processing || checkingSurcharge || !ready}
         style={{
           width: '100%', padding: '16px', borderRadius: '12px', border: 'none',
-          background: processing || !ready ? '#374151' : accent,
+          background: processing || checkingSurcharge || !ready ? '#374151' : accent,
           color: '#fff', fontSize: '16px', fontWeight: '800',
-          cursor: processing || !ready ? 'not-allowed' : 'pointer',
+          cursor: processing || checkingSurcharge || !ready ? 'not-allowed' : 'pointer',
           fontFamily: 'inherit', letterSpacing: '-0.2px',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
           transition: 'background 0.15s',
         }}
       >
-        {processing ? 'Processing…' : !ready ? 'Loading…' : `Pay ${fmt(chargeAmount)} securely`}
+        {processing ? 'Processing…'
+          : checkingSurcharge ? 'Checking your card…'
+          : !ready ? 'Loading…'
+          : surchargePending ? 'Continue →'
+          : `Pay ${fmt(chargeAmount)} securely`}
       </button>
 
-      {chargeAmount > payAmount && (
+      {!surchargePending && chargeAmount > payAmount && (
         <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '12px', color: '#6B7280' }}>
           Includes {fmt(chargeAmount - payAmount)} processing fee · You pay {fmt(chargeAmount)} total
+        </div>
+      )}
+      {surchargePending && (
+        <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '12px', color: '#6B7280' }}>
+          We&apos;ll show your exact total — including any card processing fee — before you pay.
         </div>
       )}
     </form>
@@ -119,6 +234,7 @@ export default function PayPage() {
   const [partialAmount, setPartialAmount] = useState('');
   const [donationAmount, setDonationAmount] = useState<number>(0);
   const [customDonation, setCustomDonation] = useState('');
+  const [rail, setRail] = useState<PaymentRail>('ach');
 
   // Checkout state
   const [checkoutState, setCheckoutState] = useState<'idle' | 'loading' | 'ready' | 'success'>(
@@ -129,6 +245,8 @@ export default function PayPage() {
   const [chargeAmount, setChargeAmount]   = useState(0);
   const [payAmount, setPayAmount]         = useState(0);
   const [initError, setInitError]         = useState<string | null>(null);
+  const [surchargePending, setSurchargePending] = useState(false);
+  const [paymentIntentId, setPaymentIntentId]   = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -146,6 +264,19 @@ export default function PayPage() {
   }, [token]);
 
   const effectiveDonation = donationAmount > 0 ? donationAmount : (customDonation ? parseFloat(customDonation) || 0 : 0);
+  const isLegacyFeeModel  = fee?.fee_model_version === LEGACY_BLENDED_FEE_MODEL;
+  // Stripe's ACH direct debit (us_bank_account) only supports US bank
+  // accounts on USD PaymentIntents — non-US clubs only ever see Card.
+  const achAvailable      = fee?.currency === 'USD';
+  const effectiveRail: PaymentRail = achAvailable ? rail : 'card';
+
+  const previewBalance    = fee ? Math.max(0, fee.amount_due - fee.discount - fee.amount_paid) : 0;
+  const previewPayAmount  = fee?.allow_partial_payments && partialAmount ? (parseFloat(partialAmount) || previewBalance) : previewBalance;
+  const feeBaseForPreview = previewPayAmount + effectiveDonation;
+  const railTotals = {
+    ach:  calculateFee(feeBaseForPreview, 'ach').totalCharge,
+    card: calculateFee(feeBaseForPreview, 'card').totalCharge,
+  };
 
   const handlePay = useCallback(async () => {
     if (!fee || checkoutState !== 'idle') return;
@@ -158,7 +289,10 @@ export default function PayPage() {
       const res  = await fetch('/api/stripe/create-payment-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_token: fee.payment_token, amount: partial, donation_amount: effectiveDonation || undefined }),
+        body: JSON.stringify({
+          payment_token: fee.payment_token, amount: partial, donation_amount: effectiveDonation || undefined,
+          rail: isLegacyFeeModel ? undefined : effectiveRail,
+        }),
       });
       const data = await res.json();
 
@@ -178,12 +312,14 @@ export default function PayPage() {
       setClientSecret(data.client_secret);
       setChargeAmount(data.charge_amount);
       setPayAmount(data.pay_amount);
+      setSurchargePending(!!data.surcharge_pending);
+      setPaymentIntentId(data.payment_intent_id ?? null);
       setCheckoutState('ready');
     } catch {
       setInitError('Something went wrong. Please try again.');
       setCheckoutState('idle');
     }
-  }, [fee, checkoutState, partialAmount, effectiveDonation]);
+  }, [fee, checkoutState, partialAmount, effectiveDonation, isLegacyFeeModel, effectiveRail]);
 
   // ── Loading / not found ──────────────────────────────────────────────────────
   if (loading) return (
@@ -204,6 +340,8 @@ export default function PayPage() {
 
   if (!fee) return null;
 
+  const fmt        = (n: number) => formatCurrency(n, fee.currency);
+  const symbol     = symbolForCurrency(fee.currency);
   const balance    = Math.max(0, fee.amount_due - fee.discount - fee.amount_paid);
   const isOverdue  = fee.due_date ? new Date(fee.due_date) < new Date() : false;
   const accent     = fee.club_color && fee.club_color !== '#000000' && fee.club_color !== '#ffffff' ? fee.club_color : '#22C55E';
@@ -340,7 +478,7 @@ export default function PayPage() {
                     Pay a different amount <span style={{ fontWeight: '400', color: '#6B7280' }}>(optional)</span>
                   </label>
                   <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #374151', borderRadius: '10px', overflow: 'hidden', background: '#1C1C1E' }}>
-                    <span style={{ padding: '11px 12px', color: '#6B7280', fontSize: '15px', fontWeight: '700', borderRight: '1px solid #374151' }}>$</span>
+                    <span style={{ padding: '11px 12px', color: '#6B7280', fontSize: '15px', fontWeight: '700', borderRight: '1px solid #374151' }}>{symbol}</span>
                     <input
                       type="number" min="1" max={balance} step="0.01"
                       placeholder={balance.toFixed(2)}
@@ -365,11 +503,11 @@ export default function PayPage() {
                     {[0, 5, 10, 25].map(amt => (
                       <button key={amt} onClick={() => { setDonationAmount(amt); setCustomDonation(''); }}
                         style={{ padding: '7px 14px', borderRadius: '8px', border: `1.5px solid ${donationAmount === amt && !customDonation ? accent : '#374151'}`, background: donationAmount === amt && !customDonation ? `${accent}20` : 'transparent', color: donationAmount === amt && !customDonation ? accent : '#9CA3AF', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
-                        {amt === 0 ? 'None' : `+$${amt}`}
+                        {amt === 0 ? 'None' : `+${symbol}${amt}`}
                       </button>
                     ))}
                     <input
-                      type="number" min="1" placeholder="Custom $"
+                      type="number" min="1" placeholder={`Custom ${symbol}`}
                       value={customDonation}
                       onChange={e => { setCustomDonation(e.target.value); setDonationAmount(0); }}
                       style={{ width: '90px', padding: '7px 10px', borderRadius: '8px', border: `1.5px solid ${customDonation ? accent : '#374151'}`, background: 'transparent', color: '#F9FAFB', fontSize: '13px', outline: 'none', fontFamily: 'inherit' }}
@@ -377,9 +515,52 @@ export default function PayPage() {
                   </div>
                   {effectiveDonation > 0 && (
                     <div style={{ fontSize: '12px', color: '#22C55E', marginTop: '10px' }}>
-                      ✓ +${effectiveDonation.toFixed(2)} will go to the club hardship fund
+                      ✓ +{fmt(effectiveDonation)} will go to the club hardship fund
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Payment method — rail picker (new-model fees only; legacy fees keep the single Pay button unchanged) */}
+              {checkoutState === 'idle' && !isLegacyFeeModel && (
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '700', color: '#D1D5DB', display: 'block', marginBottom: '8px' }}>
+                    How would you like to pay?
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(achAvailable ? (['ach', 'card'] as const) : (['card'] as const)).map(r => {
+                      const isSelected = effectiveRail === r;
+                      const total = fee.stripe_fee_handling === 'pass_on' ? railTotals[r] : feeBaseForPreview;
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setRail(r)}
+                          style={{
+                            flex: 1, textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
+                            border: `2px solid ${isSelected ? accent : '#2A2A2A'}`,
+                            background: isSelected ? `${accent}12` : '#161616',
+                            cursor: 'pointer', fontFamily: 'inherit',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', gap: '6px' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '800', color: isSelected ? accent : '#F3F4F6' }}>
+                              {r === 'ach' ? 'Bank account' : 'Card'}
+                            </span>
+                            {r === 'ach' && (
+                              <span style={{ fontSize: '9px', fontWeight: '800', color: accent, background: `${accent}20`, borderRadius: '5px', padding: '2px 6px', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                                LOWER FEE
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '17px', fontWeight: '900', color: '#F9FAFB', letterSpacing: '-0.3px' }}>{fmt(total)}</div>
+                          <div style={{ fontSize: '10.5px', color: '#6B7280', marginTop: '2px' }}>
+                            {r === 'ach' ? 'Directly from your bank · 1–2 days' : 'Debit or credit · instant'}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -402,9 +583,11 @@ export default function PayPage() {
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   }}
                 >
-                  {fee.stripe_fee_handling === 'pass_on'
-                    ? `Pay ${fmt(balance)} →`
-                    : `Pay ${fmt(fee.allow_partial_payments && partialAmount ? parseFloat(partialAmount) || balance : balance)} →`
+                  {!isLegacyFeeModel
+                    ? `Pay ${fmt(fee.stripe_fee_handling === 'pass_on' ? railTotals[effectiveRail] : feeBaseForPreview)} →`
+                    : fee.stripe_fee_handling === 'pass_on'
+                      ? `Pay ${fmt(balance)} →`
+                      : `Pay ${fmt(fee.allow_partial_payments && partialAmount ? parseFloat(partialAmount) || balance : balance)} →`
                   }
                 </button>
               )}
@@ -427,8 +610,14 @@ export default function PayPage() {
                     <CheckoutForm
                       chargeAmount={chargeAmount}
                       payAmount={payAmount}
+                      currency={fee.currency}
                       accent={accent}
                       onSuccess={() => setCheckoutState('success')}
+                      surchargePending={surchargePending}
+                      paymentToken={fee.payment_token}
+                      paymentIntentId={paymentIntentId}
+                      clientSecret={clientSecret}
+                      clubName={fee.club_name}
                     />
                   </Elements>
                   <button

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
+import { sendExpoPush } from '@/lib/expoPush';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 type FeeForReminder = {
   id: string; payment_token: string | null; description: string; amount_due: number; discount: number;
@@ -253,11 +253,7 @@ export async function POST(req: NextRequest) {
           sound: 'default',
           data: { type: 'fee_reminder', player_fee_id, club_slug: fee.teams?.clubs?.slug ?? '' },
         }));
-        await fetch(EXPO_PUSH_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(messages),
-        });
+        await sendExpoPush(messages);
         pushSent = messages.length;
       }
     }

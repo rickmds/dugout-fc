@@ -69,8 +69,7 @@ Deno.serve(async (_req) => {
     const { data: allPlayers } = await supabase
       .from('players')
       .select('id, profile_id')
-      .eq('team_id', event.team_id)
-      .not('profile_id', 'is', null);
+      .eq('team_id', event.team_id);
 
     if (!allPlayers?.length) continue;
 
@@ -80,9 +79,21 @@ Deno.serve(async (_req) => {
       .eq('event_id', event.id);
 
     const respondedIds = new Set((existingRsvps ?? []).map((r: any) => r.player_id as string));
-    const pendingProfileIds = (allPlayers as any[])
-      .filter((p) => !respondedIds.has(p.id) && p.profile_id)
-      .map((p) => p.profile_id as string);
+    const pendingPlayers = (allPlayers as any[]).filter((p) => !respondedIds.has(p.id));
+    if (!pendingPlayers.length) continue;
+
+    // A player can have more than one guardian (player_guardians, additive
+    // to the legacy single-column players.profile_id) — a second/co-parent
+    // guardian was never reminded before, only whoever's in profile_id.
+    const { data: guardianRows } = await supabase
+      .from('player_guardians')
+      .select('player_id, profile_id')
+      .in('player_id', pendingPlayers.map((p) => p.id));
+
+    const pendingProfileIds = [...new Set([
+      ...pendingPlayers.map((p) => p.profile_id).filter(Boolean),
+      ...(guardianRows ?? []).map((g: any) => g.profile_id as string),
+    ])] as string[];
 
     if (!pendingProfileIds.length) continue;
 

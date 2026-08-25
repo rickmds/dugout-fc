@@ -166,9 +166,20 @@ export default function StaffPage() {
   async function removeStaff() {
     if (!editModal) return;
     setEditModal((m) => m ? { ...m, saving: true, saveError: null } : null);
-    const { error } = await supabase.from('profiles').update({ club_id: null, role: 'player' }).eq('id', editModal.staff.id);
-    if (error) {
-      setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not remove: ${error.message}` } : null);
+    const { staff: s } = editModal;
+    // Clearing profiles.club_id/role alone leaves their team_members rows in
+    // place — several RLS policies (attendance, fees, photos, polls) key off
+    // team_members.role='coach' independent of the profile, so a "removed"
+    // coach kept full write access to every team they were still on.
+    const [profileRes, ...teamResults] = await Promise.all([
+      supabase.from('profiles').update({ club_id: null, role: 'player' }).eq('id', s.id),
+      ...s.assigned_teams.map((teamId) =>
+        supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)
+      ),
+    ]);
+    const firstError = profileRes.error ?? teamResults.find((r) => r.error)?.error;
+    if (firstError) {
+      setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not remove: ${firstError.message}` } : null);
       return;
     }
     setStaff((prev) => prev.filter((s) => s.id !== editModal.staff.id));

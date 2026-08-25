@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { requireRole } from '@/lib/apiAuth';
+import { sendExpoPush } from '@/lib/expoPush';
+import { zonedDateString } from '@/lib/timezone';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['org_admin', 'app_admin']);
@@ -27,13 +28,16 @@ export async function POST(req: NextRequest) {
   if (!club_id || !field_names?.length) {
     return NextResponse.json({ error: 'club_id and field_names required' }, { status: 400 });
   }
+  if (auth.role !== 'app_admin' && club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const sb = supabaseAdmin();
 
   // ── 1. Fetch club for branding ────────────────────────────────────────────────
   const { data: club } = await sb
     .from('clubs')
-    .select('id, name, slug, primary_color, logo_url')
+    .select('id, name, slug, primary_color, logo_url, timezone')
     .eq('id', club_id)
     .single();
 
@@ -84,8 +88,9 @@ export async function POST(req: NextRequest) {
   const affectedTeams = [...new Set(slotsToCancel.map(s => s.team).filter(Boolean))] as string[];
 
   // ── 4. Find dated events on affected fields within closure window ─────────────
-  const closureFromDate = closureFrom.toISOString().slice(0, 10);
-  const closureUntilDate = (closureUntil ?? limit).toISOString().slice(0, 10);
+  const clubTimezone = club.timezone ?? 'America/New_York';
+  const closureFromDate = zonedDateString(closureFrom.toISOString(), clubTimezone);
+  const closureUntilDate = zonedDateString((closureUntil ?? limit).toISOString(), clubTimezone);
 
   const { data: allEvents } = await sb
     .from('events')
@@ -104,10 +109,39 @@ export async function POST(req: NextRequest) {
       .in('id', matchingEvents.map(e => e.id));
   }
 
-  // ── 5. Get team members for affected event teams ───────────────────────────────
-  const affectedEventTeamIds = [...new Set(
-    matchingEvents.map(e => e.team_id).filter(Boolean)
-  )] as string[];
+  // ── 4b. Cancel already-scheduled games on the closed field(s) ──────────────────
+  // game_slots/pending_games (the Game Scheduler) were never touched by a
+  // field closure — a game already assigned to a now-closed field stayed
+  // "assigned" indefinitely, with no cancellation and no one notified.
+  const { data: affectedSlots2 } = await sb
+    .from('game_slots')
+    .select('id, home_team_id')
+    .eq('club_id', club_id)
+    .in('field_name', field_names)
+    .neq('status', 'cancelled')
+    .gte('slot_date', closureFromDate)
+    .lte('slot_date', closureUntilDate);
+
+  const cancelledSlotIds = (affectedSlots2 ?? []).map(s => s.id);
+
+  if (cancelledSlotIds.length > 0) {
+    await sb.from('game_slots').update({ status: 'cancelled' }).in('id', cancelledSlotIds);
+    // pending_games has no 'cancelled' status — reverting to unscheduled
+    // (and clearing the now-dead slot reference) is what actually lets the
+    // game get reassigned to a new slot instead of sitting stuck.
+    await sb.from('pending_games')
+      .update({ status: 'unscheduled', slot_id: null })
+      .in('slot_id', cancelledSlotIds)
+      .eq('status', 'scheduled');
+  }
+
+  const affectedSlotTeamIds = [...new Set((affectedSlots2 ?? []).map(s => s.home_team_id).filter(Boolean))] as string[];
+
+  // ── 5. Get team members for affected event + game-slot teams ───────────────────
+  const affectedEventTeamIds = [...new Set([
+    ...matchingEvents.map(e => e.team_id).filter(Boolean),
+    ...affectedSlotTeamIds,
+  ])] as string[];
 
   const { data: affectedTeamMembers } = affectedEventTeamIds.length ? await sb
     .from('team_members')
@@ -262,13 +296,7 @@ export async function POST(req: NextRequest) {
       data: { type: 'field_closure', field_names, reason, club_slug: club.slug ?? '' },
     }));
 
-    for (let i = 0; i < messages.length; i += 100) {
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(messages.slice(i, i + 100)),
-      });
-    }
+    await sendExpoPush(messages);
     pushSent = true;
   }
 
@@ -284,6 +312,7 @@ export async function POST(req: NextRequest) {
     closures: insertedClosures?.length ?? 0,
     sessions_affected: slotsToCancel.length,
     events_affected: matchingEvents.length,
+    games_cancelled: cancelledSlotIds.length,
     emails_sent: emailsSent.length,
     push_sent: pushSent,
   });

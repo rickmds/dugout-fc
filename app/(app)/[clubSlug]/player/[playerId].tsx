@@ -594,7 +594,10 @@ export default function PlayerProfileScreen() {
   async function handleDelete() {
     if (!player) return;
     setDeleting(true);
-    const { error } = await supabase.from('players').delete().eq('id', player.id);
+    // Raw delete used to fail hard the moment a player had any evaluations
+    // or match-tracker data — routed through the same self-healing RPC used
+    // for club/team deletes.
+    const { error } = await supabase.rpc('admin_delete_player', { p_player_id: player.id });
     if (error) {
       setDeleting(false);
       Alert.alert('Error', 'Could not remove player. Please try again.');

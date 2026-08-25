@@ -289,6 +289,32 @@ export default function SubmissionsTab() {
             nextPos += 1;
           }
         }
+      } else if (newStatus === 'approved') {
+        // Promoting off the waitlist needs the "a spot opened up" email and
+        // resequencing everyone else's waitlist_position — route those
+        // specific ids through the API (which does both) instead of a
+        // plain status update; anything not currently waitlisted (e.g.
+        // approving a fresh submission) can still go straight through.
+        const toPromote = [...selectedIds].filter(id => submissions.find(s => s.id === id)?.status === 'waitlisted');
+        const rest = [...selectedIds].filter(id => !toPromote.includes(id));
+
+        if (toPromote.length > 0) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = sessionData?.session?.access_token;
+          for (const submission_id of toPromote) {
+            await fetch('/api/registrations/promote-waitlist', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body: JSON.stringify({ submission_id }),
+            });
+          }
+        }
+        if (rest.length > 0) {
+          await supabase
+            .from('registration_submissions')
+            .update({ status: 'approved', waitlist_position: null })
+            .in('id', rest);
+        }
       } else {
         await supabase
           .from('registration_submissions')

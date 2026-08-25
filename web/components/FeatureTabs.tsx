@@ -191,7 +191,7 @@ const tabDefs = [
     id: 'lineup',
     icon: '⚽',
     label: 'Lineup builder',
-    subtitle: 'Built in seconds, not 45 minutes',
+    subtitle: 'Built in seconds, not 20 minutes',
     accent: '#E879A0',
     ai: true,
     checks: ['Only shows confirmed RSVPs', 'AI suggests lineup by position', 'Equal time calculator — instant, offline'],
@@ -475,8 +475,28 @@ export default function FeatureTabs() {
                 position: 'absolute', top: 0, left: 24, right: 24, height: 2, borderRadius: 2,
                 background: `linear-gradient(90deg, transparent, ${tab.accent}, transparent)`,
               }} />
-              <div key={active} style={{ animation: 'tabFadeIn 0.3s ease' }}>
-                {tab.visual}
+              {/* All five panels stacked in the same grid cell (rather than
+                  conditionally rendering just the active one) so the grid
+                  track sizes to the tallest panel and stays that height
+                  permanently — swapping which one is visible (by click or
+                  by the 5s auto-rotate) never changes this container's
+                  height, which is what was making the page jump. */}
+              <div style={{ display: 'grid' }}>
+                {tabDefs.map((t, i) => (
+                  <div
+                    key={t.id}
+                    style={{
+                      gridArea: '1 / 1',
+                      opacity: active === i ? 1 : 0,
+                      visibility: active === i ? 'visible' : 'hidden',
+                      pointerEvents: active === i ? 'auto' : 'none',
+                      transform: active === i ? 'translateY(0)' : 'translateY(6px)',
+                      transition: 'opacity 0.3s ease, transform 0.3s ease',
+                    }}
+                  >
+                    {t.visual}
+                  </div>
+                ))}
               </div>
             </div>
           </div>

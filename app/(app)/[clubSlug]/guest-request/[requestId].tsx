@@ -69,7 +69,7 @@ function computeEndTime(timeStr: string, durationMins: number): string {
 export default function GuestRequestScreen() {
   const { requestId, clubSlug } = useLocalSearchParams<{ requestId: string; clubSlug: string }>();
   const { profile } = useAuth();
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, rgba, timezone } = useClub();
   const router = useRouter();
   const mapApp = useMapApp();
 
@@ -117,7 +117,7 @@ export default function GuestRequestScreen() {
       // Kick off drive time fetch
       const dest = ev.lat != null && ev.lng != null ? `${ev.lat},${ev.lng}` : (ev.address ?? '');
       if (dest && PLACES_KEY) {
-        fetchDriveTime(dest, ev.event_date, ev.event_time).then(t => { if (t) setDriveTime(t); });
+        fetchDriveTime(dest, ev.event_date, ev.event_time, timezone).then(t => { if (t) setDriveTime(t); });
       }
     }
     if (teamRes.data) setRequestingTeamName(teamRes.data.name);

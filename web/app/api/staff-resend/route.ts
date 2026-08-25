@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
-import { inviteFirst, resendSetupEmail, resolveAccent } from '@/lib/coachInvite';
+import { inviteFirst, inviteClubWide, resendSetupEmail, resolveAccent } from '@/lib/coachInvite';
 
 type Body =
   | { kind: 'pending'; invite_id: string }
@@ -21,18 +21,26 @@ export async function POST(req: NextRequest) {
   if (body.kind === 'pending') {
     const { data: invite } = await db
       .from('invites')
-      .select('email, team_id, teams(club_id, name, clubs(name, logo_url, primary_color, slug))')
+      .select('email, role, team_id, club_id, team_ids, teams(club_id, name, clubs(name, logo_url, primary_color, slug)), clubs(name, logo_url, primary_color, slug)')
       .eq('id', body.invite_id)
-      .single<{ email: string; team_id: string; teams: { club_id: string; name: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string | null } | null } | null }>();
+      .single<{
+        email: string; role: string; team_id: string | null; club_id: string | null; team_ids: string[] | null;
+        teams: { club_id: string; name: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string | null } | null } | null;
+        clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string | null } | null;
+      }>();
     if (!invite) return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
 
     const team = invite.teams;
-    const club = team?.clubs;
-    if (!team || (auth.role !== 'app_admin' && team.club_id !== auth.clubId)) {
+    const clubId = invite.team_id ? team?.club_id : invite.club_id;
+    const club = invite.team_id ? team?.clubs : invite.clubs;
+    if (!clubId || (auth.role !== 'app_admin' && clubId !== auth.clubId)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     if (auth.role === 'coach') {
+      // Plain coaches can only resend a single-team invite for a team
+      // they themselves belong to — never a club-wide admin/multi-team one.
+      if (!invite.team_id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       const { data: membership } = await db
         .from('team_members')
         .select('id')
@@ -42,11 +50,20 @@ export async function POST(req: NextRequest) {
       if (!membership) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    await inviteFirst({
-      db, club_id: team.club_id, clubName: club?.name ?? 'Your Club', logoUrl: club?.logo_url ?? null,
-      slug: club?.slug ?? null, accent: resolveAccent(club?.primary_color), email: invite.email,
-      full_name: invite.email.split('@')[0], teamId: invite.team_id, createdBy: auth.userId,
-    });
+    if (invite.team_id) {
+      await inviteFirst({
+        db, club_id: clubId, clubName: club?.name ?? 'Your Club', logoUrl: club?.logo_url ?? null,
+        slug: club?.slug ?? null, accent: resolveAccent(club?.primary_color), email: invite.email,
+        full_name: invite.email.split('@')[0], teamId: invite.team_id, createdBy: auth.userId,
+      });
+    } else {
+      await inviteClubWide({
+        db, club_id: clubId, clubName: club?.name ?? 'Your Club', logoUrl: club?.logo_url ?? null,
+        slug: club?.slug ?? null, accent: resolveAccent(club?.primary_color), email: invite.email,
+        full_name: invite.email.split('@')[0], teamIds: invite.team_ids ?? [],
+        role: invite.role === 'org_admin' ? 'org_admin' : 'coach', createdBy: auth.userId,
+      });
+    }
     return NextResponse.json({ ok: true });
   }
 

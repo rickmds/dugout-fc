@@ -108,6 +108,23 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
     setStatusSaving(true);
     setShowStatusDrop(false);
     try {
+      // Promoting someone off the waitlist needs the "a spot opened up"
+      // email and resequencing everyone else's waitlist_position — a plain
+      // status update here silently skips both, so route this one
+      // transition through the API instead of the generic patch().
+      if (currentSub.status === 'waitlisted' && newStatus === 'approved') {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/registrations/promote-waitlist', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ submission_id: currentSub.id }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? 'Could not promote from waitlist.');
+        setCurrentSub(prev => ({ ...prev, status: 'approved', waitlist_position: null }));
+        onUpdated();
+        return;
+      }
       const update: Partial<Submission> = {
         status: newStatus,
         waitlist_position: newStatus === 'waitlisted' ? currentSub.waitlist_position : null,
@@ -118,7 +135,7 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
     } finally {
       setStatusSaving(false);
     }
-  }, [currentSub.waitlist_position, patch]);
+  }, [currentSub.id, currentSub.status, currentSub.waitlist_position, patch, onUpdated]);
 
   // ── Offline payment ──────────────────────────────────────────────────────────
 

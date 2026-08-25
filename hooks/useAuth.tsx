@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import type { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
@@ -221,6 +222,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function signOut() {
+    // Otherwise this device's push token outlives the session — on a
+    // shared/handed-down device, the next person to sign in still shares
+    // the token row with whoever signed out, and can keep receiving pushes
+    // meant for them. Best-effort: a token re-fetch requires notification
+    // permission and a live network call, neither guaranteed at sign-out
+    // time, so failures here must never block actually signing out.
+    if (state.user) {
+      try {
+        const tokenData = await Notifications.getExpoPushTokenAsync({ projectId: '3b35d5d3-278b-42c4-b66b-1a487815ce31' });
+        await supabase.from('push_tokens').delete().eq('profile_id', state.user.id).eq('token', tokenData.data);
+      } catch {}
+    }
     await supabase.auth.signOut();
   }
 

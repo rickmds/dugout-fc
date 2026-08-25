@@ -5,7 +5,7 @@ import {
   DollarSign, Plus, X, Send, Download, ChevronDown, ChevronUp,
   TrendingUp, AlertCircle, Clock, CheckCircle, CreditCard, Search,
   Banknote, Tag, MoreHorizontal, ArrowUpDown,
-  ArrowUp, ArrowDown, Zap, Calendar, Users, BarChart3, UserPlus, QrCode, Printer, Trash2,
+  ArrowUp, ArrowDown, Zap, Calendar, Users, BarChart3, UserPlus, QrCode, Printer, Trash2, RotateCcw,
 } from 'lucide-react';
 import FamiliesTab  from './_components/FamiliesTab';
 import FeeAnalytics from './_components/FeeAnalytics';
@@ -14,6 +14,10 @@ import { recordFeePayment, undoFeePayment } from '@/lib/feePayments';
 import { syncPaymentInstructions } from '@/lib/feePayee';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import PayeeTypeField from '@/components/dashboard/PayeeTypeField';
+import RefundModal, { type RefundablePayment } from '@/components/dashboard/RefundModal';
+import { formatCurrency } from '@/lib/formatCurrency';
+import { symbolForCurrency } from '@/lib/countries';
+import { zonedDateString } from '@/lib/timezone';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type PageTab     = 'ledger' | 'families' | 'analytics';
@@ -33,8 +37,13 @@ type ClubFee     = {
   payee_type: 'club' | 'coach';
   payment_instructions: string | null;
   event_title: string | null;
+  hardship_covered: boolean;
 };
-type Payment = { id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; recorder_name: string | null };
+type Payment = {
+  id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; recorder_name: string | null;
+  refunded_amount?: number | null; payment_rail?: 'card' | 'ach' | null;
+  fee_charged?: number | null; surcharge_passed_to_payer?: boolean | null; refunded_surcharge?: number | null;
+};
 type ReminderLog = { id: string; sent_at: string; reminder_type: string; player_fee_id: string };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -61,7 +70,6 @@ type SortCol = typeof SORT_COLS[number];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function daysDiff(a: string, b: string) { return Math.floor((new Date(b).getTime() - new Date(a).getTime()) / 86400000); }
-function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtMethod(m: string) { return m.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function initials(name: string) { return name.split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2); }
 
@@ -85,6 +93,7 @@ type RowMenuProps = {
   onPay?: () => void;
   onWaive?: () => void;
   onUndo?: () => void;
+  onRefund?: () => void;
   onEdit?: () => void;
   onResendReceipt?: () => void;
   onQR?: () => void;
@@ -93,7 +102,7 @@ type RowMenuProps = {
   hasPayments?: boolean;
   primary: string;
 };
-function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, onDelete, isPaid: _isPaid, hasPayments: _hasPayments, primary }: RowMenuProps) {
+function RowMenu({ onPay, onWaive, onUndo, onRefund, onEdit, onResendReceipt, onQR, onDelete, isPaid: _isPaid, hasPayments: _hasPayments, primary }: RowMenuProps) {
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -134,6 +143,7 @@ function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, onDele
           {onWaive && <>{item(onWaive, '#8B5CF6', '#F5F3FF', <CheckCircle size={13} color="#8B5CF6" />, 'Waive Fee')}</>}
           {(onEdit || onWaive) && (onUndo || onResendReceipt) && <div style={{ height: '1px', background: '#F1F5F9' }} />}
           {onUndo && item(onUndo, '#EF4444', '#FEF2F2', <X size={13} color="#EF4444" />, 'Undo Last Payment')}
+          {onRefund && item(onRefund, '#DC2626', '#FEF2F2', <RotateCcw size={13} color="#DC2626" />, 'Refund Payment')}
           {onResendReceipt && item(onResendReceipt, '#3B82F6', '#EFF6FF', <Send size={13} color="#3B82F6" />, 'Resend Receipt')}
           {onDelete && <><div style={{ height: '1px', background: '#F1F5F9' }} />{item(onDelete, '#EF4444', '#FEF2F2', <Trash2 size={13} color="#EF4444" />, 'Delete Fee')}</>}
         </div>
@@ -146,7 +156,13 @@ function RowMenu({ onPay, onWaive, onUndo, onEdit, onResendReceipt, onQR, onDele
 export default function ClubFeesPage() {
   const { club, profile } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
-  const today   = new Date().toISOString().slice(0, 10);
+  // Comparing due_date (a date-only column) against the browser/server's
+  // UTC "today" flips a fee to overdue hours before local midnight — as
+  // early as mid-afternoon for a Pacific-timezone club. Anchor "today" to
+  // the club's own timezone instead.
+  const today   = zonedDateString(new Date().toISOString(), club?.timezone ?? 'America/New_York');
+  const fmt = (n: number) => formatCurrency(n, club?.currency);
+  const currencySymbol = symbolForCurrency(club?.currency);
 
   async function authHeaders() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -256,6 +272,7 @@ export default function ClubFeesPage() {
   // ── Undo payment ─────────────────────────────────────────────────────────────
   const [showUndoConfirm, setShowUndoConfirm] = useState<{ fee: ClubFee; payment: Payment } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<ClubFee | null>(null);
+  const [refundTarget, setRefundTarget] = useState<{ payment: RefundablePayment; description: string } | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [undoSaving,      setUndoSaving]      = useState(false);
 
@@ -267,6 +284,7 @@ export default function ClubFeesPage() {
   // ── Bulk waive ────────────────────────────────────────────────────────────────
   const [showBulkWaive,   setShowBulkWaive]   = useState(false);
   const [bulkWaiveReason, setBulkWaiveReason] = useState('');
+  const [bulkWaiveHardship, setBulkWaiveHardship] = useState(false);
   const [bulkWaiving,     setBulkWaiving]     = useState(false);
 
   // ── QR code modal ─────────────────────────────────────────────────────────────
@@ -297,6 +315,7 @@ export default function ClubFeesPage() {
 
   const [showWaive,   setShowWaive]   = useState<ClubFee | null>(null);
   const [waiveReason, setWaiveReason] = useState('');
+  const [waiveHardship, setWaiveHardship] = useState(false);
   const [waiveSaving, setWaiveSaving] = useState(false);
 
   const [playerPanel,  setPlayerPanel]  = useState<string | null>(null); // player_id
@@ -340,12 +359,15 @@ export default function ClubFeesPage() {
       supabase.from('teams').select('id,name').eq('club_id', club.id).order('name'),
       supabase.from('fee_categories').select('id,name,amount,description').eq('club_id', club.id).order('name'),
     ]);
-    // Hardship fund
+    // Hardship fund — balance is contributions minus what's actually been
+    // spent (waived fees explicitly flagged hardship_covered); computed
+    // below once the fees themselves are loaded.
     const { data: clubRow } = await supabase.from('clubs').select('hardship_fund_enabled').eq('id', club.id).single<{ hardship_fund_enabled: boolean | null }>();
+    let hardshipContribSum = 0;
     if (clubRow?.hardship_fund_enabled) {
       setHardshipEnabled(true);
       const { data: contribs } = await supabase.from('hardship_contributions').select('amount').eq('club_id', club.id);
-      setHardshipBalance((contribs ?? []).reduce((s, c) => s + Number(c.amount), 0));
+      hardshipContribSum = (contribs ?? []).reduce((s, c) => s + Number(c.amount), 0);
     } else {
       setHardshipEnabled(false);
       setHardshipBalance(null);
@@ -358,7 +380,7 @@ export default function ClubFeesPage() {
 
     const { data: fd } = await supabase
       .from('player_fees')
-      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,payment_token,payee_type,payment_instructions,events(title),players(full_name,photo_url)')
+      .select('id,player_id,team_id,description,amount_due,amount_paid,discount,discount_reason,due_date,status,plan_group_id,installment_number,installment_total,last_reminded_at,payment_token,payee_type,payment_instructions,hardship_covered,events(title),players(full_name,photo_url)')
       .in('team_id', tList.map(t => t.id))
       .order('due_date', { ascending: true, nullsFirst: false })
       .returns<{
@@ -368,6 +390,7 @@ export default function ClubFeesPage() {
         installment_number: number | null; installment_total: number | null;
         last_reminded_at: string | null; payment_token: string | null;
         payee_type: 'club' | 'coach'; payment_instructions: string | null;
+        hardship_covered: boolean;
         events: { title: string } | null;
         players: { full_name: string; photo_url: string | null } | null;
       }[]>();
@@ -390,22 +413,35 @@ export default function ClubFeesPage() {
       payee_type: f.payee_type ?? 'club',
       payment_instructions: f.payment_instructions ?? null,
       event_title: f.events?.title ?? null,
+      hardship_covered: f.hardship_covered ?? false,
     }));
     setFees(mapped);
+
+    if (clubRow?.hardship_fund_enabled) {
+      const hardshipSpent = mapped
+        .filter(f => f.hardship_covered && f.status === 'waived')
+        .reduce((s, f) => s + Math.max(f.amount_due - f.discount, 0), 0);
+      setHardshipBalance(hardshipContribSum - hardshipSpent);
+    }
 
     if (mapped.length > 0) {
       const { data: pmts } = await supabase
         .from('fee_payments')
-        .select('id,player_fee_id,amount,paid_at,method,reference,profiles!fee_payments_recorded_by_fkey(full_name)')
+        .select('id,player_fee_id,amount,paid_at,method,reference,refunded_amount,payment_rail,fee_charged,surcharge_passed_to_payer,refunded_surcharge,profiles!fee_payments_recorded_by_fkey(full_name)')
         .in('player_fee_id', mapped.map(f => f.id))
         .order('paid_at', { ascending: false })
-        .returns<{ id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; profiles: { full_name: string | null } | null }[]>();
+        .returns<{ id: string; player_fee_id: string; amount: number; paid_at: string; method: string | null; reference: string | null; refunded_amount: number | null; payment_rail: 'card' | 'ach' | null; fee_charged: number | null; surcharge_passed_to_payer: boolean | null; refunded_surcharge: number | null; profiles: { full_name: string | null } | null }[]>();
       setAllPayments((pmts ?? []).map(p => ({
         id: p.id, player_fee_id: p.player_fee_id,
         amount: +p.amount, paid_at: p.paid_at,
         method: p.method ?? null,
         reference: p.reference ?? null,
         recorder_name: p.profiles?.full_name ?? null,
+        refunded_amount: p.refunded_amount ?? 0,
+        payment_rail: p.payment_rail ?? null,
+        fee_charged: p.fee_charged ?? null,
+        surcharge_passed_to_payer: p.surcharge_passed_to_payer ?? false,
+        refunded_surcharge: p.refunded_surcharge ?? 0,
       })));
     }
     setLoading(false);
@@ -471,9 +507,9 @@ export default function ClubFeesPage() {
   // Smart insights
   const insights = useMemo(() => {
     const items: { type: 'error'|'warn'|'info'; msg: string; action?: string; filter?: () => void }[] = [];
-    if (aging.d60p.length > 0) items.push({ type: 'error', msg: `${aging.d60p.length} fee${aging.d60p.length !== 1 ? 's' : ''} are 60+ days overdue — $${fmt(agSum(aging.d60p))} at risk`, action: 'View', filter: () => setStatusFilter('overdue') });
-    if (overdueFees.length > 0 && aging.d60p.length === 0) items.push({ type: 'warn', msg: `${overdueFees.length} overdue fee${overdueFees.length !== 1 ? 's' : ''} — $${fmt(overdueTotal)} outstanding`, action: 'Filter', filter: () => setStatusFilter('overdue') });
-    if (dueSoonFees.length > 0) items.push({ type: 'info', msg: `$${fmt(dueSoonTotal)} due in the next 7 days across ${dueSoonFees.length} fee${dueSoonFees.length !== 1 ? 's' : ''}` });
+    if (aging.d60p.length > 0) items.push({ type: 'error', msg: `${aging.d60p.length} fee${aging.d60p.length !== 1 ? 's' : ''} are 60+ days overdue — ${fmt(agSum(aging.d60p))} at risk`, action: 'View', filter: () => setStatusFilter('overdue') });
+    if (overdueFees.length > 0 && aging.d60p.length === 0) items.push({ type: 'warn', msg: `${overdueFees.length} overdue fee${overdueFees.length !== 1 ? 's' : ''} — ${fmt(overdueTotal)} outstanding`, action: 'Filter', filter: () => setStatusFilter('overdue') });
+    if (dueSoonFees.length > 0) items.push({ type: 'info', msg: `${fmt(dueSoonTotal)} due in the next 7 days across ${dueSoonFees.length} fee${dueSoonFees.length !== 1 ? 's' : ''}` });
     return items;
   }, [aging, overdueFees, dueSoonFees, overdueTotal, dueSoonTotal]);
 
@@ -580,10 +616,15 @@ export default function ClubFeesPage() {
     if (!showWaive || !profile) return;
     setWaiveSaving(true);
     try {
-      const { error } = await supabase.from('player_fees').update({ status: 'waived', discount_reason: waiveReason || 'Waived by admin' }).eq('id', showWaive.id);
+      const { error } = await supabase.from('player_fees').update({
+        status: 'waived',
+        discount_reason: waiveReason || 'Waived by admin',
+        hardship_covered: waiveHardship,
+      }).eq('id', showWaive.id);
       if (error) { alert(`Could not waive fee: ${error.message}`); return; }
       setShowWaive(null);
       setWaiveReason('');
+      setWaiveHardship(false);
       load();
     } finally {
       setWaiveSaving(false);
@@ -661,11 +702,12 @@ export default function ClubFeesPage() {
     setBulkWaiving(true);
     try {
       const { error } = await supabase.from('player_fees')
-        .update({ status: 'waived', discount_reason: bulkWaiveReason || 'Waived by admin' })
+        .update({ status: 'waived', discount_reason: bulkWaiveReason || 'Waived by admin', hardship_covered: bulkWaiveHardship })
         .in('id', targets.map(f => f.id));
       if (error) { alert(`Could not waive fees: ${error.message}`); return; }
       setShowBulkWaive(false);
       setBulkWaiveReason('');
+      setBulkWaiveHardship(false);
       setSelectedIds(new Set());
       load();
     } finally {
@@ -955,11 +997,11 @@ export default function ClubFeesPage() {
         {/* 2. Stat cards */}
         <div className="stat-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '14px', marginBottom: '20px' }}>
           {[
-            { label: 'Total Invoiced',  value: `$${fmt(totalInvoiced)}`,       color: '#64748B', icon: DollarSign,   iconBg: '#F1F5F9', extra: null },
-            { label: 'Collected',       value: `$${fmt(totalCollected)}`,      color: '#22C55E', icon: CheckCircle,  iconBg: '#F0FDF4', extra: <Sparkline data={weeklySparkline} color="#22C55E" /> },
-            { label: 'Outstanding',     value: `$${fmt(totalOutstanding)}`,    color: '#F59E0B', icon: Clock,        iconBg: '#FFFBEB', extra: null },
-            { label: 'Overdue',         value: `$${fmt(overdueTotal)}`,        color: '#EF4444', icon: AlertCircle,  iconBg: '#FEF2F2', extra: null },
-            { label: 'Due This Month',  value: `$${fmt(dueThisMonthTotal)}`,   color: '#8B5CF6', icon: Calendar,     iconBg: '#F5F3FF', extra: null },
+            { label: 'Total Invoiced',  value: `${fmt(totalInvoiced)}`,       color: '#64748B', icon: DollarSign,   iconBg: '#F1F5F9', extra: null },
+            { label: 'Collected',       value: `${fmt(totalCollected)}`,      color: '#22C55E', icon: CheckCircle,  iconBg: '#F0FDF4', extra: <Sparkline data={weeklySparkline} color="#22C55E" /> },
+            { label: 'Outstanding',     value: `${fmt(totalOutstanding)}`,    color: '#F59E0B', icon: Clock,        iconBg: '#FFFBEB', extra: null },
+            { label: 'Overdue',         value: `${fmt(overdueTotal)}`,        color: '#EF4444', icon: AlertCircle,  iconBg: '#FEF2F2', extra: null },
+            { label: 'Due This Month',  value: `${fmt(dueThisMonthTotal)}`,   color: '#8B5CF6', icon: Calendar,     iconBg: '#F5F3FF', extra: null },
           ].map(({ label, value, color, icon: Icon, iconBg, extra }) => (
             <div key={label} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '18px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: extra ? '10px' : '0' }}>
@@ -1048,7 +1090,7 @@ export default function ClubFeesPage() {
                 <span style={{ fontSize: '10.5px', fontWeight: '700', color, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
                 <span style={{ fontSize: '10px', color: '#94A3B8' }}>· {sublabel}</span>
               </div>
-              <div style={{ fontSize: '21px', fontWeight: '800', color, letterSpacing: '-0.5px', lineHeight: 1 }}>{loading ? '—' : `$${fmt(agSum(arr))}`}</div>
+              <div style={{ fontSize: '21px', fontWeight: '800', color, letterSpacing: '-0.5px', lineHeight: 1 }}>{loading ? '—' : `${fmt(agSum(arr))}`}</div>
               <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '5px' }}>{arr.length} fee{arr.length !== 1 ? 's' : ''}</div>
             </div>
           ))}
@@ -1120,7 +1162,7 @@ export default function ClubFeesPage() {
                       ) : (
                         <>
                           <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151', flex: 2 }}>{cat.name}</span>
-                          <span style={{ fontSize: '13px', fontWeight: '700', color: primary }}>${cat.amount.toFixed(2)}</span>
+                          <span style={{ fontSize: '13px', fontWeight: '700', color: primary }}>{fmt(cat.amount)}</span>
                           {cat.description && <span style={{ fontSize: '12px', color: '#94A3B8', flex: 3 }}>{cat.description}</span>}
                           <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
                             <button onClick={() => { setEditCatId(cat.id); setCatForm({ name: cat.name, amount: String(cat.amount), description: cat.description ?? '' }); }} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '11.5px', fontWeight: '600', cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Edit</button>
@@ -1283,7 +1325,7 @@ export default function ClubFeesPage() {
                   </div>
                   <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#374151' }}>${fmt(fee.amount_due - fee.discount)}</div>
                   <div style={{ fontSize: '12.5px', color: fee.amount_paid > 0 ? '#22C55E' : '#CBD5E1', fontWeight: fee.amount_paid > 0 ? '600' : '400' }}>${fmt(fee.amount_paid)}</div>
-                  <div style={{ fontSize: '12.5px', fontWeight: '700', color: owed > 0 ? cfg.color : '#CBD5E1' }}>{owed > 0 ? `$${fmt(owed)}` : '—'}</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: '700', color: owed > 0 ? cfg.color : '#CBD5E1' }}>{owed > 0 ? `${fmt(owed)}` : '—'}</div>
                   <div>
                     <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
                     {(fee.status === 'paid' || fee.status === 'partial') && (() => {
@@ -1312,13 +1354,20 @@ export default function ClubFeesPage() {
                     {(() => {
                       const feePayments = allPayments.filter(p => p.player_fee_id === fee.id);
                       const latestPmt   = feePayments[0] ?? null;
+                      const latestHasRefund = !!latestPmt && (latestPmt.refunded_amount ?? 0) > 0.005;
+                      const canRefund   = !!latestPmt && (latestPmt.amount - (latestPmt.refunded_amount ?? 0)) > 0.005;
                       return (
                         <RowMenu
                           primary={primary}
                           onPay={canPay ? () => openPayment(fee) : undefined}
                           onWaive={canPay ? () => setShowWaive(fee) : undefined}
                           onEdit={() => { setShowEditFee(fee); setEditFeeForm({ description: fee.description, amount_due: String(fee.amount_due), due_date: fee.due_date ?? '' }); }}
-                          onUndo={latestPmt ? () => setShowUndoConfirm({ fee, payment: latestPmt }) : undefined}
+                          // Undo fully deletes the payment row and reverses its whole original
+                          // amount — unsafe once part of it has already been refunded through
+                          // Stripe (that money is already gone and already backed out of the
+                          // ledger once). Once any refund exists, Refund is the only path.
+                          onUndo={latestPmt && !latestHasRefund ? () => setShowUndoConfirm({ fee, payment: latestPmt }) : undefined}
+                          onRefund={canRefund ? () => setRefundTarget({ payment: latestPmt!, description: fee.description }) : undefined}
                           onResendReceipt={fee.status === 'paid' ? () => handleResendReceipt(fee) : undefined}
                           onQR={fee.payment_token ? () => openQr(fee) : undefined}
                           onDelete={() => setShowDeleteConfirm(fee)}
@@ -1353,7 +1402,7 @@ export default function ClubFeesPage() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{panelName}</div>
                 <div style={{ fontSize: '12px', color: panelOwed > 0 ? '#EF4444' : '#22C55E', fontWeight: '600', marginTop: '2px' }}>
-                  {panelOwed > 0 ? `$${fmt(panelOwed)} outstanding` : 'All fees paid ✓'}
+                  {panelOwed > 0 ? `${fmt(panelOwed)} outstanding` : 'All fees paid ✓'}
                 </div>
               </div>
               <button onClick={() => setPlayerPanel(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
@@ -1385,7 +1434,7 @@ export default function ClubFeesPage() {
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color, marginBottom: '6px' }}>{cfg.label}</span>
-                        <div style={{ fontSize: '15px', fontWeight: '800', color: owed > 0 ? cfg.color : '#22C55E' }}>{owed > 0 ? `$${fmt(owed)} owed` : 'Paid'}</div>
+                        <div style={{ fontSize: '15px', fontWeight: '800', color: owed > 0 ? cfg.color : '#22C55E' }}>{owed > 0 ? `${fmt(owed)} owed` : 'Paid'}</div>
                       </div>
                     </div>
                     {feePayments.length > 0 && (
@@ -1485,7 +1534,7 @@ export default function ClubFeesPage() {
               {/* Amount + Due date */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '6px' }}>Amount ($)</label>
+                  <label style={{ fontSize: '12px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '6px' }}>Amount ({currencySymbol})</label>
                   <input type="number" min="0" step="0.01" value={playerAssignForm.amount_due} onChange={e => setPlayerAssignForm(f => ({ ...f, amount_due: e.target.value }))}
                     placeholder="0.00"
                     style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
@@ -1538,7 +1587,7 @@ export default function ClubFeesPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={lbl}>Amount ($) *</label>
+                  <label style={lbl}>Amount ({currencySymbol}) *</label>
                   <input type="number" value={indivForm.amount_due} onChange={e => setIndivForm(f => ({ ...f, amount_due: e.target.value }))} placeholder="0.00" style={inp} />
                 </div>
                 <div>
@@ -1548,7 +1597,7 @@ export default function ClubFeesPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={lbl}>Discount ($)</label>
+                  <label style={lbl}>Discount ({currencySymbol})</label>
                   <input type="number" value={indivForm.discount_amount} onChange={e => setIndivForm(f => ({ ...f, discount_amount: e.target.value }))} placeholder="0.00" style={inp} />
                 </div>
                 <div>
@@ -1667,7 +1716,7 @@ export default function ClubFeesPage() {
                               style={{ width: '40px', height: '40px', borderRadius: '50%', border: `2px solid ${mc.color}20`, background: mc.bg, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s', fontSize: '16px' }}
                               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = mc.color; (e.currentTarget as HTMLElement).style.transform = 'scale(1.1)'; }}
                               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = mc.bg; (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; }}
-                              title={`Record $${fmt(owed)} ${cashMethod}`}
+                              title={`Record ${fmt(owed)} ${cashMethod}`}
                             >
                               <CheckCircle size={20} color={mc.color} />
                             </button>
@@ -1741,7 +1790,7 @@ export default function ClubFeesPage() {
                 <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Waive Fee</div>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>{showWaive.player_name} · {showWaive.description}</div>
               </div>
-              <button onClick={() => { setShowWaive(null); setWaiveReason(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+              <button onClick={() => { setShowWaive(null); setWaiveReason(''); setWaiveHardship(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
             </div>
             <div style={{ padding: '20px 24px' }}>
               <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
@@ -1750,9 +1799,16 @@ export default function ClubFeesPage() {
               </div>
               <label style={lbl}>Reason (optional)</label>
               <input value={waiveReason} onChange={e => setWaiveReason(e.target.value)} placeholder="e.g. Scholarship, Hardship, Admin error…" style={inp} autoFocus />
+              {hardshipEnabled && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={waiveHardship} onChange={e => setWaiveHardship(e.target.checked)} style={{ width: '15px', height: '15px' }} />
+                  Cover with hardship fund
+                  {hardshipBalance !== null && <span style={{ color: '#94A3B8' }}>(${fmt(hardshipBalance)} available)</span>}
+                </label>
+              )}
             </div>
             <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => { setShowWaive(null); setWaiveReason(''); }} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={() => { setShowWaive(null); setWaiveReason(''); setWaiveHardship(false); }} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               <button onClick={handleWaive} disabled={waiveSaving} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: '#8B5CF6', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: waiveSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                 {waiveSaving ? 'Waiving…' : 'Waive Fee'}
               </button>
@@ -1785,7 +1841,7 @@ export default function ClubFeesPage() {
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <label style={lbl}>Amount received ($) *</label>
+                <label style={lbl}>Amount received ({currencySymbol}) *</label>
                 <input type="number" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" max={Math.max(showPayment.amount_due - showPayment.discount - showPayment.amount_paid, 0)} min="0.01" step="0.01" style={inp} autoFocus />
               </div>
               <div>
@@ -1841,7 +1897,7 @@ export default function ClubFeesPage() {
                 <span style={lbl}>Fee type (optional)</span>
                 <select value={aForm.category_id} onChange={e => { const cat = categories.find(c => c.id === e.target.value); setAForm(f => ({ ...f, category_id: e.target.value, description: cat?.name ?? f.description, amount_due: cat ? String(cat.amount) : f.amount_due })); }} style={inp}>
                   <option value="">Custom</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name} — ${c.amount}</option>)}
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name} — {fmt(c.amount)}</option>)}
                 </select>
               </div>
               <div>
@@ -1849,7 +1905,7 @@ export default function ClubFeesPage() {
                 <input value={aForm.description} onChange={e => setAForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Season Registration 2026-27" style={inp} />
               </div>
               <div>
-                <span style={lbl}>Total amount per player ($) *</span>
+                <span style={lbl}>Total amount per player ({currencySymbol}) *</span>
                 <input type="number" value={aForm.amount_due} onChange={e => setAForm(f => ({ ...f, amount_due: e.target.value }))} placeholder="0.00" style={inp} />
               </div>
 
@@ -1882,7 +1938,7 @@ export default function ClubFeesPage() {
                           {instPrev.map((inst, i) => (
                             <div key={inst.num} style={{ display: 'grid', gridTemplateColumns: '110px 80px 1fr', gap: '10px', alignItems: 'center', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '8px 12px' }}>
                               <span style={{ fontSize: '12px', fontWeight: '700', color: '#374151' }}>Instalment {inst.num}</span>
-                              <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>${inst.amount.toFixed(2)}</span>
+                              <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>{fmt(inst.amount)}</span>
                               <input type="date" value={aForm.plan_dates[i] ?? ''} onChange={e => setAForm(f => { const d = [...f.plan_dates]; d[i] = e.target.value; return { ...f, plan_dates: d }; })} style={{ ...inp, padding: '5px 8px', fontSize: '12px' }} />
                             </div>
                           ))}
@@ -1900,7 +1956,7 @@ export default function ClubFeesPage() {
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <span style={lbl}>Discount per player ($)</span>
+                  <span style={lbl}>Discount per player ({currencySymbol})</span>
                   <input type="number" value={aForm.discount_amount} onChange={e => setAForm(f => ({ ...f, discount_amount: e.target.value }))} placeholder="0.00" style={inp} />
                 </div>
                 <div>
@@ -2018,7 +2074,7 @@ export default function ClubFeesPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={lbl}>Amount due ($)</label>
+                  <label style={lbl}>Amount due ({currencySymbol})</label>
                   <input type="number" value={editFeeForm.amount_due} onChange={e => setEditFeeForm(f => ({ ...f, amount_due: e.target.value }))} placeholder="0.00" style={inp} />
                 </div>
                 <div>
@@ -2049,7 +2105,7 @@ export default function ClubFeesPage() {
                   <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Bulk Waive Fees</div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>{waivable.length} fee{waivable.length !== 1 ? 's' : ''} · ${fmt(total)} total</div>
                 </div>
-                <button onClick={() => setShowBulkWaive(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+                <button onClick={() => { setShowBulkWaive(false); setBulkWaiveHardship(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
               </div>
               <div style={{ padding: '20px 24px' }}>
                 <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
@@ -2059,9 +2115,16 @@ export default function ClubFeesPage() {
                 </div>
                 <label style={lbl}>Reason (optional)</label>
                 <input value={bulkWaiveReason} onChange={e => setBulkWaiveReason(e.target.value)} placeholder="e.g. Season end, Team dissolved…" style={inp} autoFocus />
+                {hardshipEnabled && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={bulkWaiveHardship} onChange={e => setBulkWaiveHardship(e.target.checked)} style={{ width: '15px', height: '15px' }} />
+                    Cover with hardship fund
+                    {hardshipBalance !== null && <span style={{ color: '#94A3B8' }}>(${fmt(hardshipBalance)} available)</span>}
+                  </label>
+                )}
               </div>
               <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowBulkWaive(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={() => { setShowBulkWaive(false); setBulkWaiveHardship(false); }} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
                 <button onClick={handleBulkWaive} disabled={bulkWaiving} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: '#8B5CF6', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: bulkWaiving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                   {bulkWaiving ? 'Waiving…' : `Waive ${waivable.length} fee${waivable.length !== 1 ? 's' : ''}`}
                 </button>
@@ -2171,6 +2234,17 @@ export default function ClubFeesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Refund */}
+      {refundTarget && (
+        <RefundModal
+          payment={refundTarget.payment}
+          feeDescription={refundTarget.description}
+          currency={club?.currency ?? undefined}
+          onClose={() => setRefundTarget(null)}
+          onDone={() => { setRefundTarget(null); load(); }}
+        />
       )}
     </div>
   );

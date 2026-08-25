@@ -12,6 +12,7 @@ const TEAM_PALETTE = ['#6366F1', '#F59E0B', '#10B981', '#EC4899', '#14B8A6', '#F
 import { supabase } from '@/lib/supabase';
 import { sendEventPush } from '@/lib/pushEvent';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { zonedTimeToUtc } from '@/lib/timezone';
 import AIScheduleImport from '@/components/dashboard/AIScheduleImport';
 import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
@@ -128,13 +129,13 @@ function parseGameTitle(title: string): { homeAway: 'home' | 'away'; opponent: s
   return { homeAway: 'home', opponent: title };
 }
 
-function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null): number {
+function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null, timezone: string): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
   // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
   // appending our own ":00", otherwise this builds an invalid date string
   // and every bucket comparison below silently falls through to 48.
-  const eventAt = new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`);
+  const eventAt = zonedTimeToUtc(eventDate, `${eventTime.slice(0, 5)}:00`, timezone);
   const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
   if (diffHours <= 0) return 0;
   if (diffHours <= 12) return 12;
@@ -409,7 +410,7 @@ export default function SchedulePage() {
       notes: ev.notes ?? '',
       coach_notes: ev.coach_notes ?? '',
       require_rsvp: ev.require_rsvp ?? true,
-      rsvp_lock_hours: computeLockHours(ev.rsvp_lock_at, ev.event_date, ev.event_time),
+      rsvp_lock_hours: computeLockHours(ev.rsvp_lock_at, ev.event_date, ev.event_time, club?.timezone ?? 'America/New_York'),
       push_notify: true,
     });
     setEditId(ev.id);
@@ -520,7 +521,11 @@ export default function SchedulePage() {
     function computeLockAt(): string | null {
       if (!form.require_rsvp || !eventTime) return null;
       const t = eventTime.substring(0, 5);
-      const dt = new Date(`${eventDate}T${t}:00`);
+      // Anchored to the club's own timezone, not the browser's — otherwise
+      // an org_admin creating an event from a different timezone than
+      // their club saves a deadline that's off by however many hours
+      // separate the two.
+      const dt = zonedTimeToUtc(eventDate, `${t}:00`, club?.timezone ?? 'America/New_York');
       dt.setHours(dt.getHours() - form.rsvp_lock_hours);
       return dt.toISOString();
     }

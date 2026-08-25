@@ -17,10 +17,11 @@ Your job:
 6. A player row may list a second guardian email (e.g. a "Secondary Email" column, or two email addresses in one cell/row) — capture it separately as secondary_parent_email, never merge two emails into one field.
 7. Date of birth: normalize to YYYY-MM-DD if a full date is present; null if not present or ambiguous.
 8. Parent phone: extract digits as given (don't reformat); null if not present.
+9. Ignore uniform/shirt/jersey size, and any other column not listed above — never extract it, never treat it as a data anomaly, and never mention it in an uncertainty_reason or warning.
 
 Normalize positions to: GK, CB, LB, RB, CM, DM, AM, LM, RM, LW, RW, ST. Use closest match or null.
 Normalize coach roles to: "Head Coach", "Assistant Coach", or "Manager".
-Flag rows as uncertain if: team is ambiguous, name is missing, or role is unclear.
+Flag rows as uncertain ONLY if: team is ambiguous, name is missing, or role is unclear. Do not flag a row uncertain for any other reason (e.g. an unusual-looking value in a field you were told to ignore).
 
 Return ONLY valid JSON — no explanation, no markdown:
 {

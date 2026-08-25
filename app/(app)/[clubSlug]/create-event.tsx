@@ -23,6 +23,7 @@ import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
+import { zonedTimeToUtc } from '../../../lib/timezone';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -101,13 +102,13 @@ function fmtDuration(mins: number): string {
 
 // Same bucketing as edit-event's computeLockHours — reconstructs which
 // RSVP_LOCK_OPTIONS chip a saved rsvp_lock_at corresponds to.
-function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null): number {
+function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null, timezone: string): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
   // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
   // appending our own ":00", otherwise this builds an invalid date string
   // and every bucket comparison below silently falls through to 48.
-  const eventAt = new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`);
+  const eventAt = zonedTimeToUtc(eventDate, `${eventTime.slice(0, 5)}:00`, timezone);
   const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
   if (diffHours <= 0)  return 0;
   if (diffHours <= 12) return 12;
@@ -400,7 +401,7 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function CreateEventScreen() {
-  const { primaryColor, secondaryColor, onSecondary, rgba } = useClub();
+  const { primaryColor, secondaryColor, onSecondary, rgba, timezone } = useClub();
   const router = useRouter();
   const { clubSlug, duplicateFrom } = useLocalSearchParams<{ clubSlug: string; duplicateFrom?: string }>();
   const { team } = useTeam();
@@ -527,7 +528,7 @@ export default function CreateEventScreen() {
       setPlayerNotes(data.notes ?? '');
       setCoachNotes(data.coach_notes ?? '');
       setRequireRsvp(data.require_rsvp ?? true);
-      setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time));
+      setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time, timezone));
       setLoadingDuplicate(false);
     })();
   }, [duplicateFrom]);
@@ -547,7 +548,10 @@ export default function CreateEventScreen() {
 
     function computeLockAt(dateStr: string): string | null {
       if (!requireRsvp || !eventTime) return null;
-      const dt = new Date(`${dateStr}T${eventTime}:00`);
+      // Anchored to the club's own timezone, not this device's — otherwise
+      // a coach traveling in a different timezone than their club saves a
+      // deadline that's off by however many hours separate the two.
+      const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
       dt.setHours(dt.getHours() - rsvpLockHours); // 0 = lock at event start
       return dt.toISOString();
     }

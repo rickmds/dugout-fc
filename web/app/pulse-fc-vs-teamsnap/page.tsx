@@ -63,10 +63,10 @@ const rows: ComparisonRow[] = [
     teamsnapNote: 'Basic lineup assignment — no AI suggestions, no soccer formations',
   },
   {
-    category: 'AI features',
-    feature: 'AI substitution planner',
+    category: 'Operations',
+    feature: 'Equal playing time calculator',
     pulse: true,
-    pulseNote: 'Automated rotation plan for equal play time, formatted for the sideline',
+    pulseNote: 'Automatic rotation plan for equal play time — pure maths, works instantly offline, no AI call needed',
     teamsnap: false,
     teamsnapNote: 'Not available',
   },
@@ -139,14 +139,14 @@ const rows: ComparisonRow[] = [
     feature: 'Attendance tracking',
     pulse: true,
     pulseNote: 'Per-player attendance history — parents notified instantly if child marked absent',
-    teamsnap: true,
+    teamsnap: 'partial',
     teamsnapNote: 'Attendance tracking available — no parent absence notifications',
   },
   {
     category: 'Operations',
     feature: 'Parent mobile app',
-    pulse: true,
-    pulseNote: 'iOS app — clean, no ads, no clutter',
+    pulse: 'partial',
+    pulseNote: 'iOS today, clean with no ads — Android in progress',
     teamsnap: true,
     teamsnapNote: 'iOS and Android available',
   },
@@ -256,7 +256,7 @@ export default async function PulseVsTeamsnapPage() {
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 24px 64px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           {[
-            { label: 'AI features', pulse: 4, teamsnap: 0 },
+            { label: 'AI features', pulse: 3, teamsnap: 0 },
             { label: 'Soccer-specific', pulse: '✓', teamsnap: '✗' },
             { label: 'Starting price', pulse: 'Free', teamsnap: '$15.99/mo' },
           ].map(({ label, pulse, teamsnap }) => (

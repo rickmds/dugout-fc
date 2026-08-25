@@ -5,11 +5,6 @@ function esc(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 }
 
-// All current clubs are in the US Eastern timezone (no per-club timezone
-// column exists yet) — event_time is the wall-clock time a coach typed in,
-// meant as local time there, not UTC.
-const CLUB_TIME_ZONE = 'America/New_York';
-
 // A bare "DTSTART:20260901T180000" (no Z, no TZID) is technically "floating"
 // time per RFC 5545 and should render as 6pm in the VIEWER's own timezone —
 // but Google Calendar's URL-subscription reader (and some other clients)
@@ -28,11 +23,11 @@ function offsetMinutes(date: Date, timeZone: string): number {
   return (asUtc - date.getTime()) / 60000;
 }
 
-function localToUtcIcs(dateStr: string, timeStr: string, addMins = 0): string {
+function localToUtcIcs(dateStr: string, timeStr: string, timeZone: string, addMins = 0): string {
   const [year, month, day] = dateStr.split('-').map(Number);
   const [hour, minute] = timeStr.split(':').map(Number);
   const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  const actualUtcMs = utcGuess.getTime() - offsetMinutes(utcGuess, CLUB_TIME_ZONE) * 60000 + addMins * 60000;
+  const actualUtcMs = utcGuess.getTime() - offsetMinutes(utcGuess, timeZone) * 60000 + addMins * 60000;
   return new Date(actualUtcMs).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 }
 
@@ -46,11 +41,13 @@ export async function GET(
 
   const { data: team } = await supabase
     .from('teams')
-    .select('id, name, age_group, season')
+    .select('id, name, age_group, season, clubs(timezone)')
     .eq('id', teamId)
     .single();
 
   if (!team) return new NextResponse('Not found', { status: 404 });
+
+  const timeZone = (team.clubs as any)?.timezone ?? 'America/New_York';
 
   const { data: events } = await supabase
     .from('events')
@@ -77,8 +74,8 @@ export async function GET(
     const hasTime = Boolean(ev.event_time);
     const durMins = ev.duration_minutes ?? (ev.type === 'game' ? 90 : 60);
 
-    const dtStart = hasTime ? localToUtcIcs(ev.event_date, ev.event_time!) : d;
-    const dtEnd = hasTime ? localToUtcIcs(ev.event_date, ev.event_time!, durMins) : d;
+    const dtStart = hasTime ? localToUtcIcs(ev.event_date, ev.event_time!, timeZone) : d;
+    const dtEnd = hasTime ? localToUtcIcs(ev.event_date, ev.event_time!, timeZone, durMins) : d;
 
     const loc = ev.address || ev.location || '';
     const typeLabel = ev.type === 'game' ? 'Game' : ev.type === 'training' ? 'Training' : 'Event';

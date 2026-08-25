@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { STRIPE_FIXED_FEE_MINOR } from '@/lib/countries';
+import { calculateFee, LEGACY_BLENDED_FEE_MODEL, type PaymentRail } from '@/lib/feeCalculator';
 
 type FeeForCheckout = {
   id: string; payment_token: string; description: string; amount_due: number; amount_paid: number; discount: number; status: string;
-  payee_type: 'club' | 'coach';
+  payee_type: 'club' | 'coach'; fee_model_version: string;
   players: { full_name: string | null; profile_id: string | null } | null;
   teams: {
     id: string; name: string;
     clubs: {
       id: string; name: string; slug: string | null; primary_color: string | null; stripe_fee_handling: string | null;
       stripe_surcharge_pct: number | null; allow_partial_payments: boolean | null;
-      stripe_connect_account_id: string | null; stripe_connect_onboarded: boolean | null;
+      stripe_connect_account_id: string | null; stripe_connect_onboarded: boolean | null; currency: string | null;
     } | null;
   } | null;
 };
@@ -21,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ configured: false, error: 'Payments not configured for this club yet.' }, { status: 200 });
   }
 
-  const { payment_token, amount: requestedAmount, donation_amount: donationRaw } = await req.json();
+  const { payment_token, amount: requestedAmount, donation_amount: donationRaw, rail: requestedRailRaw } = await req.json();
   if (!payment_token) return NextResponse.json({ error: 'payment_token required' }, { status: 400 });
 
   const supabase = supabaseAdmin();
@@ -29,9 +31,9 @@ export async function POST(req: NextRequest) {
   const { data: fee, error: feeErr } = await supabase
     .from('player_fees')
     .select(`
-      id, payment_token, description, amount_due, amount_paid, discount, status, payee_type,
+      id, payment_token, description, amount_due, amount_paid, discount, status, payee_type, fee_model_version,
       players!inner(full_name, profile_id),
-      teams!inner(id, name, clubs!inner(id, name, slug, primary_color, stripe_fee_handling, stripe_surcharge_pct, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded))
+      teams!inner(id, name, clubs!inner(id, name, slug, primary_color, stripe_fee_handling, stripe_surcharge_pct, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, currency))
     `)
     .eq('payment_token', payment_token)
     .single<FeeForCheckout>();
@@ -60,15 +62,79 @@ export async function POST(req: NextRequest) {
 
   const donationAmount = donationRaw && parseFloat(donationRaw) > 0 ? parseFloat(donationRaw) : 0;
 
-  const stripeRate   = (club?.stripe_surcharge_pct ?? 3.0) / 100;
-  const platformRate = parseFloat(process.env.STRIPE_PLATFORM_FEE_PCT ?? '0') / 100;
-  const feeBase      = payAmount + donationAmount;
-  const chargeAmount = club?.stripe_fee_handling === 'pass_on'
-    ? Math.round(((feeBase + 0.30) / (1 - stripeRate - platformRate)) * 100)
-    : Math.round(feeBase * 100);
+  const currency      = (club?.currency ?? 'USD').toLowerCase();
+  const fixedFeeMinor = STRIPE_FIXED_FEE_MINOR[club?.currency ?? 'USD'] ?? STRIPE_FIXED_FEE_MINOR.USD;
+  const feeBase       = payAmount + donationAmount;
+  const feeBaseMinor  = Math.round(feeBase * 100);
+
+  // A fee keeps whatever model it was created under (see
+  // supabase/migrations/20260817000001_rail_based_fee_model.sql) — this is
+  // what stops a global rate change from silently repricing an instalment
+  // plan a family already agreed to.
+  const isLegacyFeeModel = fee.fee_model_version === LEGACY_BLENDED_FEE_MODEL;
+
+  let chargeAmount: number;
+  let paymentMethodTypes: string[] | null = null; // null => let Stripe auto-detect (legacy only)
+  let rail: PaymentRail | null = null;
+  let feeChargedMinor = 0;
+  let feeChargedDollars = 0;
+  let platformCostDollars = 0;
+  let legacyApplicationFeeRate = 0;
+
+  // Card surcharges go through Stripe's native surcharge validation
+  // (POST-preview API), which needs a payment method actually attached to
+  // tell us the card's funding type (credit vs debit — debit can never be
+  // surcharged) and the technically-permitted maximum before we know the
+  // real total. So for a card + pass_on transaction we create the
+  // PaymentIntent at the base amount only; /api/stripe/check-surcharge
+  // fills in the real surcharge once a card is entered, right before
+  // confirmation. ACH has no such rule and stays a single step.
+  let surchargePending = false;
+
+  if (isLegacyFeeModel) {
+    const stripeRate   = (club?.stripe_surcharge_pct ?? 3.0) / 100;
+    const platformRate = parseFloat(process.env.STRIPE_PLATFORM_FEE_PCT ?? '0') / 100;
+    legacyApplicationFeeRate = platformRate;
+    chargeAmount = club?.stripe_fee_handling === 'pass_on'
+      ? Math.round((feeBaseMinor + fixedFeeMinor) / (1 - stripeRate - platformRate))
+      : feeBaseMinor;
+  } else {
+    // ACH (us_bank_account) is USD/US-bank-account only in Stripe — fall
+    // back to card for any club running in another currency, regardless
+    // of what the client requested.
+    const requestedRail: PaymentRail = requestedRailRaw === 'card' ? 'card' : 'ach';
+    rail = requestedRail === 'ach' && currency === 'usd' ? 'ach' : 'card';
+
+    const breakdown      = calculateFee(feeBase, rail);
+    feeChargedDollars    = breakdown.feeCharged;
+    platformCostDollars  = breakdown.platformCost;
+    feeChargedMinor      = Math.round(feeChargedDollars * 100);
+
+    surchargePending = rail === 'card' && club?.stripe_fee_handling === 'pass_on';
+    chargeAmount = surchargePending
+      ? feeBaseMinor // surcharge not known yet — filled in by check-surcharge before confirm
+      : (club?.stripe_fee_handling === 'pass_on' ? feeBaseMinor + feeChargedMinor : feeBaseMinor);
+
+    // Lock the PaymentIntent to the rail the fee was priced for — letting
+    // Stripe's automatic_payment_methods offer an alternative here would
+    // mean a payer could complete the charge through a rail with a
+    // different real cost than what we just calculated and (for pass_on
+    // clubs) charged them for.
+    paymentMethodTypes = [rail === 'ach' ? 'us_bank_account' : 'card'];
+  }
 
   const connectAccountId     = club?.stripe_connect_onboarded ? (club?.stripe_connect_account_id ?? null) : null;
-  const applicationFeeAmount = connectAccountId ? Math.round(chargeAmount * platformRate) : 0;
+  const applicationFeeAmount = connectAccountId
+    ? (isLegacyFeeModel ? Math.round(chargeAmount * legacyApplicationFeeRate) : (surchargePending ? 0 : feeChargedMinor))
+    : 0;
+
+  // Whether the payer actually paid the processing fee as a surcharge on
+  // top of the base amount (pass_on) vs it being absorbed by the club —
+  // only the former needs any surcharge returned on a later refund. For
+  // the pending-surcharge case this is only a placeholder — the real
+  // answer (which depends on whether the card turns out to be debit or
+  // credit) gets written by check-surcharge before confirmation.
+  const surchargePassedToPayer = !isLegacyFeeModel && club?.stripe_fee_handling === 'pass_on' && !surchargePending;
 
   // Get or create Stripe customer for this parent
   const parentProfileId = fee.players?.profile_id ?? null;
@@ -99,16 +165,31 @@ export async function POST(req: NextRequest) {
   }
 
   const piBody = new URLSearchParams({
-    amount:                              String(chargeAmount),
-    currency:                            'usd',
-    'automatic_payment_methods[enabled]': 'true',
-    'metadata[player_fee_id]':           fee.id,
-    'metadata[payment_token]':           payment_token,
-    'metadata[pay_amount]':              String(payAmount),
-    'metadata[club_slug]':               club?.slug ?? '',
-    'metadata[club_id]':                 fee.teams?.clubs?.id ?? '',
-    'metadata[donation_amount]':         String(donationAmount),
+    amount:                      String(chargeAmount),
+    currency,
+    'metadata[player_fee_id]':   fee.id,
+    'metadata[payment_token]':   payment_token,
+    'metadata[pay_amount]':      String(payAmount),
+    'metadata[club_slug]':       club?.slug ?? '',
+    'metadata[club_id]':         fee.teams?.clubs?.id ?? '',
+    'metadata[donation_amount]': String(donationAmount),
   });
+
+  if (paymentMethodTypes) {
+    paymentMethodTypes.forEach((t, i) => piBody.set(`payment_method_types[${i}]`, t));
+  } else {
+    piBody.set('automatic_payment_methods[enabled]', 'true');
+  }
+  if (rail) {
+    piBody.set('metadata[payment_rail]',   rail);
+    piBody.set('metadata[fee_charged]',    String(feeChargedDollars));
+    piBody.set('metadata[platform_cost]',  String(platformCostDollars));
+    piBody.set('metadata[surcharge_passed_to_payer]', String(surchargePassedToPayer));
+    // Placeholder for the pending-surcharge case — check-surcharge
+    // overwrites this with the real number (Pulse's normal fee,
+    // regardless of what the payer ends up being charged) before confirm.
+    piBody.set('metadata[platform_fee_collected]', String(surchargePending ? 0 : applicationFeeAmount / 100));
+  }
 
   if (stripeCustomerId) piBody.set('customer', stripeCustomerId);
   if (connectAccountId) {
@@ -121,7 +202,7 @@ export async function POST(req: NextRequest) {
     headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: piBody,
   });
-  let pi: { client_secret?: string; error?: { message?: string } } | null;
+  let pi: { id?: string; client_secret?: string; error?: { message?: string } } | null;
   try { pi = await piRes.json(); } catch { pi = null; }
 
   if (!piRes.ok || !pi?.client_secret) {
@@ -130,10 +211,17 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    client_secret:   pi.client_secret,
-    publishable_key: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '',
-    charge_amount:   chargeAmount / 100,
-    pay_amount:      payAmount,
-    donation_amount: donationAmount,
+    payment_intent_id: pi.id,
+    client_secret:      pi.client_secret,
+    publishable_key:    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '',
+    charge_amount:       chargeAmount / 100,
+    pay_amount:          payAmount,
+    donation_amount:     donationAmount,
+    rail,
+    fee_charged: rail ? feeChargedDollars : null,
+    // true only for card + pass_on: the surcharge shown so far is an
+    // estimate — /api/stripe/check-surcharge determines and discloses the
+    // real, card-network-validated amount once a card is entered.
+    surcharge_pending: surchargePending,
   });
 }

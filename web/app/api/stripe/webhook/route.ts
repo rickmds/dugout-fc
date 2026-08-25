@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { Resend } from 'resend';
+import { resolveAccent, contrastText, esc } from '@/lib/emailHelpers';
+import { applyRefund, splitRefundAmount } from '@/lib/refunds';
+import { sendExpoPush } from '@/lib/expoPush';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function POST(req: NextRequest) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -23,16 +25,26 @@ export async function POST(req: NextRequest) {
     const { player_fee_id, pay_amount, club_slug } = session.metadata ?? {};
     if (player_fee_id) {
       const amountPaid = pay_amount ? parseFloat(pay_amount) : session.amount_total / 100;
-      await handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, club_slug, reference: session.id, payment_intent_id: session.payment_intent });
+      await handlePaymentComplete({
+        player_fee_id, pay_amount: amountPaid, club_slug, reference: session.id, payment_intent_id: session.payment_intent,
+        payment_rail: null, fee_charged: null, platform_cost: null, surcharge_passed_to_payer: false, platform_fee_collected: null,
+      });
     }
   }
 
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object;
-    const { player_fee_id, pay_amount, club_slug, club_id, donation_amount } = pi.metadata ?? {};
+    const { player_fee_id, pay_amount, club_slug, club_id, donation_amount, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected } = pi.metadata ?? {};
     if (player_fee_id) {
       const amountPaid = pay_amount ? parseFloat(pay_amount) : pi.amount_received / 100;
-      await handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, club_slug, reference: pi.id, payment_intent_id: pi.id });
+      await handlePaymentComplete({
+        player_fee_id, pay_amount: amountPaid, club_slug, reference: pi.id, payment_intent_id: pi.id,
+        payment_rail: payment_rail === 'card' || payment_rail === 'ach' ? payment_rail : null,
+        fee_charged:   fee_charged   ? parseFloat(fee_charged)   : null,
+        platform_cost: platform_cost ? parseFloat(platform_cost) : null,
+        surcharge_passed_to_payer: surcharge_passed_to_payer === 'true',
+        platform_fee_collected: platform_fee_collected ? parseFloat(platform_fee_collected) : null,
+      });
       if (club_id && donation_amount && parseFloat(donation_amount) > 0) {
         const supabase = supabaseAdmin();
         await supabase.from('hardship_contributions').insert({ club_id, player_fee_id, amount: parseFloat(donation_amount) });
@@ -53,7 +65,55 @@ export async function POST(req: NextRequest) {
     await handleAccountUpdated(event.data.object);
   }
 
+  // Catches refunds issued directly from the Stripe dashboard (disputes,
+  // support doing it manually) — not just the ones our own /api/stripe/refund
+  // route issues. applyRefund() is idempotent on stripe_refund_id, so a
+  // refund we already recorded via that route is a no-op here.
+  if (event.type === 'charge.refunded') {
+    await handleChargeRefunded(event.data.object);
+  }
+
   return NextResponse.json({ received: true });
+}
+
+type StripeCharge = {
+  payment_intent: string | null;
+  refunds?: { data: { id: string; amount: number; reason: string | null }[] };
+};
+
+async function handleChargeRefunded(charge: StripeCharge) {
+  if (!charge.payment_intent) return;
+  const supabase = supabaseAdmin();
+
+  const { data: paymentRow } = await supabase
+    .from('fee_payments')
+    .select('id, amount, fee_charged, surcharge_passed_to_payer, refunded_amount, refunded_surcharge')
+    .eq('stripe_payment_intent_id', charge.payment_intent)
+    .single();
+  if (!paymentRow) return;
+
+  for (const refund of charge.refunds?.data ?? []) {
+    // Stripe only gives us the lump-sum total for a refund issued outside
+    // our own UI (Stripe dashboard) — recover the base/surcharge split
+    // proportional to this payment's own original split.
+    const { baseAmount, surchargeAmount } = splitRefundAmount({
+      totalRefund:       refund.amount / 100,
+      originalBase:      Number(paymentRow.amount),
+      originalSurcharge: paymentRow.surcharge_passed_to_payer ? Number(paymentRow.fee_charged ?? 0) : 0,
+      remainingBase:      Number(paymentRow.amount) - Number(paymentRow.refunded_amount ?? 0),
+      remainingSurcharge: (paymentRow.surcharge_passed_to_payer ? Number(paymentRow.fee_charged ?? 0) : 0) - Number(paymentRow.refunded_surcharge ?? 0),
+    });
+
+    await applyRefund({
+      feePaymentId:    paymentRow.id,
+      amount:          baseAmount,
+      surchargeAmount,
+      mode:            'external',
+      stripeRefundId:  refund.id,
+      reason:          refund.reason ?? null,
+      refundedBy:      null,
+    });
+  }
 }
 
 // Stripe fires this whenever a connected account's status changes — the
@@ -109,26 +169,24 @@ async function handlePaymentFailed({ player_fee_id, club_slug, declineReason }: 
   const { data: parentTokens } = await supabase
     .from('push_tokens').select('token').eq('profile_id', parentProfileId);
   if (parentTokens?.length) {
-    await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(parentTokens.map(t => ({
-        to: t.token, title: '❌ Payment failed',
-        body: `${fee.description} — ${declineReason}`,
-        sound: 'default',
-        data: { type: 'payment_failed', player_fee_id, club_slug: club_slug ?? '' },
-      }))),
-    });
+    await sendExpoPush(parentTokens.map(t => ({
+      to: t.token, title: '❌ Payment failed',
+      body: `${fee.description} — ${declineReason}`,
+      sound: 'default',
+      data: { type: 'payment_failed', player_fee_id, club_slug: club_slug ?? '' },
+    })));
   }
 }
 
 type FeeWithClub = {
   id: string; amount_due: number; amount_paid: number; discount: number; description: string; player_id: string;
-  teams: { id: string; name: string; clubs: { id: string; name: string; slug: string | null; logo_url: string | null; primary_color: string | null } | null } | null;
+  teams: { id: string; name: string; clubs: { id: string; name: string; slug: string | null; logo_url: string | null; primary_color: string | null; stripe_fee_handling: string | null } | null } | null;
 };
 
-async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, club_slug, reference, payment_intent_id }: {
+async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, club_slug, reference, payment_intent_id, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected }: {
   player_fee_id: string; pay_amount: number; club_slug?: string; reference: string; payment_intent_id: string;
+  payment_rail: 'card' | 'ach' | null; fee_charged: number | null; platform_cost: number | null; surcharge_passed_to_payer: boolean;
+  platform_fee_collected: number | null;
 }) {
   const supabase = supabaseAdmin();
   const paymentIntentId = payment_intent_id;
@@ -136,16 +194,13 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
   // Load the fee
   const { data: fee } = await supabase
     .from('player_fees')
-    .select('id, amount_due, amount_paid, discount, description, player_id, teams!inner(id, name, clubs!inner(id, name, slug, logo_url, primary_color))')
+    .select('id, amount_due, amount_paid, discount, description, player_id, teams!inner(id, name, clubs!inner(id, name, slug, logo_url, primary_color, stripe_fee_handling))')
     .eq('id', player_fee_id)
     .single<FeeWithClub>();
 
   if (!fee) return;
 
-  const prevPaid  = fee.amount_paid ?? 0;
-  const newPaid   = prevPaid + amountPaid;
-  const balance   = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
-  const newStatus = newPaid >= balance - 0.01 ? 'paid' : 'partial';
+  const balance = Math.max(0, (fee.amount_due ?? 0) - (fee.discount ?? 0));
 
   // Idempotency: Stripe delivers webhooks at-least-once, so the same
   // payment can arrive more than once (checkout.session.completed AND
@@ -161,6 +216,11 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
     stripe_payment_intent_id: paymentIntentId,
     stripe_charge_id:         paymentIntentId,
     notes:                    'Online payment via Stripe',
+    payment_rail,
+    fee_charged,
+    platform_cost,
+    surcharge_passed_to_payer,
+    platform_fee_collected,
   });
   if (insertErr) {
     if (insertErr.code === '23505') return; // already processed this payment intent
@@ -168,11 +228,33 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
     return;
   }
 
-  const { error: updateErr } = await supabase.from('player_fees').update({
-    amount_paid: newPaid,
-    status:      newStatus,
-  }).eq('id', player_fee_id);
-  if (updateErr) console.error('player_fees update failed', updateErr, { player_fee_id });
+  // Two payment intents on the same fee (e.g. a double-submit, or a family
+  // paying from two devices) can both succeed at Stripe and land here
+  // concurrently. Reading fee.amount_paid once up front and blindly
+  // overwriting it would let whichever webhook writes last silently drop
+  // the other's contribution — Stripe already took both payments, but the
+  // ledger would only ever reflect one. Re-assert the prior amount_paid on
+  // the write itself (compare-and-swap) and retry against the fresh value
+  // on conflict, so both payments always end up accumulated.
+  let newPaid = 0;
+  let newStatus: 'paid' | 'partial' = 'partial';
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: current } = await supabase
+      .from('player_fees').select('amount_paid').eq('id', player_fee_id).single();
+    const prevPaid = current?.amount_paid ?? 0;
+    newPaid = prevPaid + amountPaid;
+    newStatus = newPaid >= balance - 0.01 ? 'paid' : 'partial';
+
+    const { data: claimed, error: updateErr } = await supabase.from('player_fees')
+      .update({ amount_paid: newPaid, status: newStatus })
+      .eq('id', player_fee_id)
+      .eq('amount_paid', prevPaid)
+      .select('id');
+    if (updateErr) { console.error('player_fees update failed', updateErr, { player_fee_id }); break; }
+    if (claimed?.length) break; // won the race
+    // Lost the race — another concurrent payment updated amount_paid
+    // between our read and write. Retry against its now-current value.
+  }
 
   // Load parent + coach details for notifications
   const club      = fee.teams?.clubs;
@@ -205,16 +287,12 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
     const { data: parentTokens } = await supabase
       .from('push_tokens').select('token').eq('profile_id', parentProfileId);
     if (parentTokens?.length) {
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(parentTokens.map(t => ({
-          to: t.token, title: '✅ Payment confirmed',
-          body: `${fee.description} · ${fmtAmount} received. Thanks!`,
-          sound: 'default',
-          data: { type: 'payment_confirmed', player_fee_id, club_slug: club_slug ?? club?.slug ?? '' },
-        }))),
-      });
+      await sendExpoPush(parentTokens.map(t => ({
+        to: t.token, title: '✅ Payment confirmed',
+        body: `${fee.description} · ${fmtAmount} received. Thanks!`,
+        sound: 'default',
+        data: { type: 'payment_confirmed', player_fee_id, club_slug: club_slug ?? club?.slug ?? '' },
+      })));
     }
   }
 
@@ -241,16 +319,12 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
     const { data: staffTokenRows } = await supabase
       .from('push_tokens').select('token, profile_id').in('profile_id', staffIds);
     if (staffTokenRows?.length) {
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(staffTokenRows.map(t => ({
-          to: t.token, title: '💳 Payment received',
-          body: `${playerName} paid ${fee.description} · ${fmtAmount}`,
-          sound: 'default',
-          data: { type: 'payment_received', player_fee_id, club_slug: club_slug ?? club?.slug ?? '' },
-        }))),
-      });
+      await sendExpoPush(staffTokenRows.map(t => ({
+        to: t.token, title: '💳 Payment received',
+        body: `${playerName} paid ${fee.description} · ${fmtAmount}`,
+        sound: 'default',
+        data: { type: 'payment_received', player_fee_id, club_slug: club_slug ?? club?.slug ?? '' },
+      })));
     }
   }
 
@@ -303,6 +377,7 @@ async function handlePaymentComplete({ player_fee_id, pay_amount: amountPaid, cl
         <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">Team</p>
         <p style="margin:0;font-size:14px;color:#9ca3af;">${esc(teamName)}</p>
       </td></tr>
+      ${payment_rail ? `<tr><td style="padding-top:14px;"><p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">Paid via</p><p style="margin:0;font-size:14px;color:#9ca3af;">${payment_rail === 'ach' ? 'Bank account (ACH)' : 'Card'}${fee_charged && club?.stripe_fee_handling === 'pass_on' ? ` · includes $${fee_charged.toFixed(2)} processing fee` : ''}</p></td></tr>` : ''}
       ${newStatus === 'partial' ? `<tr><td style="padding-top:14px;"><p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">Remaining balance</p><p style="margin:0;font-size:14px;color:#f59e0b;font-weight:700;">$${(balance - newPaid).toFixed(2)}</p></td></tr>` : ''}
     </table>
   </div>
@@ -361,22 +436,3 @@ async function verifyStripeSignature(body: string, header: string, secret: strin
   }
 }
 
-function resolveAccent(hex: string | null | undefined): string {
-  if (!hex) return '#22c55e';
-  const h = hex.replace('#', '');
-  if (h.length !== 6) return '#22c55e';
-  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-  if (isNaN(r) || isNaN(g) || isNaN(b)) return '#22c55e';
-  if ((r === 0 && g === 0 && b === 0) || (r === 255 && g === 255 && b === 255)) return '#22c55e';
-  return hex;
-}
-
-function contrastText(hex: string): string {
-  const h = hex.replace('#', '');
-  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000 > 145 ? '#000000' : '#ffffff';
-}
-
-function esc(s: string): string {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}

@@ -341,11 +341,12 @@ export default function RosterScreen() {
       }));
     }
 
-    const coachesRes = await supabase
-      .from('team_members')
-      .select('id, profiles!team_members_profile_id_fkey(full_name, avatar_url, phone)')
-      .eq('team_id', team.id)
-      .eq('role', 'coach');
+    // team_members -> profiles direct join is blocked by profiles_select_own
+    // for anyone but the coach themself — a parent always got a null phone
+    // back. get_team_coaches is a SECURITY DEFINER RPC purpose-built to
+    // surface this to any teammate, matching CLAUDE.md's "coach phone
+    // always visible to team parents."
+    const { data: coachRows } = await supabase.rpc('get_team_coaches', { p_team_id: team.id });
 
     const pendingRes = await supabase
       .from('invites')
@@ -356,7 +357,10 @@ export default function RosterScreen() {
 
     const newPlayers = (playersRes.data as unknown as Player[]) ?? [];
     setPlayers(newPlayers);
-    setCoaches((coachesRes.data as unknown as Coach[]) ?? []);
+    setCoaches((coachRows ?? []).map((c) => ({
+      id: c.profile_id,
+      profiles: { full_name: c.full_name, avatar_url: c.avatar_url, phone: c.phone },
+    })));
     setPendingCoaches((pendingRes.data as unknown as PendingCoach[]) ?? []);
     setLoading(false);
 

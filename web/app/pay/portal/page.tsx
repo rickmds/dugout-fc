@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { formatCurrency } from '@/lib/formatCurrency';
 
 type Fee = {
   id: string;
@@ -17,9 +18,10 @@ type Fee = {
   club_name: string;
   club_color: string;
   club_logo: string | null;
+  currency: string;
 };
 
-function fmt(n: number) { return `$${n.toFixed(2)}`; }
+function fmt(n: number, currency?: string) { return formatCurrency(n, currency); }
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -54,7 +56,7 @@ export default function PayPortal() {
       .select(`
         id, payment_token, description, amount_due, amount_paid, discount, due_date, status,
         players!inner(full_name),
-        teams!inner(name, clubs!inner(name, logo_url, primary_color))
+        teams!inner(name, clubs!inner(name, logo_url, primary_color, currency))
       `)
       .in('player_id', playerIds)
       .order('due_date', { ascending: true, nullsFirst: false });
@@ -63,7 +65,7 @@ export default function PayPortal() {
       id: string; payment_token: string | null; description: string; amount_due: number; amount_paid: number;
       discount: number | null; due_date: string | null; status: string;
       players: { full_name: string } | null;
-      teams: { name: string; clubs: { name: string; logo_url: string | null; primary_color: string | null } | null } | null;
+      teams: { name: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; currency: string | null } | null } | null;
     };
     setFees(((feeRows ?? []) as unknown as FeeRow[]).map(f => ({
       id:           f.id,
@@ -79,6 +81,7 @@ export default function PayPortal() {
       club_name:    f.teams?.clubs?.name ?? '',
       club_color:   f.teams?.clubs?.primary_color ?? '#22C55E',
       club_logo:    f.teams?.clubs?.logo_url ?? null,
+      currency:     f.teams?.clubs?.currency ?? 'USD',
     })));
     setLoggedIn(true);
     setLoading(false);
@@ -109,7 +112,12 @@ export default function PayPortal() {
 
   const outstanding = fees.filter(f => !['paid', 'waived'].includes(f.status));
   const settled     = fees.filter(f => ['paid', 'waived'].includes(f.status));
-  const totalOwed   = outstanding.reduce((s, f) => s + Math.max(0, f.amount_due - f.discount - f.amount_paid), 0);
+  // Summing raw amounts across fees only makes sense when they share a
+  // currency — true for the overwhelming majority of parents (one club),
+  // and a pre-existing limitation for the rare parent with kids at clubs
+  // in different countries that this pass doesn't attempt to solve.
+  const totalOwed    = outstanding.reduce((s, f) => s + Math.max(0, f.amount_due - f.discount - f.amount_paid), 0);
+  const totalCurrency = outstanding[0]?.currency ?? 'USD';
 
   if (loading) return (
     <div style={styles.page}><div style={{ color: '#9CA3AF', fontSize: '14px' }}>Loading…</div></div>
@@ -172,7 +180,7 @@ export default function PayPortal() {
         <div style={{ width: '100%', maxWidth: '560px', background: '#1C1C1E', border: '1px solid #374151', borderLeft: '4px solid #EF4444', borderRadius: '12px', padding: '16px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: '12px', fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Total outstanding</div>
-            <div style={{ fontSize: '28px', fontWeight: '900', color: '#EF4444', letterSpacing: '-1px' }}>{fmt(totalOwed)}</div>
+            <div style={{ fontSize: '28px', fontWeight: '900', color: '#EF4444', letterSpacing: '-1px' }}>{fmt(totalOwed, totalCurrency)}</div>
           </div>
           <div style={{ fontSize: '13px', color: '#6B7280' }}>{outstanding.length} unpaid {outstanding.length === 1 ? 'fee' : 'fees'}</div>
         </div>
@@ -206,11 +214,11 @@ export default function PayPortal() {
                       </div>
                     )}
                     {f.amount_paid > 0 && (
-                      <div style={{ fontSize: '12px', color: '#22C55E', marginTop: '3px' }}>{fmt(f.amount_paid)} already paid</div>
+                      <div style={{ fontSize: '12px', color: '#22C55E', marginTop: '3px' }}>{fmt(f.amount_paid, f.currency)} already paid</div>
                     )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', flexShrink: 0 }}>
-                    <div style={{ fontSize: '20px', fontWeight: '900', color: isOverdue ? '#EF4444' : '#F59E0B', letterSpacing: '-0.5px' }}>{fmt(balance)}</div>
+                    <div style={{ fontSize: '20px', fontWeight: '900', color: isOverdue ? '#EF4444' : '#F59E0B', letterSpacing: '-0.5px' }}>{fmt(balance, f.currency)}</div>
                     <a
                       href={`/pay/${f.payment_token}`}
                       style={{ padding: '8px 16px', borderRadius: '8px', background: f.club_color || '#22C55E', color: '#fff', fontSize: '13px', fontWeight: '700', textDecoration: 'none', whiteSpace: 'nowrap' as const }}
@@ -238,7 +246,7 @@ export default function PayPortal() {
                   <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>{f.player_name} · {f.team_name}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#22C55E' }}>{f.status === 'waived' ? 'Waived' : `${fmt(f.amount_paid)} paid`}</span>
+                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#22C55E' }}>{f.status === 'waived' ? 'Waived' : `${fmt(f.amount_paid, f.currency)} paid`}</span>
                 </div>
               </div>
             </div>

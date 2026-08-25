@@ -141,12 +141,29 @@ Deno.serve(async (req) => {
   const chunks: typeof messages[] = [];
   for (let i = 0; i < messages.length; i += 100) chunks.push(messages.slice(i, i + 100));
 
+  // Tokens Expo reports as DeviceNotRegistered (uninstalled, signed out on a
+  // shared device, replaced phone) get pruned instead of sitting in
+  // push_tokens forever and getting retried on every future send.
+  const deadTokens: string[] = [];
   for (const chunk of chunks) {
-    await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(chunk),
-    });
+    try {
+      const res = await fetch(EXPO_PUSH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(chunk),
+      });
+      const json = await res.json().catch(() => null) as { data?: Array<{ status: string; details?: { error?: string } }> } | null;
+      json?.data?.forEach((ticket, idx) => {
+        if (ticket.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
+          deadTokens.push(chunk[idx].to);
+        }
+      });
+    } catch (err) {
+      console.warn('[send-push] batch send failed:', err);
+    }
+  }
+  if (deadTokens.length) {
+    await supabase.from('push_tokens').delete().in('token', deadTokens);
   }
 
   return new Response(JSON.stringify({ sent: messages.length }), {

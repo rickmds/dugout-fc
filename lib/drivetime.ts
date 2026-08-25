@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { zonedTimeToUtc } from './timezone';
 
 const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
@@ -22,10 +23,13 @@ async function getUserOrigin(): Promise<string | null> {
 // want (predicted traffic at kickoff, not traffic right now). departure_time
 // can't be in the past, so anything that resolves earlier than "now" (a
 // past event, or one with no time set) just falls back to live traffic.
-function toDepartureTimestamp(eventDate?: string, eventTime?: string | null): number {
+function toDepartureTimestamp(eventDate: string | undefined, eventTime: string | null | undefined, timezone: string): number {
   const nowSec = Math.floor(Date.now() / 1000);
   if (!eventDate) return nowSec;
-  const target = new Date(`${eventDate}T${eventTime ?? '12:00'}:00`);
+  // Anchored to the club's own timezone, not this device's — otherwise a
+  // parent traveling in a different timezone than their club gets traffic
+  // predicted for the wrong actual moment.
+  const target = zonedTimeToUtc(eventDate, `${eventTime ?? '12:00'}:00`, timezone);
   const targetSec = Math.floor(target.getTime() / 1000);
   return Number.isFinite(targetSec) ? Math.max(targetSec, nowSec) : nowSec;
 }
@@ -69,12 +73,13 @@ export async function fetchDriveTime(
   destination: string,
   eventDate?: string,
   eventTime?: string | null,
+  timezone: string = 'America/New_York',
 ): Promise<string | null> {
   if (!PLACES_KEY || !destination) return null;
   const origin = await getUserOrigin();
   if (!origin) return null;
   try {
-    const departure = toDepartureTimestamp(eventDate, eventTime);
+    const departure = toDepartureTimestamp(eventDate, eventTime, timezone);
     const res = await fetch(
       `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${encodeURIComponent(destination)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
     );
@@ -94,10 +99,11 @@ export async function fetchDriveTimeBetween(
   destinationAddress: string,
   eventDate?: string,
   eventTime?: string | null,
+  timezone: string = 'America/New_York',
 ): Promise<string | null> {
   if (!PLACES_KEY || !originAddress || !destinationAddress) return null;
   try {
-    const departure = toDepartureTimestamp(eventDate, eventTime);
+    const departure = toDepartureTimestamp(eventDate, eventTime, timezone);
     const res = await fetch(
       `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(originAddress)}&destinations=${encodeURIComponent(destinationAddress)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
     );
@@ -112,6 +118,7 @@ export async function fetchDriveTimeBetween(
 export async function fetchDriveTimesFromAddress(
   originAddress: string,
   items: Array<{ id: string; location: string; eventDate?: string; eventTime?: string | null }>,
+  timezone: string = 'America/New_York',
 ): Promise<Record<string, string>> {
   if (!PLACES_KEY || !items.length || !originAddress) return {};
   const origin = await geocodeAddress(originAddress);
@@ -119,7 +126,7 @@ export async function fetchDriveTimesFromAddress(
   const results = await Promise.all(
     items.map(async d => {
       try {
-        const departure = toDepartureTimestamp(d.eventDate, d.eventTime);
+        const departure = toDepartureTimestamp(d.eventDate, d.eventTime, timezone);
         const res = await fetch(
           `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${encodeURIComponent(d.location)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
         );
@@ -139,6 +146,7 @@ export async function fetchDriveTimesFromAddress(
 // Parallel individual calls — same origin fetched once, one request per destination
 export async function fetchDriveTimes(
   items: Array<{ id: string; location: string; eventDate?: string; eventTime?: string | null }>,
+  timezone: string = 'America/New_York',
 ): Promise<Record<string, string>> {
   if (!PLACES_KEY || !items.length) return {};
   const origin = await getUserOrigin();
@@ -146,7 +154,7 @@ export async function fetchDriveTimes(
   const results = await Promise.all(
     items.map(async d => {
       try {
-        const departure = toDepartureTimestamp(d.eventDate, d.eventTime);
+        const departure = toDepartureTimestamp(d.eventDate, d.eventTime, timezone);
         const res = await fetch(
           `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${encodeURIComponent(d.location)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
         );

@@ -52,6 +52,8 @@ export function useClub() {
     logoUrl: club?.logo_url ?? null,
     tagline: (club as any)?.tagline ?? null as string | null,
     currency: (club as any)?.currency ?? 'USD' as string,
+    /** IANA zone, e.g. "America/New_York" — the club's own local time, not the viewing device's */
+    timezone: (club as any)?.timezone ?? 'America/New_York' as string,
     primaryColor,
     secondaryColor,
     homeKitColor,

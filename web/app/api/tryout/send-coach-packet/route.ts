@@ -167,6 +167,9 @@ export async function POST(req: NextRequest) {
   if (!coach_ids?.length || !club_id) {
     return NextResponse.json({ error: 'coach_ids and club_id required' }, { status: 400 });
   }
+  if (auth.role !== 'app_admin' && club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const db = sb();
 

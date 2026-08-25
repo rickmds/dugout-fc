@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
-
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+import { sendExpoPush } from '@/lib/expoPush';
 
 type FeeForConfirmation = {
   description: string; player_id: string;
@@ -60,17 +59,13 @@ export async function POST(req: NextRequest) {
 
     const { data: tokens } = await supabase.from('push_tokens').select('token').eq('profile_id', parentUser.id);
     if (tokens?.length) {
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(tokens.map(t => ({
-          to: t.token,
-          title: '✅ Payment recorded',
-          body: `${fmtAmount} received for ${desc}`,
-          sound: 'default',
-          data: { type: 'payment_confirmed', player_fee_id, club_slug: fee.teams?.clubs?.slug ?? '' },
-        }))),
-      });
+      await sendExpoPush(tokens.map(t => ({
+        to: t.token,
+        title: '✅ Payment recorded',
+        body: `${fmtAmount} received for ${desc}`,
+        sound: 'default',
+        data: { type: 'payment_confirmed', player_fee_id, club_slug: fee.teams?.clubs?.slug ?? '' },
+      })));
     }
   } catch (e) {
     console.error('Push error:', e);

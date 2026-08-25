@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import SetupWizard from '@/components/dashboard/SetupWizard';
 import SetupProgressCard from '@/components/dashboard/SetupProgressCard';
+import { formatCurrencyRounded } from '@/lib/formatCurrency';
 
 type FieldClosure = { id: string; field_name: string; reason: string | null; closed_from: string; closed_until: string | null };
 type EventRow     = { id: string; title: string; type: string; event_date: string; event_time: string | null; location: string | null; team_id: string };
@@ -45,10 +46,7 @@ function isActiveClosure(c: FieldClosure): boolean {
   if (!c.closed_until) return true;
   return new Date(c.closed_until) > now;
 }
-function fmtMoney(n: number, currency = 'USD'): string {
-  try { return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n); }
-  catch { return `$${Math.round(n).toLocaleString()}`; }
-}
+const fmtMoney = formatCurrencyRounded;
 function weatherEmoji(cond: string): string {
   const c = cond.toLowerCase();
   if (c.includes('sunny') || c.includes('clear'))  return '☀️';

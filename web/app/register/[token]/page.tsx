@@ -48,7 +48,13 @@ type Form = {
   } | null;
 };
 
-function uid() { return Math.random().toString(36).slice(2, 10); }
+// crypto.randomUUID(), not Math.random() — this seeds the storage path a
+// document upload lands at (registration-docs/{form.id}/{submissionId}/...),
+// and Math.random() is both non-cryptographic and short enough (~41 bits)
+// that a predicted value could squat a real family's upload path before
+// they submit — RLS blocks overwriting an existing object there, so a
+// squatted path would just permanently fail their real upload instead.
+function uid() { return crypto.randomUUID(); }
 
 export default function RegisterPage() {
   const { token } = useParams<{ token: string }>();
@@ -64,6 +70,7 @@ export default function RegisterPage() {
   const [errors, setErrors]       = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone]           = useState(false);
+  const [submissionStatus, setSubmissionStatus] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<Record<string, boolean>>({});
   const [paymentChoice, setPaymentChoice] = useState<'full' | 'plan' | null>(null);
   const [selectedTier,  setSelectedTier]  = useState<PriceTier | null>(null);
@@ -193,21 +200,25 @@ export default function RegisterPage() {
     }
     const hasFee = finalAmountDue !== null;
 
-    // 2. Insert submission
-    const { error: subErr } = await supabase.from('registration_submissions').insert({
-      form_id: form!.id,
-      data: finalValues,
-      status: 'pending',
-      payment_choice: hasFee ? paymentChoice : null,
-      payment_status: hasFee ? 'unpaid' : null,
-      amount_due: finalAmountDue,
-    });
+    // 2. Insert submission — via an RPC that re-checks max_spots and picks
+    // the status atomically (advisory-locked per form_id), instead of a
+    // plain insert. The spotsLeft banner above only reflects the count as
+    // of page load; two people submitting for the same last spot at
+    // once could otherwise both land as 'pending' and both be told they
+    // have a place, when only one actually does.
+    const { data: subResult, error: subErr } = await supabase.rpc('submit_registration', {
+      p_form_id: form!.id,
+      p_data: finalValues,
+      p_payment_choice: hasFee ? paymentChoice : null,
+      p_amount_due: finalAmountDue,
+    }).single<{ id: string; status: string }>();
 
-    if (subErr) {
+    if (subErr || !subResult) {
       alert('Submission failed. Please try again.');
       setSubmitting(false);
       return;
     }
+    setSubmissionStatus(subResult.status);
 
     // 3. Send confirmation email if enabled
     if (form?.send_confirmation_email) {
@@ -284,22 +295,27 @@ export default function RegisterPage() {
     </Page>
   );
 
-  if (done) return (
-    <Page>
-      <FormCard primary={primary} form={form}>
-        <div style={{ textAlign: 'center', padding: '32px 0' }}>
-          <div style={{ width: '64px', height: '64px', background: '#DCFCE7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: '28px' }}>✅</div>
-          <h2 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '12px' }}>Registration received!</h2>
-          <p style={{ fontSize: '15px', color: '#374151', lineHeight: '1.65', maxWidth: '400px', margin: '0 auto' }}>
-            {form.confirmation_message ?? 'Thank you! We\'ll be in touch shortly.'}
-          </p>
-          {form.send_confirmation_email && (
-            <p style={{ fontSize: '13px', color: '#94A3B8', marginTop: '16px' }}>A confirmation email has been sent to you.</p>
-          )}
-        </div>
-      </FormCard>
-    </Page>
-  );
+  if (done) {
+    const waitlisted = submissionStatus === 'waitlisted';
+    return (
+      <Page>
+        <FormCard primary={primary} form={form}>
+          <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{ width: '64px', height: '64px', background: waitlisted ? '#FEF3C7' : '#DCFCE7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: '28px' }}>{waitlisted ? '⏳' : '✅'}</div>
+            <h2 style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', marginBottom: '12px' }}>{waitlisted ? "You're on the waitlist" : 'Registration received!'}</h2>
+            <p style={{ fontSize: '15px', color: '#374151', lineHeight: '1.65', maxWidth: '400px', margin: '0 auto' }}>
+              {waitlisted
+                ? 'The last spot filled just before your submission — you\'ve been added to the waitlist and the club will reach out if a spot opens up.'
+                : (form.confirmation_message ?? 'Thank you! We\'ll be in touch shortly.')}
+            </p>
+            {form.send_confirmation_email && (
+              <p style={{ fontSize: '13px', color: '#94A3B8', marginTop: '16px' }}>A confirmation email has been sent to you.</p>
+            )}
+          </div>
+        </FormCard>
+      </Page>
+    );
+  }
 
   // ─── Main form ────────────────────────────────────────────────────────────
 

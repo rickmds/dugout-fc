@@ -36,8 +36,24 @@ export default function ResetPasswordScreen() {
       return;
     }
     setLoading(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+
+    // Same stalled-request risk as the other auth screens. Unlike sign-in/
+    // sign-up there's no session state to inspect to tell whether it landed,
+    // but updateUser({ password }) is idempotent — retrying it is harmless —
+    // so on timeout we just surface that plainly instead of a false error.
+    const TIMEOUT = Symbol('timeout');
+    const result = await Promise.race([
+      supabase.auth.updateUser({ password }),
+      new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), 6000)),
+    ]);
     setLoading(false);
+
+    if (result === TIMEOUT) {
+      setError('This is taking longer than expected. Check your connection and try again — if it already went through, updating again is safe.');
+      return;
+    }
+
+    const { error: updateError } = result;
     if (updateError) {
       setError(updateError.message);
       return;

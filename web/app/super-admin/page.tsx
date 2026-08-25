@@ -526,7 +526,6 @@ function App({ user }: { user: User }) {
   }, [addActivity]);
 
   async function handleSuspend(club: Club) {
-    if (!confirm(`${club.suspended_at ? 'Unsuspend' : 'Suspend'} "${club.name}"?`)) return;
     setActing(club.id);
     await supabase.from('clubs').update({ suspended_at: club.suspended_at ? null : new Date().toISOString() }).eq('id', club.id);
     setActing(null); load();
@@ -542,19 +541,34 @@ function App({ user }: { user: User }) {
 
   function handleDelete() { setSelected(null); load(); }
 
-  async function handleDeleteFlag(kind: 'orphaned_staff' | 'stale_invite', id: string) {
+  async function handleDeleteFlag(kind: 'orphaned_staff' | 'stale_invite' | 'unclaimed_player', ids: string[]) {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch('/api/admin/delete-flag', {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, id }),
+      body: JSON.stringify({ kind, ids }),
     });
     if (!res.ok) { const { error } = await res.json(); alert(error ?? 'Could not delete'); return; }
+    const { deletedIds } = await res.json() as { deletedIds: string[] };
+    const deleted = new Set(deletedIds);
     setFlags(prev => prev && {
       ...prev,
-      orphanedStaff: kind === 'orphaned_staff' ? prev.orphanedStaff.filter(f => f.id !== id) : prev.orphanedStaff,
-      staleInvites:  kind === 'stale_invite'   ? prev.staleInvites.filter(f => f.id !== id)  : prev.staleInvites,
+      orphanedStaff:    kind === 'orphaned_staff'   ? prev.orphanedStaff.filter(f => !deleted.has(f.id))    : prev.orphanedStaff,
+      staleInvites:     kind === 'stale_invite'     ? prev.staleInvites.filter(f => !deleted.has(f.id))     : prev.staleInvites,
+      unclaimedPlayers: kind === 'unclaimed_player' ? prev.unclaimedPlayers.filter(f => !deleted.has(f.id)) : prev.unclaimedPlayers,
     });
+  }
+
+  async function handleRemindPaymentMisconfig(clubId: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/admin/remind-stripe-setup', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ club_id: clubId }),
+    });
+    const body = await res.json();
+    if (!res.ok) { alert(body.error ?? 'Could not send reminder'); return; }
+    alert(body.sent > 0 ? `Reminder sent to ${body.sent} admin${body.sent === 1 ? '' : 's'}.` : 'No org admin found for this club to notify.');
   }
 
   const filtered = clubs.filter(c => {
@@ -674,7 +688,7 @@ function App({ user }: { user: User }) {
               onClose={() => setSelected(null)} onSuspend={() => handleSuspend(selected)}
               onMarkContacted={() => handleMarkContacted(selected.id)} onDelete={handleDelete} />
           ) : (
-            <PlatformOverview stats={stats} recentMembers={recentMembers} clubs={clubs} loading={loading} activityFeed={activityFeed} liveConnected={liveConnected} devices={devices} flags={flags} onDeleteFlag={handleDeleteFlag} />
+            <PlatformOverview stats={stats} recentMembers={recentMembers} clubs={clubs} loading={loading} activityFeed={activityFeed} liveConnected={liveConnected} devices={devices} flags={flags} onDeleteFlag={handleDeleteFlag} onRemindFlag={handleRemindPaymentMisconfig} />
           )}
         </div>
       </div>
@@ -1175,9 +1189,11 @@ function PlatformSplitCard({ devices }: { devices: DeviceStats | null }) {
 }
 
 // ── Health flags — bug / broken-flow detector ─────────────────────────────────
-function FlagRow({ label, icon: Icon, items, hint, onDelete }: { label: string; icon: typeof UserX; items: FlagItem[]; hint: string; onDelete?: (id: string) => Promise<void> }) {
+function FlagRow({ label, icon: Icon, items, hint, onDelete, onDeleteAll, onRemind }: { label: string; icon: typeof UserX; items: FlagItem[]; hint: string; onDelete?: (id: string) => Promise<void>; onDeleteAll?: (ids: string[]) => Promise<void>; onRemind?: (id: string) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
   const n = items.length;
   const color = n === 0 ? '#16a34a' : n <= 2 ? '#d97706' : '#dc2626';
   const bg    = n === 0 ? '#F0FDF4' : n <= 2 ? '#FFFBEB' : '#FFF5F5';
@@ -1191,6 +1207,23 @@ function FlagRow({ label, icon: Icon, items, hint, onDelete }: { label: string; 
     setDeletingId(null);
   }
 
+  async function handleDeleteAllClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!onDeleteAll) return;
+    if (!confirm(`Delete all ${n} ${label.toLowerCase()}? This can't be undone.`)) return;
+    setBulkDeleting(true);
+    await onDeleteAll(items.map(it => it.id));
+    setBulkDeleting(false);
+  }
+
+  async function handleRemindClick(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    if (!onRemind) return;
+    setRemindingId(id);
+    await onRemind(id);
+    setRemindingId(null);
+  }
+
   return (
     <div style={{ borderRadius: 10, border: `1px solid ${n === 0 ? C.border : bg === '#FFF5F5' ? '#FECACA' : '#FDE68A'}`, overflow: 'hidden' }}>
       <button onClick={() => n > 0 && setOpen(o => !o)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: n === 0 ? C.cardBg : bg, border: 'none', cursor: n > 0 ? 'pointer' : 'default', fontFamily: 'inherit', textAlign: 'left' }}>
@@ -1201,6 +1234,15 @@ function FlagRow({ label, icon: Icon, items, hint, onDelete }: { label: string; 
           <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>{label}</div>
           <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>{hint}</div>
         </div>
+        {onDeleteAll && n > 1 && (
+          bulkDeleting
+            ? <Spinner size={12} />
+            : (
+              <button onClick={handleDeleteAllClick} title={`Delete all ${n}`} style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, fontFamily: 'inherit' }}>
+                Delete all
+              </button>
+            )
+        )}
         <span style={{ fontSize: 15, fontWeight: 800, color, flexShrink: 0 }}>{n}</span>
         {n > 0 && <ChevronDown size={14} color={C.textMuted} style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />}
       </button>
@@ -1214,6 +1256,15 @@ function FlagRow({ label, icon: Icon, items, hint, onDelete }: { label: string; 
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                 <span style={{ fontSize: 10, color: C.textMuted }}>{timeAgo(it.createdAt)}</span>
+                {onRemind && (
+                  remindingId === it.id
+                    ? <Spinner size={12} />
+                    : (
+                      <button onClick={e => handleRemindClick(e, it.id)} title="Send Stripe setup reminder" style={{ background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', padding: 2, display: 'flex', fontFamily: 'inherit' }}>
+                        <Mail size={13} />
+                      </button>
+                    )
+                )}
                 {onDelete && (
                   deletingId === it.id
                     ? <Spinner size={12} />
@@ -1232,7 +1283,7 @@ function FlagRow({ label, icon: Icon, items, hint, onDelete }: { label: string; 
   );
 }
 
-function HealthFlagsCard({ flags, onDeleteFlag }: { flags: Flags | null; onDeleteFlag: (kind: 'orphaned_staff' | 'stale_invite', id: string) => Promise<void> }) {
+function HealthFlagsCard({ flags, onDeleteFlag, onRemindFlag }: { flags: Flags | null; onDeleteFlag: (kind: 'orphaned_staff' | 'stale_invite' | 'unclaimed_player', ids: string[]) => Promise<void>; onRemindFlag: (clubId: string) => Promise<void> }) {
   if (!flags) return null;
   const total = flags.orphanedStaff.length + flags.unclaimedPlayers.length + flags.staleInvites.length + flags.paymentMisconfig.length;
 
@@ -1245,19 +1296,20 @@ function HealthFlagsCard({ flags, onDeleteFlag }: { flags: Flags | null; onDelet
       </div>
       <p style={{ fontSize: 12, color: C.textLight, margin: '0 0 14px' }}>Catches the exact kinds of broken data this app has actually hit — click a row to see who.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-        <FlagRow label="Orphaned staff" icon={UserX} items={flags.orphanedStaff} hint="Role set, no club — stranded account" onDelete={id => onDeleteFlag('orphaned_staff', id)} />
-        <FlagRow label="Unclaimed players" icon={UserRoundX} items={flags.unclaimedPlayers} hint="On a roster 14d+, no guardian linked" />
-        <FlagRow label="Stale invites" icon={MailWarning} items={flags.staleInvites} hint="Sent 14d+ ago, never accepted" onDelete={id => onDeleteFlag('stale_invite', id)} />
-        <FlagRow label="Payment misconfig" icon={CreditCard} items={flags.paymentMisconfig} hint="Fees exist, Stripe not connected" />
+        <FlagRow label="Orphaned staff" icon={UserX} items={flags.orphanedStaff} hint="Role set, no club — stranded account" onDelete={id => onDeleteFlag('orphaned_staff', [id])} onDeleteAll={ids => onDeleteFlag('orphaned_staff', ids)} />
+        <FlagRow label="Unclaimed players" icon={UserRoundX} items={flags.unclaimedPlayers} hint="On a roster 14d+, no guardian linked" onDelete={id => onDeleteFlag('unclaimed_player', [id])} onDeleteAll={ids => onDeleteFlag('unclaimed_player', ids)} />
+        <FlagRow label="Stale invites" icon={MailWarning} items={flags.staleInvites} hint="Sent 14d+ ago, never accepted" onDelete={id => onDeleteFlag('stale_invite', [id])} onDeleteAll={ids => onDeleteFlag('stale_invite', ids)} />
+        <FlagRow label="Payment misconfig" icon={CreditCard} items={flags.paymentMisconfig} hint="Fees exist, Stripe not connected" onRemind={onRemindFlag} />
       </div>
     </div>
   );
 }
 
-function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, liveConnected, devices, flags, onDeleteFlag }: {
+function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, liveConnected, devices, flags, onDeleteFlag, onRemindFlag }: {
   stats: Stats | null; recentMembers: RecentMember[]; clubs: Club[]; loading: boolean;
   activityFeed: ActivityItem[]; liveConnected: boolean; devices: DeviceStats | null; flags: Flags | null;
-  onDeleteFlag: (kind: 'orphaned_staff' | 'stale_invite', id: string) => Promise<void>;
+  onDeleteFlag: (kind: 'orphaned_staff' | 'stale_invite' | 'unclaimed_player', ids: string[]) => Promise<void>;
+  onRemindFlag: (clubId: string) => Promise<void>;
 }) {
   if (loading || !stats) return <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><Spinner /></div>;
   const topClubs   = [...clubs].sort((a, b) => b.member_count - a.member_count).slice(0, 6);
@@ -1292,7 +1344,7 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
       </div>
 
       {/* Health flags — bug / broken-flow detector */}
-      <HealthFlagsCard flags={flags} onDeleteFlag={onDeleteFlag} />
+      <HealthFlagsCard flags={flags} onDeleteFlag={onDeleteFlag} onRemindFlag={onRemindFlag} />
 
       {/* Growth chart */}
       <div style={{ ...card, padding: '16px 20px', marginBottom: 16 }}>
@@ -1465,6 +1517,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
   const [detailLoading, setDetailLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting]           = useState(false);
+  const [suspendConfirm, setSuspendConfirm] = useState(false);
   const [copied, setCopied]               = useState(false);
   const [notes, setNotes]                 = useState('');
   const [notesSaving, setNotesSaving]     = useState(false);
@@ -1474,7 +1527,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
-    setDeleteConfirm(false); setNotes('');
+    setDeleteConfirm(false); setSuspendConfirm(false); setNotes('');
     let cancelled = false;
     async function load() {
       setDetailLoading(true);
@@ -1639,7 +1692,7 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
       )}
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        <button onClick={onSuspend} disabled={acting} style={{ padding: '9px 18px', borderRadius: 9, border: `1px solid ${club.suspended_at ? '#86EFAC' : '#FCA5A5'}`, background: club.suspended_at ? '#F0FDF4' : '#FFF5F5', color: club.suspended_at ? '#15803d' : '#dc2626', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: acting ? 0.5 : 1 }}>
+        <button onClick={() => club.suspended_at ? onSuspend() : setSuspendConfirm(true)} disabled={acting} style={{ padding: '9px 18px', borderRadius: 9, border: `1px solid ${club.suspended_at ? '#86EFAC' : '#FCA5A5'}`, background: club.suspended_at ? '#F0FDF4' : '#FFF5F5', color: club.suspended_at ? '#15803d' : '#dc2626', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: acting ? 0.5 : 1 }}>
           {acting ? '…' : club.suspended_at ? 'Unsuspend club' : 'Suspend club'}
         </button>
         <button
@@ -1650,6 +1703,48 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
           <span style={{ fontSize: 15, lineHeight: 1 }}>🗑</span> Delete club
         </button>
       </div>
+
+      {/* Suspend confirmation modal */}
+      {suspendConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setSuspendConfirm(false); }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: 460, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ background: '#d97706', padding: '20px 24px' }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>Suspend &quot;{club.name}&quot;?</div>
+              <div style={{ fontSize: 13, color: '#FEF3C7' }}>Reversible — you can unsuspend anytime, nothing is deleted.</div>
+            </div>
+
+            <div style={{ padding: '20px 24px' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>What this does</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                {[
+                  { label: 'Blocks access', desc: 'members see a "Club access suspended" screen instead of the app or dashboard, on mobile and web' },
+                  { label: 'Flags the club', desc: 'shows a SUSPENDED badge here and moves it into the Suspended tab' },
+                  { label: 'Keeps all data', desc: 'teams, players, events, chat — nothing is deleted or changed' },
+                ].map(({ label, desc }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 12px', background: '#FFFBEB', borderRadius: 8, border: '1px solid #FDE68A' }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: C.textDark }}>{label}</span>
+                      <span style={{ fontSize: 12, color: C.textLight }}> — {desc}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ padding: '0 24px 24px', display: 'flex', gap: 10 }}>
+              <button onClick={() => { onSuspend(); setSuspendConfirm(false); }} disabled={acting}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: 'none', background: '#d97706', color: '#fff', fontSize: 14, fontWeight: 700, cursor: acting ? 'default' : 'pointer', fontFamily: 'inherit', opacity: acting ? 0.6 : 1 }}>
+                {acting ? 'Suspending…' : 'Yes, suspend club'}
+              </button>
+              <button onClick={() => setSuspendConfirm(false)} disabled={acting}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 9, border: `1.5px solid ${C.border}`, background: C.cardBg, color: C.textMid, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation modal */}
       {deleteConfirm && (

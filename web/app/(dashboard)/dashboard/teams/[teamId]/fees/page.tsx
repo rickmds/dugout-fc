@@ -2,13 +2,17 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { DollarSign, Plus, X, ChevronDown, Send, CheckCircle } from 'lucide-react';
+import { DollarSign, Plus, X, ChevronDown, Send, CheckCircle, RotateCcw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { recordFeePayment } from '@/lib/feePayments';
 import { syncPaymentInstructions } from '@/lib/feePayee';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 import PayeeTypeField from '@/components/dashboard/PayeeTypeField';
+import RefundModal, { type RefundablePayment } from '@/components/dashboard/RefundModal';
+import { formatCurrency } from '@/lib/formatCurrency';
+import { symbolForCurrency } from '@/lib/countries';
+import { zonedDateString } from '@/lib/timezone';
 
 type FeeCategory = { id: string; name: string; amount: number; description: string | null };
 type Player = { id: string; full_name: string; jersey_number: number | null; position: string | null };
@@ -25,7 +29,11 @@ type PlayerFee = {
   payment_instructions: string | null;
   event_title: string | null;
 };
-type Payment = { id: string; player_fee_id: string; amount: number; method: string; reference: string | null; notes: string | null; paid_at: string };
+type Payment = {
+  id: string; player_fee_id: string; amount: number; method: string; reference: string | null; notes: string | null; paid_at: string;
+  refunded_amount?: number | null; payment_rail?: 'card' | 'ach' | null;
+  fee_charged?: number | null; surcharge_passed_to_payer?: boolean | null; refunded_surcharge?: number | null;
+};
 
 const STATUS_CONFIG: Record<string,{label:string;color:string;bg:string}> = {
   outstanding: { label: 'Outstanding', color: '#F59E0B', bg: '#FFFBEB' },
@@ -41,6 +49,8 @@ export default function TeamFeesPage() {
   const { teamId } = useParams<{ teamId: string }>();
   const { club, profile, canUse } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
+  const fmt = (n: number) => formatCurrency(n, club?.currency);
+  const currencySymbol = symbolForCurrency(club?.currency);
 
   const [fees,       setFees]       = useState<PlayerFee[]>([]);
   const [categories, setCategories] = useState<FeeCategory[]>([]);
@@ -55,6 +65,7 @@ export default function TeamFeesPage() {
   const [showPayment,  setShowPayment]  = useState<PlayerFee | null>(null);
   const [showCategory, setShowCategory] = useState(false);
   const [showWaive,    setShowWaive]    = useState<PlayerFee | null>(null);
+  const [refundTarget, setRefundTarget] = useState<{ payment: RefundablePayment; description: string } | null>(null);
 
   // Assign fee form
   const [assignForm, setAssignForm] = useState({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false, payee_type: 'club' as 'club' | 'coach', payment_instructions: '' });
@@ -64,6 +75,7 @@ export default function TeamFeesPage() {
   const [catForm, setCatForm] = useState({ name: '', amount: '', description: '' });
   // Waive form
   const [waiveReason, setWaiveReason] = useState('');
+  const [waiveHardship, setWaiveHardship] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -107,8 +119,11 @@ export default function TeamFeesPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
-  // Auto-set overdue
-  const today = new Date().toISOString().slice(0,10);
+  // Auto-set overdue. Anchored to the club's own timezone, not UTC — a UTC
+  // "today" already rolls to tomorrow hours before local midnight (as
+  // early as mid-afternoon for a Pacific club), flipping a same-day fee to
+  // overdue too soon.
+  const today = zonedDateString(new Date().toISOString(), club?.timezone ?? 'America/New_York');
   const enriched = fees.map(f => ({
     ...f,
     status: f.status !== 'paid' && f.status !== 'waived' && f.due_date && f.due_date < today ? 'overdue' : f.status,
@@ -181,7 +196,7 @@ export default function TeamFeesPage() {
           amount: remaining, method: payForm.method, reference: payForm.reference, notes: payForm.notes, recordedBy: profile.id,
         });
         if (!result.ok) {
-          alert(`${result.error}${totalPaid > 0 ? ` ${totalPaid.toFixed(2)} was already recorded before this failure.` : ''}`);
+          alert(`${result.error}${totalPaid > 0 ? ` ${fmt(totalPaid)} was already recorded before this failure.` : ''}`);
           setSaving(false);
           return;
         }
@@ -219,9 +234,10 @@ export default function TeamFeesPage() {
   async function handleWaive() {
     if (!showWaive) return;
     setSaving(true);
-    await supabase.from('player_fees').update({ status: 'waived', discount_reason: waiveReason || 'Waived by admin' }).eq('id', showWaive.id);
+    await supabase.from('player_fees').update({ status: 'waived', discount_reason: waiveReason || 'Waived by admin', hardship_covered: waiveHardship }).eq('id', showWaive.id);
     setShowWaive(null);
     setWaiveReason('');
+    setWaiveHardship(false);
     setSaving(false);
     load();
   }
@@ -273,9 +289,9 @@ export default function TeamFeesPage() {
       {/* Summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '14px', marginBottom: '24px' }}>
         {[
-          { label: 'Total Invoiced',   value: `$${totalDue.toFixed(2)}`,        color: '#64748B' },
-          { label: 'Total Collected',  value: `$${totalPaid.toFixed(2)}`,        color: '#22C55E' },
-          { label: 'Outstanding',      value: `$${totalOutstanding.toFixed(2)}`, color: '#F59E0B' },
+          { label: 'Total Invoiced',   value: fmt(totalDue),        color: '#64748B' },
+          { label: 'Total Collected',  value: fmt(totalPaid),        color: '#22C55E' },
+          { label: 'Outstanding',      value: fmt(totalOutstanding), color: '#F59E0B' },
           { label: 'Overdue',          value: overdueCount,                       color: '#EF4444' },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
@@ -385,10 +401,10 @@ export default function TeamFeesPage() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
-                      <span style={{ fontSize: '13px', color: '#94A3B8' }}>${fee.amount_paid.toFixed(2)} / ${(fee.amount_due - fee.discount).toFixed(2)}</span>
+                      <span style={{ fontSize: '13px', color: '#94A3B8' }}>{fmt(fee.amount_paid)} / {fmt(fee.amount_due - fee.discount)}</span>
                       <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
                       {!['paid','waived'].includes(fee.status) && (
-                        <span style={{ fontSize: '15px', fontWeight: '800', color: cfg.color }}>${Math.max(owed, 0).toFixed(2)}</span>
+                        <span style={{ fontSize: '15px', fontWeight: '800', color: cfg.color }}>{fmt(Math.max(owed, 0))}</span>
                       )}
                       <ChevronDown size={14} color="#94A3B8" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                     </div>
@@ -401,19 +417,36 @@ export default function TeamFeesPage() {
                     {feePayments.length > 0 && (
                       <div style={{ marginBottom: '14px' }}>
                         <div style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>Payment History</div>
-                        {feePayments.map(p => (
-                          <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px', padding: '6px 10px', background: '#fff', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                            <span style={{ color: '#22C55E', fontWeight: '700' }}>+${p.amount.toFixed(2)}</span>
-                            <span style={{ color: '#64748B', textTransform: 'capitalize' }}>{p.method.replace('_',' ')}</span>
-                            {p.reference && <span style={{ color: '#94A3B8', fontFamily: 'monospace', fontSize: '12px' }}>#{p.reference}</span>}
-                            <span style={{ color: '#94A3B8' }}>{new Date(p.paid_at).toLocaleDateString()}</span>
-                          </div>
-                        ))}
+                        {feePayments.map(p => {
+                          const refundedAmt = p.refunded_amount ?? 0;
+                          const stillRefundable = p.amount - refundedAmt > 0.005;
+                          return (
+                            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px', padding: '6px 10px', background: '#fff', borderRadius: '6px', border: '1px solid #E2E8F0', gap: '8px' }}>
+                              <span style={{ color: '#22C55E', fontWeight: '700', flexShrink: 0 }}>+{fmt(p.amount)}</span>
+                              <span style={{ color: '#64748B', textTransform: 'capitalize' }}>{p.method.replace('_',' ')}</span>
+                              {p.reference && <span style={{ color: '#94A3B8', fontFamily: 'monospace', fontSize: '12px' }}>#{p.reference}</span>}
+                              {refundedAmt > 0 && (
+                                <span style={{ color: '#DC2626', fontSize: '11px', fontWeight: '700', flexShrink: 0 }}>
+                                  −{fmt(refundedAmt)} refunded
+                                </span>
+                              )}
+                              <span style={{ color: '#94A3B8', flexShrink: 0 }}>{new Date(p.paid_at).toLocaleDateString()}</span>
+                              {stillRefundable && (
+                                <button
+                                  onClick={() => setRefundTarget({ payment: p, description: fee.description })}
+                                  style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '5px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontSize: '11px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}
+                                >
+                                  <RotateCcw size={11} /> Refund
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     {fee.discount > 0 && (
                       <div style={{ fontSize: '12px', color: '#8B5CF6', marginBottom: '10px' }}>
-                        Discount applied: -${fee.discount.toFixed(2)}{fee.discount_reason ? ` (${fee.discount_reason})` : ''}
+                        Discount applied: -{fmt(fee.discount)}{fee.discount_reason ? ` (${fee.discount_reason})` : ''}
                       </div>
                     )}
                     {/* Actions */}
@@ -461,7 +494,7 @@ export default function TeamFeesPage() {
                   setAssignForm(f => ({ ...f, category_id: e.target.value, description: cat?.name ?? f.description, amount_due: cat ? String(cat.amount) : f.amount_due }));
                 }} style={inputStyle}>
                   <option value="">Custom fee</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name} — ${c.amount}</option>)}
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name} — {fmt(c.amount)}</option>)}
                 </select>
               </label>
               <label style={labelStyle}>
@@ -470,11 +503,11 @@ export default function TeamFeesPage() {
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <label style={labelStyle}>
-                  Amount due ($) *
+                  Amount due ({currencySymbol}) *
                   <input type="number" value={assignForm.amount_due} onChange={e => setAssignForm(f => ({...f, amount_due: e.target.value}))} placeholder="0.00" style={inputStyle} />
                 </label>
                 <label style={labelStyle}>
-                  Discount ($)
+                  Discount ({currencySymbol})
                   <input type="number" value={assignForm.discount} onChange={e => setAssignForm(f => ({...f, discount: e.target.value}))} placeholder="0.00" style={inputStyle} />
                 </label>
               </div>
@@ -545,13 +578,13 @@ export default function TeamFeesPage() {
                       style={{ width: '16px', height: '16px', accentColor: '#22C55E' }} />
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Pay plan in full</div>
-                      <div style={{ fontSize: '11.5px', color: '#64748B' }}>Clears all {fees.filter(f => f.plan_group_id === showPayment.plan_group_id && !['paid','waived'].includes(f.status)).length} outstanding instalments — ${planRemaining.toFixed(2)} total</div>
+                      <div style={{ fontSize: '11.5px', color: '#64748B' }}>Clears all {fees.filter(f => f.plan_group_id === showPayment.plan_group_id && !['paid','waived'].includes(f.status)).length} outstanding instalments — {fmt(planRemaining)} total</div>
                     </div>
                   </label>
                 ) : null;
               })()}
               <label style={labelStyle}>
-                Amount paid ($) *
+                Amount paid ({currencySymbol}) *
                 <input type="number" value={payForm.amount} onChange={e => setPayForm(f => ({...f, amount: e.target.value, pay_plan_full: false}))} disabled={payForm.pay_plan_full} style={{ ...inputStyle, opacity: payForm.pay_plan_full ? 0.5 : 1 }} />
               </label>
               <label style={labelStyle}>
@@ -585,13 +618,19 @@ export default function TeamFeesPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
           <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: '24px' }}>
             <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', marginBottom: '8px' }}>Waive Fee</div>
-            <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>Waive ${(showWaive.amount_due - showWaive.discount).toFixed(2)} for {showWaive.player_name}?</div>
+            <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>Waive {fmt(showWaive.amount_due - showWaive.discount)} for {showWaive.player_name}?</div>
             <label style={labelStyle}>
               Reason
               <input value={waiveReason} onChange={e => setWaiveReason(e.target.value)} placeholder="e.g. Scholarship, hardship exemption" style={inputStyle} />
             </label>
+            {club?.hardship_fund_enabled && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', fontSize: '13px', color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={waiveHardship} onChange={e => setWaiveHardship(e.target.checked)} style={{ width: '15px', height: '15px' }} />
+                Cover with hardship fund
+              </label>
+            )}
             <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowWaive(null)} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setShowWaive(null); setWaiveHardship(false); }} style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleWaive} disabled={saving} style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: '#8B5CF6', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer' }}>Waive Fee</button>
             </div>
           </div>
@@ -608,7 +647,7 @@ export default function TeamFeesPage() {
             </div>
             <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <label style={labelStyle}>Name * <input value={catForm.name} onChange={e => setCatForm(f => ({...f, name: e.target.value}))} placeholder="e.g. Registration Fee" style={inputStyle} /></label>
-              <label style={labelStyle}>Default amount ($) * <input type="number" value={catForm.amount} onChange={e => setCatForm(f => ({...f, amount: e.target.value}))} placeholder="0.00" style={inputStyle} /></label>
+              <label style={labelStyle}>Default amount ({currencySymbol}) * <input type="number" value={catForm.amount} onChange={e => setCatForm(f => ({...f, amount: e.target.value}))} placeholder="0.00" style={inputStyle} /></label>
               <label style={labelStyle}>Description <input value={catForm.description} onChange={e => setCatForm(f => ({...f, description: e.target.value}))} placeholder="Optional" style={inputStyle} /></label>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
@@ -617,6 +656,17 @@ export default function TeamFeesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Refund */}
+      {refundTarget && (
+        <RefundModal
+          payment={refundTarget.payment}
+          feeDescription={refundTarget.description}
+          currency={club?.currency ?? undefined}
+          onClose={() => setRefundTarget(null)}
+          onDone={() => { setRefundTarget(null); load(); }}
+        />
       )}
     </div>
   );

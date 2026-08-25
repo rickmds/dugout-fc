@@ -4737,6 +4737,9 @@ export type Database = {
     Functions: {
       accept_invite: { Args: { p_token: string }; Returns: Json }
       admin_delete_club: { Args: { p_club_id: string }; Returns: undefined }
+      admin_delete_team: { Args: { p_team_id: string }; Returns: undefined }
+      admin_delete_player: { Args: { p_player_id: string }; Returns: undefined }
+      get_team_coaches: { Args: { p_team_id: string }; Returns: { profile_id: string; full_name: string | null; avatar_url: string | null; phone: string | null }[] }
       assign_fee_to_attendees:
         | {
             Args: {

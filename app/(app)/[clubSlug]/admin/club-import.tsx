@@ -384,6 +384,11 @@ export default function ClubImportScreen() {
       setProgress({ current: i + 1, total, label: `Adding players to ${pt.name}…` });
       for (const p of players) {
         if (!p.full_name.trim()) continue;
+        // The "Already on roster" badge shown during review was purely
+        // cosmetic — nothing here actually consulted it, so even a name
+        // the coach saw flagged as a duplicate (and didn't explicitly
+        // remove) still got inserted as a second, separate player row.
+        if (existingNamesByTeam[pt.name]?.has(normalizeName(p.full_name))) continue;
         const { data: playerData } = await supabase
           .from('players')
           .insert({

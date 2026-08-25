@@ -8,7 +8,8 @@ import { FlipBoard } from '@/components/FlipBoard';
 import { Menu, X } from 'lucide-react';
 
 function Shell({ children }: { children: React.ReactNode }) {
-  const { loading } = useDashboard();
+  const { loading, club, signOut, profile } = useDashboard();
+  const isOrgAdmin = profile?.role === 'org_admin';
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
   const pathname = usePathname();
@@ -33,6 +34,27 @@ function Shell({ children }: { children: React.ReactNode }) {
           { label: 'Coaches', pad: 2 },
         ]}
       />
+    );
+  }
+
+  if (club?.suspended_at) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F0F2F5', padding: 24 }}>
+        <div style={{ maxWidth: 380, width: '100%', background: '#fff', borderRadius: 16, padding: '32px 28px', textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          <div style={{ width: 52, height: 52, borderRadius: 16, background: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+            <span style={{ fontSize: 22 }}>🔒</span>
+          </div>
+          <h1 style={{ fontSize: 17, fontWeight: 800, color: '#0F172A', margin: '0 0 8px' }}>Club access suspended</h1>
+          <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5, margin: '0 0 22px' }}>
+            {isOrgAdmin
+              ? <>This club&apos;s access has been temporarily suspended. Contact <a href="mailto:support@pulse-fc.app" style={{ color: '#16a34a' }}>support@pulse-fc.app</a> to find out why and get it resolved.</>
+              : "This club's access has been temporarily suspended. Please contact your club administrator for more information."}
+          </p>
+          <button onClick={signOut} style={{ width: '100%', padding: '11px 0', borderRadius: 10, border: '1px solid #E2E8F0', background: '#fff', color: '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Sign Out
+          </button>
+        </div>
+      </div>
     );
   }
 

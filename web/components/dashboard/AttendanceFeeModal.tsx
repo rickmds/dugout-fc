@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { syncPaymentInstructions } from '@/lib/feePayee';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import PayeeTypeField from '@/components/dashboard/PayeeTypeField';
+import { formatCurrency } from '@/lib/formatCurrency';
+import { symbolForCurrency } from '@/lib/countries';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,7 +29,9 @@ interface Props {
 // marked present/late from the event's already-loaded attendance state —
 // the coach can still add/remove anyone before confirming.
 export default function AttendanceFeeModal({ teamId, eventId, eventTitle, primary, players, attStatusByPlayer }: Props) {
-  const { profile } = useDashboard();
+  const { profile, club } = useDashboard();
+  const fmt = (n: number) => formatCurrency(n, club?.currency);
+  const currencySymbol = symbolForCurrency(club?.currency);
 
   const [showModal, setShowModal] = useState(false);
   const [description, setDescription] = useState('');
@@ -152,7 +156,7 @@ export default function AttendanceFeeModal({ teamId, eventId, eventTitle, primar
                   <Check size={24} color="#16A34A" />
                 </div>
                 <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>
-                  Charged ${result.total.toFixed(2)} across {result.count} player{result.count !== 1 ? 's' : ''}
+                  Charged {fmt(result.total)} across {result.count} player{result.count !== 1 ? 's' : ''}
                 </div>
                 <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '4px' }}>Parents have been notified.</div>
                 <button
@@ -180,7 +184,7 @@ export default function AttendanceFeeModal({ teamId, eventId, eventTitle, primar
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount ($)</label>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount ({currencySymbol})</label>
                       <input
                         type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)}
                         style={{ width: '100%', marginTop: '5px', boxSizing: 'border-box', border: '1.5px solid #E2E8F0', borderRadius: '8px', padding: '9px 11px', fontSize: '14px', color: '#0F172A', fontFamily: 'inherit', outline: 'none' }}

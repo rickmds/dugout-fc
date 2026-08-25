@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+import { sendExpoPush } from '@/lib/expoPush';
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
@@ -69,13 +68,7 @@ export async function GET(req: NextRequest) {
       data: { type: 'event_day_reminder', event_id: ev.id },
     }));
 
-    for (let i = 0; i < messages.length; i += 100) {
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(messages.slice(i, i + 100)),
-      });
-    }
+    await sendExpoPush(messages);
 
     totalSent += messages.length;
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
+import { countryInfo } from '@/lib/countries';
 
 type StripeResponse = { id?: string; url?: string; error?: { message?: string } };
 
@@ -16,21 +17,30 @@ export async function POST(req: NextRequest) {
   const supabase = supabaseAdmin();
   const { club_id } = await req.json();
   if (!club_id) return NextResponse.json({ error: 'club_id required' }, { status: 400 });
+  if (auth.role !== 'app_admin' && club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   // Load club
   const { data: club } = await supabase
-    .from('clubs').select('id, name, stripe_connect_account_id').eq('id', club_id).single();
+    .from('clubs').select('id, name, country, stripe_connect_account_id').eq('id', club_id).single();
   if (!club) return NextResponse.json({ error: 'Club not found' }, { status: 404 });
 
   let accountId = club.stripe_connect_account_id as string | null;
 
   // Create Express account if one doesn't exist yet
   if (!accountId) {
+    // Stripe can't be told a Connect account's country after creation, so
+    // this is the one and only chance to set it — omitting it entirely
+    // (as this used to) makes Stripe silently default to the platform
+    // account's own country, which produces a US-flavored account no
+    // matter where the club actually is.
     const res = await fetch('https://api.stripe.com/v1/accounts', {
       method: 'POST',
       headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         type:                    'express',
+        country:                 countryInfo(club.country).code,
         'business_type':         'company',
         'business_profile[name]': club.name ?? '',
         'metadata[club_id]':     club_id,
@@ -45,7 +55,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: account?.error?.message ?? 'Could not create Stripe account. Please try again.' }, { status: 502 });
     }
     accountId = account.id;
-    await supabase.from('clubs').update({ stripe_connect_account_id: accountId }).eq('id', club_id);
+
+    // If this write fails, the club's stripe_connect_account_id stays
+    // null — meaning a retry below would create a SECOND Stripe account,
+    // orphaning this one, and (worse) the account.updated webhook keys
+    // off stripe_connect_account_id to find the club, so it could never
+    // mark this club onboarded even if they finish Express setup for an
+    // account we have no record of. Stop here rather than handing back a
+    // working-looking onboarding link for an account the DB doesn't know
+    // about.
+    const { error: saveErr } = await supabase.from('clubs').update({ stripe_connect_account_id: accountId }).eq('id', club_id);
+    if (saveErr) {
+      console.error('Failed to save Stripe account id:', saveErr, { club_id, accountId });
+      return NextResponse.json({ error: 'Could not save your Stripe account. Please try again.' }, { status: 500 });
+    }
   }
 
   const baseUrl = 'https://pulse-fc.app';

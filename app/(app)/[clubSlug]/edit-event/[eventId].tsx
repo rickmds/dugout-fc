@@ -20,6 +20,7 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { zonedTimeToUtc } from '../../../../lib/timezone';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { sendTeamPush } from '../../../../lib/push';
 import { DateTimeSheet } from '../../../../components/ui/DateTimeSheet';
@@ -94,7 +95,7 @@ function parseGameTitle(title: string): { homeAway: 'home' | 'away'; opponent: s
   return { homeAway: 'home', opponent: title };
 }
 
-function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null): number {
+function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null, timezone: string): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
   // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
@@ -102,7 +103,7 @@ function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTim
   // ("...T18:00:00:00"), diffHours comes out NaN, and every comparison
   // below silently falls through to the last bucket (48) regardless of
   // what's actually saved.
-  const eventAt = new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`);
+  const eventAt = zonedTimeToUtc(eventDate, `${eventTime.slice(0, 5)}:00`, timezone);
   const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
   if (diffHours <= 0)  return 0;
   if (diffHours <= 12) return 12;
@@ -327,7 +328,7 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function EditEventScreen() {
-  const { primaryColor, secondaryColor, onSecondary, rgba } = useClub();
+  const { primaryColor, secondaryColor, onSecondary, rgba, timezone } = useClub();
   const router = useRouter();
   const { clubSlug, eventId } = useLocalSearchParams<{ clubSlug: string; eventId: string }>();
   const { profile } = useAuth();
@@ -339,6 +340,16 @@ export default function EditEventScreen() {
   const [isCancelled, setIsCancelled] = useState(false);
   const [eventTeamId, setEventTeamId] = useState<string | null>(null);
   const originalRef = useRef<{ date: string; time: string | null; location: string; videoUrl: string | null } | null>(null);
+
+  // Multi-team occurrences (created via the web dashboard's multi-team
+  // picker) share event_group_id across one row per team. Mobile had no
+  // concept of this at all — editing/cancelling here only ever touched this
+  // one row, silently leaving every other team's copy out of sync. Only
+  // org_admins get to propagate (mirrors web); a coach always edits just
+  // their own team's row.
+  const [eventGroupId, setEventGroupId] = useState<string | null>(null);
+  const [linkedTeams, setLinkedTeams] = useState<{ id: string; name: string }[]>([]);
+  const isOrgAdmin = profile?.role === 'org_admin';
 
   // Event basics
   const [eventType, setEventType] = useState<EventType>('training');
@@ -415,10 +426,25 @@ export default function EditEventScreen() {
   async function loadEvent() {
     const { data } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,teams(club_id)')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,event_group_id,teams(club_id)')
       .eq('id', eventId)
       .single();
     if (data) setEventTeamId((data as any).team_id ?? null);
+
+    const groupId = (data as any)?.event_group_id ?? null;
+    setEventGroupId(groupId);
+    if (isOrgAdmin && groupId) {
+      const { data: siblings } = await supabase
+        .from('events')
+        .select('team_id, teams(name)')
+        .eq('event_group_id', groupId)
+        .neq('id', eventId as string);
+      setLinkedTeams(
+        ((siblings ?? []) as any[]).map((s) => ({ id: s.team_id as string, name: (s.teams?.name as string) ?? 'another team' }))
+      );
+    } else {
+      setLinkedTeams([]);
+    }
 
     if (!data) { setLoading(false); return; }
 
@@ -467,7 +493,7 @@ export default function EditEventScreen() {
     setCoachNotes(data.coach_notes ?? '');
     setVideoUrl((data as any).video_url ?? '');
     setRequireRsvp(data.require_rsvp ?? true);
-    setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time));
+    setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time, timezone));
     setIsCancelled(!!(data as any).cancelled_at);
     setRecurrenceId((data as any).recurrence_id ?? null);
 
@@ -491,7 +517,9 @@ export default function EditEventScreen() {
 
     function computeLockAtFor(dateStr: string): string | null {
       if (!requireRsvp || !eventTime) return null;
-      const dt = new Date(`${dateStr}T${eventTime}:00`);
+      // Anchored to the club's own timezone, not this device's — see
+      // create-event.tsx's computeLockAt for the full reasoning.
+      const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
       dt.setHours(dt.getHours() - rsvpLockHours);
       return dt.toISOString();
     }
@@ -524,12 +552,20 @@ export default function EditEventScreen() {
       require_rsvp: requireRsvp,
     };
 
+    // Combining cross-team propagation with the recurring "future" scope
+    // is a rare, more complex combination not covered here — propagation
+    // only applies to the single occurrence being edited right now.
+    const propagateGroup = scope === 'this' && isOrgAdmin && !!eventGroupId && linkedTeams.length > 0;
+
     if (scope === 'this') {
-      await supabase.from('events').update({
+      const updatePayload = {
         ...sharedFields,
         event_date: eventDate,
         rsvp_lock_at: computeLockAtFor(eventDate),
-      }).eq('id', eventId);
+      };
+      await (propagateGroup
+        ? supabase.from('events').update(updatePayload).eq('event_group_id', eventGroupId)
+        : supabase.from('events').update(updatePayload).eq('id', eventId));
     } else if (recurrenceId) {
       // rsvp_lock_at depends on each row's own date, so this can't be one
       // blanket update — fetch the affected rows and recompute it per row.
@@ -575,22 +611,25 @@ export default function EditEventScreen() {
             pushBody = `${savedTitle} location updated`;
           }
         }
-        sendTeamPush({
-          teamId: eventTeamId,
-          title: 'Schedule updated',
-          body: pushBody,
-          excludeProfileId: profile?.id,
-          data: { type: 'schedule_change', event_id: eventId },
-        });
-        // Extra push when a recording is newly added
-        if (videoUrl.trim() && orig && !orig.videoUrl) {
+        const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
+        for (const teamId of notifyTeamIds) {
           sendTeamPush({
-            teamId: eventTeamId,
-            title: 'Recording available',
-            body: `Watch the recording for ${savedTitle}`,
+            teamId,
+            title: 'Schedule updated',
+            body: pushBody,
             excludeProfileId: profile?.id,
-            data: { type: 'video_added', event_id: eventId },
+            data: { type: 'schedule_change', event_id: eventId },
           });
+          // Extra push when a recording is newly added
+          if (videoUrl.trim() && orig && !orig.videoUrl) {
+            sendTeamPush({
+              teamId,
+              title: 'Recording available',
+              body: `Watch the recording for ${savedTitle}`,
+              excludeProfileId: profile?.id,
+              data: { type: 'video_added', event_id: eventId },
+            });
+          }
         }
       }
     }
@@ -607,13 +646,22 @@ export default function EditEventScreen() {
       : { column: 'recurrence_id' as const, value: recurrenceId as string, from: originalRef.current?.date ?? toDbDate(date) };
   }
 
+  // "this"-scope group propagation only — see handleSave's comment on why
+  // it never combines with the recurring "future" scope.
+  function groupPropagates(scope: RecurringScope): boolean {
+    return scope === 'this' && isOrgAdmin && !!eventGroupId && linkedTeams.length > 0;
+  }
+
   function confirmDelete() {
     const scope = editScope ?? 'this';
+    const propagateGroup = groupPropagates(scope);
     Alert.alert(
       'Delete Event',
-      scope === 'future'
-        ? 'Delete this event and every future occurrence? This cannot be undone.'
-        : 'Delete this event? This cannot be undone.',
+      propagateGroup
+        ? `This event is also scheduled for ${linkedTeams.map((t) => t.name).join(', ')}. Delete it for all of them? This cannot be undone.`
+        : scope === 'future'
+          ? 'Delete this event and every future occurrence? This cannot be undone.'
+          : 'Delete this event? This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => handleDelete(scope) },
@@ -623,11 +671,14 @@ export default function EditEventScreen() {
 
   async function handleDelete(scope: RecurringScope) {
     setDeleting(true);
+    const propagateGroup = groupPropagates(scope);
     const f = recurringFilter(scope);
     const base = supabase.from('events').delete();
-    const { error } = f.column === 'id'
-      ? await base.eq('id', f.value)
-      : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
+    const { error } = propagateGroup
+      ? await base.eq('event_group_id', eventGroupId as string)
+      : f.column === 'id'
+        ? await base.eq('id', f.value)
+        : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
     if (error) {
       setDeleting(false);
       Alert.alert('Error', 'Could not delete event. Please try again.');
@@ -642,11 +693,14 @@ export default function EditEventScreen() {
   }
 
   function promptCancelReason(scope: RecurringScope) {
+    const propagateGroup = groupPropagates(scope);
     Alert.prompt(
       'Cancel Event',
-      scope === 'future'
-        ? 'This will cancel this event and every future occurrence. Add a reason for parents (optional):'
-        : 'Add a reason for parents (optional):',
+      propagateGroup
+        ? `This event is also scheduled for ${linkedTeams.map((t) => t.name).join(', ')}. Add a reason for parents (optional) — this cancels it for all of them:`
+        : scope === 'future'
+          ? 'This will cancel this event and every future occurrence. Add a reason for parents (optional):'
+          : 'Add a reason for parents (optional):',
       [
         { text: 'Keep Event', style: 'cancel' },
         { text: 'Cancel Event', style: 'destructive', onPress: (reason: string | undefined) => handleCancelEvent(reason ?? '', scope) },
@@ -659,12 +713,15 @@ export default function EditEventScreen() {
   async function handleCancelEvent(reason: string, scope: RecurringScope) {
     if (!eventId) return;
     setCancelling(true);
+    const propagateGroup = groupPropagates(scope);
     const payload = { cancelled_at: new Date().toISOString(), cancellation_reason: reason.trim() || null } as any;
     const f = recurringFilter(scope);
     const base = supabase.from('events').update(payload);
-    const { error } = f.column === 'id'
-      ? await base.eq('id', f.value)
-      : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
+    const { error } = propagateGroup
+      ? await base.eq('event_group_id', eventGroupId as string)
+      : f.column === 'id'
+        ? await base.eq('id', f.value)
+        : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
     setCancelling(false);
     if (error) {
       Alert.alert('Error', 'Could not cancel the event. Please try again.');
@@ -674,15 +731,18 @@ export default function EditEventScreen() {
       const titleLabel = eventType === 'game'
         ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
         : title.trim();
-      sendTeamPush({
-        teamId: eventTeamId,
-        title: 'Event cancelled',
-        body: scope === 'future'
-          ? `${titleLabel} and future sessions cancelled${reason.trim() ? `: ${reason.trim()}` : ''}`
-          : reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`,
-        excludeProfileId: profile?.id,
-        data: { type: 'event_cancelled', event_id: eventId },
-      });
+      const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
+      for (const teamId of notifyTeamIds) {
+        sendTeamPush({
+          teamId,
+          title: 'Event cancelled',
+          body: scope === 'future'
+            ? `${titleLabel} and future sessions cancelled${reason.trim() ? `: ${reason.trim()}` : ''}`
+            : reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`,
+          excludeProfileId: profile?.id,
+          data: { type: 'event_cancelled', event_id: eventId },
+        });
+      }
     }
     setIsCancelled(true);
     Alert.alert('Event cancelled', 'Parents have been notified by push notification.');
@@ -695,12 +755,15 @@ export default function EditEventScreen() {
   async function handleUncancelEvent(scope: RecurringScope) {
     if (!eventId) return;
     setCancelling(true);
+    const propagateGroup = groupPropagates(scope);
     const payload = { cancelled_at: null, cancellation_reason: null } as any;
     const f = recurringFilter(scope);
     const base = supabase.from('events').update(payload);
-    const { error } = f.column === 'id'
-      ? await base.eq('id', f.value)
-      : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
+    const { error } = propagateGroup
+      ? await base.eq('event_group_id', eventGroupId as string)
+      : f.column === 'id'
+        ? await base.eq('id', f.value)
+        : await base.eq('recurrence_id', f.value).gte('event_date', f.from!);
     setCancelling(false);
     if (error) {
       Alert.alert('Error', 'Could not restore the event. Please try again.');
@@ -758,6 +821,15 @@ export default function EditEventScreen() {
               <TouchableOpacity onPress={() => promptEditScope(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Text style={[styles.scopeBannerChange, { color: primaryColor }]}>Change</Text>
               </TouchableOpacity>
+            </View>
+          )}
+
+          {linkedTeams.length > 0 && (
+            <View style={styles.scopeBanner}>
+              <Ionicons name="people-outline" size={15} color={primaryColor} />
+              <Text style={[styles.scopeBannerText, { color: primaryColor }]}>
+                Also scheduled for {linkedTeams.map((t) => t.name).join(', ')} — saves apply to all
+              </Text>
             </View>
           )}
 

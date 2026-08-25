@@ -89,10 +89,10 @@ const rows: ComparisonRow[] = [
     playmetricsNote: 'Visual lineups, formations, depth charts — no AI suggestions found',
   },
   {
-    category: 'AI features',
-    feature: 'AI substitution planner',
+    category: 'Operations',
+    feature: 'Equal playing time calculator',
     pulse: true,
-    pulseNote: 'Automated rotation plan for equal play time, formatted for the sideline',
+    pulseNote: 'Automatic rotation plan for equal play time — pure maths, works instantly offline, no AI call needed',
     teamsnap: false,
     teamsnapNote: 'Not available',
     sportsengine: false,

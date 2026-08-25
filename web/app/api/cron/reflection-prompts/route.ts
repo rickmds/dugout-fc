@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+import { zonedTimeToUtc } from '@/lib/timezone';
+import { sendExpoPush } from '@/lib/expoPush';
 
 // Falls back to a deliberately conservative estimate when an event has no
 // duration_minutes set — long enough to clear warmup, halftime, and extra
@@ -13,7 +13,7 @@ const PROMPT_WINDOW_MINUTES = 30;
 
 type CandidateEvent = {
   id: string; team_id: string; title: string; event_date: string; event_time: string | null; duration_minutes: number | null;
-  teams: { name: string; clubs: { slug: string | null } | null } | null;
+  teams: { name: string; clubs: { slug: string | null; timezone: string | null } | null } | null;
 };
 
 export async function GET(req: NextRequest) {
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const { data: candidates, error } = await supabase
     .from('events')
-    .select('id, team_id, title, event_date, event_time, duration_minutes, teams!inner(name, clubs!inner(slug))')
+    .select('id, team_id, title, event_date, event_time, duration_minutes, teams!inner(name, clubs!inner(slug, timezone))')
     .eq('type', 'game')
     .is('reflection_prompt_sent_at', null)
     .not('event_time', 'is', null)
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   }
 
   const eligible = (candidates ?? []).filter(ev => {
-    const start = new Date(`${ev.event_date}T${ev.event_time}`);
+    const start = zonedTimeToUtc(ev.event_date, ev.event_time!, ev.teams?.clubs?.timezone ?? 'America/New_York');
     const durationMinutes = ev.duration_minutes ?? FALLBACK_GAME_DURATION_MINUTES;
     const windowStart = new Date(start.getTime() + durationMinutes * 60000);
     const windowEnd   = new Date(windowStart.getTime() + PROMPT_WINDOW_MINUTES * 60000);
@@ -106,14 +106,10 @@ async function notifyRoster(supabase: ReturnType<typeof supabaseAdmin>, event: C
     const { data: tokens } = await supabase
       .from('push_tokens').select('token').in('profile_id', Array.from(guardianIds));
     if (tokens?.length) {
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(tokens.map(t => ({
-          to: t.token, title: '🎯 How did the game go?', body: notifBody, sound: 'default',
-          data: { type: 'reflection_prompt', event_id: event.id, player_id: player.id, club_slug: clubSlug },
-        }))),
-      });
+      await sendExpoPush(tokens.map(t => ({
+        to: t.token, title: '🎯 How did the game go?', body: notifBody, sound: 'default',
+        data: { type: 'reflection_prompt', event_id: event.id, player_id: player.id, club_slug: clubSlug },
+      })));
     }
     notified++;
   }

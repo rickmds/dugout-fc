@@ -7,6 +7,8 @@ import { FlipBoard } from '@/components/FlipBoard';
 import { seasonOptions } from '@/lib/ageGroup';
 import { Plus, Trash2, X, DollarSign, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { formatCurrencyRounded } from '@/lib/formatCurrency';
+import { symbolForCurrency } from '@/lib/countries';
 
 type Player = { id: string };
 type Assignment = { player_id: string; offer_status: string };
@@ -76,7 +78,8 @@ export default function TryoutFinancesPage() {
   const byCategory = expenses.reduce((acc, e) => { if (!acc[e.category]) acc[e.category] = 0; acc[e.category] += e.amount; return acc; }, {} as Record<string, number>);
   const chartData = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, total]) => ({ name, total }));
 
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(n);
+  const fmt = (n: number) => formatCurrencyRounded(n, club?.currency);
+  const currencySymbol = symbolForCurrency(club?.currency);
 
   function exportCsv() {
     const rows = [['Category','Description','Amount','Notes'], ...expenses.map(e => [e.category, e.description ?? '', String(e.amount), e.notes ?? ''])];
@@ -114,11 +117,11 @@ export default function TryoutFinancesPage() {
         <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '14px 20px', marginBottom: '20px', display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', borderLeft: '4px solid #6366F1' }}>
           <span style={{ fontSize: '11px', fontWeight: '800', color: '#6366F1', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Fee Config</span>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151' }}>
-            Tryout Reg Fee $
+            Tryout Reg Fee {currencySymbol}
             <input type="number" value={regFee} onChange={e => setRegFee(Number(e.target.value))} style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', outline: 'none' }} />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151' }}>
-            Seasonal Tuition $
+            Seasonal Tuition {currencySymbol}
             <input type="number" value={seasonFee} onChange={e => setSeasonFee(Number(e.target.value))} style={{ width: '90px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', outline: 'none' }} />
           </label>
           <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{players.length} registered · {placed} placed · {accepted} accepted</span>
@@ -159,7 +162,7 @@ export default function TryoutFinancesPage() {
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={chartData} margin={{ top: 4, right: 4, left: 0, bottom: 4 }}>
                   <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94A3B8' }} interval={0} angle={-20} textAnchor="end" height={36} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={(v: number) => `$${Math.round(v / 1000)}k`} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={(v: number) => `${currencySymbol}${Math.round(v / 1000)}k`} />
                   <Tooltip formatter={(v) => fmt(Number(v ?? 0))} />
                   <Bar dataKey="total" radius={[3, 3, 0, 0]}>
                     {chartData.map((_, i) => <Cell key={i} fill={['#3B82F6','#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#14B8A6','#EF4444'][i % 8]} />)}
@@ -229,7 +232,7 @@ export default function TryoutFinancesPage() {
         </div>
       </div>
 
-      {showAddExp && <ExpenseModal club={club as { id: string } | null} season={season} expense={editExp} onClose={() => { setShowAddExp(false); setEditExp(null); }} onSaved={load} />}
+      {showAddExp && <ExpenseModal club={club as { id: string } | null} season={season} expense={editExp} currencySymbol={currencySymbol} onClose={() => { setShowAddExp(false); setEditExp(null); }} onSaved={load} />}
 
       {delExpId && <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
         <div style={{ background: '#fff', borderRadius: '14px', padding: '28px', width: '340px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
@@ -244,7 +247,7 @@ export default function TryoutFinancesPage() {
   );
 }
 
-function ExpenseModal({ club, season, expense, onClose, onSaved }: { club: { id: string } | null; season: string; expense: Expense | null; onClose: () => void; onSaved: () => void }) {
+function ExpenseModal({ club, season, expense, currencySymbol, onClose, onSaved }: { club: { id: string } | null; season: string; expense: Expense | null; currencySymbol: string; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<Omit<Expense,'id'>>(expense ? { category: expense.category, description: expense.description, amount: expense.amount, notes: expense.notes } : blankExp());
   const [saving, setSaving] = useState(false);
   const inp: React.CSSProperties = { padding: '8px 11px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' };
@@ -268,7 +271,7 @@ function ExpenseModal({ club, season, expense, onClose, onSaved }: { club: { id:
         <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>{lbl('Category')}<select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inp}>{EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
           <div>{lbl('Description')}<input value={form.description ?? ''} onChange={e => setForm(f => ({ ...f, description: e.target.value || null }))} placeholder="Optional" style={inp} /></div>
-          <div>{lbl('Amount ($)')}<input type="number" min={0} step={0.01} value={form.amount} onChange={e => setForm(f => ({ ...f, amount: parseFloat(e.target.value) || 0 }))} style={inp} /></div>
+          <div>{lbl(`Amount (${currencySymbol})`)}<input type="number" min={0} step={0.01} value={form.amount} onChange={e => setForm(f => ({ ...f, amount: parseFloat(e.target.value) || 0 }))} style={inp} /></div>
           <div>{lbl('Notes')}<input value={form.notes ?? ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value || null }))} placeholder="Optional" style={inp} /></div>
         </div>
         <div style={{ padding: '14px 22px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { formatCurrency } from '@/lib/formatCurrency';
+import { zonedDateString } from '@/lib/timezone';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type FamilyFee = {
@@ -40,7 +42,6 @@ type Family = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function initials(name: string) { return name.split(' ').map(w => w[0] ?? '').join('').toUpperCase().slice(0, 2); }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -62,6 +63,7 @@ const REG_STATUS_CONFIG: Record<string, { label: string; color: string; bg: stri
 export default function FamiliesTab() {
   const { club } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
+  const fmt = (n: number) => formatCurrency(n, club?.currency);
 
   const [families, setFamilies]       = useState<Family[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -69,7 +71,9 @@ export default function FamiliesTab() {
   const [search, setSearch]           = useState('');
   const [filter, setFilter]           = useState<'all' | 'outstanding' | 'paid'>('all');
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Anchored to the club's own timezone, not UTC — see fees/page.tsx's
+  // matching comment for why a UTC "today" flips a fee overdue too early.
+  const today = zonedDateString(new Date().toISOString(), club?.timezone ?? 'America/New_York');
 
   const load = useCallback(async () => {
     if (!club) return;
@@ -246,7 +250,7 @@ export default function FamiliesTab() {
         {[
           { label: 'Total Families',     value: loading ? '—' : families.length,      icon: '👨‍👩‍👧', color: '#64748B', bg: '#F1F5F9' },
           { label: 'Families Owing',     value: loading ? '—' : owingFamilies,         icon: '⚠️',       color: '#EF4444', bg: '#FEF2F2' },
-          { label: 'Total Outstanding',  value: loading ? '—' : `$${fmt(totalOwed)}`,  icon: '💰',       color: '#F59E0B', bg: '#FFFBEB' },
+          { label: 'Total Outstanding',  value: loading ? '—' : `${fmt(totalOwed)}`,  icon: '💰',       color: '#F59E0B', bg: '#FFFBEB' },
           { label: 'Registrations',      value: loading ? '—' : totalReg,              icon: '📋',       color: '#3B82F6', bg: '#EFF6FF' },
         ].map(({ label, value, icon, color, bg }) => (
           <div key={label} style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
@@ -450,7 +454,7 @@ export default function FamiliesTab() {
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '10px', color: '#94A3B8', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Balance</div>
                           <div style={{ fontSize: '15px', fontWeight: '800', color: fam.total_owed > 0 ? (fam.has_overdue ? '#EF4444' : '#F59E0B') : '#22C55E', letterSpacing: '-0.3px' }}>
-                            {fam.total_owed > 0 ? `$${fmt(fam.total_owed)}` : '✓ Paid'}
+                            {fam.total_owed > 0 ? `${fmt(fam.total_owed)}` : '✓ Paid'}
                           </div>
                         </div>
                       </div>

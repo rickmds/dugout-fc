@@ -16,6 +16,9 @@ export async function POST(req: NextRequest) {
 
   const { player_id, club_id } = await req.json();
   if (!player_id || !club_id) return NextResponse.json({ error: 'player_id and club_id required' }, { status: 400 });
+  if (auth.role !== 'app_admin' && club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const sb = supabaseAdmin();
 
@@ -122,12 +125,21 @@ export async function POST(req: NextRequest) {
 
   const from = `${settings.from_name ?? club?.name ?? 'Pulse FC'} <support@pulse-fc.app>`;
 
-  await resend.emails.send({
-    from,
-    to: player.email_primary,
-    subject: settings.email_subject ?? 'Your Roster Offer',
-    html: body,
-  });
+  // Unlike its bulk sibling (send-bulk-offers), this single-offer route had
+  // no try/catch around the send — an unhandled Resend failure surfaced as
+  // a raw 500 with no usable error message, and never told the caller
+  // whether the offer actually went out.
+  try {
+    await resend.emails.send({
+      from,
+      to: player.email_primary,
+      subject: settings.email_subject ?? 'Your Roster Offer',
+      html: body,
+    });
+  } catch (e) {
+    console.error('send-offer: resend failed', e);
+    return NextResponse.json({ error: 'Could not send the offer email. Please try again.' }, { status: 502 });
+  }
 
   await sb.from('tryout_assignments')
     .update({ offer_status: 'Sent', offer_sent_at: new Date().toISOString() })

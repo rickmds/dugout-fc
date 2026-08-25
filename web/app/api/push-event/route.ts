@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
 import { sendWebPush } from '@/lib/webPush';
-
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+import { sendExpoPush } from '@/lib/expoPush';
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
@@ -71,13 +70,7 @@ export async function POST(req: NextRequest) {
     data: pushData,
   }));
 
-  for (let i = 0; i < messages.length; i += 100) {
-    await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(messages.slice(i, i + 100)),
-    });
-  }
+  await sendExpoPush(messages);
 
   return NextResponse.json({ sent: messages.length });
 }

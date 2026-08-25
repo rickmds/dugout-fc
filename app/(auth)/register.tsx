@@ -56,11 +56,30 @@ export default function RegisterScreen() {
     }
 
     setLoading(true);
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } },
-    });
+
+    // No timeout on the SDK call itself, so a stalled request can leave this
+    // awaiting forever even though the account was actually created
+    // server-side — same class of bug already fixed on the sign-in screen.
+    // Race a timeout and self-heal by checking for a real session instead of
+    // leaving the button stuck spinning.
+    const TIMEOUT = Symbol('timeout');
+    const result = await Promise.race([
+      supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } }),
+      new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), 6000)),
+    ]);
+
+    if (result === TIMEOUT) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      setLoading(false);
+      if (sessionData.session?.user) {
+        await routeAfterRegister(sessionData.session.user.id);
+      } else {
+        setError('This is taking longer than expected. Check your connection and try again.');
+      }
+      return;
+    }
+
+    const { data, error: signUpError } = result;
     setLoading(false);
 
     if (signUpError) {

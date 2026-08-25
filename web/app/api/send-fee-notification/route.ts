@@ -40,6 +40,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Fee not found' }, { status: 404 });
   }
 
+  // A caller can only send fee notices for their own club's fees — without
+  // this, an org_admin/coach could pass any other club's player_fee_id and
+  // trigger an email (with a live Stripe payment link) to that club's
+  // parent. Mirrors the same check in send-fee-reminder/route.ts.
+  if (auth.role !== 'app_admin' && fee.teams?.club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   // Find parent email from invites table
   const { data: invite } = await supabase
     .from('invites')

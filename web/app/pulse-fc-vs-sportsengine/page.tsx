@@ -63,10 +63,10 @@ const rows: ComparisonRow[] = [
     sportsengineNote: 'No lineup builder. Not available on any plan.',
   },
   {
-    category: 'AI features',
-    feature: 'AI substitution planner',
+    category: 'Operations',
+    feature: 'Equal playing time calculator',
     pulse: true,
-    pulseNote: 'Automated rotation plan for equal play time, formatted for the sideline',
+    pulseNote: 'Automatic rotation plan for equal play time — pure maths, works instantly offline, no AI call needed',
     sportsengine: false,
     sportsengineNote: 'Not available.',
   },
@@ -119,6 +119,14 @@ const rows: ComparisonRow[] = [
     sportsengineNote: 'Push notifications available.',
   },
   {
+    category: 'Communication',
+    feature: 'Automatic change alerts',
+    pulse: true,
+    pulseNote: 'Time change, location change, or cancellation → instant push to all parents with the exact change highlighted',
+    sportsengine: false,
+    sportsengineNote: 'No automatic change notifications.',
+  },
+  {
     category: 'Operations',
     feature: 'Fee collection',
     pulse: true,
@@ -131,16 +139,40 @@ const rows: ComparisonRow[] = [
     feature: 'Attendance tracking',
     pulse: true,
     pulseNote: 'Per-player attendance history — parents notified instantly if child marked absent',
-    sportsengine: true,
-    sportsengineNote: 'Attendance tracking available.',
+    sportsengine: 'partial',
+    sportsengineNote: 'Attendance tracking available — no parent notification if a child is marked absent.',
   },
   {
     category: 'Operations',
     feature: 'Parent mobile app',
-    pulse: true,
-    pulseNote: 'iOS app — clean, no ads, no clutter',
+    pulse: 'partial',
+    pulseNote: 'iOS today, clean with no ads — Android in progress',
     sportsengine: 'partial',
     sportsengineNote: 'iOS and Android available — contains intrusive ads unless removed via paid upgrade.',
+  },
+  {
+    category: 'Operations',
+    feature: 'Game scores + season record',
+    pulse: true,
+    pulseNote: 'Log scores from the sideline via match tracker. Season W/L/D record builds automatically.',
+    sportsengine: true,
+    sportsengineNote: 'Available — league-focused.',
+  },
+  {
+    category: 'Operations',
+    feature: 'Video recordings library',
+    pulse: true,
+    pulseNote: 'Link any recording to an event — parents get a push notification. All sessions archived in one place.',
+    sportsengine: false,
+    sportsengineNote: 'Not available.',
+  },
+  {
+    category: 'Operations',
+    feature: 'Guest player management',
+    pulse: true,
+    pulseNote: 'Borrow players from other teams in the club. Conflict detection, G-badge in lineup and match tracker, org admin activity view.',
+    sportsengine: false,
+    sportsengineNote: 'Not available.',
   },
   {
     category: 'Setup & pricing',
@@ -248,7 +280,7 @@ export default async function PulseVsSportsEnginePage() {
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '0 24px 64px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           {[
-            { label: 'AI features', pulse: 4, sportsengine: 0 },
+            { label: 'AI features', pulse: 3, sportsengine: 0 },
             { label: 'Starting price', pulse: 'Free', sportsengine: '$79/mo' },
             { label: 'Free plan', pulse: '✓', sportsengine: '✗' },
           ].map(({ label, pulse, sportsengine }) => (

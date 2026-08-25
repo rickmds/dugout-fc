@@ -22,6 +22,7 @@ import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
+import { zonedTimeToUtc } from '../../../../lib/timezone';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
@@ -91,7 +92,7 @@ function fmtDuration(min: number): string {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ScheduleUploadScreen() {
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, rgba, timezone } = useClub();
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { team } = useTeam();
@@ -185,7 +186,13 @@ export default function ScheduleUploadScreen() {
 
     const parsed: ParsedEvent[] = (invokeRes.data.events ?? []).map((e: any, i: number) => {
       const type = (['game', 'training', 'other'].includes(e.type) ? e.type : 'other') as EventType;
-      const isDuplicate = !!e.date && existingKeys.has(`${e.date}_${type}`);
+      const key = e.date ? `${e.date}_${type}` : null;
+      const isDuplicate = !!key && existingKeys.has(key);
+      // Only checked against the DB before, so two rows the AI parsed
+      // twice from the same upload (same date+type) both came back
+      // "not duplicate" and both got selected for import. Mark this key
+      // seen now so a later row in this same batch is caught too.
+      if (key && !isDuplicate) existingKeys.add(key);
       return {
         _id: `evt-${i}`,
         date: e.date ?? null,
@@ -238,7 +245,9 @@ export default function ScheduleUploadScreen() {
       const rsvpLockAt = bulk.rsvpLockHours != null && e.date && e.time
         ? (() => {
             const [h, m] = e.time!.split(':').map(Number);
-            const dt = new Date(`${e.date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
+            // Anchored to the club's own timezone, not this device's — see
+            // create-event.tsx's computeLockAt for the full reasoning.
+            const dt = zonedTimeToUtc(e.date!, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`, timezone);
             dt.setHours(dt.getHours() - bulk.rsvpLockHours!);
             return dt.toISOString();
           })()

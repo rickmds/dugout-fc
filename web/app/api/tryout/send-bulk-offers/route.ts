@@ -16,6 +16,9 @@ export async function POST(req: NextRequest) {
 
   const { club_id, team_name } = await req.json();
   if (!club_id || !team_name) return NextResponse.json({ error: 'club_id and team_name required' }, { status: 400 });
+  if (auth.role !== 'app_admin' && club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const sb = supabaseAdmin();
 

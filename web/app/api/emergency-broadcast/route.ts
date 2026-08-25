@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { requireRole } from '@/lib/apiAuth';
+import { sendExpoPush } from '@/lib/expoPush';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['org_admin', 'app_admin']);
@@ -22,6 +22,9 @@ export async function POST(req: NextRequest) {
 
   if (!club_id || !message?.trim()) {
     return NextResponse.json({ error: 'club_id and message required' }, { status: 400 });
+  }
+  if (auth.role !== 'app_admin' && club_id !== auth.clubId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const sb = supabaseAdmin();
@@ -65,13 +68,7 @@ export async function POST(req: NextRequest) {
         data: { type: 'emergency_broadcast', club_slug: club.slug ?? '' },
       }));
 
-      for (let i = 0; i < messages.length; i += 100) {
-        await fetch(EXPO_PUSH_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(messages.slice(i, i + 100)),
-        });
-      }
+      await sendExpoPush(messages);
       pushSent = pushTokens.length;
     }
   }

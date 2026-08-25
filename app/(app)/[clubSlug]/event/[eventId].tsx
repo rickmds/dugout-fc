@@ -49,7 +49,7 @@ function LocationMap({
   onPress: () => void;
   onDriveTime?: (t: string) => void;
 }) {
-  const { primaryColor } = useClub();
+  const { primaryColor, timezone } = useClub();
   const [drivingTime, setDrivingTime] = useState<string | null>(null);
   const [imgError, setImgError]       = useState(false);
   const [imgLoaded, setImgLoaded]     = useState(false);
@@ -57,7 +57,7 @@ function LocationMap({
   useEffect(() => {
     if (!PLACES_KEY) return;
     const dest = lat != null && lng != null ? `${lat},${lng}` : (address ?? '');
-    fetchDriveTime(dest, eventDate, eventTime).then(t => {
+    fetchDriveTime(dest, eventDate, eventTime, timezone).then(t => {
       if (t) { setDrivingTime(t); onDriveTime?.(t); }
     });
   }, []);
@@ -300,17 +300,14 @@ function computeEndTime(timeStr: string, durationMins: number): string {
   return `${displayH}:${String(endM).padStart(2, '0')} ${period}`;
 }
 
-function isUpcoming(dateStr: string): boolean {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return new Date(dateStr + 'T00:00:00') >= today;
-}
-
 // Same conservative-fallback logic as the reflection-prompts cron
 // (web/app/api/cron/reflection-prompts/route.ts) — uses the real
 // duration_minutes when the coach set one, otherwise assumes 2 hours is
 // long enough to clear any age group's warmup/halftime/game length.
-function hasGameEnded(event: { event_date: string; event_time: string | null; duration_minutes: number | null }): boolean {
+// Also doubles as the "upcoming" check below — a training/game dated today
+// no longer reads as upcoming for the rest of the evening once it's
+// actually over.
+function hasEventEnded(event: { event_date: string; event_time: string | null; duration_minutes: number | null }): boolean {
   if (!event.event_time) return false;
   const start = new Date(`${event.event_date}T${event.event_time}`);
   const end = new Date(start.getTime() + (event.duration_minutes ?? 120) * 60000);
@@ -412,6 +409,29 @@ export default function EventDetailScreen() {
     load();
   }, [team?.id, teamLoading, profile?.id, eventId]);
 
+  // Same stuck-badge/stuck-centre-item bug as messages and announcements —
+  // this screen is the real destination for every event-scoped notification
+  // type (new event, updated, cancelled, schedule change, game day/RSVP
+  // reminders, attendance, and every guest_* variant — they all carry
+  // event_id, see the comment above about notification taps landing here),
+  // but nothing ever cleared those rows unless the user separately opened
+  // the Notification Centre and tapped them there.
+  async function markEventNotificationsRead() {
+    if (!profile || !eventId) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .in('type', [
+        'new_event', 'event_updated', 'event_cancelled', 'schedule_change',
+        'game_day', 'event_day_reminder', 'rsvp_reminder', 'attendance_absent',
+        'guest_invite', 'guest_coach_invite', 'guest_accepted', 'guest_response',
+        'guest_removed', 'guest_cancelled', 'guest_reminder',
+      ])
+      .filter('data->>event_id', 'eq', eventId);
+  }
+
   async function load() {
     if (!team || !profile || !eventId) return;
     setLoading(true);
@@ -457,6 +477,7 @@ export default function EventDetailScreen() {
     setEvent(eventRow as unknown as EventDetail);
     setPlayers((playersRes.data ?? []) as Player[]);
     setRsvps((rsvpsRes.data ?? []) as RsvpRow[]);
+    markEventNotificationsRead();
 
     const pids = ((playerRes.data as any[]) ?? []).map((p) => p.id as string);
     setMyPlayerIds(pids);
@@ -1232,7 +1253,7 @@ export default function EventDetailScreen() {
   }
 
   const cfg = TYPE_CONFIG[event.type] ?? TYPE_CONFIG.other;
-  const upcoming = isUpcoming(event.event_date);
+  const upcoming = !hasEventEnded(event);
 
   const rsvpMap = new Map(rsvps.map((r) => [r.player_id, r.status]));
   const attending = players.filter((p) => rsvpMap.get(p.id) === 'attending');
@@ -1443,7 +1464,7 @@ export default function EventDetailScreen() {
           {/* Post-game reflection — self-directed only; the "never before
               the game ends" rule lives in hasGameEnded(), same estimate the
               push-notification cron uses. */}
-          {myPlayerIds.length > 0 && event.type === 'game' && !event.cancelled_at && hasGameEnded(event) && (
+          {myPlayerIds.length > 0 && event.type === 'game' && !event.cancelled_at && hasEventEnded(event) && (
             myPlayerIds.map((pid) => {
               const reflection = myReflections[pid];
               const firstName = players.find(p => p.id === pid)?.full_name.split(' ')[0] ?? 'them';
@@ -1477,7 +1498,7 @@ export default function EventDetailScreen() {
               dilute how genuine it feels; this is just a door left open.
               Past games only — there's nothing to recognize before the
               game has actually happened. */}
-          {isCoach && event.type === 'game' && !event.cancelled_at && hasGameEnded(event) && (
+          {isCoach && event.type === 'game' && !event.cancelled_at && hasEventEnded(event) && (
             <TouchableOpacity style={styles.shoutoutBanner} onPress={() => setShoutoutSheetOpen(true)} activeOpacity={0.8}>
               <View style={styles.shoutoutIconChip}>
                 <Text style={styles.shoutoutEmoji}>🏅</Text>

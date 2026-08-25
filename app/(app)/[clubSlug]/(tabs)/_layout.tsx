@@ -42,7 +42,7 @@ export default function TabsLayout() {
         .select('*', { count: 'exact', head: true })
         .eq('profile_id', profile!.id)
         .eq('read', false)
-        .in('type', ['new_message', 'message', 'new_announcement', 'direct_message', 'chat']);
+        .in('type', ['new_message', 'new_announcement', 'new_dm']);
       setChatUnread(count ?? 0);
     }
 

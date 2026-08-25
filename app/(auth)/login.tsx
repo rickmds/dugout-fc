@@ -90,10 +90,26 @@ export default function LoginScreen() {
       return;
     }
     setLoading(true);
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://pulse-fc.app/reset-password',
-    });
+
+    // Same stalled-request risk as sign-in/sign-up: without a timeout this
+    // can spin forever even though Supabase already queued the email
+    // server-side. There's no session to self-heal into here, and Supabase
+    // deliberately returns success regardless of whether the email exists
+    // (to avoid leaking which emails are registered) — so a timeout is safe
+    // to treat the same as success rather than leaving the user stuck.
+    const TIMEOUT = Symbol('timeout');
+    const result = await Promise.race([
+      supabase.auth.resetPasswordForEmail(email, { redirectTo: 'https://pulse-fc.app/reset-password' }),
+      new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), 6000)),
+    ]);
     setLoading(false);
+
+    if (result === TIMEOUT) {
+      setInfo('Check your email for a link to reset your password.');
+      return;
+    }
+
+    const { error: resetError } = result;
     if (resetError) { setError(resetError.message); return; }
     setInfo('Check your email for a link to reset your password.');
   }

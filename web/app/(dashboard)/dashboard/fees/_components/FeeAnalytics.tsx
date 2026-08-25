@@ -4,6 +4,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { formatCurrency } from '@/lib/formatCurrency';
+import { symbolForCurrency } from '@/lib/countries';
+import { zonedDateString } from '@/lib/timezone';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type MonthData = {
@@ -26,6 +29,8 @@ type AgeingData = {
   color: string;
 };
 
+type RailStats = { achCount: number; cardCount: number; achVolume: number; cardVolume: number };
+
 type FeeRow = {
   id: string;
   description: string | null;
@@ -37,19 +42,20 @@ type FeeRow = {
   created_at: string | null;
 };
 
-type PaymentRow = { player_fee_id: string; amount: number; paid_at: string | null };
+type PaymentRow = { player_fee_id: string; amount: number; paid_at: string | null; method: string | null; payment_rail: 'card' | 'ach' | null };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function fmt(n: number) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function fmtK(n: number) {
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
-  return `$${n.toFixed(0)}`;
+function fmt(n: number, currency?: string) { return formatCurrency(n, currency); }
+function fmtK(n: number, currency?: string) {
+  const symbol = symbolForCurrency(currency);
+  if (n >= 1000) return `${symbol}${(n / 1000).toFixed(1)}k`;
+  return `${symbol}${n.toFixed(0)}`;
 }
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // ── Monthly bar chart (pure SVG, no deps) ────────────────────────────────────
-function MonthlyChart({ data, primary }: { data: MonthData[]; primary: string }) {
+function MonthlyChart({ data, primary, currency }: { data: MonthData[]; primary: string; currency?: string }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const maxVal = Math.max(...data.flatMap(d => [d.invoiced, d.collected]), 1);
   const W = 700, H = 180;
@@ -69,7 +75,7 @@ function MonthlyChart({ data, primary }: { data: MonthData[]; primary: string })
           return (
             <g key={pct}>
               <line x1={pad.left} x2={W - pad.right} y1={y} y2={y} stroke="#F1F5F9" strokeWidth="1" />
-              <text x={pad.left - 5} y={y + 3.5} textAnchor="end" fontSize="9" fill="#94A3B8">{fmtK(maxVal * pct)}</text>
+              <text x={pad.left - 5} y={y + 3.5} textAnchor="end" fontSize="9" fill="#94A3B8">{fmtK(maxVal * pct, currency)}</text>
             </g>
           );
         })}
@@ -97,8 +103,8 @@ function MonthlyChart({ data, primary }: { data: MonthData[]; primary: string })
                 <g>
                   <rect x={cx - 46} y={pad.top} width={92} height={48} rx={5} fill="#0F172A" />
                   <text x={cx} y={pad.top + 13} textAnchor="middle" fontSize="9.5" fill="#fff" fontWeight="700">{d.label}</text>
-                  <text x={cx} y={pad.top + 25} textAnchor="middle" fontSize="8.5" fill={primary}>Collected: ${fmt(d.collected)}</text>
-                  <text x={cx} y={pad.top + 35} textAnchor="middle" fontSize="8.5" fill="#94A3B8">Invoiced: ${fmt(d.invoiced)}</text>
+                  <text x={cx} y={pad.top + 25} textAnchor="middle" fontSize="8.5" fill={primary}>Collected: {fmt(d.collected, currency)}</text>
+                  <text x={cx} y={pad.top + 35} textAnchor="middle" fontSize="8.5" fill="#94A3B8">Invoiced: {fmt(d.invoiced, currency)}</text>
                   <text x={cx} y={pad.top + 45} textAnchor="middle" fontSize="8.5" fill="#64748B">{colPct}% rate</text>
                 </g>
               )}
@@ -121,8 +127,8 @@ function MonthlyChart({ data, primary }: { data: MonthData[]; primary: string })
 }
 
 // ── Horizontal bar for categories ─────────────────────────────────────────────
-function CategoryBar({ name, invoiced, collected, maxInvoiced, primary }: {
-  name: string; invoiced: number; collected: number; maxInvoiced: number; primary: string;
+function CategoryBar({ name, invoiced, collected, maxInvoiced, primary, currency }: {
+  name: string; invoiced: number; collected: number; maxInvoiced: number; primary: string; currency?: string;
 }) {
   const pctWidth  = maxInvoiced > 0 ? (invoiced / maxInvoiced) * 100 : 0;
   const colPct    = invoiced   > 0 ? Math.round((collected / invoiced) * 100) : 0;
@@ -134,7 +140,7 @@ function CategoryBar({ name, invoiced, collected, maxInvoiced, primary }: {
         <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pctWidth}%`, background: '#E2E8F0', borderRadius: '4px' }} />
         <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pctWidth * (colPct / 100)}%`, background: primary, borderRadius: '4px' }} />
       </div>
-      <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151', textAlign: 'right' }}>${fmt(invoiced)}</span>
+      <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151', textAlign: 'right' }}>{fmt(invoiced, currency)}</span>
       <span style={{ fontSize: '11px', fontWeight: '700', color: barColor, textAlign: 'right' }}>{colPct}%</span>
     </div>
   );
@@ -152,8 +158,11 @@ export default function FeeAnalytics() {
   const [totalInv,   setTotalInv]   = useState(0);
   const [totalCol,   setTotalCol]   = useState(0);
   const [totalOut,   setTotalOut]   = useState(0);
+  const [railStats,  setRailStats]  = useState<RailStats | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Anchored to the club's own timezone, not UTC — see fees/page.tsx's
+  // matching comment for why a UTC "today" flips a fee overdue too early.
+  const today = zonedDateString(new Date().toISOString(), club?.timezone ?? 'America/New_York');
 
   const load = useCallback(async () => {
     if (!club) return;
@@ -184,7 +193,7 @@ export default function FeeAnalytics() {
     let payments: PaymentRow[] = [];
     if (feeIds.length > 0) {
       const { data: pmtsData } = await supabase
-        .from('fee_payments').select('player_fee_id,amount,paid_at').in('player_fee_id', feeIds)
+        .from('fee_payments').select('player_fee_id,amount,paid_at,method,payment_rail').in('player_fee_id', feeIds)
         .returns<PaymentRow[]>();
       payments = pmtsData ?? [];
     }
@@ -240,12 +249,21 @@ export default function FeeAnalytics() {
       { label: '60d+ overdue',  amount: sumOwed(d60p),    probability: 0.15, color: '#7F1D1D' },
     ];
 
+    // ── ACH adoption (online payments only — cash/check have no rail) ──────────
+    const railPayments = payments.filter(p => p.method === 'stripe' && p.payment_rail);
+    const stats: RailStats = { achCount: 0, cardCount: 0, achVolume: 0, cardVolume: 0 };
+    for (const p of railPayments) {
+      if (p.payment_rail === 'ach')  { stats.achCount++;  stats.achVolume  += +p.amount; }
+      if (p.payment_rail === 'card') { stats.cardCount++; stats.cardVolume += +p.amount; }
+    }
+
     setMonthly(months);
     setCategories(cats);
     setAgeing(ageingData);
     setTotalInv(inv);
     setTotalCol(col);
     setTotalOut(out);
+    setRailStats(railPayments.length > 0 ? stats : null);
     setLoading(false);
   }, [club, today]);
 
@@ -269,10 +287,10 @@ export default function FeeAnalytics() {
       {/* ── Top summary row ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '14px', marginBottom: '20px' }}>
         {[
-          { label: 'Total Invoiced',    value: loading ? '—' : `$${fmt(totalInv)}`,             color: '#64748B', icon: '📄' },
-          { label: 'Total Collected',   value: loading ? '—' : `$${fmt(totalCol)}`,             color: '#22C55E', icon: '✅' },
+          { label: 'Total Invoiced',    value: loading ? '—' : fmt(totalInv, club?.currency),             color: '#64748B', icon: '📄' },
+          { label: 'Total Collected',   value: loading ? '—' : fmt(totalCol, club?.currency),             color: '#22C55E', icon: '✅' },
           { label: 'Collection Rate',   value: loading ? '—' : `${collectionPct}%`,             color: collectionPct >= 80 ? '#22C55E' : collectionPct >= 50 ? '#F59E0B' : '#EF4444', icon: '📈' },
-          { label: 'Projected Further', value: loading ? '—' : `$${fmt(projectedCollection)}`, color: '#3B82F6', icon: '🔮' },
+          { label: 'Projected Further', value: loading ? '—' : fmt(projectedCollection, club?.currency), color: '#3B82F6', icon: '🔮' },
         ].map(({ label, value, color, icon }) => (
           <div key={label} style={{ ...card, display: 'flex', alignItems: 'center', gap: '14px', padding: '16px 20px' }}>
             <div style={{ fontSize: '24px', flexShrink: 0 }}>{icon}</div>
@@ -298,14 +316,14 @@ export default function FeeAnalytics() {
             return diff !== 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: '600', color: diff > 0 ? '#22C55E' : '#EF4444' }}>
                 {diff > 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                {diff > 0 ? '+' : ''}{fmt(Math.abs(diff))} vs prev month
+                {diff > 0 ? '+' : ''}{fmt(Math.abs(diff), club?.currency)} vs prev month
               </div>
             ) : null;
           })()}
         </div>
         {loading
           ? <div style={{ height: '180px', ...shimmer }} />
-          : <MonthlyChart data={monthly} primary={primary} />
+          : <MonthlyChart data={monthly} primary={primary} currency={club?.currency} />
         }
       </div>
 
@@ -327,7 +345,7 @@ export default function FeeAnalytics() {
                     ))}
                   </div>
                   {categories.map(cat => (
-                    <CategoryBar key={cat.name} name={cat.name} invoiced={cat.invoiced} collected={cat.collected} maxInvoiced={maxCatInv} primary={primary} />
+                    <CategoryBar key={cat.name} name={cat.name} invoiced={cat.invoiced} collected={cat.collected} maxInvoiced={maxCatInv} primary={primary} currency={club?.currency} />
                   ))}
                 </>
               )
@@ -352,8 +370,8 @@ export default function FeeAnalytics() {
                           <span style={{ fontSize: '11px', color: '#94A3B8', marginLeft: '6px' }}>{Math.round(a.probability * 100)}% likely</span>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '12px', fontWeight: '700', color: '#374151' }}>${fmt(a.amount)}</div>
-                          <div style={{ fontSize: '10.5px', color: a.color, fontWeight: '600' }}>→ ${fmt(proj)}</div>
+                          <div style={{ fontSize: '12px', fontWeight: '700', color: '#374151' }}>{fmt(a.amount, club?.currency)}</div>
+                          <div style={{ fontSize: '10.5px', color: a.color, fontWeight: '600' }}>→ {fmt(proj, club?.currency)}</div>
                         </div>
                       </div>
                       <div style={{ height: '5px', background: '#F1F5F9', borderRadius: '3px', overflow: 'hidden' }}>
@@ -365,16 +383,54 @@ export default function FeeAnalytics() {
 
                 <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '2px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '13px', fontWeight: '700', color: '#374151' }}>Projected total recovery</span>
-                  <span style={{ fontSize: '16px', fontWeight: '800', color: primary, letterSpacing: '-0.3px' }}>${fmt(projectedCollection)}</span>
+                  <span style={{ fontSize: '16px', fontWeight: '800', color: primary, letterSpacing: '-0.3px' }}>{fmt(projectedCollection, club?.currency)}</span>
                 </div>
                 <div style={{ marginTop: '6px', fontSize: '11px', color: '#94A3B8' }}>
-                  Out of ${fmt(totalOut)} outstanding ({totalOut > 0 ? Math.round((projectedCollection / totalOut) * 100) : 0}% expected recovery)
+                  Out of {fmt(totalOut, club?.currency)} outstanding ({totalOut > 0 ? Math.round((projectedCollection / totalOut) * 100) : 0}% expected recovery)
                 </div>
               </>
             )
           }
         </div>
       </div>
+
+      {/* ── Payment method adoption (ACH vs card) ── */}
+      {!loading && railStats && (
+        <div style={{ ...card, marginBottom: '16px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>Payment Method Adoption</div>
+          <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '16px' }}>Bank account (ACH) vs card, across all online payments</div>
+          {(() => {
+            const totalCount   = railStats.achCount + railStats.cardCount;
+            const totalVolume  = railStats.achVolume + railStats.cardVolume;
+            const achCountPct  = totalCount  > 0 ? Math.round((railStats.achCount  / totalCount)  * 100) : 0;
+            const achVolumePct = totalVolume > 0 ? Math.round((railStats.achVolume / totalVolume) * 100) : 0;
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151' }}>By transaction count</span>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: primary }}>{achCountPct}% ACH</span>
+                  </div>
+                  <div style={{ height: '8px', borderRadius: '4px', background: '#CBD5E1', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${achCountPct}%`, background: primary }} />
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '5px' }}>{railStats.achCount} bank &middot; {railStats.cardCount} card</div>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#374151' }}>By dollar volume</span>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: primary }}>{achVolumePct}% ACH</span>
+                  </div>
+                  <div style={{ height: '8px', borderRadius: '4px', background: '#CBD5E1', overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${achVolumePct}%`, background: primary }} />
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '5px' }}>{fmt(railStats.achVolume, club?.currency)} bank &middot; {fmt(railStats.cardVolume, club?.currency)} card</div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* ── Outstanding status breakdown ── */}
       {!loading && totalOut > 0 && (
@@ -385,7 +441,7 @@ export default function FeeAnalytics() {
             {ageing.map(a => (
               <div key={a.label} style={{ background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E2E8F0', padding: '14px 16px' }}>
                 <div style={{ fontSize: '10.5px', fontWeight: '700', color: a.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{a.label}</div>
-                <div style={{ fontSize: '18px', fontWeight: '800', color: a.color, letterSpacing: '-0.3px' }}>${fmt(a.amount)}</div>
+                <div style={{ fontSize: '18px', fontWeight: '800', color: a.color, letterSpacing: '-0.3px' }}>{fmt(a.amount, club?.currency)}</div>
                 <div style={{ marginTop: '8px', height: '3px', background: '#E2E8F0', borderRadius: '2px', overflow: 'hidden' }}>
                   <div style={{ width: `${totalOut > 0 ? (a.amount / totalOut) * 100 : 0}%`, height: '100%', background: a.color }} />
                 </div>

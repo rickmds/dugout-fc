@@ -28,6 +28,7 @@ export type Club = {
   training_kit_color: string | null;
   logo_url: string | null;
   currency: string;
+  country: string;
   tryouts_active: boolean;
   latitude: number | null;
   longitude: number | null;
@@ -41,6 +42,7 @@ export type Club = {
   late_fee_amount: number | null;
   late_fee_grace_days: number | null;
   hardship_fund_enabled: boolean | null;
+  suspended_at: string | null;
 };
 
 export type Team = {
@@ -114,7 +116,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       if (prof.club_id) {
         const { data: c } = await supabase
           .from('clubs')
-          .select('id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled')
+          .select('id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at')
           .eq('id', prof.club_id)
           .single();
         if (c) {
@@ -165,6 +167,51 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
+
+  // load() only checks auth once, on mount. If the session dies later —
+  // refresh token expired, signed out in another tab, revoked — nothing
+  // else here would notice: profile/club/teams stay in state, the page
+  // keeps rendering as if logged in, and every action after that just
+  // fails silently. Supabase itself fires SIGNED_OUT the moment it gives
+  // up on the session, so react to that directly instead of leaving stale
+  // UI up.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') router.push('/login');
+    });
+    return () => subscription.unsubscribe();
+  }, [router]);
+
+  // The SIGNED_OUT listener above only fires when Supabase's own client
+  // decides the session is dead — which requires its background refresh
+  // timer to actually run. Browsers throttle or fully pause timers for a
+  // backgrounded tab (laptop asleep, tab unfocused for a while), so that
+  // timer can simply never get a turn — the session sits stale in memory
+  // with nothing pushing an event, and only a manual reload's fresh
+  // getUser() call notices. Closing that gap: re-validate with the server
+  // the moment the tab is looked at again, instead of waiting on a push
+  // that may never come.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== 'visible') return;
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (!user) { router.push('/login'); return; }
+        // Session-liveness check above doesn't cover a club that got
+        // suspended while this tab sat in the background — the suspended
+        // block screen only renders off club.suspended_at in state, and
+        // nothing else here ever refreshes it after the initial load().
+        if (profile?.club_id) {
+          supabase.from('clubs').select('suspended_at').eq('id', profile.club_id).single().then(({ data }) => {
+            if (data && data.suspended_at !== club?.suspended_at) {
+              setClub(prev => prev ? { ...prev, suspended_at: data.suspended_at } : prev);
+            }
+          });
+        }
+      });
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [router, profile?.club_id, club?.suspended_at]);
 
   async function signOut() {
     await supabase.auth.signOut();

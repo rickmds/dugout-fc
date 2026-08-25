@@ -318,10 +318,17 @@ export default function LineupScreen() {
       lineup.setSelectedFormationId(existing.formation);
       const lps = (existing as any).lineup_positions ?? [];
       // Map positions after formation is updated — use a short delay for state settle
+      const attendingIds = new Set(allIds);
       setTimeout(() => {
         const fps = positionsRef.current;
         const map: Record<number, string> = {};
         lps.forEach((lp: { player_id: string; x: number; y: number }) => {
+          // A player who's since flipped their RSVP to not-attending (or
+          // been removed as a guest) shouldn't keep a saved slot — it read
+          // as empty on screen already, but Save silently re-persisted
+          // their id anyway since this map never checked who's still
+          // actually confirmed.
+          if (!attendingIds.has(lp.player_id)) return;
           const idx = fps.findIndex((fp) => Math.abs(fp.x - lp.x) < 1 && Math.abs(fp.y - lp.y) < 1);
           if (idx >= 0) map[idx] = lp.player_id;
         });

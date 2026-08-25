@@ -13,12 +13,14 @@ export async function POST(req: NextRequest) {
   // 1. Fetch and validate the invite
   const { data: invite, error: invErr } = await db
     .from('invites')
-    .select('id, team_id, player_id, role, accepted_at, teams(club_id, clubs(slug))')
+    .select('id, team_id, club_id, team_ids, player_id, role, accepted_at, teams(club_id, clubs(slug)), clubs(slug)')
     .eq('token', token)
     .is('accepted_at', null)
     .single<{
-      id: string; team_id: string; player_id: string | null; role: string; accepted_at: string | null;
+      id: string; team_id: string | null; club_id: string | null; team_ids: string[] | null;
+      player_id: string | null; role: string; accepted_at: string | null;
       teams: { club_id: string; clubs: { slug: string } | null } | null;
+      clubs: { slug: string } | null;
     }>();
 
   if (invErr || !invite) {
@@ -26,10 +28,9 @@ export async function POST(req: NextRequest) {
   }
 
   const inv       = invite;
-  const club_id   = inv.teams?.club_id;
-  const club_slug = inv.teams?.clubs?.slug;
-  const role      = inv.role === 'coach' ? 'coach'  : 'player';
-  const teamRole  = inv.role === 'coach' ? 'coach'  : 'parent';
+  const club_id   = inv.team_id ? inv.teams?.club_id : inv.club_id;
+  const club_slug = inv.team_id ? inv.teams?.clubs?.slug : inv.clubs?.slug;
+  const role      = inv.role === 'coach' ? 'coach' : inv.role === 'org_admin' ? 'org_admin' : 'player';
 
   // 2. Create the user with email pre-confirmed (no confirmation email needed)
   const { data: authData, error: createErr } = await db.auth.admin.createUser({
@@ -63,16 +64,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Account setup failed. Please try again.' }, { status: 500 });
   }
 
-  // 4. Join the team
-  const { error: memberErr } = await db.from('team_members').insert({
-    team_id:    inv.team_id,
-    profile_id: userId,
-    role:       teamRole,
-  });
-  if (memberErr) {
-    await db.auth.admin.deleteUser(userId);
-    console.error('team_members insert failed:', memberErr);
-    return NextResponse.json({ error: 'Could not join team. Please try again.' }, { status: 500 });
+  // 4. Join the team(s) — a single-team invite (parent or single-team coach)
+  // carries team_id; a club-wide coach invite carries team_ids instead; an
+  // org_admin invite carries neither — their access is club-wide via
+  // profiles.role/club_id alone, no team_members row needed.
+  const teamRole = inv.role === 'coach' ? 'coach' : 'parent';
+  const memberRows = inv.team_id
+    ? [{ team_id: inv.team_id, profile_id: userId, role: teamRole }]
+    : (inv.team_ids ?? []).map((team_id) => ({ team_id, profile_id: userId, role: 'coach' }));
+
+  if (memberRows.length) {
+    const { error: memberErr } = await db.from('team_members').insert(memberRows);
+    if (memberErr) {
+      await db.auth.admin.deleteUser(userId);
+      console.error('team_members insert failed:', memberErr);
+      return NextResponse.json({ error: 'Could not join team. Please try again.' }, { status: 500 });
+    }
   }
 
   // 5. Link player record to this profile
