@@ -11,6 +11,7 @@ import { resolveNotificationTeamId } from '../lib/resolveNotificationTeamId';
 import WebPushPrompt from '../components/ui/WebPushPrompt';
 import UpdateRequiredModal from '../components/ui/UpdateRequiredModal';
 import ClubSuspendedModal from '../components/ui/ClubSuspendedModal';
+import ViewAsBanner from '../components/ui/ViewAsBanner';
 import { checkVersionGate } from '../lib/versionGate';
 
 SplashScreen.preventAutoHideAsync();
@@ -121,6 +122,7 @@ function AppShell() {
     <>
       <Stack screenOptions={{ headerShown: false }} />
       <WebPushPrompt />
+      <ViewAsBanner />
       {updateRequired && <UpdateRequiredModal />}
       {!updateRequired && club?.suspended_at && <ClubSuspendedModal />}
     </>

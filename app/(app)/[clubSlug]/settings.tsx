@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Constants from 'expo-constants';
 import {
   ActivityIndicator,
@@ -32,6 +32,7 @@ import TeamEditModal from '../../../components/ui/TeamEditModal';
 import ImageEditor from '../../../components/ui/ImageEditor';
 import { useMapApp } from '../../../hooks/useMapApp';
 import { formatPhone } from '../../../lib/formatPhone';
+import { startViewAs } from '../../../lib/viewAs';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -174,6 +175,17 @@ export default function SettingsScreen() {
   const [myCerts, setMyCerts]               = useState<MyCert[]>([]);
   const [certsLoaded, setCertsLoaded]       = useState(false);
   const [showCertModal, setShowCertModal]   = useState(false);
+
+  // View As (app_admin only) — 5 quick taps on the version footer opens a
+  // picker of this club's real parent accounts, then swaps to a genuine
+  // Supabase session as that person via lib/viewAs.ts. Hidden rather than a
+  // visible menu item since it's a testing tool, not a feature for anyone
+  // else to stumble into.
+  const [viewAsTapCount, setViewAsTapCount]     = useState(0);
+  const [showViewAsPicker, setShowViewAsPicker] = useState(false);
+  const [viewAsLoading, setViewAsLoading]       = useState(false);
+  const [clubParents, setClubParents]           = useState<{ profile_id: string; full_name: string; team_name: string }[]>([]);
+  const viewAsTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [certType, setCertType]             = useState('background_check');
   const [certLevel, setCertLevel]           = useState('');
   const [certCustomLabel, setCertCustomLabel] = useState('');
@@ -608,6 +620,43 @@ export default function SettingsScreen() {
     }
     Alert.alert('Done', 'Password updated successfully.');
     setNewPw(''); setConfirmPw(''); setShowPwForm(false);
+  }
+
+  function handleVersionTap() {
+    if (profile?.role !== 'app_admin') return;
+    setViewAsTapCount((prev) => {
+      const next = prev + 1;
+      if (viewAsTapTimer.current) clearTimeout(viewAsTapTimer.current);
+      if (next >= 5) {
+        openViewAsPicker();
+        return 0;
+      }
+      viewAsTapTimer.current = setTimeout(() => setViewAsTapCount(0), 1500);
+      return next;
+    });
+  }
+
+  async function openViewAsPicker() {
+    if (!club) return;
+    setShowViewAsPicker(true);
+    setViewAsLoading(true);
+    const { data, error } = await (supabase as any).rpc('get_club_parents', { p_club_id: club.id });
+    setClubParents(error ? [] : (data ?? []));
+    setViewAsLoading(false);
+  }
+
+  async function handleSelectViewAs(targetProfileId: string) {
+    const slug = club?.slug;
+    setShowViewAsPicker(false);
+    setViewAsLoading(true);
+    const result = await startViewAs(targetProfileId);
+    setViewAsLoading(false);
+    if (!result.ok) {
+      Alert.alert('Could not switch', result.error);
+      return;
+    }
+    await refreshProfile();
+    router.replace(`/(app)/${slug}/(tabs)` as any);
   }
 
   function handleSignOut() {
@@ -1426,7 +1475,43 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </Section>
 
-      <Text style={st.version}>{`Pulse FC · v${Constants.expoConfig?.version ?? '1.0'}`}</Text>
+      <TouchableOpacity onPress={handleVersionTap} activeOpacity={1}>
+        <Text style={st.version}>{`Pulse FC · v${Constants.expoConfig?.version ?? '1.0'}`}</Text>
+      </TouchableOpacity>
+
+      {/* ── View As picker (app_admin only, reached via 5 taps above) ── */}
+      <Modal visible={showViewAsPicker} animationType="slide" transparent onRequestClose={() => setShowViewAsPicker(false)}>
+        <View style={cp.overlay}>
+          <View style={[cp.sheet, { maxHeight: '75%' }]}>
+            <Text style={cp.title}>View As</Text>
+            <Text style={[st.rowLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 16 }]}>
+              Pick a parent to sign in as. Tap Exit on the banner to switch back.
+            </Text>
+            {viewAsLoading ? (
+              <ActivityIndicator color={primaryColor} />
+            ) : clubParents.length === 0 ? (
+              <Text style={st.rowLabel}>No parents found for this club yet.</Text>
+            ) : (
+              <ScrollView>
+                {clubParents.map((p) => (
+                  <TouchableOpacity
+                    key={`${p.profile_id}-${p.team_name}`}
+                    style={st.row}
+                    onPress={() => handleSelectViewAs(p.profile_id)}
+                    activeOpacity={0.65}
+                  >
+                    <Text style={[st.rowLabel, { flex: 1 }]}>{p.full_name}</Text>
+                    <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13 }}>{p.team_name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            <TouchableOpacity style={[st.row, { marginTop: 12 }]} onPress={() => setShowViewAsPicker(false)} activeOpacity={0.65}>
+              <Text style={[st.rowLabel, { flex: 1, textAlign: 'center', color: PULSE_COLORS.ui.muted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Certification upload modal ── */}
       <Modal visible={showCertModal} animationType="slide" transparent onRequestClose={() => setShowCertModal(false)}>
