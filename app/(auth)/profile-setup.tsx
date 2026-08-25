@@ -29,7 +29,6 @@ type GuardedPlayer = {
   id: string;
   full_name: string;
   team_id: string;
-  medical_notes: string | null;
 };
 
 type ChildFields = { name: string; phone: string; rel: string; notes: string };
@@ -73,23 +72,30 @@ export default function ProfileSetupScreen() {
       const rows = (data ?? []) as GuardedPlayer[];
       setPlayers(rows);
 
-      const { data: contacts } = rows.length
-        ? await supabase
-            .from('player_emergency_contacts')
-            .select('id, player_id, name, phone, relationship')
-            .in('player_id', rows.map((p) => p.id))
-            .order('created_at', { ascending: true })
-        : { data: [] };
+      const [{ data: contacts }, { data: medicalNotes }] = rows.length
+        ? await Promise.all([
+            supabase
+              .from('player_emergency_contacts')
+              .select('id, player_id, name, phone, relationship')
+              .in('player_id', rows.map((p) => p.id))
+              .order('created_at', { ascending: true }),
+            (supabase as any)
+              .from('player_medical_notes')
+              .select('player_id, notes')
+              .in('player_id', rows.map((p) => p.id)) as Promise<{ data: { player_id: string; notes: string | null }[] | null }>,
+          ])
+        : [{ data: [] }, { data: [] as { player_id: string; notes: string | null }[] }];
 
       const fields: Record<string, ChildFields> = {};
       const ids: Record<string, string> = {};
       for (const p of rows) {
         const existing = (contacts ?? []).find((c) => c.player_id === p.id);
+        const notesRow = (medicalNotes ?? []).find((m) => m.player_id === p.id);
         fields[p.id] = {
           name: existing?.name ?? '',
           phone: existing?.phone ?? '',
           rel: existing?.relationship ?? '',
-          notes: p.medical_notes ?? '',
+          notes: notesRow?.notes ?? '',
         };
         if (existing) ids[p.id] = existing.id;
       }
@@ -156,7 +162,7 @@ export default function ProfileSetupScreen() {
     const { data: { user: liveUser } } = await supabase.auth.getUser();
     if (liveUser?.id !== user.id) {
       console.warn('[guardian-invite] session mismatch', { cachedUserId: user.id, liveUserId: liveUser?.id });
-      Alert.alert('Session out of sync', `App had ${user.id.slice(0, 8)}… but the server session is ${liveUser?.id?.slice(0, 8) ?? 'none'}…. Please sign out and back in, then try again.`);
+      Alert.alert("Couldn't send invite", 'Please sign out and back in, then try again.');
       setGuardianSaving(false);
       return;
     }
@@ -205,7 +211,10 @@ export default function ProfileSetupScreen() {
         const f = childFields[p.id];
         if (!f) return Promise.resolve();
         const tasks: PromiseLike<unknown>[] = [
-          supabase.from('players').update({ medical_notes: f.notes.trim() || null }).eq('id', p.id),
+          (supabase as any).from('player_medical_notes').upsert(
+            { player_id: p.id, notes: f.notes.trim() || null, updated_at: new Date().toISOString() },
+            { onConflict: 'player_id' }
+          ),
         ];
         const existingId = existingContactId[p.id];
         if (f.name.trim()) {

@@ -618,23 +618,28 @@ export default function EventDetailScreen() {
       if (current === status) {
         const { error } = await supabase.from('event_rsvps').delete()
           .eq('event_id', eventId).eq('player_id', playerId);
-        if (!error) {
-          setRsvps((prev) => prev.filter((r) => r.player_id !== playerId));
+        if (error) {
+          Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
+          return;
         }
+        setRsvps((prev) => prev.filter((r) => r.player_id !== playerId));
       } else {
         const { error } = await supabase.from('event_rsvps').upsert(
           { event_id: eventId, player_id: playerId, responded_by: profile?.id, status },
           { onConflict: 'event_id,player_id' }
         );
-        if (!error) {
-          setRsvps((prev) => {
-            const filtered = prev.filter((r) => r.player_id !== playerId);
-            return [...filtered, { player_id: playerId, status }];
-          });
+        if (error) {
+          Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
+          return;
         }
+        setRsvps((prev) => {
+          const filtered = prev.filter((r) => r.player_id !== playerId);
+          return [...filtered, { player_id: playerId, status }];
+        });
       }
     } catch (e) {
       console.error('handleRsvp error', e);
+      Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
     } finally {
       setRsvpSavingPlayerId(null);
     }

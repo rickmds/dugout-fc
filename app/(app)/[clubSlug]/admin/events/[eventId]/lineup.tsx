@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -84,7 +84,13 @@ function PitchMarkings({ w, h }: { w: number; h: number }) {
 
 // ─── Slot token (visual only — touch handled by pitch PanResponder) ───────────
 
-function SlotToken({
+// memo()-wrapped so a slot token whose props haven't changed (i.e. every
+// slot except the drag source/current drop target) doesn't re-render on
+// every touch-move frame of a pitch drag — only setDrag's own state lives
+// in the parent, so without this every one of these tokens (plus the whole
+// rest of the screen) would otherwise reconcile up to 60x/second while a
+// coach repositions a player.
+const SlotToken = memo(function SlotToken({
   label, player, isSelected, isTarget, isDimmed,
 }: {
   label: string;
@@ -115,7 +121,145 @@ function SlotToken({
       )}
     </View>
   );
-}
+});
+
+// memo()-wrapped floating drag ghost — isolated into its own component so
+// the 60fps stream of pageX/pageY updates during a drag only re-renders
+// this small token, not the pitch slots or the roster panel below it.
+const DragGhost = memo(function DragGhost({
+  pageX, pageY, ghostPlayer, primaryColor,
+}: {
+  pageX: number;
+  pageY: number;
+  ghostPlayer: Player | null;
+  primaryColor: string;
+}) {
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.ghostLayer]}>
+      <View
+        style={[
+          styles.ghost,
+          {
+            left: pageX - DRAG_TOKEN / 2,
+            top:  pageY - DRAG_TOKEN / 2,
+            width:        DRAG_TOKEN,
+            height:       DRAG_TOKEN,
+            borderRadius: DRAG_TOKEN / 2,
+            backgroundColor: primaryColor,
+            shadowColor: primaryColor,
+          },
+        ]}
+      >
+        <Text style={styles.ghostLabel}>
+          {ghostPlayer
+            ? (ghostPlayer.jersey_number != null ? String(ghostPlayer.jersey_number) : initials(ghostPlayer.full_name))
+            : ''}
+        </Text>
+        {ghostPlayer && (
+          <Text style={styles.ghostName} numberOfLines={1}>
+            {firstName(ghostPlayer.full_name)}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+});
+
+// memo()-wrapped roster panel — none of its own props (players, assignedIds,
+// selectedSlot) change during a pitch drag, so extracting it stops the full
+// ~15-25 row list from being reconciled on every drag touch-move frame too.
+const PlayersList = memo(function PlayersList({
+  players, assignedIds, selectedSlot, primaryColor, rgba, onSelectPlayer,
+}: {
+  players: Player[];
+  assignedIds: Set<string>;
+  selectedSlot: number | null;
+  primaryColor: string;
+  rgba: (alpha: number) => string;
+  onSelectPlayer: (player: Player) => void;
+}) {
+  if (players.length === 0) {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="people-outline" size={32} color={PULSE_COLORS.ui.muted} />
+        <Text style={styles.emptyTitle}>No confirmed RSVPs yet</Text>
+        <Text style={styles.emptyBody}>Players who RSVP attending will appear here</Text>
+      </View>
+    );
+  }
+  return (
+    <>
+      {players.map((player) => {
+        const isAssigned = assignedIds.has(player.id);
+        const isTarget   = selectedSlot !== null && !isAssigned && !player.isInjured;
+        return (
+          <TouchableOpacity
+            key={player.id}
+            style={[
+              styles.playerRow,
+              isAssigned && styles.playerRowDone,
+              isTarget   && [styles.playerRowTarget, { backgroundColor: rgba(0.05) }],
+              player.isInjured && styles.playerRowInjured,
+            ]}
+            onPress={() => onSelectPlayer(player)}
+            activeOpacity={(isAssigned || player.isInjured) ? 1 : 0.75}
+          >
+            <View style={[
+              styles.jersey,
+              isAssigned && [styles.jerseyDone, { backgroundColor: rgba(0.12), borderColor: primaryColor }],
+              player.isInjured && { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)' },
+            ]}>
+              <Text style={[
+                styles.jerseyNum,
+                isAssigned && [styles.jerseyNumDone, { color: primaryColor }],
+                player.isInjured && { color: '#ef4444' },
+              ]}>
+                {player.jersey_number ?? '—'}
+              </Text>
+            </View>
+
+            <View style={styles.playerInfo}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.playerName, isAssigned && styles.playerNameDone, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>
+                  {player.full_name}
+                </Text>
+                {player.isGuest && (
+                  <View style={styles.guestBadge}>
+                    <Text style={styles.guestBadgeText}>G</Text>
+                  </View>
+                )}
+                {player.isInjured && (
+                  <View style={styles.injuredBadge}>
+                    <Ionicons name="bandage-outline" size={10} color="#ef4444" />
+                    <Text style={styles.injuredBadgeText}>Injured</Text>
+                  </View>
+                )}
+              </View>
+              {player.position && (
+                <Text style={[styles.playerPos, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>{player.position}</Text>
+              )}
+            </View>
+
+            {player.isInjured ? (
+              <Ionicons name="bandage-outline" size={18} color="rgba(239,68,68,0.4)" />
+            ) : isAssigned ? (
+              <View style={styles.statusBadge}>
+                <Ionicons name="checkmark-circle" size={13} color={primaryColor} />
+                <Text style={[styles.statusText, { color: primaryColor }]}>On pitch</Text>
+              </View>
+            ) : isTarget ? (
+              <View style={[styles.assignBadge, { backgroundColor: primaryColor }]}>
+                <Text style={styles.assignText}>Assign</Text>
+              </View>
+            ) : (
+              <Ionicons name="ellipse-outline" size={18} color={PULSE_COLORS.ui.border} />
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </>
+  );
+});
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
@@ -342,6 +486,30 @@ export default function LineupScreen() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { lineup.loadFavourites(); }, []);
 
+  // Stable across a pure pitch-drag re-render (only `assignments` changes
+  // it) so it can be passed as a prop into the memo()-wrapped PlayersList
+  // below without defeating the memoization with a fresh Set every frame.
+  const assignedIds = useMemo(() => new Set(Object.values(assignments)), [assignments]);
+
+  const handleSelectPlayer = useCallback((player: Player) => {
+    if (player.isInjured) {
+      Alert.alert('Player injured', `${player.full_name} is flagged as injured and cannot be added to the lineup.`);
+      return;
+    }
+    setSelectedSlot((slot) => {
+      if (assignedIds.has(player.id) || slot === null) return slot;
+      setAssignments((prev) => {
+        const newMap = { ...prev };
+        Object.keys(newMap).forEach((k) => {
+          if (newMap[Number(k)] === player.id) delete newMap[Number(k)];
+        });
+        newMap[slot] = player.id;
+        return newMap;
+      });
+      return null;
+    });
+  }, [assignedIds]);
+
   // ── Save ──────────────────────────────────────────────────────────────────
 
   async function handleSave() {
@@ -448,7 +616,6 @@ export default function LineupScreen() {
 
   const positions     = lineup.selectedFormation?.positions ?? [];
   positionsRef.current = positions;                              // sync ref every render
-  const assignedIds   = new Set(Object.values(assignments));
   const assignedCount = assignedIds.size;
   const totalSlots    = positions.length;
   const selectedLabel = selectedSlot !== null ? positions[selectedSlot]?.label : null;
@@ -616,95 +783,14 @@ export default function LineupScreen() {
           </ScrollView>
         ) : (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.playersList}>
-            {players.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={32} color={PULSE_COLORS.ui.muted} />
-                <Text style={styles.emptyTitle}>No confirmed RSVPs yet</Text>
-                <Text style={styles.emptyBody}>Players who RSVP attending will appear here</Text>
-              </View>
-            ) : (
-              players.map((player) => {
-                const isAssigned = assignedIds.has(player.id);
-                const isTarget   = selectedSlot !== null && !isAssigned && !player.isInjured;
-                return (
-                  <TouchableOpacity
-                    key={player.id}
-                    style={[
-                      styles.playerRow,
-                      isAssigned && styles.playerRowDone,
-                      isTarget   && [styles.playerRowTarget, { backgroundColor: rgba(0.05) }],
-                      player.isInjured && styles.playerRowInjured,
-                    ]}
-                    onPress={() => {
-                      if (player.isInjured) {
-                        Alert.alert('Player injured', `${player.full_name} is flagged as injured and cannot be added to the lineup.`);
-                        return;
-                      }
-                      if (isAssigned || selectedSlot === null) return;
-                      const newMap = { ...assignments };
-                      Object.keys(newMap).forEach((k) => {
-                        if (newMap[Number(k)] === player.id) delete newMap[Number(k)];
-                      });
-                      newMap[selectedSlot] = player.id;
-                      setAssignments(newMap);
-                      setSelectedSlot(null);
-                    }}
-                    activeOpacity={(isAssigned || player.isInjured) ? 1 : 0.75}
-                  >
-                    <View style={[
-                      styles.jersey,
-                      isAssigned && [styles.jerseyDone, { backgroundColor: rgba(0.12), borderColor: primaryColor }],
-                      player.isInjured && { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)' },
-                    ]}>
-                      <Text style={[
-                        styles.jerseyNum,
-                        isAssigned && [styles.jerseyNumDone, { color: primaryColor }],
-                        player.isInjured && { color: '#ef4444' },
-                      ]}>
-                        {player.jersey_number ?? '—'}
-                      </Text>
-                    </View>
-
-                    <View style={styles.playerInfo}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.playerName, isAssigned && styles.playerNameDone, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>
-                          {player.full_name}
-                        </Text>
-                        {player.isGuest && (
-                          <View style={styles.guestBadge}>
-                            <Text style={styles.guestBadgeText}>G</Text>
-                          </View>
-                        )}
-                        {player.isInjured && (
-                          <View style={styles.injuredBadge}>
-                            <Ionicons name="bandage-outline" size={10} color="#ef4444" />
-                            <Text style={styles.injuredBadgeText}>Injured</Text>
-                          </View>
-                        )}
-                      </View>
-                      {player.position && (
-                        <Text style={[styles.playerPos, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>{player.position}</Text>
-                      )}
-                    </View>
-
-                    {player.isInjured ? (
-                      <Ionicons name="bandage-outline" size={18} color="rgba(239,68,68,0.4)" />
-                    ) : isAssigned ? (
-                      <View style={styles.statusBadge}>
-                        <Ionicons name="checkmark-circle" size={13} color={primaryColor} />
-                        <Text style={[styles.statusText, { color: primaryColor }]}>On pitch</Text>
-                      </View>
-                    ) : isTarget ? (
-                      <View style={[styles.assignBadge, { backgroundColor: primaryColor }]}>
-                        <Text style={styles.assignText}>Assign</Text>
-                      </View>
-                    ) : (
-                      <Ionicons name="ellipse-outline" size={18} color={PULSE_COLORS.ui.border} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })
-            )}
+            <PlayersList
+              players={players}
+              assignedIds={assignedIds}
+              selectedSlot={selectedSlot}
+              primaryColor={primaryColor}
+              rgba={rgba}
+              onSelectPlayer={handleSelectPlayer}
+            />
           </ScrollView>
         )}
 
@@ -712,35 +798,7 @@ export default function LineupScreen() {
 
       {/* ── Drag ghost (renders above everything) ── */}
       {drag && (
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.ghostLayer]}>
-          <View
-            style={[
-              styles.ghost,
-              {
-                left: drag.pageX - DRAG_TOKEN / 2,
-                top:  drag.pageY - DRAG_TOKEN / 2,
-                width:        DRAG_TOKEN,
-                height:       DRAG_TOKEN,
-                borderRadius: DRAG_TOKEN / 2,
-                backgroundColor: primaryColor,
-                shadowColor: primaryColor,
-              },
-            ]}
-          >
-            <Text style={styles.ghostLabel}>
-              {ghostPlayer
-                ? (ghostPlayer.jersey_number != null
-                    ? String(ghostPlayer.jersey_number)
-                    : initials(ghostPlayer.full_name))
-                : ''}
-            </Text>
-            {ghostPlayer && (
-              <Text style={styles.ghostName} numberOfLines={1}>
-                {firstName(ghostPlayer.full_name)}
-              </Text>
-            )}
-          </View>
-        </View>
+        <DragGhost pageX={drag.pageX} pageY={drag.pageY} ghostPlayer={ghostPlayer} primaryColor={primaryColor} />
       )}
     </View>
   );

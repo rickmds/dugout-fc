@@ -234,6 +234,16 @@ export default function PlayerProfileScreen() {
       .then(({ data }) => setIsSecondaryGuardian(!!data));
   }, [player?.id, profile?.id]);
 
+  // medical_notes lives in its own guardian/coach-scoped table (RLS
+  // enforces it, not just the roster contact-sharing toggle) — fetched
+  // separately from the base player row rather than joined, so a viewer
+  // RLS denies simply gets null back instead of the whole query failing.
+  useEffect(() => {
+    if (!player?.id) return;
+    (supabase as any).from('player_medical_notes').select('notes').eq('player_id', player.id).maybeSingle()
+      .then(({ data }: { data: { notes: string | null } | null }) => setPlayer((prev) => (prev ? { ...prev, medical_notes: data?.notes ?? null } : prev)));
+  }, [player?.id]);
+
   // Stats (events, RSVPs, playing time) need team — fires once both are ready
   useEffect(() => {
     if (!player || !team || teamLoading) return;
@@ -256,7 +266,7 @@ export default function PlayerProfileScreen() {
     // that may not be in the live DB yet — handled gracefully via cast
     const { data, error } = await (supabase as any)
       .from('players')
-      .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, medical_notes, profiles!players_profile_id_fkey(avatar_url)')
+      .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, profiles!players_profile_id_fkey(avatar_url)')
       .eq('id', playerId)
       .single();
 

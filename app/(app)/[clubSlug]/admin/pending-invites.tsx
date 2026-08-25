@@ -58,6 +58,7 @@ export default function PendingInvitesScreen() {
 
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [resendingAll, setResendingAll] = useState(false);
 
   useFocusEffect(useCallback(() => { fetchInvites(); }, [team?.id]));
@@ -66,13 +67,20 @@ export default function PendingInvitesScreen() {
     if (!team) return;
     setLoading(true);
 
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('invites')
       .select('id, email, token, role, created_at, players!invites_player_id_fkey(full_name)')
       .eq('team_id', team.id)
       .is('accepted_at', null)
       .order('created_at', { ascending: false });
 
+    if (error) {
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+
+    setLoadError(false);
     setInvites(
       ((data ?? []) as any[]).map((row) => ({
         id: row.id,
@@ -149,6 +157,20 @@ export default function PendingInvitesScreen() {
       {loading ? (
         <View style={st.center}>
           <ActivityIndicator color={primaryColor} size="large" />
+        </View>
+      ) : loadError ? (
+        <View style={st.empty}>
+          <Ionicons name="cloud-offline-outline" size={52} color={PULSE_COLORS.ui.muted} />
+          <Text style={st.emptyTitle}>Couldn't load invites</Text>
+          <Text style={st.emptyBody}>Check your connection and try again.</Text>
+          <TouchableOpacity
+            style={[st.resendAllBtn, { marginTop: 16, borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]}
+            onPress={fetchInvites}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="refresh" size={16} color="#ffffff" />
+            <Text style={[st.resendAllText, { color: '#ffffff' }]}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : invites.length === 0 ? (
         <View style={st.empty}>

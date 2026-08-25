@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { uniqueChannelName } from '../../../../lib/realtime';
 import { computeArriveBy } from '../../../../lib/eventTime';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -261,6 +262,19 @@ function HomeSkeleton() {
   );
 }
 
+function HomeLoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16, paddingHorizontal: 32 }}>
+      <Ionicons name="cloud-offline-outline" size={40} color={PULSE_COLORS.ui.muted} />
+      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600', textAlign: 'center' }}>Couldn't load your home screen</Text>
+      <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13, textAlign: 'center' }}>Check your connection and try again.</Text>
+      <TouchableOpacity onPress={onRetry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
+        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -294,6 +308,7 @@ export default function HomeScreen() {
   const [pulseGameEvents, setPulseGameEvents]         = useState(0);
   const [pulseTrainingEvents, setPulseTrainingEvents] = useState(0);
   const [loading, setLoading]               = useState(true);
+  const [loadError, setLoadError]           = useState(false);
   const [refreshing, setRefreshing]         = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [outstandingFees, setOutstandingFees] = useState<OutstandingFee[]>([]);
@@ -408,8 +423,12 @@ export default function HomeScreen() {
   // the skeleton — that's the flash. Only the very first load should.
   const hasLoadedOnceRef = useRef(false);
   useEffect(() => {
-    if (!loading) hasLoadedOnceRef.current = true;
-  }, [loading]);
+    // Only a load that actually produced data counts as "loaded once" — a
+    // load that failed/timed out shouldn't permanently suppress the
+    // retry state on a first-ever attempt (see loadError handling in
+    // fetchData below).
+    if (!loading && !loadError) hasLoadedOnceRef.current = true;
+  }, [loading, loadError]);
 
   function handleGreetingTap() {
     if (process.env.EXPO_PUBLIC_APP_ENV !== 'development') return;
@@ -513,13 +532,12 @@ export default function HomeScreen() {
 
     try {
     // === CRITICAL PATH — unblocks skeleton as fast as possible ===
-    const [
-      { data: gameEvents },
-      { data: trainingEvents },
-      announcementRes,
-      playerRes,
-      { data: calloutData },
-    ] = await Promise.all([
+    // Raced against a timeout so a stalled connection doesn't leave the
+    // skeleton up forever — on timeout/failure the screen shows a retry
+    // affordance instead of hanging indefinitely or rendering as if
+    // there's simply nothing to show.
+    const CRITICAL_TIMEOUT_MS = 10_000;
+    const criticalResult = await withTimeout(Promise.all([
       supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
       supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -531,7 +549,23 @@ export default function HomeScreen() {
       // rendered once per guarded player.
       (supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).order('full_name'),
       sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
-    ]);
+    ]), CRITICAL_TIMEOUT_MS);
+
+    if (criticalResult === TIMEOUT) {
+      console.error('fetchData critical path timed out');
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+
+    const [
+      { data: gameEvents },
+      { data: trainingEvents },
+      announcementRes,
+      playerRes,
+      { data: calloutData },
+    ] = criticalResult;
+    setLoadError(false);
 
     const nextG = (gameEvents as NextEvent[])?.[0] ?? null;
     const nextT = (trainingEvents as NextEvent[])?.[0] ?? null;
@@ -898,6 +932,11 @@ export default function HomeScreen() {
 
     } catch (e) {
       console.error('fetchData error', e);
+      // Only show the blocking retry state for a first-ever failed load —
+      // once real content has been shown, a later background hiccup
+      // shouldn't blank the screen back out (same flash-prevention
+      // reasoning as hasLoadedOnceRef above).
+      if (!hasLoadedOnceRef.current) setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -1106,19 +1145,32 @@ export default function HomeScreen() {
     try {
       if (currentStatus === status) {
         const { error } = await supabase.from('event_rsvps').delete().eq('event_id', event.id).eq('player_id', playerId);
-        if (!error) setStatus(playerId, null);
+        if (error) {
+          Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
+          return;
+        }
+        setStatus(playerId, null);
       } else {
         const { error } = await supabase.from('event_rsvps').upsert(
           { event_id: event.id, player_id: playerId, responded_by: profile?.id, status },
           { onConflict: 'event_id,player_id' }
         );
-        if (!error) setStatus(playerId, status);
+        if (error) {
+          Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
+          return;
+        }
+        setStatus(playerId, status);
       }
     } catch (e) {
       console.error('handleRsvp error', e);
+      Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
     } finally {
       setSavingId(null);
     }
+  }
+
+  if (loadError && !hasLoadedOnceRef.current) {
+    return <HomeLoadError onRetry={handleRefresh} />;
   }
 
   if ((teamLoading || loading) && !hasLoadedOnceRef.current) {

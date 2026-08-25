@@ -155,18 +155,26 @@ export default function GalleryScreen() {
   async function handleUpload() {
     if (!team || !profile || !pendingAssets.length) return;
     setUploading(true);
+    const totalCount = pendingAssets.length;
     const newPhotos: Photo[] = [];
+    // Track per-photo success/failure instead of silently `continue`-ing
+    // past a storage error — a flaky connection mid-batch used to still
+    // close the modal and fire a success haptic even when only some
+    // photos actually saved. Failed assets are kept in pendingAssets so
+    // the user can retry without re-picking from their library.
+    const failedAssets: ImagePicker.ImagePickerAsset[] = [];
 
     for (let i = 0; i < pendingAssets.length; i++) {
       setUploadDone(i);
+      const asset = pendingAssets[i];
       try {
         const path = `${team.id}/${uid()}.jpg`;
-        const response = await fetch(pendingAssets[i].uri);
+        const response = await fetch(asset.uri);
         const blob = await response.blob();
         const { error: storageErr } = await supabase.storage
           .from('photos')
           .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-        if (storageErr) continue;
+        if (storageErr) { failedAssets.push(asset); continue; }
 
         const { data: row } = await (supabase as any)
           .from('team_photos')
@@ -178,17 +186,35 @@ export default function GalleryScreen() {
           })
           .select('*, profiles!uploaded_by(full_name), events(title), team_photo_likes(profile_id)')
           .single();
-        if (row) newPhotos.push(row as Photo);
-      } catch {}
+        if (row) {
+          newPhotos.push(row as Photo);
+        } else {
+          failedAssets.push(asset);
+          // Row insert failed after the storage upload succeeded — clean up the orphaned file.
+          supabase.storage.from('photos').remove([path]).catch(() => {});
+        }
+      } catch {
+        failedAssets.push(asset);
+      }
     }
 
     setPhotos(prev => [...newPhotos.reverse(), ...prev]);
     offsetRef.current += newPhotos.length;
     setUploading(false);
-    setUploadVisible(false);
-    setPendingAssets([]);
-    setCaption('');
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    if (failedAssets.length > 0) {
+      setPendingAssets(failedAssets);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        newPhotos.length > 0 ? "Some photos didn't upload" : 'Upload failed',
+        `${newPhotos.length} of ${totalCount} uploaded. ${failedAssets.length} failed — check your connection and try again.`
+      );
+    } else {
+      setUploadVisible(false);
+      setPendingAssets([]);
+      setCaption('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
   }
 
   function handleLike(photo: Photo) {
@@ -216,12 +242,18 @@ export default function GalleryScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
+          const snapshot = photos;
           setPhotos(prev => prev.filter(p => p.id !== photo.id));
-          offsetRef.current = Math.max(0, offsetRef.current - 1);
           if (viewerVisible) setViewerVisible(false);
+          const { error } = await (supabase as any).from('team_photos').delete().eq('id', photo.id);
+          if (error) {
+            setPhotos(snapshot);
+            Alert.alert('Error', 'Could not delete photo.');
+            return;
+          }
+          offsetRef.current = Math.max(0, offsetRef.current - 1);
           supabase.storage.from('photos').remove([photo.storage_path]);
-          (supabase as any).from('team_photos').delete().eq('id', photo.id);
         },
       },
     ]);

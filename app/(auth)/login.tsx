@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { signInWithApple, signInWithGoogle } from '../../lib/auth';
-import { routeAfterAuth as sharedRouteAfterAuth } from '../../lib/authRouting';
+import { routeAfterAuth as sharedRouteAfterAuth, recoverOrShowError as sharedRecoverOrShowError } from '../../lib/authRouting';
 import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
@@ -114,17 +114,10 @@ export default function LoginScreen() {
     setInfo('Check your email for a link to reset your password.');
   }
 
-  // If a network leg inside signInWithGoogle/Apple times out, the request
-  // can still have completed server-side — check for a real session before
-  // showing an error the person would find confusing if they're actually
-  // already signed in.
+  // See lib/authRouting.ts — shared with register.tsx so both SSO paths
+  // self-heal the same way instead of each keeping their own copy.
   async function recoverOrShowError(message: string, isSso: boolean) {
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (sessionData.session?.user) {
-      await routeAfterAuth(sessionData.session.user.id, isSso);
-    } else {
-      setError(message);
-    }
+    return sharedRecoverOrShowError(message, isSso, routeAfterAuth, setError);
   }
 
   async function handleGoogle() {

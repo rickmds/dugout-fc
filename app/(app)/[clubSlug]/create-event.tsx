@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -461,6 +462,7 @@ export default function CreateEventScreen() {
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [attemptedSave, setAttemptedSave] = useState(false);
   const [loadingDuplicate, setLoadingDuplicate] = useState(!!duplicateFrom);
 
   useEffect(() => {
@@ -482,12 +484,17 @@ export default function CreateEventScreen() {
   useEffect(() => {
     if (!duplicateFrom) return;
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('events')
         .select('title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,require_rsvp,rsvp_lock_at')
         .eq('id', duplicateFrom)
         .single();
-      if (!data) { setLoadingDuplicate(false); return; }
+      if (error || !data) {
+        setLoadingDuplicate(false);
+        Alert.alert("Couldn't duplicate event", "Couldn't load that event to duplicate. Check your connection and try again.");
+        router.back();
+        return;
+      }
 
       setEventType(data.type as EventType);
       if (data.type === 'game') {
@@ -540,7 +547,12 @@ export default function CreateEventScreen() {
   }
 
   async function handleSave() {
-    if (!title.trim() || !team) return;
+    setAttemptedSave(true);
+    if (!title.trim()) return;
+    if (!team) {
+      Alert.alert('Create a team first', 'This club has no teams yet — create one before adding events.');
+      return;
+    }
     setSaving(true);
 
     const eventDate = toDbDate(date);
@@ -586,12 +598,17 @@ export default function CreateEventScreen() {
     let newEventId: string | undefined;
 
     if (recurrence === 'none') {
-      const { data: created } = await supabase.from('events').insert({
+      const { data: created, error } = await supabase.from('events').insert({
         ...base,
         event_date: eventDate,
         rsvp_lock_at: computeLockAt(eventDate),
       }).select('id').single();
-      newEventId = created?.id;
+      if (error || !created) {
+        setSaving(false);
+        Alert.alert('Could not save event', 'Check your connection and try again.');
+        return;
+      }
+      newEventId = created.id;
     } else {
       const recurDates = generateRecurringDates(date, recurrence, weekDays, monthlyMode, endMode, endDate);
       const allDates = [eventDate, ...recurDates];
@@ -604,9 +621,27 @@ export default function CreateEventScreen() {
         rsvp_lock_at: computeLockAt(d),
       }));
 
+      const failedDates: string[] = [];
       for (let i = 0; i < rows.length; i += 50) {
-        const { data: created } = await supabase.from('events').insert(rows.slice(i, i + 50)).select('id');
+        const batch = rows.slice(i, i + 50);
+        const { data: created, error } = await supabase.from('events').insert(batch).select('id');
+        if (error) {
+          failedDates.push(...batch.map((r) => r.event_date));
+          continue;
+        }
         if (i === 0 && created?.[0]) newEventId = created[0].id;
+      }
+
+      if (failedDates.length === rows.length) {
+        setSaving(false);
+        Alert.alert('Could not save event', 'Check your connection and try again.');
+        return;
+      }
+      if (failedDates.length > 0) {
+        Alert.alert(
+          'Some occurrences could not be saved',
+          `${failedDates.length} of ${rows.length} dates failed to save: ${failedDates.slice(0, 5).join(', ')}${failedDates.length > 5 ? ', …' : ''}. The rest were created.`
+        );
       }
     }
 
@@ -624,7 +659,7 @@ export default function CreateEventScreen() {
     router.back();
   }
 
-  const canSave = title.trim().length > 0 && !saving;
+  const canSave = title.trim().length > 0 && !!team && !saving;
 
   if (loadingDuplicate) {
     return (
@@ -717,6 +752,12 @@ export default function CreateEventScreen() {
               />
             </View>
           </Card>
+          {attemptedSave && !title.trim() && (
+            <Text style={styles.titleRequiredHint}>Title required</Text>
+          )}
+          {attemptedSave && !team && (
+            <Text style={styles.titleRequiredHint}>Create a team first — this club has no teams yet.</Text>
+          )}
 
           {/* ── Date & Time ─────────────────────────────── */}
           <SectionHeader title="Date & Time" />
@@ -1221,6 +1262,10 @@ const styles = StyleSheet.create({
   titleInput: {
     flex: 1, fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text,
     paddingVertical: 12,
+  },
+  titleRequiredHint: {
+    fontSize: 12, fontWeight: '600', color: PULSE_COLORS.status.error,
+    paddingHorizontal: 16, marginTop: 6,
   },
 
   fieldRow: {

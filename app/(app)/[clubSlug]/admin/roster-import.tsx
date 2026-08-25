@@ -40,6 +40,7 @@ type DoneStats = {
   added: number;
   invitesSent: number;
   noEmail: number;
+  emailFailed: number;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -143,7 +144,7 @@ export default function RosterImportScreen() {
     if (toImport.length === 0) return;
     setPhase('importing');
 
-    const stats: DoneStats = { added: 0, invitesSent: 0, noEmail: 0 };
+    const stats: DoneStats = { added: 0, invitesSent: 0, noEmail: 0, emailFailed: 0 };
 
     for (const p of toImport) {
       const { data: playerData } = await supabase
@@ -174,8 +175,12 @@ export default function RosterImportScreen() {
           .select('id')
           .single();
         if (inviteData?.id) {
-          await sendParentInviteEmail(inviteData.id, p.full_name);
-          stats.invitesSent++;
+          const sent = await sendParentInviteEmail(inviteData.id, p.full_name);
+          if (sent) {
+            stats.invitesSent++;
+          } else {
+            stats.emailFailed++;
+          }
         } else {
           stats.noEmail++;
         }
@@ -429,6 +434,15 @@ export default function RosterImportScreen() {
                   <View style={[st.statDot, { backgroundColor: '#F59E0B' }]} />
                   <Text style={st.statText}>
                     <Text style={st.statBold}>{doneStats.noEmail}</Text> player{doneStats.noEmail !== 1 ? 's' : ''} have no parent email — invite from the roster when ready
+                  </Text>
+                </View>
+              )}
+
+              {doneStats.emailFailed > 0 && (
+                <View style={st.statRow}>
+                  <View style={[st.statDot, { backgroundColor: '#EF4444' }]} />
+                  <Text style={st.statText}>
+                    <Text style={st.statBold}>{doneStats.emailFailed}</Text> invite{doneStats.emailFailed !== 1 ? 's' : ''} couldn't be emailed — resend from Pending Invites
                   </Text>
                 </View>
               )}

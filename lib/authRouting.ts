@@ -1,5 +1,6 @@
 import type { useRouter } from 'expo-router';
 import { supabase } from './supabase';
+import { withTimeout as withTimeoutRaced, TIMEOUT } from './withTimeout';
 
 type Router = ReturnType<typeof useRouter>;
 
@@ -15,12 +16,8 @@ export type PostAuthResult =
 // here reads as "login just hangs," fixed only by a force-quit that
 // abandons the request. Race a timeout instead so it surfaces as a
 // retryable error.
-const TIMEOUT = Symbol('timeout');
 function withTimeout<T>(promise: PromiseLike<T>, ms = 6000): Promise<T | typeof TIMEOUT> {
-  return Promise.race([
-    Promise.resolve(promise),
-    new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), ms)),
-  ]);
+  return withTimeoutRaced(promise, ms);
 }
 
 // Single source of truth for "what happens right after someone
@@ -81,4 +78,25 @@ export async function routeAfterAuth(
   // 5. Fallback — has a role but somehow no club (e.g. skipped find-team earlier).
   router.replace('/(auth)/find-team');
   return { type: 'routed' };
+}
+
+// Shared SSO self-heal: if a network leg inside signInWithGoogle/Apple
+// times out or throws, the request can still have completed successfully
+// server-side — check for a real session before showing an error the
+// person would find confusing if they're actually already signed in.
+// Originally only lived in login.tsx; register.tsx's SSO handlers never
+// got the same treatment, so a signup (not just a login) on flaky signal
+// could show a false failure even though the account now exists.
+export async function recoverOrShowError(
+  message: string,
+  isSso: boolean,
+  routeIfSignedIn: (userId: string, isSso: boolean) => Promise<void>,
+  setError: (message: string) => void
+): Promise<void> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.user) {
+    await routeIfSignedIn(sessionData.session.user.id, isSso);
+  } else {
+    setError(message);
+  }
 }

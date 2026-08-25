@@ -122,6 +122,11 @@ export default function SettingsScreen() {
   const [phone, setPhone]               = useState((profile as any)?.phone ?? '');
   const [savingPhone, setSavingPhone]   = useState(false);
 
+  // Only profile-setup.tsx had this toggle — a parent who enabled sharing
+  // during onboarding (or had it default on) had no in-app way to turn it
+  // off again short of asking the coach/admin to do it via the DB.
+  const [shareContact, setShareContact] = useState((profile as any)?.share_contact_with_team ?? true);
+
   const [editingAddress, setEditingAddress] = useState(false);
   const [address, setAddress]               = useState((profile as any)?.address ?? '');
   const [savingAddress, setSavingAddress]   = useState(false);
@@ -216,6 +221,12 @@ export default function SettingsScreen() {
       if (dbPrefs && typeof dbPrefs === 'object') {
         setNotifPrefs({ ...DEFAULT_NOTIF_PREFS, ...dbPrefs });
       }
+    }
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (profile) {
+      setShareContact((profile as any).share_contact_with_team ?? true);
     }
   }, [profile?.id]);
 
@@ -391,7 +402,8 @@ export default function SettingsScreen() {
               .eq('team_id', teamId)
               .eq('profile_id', profile!.id);
             if (error) {
-              Alert.alert('Error', error.message);
+              console.error('[settings] leave team failed', error);
+              Alert.alert('Error', "Couldn't leave the team. Check your connection and try again.");
               setLeavingTeamId(null);
               return;
             }
@@ -589,7 +601,11 @@ export default function SettingsScreen() {
     setSavingPw(true);
     const { error } = await supabase.auth.updateUser({ password: newPw });
     setSavingPw(false);
-    if (error) { Alert.alert('Error', error.message); return; }
+    if (error) {
+      console.error('[settings] change password failed', error);
+      Alert.alert('Error', "Couldn't update your password. Check your connection and try again.");
+      return;
+    }
     Alert.alert('Done', 'Password updated successfully.');
     setNewPw(''); setConfirmPw(''); setShowPwForm(false);
   }
@@ -625,11 +641,17 @@ export default function SettingsScreen() {
             setDeletingAccount(true);
             try {
               const { error } = await supabase.rpc('delete_account' as any);
-              if (error) { Alert.alert('Error', error.message); setDeletingAccount(false); return; }
+              if (error) {
+                console.error('[settings] delete account failed', error);
+                Alert.alert('Error', "Couldn't delete your account. Check your connection and try again.");
+                setDeletingAccount(false);
+                return;
+              }
               await signOut();
               router.replace('/(auth)/login');
             } catch (e) {
-              Alert.alert('Error', String(e));
+              console.error('[settings] delete account failed', e);
+              Alert.alert('Error', "Couldn't delete your account. Check your connection and try again.");
               setDeletingAccount(false);
             }
           },
@@ -1091,6 +1113,31 @@ export default function SettingsScreen() {
           ) : (
             <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
           )}
+        </View>
+
+        <View style={st.divider} />
+
+        {/* Share contact with team parents toggle */}
+        <View style={[st.row, { backgroundColor: PULSE_COLORS.ui.surfaceAlt }]}>
+          <IconCell name="people-outline" color="#fff" bg="#8B5CF6" />
+          <Text style={[st.rowLabel, { flex: 1 }]}>Share contact with team parents</Text>
+          <Switch
+            value={shareContact}
+            onValueChange={(v) => {
+              setShareContact(v);
+              (supabase as any).from('profiles').update({ share_contact_with_team: v }).eq('id', profile!.id)
+                .then(({ error }: { error: any }) => {
+                  if (error) {
+                    console.error('[settings] share_contact_with_team update failed', error);
+                    setShareContact(!v);
+                    Alert.alert('Error', "Couldn't update this setting. Check your connection and try again.");
+                  }
+                });
+            }}
+            trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+            thumbColor="#fff"
+            ios_backgroundColor={PULSE_COLORS.ui.border}
+          />
         </View>
 
         <View style={st.divider} />

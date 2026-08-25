@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { signInWithApple, signInWithGoogle } from '../../lib/auth';
-import { routeAfterAuth } from '../../lib/authRouting';
+import { routeAfterAuth, recoverOrShowError as sharedRecoverOrShowError } from '../../lib/authRouting';
 import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
@@ -97,6 +97,14 @@ export default function RegisterScreen() {
     }
   }
 
+  // See lib/authRouting.ts — shared with login.tsx. If a network leg inside
+  // signInWithGoogle/Apple times out or throws, the request can still have
+  // completed successfully server-side (the account now exists), so check
+  // for a real session before showing a false failure error.
+  async function recoverOrShowError(message: string, isSso: boolean) {
+    return sharedRecoverOrShowError(message, isSso, routeAfterRegister, setError);
+  }
+
   async function handleGoogle() {
     setError(null);
     setSocialLoading('google');
@@ -109,7 +117,7 @@ export default function RegisterScreen() {
       }
       await routeAfterRegister(data.user.id, true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Google sign-in failed.');
+      await recoverOrShowError(e instanceof Error ? e.message : 'Google sign-in failed.', true);
     } finally {
       setSocialLoading(null);
     }
@@ -127,7 +135,7 @@ export default function RegisterScreen() {
       }
       await routeAfterRegister(data.user.id, true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Apple sign-in failed.');
+      await recoverOrShowError(e instanceof Error ? e.message : 'Apple sign-in failed.', true);
     } finally {
       setSocialLoading(null);
     }

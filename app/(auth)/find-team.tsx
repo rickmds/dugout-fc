@@ -24,12 +24,6 @@ interface ClubResult {
   logo_url: string | null;
 }
 
-interface TeamOption {
-  id: string;
-  name: string;
-  age_group: string | null;
-}
-
 export default function FindTeamScreen() {
   const router = useRouter();
   const { user, refreshProfile } = useAuth();
@@ -38,15 +32,19 @@ export default function FindTeamScreen() {
   const [clubLoading, setClubLoading] = useState(false);
   const [clubError, setClubError] = useState<string | null>(null);
   const [foundClub, setFoundClub] = useState<ClubResult | null>(null);
-  const [teams, setTeams] = useState<TeamOption[]>([]);
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  // null = not checked yet, false = checked and no invite found, true = found
+  const [hasInvite, setHasInvite] = useState<boolean | null>(null);
   const [joinLoading, setJoinLoading] = useState(false);
 
+  // Looking up a club by slug is just for display/branding — it never grants
+  // access on its own. Joining a team requires a real, pending invite
+  // addressed to this signed-in user's own email, verified server-side by
+  // find_my_invite_token(); there is no path here to browse and self-select
+  // an arbitrary team the way the old version allowed.
   async function handleFindClub() {
     setClubError(null);
     setFoundClub(null);
-    setTeams([]);
-    setSelectedTeamId(null);
+    setHasInvite(null);
 
     if (!clubSlug.trim()) {
       setClubError('Please enter a club slug.');
@@ -60,44 +58,49 @@ export default function FindTeamScreen() {
       .eq('slug', clubSlug.trim().toLowerCase())
       .single();
 
-    if (!club) {
+    // Most people only know their club's name, not its URL slug — fall
+    // back to a name search before giving up.
+    const resolvedClub = club ?? (await supabase
+      .from('clubs')
+      .select('id, name, slug, logo_url')
+      .ilike('name', `%${clubSlug.trim()}%`)
+      .limit(1)
+      .maybeSingle()
+    ).data;
+
+    if (!resolvedClub) {
       setClubLoading(false);
-      setClubError('No club found with that slug.');
+      setClubError('No club found with that name or slug. Ask your coach for your club’s Pulse FC link.');
       return;
     }
 
-    const { data: clubTeams } = await supabase
-      .from('teams')
-      .select('id, name, age_group')
-      .eq('club_id', club.id);
+    const { data: token, error: tokenErr } = await (supabase as any).rpc('find_my_invite_token', { p_club_slug: resolvedClub.slug });
 
     setClubLoading(false);
-    setFoundClub(club);
-    setTeams(clubTeams ?? []);
+    setFoundClub(resolvedClub);
+    setHasInvite(!tokenErr && !!token);
   }
 
   async function handleJoinTeam() {
-    if (!foundClub || !selectedTeamId || !user) return;
+    if (!foundClub || !user) return;
 
     setClubError(null);
     setJoinLoading(true);
 
-    const { error: memberErr } = await supabase
-      .from('team_members')
-      .insert({ team_id: selectedTeamId, profile_id: user.id, role: 'parent' });
-    if (memberErr) {
+    const { data: token, error: tokenErr } = await (supabase as any).rpc('find_my_invite_token', { p_club_slug: foundClub.slug });
+    if (tokenErr || !token) {
       setJoinLoading(false);
-      setClubError('Could not join the team. Please try again.');
+      setHasInvite(false);
+      setClubError('We couldn’t find a pending invite for your account at this club.');
       return;
     }
 
-    const { error: profileErr } = await supabase
-      .from('profiles')
-      .update({ club_id: foundClub.id, role: 'player' })
-      .eq('id', user.id);
-    if (profileErr) {
+    const { data: rpcData, error: rpcErr } = await (supabase as any).rpc('accept_invite', { p_token: token as string });
+    const result = rpcData as { error?: string; needs_confirmation?: boolean } | null;
+
+    if (rpcErr || result?.error || result?.needs_confirmation) {
       setJoinLoading(false);
-      setClubError('Could not join the team. Please try again.');
+      setClubError('Could not join the team. The invite may have expired or already been used.');
       return;
     }
 
@@ -127,28 +130,19 @@ export default function FindTeamScreen() {
             <View style={styles.clubResult}>
               <Text style={styles.clubName}>{foundClub.name}</Text>
 
-              {teams.length === 0 ? (
-                <Text style={styles.noTeams}>This club has no teams set up yet.</Text>
-              ) : (
+              {hasInvite === false && (
+                <Text style={styles.noTeams}>
+                  We couldn’t find a pending invite for your account at this club. Ask your coach or club admin to send you an invite.
+                </Text>
+              )}
+
+              {hasInvite && (
                 <>
-                  <Text style={styles.teamPrompt}>Select your team:</Text>
-                  {teams.map((team) => (
-                    <TouchableOpacity
-                      key={team.id}
-                      onPress={() => setSelectedTeamId(team.id)}
-                      style={[styles.teamOption, selectedTeamId === team.id && styles.teamOptionSelected]}
-                    >
-                      <Text style={styles.teamOptionText}>
-                        {team.name}
-                        {team.age_group ? ` · ${team.age_group}` : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  <Text style={styles.teamPrompt}>We found a pending invite for you at this club.</Text>
                   <PrimaryButton
                     title="Join team"
                     onPress={handleJoinTeam}
                     loading={joinLoading}
-                    disabled={!selectedTeamId}
                     style={styles.joinButton}
                   />
                 </>
@@ -231,21 +225,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 12,
     marginBottom: 8,
-  },
-  teamOption: {
-    borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-  },
-  teamOptionSelected: {
-    borderColor: PULSE_COLORS.brand.green,
-    backgroundColor: 'rgba(34, 197, 94, 0.08)',
-  },
-  teamOptionText: {
-    color: PULSE_COLORS.ui.text,
-    fontSize: 14,
   },
   joinButton: {
     marginTop: 8,

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { withTimeout, TIMEOUT } from '../../lib/withTimeout';
 import { useAuth } from '../../hooks/useAuth';
 import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
@@ -44,33 +45,133 @@ export default function CreateTeamScreen() {
     if (!teamName.trim()) { setError('Please enter a team name.'); return; }
 
     setLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
+
+    // Every write below is timeout-guarded (same pattern as login.tsx/
+    // register.tsx) so a stalled connection surfaces as a retryable error
+    // instead of a stuck spinner. The sequence is also resumable: retrying
+    // after a partial failure reuses whatever club/team already got
+    // created rather than inserting duplicates.
+    const sessionResult = await withTimeout(supabase.auth.getSession(), 6000);
+    if (sessionResult === TIMEOUT) {
+      setError('This is taking longer than expected. Check your connection and try again.');
+      setLoading(false);
+      return;
+    }
+    const { data: { session } } = sessionResult;
     const user = session?.user;
     if (!user) { setError('No active session found. Please sign out and sign in again.'); setLoading(false); return; }
 
-    const slug = `${toSlug(teamName.trim())}-${randomSuffix()}`;
+    const roleResult = await withTimeout(
+      supabase.from('profiles').update({ role: 'org_admin' }).eq('id', user.id),
+      6000
+    );
+    if (roleResult === TIMEOUT || roleResult.error) {
+      setError("Couldn't set up your account. Check your connection and try again.");
+      setLoading(false);
+      return;
+    }
 
-    const { error: roleErr } = await supabase.from('profiles').update({ role: 'org_admin' }).eq('id', user.id);
-    if (roleErr) { setError(`Account setup failed: ${roleErr.message}`); setLoading(false); return; }
+    // Resumable step 1/2: if an earlier attempt already created a club and
+    // linked it to this profile before failing on a later step, reuse it
+    // instead of inserting a second, orphaned club.
+    const profileResult = await withTimeout(
+      supabase.from('profiles').select('club_id').eq('id', user.id).single(),
+      6000
+    );
+    if (profileResult === TIMEOUT || profileResult.error) {
+      setError('This is taking longer than expected. Check your connection and try again.');
+      setLoading(false);
+      return;
+    }
 
-    const { data: club, error: clubErr } = await supabase.from('clubs').insert({ name: teamName.trim(), slug }).select('id').single();
-    if (clubErr || !club) { setError(`Failed to create club: ${clubErr?.message}`); setLoading(false); return; }
-    const clubId = club.id;
+    let clubId = profileResult.data?.club_id ?? null;
+    let slug = '';
 
-    const { error: profileClubErr } = await supabase.from('profiles').update({ club_id: clubId }).eq('id', user.id);
-    if (profileClubErr) { setError(`Account setup failed: ${profileClubErr.message}`); setLoading(false); return; }
+    if (clubId) {
+      const clubResult = await withTimeout(supabase.from('clubs').select('slug').eq('id', clubId).single(), 6000);
+      if (clubResult !== TIMEOUT && !clubResult.error && clubResult.data) {
+        slug = clubResult.data.slug;
+      } else {
+        // The linked club vanished or couldn't be read — fall back to creating a fresh one below.
+        clubId = null;
+      }
+    }
 
-    const { data: team, error: teamErr } = await supabase.from('teams').insert({
-      club_id: clubId,
-      name: teamName.trim(),
-      age_group: ageGroup || null,
-      gender:    gender    || null,
-    }).select('id').single();
-    if (teamErr || !team) { setError(`Failed to create team: ${teamErr?.message}`); setLoading(false); return; }
-    const teamId = team.id;
+    if (!clubId) {
+      const newSlug = `${toSlug(teamName.trim())}-${randomSuffix()}`;
+      const clubResult = await withTimeout(
+        supabase.from('clubs').insert({ name: teamName.trim(), slug: newSlug }).select('id, slug').single(),
+        6000
+      );
+      if (clubResult === TIMEOUT || clubResult.error || !clubResult.data) {
+        setError("Couldn't create your club. Check your connection and try again.");
+        setLoading(false);
+        return;
+      }
+      clubId = clubResult.data.id;
+      slug = clubResult.data.slug;
 
-    const { error: memberErr } = await supabase.from('team_members').insert({ team_id: teamId, profile_id: user.id, role: 'coach' });
-    if (memberErr) { setError(`Failed to add you to the team: ${memberErr.message}`); setLoading(false); return; }
+      const profileClubResult = await withTimeout(
+        supabase.from('profiles').update({ club_id: clubId }).eq('id', user.id),
+        6000
+      );
+      if (profileClubResult === TIMEOUT || profileClubResult.error) {
+        setError("Your club was created, but we couldn't finish linking it to your account. Check your connection, then tap Create again to pick up where you left off.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    if (!clubId) {
+      setError('Something went wrong setting up your club. Please try again.');
+      setLoading(false);
+      return;
+    }
+
+    // Resumable step 2/2: reuse an existing team under this club rather
+    // than creating a duplicate if an earlier attempt got this far before
+    // failing on the team_members step.
+    let teamId: string | null = null;
+    const existingTeamResult = await withTimeout(
+      supabase.from('teams').select('id').eq('club_id', clubId).limit(1).maybeSingle(),
+      6000
+    );
+    if (existingTeamResult !== TIMEOUT && !existingTeamResult.error && existingTeamResult.data) {
+      teamId = existingTeamResult.data.id;
+    }
+
+    if (!teamId) {
+      const teamResult = await withTimeout(
+        supabase.from('teams').insert({
+          club_id: clubId,
+          name: teamName.trim(),
+          age_group: ageGroup || null,
+          gender:    gender    || null,
+        }).select('id').single(),
+        6000
+      );
+      if (teamResult === TIMEOUT || teamResult.error || !teamResult.data) {
+        setError("Your club was created, but we couldn't create your team. Check your connection, then tap Create again.");
+        setLoading(false);
+        return;
+      }
+      teamId = teamResult.data.id;
+    }
+
+    // upsert, not insert — (team_id, profile_id) is unique, so this is
+    // safe to repeat on retry instead of erroring on a duplicate.
+    const memberResult = await withTimeout(
+      supabase.from('team_members').upsert(
+        { team_id: teamId, profile_id: user.id, role: 'coach' },
+        { onConflict: 'team_id,profile_id' }
+      ),
+      6000
+    );
+    if (memberResult === TIMEOUT || memberResult.error) {
+      setError("Your team was created, but we couldn't finish adding you to it. Check your connection, then tap Create again.");
+      setLoading(false);
+      return;
+    }
 
     await refreshProfile();
     setLoading(false);

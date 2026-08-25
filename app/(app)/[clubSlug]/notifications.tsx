@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../constants/colors';
@@ -18,6 +19,8 @@ import { useClub } from '../../../hooks/useClub';
 import { useTeam } from '../../../hooks/useTeam';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import { formatCurrency } from '../../../lib/formatCurrency';
+
+const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -280,13 +283,17 @@ export default function NotificationsScreen() {
       case 'waiver_reminder':
         router.push(`/(app)/${slug}/admin` as any);
         break;
-      // Fee/payment types have no dedicated mobile screen — already marked
-      // read above, nothing further to navigate to.
       case 'fee_assigned':
+        break;
+      // These all carry player_fee_id — open the same pay flow Home's
+      // payNow() uses so a parent who gets a "payment failed" push can
+      // actually fix it from the notification instead of having to find
+      // the outstanding-fees card on Home themselves.
       case 'fee_reminder':
       case 'payment_confirmed':
       case 'payment_failed':
       case 'payment_received':
+        if (d?.player_fee_id) handleFeePaymentTap(d.player_fee_id as string);
         break;
       case 'fee_payment_claimed':
         if (d?.player_fee_id) handleFeeClaimTap(d.player_fee_id as string);
@@ -294,6 +301,22 @@ export default function NotificationsScreen() {
       default:
         break;
     }
+  }
+
+  async function handleFeePaymentTap(playerFeeId: string) {
+    const { data: fee, error } = await supabase
+      .from('player_fees')
+      .select('payment_token')
+      .eq('id', playerFeeId)
+      .single();
+    if (error || !fee?.payment_token) {
+      Alert.alert("Couldn't open payment", 'Check the Home tab for your outstanding fees.');
+      return;
+    }
+    await WebBrowser.openBrowserAsync(`${APP_BASE}/pay/${fee.payment_token}`, {
+      controlsColor: primaryColor,
+      dismissButtonStyle: 'close',
+    });
   }
 
   async function handleFeeClaimTap(playerFeeId: string) {

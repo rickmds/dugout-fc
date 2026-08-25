@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
@@ -108,8 +108,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const team = allTeams.find((t) => t.id === selectedTeamId) ?? allTeams[0] ?? null;
 
+  // Without this, every render of TeamProvider (including ones triggered by
+  // AuthProvider re-rendering above it) hands every consumer a brand-new
+  // object by reference, forcing a re-render regardless of whether team/
+  // allTeams/loading actually changed. selectTeam/fetchTeams are already
+  // stable via useCallback above, so only `team`/`allTeams`/`loading` need
+  // to be in the dependency array.
+  const value = useMemo<TeamContextValue>(
+    () => ({ team, allTeams, loading, selectTeam, refetch: fetchTeams }),
+    [team, allTeams, loading, selectTeam, fetchTeams]
+  );
+
   return (
-    <TeamContext.Provider value={{ team, allTeams, loading, selectTeam, refetch: fetchTeams }}>
+    <TeamContext.Provider value={value}>
       {children}
     </TeamContext.Provider>
   );

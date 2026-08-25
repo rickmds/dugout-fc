@@ -7,8 +7,6 @@ import { useClub } from '../../../../hooks/useClub';
 import { useAuth } from '../../../../hooks/useAuth';
 import { supabase } from '../../../../lib/supabase';
 import { uniqueChannelName } from '../../../../lib/realtime';
-import { useNetworkStatus } from '../../../../hooks/useNetworkStatus';
-import OfflineBanner from '../../../../components/ui/OfflineBanner';
 
 const INACTIVE = '#555';
 
@@ -28,7 +26,6 @@ function TabIcon({ focused, primary, children }: { focused: boolean; primary: st
 
 export default function TabsLayout() {
   const { primaryColor } = useClub();
-  const { isConnected } = useNetworkStatus();
   const { profile } = useAuth();
   const [chatUnread, setChatUnread] = useState(0);
   const [pendingGuestCount, setPendingGuestCount] = useState(0);
@@ -95,7 +92,6 @@ export default function TabsLayout() {
   }, [profile?.id]);
 
   return (
-    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -166,7 +162,5 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
-    <OfflineBanner visible={!isConnected} />
-    </View>
   );
 }

@@ -136,6 +136,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
 
   const [convos, setConvos]             = useState<ConvoItem[]>([]);
   const [loading, setLoading]           = useState(true);
+  const [loadError, setLoadError]       = useState(false);
   const [showNewChat, setShowNewChat]   = useState(false);
   const [teamMembers, setTeamMembers]   = useState<TeamMember[]>([]);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
@@ -157,6 +158,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
   async function fetchConvos() {
     if (!team || !profile) return;
     setLoading(true);
+    setLoadError(false);
 
     // Get/create team group conversation
     const { data: tgRows } = await supabase
@@ -185,7 +187,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         teamConv = raceRows?.[0] ?? null;
         if (!teamConv) {
           console.error('[Chat] Could not create team_group conversation:', error.message);
-          Alert.alert('Chat setup failed', error.message);
+          setLoadError(true);
           setLoading(false);
           return;
         }
@@ -419,6 +421,22 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         <Text style={{ color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', padding: 32, fontSize: 15 }}>
           No team found. Make sure your club and team are set up.
         </Text>
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View style={st.center}>
+        <Ionicons name="chatbubble-outline" size={40} color={PULSE_COLORS.ui.muted} />
+        <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' }}>Could not open chat</Text>
+        <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 32 }}>Check your connection and try again.</Text>
+        <TouchableOpacity
+          onPress={fetchConvos}
+          style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}
+        >
+          <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -713,7 +731,8 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
     Alert.alert('Delete announcement', 'Remove this announcement?', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
-        await supabase.from('announcements').delete().eq('id', id);
+        const { error } = await supabase.from('announcements').delete().eq('id', id);
+        if (error) { Alert.alert('Error', 'Could not delete announcement.'); return; }
         setAnnouncements((prev) => prev.filter((a) => a.id !== id));
       }},
     ]);
@@ -771,7 +790,18 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
     });
     setEmailSending(false);
     setEmailModalVisible(false);
-    if (error) Alert.alert('Failed', 'Email service not yet configured.');
+    if (error) {
+      console.error('[chat] send-team-email failed', error);
+      // Distinguish a genuine network/timeout failure (the request never
+      // reached the function) from a real error response — never surface
+      // developer/config instructions to a coach mid-communication.
+      Alert.alert(
+        'Failed',
+        (error as any)?.name === 'FunctionsFetchError'
+          ? "Couldn't send — check your connection and try again."
+          : 'Could not send the email right now. Please try again.'
+      );
+    }
     else Alert.alert('Sent!', `Emailed to ${toAddresses.length} address${toAddresses.length !== 1 ? 'es' : ''}.`);
   }
 
@@ -1332,7 +1362,16 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
           });
           setSending(false);
           if (error) {
-            Alert.alert('Failed to send', 'Email service not yet configured. Set up the send-team-email Edge Function.');
+            console.error('[chat] send-team-email failed', error);
+            // Distinguish a genuine network/timeout failure from a real
+            // error response — never surface developer/config instructions
+            // to a coach mid-communication with parents.
+            Alert.alert(
+              'Failed to send',
+              (error as any)?.name === 'FunctionsFetchError'
+                ? "Couldn't send — check your connection and try again."
+                : 'Could not send the email right now. Please try again.'
+            );
           } else {
             if (team) {
               const { data: logged } = await supabase

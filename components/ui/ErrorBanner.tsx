@@ -1,24 +1,22 @@
-import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../constants/colors';
 
+// Every call site across the auth flow (login, register, create-team,
+// find-team, reset-password, profile-setup) uses this exclusively for
+// actionable errors, never a success/info toast — it used to auto-fade to
+// invisible after 4 seconds with no way to recall it (the container stayed
+// in the layout, leaving an empty gap, but the message itself vanished).
+// Errors that require the user to actually do something shouldn't
+// disappear on a timer; it stays visible for as long as the parent keeps
+// its `error` state set, and goes away naturally once that's cleared
+// (typically on the next attempt).
 export default function ErrorBanner({ message }: { message: string }) {
-  const opacity = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    opacity.setValue(1);
-    const timer = setTimeout(() => {
-      Animated.timing(opacity, { toValue: 0, duration: 350, useNativeDriver: true }).start();
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [message]);
-
   return (
-    <Animated.View style={[styles.container, { opacity }]}>
+    <View style={styles.container}>
       <Ionicons name="alert-circle" size={16} color={PULSE_COLORS.status.error} style={styles.icon} />
       <Text style={styles.text}>{message}</Text>
-    </Animated.View>
+    </View>
   );
 }
 

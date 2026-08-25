@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import type { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { withTimeout, TIMEOUT } from '../lib/withTimeout';
 import type { Database } from '../types/database';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
@@ -93,22 +94,17 @@ async function clearCache() {
 // and lets a fresh one succeed. Retrying in-process after a timeout does
 // the same thing automatically instead of requiring that.
 const SESSION_TIMEOUT_MS = 5000;
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race([
-    promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
-}
 async function getSessionWithRetry() {
   const first = await withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
-  if (first) return first;
-  return withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
+  if (first !== TIMEOUT) return first;
+  const second = await withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
+  return second !== TIMEOUT ? second : null;
 }
 async function fetchProfileAndClubWithRetry(userId: string) {
   const first = await withTimeout(fetchProfileAndClub(userId), SESSION_TIMEOUT_MS);
-  if (first) return first;
+  if (first !== TIMEOUT) return first;
   const second = await withTimeout(fetchProfileAndClub(userId), SESSION_TIMEOUT_MS);
-  return second ?? { profile: null, club: null, error: true as const };
+  return second !== TIMEOUT ? second : { profile: null, club: null, error: true as const };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -221,7 +217,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, []);
 
-  async function signOut() {
+  // useCallback (keyed on just the user id, the only field either function
+  // actually reads off `state.user`) so identity stays stable across
+  // re-renders that don't change who's signed in — otherwise every render
+  // of AuthProvider hands all 54 consumers a brand-new function reference,
+  // forcing them to re-render regardless of whether anything meaningful
+  // changed. See the context-value useMemo below for the other half of this.
+  const signOut = useCallback(async () => {
     // Otherwise this device's push token outlives the session — on a
     // shared/handed-down device, the next person to sign in still shares
     // the token row with whoever signed out, and can keep receiving pushes
@@ -235,9 +237,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {}
     }
     await supabase.auth.signOut();
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.user?.id]);
 
-  async function refreshProfile() {
+  const refreshProfile = useCallback(async () => {
     if (!state.user) return;
     const { profile, club, error } = await fetchProfileAndClub(state.user.id);
     if (error) {
@@ -246,10 +249,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setState((prev) => ({ ...prev, profile, club }));
     if (profile) persistCache(state.user.id, profile, club);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.user?.id]);
+
+  // Memoized so a re-render of AuthProvider that doesn't actually change
+  // `state` (e.g. triggered by an ancestor re-rendering for unrelated
+  // reasons) reuses the same value object instead of forcing every
+  // consumer — including memo()-wrapped list rows that call useAuth()/
+  // useClub() internally — to re-render regardless of whether anything
+  // meaningful changed.
+  const value = useMemo<AuthContextValue>(
+    () => ({ ...state, signOut, refreshProfile }),
+    [state, signOut, refreshProfile]
+  );
 
   return (
-    <AuthContext.Provider value={{ ...state, signOut, refreshProfile }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

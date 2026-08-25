@@ -52,7 +52,12 @@ export default function EmergencyBroadcastScreen() {
         },
         body: JSON.stringify({ prompt }),
       });
-      const json = await res.json();
+      let json: any;
+      try {
+        json = await res.json();
+      } catch {
+        throw new Error("Couldn't reach the server — check your connection and try again.");
+      }
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       const raw: string = json.result ?? '';
 
@@ -88,12 +93,28 @@ export default function EmergencyBroadcastScreen() {
           message: message.trim(),
         }),
       });
-      const json = await res.json();
+      let json: any;
+      try {
+        json = await res.json();
+      } catch {
+        throw new Error("Couldn't reach the server — check your connection and try again.");
+      }
       if (!res.ok) throw new Error(json.error ?? 'Failed');
 
+      // push_sent currently reflects tokens attempted, not confirmed
+      // delivery (sendExpoPush doesn't yet report per-ticket success/
+      // failure back through this route) — say so explicitly rather than
+      // implying every push was delivered. emails_sent is a real success
+      // count (only incremented after Resend confirms the send).
+      const recipients = json.recipients ?? 0;
+      const emailsSent = json.emails_sent ?? 0;
+      const pushSent = json.push_sent ?? 0;
+      const shortfall = recipients > 0 && (emailsSent < recipients || pushSent < recipients);
+
       Alert.alert(
-        '🚨 Broadcast sent',
-        `Push notifications: ${json.push_sent ?? 0}\nEmails sent: ${json.emails_sent ?? 0}`,
+        shortfall ? '🚨 Broadcast sent — some recipients may be missing' : '🚨 Broadcast sent',
+        `Email: ${emailsSent}/${recipients} sent\nPush: ${pushSent}/${recipients} attempted (delivery not confirmed)`
+          + (shortfall ? '\n\nNot everyone may have received this — follow up directly if it\'s critical.' : ''),
         [{ text: 'Done', onPress: () => router.back() }]
       );
     } catch (e: any) {

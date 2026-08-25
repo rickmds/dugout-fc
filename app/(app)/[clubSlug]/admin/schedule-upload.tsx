@@ -19,6 +19,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../../lib/supabase';
+import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -158,7 +159,7 @@ export default function ScheduleUploadScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9, base64: true });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
-    if (!asset.base64) { Alert.alert('Error', 'Could not read image.'); return; }
+    if (!asset.base64) { Alert.alert('Error', "Couldn't read that photo — try picking it again or use a different one."); return; }
     const ext = asset.uri.split('.').pop() ?? 'jpg';
     await parseSchedule(asset.base64, ext === 'png' ? 'image/png' : 'image/jpeg');
   }
@@ -166,16 +167,31 @@ export default function ScheduleUploadScreen() {
   async function parseSchedule(file_base64: string, file_type: string) {
     setPhase('processing');
 
-    const [invokeRes, existingRes] = await Promise.all([
-      supabase.functions.invoke('parse-schedule', { body: { file_base64, file_type } }),
+    // 40s timeout on the AI parse — without one, a slow/flaky connection
+    // just rotates the "Analysing your schedule…" status messages forever
+    // with no fallback or way to cancel.
+    const AI_PARSE_TIMEOUT_MS = 40_000;
+    const [invokeResult, existingRes] = await Promise.all([
+      withTimeout(supabase.functions.invoke('parse-schedule', { body: { file_base64, file_type } }), AI_PARSE_TIMEOUT_MS),
       team
         ? supabase.from('events').select('event_date, type').eq('team_id', team.id)
         : Promise.resolve({ data: [] as { event_date: string; type: string }[] }),
     ]);
 
+    if (invokeResult === TIMEOUT) {
+      setPhase('idle');
+      Alert.alert('This is taking longer than expected', 'Check your connection and try again.');
+      return;
+    }
+    const invokeRes = invokeResult;
+
     if (invokeRes.error || !invokeRes.data) {
       setPhase('idle');
-      Alert.alert('Failed to parse', invokeRes.error?.message ?? 'Could not read schedule. Try a different file.');
+      // supabase.functions.invoke's own error on a non-2xx response is
+      // literally "Edge Function returned a non-2xx status code" — not
+      // useful to a coach, so treat any failed invoke as one generic,
+      // friendly message rather than surfacing that raw client-library text.
+      Alert.alert('Failed to parse', "We couldn't read that file right now. Check your connection and try again, or try a different file.");
       return;
     }
 
@@ -273,7 +289,8 @@ export default function ScheduleUploadScreen() {
     const { error } = await supabase.from('events').insert(rows as any);
     if (error) {
       setPhase('review');
-      Alert.alert('Import failed', error.message);
+      console.error('[schedule-upload] import failed', error);
+      Alert.alert('Import failed', "Some of these events couldn't be saved — try a smaller batch or check the dates.");
       return;
     }
     setImported(toImport.length);
@@ -710,6 +727,16 @@ function EditEventModal({ event, onSave, onClose }: {
               ))}
             </View>
 
+            {/* Free-text date/time entry rather than the DateTimeSheet picker
+                used elsewhere (create-event.tsx): DateTimeSheet always
+                returns a concrete Date and has no "clear" affordance, but
+                an uncertain row here can legitimately need date and/or time
+                left blank (e.g. an all-day event, or a date the AI genuinely
+                couldn't determine) — supporting that would mean adding
+                optional/nullable semantics to the shared picker itself, a
+                bigger change than fits this pass. Left as-is; a real fix
+                should extend DateTimeSheet with an optional "Clear" action
+                rather than fork it here. */}
             <Text style={[st.fieldLabel, { marginTop: 16 }]}>DATE <Text style={st.fieldHint}>YYYY-MM-DD</Text></Text>
             <TextInput
               style={st.fieldInput}

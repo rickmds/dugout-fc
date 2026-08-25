@@ -1,7 +1,10 @@
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../hooks/useAuth';
 import { useTeam } from '../../../hooks/useTeam';
+import { useNetworkStatus } from '../../../hooks/useNetworkStatus';
+import OfflineBanner from '../../../components/ui/OfflineBanner';
 
 // Individual screens under this route fetch data scoped by the signed-in
 // user's own club_id/team membership, not by this URL param, so a mismatched
@@ -39,9 +42,17 @@ function ClubSlugGuard({ children }: { children: React.ReactNode }) {
 }
 
 export default function ClubLayout() {
+  // Rendered here rather than only inside (tabs)/_layout.tsx so non-tab
+  // screens under this club (event detail, admin panel, settings, gallery,
+  // notifications, etc.) get the same offline signal instead of just the
+  // four bottom tabs.
+  const { isConnected } = useNetworkStatus();
   return (
     <ClubSlugGuard>
-      <Stack screenOptions={{ headerShown: false }} />
+      <View style={{ flex: 1 }}>
+        <Stack screenOptions={{ headerShown: false }} />
+        <OfflineBanner visible={!isConnected} />
+      </View>
     </ClubSlugGuard>
   );
 }
