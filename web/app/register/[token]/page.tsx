@@ -74,6 +74,7 @@ export default function RegisterPage() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, boolean>>({});
   const [paymentChoice, setPaymentChoice] = useState<'full' | 'plan' | null>(null);
   const [selectedTier,  setSelectedTier]  = useState<PriceTier | null>(null);
+  const [submitError,   setSubmitError]   = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -115,7 +116,16 @@ export default function RegisterPage() {
     setValue(label, updated.join(', '));
   }
 
+  const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
   function setFile(label: string, file: File | null) {
+    // The drop zone says "Max 10MB" but nothing enforced it before — an
+    // oversized file used to sail through to the upload call and surface a
+    // raw Supabase Storage error instead of an immediate, friendly warning.
+    if (file && file.size > MAX_FILE_BYTES) {
+      setErrors((e) => ({ ...e, [label]: `That file is too large (${(file.size / 1024 / 1024).toFixed(1)}MB) — max 10MB.` }));
+      return;
+    }
     setFiles((f) => ({ ...f, [label]: file }));
     setErrors((e) => { const n = { ...e }; delete n[label]; return n; });
   }
@@ -157,98 +167,110 @@ export default function RegisterPage() {
     if (Object.keys(errs).length) { setErrors(errs); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
 
     setSubmitting(true);
+    setSubmitError(null);
+    // The RPC below durably commits the registration — everything after it
+    // (the confirmation email) must never be able to stop setDone(true)
+    // from firing. Wrapping the whole thing in try/catch/finally, and
+    // making the email fire-and-forget, closes the gap where a flaky
+    // connection on either step left the parent staring at "Submitting…"
+    // forever despite the registration already existing.
+    try {
+      // 1. Upload any files to Supabase Storage
+      const submissionId = uid();
+      const finalValues = { ...values };
 
-    // 1. Upload any files to Supabase Storage
-    const submissionId = uid();
-    const finalValues = { ...values };
+      for (const [label, file] of Object.entries(files)) {
+        if (!file) continue;
+        setUploadProgress((p) => ({ ...p, [label]: true }));
+        const ext = file.name.split('.').pop();
+        const path = `${form!.id}/${submissionId}/${label.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${ext}`;
+        const { data: uploaded, error: upErr } = await supabase.storage
+          .from('registration-docs')
+          .upload(path, file, { upsert: true });
+        setUploadProgress((p) => ({ ...p, [label]: false }));
 
-    for (const [label, file] of Object.entries(files)) {
-      if (!file) continue;
-      setUploadProgress((p) => ({ ...p, [label]: true }));
-      const ext = file.name.split('.').pop();
-      const path = `${form!.id}/${submissionId}/${label.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${ext}`;
-      const { data: uploaded, error: upErr } = await supabase.storage
-        .from('registration-docs')
-        .upload(path, file, { upsert: true });
-      setUploadProgress((p) => ({ ...p, [label]: false }));
+        if (upErr) {
+          setErrors((er) => ({ ...er, [label]: `Upload failed: ${upErr.message}` }));
+          return;
+        }
 
-      if (upErr) {
-        setErrors((er) => ({ ...er, [label]: `Upload failed: ${upErr.message}` }));
-        setSubmitting(false);
+        const { data: urlData } = supabase.storage.from('registration-docs').getPublicUrl(uploaded.path);
+        finalValues[label] = urlData.publicUrl;
+      }
+
+      // Convert waiver values
+      for (const f of form?.fields ?? []) {
+        if (f.type === 'waiver' && finalValues[f.label] === 'agreed') {
+          finalValues[f.label] = 'I agree';
+        }
+      }
+
+      // Resolve amount_due from pricing mode
+      const pMode = form!.price_mode ?? 'flat';
+      let finalAmountDue: number | null = form!.price;
+      if (pMode === 'tiers') {
+        finalAmountDue = selectedTier?.price ?? null;
+      } else if (pMode === 'field') {
+        const pt = form!.price_tiers as { field: string; rules: Record<string, number> } | null;
+        finalAmountDue = pt ? (pt.rules[finalValues[pt.field] ?? ''] ?? null) : null;
+      }
+      const hasFee = finalAmountDue !== null;
+
+      // 2. Insert submission — via an RPC that re-checks max_spots and picks
+      // the status atomically (advisory-locked per form_id), instead of a
+      // plain insert. The spotsLeft banner above only reflects the count as
+      // of page load; two people submitting for the same last spot at
+      // once could otherwise both land as 'pending' and both be told they
+      // have a place, when only one actually does.
+      const { data: subResult, error: subErr } = await supabase.rpc('submit_registration', {
+        p_form_id: form!.id,
+        p_data: finalValues,
+        p_payment_choice: hasFee ? paymentChoice : null,
+        p_amount_due: finalAmountDue,
+      }).single<{ id: string; status: string }>();
+
+      if (subErr || !subResult) {
+        setSubmitError('Submission failed. Please try again.');
         return;
       }
+      setSubmissionStatus(subResult.status);
 
-      const { data: urlData } = supabase.storage.from('registration-docs').getPublicUrl(uploaded.path);
-      finalValues[label] = urlData.publicUrl;
-    }
+      // 3. Send confirmation email if enabled — fire-and-forget, so a slow
+      // or failed email can't block reaching the success screen for a
+      // registration that already went through.
+      if (form?.send_confirmation_email) {
+        const parentEmail = Object.entries(finalValues).find(([k]) =>
+          k.toLowerCase().includes('email')
+        )?.[1];
+        const playerName = Object.entries(finalValues).find(([k]) =>
+          k.toLowerCase().includes('name') || k.toLowerCase().includes('player')
+        )?.[1] ?? '';
 
-    // Convert waiver values
-    for (const f of form?.fields ?? []) {
-      if (f.type === 'waiver' && finalValues[f.label] === 'agreed') {
-        finalValues[f.label] = 'I agree';
+        if (parentEmail) {
+          fetch('/api/registration-confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: parentEmail,
+              player_name: playerName,
+              form_title: form.title,
+              club_name: form.clubs?.name,
+              club_logo_url: form.clubs?.logo_url,
+              primary_color: form.clubs?.primary_color,
+              confirmation_message: form.confirmation_message,
+            }),
+          }).catch((err) => console.error('registration-confirm email failed:', err));
+        }
       }
-    }
 
-    // Resolve amount_due from pricing mode
-    const pMode = form!.price_mode ?? 'flat';
-    let finalAmountDue: number | null = form!.price;
-    if (pMode === 'tiers') {
-      finalAmountDue = selectedTier?.price ?? null;
-    } else if (pMode === 'field') {
-      const pt = form!.price_tiers as { field: string; rules: Record<string, number> } | null;
-      finalAmountDue = pt ? (pt.rules[finalValues[pt.field] ?? ''] ?? null) : null;
-    }
-    const hasFee = finalAmountDue !== null;
-
-    // 2. Insert submission — via an RPC that re-checks max_spots and picks
-    // the status atomically (advisory-locked per form_id), instead of a
-    // plain insert. The spotsLeft banner above only reflects the count as
-    // of page load; two people submitting for the same last spot at
-    // once could otherwise both land as 'pending' and both be told they
-    // have a place, when only one actually does.
-    const { data: subResult, error: subErr } = await supabase.rpc('submit_registration', {
-      p_form_id: form!.id,
-      p_data: finalValues,
-      p_payment_choice: hasFee ? paymentChoice : null,
-      p_amount_due: finalAmountDue,
-    }).single<{ id: string; status: string }>();
-
-    if (subErr || !subResult) {
-      alert('Submission failed. Please try again.');
+      setDone(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      console.error(err);
+      setSubmitError('Something went wrong submitting your registration. Please check your connection and try again.');
+    } finally {
       setSubmitting(false);
-      return;
     }
-    setSubmissionStatus(subResult.status);
-
-    // 3. Send confirmation email if enabled
-    if (form?.send_confirmation_email) {
-      const parentEmail = Object.entries(finalValues).find(([k]) =>
-        k.toLowerCase().includes('email')
-      )?.[1];
-      const playerName = Object.entries(finalValues).find(([k]) =>
-        k.toLowerCase().includes('name') || k.toLowerCase().includes('player')
-      )?.[1] ?? '';
-
-      if (parentEmail) {
-        await fetch('/api/registration-confirm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: parentEmail,
-            player_name: playerName,
-            form_title: form.title,
-            club_name: form.clubs?.name,
-            club_logo_url: form.clubs?.logo_url,
-            primary_color: form.clubs?.primary_color,
-            confirmation_message: form.confirmation_message,
-          }),
-        });
-      }
-    }
-
-    setSubmitting(false);
-    setDone(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // ─── Render states ────────────────────────────────────────────────────────
@@ -342,6 +364,14 @@ export default function RegisterPage() {
             <div style={{ fontSize: '13px', color: '#DC2626', fontWeight: '600' }}>
               {errorCount} field{errorCount !== 1 ? 's' : ''} need{errorCount === 1 ? 's' : ''} your attention — please check below.
             </div>
+          </div>
+        )}
+
+        {/* Submission failure — same inline pattern as the field-error summary above, instead of a native alert() */}
+        {submitError && (
+          <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '12px 14px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '15px' }}>⚠️</span>
+            <div style={{ fontSize: '13px', color: '#DC2626', fontWeight: '600' }}>{submitError}</div>
           </div>
         )}
 
@@ -521,7 +551,7 @@ export default function RegisterPage() {
 
 // ─── Field renderer ───────────────────────────────────────────────────────────
 
-function FormField({ field: f, value, fileValue, error, uploading: _uploading, primary, onValue, onMultiValue, onFile }: {
+function FormField({ field: f, value, fileValue, error, uploading, primary, onValue, onMultiValue, onFile }: {
   field: FieldDef; value: string; fileValue: File | null; error?: string;
   uploading: boolean; primary: string;
   onValue: (v: string) => void;
@@ -631,7 +661,12 @@ function FormField({ field: f, value, fileValue, error, uploading: _uploading, p
       {f.type === 'file' && (
         <div>
           <input ref={fileRef} type="file" accept={f.accept ?? 'image/*,.pdf'} style={{ display: 'none' }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-          {fileValue ? (
+          {uploading ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px' }}>
+              <Spinner color={primary} size={16} />
+              <span style={{ fontSize: '13px', color: '#64748B' }}>Uploading…</span>
+            </div>
+          ) : fileValue ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', background: `${primary}08`, border: `1.5px solid ${primary}40`, borderRadius: '10px' }}>
               <span style={{ fontSize: '20px' }}>{fileValue.type.includes('pdf') ? '📄' : '🖼️'}</span>
               <div style={{ flex: 1, minWidth: 0 }}>

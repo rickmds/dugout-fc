@@ -590,7 +590,7 @@ export default async function ComparePage() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #111', padding: '24px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto' }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
         
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <Link href="/pricing" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Pricing</Link>

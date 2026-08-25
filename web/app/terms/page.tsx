@@ -13,7 +13,7 @@ export default function TermsPage() {
       <header className="px-6 sm:px-10 py-5 flex items-center justify-between border-b border-[#111] max-w-5xl mx-auto">
         <Link href="/">
           {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-          <img src="/logo.png" alt="Pulse FC" style={{ height: '44px', width: 'auto' }} />
+          <img src="/logo.png" alt="Pulse FC" width={44} height={44} style={{ height: '44px', width: 'auto' }} />
           
         </Link>
         <Link href="/" className="text-[#555] text-[13px] hover:text-white transition-colors">← Back</Link>
@@ -104,7 +104,7 @@ export default function TermsPage() {
       {/* Footer */}
       <footer className="border-t border-[#111] px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between">
         {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
         
         <div className="flex items-center gap-6">
           <Link href="/privacy" className="text-[#555] text-[12px] hover:text-[#bbb] transition-colors">Privacy Policy</Link>

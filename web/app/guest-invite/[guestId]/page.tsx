@@ -69,6 +69,7 @@ export default function GuestInvitePage() {
   const [loading,   setLoading]   = useState(true);
   const [pending,   setPending]   = useState<'accept' | 'decline' | null>(null);
   const [done,      setDone]      = useState<'accepted' | 'declined' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const autoFired = useRef(false);
 
   useEffect(() => {
@@ -76,7 +77,21 @@ export default function GuestInvitePage() {
     if (!guestId) { setLoading(false); return; }
     fetch(`/api/guest-invite/respond?guestId=${guestId}`)
       .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); });
+      .then(d => { setData(d); setLoading(false); })
+      // No catch previously — a failed initial load left `loading` true
+      // forever, showing a permanent "Loading invitation…" on a network blip.
+      // `error` alone drives the error-state branch below (checked before
+      // any other field is read), so the rest can safely be empty shapes.
+      .catch(() => {
+        setData({
+          guest_id: '', full_name: '', role: 'player', status: 'pending',
+          event_title: '', event_type: '', event_date: '', event_time: null,
+          location: null, home_away: null, team_name: null, club_name: null,
+          club_logo: null, club_color: null, club_slug: null,
+          error: 'Could not load this invitation. Check your connection and try again.',
+        });
+        setLoading(false);
+      });
   }, [guestId]);
 
   // Fetch fallback club info from slug so we can brand the error state
@@ -100,17 +115,28 @@ export default function GuestInvitePage() {
   async function handleAction(action: 'accept' | 'decline') {
     if (!guestId) return;
     setPending(action);
-    const r = await fetch('/api/guest-invite/respond', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ guestId, action }),
-    });
-    const result = await r.json();
-    if (result.ok) {
-      setDone(action === 'accept' ? 'accepted' : 'declined');
-      setData(prev => prev ? { ...prev, status: result.status } : prev);
+    setActionError(null);
+    try {
+      const r = await fetch('/api/guest-invite/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guestId, action }),
+      });
+      const result = await r.json();
+      if (result.ok) {
+        setDone(action === 'accept' ? 'accepted' : 'declined');
+        setData(prev => prev ? { ...prev, status: result.status } : prev);
+      } else {
+        // Previously silent — the button just re-enabled with no message,
+        // so a real failure (server error, expired invite) looked identical
+        // to nothing having happened.
+        setActionError(result.error ?? 'Could not save your response — please try again.');
+      }
+    } catch {
+      setActionError('Could not save your response — please check your connection and try again.');
+    } finally {
+      setPending(null);
     }
-    setPending(null);
   }
 
   const clubName  = data?.club_name  ?? fallbackClub?.name  ?? null;
@@ -333,6 +359,12 @@ export default function GuestInvitePage() {
           )}
         </div>
       </div>
+
+      {actionError && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', fontSize: '13px', color: '#fca5a5' }}>
+          {actionError}
+        </div>
+      )}
 
       {/* Buttons */}
       <div style={{ display: 'flex', gap: '10px' }}>

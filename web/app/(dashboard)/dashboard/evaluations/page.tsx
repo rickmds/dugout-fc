@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Award, CheckCircle, Clock, ChevronRight, AlertCircle, Users, Plus } from 'lucide-react';
+import { Award, CheckCircle, Clock, ChevronRight, AlertCircle, Users, Plus, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -67,6 +67,15 @@ export default function EvaluationsPage() {
   const [batches,  setBatches]  = useState<BatchRow[]>([]);
   const [loading,  setLoading]  = useState(true);
 
+  // ── New Batch modal ──────────────────────────────────────────────────────
+  const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
+  const [showNewBatch, setShowNewBatch] = useState(false);
+  const [newTeamId, setNewTeamId]     = useState('');
+  const [newSeason, setNewSeason]     = useState('');
+  const [newPeriod, setNewPeriod]     = useState('');
+  const [creatingBatch, setCreatingBatch] = useState(false);
+  const [newBatchError, setNewBatchError] = useState('');
+
   const load = useCallback(async () => {
     if (!club) return;
     setLoading(true);
@@ -82,6 +91,57 @@ export default function EvaluationsPage() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
+  useEffect(() => {
+    if (!club) return;
+    supabase.from('teams').select('id, name').eq('club_id', club.id).order('name')
+      .then(({ data }) => setTeamOptions((data ?? []) as { id: string; name: string }[]));
+  }, [club]);
+
+  function openNewBatch() {
+    setNewTeamId(teamOptions[0]?.id ?? '');
+    setNewSeason('');
+    setNewPeriod('');
+    setNewBatchError('');
+    setShowNewBatch(true);
+  }
+
+  async function createBatch() {
+    if (!club || !profile || !newTeamId || !newSeason.trim() || !newPeriod.trim()) return;
+    setCreatingBatch(true);
+    setNewBatchError('');
+    try {
+      const { count } = await supabase
+        .from('players')
+        .select('id', { count: 'exact', head: true })
+        .eq('team_id', newTeamId);
+
+      const { data, error } = await supabase
+        .from('evaluation_batches')
+        .insert({
+          club_id: club.id,
+          team_id: newTeamId,
+          coach_id: profile.id,
+          season_label: newSeason.trim(),
+          period_label: newPeriod.trim(),
+          total_players: count ?? 0,
+          completed_count: 0,
+          status: 'in_progress',
+        })
+        .select('id')
+        .single();
+
+      if (error || !data) {
+        setNewBatchError('Could not create batch. Please try again.');
+        return;
+      }
+      setShowNewBatch(false);
+      router.push(`/dashboard/evaluations/${data.id}`);
+    } finally {
+      setCreatingBatch(false);
+    }
+  }
 
   // Summary stats
   const submitted = batches.filter(b => b.status === 'submitted').length;
@@ -121,7 +181,7 @@ export default function EvaluationsPage() {
         {isAdmin && (
           <button
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
-            onClick={() => {/* TODO: open new batch modal */}}
+            onClick={openNewBatch}
           >
             <Plus size={14} />
             New Batch
@@ -246,6 +306,55 @@ export default function EvaluationsPage() {
           </div>
         )}
       </div>
+
+      {/* ── New Batch modal ──────────────────────────────────────────────── */}
+      {showNewBatch && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>New Evaluation Batch</div>
+              <button onClick={() => setShowNewBatch(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+            </div>
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Team</label>
+                {teamOptions.length === 0 ? (
+                  <div style={{ fontSize: '13px', color: '#94A3B8' }}>No teams found for this club.</div>
+                ) : (
+                  <select
+                    value={newTeamId}
+                    onChange={e => setNewTeamId(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }}
+                  >
+                    {teamOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Season</label>
+                <input value={newSeason} onChange={e => setNewSeason(e.target.value)} placeholder="e.g. 2026-27"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Period</label>
+                <input value={newPeriod} onChange={e => setNewPeriod(e.target.value)} placeholder="e.g. Fall mid-season"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }} />
+              </div>
+              {newBatchError && <div style={{ fontSize: '12.5px', color: '#EF4444', fontWeight: '600' }}>{newBatchError}</div>}
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowNewBatch(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button
+                onClick={createBatch}
+                disabled={creatingBatch || !newTeamId || !newSeason.trim() || !newPeriod.trim()}
+                style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: creatingBatch ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!newTeamId || !newSeason.trim() || !newPeriod.trim()) ? 0.5 : 1 }}
+              >
+                {creatingBatch ? 'Creating…' : 'Create Batch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

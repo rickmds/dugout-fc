@@ -122,7 +122,7 @@ export default function CoachesPage() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f' }} className="px-6 sm:px-10 py-8 flex items-center justify-between max-w-7xl mx-auto">
         {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
         <div className="flex items-center gap-6">
           <Link href="/clubs" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Clubs</Link>
           <Link href="/players" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Players</Link>

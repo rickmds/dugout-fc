@@ -29,6 +29,7 @@ type Invite = {
   phone: string | null;
   relationship: string | null;
   accepted_at: string | null;
+  accepted_by: string | null;
   created_at: string;
 };
 
@@ -180,7 +181,7 @@ export default function RosterPage() {
     setParentLastActive(null);
     supabase
       .from('invites')
-      .select('id, token, email, guardian_name, phone, relationship, accepted_at, created_at')
+      .select('id, token, email, guardian_name, phone, relationship, accepted_at, accepted_by, created_at')
       .eq('player_id', selectedPlayer.id)
       .order('created_at', { ascending: true })
       .then(async ({ data }) => {
@@ -259,7 +260,7 @@ export default function RosterPage() {
         email: inviteEmail.trim(),
         created_by: profile?.id,
       })
-      .select('id, token, email, guardian_name, phone, relationship, accepted_at, created_at')
+      .select('id, token, email, guardian_name, phone, relationship, accepted_at, accepted_by, created_at')
       .single();
     if (dbErr) {
       setInviteError('Could not save invite: ' + dbErr.message);
@@ -308,10 +309,47 @@ export default function RosterPage() {
     setSavingInviteEdit(false);
   }
 
-  async function deleteInviteRecord(id: string) {
-    setDeletingInviteId(id);
-    await supabase.from('invites').delete().eq('id', id);
-    setInvites((prev) => prev.filter((inv) => inv.id !== id));
+  // Mirrors the mobile fix (app/(app)/[clubSlug]/player/[playerId].tsx
+  // confirmRevokeAccess): for a guardian who has already joined the app, a
+  // plain `invites` delete only removes the historical invite row — it
+  // doesn't touch player_guardians/team_members, so they'd keep full
+  // roster/chat/schedule access. Only a not-yet-accepted invite is safe to
+  // just delete outright, since there's nothing else to clean up for it.
+  async function deleteInviteRecord(inv: Invite) {
+    const isAccepted = !!inv.accepted_at;
+    const confirmMsg = isAccepted
+      ? `Remove ${inv.guardian_name || inv.email} as a guardian? They will lose access to this player's info, RSVPs, and chat.`
+      : `Cancel the pending invite to ${inv.guardian_name || inv.email}?`;
+    if (!confirm(confirmMsg)) return;
+
+    setDeletingInviteId(inv.id);
+
+    if (isAccepted) {
+      if (!inv.accepted_by || !selectedPlayer) {
+        alert('Could not remove this guardian — missing account info. Please contact support.');
+        setDeletingInviteId(null);
+        return;
+      }
+      const { data, error } = await supabase.rpc('revoke_guardian_access', {
+        p_player_id: selectedPlayer.id,
+        p_profile_id: inv.accepted_by,
+      });
+      const result = data as { success?: boolean; error?: string } | null;
+      if (error || result?.error) {
+        alert(result?.error ?? 'Could not remove guardian. Please try again.');
+        setDeletingInviteId(null);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from('invites').delete().eq('id', inv.id);
+      if (error) {
+        alert('Could not cancel invite: ' + error.message);
+        setDeletingInviteId(null);
+        return;
+      }
+    }
+
+    setInvites((prev) => prev.filter((x) => x.id !== inv.id));
     setDeletingInviteId(null);
   }
 
@@ -768,7 +806,7 @@ export default function RosterPage() {
                                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                                 </svg>
                               </button>
-                              <button onClick={() => deleteInviteRecord(inv.id)} disabled={deletingInviteId === inv.id} title="Remove guardian"
+                              <button onClick={() => deleteInviteRecord(inv)} disabled={deletingInviteId === inv.id} title="Remove guardian"
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', borderRadius: '6px', display: 'flex' }}
                                 onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#FEF2F2'}
                                 onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>

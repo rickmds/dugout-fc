@@ -31,27 +31,49 @@ const STATUS_COLOR: Record<string, string> = {
   outstanding: '#F59E0B', overdue: '#EF4444',
 };
 
+// Show a short, friendly line instead of the raw Supabase Auth SDK string
+// (e.g. "AuthApiError: Invalid login credentials") on the money page.
+function friendlyLoginError(message: string | undefined): string {
+  if (!message) return 'Something went wrong. Please try again.';
+  const lower = message.toLowerCase();
+  if (lower.includes('invalid login credentials')) return 'Incorrect email or password. Please try again.';
+  if (lower.includes('email not confirmed')) return 'Please confirm your email before signing in.';
+  if (lower.includes('rate limit')) return 'Too many attempts — please wait a moment and try again.';
+  return 'Something went wrong. Please try again.';
+}
+
 export default function PayPortal() {
   const [fees, setFees] = useState<Fee[]>([]);
   const [loading, setLoading] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   async function loadFees(userId: string) {
     setLoading(true);
+    setLoadError(false);
     // Find all player records linked to this profile
-    const { data: players } = await supabase
+    const { data: players, error: playersErr } = await supabase
       .from('players')
       .select('id')
       .eq('profile_id', userId);
 
+    if (playersErr) {
+      console.error('Failed to load players for fee portal:', playersErr);
+      setLoadError(true);
+      setLoggedIn(true);
+      setLoading(false);
+      return;
+    }
+
     const playerIds = (players ?? []).map(p => p.id);
     if (!playerIds.length) { setLoggedIn(true); setLoading(false); return; }
 
-    const { data: feeRows } = await supabase
+    const { data: feeRows, error: feesErr } = await supabase
       .from('player_fees')
       .select(`
         id, payment_token, description, amount_due, amount_paid, discount, due_date, status,
@@ -60,6 +82,14 @@ export default function PayPortal() {
       `)
       .in('player_id', playerIds)
       .order('due_date', { ascending: true, nullsFirst: false });
+
+    if (feesErr) {
+      console.error('Failed to load fees for fee portal:', feesErr);
+      setLoadError(true);
+      setLoggedIn(true);
+      setLoading(false);
+      return;
+    }
 
     type FeeRow = {
       id: string; payment_token: string | null; description: string; amount_due: number; amount_paid: number;
@@ -97,13 +127,35 @@ export default function PayPortal() {
     return () => subscription.unsubscribe();
   }, []);
 
+  async function retryLoadFees() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) loadFees(session.user.id);
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setAuthLoading(true);
     setAuthError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setAuthError(error.message);
+    if (error) setAuthError(friendlyLoginError(error.message));
     setAuthLoading(false);
+  }
+
+  async function handleForgotPassword() {
+    if (!email.trim()) { setAuthError('Enter your email above first, then tap "Forgot password?"'); return; }
+    setAuthError('');
+    setAuthLoading(true);
+    try {
+      await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: 'https://pulse-fc.app/reset-password' });
+    } catch (err) {
+      // Supabase already avoids revealing whether an email exists — treat
+      // any failure the same as "sent" so this can't be used to enumerate
+      // accounts, and so a network blip doesn't strand the parent either.
+      console.error('resetPasswordForEmail failed:', err);
+    } finally {
+      setAuthLoading(false);
+      setResetSent(true);
+    }
   }
 
   async function handleLogout() {
@@ -150,11 +202,22 @@ export default function PayPortal() {
             />
           </div>
           {authError && <div style={{ fontSize: '13px', color: '#EF4444' }}>{authError}</div>}
+          {resetSent && (
+            <div style={{ fontSize: '13px', color: '#22C55E' }}>
+              If an account exists for that email, we&apos;ve sent a password reset link.
+            </div>
+          )}
           <button
             type="submit" disabled={authLoading}
             style={{ padding: '13px', borderRadius: '10px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '15px', fontWeight: '800', cursor: 'pointer', fontFamily: 'inherit' }}
           >
             {authLoading ? 'Signing in…' : 'Sign in'}
+          </button>
+          <button
+            type="button" onClick={handleForgotPassword} disabled={authLoading}
+            style={{ background: 'none', border: 'none', color: '#9CA3AF', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline', padding: 0 }}
+          >
+            Forgot password?
           </button>
         </form>
       </div>
@@ -186,7 +249,21 @@ export default function PayPortal() {
         </div>
       )}
 
-      {!fees.length && (
+      {loadError && (
+        <div style={{ ...styles.card, textAlign: 'center', padding: '48px 32px', width: '100%', maxWidth: '560px' }}>
+          <div style={{ fontSize: '32px', marginBottom: '12px' }}>⚠️</div>
+          <div style={{ fontSize: '17px', fontWeight: '700', color: '#F9FAFB' }}>We couldn&apos;t load your fees</div>
+          <div style={{ fontSize: '14px', color: '#9CA3AF', marginTop: '6px', marginBottom: '18px' }}>Check your connection and try again — this is not a statement that you owe nothing.</div>
+          <button
+            onClick={retryLoadFees}
+            style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!loadError && !fees.length && (
         <div style={{ ...styles.card, textAlign: 'center', padding: '48px 32px', width: '100%', maxWidth: '560px' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>✅</div>
           <div style={{ fontSize: '17px', fontWeight: '700', color: '#F9FAFB' }}>All clear!</div>

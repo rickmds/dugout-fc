@@ -237,7 +237,7 @@ export default async function PulseVsTeamsnapPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 16, alignItems: 'center', maxWidth: 640, margin: '0 auto' }}>
           <div style={{ background: '#0a1a0a', border: `2px solid ${GREEN}`, borderRadius: 16, padding: '24px 20px' }}>
             {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-            <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto', marginBottom: 12 }} />
+            <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto', marginBottom: 12 }} />
             <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, marginBottom: 4 }}>Purpose-built for soccer DOCs</p>
             <p style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>AI features · Multi-team dashboard · Tryout management · Soccer-specific</p>
           </div>
@@ -399,7 +399,7 @@ export default async function PulseVsTeamsnapPage() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #111', padding: '24px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto' }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <Link href="/pulse-fc-vs-sportsengine" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>vs SportsEngine</Link>
           <Link href="/pulse-fc-vs-playmetrics" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>vs PlayMetrics</Link>

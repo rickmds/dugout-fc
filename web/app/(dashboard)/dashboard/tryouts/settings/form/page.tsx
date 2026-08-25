@@ -48,29 +48,18 @@ We are excited to evaluate players interested in joining our competitive teams f
 US Soccer Age Group Update: Beginning Fall 2026, US Soccer is transitioning youth soccer from calendar-year age groups to a seasonal-year model (August 1 – July 31). At {{clubName}}, tryout groupings and team placement are based on school grade under the new US Soccer seasonal-year model. For players born in August or September, grade-based alignment will be applied so those players remain with their school peer group.
 
 Tryout Process: Each player is required to attend one tryout session. Following the tryout, selected players may be invited to a team training session for further evaluation. After evaluations are complete, offer letters will be sent based on performance, roster needs, and team balance. Not every player who attends will be offered a roster spot.`,
-  locationText: 'Superdome Sports, 134 Hopper Ave, Waldwick, NJ 07463',
-  sessionScheduleText: `Saturday, April 11, 2026 (Boys & Girls)
-• 1st Grade (Incoming 2nd) — 9:00 AM – 10:00 AM
-• 2nd Grade (Incoming 3rd) — 10:00 AM – 11:00 AM
-• 3rd Grade (Incoming 4th) — 11:00 AM – 12:00 PM
-• 4th Grade (Incoming 5th) — 12:00 PM – 1:00 PM
-• 5th Grade (Incoming 6th) — 1:00 PM – 2:00 PM
-• 6th/7th Grade (Incoming 7th/8th) — 2:00 PM – 3:00 PM
-
-Tuesday, April 14, 2026 (Girls ONLY)
-• 1st/2nd Grade (Incoming 2nd/3rd) — 4:00 PM – 5:00 PM
-• 3rd/4th Grade (Incoming 4th/5th) — 5:00 PM – 6:00 PM
-• 5th/6th/7th Grade (Incoming 6th/7th/8th) — 6:00 PM – 7:00 PM
-
-Wednesday, April 15, 2026 (Boys ONLY)
-• 1st/2nd Grade (Incoming 2nd/3rd) — 4:00 PM – 5:00 PM
-• 3rd/4th Grade (Incoming 4th/5th) — 5:00 PM – 6:00 PM
-• 5th/6th/7th Grade (Incoming 6th/7th/8th) — 6:00 PM – 7:00 PM`,
+  // These three were previously seeded with Maroons SC's real venue address
+  // and Rick's/Ben's personal emails — a self-serve club that enabled
+  // tryouts without noticing would publish that as "their own" contact
+  // info. Left as bracketed prompts instead of Maroons-specific defaults;
+  // the templated fields above/below are legitimate generic starting copy.
+  locationText: '[Add your tryout venue address]',
+  sessionScheduleText: '[Add your tryout session dates and times]',
   offerTimelineText: 'Offer letters will be sent via email on June 1st. Families will have one week to accept their roster spot. After the deadline, remaining spots will be offered to waitlisted players. No offers will be released before June 1st.',
   importantInfoText: `• Players must bring shin guards, cleats, and a properly inflated ball
 • Please arrive at least 15 minutes early for check-in
 • Tryouts are free of charge, but registration is required`,
-  contactText: 'Boys Program: Rick Breheny – rick@maroonssoccer.com\nGirls Program: Ben Manning – ben@maroonssoccer.com',
+  contactText: '[Add your tryout program contact name(s) and email(s)]',
   seasonLabel: '2026-27',
   submitLabel: 'Submit Registration',
   successTitle: 'Registration Complete!',

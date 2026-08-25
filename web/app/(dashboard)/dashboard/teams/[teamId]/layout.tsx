@@ -66,11 +66,11 @@ export default function TeamLayout({ children }: { children: React.ReactNode }) 
               <div style={{ fontSize: '22px', fontWeight: '800', color: '#0F172A', letterSpacing: '-0.5px', lineHeight: 1.1 }}>
                 {team?.name ?? ''}
               </div>
-              {(team?.age_group || team?.season) && (
-                <div style={{ fontSize: '13px', color: '#64748B', marginTop: '3px' }}>
-                  {[team.age_group, team.season].filter(Boolean).join(' · ')}
-                </div>
-              )}
+              {/* Height reserved unconditionally so the tab bar below doesn't
+                  shift down once `team` finishes loading and this line pops in. */}
+              <div style={{ fontSize: '13px', color: '#64748B', marginTop: '3px', minHeight: '17px' }}>
+                {team ? [team.age_group, team.season].filter(Boolean).join(' · ') : ' '}
+              </div>
             </div>
           </div>
 

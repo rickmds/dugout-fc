@@ -279,15 +279,10 @@ export default function SubmissionsTab() {
           const maxPos = existing.length > 0
             ? Math.max(...existing.map(s => s.waitlist_position ?? 0))
             : 0;
-          let nextPos = maxPos + 1;
 
-          for (const id of ids) {
-            await supabase
-              .from('registration_submissions')
-              .update({ status: 'waitlisted', waitlist_position: nextPos })
-              .eq('id', id);
-            nextPos += 1;
-          }
+          // One round trip for the whole batch instead of one UPDATE per
+          // row — positions are assigned sequentially in the DB itself.
+          await (supabase as any).rpc('bulk_set_waitlist_positions', { p_ids: ids, p_start_pos: maxPos + 1 });
         }
       } else if (newStatus === 'approved') {
         // Promoting off the waitlist needs the "a spot opened up" email and

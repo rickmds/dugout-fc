@@ -51,6 +51,11 @@ function CheckoutForm({ chargeAmount, payAmount, currency, accent, onSuccess, su
   const [processing, setProcessing] = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [ready, setReady]           = useState(false);
+  // The normal, expected outcome for the default ACH/bank-transfer rail —
+  // it doesn't clear instantly like a card, so falling through to the same
+  // idle-looking form as an error would leave the payer with no idea
+  // whether their bank payment is pending, failed, or lost.
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
 
   // Only card + pass_on fees go through this — the real, card-network-
   // validated surcharge (and whether it applies at all, since debit cards
@@ -74,11 +79,38 @@ function CheckoutForm({ chargeAmount, payAmount, currency, accent, onSuccess, su
     if (confirmErr) {
       setError(confirmErr.message ?? 'Payment failed. Please try again.');
       setProcessing(false);
-    } else if (paymentIntent?.status === 'succeeded') {
-      onSuccess();
-    } else {
-      setProcessing(false);
+      return;
     }
+
+    if (paymentIntent?.status === 'succeeded') {
+      // Best-effort server-side backstop: re-verifies the PaymentIntent with
+      // Stripe and runs the same crediting logic the webhook uses (it's
+      // idempotent, so it's safe even if the webhook also fires). This is
+      // what closes the gap where "Payment received" used to be driven
+      // entirely by what the client saw from Stripe, with no server-side
+      // confirmation at all. The webhook remains the primary path — don't
+      // block or fail the success screen if this call itself errors.
+      fetch('/api/stripe/confirm-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payment_intent_id: paymentIntent.id }),
+      }).catch(() => { /* best-effort — webhook is still the source of truth */ });
+      onSuccess();
+      return;
+    }
+
+    if (paymentIntent?.status === 'processing') {
+      // The normal outcome for ACH/bank-transfer — not an error.
+      setPaymentProcessing(true);
+      setProcessing(false);
+      return;
+    }
+
+    // Any other non-error status (requires_action, requires_confirmation,
+    // etc.) isn't expected in this flow, but shouldn't silently reset to a
+    // blank-looking form either.
+    setError('Your payment needs an extra step to complete — please try again.');
+    setProcessing(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -123,6 +155,23 @@ function CheckoutForm({ chargeAmount, payAmount, currency, accent, onSuccess, su
       setError('Something went wrong validating your card. Please try again.');
     }
     setCheckingSurcharge(false);
+  }
+
+  // ── ACH/bank-transfer submitted — the normal outcome, not an error.
+  // Bank payments don't clear instantly, so tell the payer plainly instead
+  // of resetting to what looks like an untouched, unsubmitted form.
+  if (paymentProcessing) {
+    return (
+      <div style={{ textAlign: 'center', padding: '16px 0 8px' }}>
+        <div style={{ fontSize: '40px', marginBottom: '12px' }}>⏳</div>
+        <div style={{ fontSize: '18px', fontWeight: '800', color: '#F9FAFB', marginBottom: '8px' }}>
+          Payment submitted
+        </div>
+        <div style={{ fontSize: '14px', color: '#9CA3AF', lineHeight: 1.7 }}>
+          Your bank payment is processing and usually clears in 1–2 business days. You&apos;ll get a receipt by email once it settles.
+        </div>
+      </div>
+    );
   }
 
   // ── Disclosure step: card is validated, real surcharge is known — show
@@ -227,6 +276,10 @@ export default function PayPage() {
   const { token }      = useParams<{ token: string }>();
   const searchParams   = useSearchParams();
   const paidParam      = searchParams.get('paid') === '1' || searchParams.get('redirect_status') === 'succeeded';
+  // Return from a redirect-based payment method (e.g. a bank redirect) that
+  // didn't go through — without this the page just silently shows the
+  // ordinary payment form again with no acknowledgment anything happened.
+  const failedParam    = searchParams.get('redirect_status') === 'failed';
 
   const [fee, setFee]               = useState<FeeData | null>(null);
   const [loading, setLoading]       = useState(true);
@@ -333,7 +386,7 @@ export default function PayPage() {
       <div style={{ ...styles.card, textAlign: 'center', padding: '48px 32px' }}>
         <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔍</div>
         <div style={{ fontSize: '18px', fontWeight: '800', color: '#F9FAFB', marginBottom: '8px' }}>Fee not found</div>
-        <div style={{ fontSize: '14px', color: '#9CA3AF' }}>This payment link is invalid or has expired.</div>
+        <div style={{ fontSize: '14px', color: '#9CA3AF' }}>This payment link is invalid or has expired. Contact your club for a corrected payment link.</div>
       </div>
     </div>
   );
@@ -404,6 +457,11 @@ export default function PayPage() {
           {/* Payment form */}
           {!showSuccess && (
             <>
+              {failedParam && (
+                <div style={{ background: '#7F1D1D', border: '1px solid #EF4444', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#FCA5A5' }}>
+                  Your last payment attempt didn&apos;t go through. Please try again.
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: '1.2px' }}>
                   {isOverdue ? 'Overdue Payment' : 'Fee Notice'}
@@ -487,6 +545,11 @@ export default function PayPage() {
                       style={{ flex: 1, padding: '11px 14px', background: 'transparent', border: 'none', outline: 'none', fontSize: '15px', color: '#F9FAFB', fontFamily: 'inherit' }}
                     />
                   </div>
+                  {!!partialAmount && (parseFloat(partialAmount) <= 0 || parseFloat(partialAmount) > balance) && (
+                    <div style={{ fontSize: '12px', color: '#EF4444', marginTop: '6px' }}>
+                      Enter an amount up to {fmt(balance)}.
+                    </div>
+                  )}
                 </div>
               )}
 

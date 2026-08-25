@@ -4,6 +4,12 @@ import { notFound } from 'next/navigation';
 // Public page — no auth, no layout
 // URL: /maroons/fields
 
+// This page has no `cookies()`/`headers()` usage, so Next's default Full
+// Route Cache would otherwise render it once per clubSlug and serve that
+// same snapshot forever — silently stale field-closure data, despite the
+// page's own footer script reloading every 5 minutes expecting fresh data.
+export const dynamic = 'force-dynamic';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

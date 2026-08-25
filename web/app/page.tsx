@@ -84,7 +84,7 @@ export default async function Home() {
               <p className="text-[#888] text-[12px] font-medium">Now live on the App Store</p>
               <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659" target="_blank" rel="noopener noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public, left as <img> for this marketing page */}
-                <img src="/app-store-badge.svg" alt="Download on the App Store" style={{ height: '36px', width: 'auto' }} />
+                <img src="/app-store-badge.svg" alt="Download on the App Store" width={108} height={36} style={{ height: '36px', width: 'auto' }} />
               </a>
             </div>
           </div>
@@ -218,7 +218,7 @@ export default async function Home() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f' }} className="px-6 sm:px-10 py-8 flex items-center justify-between max-w-7xl mx-auto">
         {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public, left as <img> for this marketing page */}
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
+        <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
 
         <div className="flex items-center gap-6">
           <Link href="/clubs" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Clubs</Link>
@@ -229,7 +229,7 @@ export default async function Home() {
           <Link href="/login" className="text-[#888] text-[12px] hover:text-[#bbb] transition-colors">Log in</Link>
           <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659" target="_blank" rel="noopener noreferrer" className="hidden sm:block">
             {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public, left as <img> for this marketing page */}
-            <img src="/app-store-badge.svg" alt="Download on the App Store" style={{ height: '28px', width: 'auto' }} />
+            <img src="/app-store-badge.svg" alt="Download on the App Store" width={84} height={28} style={{ height: '28px', width: 'auto' }} />
           </a>
         </div>
       </footer>

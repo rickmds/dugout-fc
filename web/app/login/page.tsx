@@ -142,7 +142,7 @@ export default function LoginPage() {
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '36px' }}>
           <Link href="/" style={{ textDecoration: 'none' }}>
             {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-            <img src="/logo.png" alt="Pulse FC" style={{ height: '48px', width: 'auto' }} />
+            <img src="/logo.png" alt="Pulse FC" width={48} height={48} style={{ height: '48px', width: 'auto' }} />
           </Link>
         </div>
 

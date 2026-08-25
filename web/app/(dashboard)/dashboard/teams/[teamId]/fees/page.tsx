@@ -150,27 +150,28 @@ export default function TeamFeesPage() {
     if (assignForm.payee_type === 'coach' && assignForm.payment_instructions.trim()) {
       await syncPaymentInstructions(profile.id, assignForm.payment_instructions);
     }
-    for (const pid of playerIds) {
-      const { data: inserted } = await supabase.from('player_fees').insert({
-        player_id: pid, team_id: teamId,
-        category_id: assignForm.category_id || null,
-        description: assignForm.description || cat?.name || 'Fee',
-        amount_due: parseFloat(assignForm.amount_due) || cat?.amount || 0,
-        discount: parseFloat(assignForm.discount) || 0,
-        discount_reason: assignForm.discount_reason || null,
-        due_date: assignForm.due_date || null,
-        notes: assignForm.notes || null,
-        created_by: profile.id,
-        payee_type: assignForm.payee_type,
-        payment_instructions: assignForm.payee_type === 'coach' ? (assignForm.payment_instructions.trim() || null) : null,
-      }).select('id').single();
-      if (inserted?.id) {
-        fetch('/api/send-fee-notification', {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({ player_fee_id: inserted.id }),
-        }).catch(() => {/* fire and forget */});
-      }
+    // One bulk insert instead of one round trip per player — matches the
+    // pattern the club-wide fees page already uses (web/app/(dashboard)/dashboard/fees/page.tsx).
+    const rows = playerIds.map(pid => ({
+      player_id: pid, team_id: teamId,
+      category_id: assignForm.category_id || null,
+      description: assignForm.description || cat?.name || 'Fee',
+      amount_due: parseFloat(assignForm.amount_due) || cat?.amount || 0,
+      discount: parseFloat(assignForm.discount) || 0,
+      discount_reason: assignForm.discount_reason || null,
+      due_date: assignForm.due_date || null,
+      notes: assignForm.notes || null,
+      created_by: profile.id,
+      payee_type: assignForm.payee_type,
+      payment_instructions: assignForm.payee_type === 'coach' ? (assignForm.payment_instructions.trim() || null) : null,
+    }));
+    const { data: inserted } = await supabase.from('player_fees').insert(rows).select('id');
+    for (const row of inserted ?? []) {
+      fetch('/api/send-fee-notification', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ player_fee_id: row.id }),
+      }).catch(() => {/* fire and forget */});
     }
     setShowAssign(false);
     setAssignForm({ player_id: '', category_id: '', description: '', amount_due: '', discount: '0', discount_reason: '', due_date: '', notes: '', apply_to_all: false, payee_type: 'club', payment_instructions: '' });

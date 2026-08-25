@@ -43,6 +43,37 @@ function slugify(s: string) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// ─── Error-message helpers ─────────────────────────────────────────────────
+// Supabase Auth error strings are usually already short and parent/coach
+// readable ("Invalid login credentials") — allowlist the common ones and
+// fall back to something generic for anything else (provider internals,
+// rate-limit text) instead of showing raw SDK output.
+const FRIENDLY_AUTH_SNIPPETS = [
+  'invalid login credentials',
+  'already registered',
+  'password should be at least',
+  'email not confirmed',
+  'unable to validate email address',
+  'valid password',
+  'rate limit',
+];
+function friendlyAuthError(message: string | undefined, fallback: string): string {
+  if (!message) return fallback;
+  const lower = message.toLowerCase();
+  return FRIENDLY_AUTH_SNIPPETS.some(s => lower.includes(s)) ? message : fallback;
+}
+
+// For our own /api/* JSON error responses: 401/403 means the session died
+// mid-wizard (apiAuth.ts returns a bare "Unauthorized"/"Forbidden"); 5xx
+// usually carries a raw Postgres/internal error. Anything else is a message
+// the route wrote deliberately to be shown (e.g. "That URL slug is already
+// taken.") so it's trusted as-is.
+function friendlyApiError(status: number, rawMessage: string | undefined, fallback: string): string {
+  if (status === 401 || status === 403) return 'Your session expired — refresh and log in again.';
+  if (status >= 500) return fallback;
+  return rawMessage ?? fallback;
+}
+
 // Garbage/negative jersey numbers are never valid — fall back to null
 // instead of letting NaN silently serialize as null with no distinction
 // from "left blank", or letting a negative number reach the insert as-is.
@@ -338,23 +369,32 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
     e.preventDefault();
     setError('');
     setLoading(true);
-    if (mode === 'signup') {
-      const { data, error: err } = await supabase.auth.signUp({ email, password: pw });
-      if (err || !data.user) { setError(err?.message ?? 'Sign up failed'); setLoading(false); return; }
-      if (!data.session) {
-        setAwaitingConfirmation(true);
-        setLoading(false);
-        return;
+    try {
+      if (mode === 'signup') {
+        const { data, error: err } = await supabase.auth.signUp({ email, password: pw });
+        if (err || !data.user) { setError(friendlyAuthError(err?.message, 'Sign up failed. Please try again.')); return; }
+        if (!data.session) {
+          setAwaitingConfirmation(true);
+          return;
+        }
+        const { error: profErr } = await supabase.from('profiles').upsert({ id: data.user.id, full_name: name, role: 'org_admin' });
+        if (profErr) {
+          console.error('profiles upsert failed:', profErr);
+          setError('Something went wrong creating your account. Please try again.');
+          return;
+        }
+        onDone(data.user);
+      } else {
+        const { data, error: err } = await supabase.auth.signInWithPassword({ email, password: pw });
+        if (err || !data.user) { setError(friendlyAuthError(err?.message, 'Login failed. Please try again.')); return; }
+        onDone(data.user);
       }
-      const { error: profErr } = await supabase.from('profiles').upsert({ id: data.user.id, full_name: name, role: 'org_admin' });
-      if (profErr) { setError(profErr.message); setLoading(false); return; }
-      onDone(data.user);
-    } else {
-      const { data, error: err } = await supabase.auth.signInWithPassword({ email, password: pw });
-      if (err || !data.user) { setError(err?.message ?? 'Login failed'); setLoading(false); return; }
-      onDone(data.user);
+    } catch (err) {
+      console.error(err);
+      setError('Something went wrong. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   if (awaitingConfirmation) {
@@ -363,7 +403,7 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-            <img src="/logo.png" alt="Pulse FC" style={{ height: '48px', width: 'auto' }} />
+            <img src="/logo.png" alt="Pulse FC" width={48} height={48} style={{ height: '48px', width: 'auto' }} />
           </div>
           <h1 className="text-2xl font-extrabold text-white mb-1">Check your email</h1>
         </div>
@@ -384,7 +424,7 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
       <div className="text-center mb-8">
         <div className="flex justify-center mb-4">
           {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-          <img src="/logo.png" alt="Pulse FC" style={{ height: '48px', width: 'auto' }} />
+          <img src="/logo.png" alt="Pulse FC" width={48} height={48} style={{ height: '48px', width: 'auto' }} />
           
         </div>
         <h1 className="text-2xl font-extrabold text-white mb-1">Add your club to Pulse FC</h1>
@@ -493,7 +533,7 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
         body: JSON.stringify({ action: 'create_club', name: name.trim(), slug: slug.trim(), primary_color: primary, user_id: session?.user?.id, logo_base64: logoBase64, logo_mime: logoMime, logo_name: logoName }),
       });
       const json = await res.json();
-      if (!res.ok) { setError(json.error ?? 'Failed to create club'); setLoading(false); return; }
+      if (!res.ok) { setError(friendlyApiError(res.status, json.error, 'Failed to create club. Please try again.')); setLoading(false); return; }
       onDone({ id: json.club.id, name: name.trim(), slug: slug.trim(), primaryColor: primary, logoUrl: logoPreview });
       setLoading(false);
     } catch (err) {
@@ -539,16 +579,16 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
           )}
 
           <div>
-            <Label>Club name</Label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="MDS Academy" />
+            <Label>Club name <span className="text-red-400">*</span></Label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="MDS Academy" required />
           </div>
 
           <div>
-            <Label>Club URL slug</Label>
+            <Label>Club URL slug <span className="text-red-400">*</span></Label>
             <div className="flex items-center bg-[#111] border border-[#222] rounded-xl overflow-hidden focus-within:border-[#22c55e]">
               <span className="px-3 text-[#4b5563] text-sm whitespace-nowrap">pulse-fc.app/</span>
               <input value={slug} onChange={(e) => { setSlugEdited(true); setSlug(slugify(e.target.value)); }}
-                className="border-0 rounded-none bg-transparent flex-1 !border-0 focus:!border-0" placeholder="mds-academy" />
+                className="border-0 rounded-none bg-transparent flex-1 !border-0 focus:!border-0" placeholder="mds-academy" required />
             </div>
           </div>
 
@@ -609,16 +649,27 @@ function UploadStep({ onAnalyse, onSkip, accent = '#22c55e' }: {
   const [files, setFiles]       = useState<UploadedFile[]>([]);
   const [converting, setConverting] = useState(false);
   const [over, setOver]         = useState(false);
+  const [fileError, setFileError] = useState('');
   const ref                     = useRef<HTMLInputElement>(null);
 
   async function addFiles(fl: FileList | null) {
     if (!fl) return;
     setConverting(true);
+    setFileError('');
     const added: UploadedFile[] = [];
+    const failed: string[] = [];
     for (const f of Array.from(fl)) {
-      added.push({ id: uid(), name: f.name, size: f.size, payload: await toParseAllPayload(f) });
+      try {
+        added.push({ id: uid(), name: f.name, size: f.size, payload: await toParseAllPayload(f) });
+      } catch (err) {
+        console.error('Failed to read file', f.name, err);
+        failed.push(f.name);
+      }
     }
     setFiles(p => [...p, ...added]);
+    if (failed.length) {
+      setFileError(`Couldn't read ${failed.length === 1 ? 'this file' : 'these files'}: ${failed.join(', ')}. Try a different file or format.`);
+    }
     setConverting(false);
   }
 
@@ -672,6 +723,8 @@ function UploadStep({ onAnalyse, onSkip, accent = '#22c55e' }: {
           ))}
         </div>
       )}
+
+      {fileError && <p className="text-red-400 text-sm mb-4">{fileError}</p>}
 
       <div className="flex gap-3">
         <Btn onClick={onSkip} variant="ghost">Nothing to upload — add manually</Btn>
@@ -861,6 +914,7 @@ function ReviewStep({
   coaches, setCoaches,
   fileOutcomes, setFileOutcomes,
   filePayloads, setFilePayloads,
+  saving, setSaving,
   onConfirm,
 }: {
   clubId: string; clubName: string; primaryColor: string;
@@ -870,6 +924,10 @@ function ReviewStep({
   coaches: CRow[]; setCoaches: React.Dispatch<React.SetStateAction<CRow[]>>;
   fileOutcomes: FileOutcome[]; setFileOutcomes: React.Dispatch<React.SetStateAction<FileOutcome[]>>;
   filePayloads: Record<string, UploadedFile['payload']>; setFilePayloads: React.Dispatch<React.SetStateAction<Record<string, UploadedFile['payload']>>>;
+  // Lifted to the parent so the wizard's outer Back button can hide itself
+  // while a save is in flight instead of letting the coach navigate away
+  // mid-write and get silently teleported to Done if it later succeeds.
+  saving: boolean; setSaving: React.Dispatch<React.SetStateAction<boolean>>;
   onConfirm: (invites: ParentInvite[], coachPayload: CoachPayload | null, skippedCoachNames: string[]) => void;
 }) {
   // Ids whose open/closed state has been manually toggled away from the
@@ -880,10 +938,20 @@ function ReviewStep({
   const [mergeFromId, setMergeFromId] = useState('');
   const [mergeToId, setMergeToId]     = useState('');
   const [unassignedOpen, setUnassignedOpen]   = useState(true);
-  const [saving, setSaving]   = useState(false);
   const [merging, setMerging] = useState(false);
   const [error, setError]     = useState('');
   const moreRef = useRef<HTMLInputElement>(null);
+
+  // Rows already written to the DB by a previous confirm() attempt — keyed
+  // by local row id, surviving across retries (unlike a plain local variable
+  // inside confirm()) so a retry after a partial failure only writes the
+  // rows that actually failed, instead of re-inserting the whole club's
+  // worth of data every time. Same "don't duplicate on retry" principle as
+  // mergeParsedData's dedup for the AI-import path above.
+  const savedTeamIds   = useRef<Map<string, string>>(new Map()); // local team id   -> db id
+  const savedPlayerIds = useRef<Map<string, string>>(new Map()); // local player id -> db id
+  const savedInviteIds = useRef<Map<string, string>>(new Map()); // local player id -> db invite id
+  const savedEventIds  = useRef<Set<string>>(new Set());         // local event ids already saved
 
   type EventDefaults = { duration: number; arriveEarly: number; rsvpLockHours: number };
   const [bulk, setBulk] = useState<{ game: EventDefaults; training: EventDefaults }>({
@@ -949,7 +1017,7 @@ function ReviewStep({
     if (!outcome.ok) {
       setFileOutcomes(prev => {
         const retried = new Set(payloads.map(p => p.name));
-        return [...prev.filter(f => !retried.has(f.name)), ...payloads.map(p => ({ name: p.name, ok: false, error: 'Import failed' }))];
+        return [...prev.filter(f => !retried.has(f.name)), ...payloads.map(p => ({ name: p.name, ok: false, error: outcome.error || 'Import failed' }))];
       });
       setMerging(false);
       return;
@@ -1088,6 +1156,15 @@ function ReviewStep({
   async function confirm() {
     setError('');
 
+    // A skipped/failed AI import (skipUpload, or handleAnalyse's failure
+    // fallback) seeds one blank-name team, which teamOpts filters out —
+    // without this guard, a rushed coach could click Confirm on an
+    // apparently-normal Review screen and go live with zero real teams.
+    if (!teamOpts.length) {
+      setError('Add at least one team before going live.');
+      return;
+    }
+
     // Validate every non-empty parent/coach email before writing anything —
     // there's no <form onSubmit> here, so the browser's native type="email"
     // constraint never fires on these inputs, and garbage strings would
@@ -1110,19 +1187,25 @@ function ReviewStep({
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      // 1. Teams
+      // 1. Teams — skip any local row a previous confirm() attempt already saved.
       const created: { localId: string; dbId: string }[] = [];
       const failedTeams: string[] = [];
       for (const t of teams.filter(r => r.name.trim())) {
+        const already = savedTeamIds.current.get(t.id);
+        if (already) { created.push({ localId: t.id, dbId: already }); continue; }
         const { data, error: teamErr } = await supabase.from('teams')
           .insert({ club_id: clubId, name: t.name.trim(), age_group: t.age_group.trim() || null })
           .select('id').single();
         if (teamErr || !data) { failedTeams.push(t.name.trim()); continue; }
-        created.push({ localId: t.id, dbId: (data as { id: string }).id });
+        const newDbId = (data as { id: string }).id;
+        savedTeamIds.current.set(t.id, newDbId);
+        created.push({ localId: t.id, dbId: newDbId });
       }
       const dbId = (lid: string) => created.find(c => c.localId === lid)?.dbId;
 
-      // 2. Players + invite records
+      // 2. Players + invite records — same skip-if-already-saved treatment,
+      // tracked independently since a player can be saved while its invite
+      // still fails (or vice versa on a retry after the player already exists).
       const invites: ParentInvite[] = [];
       const failedPlayers: string[] = [];
       const failedInvites: string[] = [];
@@ -1132,16 +1215,28 @@ function ReviewStep({
         // already surfaced via the "N players have no team assigned" banner,
         // not a DB failure in its own right.
         if (!tId) continue;
-        const { data: pd, error: playerErr } = await supabase.from('players')
-          .insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: parseJersey(p.jersey_number), position: p.position || null })
-          .select('id').single();
-        if (playerErr || !pd) { failedPlayers.push(p.full_name.trim()); continue; }
-        if (p.parent_email.trim()) {
-          const { data: inv, error: inviteErr } = await supabase.from('invites')
-            .insert({ team_id: tId, club_id: clubId, player_id: (pd as { id: string }).id, email: p.parent_email.trim(), created_by: user?.id })
+
+        let playerDbId = savedPlayerIds.current.get(p.id);
+        if (!playerDbId) {
+          const { data: pd, error: playerErr } = await supabase.from('players')
+            .insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: parseJersey(p.jersey_number), position: p.position || null })
             .select('id').single();
-          if (inviteErr || !inv) { failedInvites.push(`${p.full_name.trim()} (${p.parent_email.trim()})`); continue; }
-          invites.push({ inviteId: (inv as { id: string }).id, playerName: p.full_name.trim(), email: p.parent_email.trim() });
+          if (playerErr || !pd) { failedPlayers.push(p.full_name.trim()); continue; }
+          playerDbId = (pd as { id: string }).id;
+          savedPlayerIds.current.set(p.id, playerDbId);
+        }
+
+        if (p.parent_email.trim()) {
+          let inviteDbId = savedInviteIds.current.get(p.id);
+          if (!inviteDbId) {
+            const { data: inv, error: inviteErr } = await supabase.from('invites')
+              .insert({ team_id: tId, club_id: clubId, player_id: playerDbId, email: p.parent_email.trim(), created_by: user?.id })
+              .select('id').single();
+            if (inviteErr || !inv) { failedInvites.push(`${p.full_name.trim()} (${p.parent_email.trim()})`); continue; }
+            inviteDbId = (inv as { id: string }).id;
+            savedInviteIds.current.set(p.id, inviteDbId);
+          }
+          invites.push({ inviteId: inviteDbId, playerName: p.full_name.trim(), email: p.parent_email.trim() });
         }
       }
 
@@ -1160,6 +1255,7 @@ function ReviewStep({
       for (const e of events.filter(r => r.title.trim() && r.event_date)) {
         const tId = dbId(e.local_team_id);
         if (!tId) continue; // unassigned — same reasoning as players above
+        if (savedEventIds.current.has(e.id)) continue; // already saved by a previous attempt
         const d = bulkFor(e.type);
         // Ensure game title has correct vs/@ prefix based on home_away
         let savedTitle = e.title.trim();
@@ -1187,6 +1283,7 @@ function ReviewStep({
           rsvp_lock_at:           d ? calcRsvpLock(e.event_date, e.event_time, d.rsvpLockHours) : null,
         });
         if (eventErr) failedEvents.push(savedTitle);
+        else savedEventIds.current.add(e.id);
       }
 
       // If anything failed to save, stop here and tell the coach exactly
@@ -1832,7 +1929,11 @@ function DoneStep({ clubName, slug, logoUrl, primaryColor, parentInvites, coachP
         {logoUrl ? <img src={logoUrl} alt={clubName} className="w-full h-full object-contain" /> : '🎉'}
       </div>
       <h2 className="text-2xl font-extrabold text-white mb-2">{clubName} is live!</h2>
-      <p className="text-[#9ca3af] mb-3">Your teams, roster, and schedule are all set up. Download the app to manage everything.</p>
+      <p className="text-[#9ca3af] mb-3">
+        {teamCount > 0
+          ? 'Your teams, roster, and schedule are all set up. Download the app to manage everything.'
+          : 'Your club is live — add your first team from the app or dashboard to get your roster and schedule going.'}
+      </p>
       <p className="text-xs text-[#555] mb-8">
         <span className="text-white font-semibold">{teamCount}</span> team{teamCount !== 1 ? 's' : ''} · <span className="text-white font-semibold">{playerCount}</span> player{playerCount !== 1 ? 's' : ''} · <span className="text-white font-semibold">{eventCount}</span> event{eventCount !== 1 ? 's' : ''}
       </p>
@@ -1961,9 +2062,15 @@ function DoneStep({ clubName, slug, logoUrl, primaryColor, parentInvites, coachP
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+// No 'upload' -> 'club' entry: by the time the wizard reaches Upload, the
+// club has always already been created (ClubStep.onDone and resume() both
+// set clubId before advancing here), and ClubStep re-mounts blank with no
+// memory of the name/slug/color/logo just entered — going Back into it just
+// re-submits the same info into a confusing "already taken" 409 for what is
+// actually the coach's own club. There's nothing useful to go back to, so
+// this step simply isn't reachable via Back once a club exists.
 const BACK_TARGET: Partial<Record<Step, Step>> = {
   club:       'auth',
-  upload:     'club',
   processing: 'upload',
   review:     'upload',
 };
@@ -1983,6 +2090,9 @@ export default function OnboardingPage() {
   const [parentInvites, setParentInvites] = useState<ParentInvite[]>([]);
   const [pendingCoachPayload, setPendingCoachPayload] = useState<CoachPayload | null>(null);
   const [skippedCoachNames, setSkippedCoachNames] = useState<string[]>([]);
+  // Lifted from ReviewStep so the outer Back button (rendered here) can hide
+  // itself while Confirm & go live is still saving.
+  const [reviewSaving, setReviewSaving] = useState(false);
 
   // Per-uploaded-file success/failure, and the original payload for each —
   // kept around so a failed file can be retried without re-uploading.
@@ -2130,7 +2240,7 @@ export default function OnboardingPage() {
         console.error('parse-all error:', outcome.error);
         setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high', reason: '' }]);
         setPlayers([]); setEvents([]); setCoaches([]);
-        setFileOutcomes(uploadedFiles.map(f => ({ name: f.name, ok: false, error: 'Import failed' })));
+        setFileOutcomes(uploadedFiles.map(f => ({ name: f.name, ok: false, error: outcome.error || 'Import failed' })));
         setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
         setProcessingFailed(true);
       } else {
@@ -2166,7 +2276,7 @@ export default function OnboardingPage() {
   }
 
   const isReview  = step === 'review';
-  const canGoBack = !!BACK_TARGET[step];
+  const canGoBack = !!BACK_TARGET[step] && !(step === 'review' && reviewSaving);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] py-12 px-4">
@@ -2213,6 +2323,7 @@ export default function OnboardingPage() {
             coaches={coaches} setCoaches={setCoaches}
             fileOutcomes={fileOutcomes} setFileOutcomes={setFileOutcomes}
             filePayloads={filePayloads} setFilePayloads={setFilePayloads}
+            saving={reviewSaving} setSaving={setReviewSaving}
             onConfirm={(invites, coachPayload, skipped) => { setParentInvites(invites); setPendingCoachPayload(coachPayload); setSkippedCoachNames(skipped); setStep('done'); }}
           />
         )}

@@ -1,5 +1,3 @@
-'use client';
-
 import Link from 'next/link';
 
 const NAV_LINKS = [
@@ -19,7 +17,7 @@ export default function NavBar() {
       }}>
         <Link href="/" style={{ textDecoration: 'none' }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-          <img src="/logo.png" alt="Pulse FC" style={{ height: '64px', width: 'auto' }} />
+          <img src="/logo.png" alt="Pulse FC" width={64} height={64} style={{ height: '64px', width: 'auto' }} />
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>

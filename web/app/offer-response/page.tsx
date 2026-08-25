@@ -43,6 +43,7 @@ function OfferResponseContent() {
   const [data,    setData]    = useState<ResponseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<'accept' | 'decline' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
@@ -55,6 +56,12 @@ function OfferResponseContent() {
         if (action && d.current_status === 'NotSent' || d.current_status === 'Sent') {
           handleAction(action as 'accept' | 'decline');
         }
+      })
+      // No catch previously — a failed initial load left `loading` true
+      // forever, showing a permanent "Loading your offer…" on a network blip.
+      .catch(() => {
+        setData({ error: 'Could not load this offer. Check your connection and try again.' });
+        setLoading(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- action comes from the stable searchParams ref; handleAction is a plain function whose only reactive input (token) is already tracked
   }, [token]);
@@ -62,6 +69,7 @@ function OfferResponseContent() {
   async function handleAction(act: 'accept' | 'decline') {
     if (!token) return;
     setPending(act);
+    setActionError(null);
     try {
       const r = await fetch('/api/tryout/process-response', {
         method: 'POST',
@@ -70,6 +78,10 @@ function OfferResponseContent() {
       });
       const d = await r.json();
       setData(d);
+    } catch {
+      // `finally` alone prevented a permanent hang, but silently re-enabling
+      // the buttons with no message reads identically to nothing happening.
+      setActionError('Could not save your response — please check your connection and try again.');
     } finally {
       setPending(null);
     }
@@ -229,6 +241,12 @@ function OfferResponseContent() {
       )}
 
       <div style={{ height: '1px', background: '#1e1e1e', margin: '0 0 24px' }} />
+
+      {actionError && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#fca5a5' }}>
+          {actionError}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
         <button

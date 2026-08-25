@@ -76,6 +76,25 @@ export function useDashboard() {
   return ctx;
 }
 
+// Role-branched teams query, pulled out so it can run in `Promise.all`
+// alongside the clubs/subscriptions fetches instead of after them.
+async function loadTeams(prof: Profile): Promise<Team[]> {
+  if (prof.role === 'org_admin' && prof.club_id) {
+    const { data } = await supabase
+      .from('teams')
+      .select('id, name, age_group, gender, season, club_id')
+      .eq('club_id', prof.club_id)
+      .order('name');
+    return (data ?? []) as Team[];
+  }
+  const { data } = await supabase
+    .from('team_members')
+    .select('teams(id, name, age_group, gender, season, club_id)')
+    .eq('profile_id', prof.id)
+    .in('role', ['coach', 'org_admin']);
+  return (data ?? []).map(m => m.teams as unknown as Team | null).filter((t): t is Team => t !== null);
+}
+
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
@@ -113,46 +132,38 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const prof = p as Profile;
       setProfile(prof);
 
+      // `clubs`, `subscriptions`, and `teams` each only depend on
+      // `prof.club_id`/`prof`, not on each other's results, so fetch them
+      // together instead of serially — collapses 3 round trips into 1.
       if (prof.club_id) {
-        const { data: c } = await supabase
-          .from('clubs')
-          .select('id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at')
-          .eq('id', prof.club_id)
-          .single();
-        if (c) {
-          setClub(c as Club);
-          const { data: sub } = await supabase
+        const clubId = prof.club_id;
+        const [{ data: c }, { data: sub }, teamRows] = await Promise.all([
+          supabase
+            .from('clubs')
+            .select('id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at')
+            .eq('id', clubId)
+            .single(),
+          supabase
             .from('subscriptions')
             .select('plan')
-            .eq('club_id', (c as Club).id)
+            .eq('club_id', clubId)
             .order('created_at', { ascending: false })
             .limit(1)
-            .maybeSingle();
-          setPlan((sub?.plan as PlanId) ?? 'free');
+            .maybeSingle(),
+          loadTeams(prof),
+        ]);
+        if (c) setClub(c as Club);
+        setPlan((sub?.plan as PlanId) ?? 'free');
+        setTeams(teamRows);
+        if (teamRows.length >= 1) {
+          setSelectedTeamId(prev => prev ?? teamRows[0].id);
         }
-      }
-
-      // Load teams based on role
-      let teamRows: Team[] = [];
-      if (prof.role === 'org_admin' && prof.club_id) {
-        const { data } = await supabase
-          .from('teams')
-          .select('id, name, age_group, gender, season, club_id')
-          .eq('club_id', prof.club_id)
-          .order('name');
-        teamRows = (data ?? []) as Team[];
       } else {
-        const { data } = await supabase
-          .from('team_members')
-          .select('teams(id, name, age_group, gender, season, club_id)')
-          .eq('profile_id', prof.id)
-          .in('role', ['coach', 'org_admin']);
-        teamRows = (data ?? []).map(m => m.teams as unknown as Team | null).filter((t): t is Team => t !== null);
-      }
-
-      setTeams(teamRows);
-      if (teamRows.length >= 1) {
-        setSelectedTeamId(prev => prev ?? teamRows[0].id);
+        const teamRows = await loadTeams(prof);
+        setTeams(teamRows);
+        if (teamRows.length >= 1) {
+          setSelectedTeamId(prev => prev ?? teamRows[0].id);
+        }
       }
     } catch (e) {
       // Only redirect on auth errors, not transient network failures

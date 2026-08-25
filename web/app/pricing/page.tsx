@@ -1,19 +1,16 @@
-'use client';
-
-import { useState } from 'react';
 import Link from 'next/link';
-import { Check, Zap, Users, Building2, Trophy, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import NavBar from '@/components/NavBar';
+import PricingCards, { type PricingTier } from '@/components/pricing/PricingCards';
+import FaqAccordion from '@/components/pricing/FaqAccordion';
 
 const PRIMARY = '#22c55e';
 
-type BillingCycle = 'monthly' | 'annual';
-
-const TIERS = [
+const TIERS: PricingTier[] = [
   {
     id: 'free',
     label: 'Free',
-    icon: Users,
+    icon: 'Users',
     iconColor: '#64748b',
     badge: null,
     monthly: 0,
@@ -23,7 +20,7 @@ const TIERS = [
     highlight: false,
     cta: 'Get started free',
     ctaHref: '/onboarding',
-    roi: null as string | null,
+    roi: null,
     features: [
       'Schedule, roster & RSVP',
       'Team, group & 1:1 chat',
@@ -35,7 +32,7 @@ const TIERS = [
   {
     id: 'team_pro',
     label: 'Team Pro',
-    icon: Zap,
+    icon: 'Zap',
     iconColor: '#f59e0b',
     badge: null,
     monthly: 9.99,
@@ -45,7 +42,7 @@ const TIERS = [
     highlight: false,
     cta: 'Start Team Pro',
     ctaHref: '/onboarding',
-    roi: null as string | null,
+    roi: null,
     features: [
       'Everything in Free',
       'Unlimited players',
@@ -65,7 +62,7 @@ const TIERS = [
   {
     id: 'starter',
     label: 'Starter',
-    icon: Building2,
+    icon: 'Building2',
     iconColor: PRIMARY,
     badge: 'Most popular',
     monthly: 49,
@@ -75,7 +72,7 @@ const TIERS = [
     highlight: true,
     cta: 'Start Starter',
     ctaHref: '/onboarding',
-    roi: null as string | null,
+    roi: null,
     features: [
       'Everything in Team Pro',
       'Up to 25 teams across your club',
@@ -89,7 +86,7 @@ const TIERS = [
   {
     id: 'club',
     label: 'Club',
-    icon: Trophy,
+    icon: 'Trophy',
     iconColor: '#8b5cf6',
     badge: null,
     monthly: 99,
@@ -99,7 +96,7 @@ const TIERS = [
     highlight: false,
     cta: 'Start Club',
     ctaHref: '/onboarding',
-    roi: 'Keep 1 family = paid for itself. Keep 3 = +$3,600 net.' as string | null,
+    roi: 'Keep 1 family = paid for itself. Keep 3 = +$3,600 net.',
     features: [
       'Everything in Starter',
       'Up to 60 teams',
@@ -115,7 +112,7 @@ const TIERS = [
   {
     id: 'academy',
     label: 'Academy',
-    icon: Trophy,
+    icon: 'Trophy',
     iconColor: '#ef4444',
     badge: null,
     monthly: 179,
@@ -125,7 +122,7 @@ const TIERS = [
     highlight: false,
     cta: 'Contact us',
     ctaHref: 'mailto:support@pulse-fc.app?subject=Academy Plan',
-    roi: null as string | null,
+    roi: null,
     features: [
       'Everything in Club',
       'Unlimited teams',
@@ -164,15 +161,6 @@ const FAQS = [
 ];
 
 export default function PricingPage() {
-  const [billing, setBilling] = useState<BillingCycle>('monthly');
-  const [openFaq, setOpenFaq] = useState<number | null>(null);
-
-  function monthlyPrice(tier: typeof TIERS[0]): string {
-    if (tier.monthly === 0) return 'Free';
-    const price = billing === 'annual' ? tier.annual / 12 : tier.monthly;
-    return `$${price % 1 === 0 ? price : price.toFixed(2)}`;
-  }
-
   return (
     <div className="min-h-screen bg-[#080808] text-[#f0f0f0]"
       style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
@@ -196,161 +184,10 @@ export default function PricingPage() {
           style={{ fontSize: 'clamp(15px, 2.5vw, 18px)' }}>
           Every plan includes full AI tools, unlimited parents, and setup in 20 minutes. No per-team fees. No hidden costs.
         </p>
-
-        {/* Billing toggle */}
-        <div className="inline-flex rounded-xl p-1 gap-1" style={{ background: '#111', border: '1px solid #1a1a1a' }}>
-          {(['monthly', 'annual'] as BillingCycle[]).map((cycle) => (
-            <button
-              key={cycle}
-              onClick={() => setBilling(cycle)}
-              style={{
-                padding: '9px 22px', borderRadius: '9px', border: 'none', cursor: 'pointer',
-                fontSize: '14px', fontWeight: '700',
-                background: billing === cycle ? '#fff' : 'transparent',
-                color: billing === cycle ? '#000' : '#555',
-                transition: 'all 0.15s', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', gap: '8px',
-              }}
-            >
-              {cycle === 'monthly' ? 'Monthly' : (
-                <>
-                  Annual
-                  <span style={{ fontSize: '10px', fontWeight: '800', background: PRIMARY, color: '#000', padding: '2px 8px', borderRadius: '100px' }}>
-                    2 months free
-                  </span>
-                </>
-              )}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* Pricing cards */}
-      <div style={{ padding: '0 20px 80px', maxWidth: '1160px', margin: '0 auto' }}>
-        <style>{`
-          .pricing-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 12px;
-          }
-          @media (max-width: 1024px) {
-            .pricing-grid { grid-template-columns: repeat(3, 1fr); }
-          }
-          @media (max-width: 700px) {
-            .pricing-grid { grid-template-columns: 1fr 1fr; }
-          }
-          @media (max-width: 480px) {
-            .pricing-grid { grid-template-columns: 1fr; }
-          }
-          .pricing-cta:hover { opacity: 0.88; }
-        `}</style>
-
-        <div className="pricing-grid">
-          {TIERS.map((tier) => {
-            const Icon = tier.icon;
-            const annualPerMonth = tier.monthly > 0 ? (tier.annual / 12).toFixed(2) : null;
-            const savings = tier.monthly > 0 ? Math.round(((tier.monthly * 12) - tier.annual) / (tier.monthly * 12) * 100) : 0;
-
-            return (
-              <div
-                key={tier.id}
-                style={{
-                  background: tier.highlight ? '#0a1a0a' : '#0d0d0d',
-                  border: tier.highlight ? `2px solid ${PRIMARY}50` : '1px solid #1a1a1a',
-                  borderRadius: '20px', padding: '24px 20px',
-                  position: 'relative',
-                  boxShadow: tier.highlight
-                    ? `0 0 0 1px ${PRIMARY}15, 0 8px 40px rgba(34,197,94,0.14)`
-                    : 'none',
-                  display: 'flex', flexDirection: 'column',
-                }}
-              >
-                {/* Badge */}
-                {tier.badge && (
-                  <div style={{
-                    position: 'absolute', top: '-13px', left: '50%', transform: 'translateX(-50%)',
-                    background: PRIMARY, color: '#000', fontSize: '11px', fontWeight: '800',
-                    padding: '4px 14px', borderRadius: '100px', whiteSpace: 'nowrap',
-                  }}>
-                    {tier.badge}
-                  </div>
-                )}
-
-                {/* Icon + label */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-                    background: `${tier.iconColor}15`, border: `1px solid ${tier.iconColor}28`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon size={16} color={tier.iconColor} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '15px', fontWeight: '800', color: '#fff', lineHeight: 1 }}>{tier.label}</div>
-                    <div style={{ fontSize: '10px', color: '#555', marginTop: '3px' }}>{tier.teamLimit}</div>
-                  </div>
-                </div>
-
-                {/* Price */}
-                <div style={{ marginBottom: '4px' }}>
-                  <span style={{ fontSize: '34px', fontWeight: '900', color: '#fff', letterSpacing: '-0.5px' }}>
-                    {monthlyPrice(tier)}
-                  </span>
-                  {tier.monthly > 0 && (
-                    <span style={{ fontSize: '13px', color: '#555', marginLeft: '4px' }}>/mo</span>
-                  )}
-                </div>
-                {billing === 'annual' && tier.monthly > 0 && (
-                  <div style={{ fontSize: '11px', color: PRIMARY, fontWeight: '600', marginBottom: '4px' }}>
-                    ${tier.annual}/yr · save {savings}%
-                  </div>
-                )}
-                {billing === 'monthly' && tier.monthly > 0 && (
-                  <div style={{ fontSize: '11px', color: '#555', marginBottom: '4px' }}>
-                    ${annualPerMonth}/mo billed annually
-                  </div>
-                )}
-                <div style={{ fontSize: '11px', color: '#444', marginBottom: tier.roi ? '10px' : '20px' }}>
-                  {tier.playerLimit}
-                </div>
-                {tier.roi && (
-                  <div style={{ fontSize: '11px', color: '#22c55e', fontWeight: '700', background: '#22c55e0d', border: '1px solid #22c55e20', borderRadius: '8px', padding: '7px 10px', marginBottom: '16px', lineHeight: '1.4' }}>
-                    {tier.roi}
-                  </div>
-                )}
-
-                {/* CTA */}
-                <a
-                  href={tier.ctaHref}
-                  className="pricing-cta"
-                  style={{
-                    display: 'block', textAlign: 'center',
-                    padding: '10px 0', borderRadius: '10px',
-                    fontWeight: '700', fontSize: '13px', textDecoration: 'none',
-                    marginBottom: '20px', transition: 'opacity 0.15s',
-                    background: tier.highlight ? PRIMARY : '#141414',
-                    color: tier.highlight ? '#000' : '#888',
-                    border: tier.highlight ? 'none' : '1px solid #222',
-                  }}
-                >
-                  {tier.cta}
-                </a>
-
-                {/* Divider */}
-                <div style={{ height: '1px', background: '#181818', marginBottom: '16px' }} />
-
-                {/* Features */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-                  {tier.features.map((f) => (
-                    <div key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                      <Check size={13} color={PRIMARY} style={{ flexShrink: 0, marginTop: '1px' }} />
-                      <span style={{ fontSize: '12.5px', color: '#888', lineHeight: '1.45' }}>{f}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* Billing toggle + pricing cards — the only part of this page that needs client state */}
+      <PricingCards tiers={TIERS} />
 
       {/* Value props strip */}
       <div style={{ borderTop: '1px solid #111', borderBottom: '1px solid #111', background: '#060606', padding: '32px 24px' }}>
@@ -378,30 +215,7 @@ export default function PricingPage() {
           <h2 style={{ fontSize: 'clamp(22px, 3vw, 32px)', fontWeight: '800', color: '#fff', textAlign: 'center', marginBottom: '48px', letterSpacing: '-0.3px' }}>
             Everything you need to know
           </h2>
-          {FAQS.map(({ q, a }, i) => (
-            <div
-              key={q}
-              style={{ borderBottom: '1px solid #1a1a1a', cursor: 'pointer' }}
-              onClick={() => setOpenFaq(openFaq === i ? null : i)}
-            >
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '20px 0', gap: '16px',
-              }}>
-                <span style={{ fontSize: '15px', fontWeight: '700', color: '#fff', flex: 1 }}>{q}</span>
-                <span style={{
-                  fontSize: '18px', color: '#555', flexShrink: 0,
-                  transform: openFaq === i ? 'rotate(45deg)' : 'none',
-                  transition: 'transform 0.2s ease',
-                }}>+</span>
-              </div>
-              {openFaq === i && (
-                <div style={{ paddingBottom: '20px' }}>
-                  <p style={{ fontSize: '14px', color: '#888', lineHeight: '1.7', margin: 0 }}>{a}</p>
-                </div>
-              )}
-            </div>
-          ))}
+          <FaqAccordion faqs={FAQS} />
         </div>
       </div>
 
@@ -435,8 +249,8 @@ export default function PricingPage() {
       {/* Footer */}
       <footer style={{ borderTop: '1px solid #0f0f0f', padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '36px', width: 'auto' }} />
-        
+        <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
           {[
             { href: '/compare', label: 'Compare' },

@@ -100,7 +100,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           {sidebarOpen ? <X size={20} color="rgba(255,255,255,0.7)" /> : <Menu size={20} color="rgba(255,255,255,0.7)" />}
         </button>
         {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-        <img src="/logo.png" alt="Pulse FC" style={{ height: '28px', width: 'auto', filter: 'brightness(0) invert(1)' }} />
+        <img src="/logo.png" alt="Pulse FC" width={28} height={28} style={{ height: '28px', width: 'auto', filter: 'brightness(0) invert(1)' }} />
       </div>
 
       {/* ── Mobile backdrop ── always in DOM; invisible + non-interactive on desktop */}
