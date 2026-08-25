@@ -19,6 +19,7 @@ import { useClub } from '../../../hooks/useClub';
 import { useTeam } from '../../../hooks/useTeam';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import { formatCurrency } from '../../../lib/formatCurrency';
+import { resolveNotificationTeamId } from '../../../lib/resolveNotificationTeamId';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -99,7 +100,7 @@ export default function NotificationsScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { profile } = useAuth();
-  const { team, allTeams } = useTeam();
+  const { team, allTeams, selectTeam } = useTeam();
 
   const [notifications, setNotifications] = useState<Notif[]>([]);
   const [teamNameByNotifId, setTeamNameByNotifId] = useState<Record<string, string>>({});
@@ -257,6 +258,16 @@ export default function NotificationsScreen() {
     }
     const d = n.data;
     const slug = (d?.club_slug as string) ?? clubSlug;
+
+    // Switch the active team to match the notification before navigating —
+    // otherwise the destination screen renders with whatever team was
+    // active beforehand, which on a multi-team account can silently show
+    // the wrong roster/chat/schedule even though the URL is correct.
+    const targetTeamId = await resolveNotificationTeamId(d);
+    if (targetTeamId && targetTeamId !== team?.id && allTeams.some((t) => t.id === targetTeamId)) {
+      await selectTeam(targetTeamId);
+    }
+
     switch (n.type) {
       case 'new_event':
       case 'event_updated':

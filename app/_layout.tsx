@@ -5,8 +5,9 @@ import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
-import { TeamProvider } from '../hooks/TeamContext';
+import { TeamProvider, useActiveTeam } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { resolveNotificationTeamId } from '../lib/resolveNotificationTeamId';
 import WebPushPrompt from '../components/ui/WebPushPrompt';
 import UpdateRequiredModal from '../components/ui/UpdateRequiredModal';
 import ClubSuspendedModal from '../components/ui/ClubSuspendedModal';
@@ -18,6 +19,7 @@ function AppShell() {
   usePushNotifications();
   const router = useRouter();
   const { club } = useAuth();
+  const { team, allTeams, selectTeam } = useActiveTeam();
   const [updateRequired, setUpdateRequired] = useState(false);
 
   useEffect(() => {
@@ -36,10 +38,19 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
       const data = response.notification.request.content.data as Record<string, unknown>;
       const slug = data?.club_slug as string | undefined;
       if (!slug) return;
+
+      // Switch the active team to match the notification before navigating
+      // — otherwise the destination screen renders with whatever team was
+      // active beforehand, which on a multi-team account can silently show
+      // the wrong roster/chat/schedule even though the URL is correct.
+      const targetTeamId = await resolveNotificationTeamId(data);
+      if (targetTeamId && targetTeamId !== team?.id && allTeams.some((t) => t.id === targetTeamId)) {
+        await selectTeam(targetTeamId);
+      }
 
       switch (data?.type) {
         // ── Event notifications ──────────────────────────────────────────────
@@ -104,7 +115,7 @@ function AppShell() {
       }
     });
     return () => sub.remove();
-  }, []);
+  }, [team?.id, allTeams, selectTeam]);
 
   return (
     <>
