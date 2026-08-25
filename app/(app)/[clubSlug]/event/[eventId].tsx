@@ -2057,7 +2057,7 @@ export default function EventDetailScreen() {
           )}
 
           {/* Coach actions */}
-          {isCoach && (
+          {isCoach && event.type === 'game' && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Actions</Text>
               <TouchableOpacity style={styles.actionBtn} onPress={openLineup} activeOpacity={0.7}>
@@ -2067,15 +2067,13 @@ export default function EventDetailScreen() {
                 <Text style={styles.actionBtnText}>Lineup Builder</Text>
                 <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
               </TouchableOpacity>
-              {event.type === 'game' && (
-                <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openMatchTracker} activeOpacity={0.7}>
-                  <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
-                    <Ionicons name="timer-outline" size={17} color={primaryColor} />
-                  </View>
-                  <Text style={styles.actionBtnText}>Match Tracker</Text>
-                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openMatchTracker} activeOpacity={0.7}>
+                <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
+                  <Ionicons name="timer-outline" size={17} color={primaryColor} />
+                </View>
+                <Text style={styles.actionBtnText}>Match Tracker</Text>
+                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
+              </TouchableOpacity>
             </View>
           )}
 
