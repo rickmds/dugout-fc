@@ -222,6 +222,30 @@ export default function NotificationsScreen() {
     setDeletingId(null);
   }
 
+  function confirmClearAll() {
+    if (!profile || !notifications.length) return;
+    Alert.alert(
+      'Clear all notifications?',
+      'This removes every notification in your list. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Clear all', style: 'destructive', onPress: clearAll },
+      ],
+    );
+  }
+
+  async function clearAll() {
+    if (!profile) return;
+    const snapshot = notifications;
+    setNotifications([]);
+    setHasMore(false);
+    const { error } = await supabase.from('notifications').delete().eq('profile_id', profile.id);
+    if (error) {
+      setNotifications(snapshot);
+      Alert.alert('Error', 'Could not clear notifications. Please try again.');
+    }
+  }
+
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -377,10 +401,17 @@ export default function NotificationsScreen() {
         title="Notifications"
         subtitle={unreadCount > 0 ? `${unreadCount} unread` : undefined}
         onBack={() => router.back()}
-        right={unreadCount > 0 ? (
-          <TouchableOpacity onPress={markAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Mark all</Text>
-          </TouchableOpacity>
+        right={notifications.length > 0 ? (
+          <>
+            {unreadCount > 0 && (
+              <TouchableOpacity onPress={markAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Mark all</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={confirmClearAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: PULSE_COLORS.status.error }}>Clear all</Text>
+            </TouchableOpacity>
+          </>
         ) : undefined}
       />
 
