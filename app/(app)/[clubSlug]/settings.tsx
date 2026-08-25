@@ -641,7 +641,17 @@ export default function SettingsScreen() {
     setShowViewAsPicker(true);
     setViewAsLoading(true);
     const { data, error } = await (supabase as any).rpc('get_club_parents', { p_club_id: club.id });
-    setClubParents(error ? [] : (data ?? []));
+    if (error) {
+      // Surface real failures (missing function, permission error, network
+      // issue) instead of silently showing the same "no parents" empty
+      // state a genuinely-empty club would show — those look identical to
+      // a user otherwise, and the first is a bug worth knowing about.
+      setShowViewAsPicker(false);
+      setViewAsLoading(false);
+      Alert.alert('Could not load parents', error.message ?? 'Please try again.');
+      return;
+    }
+    setClubParents(data ?? []);
     setViewAsLoading(false);
   }
 
