@@ -12,7 +12,7 @@ type PlayerStat = {
 };
 type EventSummary = {
   id: string; title: string; event_date: string; type: string;
-  attending: number; not_attending: number; pending: number; total: number;
+  attending: number; not_attending: number; pending: number; total: number; actualAttended: number;
 };
 
 const RANGE_OPTIONS = [
@@ -67,23 +67,42 @@ export default function TeamAttendancePage() {
     }
 
     const eventIds = allEvents.map(e => e.id);
-    const { data: rsvps } = await supabase.from('event_rsvps').select('event_id,player_id,status').in('event_id', eventIds);
-    const allRsvps = (rsvps ?? []) as { event_id: string; player_id: string; status: string }[];
+    const [{ data: rsvps }, { data: attendance }] = await Promise.all([
+      supabase.from('event_rsvps').select('event_id,player_id,status').in('event_id', eventIds),
+      supabase.from('event_attendance').select('event_id,player_id,status').in('event_id', eventIds),
+    ]);
+    const allRsvps      = (rsvps ?? []) as { event_id: string; player_id: string; status: string }[];
+    const allAttendance = (attendance ?? []) as { event_id: string; player_id: string; status: string }[];
+
+    // RSVP is what a parent said beforehand — event_attendance is what the
+    // coach actually marked. The two genuinely diverge (a "yes" RSVP that
+    // no-showed, or a surprise arrival with no RSVP at all), so actual
+    // attendance is the authoritative signal whenever the coach has taken
+    // it; RSVP only fills in for events that haven't had attendance marked
+    // yet. Matches the pattern reports/page.tsx already uses.
+    function playerAttendedEvent(eventId: string, playerId: string): boolean {
+      const marked = allAttendance.find(a => a.event_id === eventId && a.player_id === playerId);
+      if (marked) return marked.status === 'present' || marked.status === 'late';
+      const rsvp = allRsvps.find(r => r.event_id === eventId && r.player_id === playerId);
+      return rsvp?.status === 'attending';
+    }
 
     // Per-player stats
     const playerStats: PlayerStat[] = allPlayers.map(p => {
-      const mine    = allRsvps.filter(r => r.player_id === p.id);
-      const attended = mine.filter(r => r.status === 'attending').length;
+      const attended = allEvents.filter(e => playerAttendedEvent(e.id, p.id)).length;
       const total    = allEvents.length;
       return { ...p, attended, total, rate: total > 0 ? Math.round((attended / total) * 100) : 0 };
     });
 
-    // Per-event stats
+    // Per-event stats — Attending/Declined/Pending stay RSVP-based (that's
+    // genuinely what those labels mean: who responded and how), but Rate
+    // reflects actual attendance, same reasoning as the player stats above.
     const eventSummaries: EventSummary[] = allEvents.map(e => {
       const er        = allRsvps.filter(r => r.event_id === e.id);
       const attending = er.filter(r => r.status === 'attending').length;
       const notAtt    = er.filter(r => r.status === 'not_attending').length;
-      return { ...e, attending, not_attending: notAtt, pending: allPlayers.length - er.length, total: allPlayers.length };
+      const actualAttended = allPlayers.filter(p => playerAttendedEvent(e.id, p.id)).length;
+      return { ...e, attending, not_attending: notAtt, pending: allPlayers.length - er.length, total: allPlayers.length, actualAttended };
     });
 
     setPlayers(playerStats);
@@ -240,7 +259,7 @@ export default function TeamAttendancePage() {
               </thead>
               <tbody>
                 {events.map((e, i) => {
-                  const rate = e.total > 0 ? Math.round((e.attending / e.total) * 100) : 0;
+                  const rate = e.total > 0 ? Math.round((e.actualAttended / e.total) * 100) : 0;
                   return (
                     <tr key={e.id} style={{ borderBottom: i < events.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
                       <td style={{ padding: '12px 16px' }}>
