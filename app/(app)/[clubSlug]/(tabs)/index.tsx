@@ -866,19 +866,47 @@ export default function HomeScreen() {
       ]);
       const gameIds = (gameEvts ?? []).map((e: { id: string }) => e.id);
       const trainingIds = (trainingEvts ?? []).map((e: { id: string }) => e.id);
-      const [gameAtt, trainingAtt] = await Promise.all([
-        gameIds.length > 0
-          ? supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).in('event_id', gameIds).eq('status', 'attending')
-          : Promise.resolve({ count: null }),
-        trainingIds.length > 0
-          ? supabase.from('event_rsvps').select('*', { count: 'exact', head: true }).in('event_id', trainingIds).eq('status', 'attending')
-          : Promise.resolve({ count: null }),
-      ]);
+      const allIds = [...gameIds, ...trainingIds];
+
+      // Actual coach-marked attendance is the authoritative signal — RSVP
+      // only fills in for a session that hasn't been marked yet. Same
+      // reasoning and pattern as the web dashboard's team attendance page:
+      // RSVP is what a parent said beforehand, not whether the kid showed.
+      const [{ data: attRows }, { data: rsvpRows }] = allIds.length > 0
+        ? await Promise.all([
+            supabase.from('event_attendance').select('event_id, player_id, status').in('event_id', allIds),
+            supabase.from('event_rsvps').select('event_id, player_id, status').in('event_id', allIds),
+          ])
+        : [{ data: [] }, { data: [] }];
+
+      const attByKey = new Map<string, string>();
+      for (const a of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+        attByKey.set(`${a.event_id}|${a.player_id}`, a.status);
+      }
+      const rsvpByKey = new Map<string, string>();
+      for (const r of (rsvpRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+        rsvpByKey.set(`${r.event_id}|${r.player_id}`, r.status);
+      }
+
+      function attendedCount(idSet: Set<string>): number {
+        let count = 0;
+        for (const [key, status] of attByKey) {
+          const eventId = key.split('|')[0];
+          if (idSet.has(eventId) && (status === 'present' || status === 'late')) count++;
+        }
+        for (const [key, status] of rsvpByKey) {
+          if (attByKey.has(key)) continue; // this pair already has a real attendance mark
+          const eventId = key.split('|')[0];
+          if (idSet.has(eventId) && status === 'attending') count++;
+        }
+        return count;
+      }
+
       const playerN = pc ?? 0;
       setPulseGameEvents(gameIds.length);
-      setPulseGamePct(gameIds.length > 0 && playerN > 0 ? Math.round(((gameAtt.count ?? 0) / (gameIds.length * playerN)) * 100) : null);
+      setPulseGamePct(gameIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(gameIds)) / (gameIds.length * playerN)) * 100) : null);
       setPulseTrainingEvents(trainingIds.length);
-      setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round(((trainingAtt.count ?? 0) / (trainingIds.length * playerN)) * 100) : null);
+      setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(trainingIds)) / (trainingIds.length * playerN)) * 100) : null);
     }
 
     // Polls
@@ -1658,7 +1686,7 @@ export default function HomeScreen() {
               <Text style={styles.sectionTitle}>TEAM PULSE</Text>
             </View>
             <View style={[styles.pulseCard, { borderLeftWidth: 3, borderLeftColor: primaryColor }]}>
-              <Text style={styles.pulseCardHeader}>RSVP ATTENDANCE · THIS MONTH</Text>
+              <Text style={styles.pulseCardHeader}>ATTENDANCE · THIS MONTH</Text>
               <View style={styles.pulseMetricRow}>
                 {/* Game attendance % this month */}
                 {(() => {
