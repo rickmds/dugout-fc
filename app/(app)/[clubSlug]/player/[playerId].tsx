@@ -307,10 +307,18 @@ export default function PlayerProfileScreen() {
   async function fetchStats() {
     if (!team || !playerId) return;
 
+    // "Recent Events" means history — what's already happened, shown with
+    // RSVP/attendance status — not a preview of what's upcoming. With no
+    // upper bound, a team whose schedule is already loaded weeks or months
+    // ahead (normal — coaches upload a full season in advance) had its
+    // furthest-out future events outrank genuinely recent ones here, since
+    // they simply have later event_date values.
+    const today = new Date().toISOString().slice(0, 10);
     const eventsRes = await supabase
       .from('events')
       .select('id, title, type, event_date')
       .eq('team_id', team.id)
+      .lte('event_date', today)
       .order('event_date', { ascending: false })
       .limit(12);
 
