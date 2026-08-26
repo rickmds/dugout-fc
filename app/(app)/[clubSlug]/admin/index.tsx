@@ -307,14 +307,23 @@ export default function AdminPanel() {
     const pastEventIds = (pastEventsRes.data ?? []).map((e) => e.id);
     setPastEventCount(pastEventIds.length);
     if (pastEventIds.length > 0 && (rosterRes.data ?? []).length > 0) {
-      const { data: rsvps } = await supabase
-        .from('event_attendance')
-        .select('event_id, player_id')
-        .in('event_id', pastEventIds)
-        .eq('status', 'present');
+      const [{ data: att }, { data: pastRsvps }] = await Promise.all([
+        supabase.from('event_attendance').select('event_id, player_id, status').in('event_id', pastEventIds),
+        supabase.from('event_rsvps').select('event_id, player_id, status').in('event_id', pastEventIds),
+      ]);
+      // Coach-marked attendance wins per event/player; RSVP only fills in
+      // events that haven't been marked yet.
+      const markedKeys = new Set<string>();
       const attendedMap: Record<string, number> = {};
-      (rsvps ?? []).forEach((r) => {
-        attendedMap[r.player_id] = (attendedMap[r.player_id] ?? 0) + 1;
+      (att ?? []).forEach((r) => {
+        markedKeys.add(`${r.event_id}|${r.player_id}`);
+        if (r.status === 'present' || r.status === 'late') {
+          attendedMap[r.player_id] = (attendedMap[r.player_id] ?? 0) + 1;
+        }
+      });
+      (pastRsvps ?? []).forEach((r) => {
+        if (markedKeys.has(`${r.event_id}|${r.player_id}`)) return;
+        if (r.status === 'attending') attendedMap[r.player_id] = (attendedMap[r.player_id] ?? 0) + 1;
       });
       const roster = (rosterRes.data ?? []) as { id: string; full_name: string; jersey_number: number | null }[];
       const players: AttendancePlayer[] = roster.map((p) => {

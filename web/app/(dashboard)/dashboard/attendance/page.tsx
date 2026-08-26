@@ -67,20 +67,37 @@ export default function AttendancePage() {
     }
 
     const eventIds = allEvents.map(e => e.id);
-    const { data: rsvps } = await supabase.from('event_rsvps').select('event_id,player_id,status').in('event_id', eventIds);
+    const [{ data: rsvps }, { data: attendance }] = await Promise.all([
+      supabase.from('event_rsvps').select('event_id,player_id,status').in('event_id', eventIds),
+      supabase.from('event_attendance').select('event_id,player_id,status').in('event_id', eventIds),
+    ]);
     const allRsvps = (rsvps ?? []) as { event_id: string; player_id: string; status: string }[];
+    const allAttendance = (attendance ?? []) as { event_id: string; player_id: string; status: string }[];
+
+    // Coach-marked attendance is the ground truth once it exists for a
+    // player/event pair — RSVP is only a fallback for events not yet marked.
+    function playerAttendedEvent(eventId: string, playerId: string): boolean {
+      const att = allAttendance.find(a => a.event_id === eventId && a.player_id === playerId);
+      if (att) return att.status === 'present' || att.status === 'late';
+      const rsvp = allRsvps.find(r => r.event_id === eventId && r.player_id === playerId);
+      return rsvp?.status === 'attending';
+    }
 
     const result: TeamAttendance[] = teams.map(t => {
       const teamEvents  = allEvents.filter(e => e.team_id === t.id);
       const teamPlayers = allPlayers.filter(p => p.team_id === t.id);
-      const teamRsvps   = allRsvps.filter(r => teamEvents.some(e => e.id === r.event_id));
 
       if (teamEvents.length === 0 || teamPlayers.length === 0) {
         return { id: t.id, name: t.name, age_group: t.age_group, eventCount: teamEvents.length, avgRate: 0, playerCount: teamPlayers.length };
       }
 
-      const totalSlots   = teamEvents.length * teamPlayers.length;
-      const totalAttended = teamRsvps.filter(r => r.status === 'attending').length;
+      const totalSlots = teamEvents.length * teamPlayers.length;
+      let totalAttended = 0;
+      for (const e of teamEvents) {
+        for (const p of teamPlayers) {
+          if (playerAttendedEvent(e.id, p.id)) totalAttended++;
+        }
+      }
       const avgRate = Math.round((totalAttended / totalSlots) * 100);
 
       return { id: t.id, name: t.name, age_group: t.age_group, eventCount: teamEvents.length, avgRate, playerCount: teamPlayers.length };

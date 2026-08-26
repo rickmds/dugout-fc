@@ -324,21 +324,34 @@ export default function PlayerProfileScreen() {
 
     const events = (eventsRes.data ?? []) as { id: string; title: string; type: string; event_date: string }[];
     if (events.length > 0) {
-      const { data: rsvps } = await supabase
-        .from('event_rsvps')
-        .select('event_id, status')
-        .eq('player_id', playerId)
-        .in('event_id', events.map((e) => e.id));
+      const eventIds = events.map((e) => e.id);
+      const [{ data: rsvps }, { data: attendance }] = await Promise.all([
+        supabase.from('event_rsvps').select('event_id, status').eq('player_id', playerId).in('event_id', eventIds),
+        supabase.from('event_attendance').select('event_id, status').eq('player_id', playerId).in('event_id', eventIds),
+      ]);
 
       const rsvpMap = new Map((rsvps ?? []).map((r: any) => [r.event_id, r.status]));
+      // Coach-marked attendance is the ground truth once it exists for an
+      // event — RSVP is only what a parent said beforehand, and is used as
+      // a fallback for events the coach hasn't marked yet.
+      const attMap = new Map((attendance ?? []).map((a: any) => [a.event_id, a.status]));
       setRsvpHistory(
-        events.map((e) => ({
-          event_id: e.id,
-          event_title: e.title,
-          event_date: e.event_date,
-          event_type: e.type,
-          status: (rsvpMap.get(e.id) as EventRsvp['status']) ?? null,
-        }))
+        events.map((e) => {
+          const att = attMap.get(e.id);
+          const status: EventRsvp['status'] =
+            att === 'present' || att === 'late'
+              ? 'attending'
+              : att === 'absent'
+              ? 'not_attending'
+              : (rsvpMap.get(e.id) as EventRsvp['status']) ?? null;
+          return {
+            event_id: e.id,
+            event_title: e.title,
+            event_date: e.event_date,
+            event_type: e.type,
+            status,
+          };
+        })
       );
     }
 

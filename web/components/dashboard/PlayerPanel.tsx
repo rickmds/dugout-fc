@@ -108,12 +108,26 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
       .then(({ data }) => { setInvites((data ?? []) as Invite[]); setInviteLoading(false); });
 
     setRsvpLoading(true);
-    supabase.from('event_rsvps').select('status').eq('player_id', player.id)
-      .then(({ data }) => {
-        const s = { attending: 0, not_attending: 0 };
-        for (const row of data ?? []) { if (row.status === 'attending') s.attending++; else if (row.status === 'not_attending') s.not_attending++; }
-        setRsvpStats(s); setRsvpLoading(false);
-      });
+    Promise.all([
+      supabase.from('event_rsvps').select('event_id,status').eq('player_id', player.id),
+      supabase.from('event_attendance').select('event_id,status').eq('player_id', player.id),
+    ]).then(([{ data: rsvpRows }, { data: attRows }]) => {
+      const s = { attending: 0, not_attending: 0 };
+      // Coach-marked attendance wins per event; RSVP only fills in events
+      // that haven't been marked yet.
+      const markedEventIds = new Set<string>();
+      for (const row of attRows ?? []) {
+        markedEventIds.add(row.event_id);
+        if (row.status === 'present' || row.status === 'late') s.attending++;
+        else if (row.status === 'absent') s.not_attending++;
+      }
+      for (const row of rsvpRows ?? []) {
+        if (markedEventIds.has(row.event_id)) continue;
+        if (row.status === 'attending') s.attending++;
+        else if (row.status === 'not_attending') s.not_attending++;
+      }
+      setRsvpStats(s); setRsvpLoading(false);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- this should only reset local form state when switching to a different player, not on every field edit
   }, [player.id]);
 

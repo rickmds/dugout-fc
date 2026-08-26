@@ -199,20 +199,28 @@ export default function RosterPage() {
       });
 
     setRsvpLoading(true);
-    supabase
-      .from('event_rsvps')
-      .select('status')
-      .eq('player_id', selectedPlayer.id)
-      .then(({ data }) => {
-        const stats: RsvpStats = { attending: 0, not_attending: 0, pending: 0 };
-        for (const r of data ?? []) {
-          if (r.status === 'attending') stats.attending++;
-          else if (r.status === 'not_attending') stats.not_attending++;
-        }
-        // We'll treat "total events" as attending + not_attending
-        setRsvpStats(stats);
-        setRsvpLoading(false);
-      });
+    Promise.all([
+      supabase.from('event_rsvps').select('event_id,status').eq('player_id', selectedPlayer.id),
+      supabase.from('event_attendance').select('event_id,status').eq('player_id', selectedPlayer.id),
+    ]).then(([{ data: rsvpRows }, { data: attRows }]) => {
+      const stats: RsvpStats = { attending: 0, not_attending: 0, pending: 0 };
+      // Coach-marked attendance wins per event; RSVP only fills in events
+      // that haven't been marked yet.
+      const markedEventIds = new Set<string>();
+      for (const a of attRows ?? []) {
+        markedEventIds.add(a.event_id);
+        if (a.status === 'present' || a.status === 'late') stats.attending++;
+        else if (a.status === 'absent') stats.not_attending++;
+      }
+      for (const r of rsvpRows ?? []) {
+        if (markedEventIds.has(r.event_id)) continue;
+        if (r.status === 'attending') stats.attending++;
+        else if (r.status === 'not_attending') stats.not_attending++;
+      }
+      // We'll treat "total events" as attending + not_attending
+      setRsvpStats(stats);
+      setRsvpLoading(false);
+    });
   }, [selectedPlayer]);
 
   async function savePanel() {

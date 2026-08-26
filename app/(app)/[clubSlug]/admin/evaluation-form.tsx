@@ -357,19 +357,26 @@ export default function EvaluationFormScreen() {
       const gameEventIds = new Set(allEvents.filter(e => e.type === 'game').map(e => e.id));
       const trainEventIds = new Set(allEvents.filter(e => e.type === 'training').map(e => e.id));
 
-      const rsvpRes = await supabase
-        .from('event_rsvps')
-        .select('event_id,status')
-        .eq('player_id', pid)
-        .in('event_id', allEvents.map(e => e.id));
+      const eventIds = allEvents.map(e => e.id);
+      const [rsvpRes, attRes] = await Promise.all([
+        supabase.from('event_rsvps').select('event_id,status').eq('player_id', pid).in('event_id', eventIds),
+        supabase.from('event_attendance').select('event_id,status').eq('player_id', pid).in('event_id', eventIds),
+      ]);
 
       const rsvps = (rsvpRes.data ?? []) as { event_id: string; status: string }[];
-      const attended = new Set(rsvps.filter(r => r.status === 'attending').map(r => r.event_id));
+      const attendanceRows = (attRes.data ?? []) as { event_id: string; status: string }[];
+      const markedEventIds = new Set(attendanceRows.map(a => a.event_id));
+      // Coach-marked attendance wins where it exists; RSVP only fills in
+      // events the coach hasn't marked yet.
+      const attended = new Set([
+        ...attendanceRows.filter(a => a.status === 'present' || a.status === 'late').map(a => a.event_id),
+        ...rsvps.filter(r => r.status === 'attending' && !markedEventIds.has(r.event_id)).map(r => r.event_id),
+      ]);
 
       const totalEvents   = allEvents.length;
       const gameEvents    = gameEventIds.size;
       const trainEvents   = trainEventIds.size;
-      const attendedTotal = rsvps.filter(r => r.status === 'attending').length;
+      const attendedTotal = attended.size;
       const attendedGames = [...attended].filter(id => gameEventIds.has(id)).length;
       const attendedTrain = [...attended].filter(id => trainEventIds.has(id)).length;
 

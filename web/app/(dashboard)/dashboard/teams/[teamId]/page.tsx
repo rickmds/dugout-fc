@@ -56,17 +56,19 @@ export default function TeamSummaryPage() {
 
     const today = new Date().toISOString().slice(0,10);
 
-    const [playersRes, nextEventsRes, announcementsRes, rsvpRes, feesRes] = await Promise.all([
+    const past30Ids = await supabase.from('events').select('id').eq('team_id', teamId)
+      .gte('event_date', new Date(Date.now() - 30*86400000).toISOString().slice(0,10))
+      .lte('event_date', today)
+      .then(r => (r.data ?? []).map(e => e.id));
+
+    const [playersRes, nextEventsRes, announcementsRes, rsvpRes, attRes, feesRes] = await Promise.all([
       supabase.from('players').select('id', { count: 'exact', head: true }).eq('team_id', teamId),
       supabase.from('events').select('id,title,type,event_date,event_time,location')
         .eq('team_id', teamId).gte('event_date', today).order('event_date').limit(1),
       supabase.from('announcements').select('id,title,body,created_at,pinned')
         .eq('team_id', teamId).order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(3),
-      supabase.from('event_rsvps').select('event_id,status').in('event_id',
-        await supabase.from('events').select('id').eq('team_id', teamId)
-          .gte('event_date', new Date(Date.now() - 30*86400000).toISOString().slice(0,10))
-          .then(r => (r.data ?? []).map(e => e.id))
-      ),
+      supabase.from('event_rsvps').select('event_id,status').in('event_id', past30Ids),
+      supabase.from('event_attendance').select('event_id,status').in('event_id', past30Ids),
       supabase.from('player_fees').select('amount_due,amount_paid,status').eq('team_id', teamId),
     ]);
 
@@ -80,10 +82,16 @@ export default function TeamSummaryPage() {
       rsvpTotal     = (nr ?? []).length;
     }
 
-    // Attendance rate (last 30 days)
+    // Attendance rate (last 30 days) — coach-marked attendance wins per
+    // event; RSVP only fills in events that haven't been marked yet.
     const rsvps = rsvpRes.data ?? [];
-    const attended = rsvps.filter(r => r.status === 'attending').length;
-    const attendanceRate = rsvps.length > 0 ? Math.round((attended / rsvps.length) * 100) : 0;
+    const attRows = attRes.data ?? [];
+    const markedEventIds = new Set(attRows.map(a => a.event_id));
+    const attendedFromAtt  = attRows.filter(a => a.status === 'present' || a.status === 'late').length;
+    const attendedFromRsvp = rsvps.filter(r => r.status === 'attending' && !markedEventIds.has(r.event_id)).length;
+    const attended = attendedFromAtt + attendedFromRsvp;
+    const total = attRows.length + rsvps.filter(r => !markedEventIds.has(r.event_id)).length;
+    const attendanceRate = total > 0 ? Math.round((attended / total) * 100) : 0;
 
     // Outstanding fees
     const fees = feesRes.data ?? [];
