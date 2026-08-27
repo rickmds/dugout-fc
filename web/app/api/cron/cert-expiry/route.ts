@@ -145,9 +145,13 @@ export async function GET(req: NextRequest) {
     const to = [...new Set([...(coachEmail ? [coachEmail] : []), ...adminEmails])];
     if (!to.length) continue;
 
+    // bcc, not to — a coach and a club's admins shouldn't see each other's
+    // personal email addresses just because both are notified about the
+    // same expiring certification.
     const { error } = await resend.emails.send({
       from: 'Pulse FC <support@pulse-fc.app>',
-      to,
+      to: 'support@pulse-fc.app',
+      bcc: to,
       subject,
       html,
     });

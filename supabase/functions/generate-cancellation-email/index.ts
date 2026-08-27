@@ -117,6 +117,23 @@ Write a short, professional, friendly cancellation email to the parents.
     return { clubName, logoUrl, accent, emailList };
   }
 
+  // Real recipients go in bcc, never to — every parent on the team
+  // otherwise sees every other parent's email address in this cancellation/
+  // reinstatement email. "to" is the sender's own address so the header
+  // isn't blank. Batched into chunks so a large team can't exceed Resend's
+  // per-request recipient cap in one call.
+  async function sendToTeam(emailList: Array<{ email: string }>, fromAddress: string, subject: string, html: string, text: string) {
+    const BCC_BATCH_SIZE = 45;
+    const addresses = emailList.map((r) => r.email);
+    for (let i = 0; i < addresses.length; i += BCC_BATCH_SIZE) {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: fromAddress, to: [fromAddress], bcc: addresses.slice(i, i + BCC_BATCH_SIZE), subject, html, text }),
+      });
+    }
+  }
+
   // ── Mode 2: Confirm cancel ───────────────────────────────────────────────────
   if (mode === 'confirm') {
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -148,17 +165,7 @@ Write a short, professional, friendly cancellation email to the parents.
       eventTime: event_time ?? null,
     });
 
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: `${clubName} <support@pulse-fc.app>`,
-        to: emailList.map((r) => r.email),
-        subject: email_subject,
-        html,
-        text: email_body,
-      }),
-    });
+    await sendToTeam(emailList, `${clubName} <support@pulse-fc.app>`, email_subject, html, email_body);
 
     return new Response(JSON.stringify({ ok: true, sent: emailList.length }), {
       headers: { ...CORS, 'Content-Type': 'application/json' },
@@ -191,17 +198,7 @@ Write a short, professional, friendly cancellation email to the parents.
         eventTime: event_time ?? null,
       });
 
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: `${clubName} <support@pulse-fc.app>`,
-          to: emailList.map((r) => r.email),
-          subject: email_subject,
-          html,
-          text: email_body,
-        }),
-      });
+      await sendToTeam(emailList, `${clubName} <support@pulse-fc.app>`, email_subject, html, email_body);
     }
 
     return new Response(JSON.stringify({ ok: true, sent: emailList.length }), {
