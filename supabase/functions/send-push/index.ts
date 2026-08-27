@@ -2,6 +2,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
+// Without this, a browser calling this function cross-origin (the web
+// dashboard on pulse-fc.app calling *.supabase.co) sends a CORS preflight
+// OPTIONS request first — with no Access-Control-Allow-Origin header to
+// satisfy it, the browser silently blocks the real POST before it's ever
+// sent. curl and the mobile app's fetch don't enforce this, which is why
+// this bug was invisible from either of those and only ever bit web-
+// dashboard-triggered pushes (e.g. announcements never notifying anyone).
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 interface PushPayload {
   team_id?: string;
   profile_ids?: string[];
@@ -12,7 +24,8 @@ interface PushPayload {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: CORS });
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
@@ -48,15 +61,15 @@ Deno.serve(async (req) => {
       .from('team_members')
       .select('profile_id')
       .eq('team_id', team_id);
-    if (!members?.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
+    if (!members?.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200, headers: CORS });
     profileIds = members
       .map((m: any) => m.profile_id as string)
       .filter((id: string) => id !== exclude_profile_id);
   } else {
-    return new Response(JSON.stringify({ error: 'team_id or profile_ids required' }), { status: 400 });
+    return new Response(JSON.stringify({ error: 'team_id or profile_ids required' }), { status: 400, headers: CORS });
   }
 
-  if (!profileIds.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  if (!profileIds.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
   // ── DM notification collapse ──────────────────────────────────────────────
   // For new_dm: if the recipient already has an unread notification for this
@@ -120,14 +133,14 @@ Deno.serve(async (req) => {
 
   // ── Push notifications ────────────────────────────────────────────────────
 
-  if (!pushProfileIds.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
+  if (!pushProfileIds.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200, headers: CORS });
 
   const { data: tokens } = await supabase
     .from('push_tokens')
     .select('token')
     .in('profile_id', pushProfileIds);
 
-  if (!tokens?.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
+  if (!tokens?.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200, headers: CORS });
 
   const messages = tokens.map((t: any) => ({
     to: t.token,
@@ -168,6 +181,6 @@ Deno.serve(async (req) => {
 
   return new Response(JSON.stringify({ sent: messages.length }), {
     status: 200,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 });
