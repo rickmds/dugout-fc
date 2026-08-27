@@ -434,7 +434,11 @@ export default function NotificationsScreen() {
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={confirmClearAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: PULSE_COLORS.status.error }}>Clear all</Text>
+              {/* White, not status.error red — this sits on the club's own
+                  brand color (any hue), and red-on-pink loses all contrast.
+                  The confirmation Alert below already renders its own
+                  destructive-styled button, so nothing is lost. */}
+              <Text style={{ fontSize: 13, fontWeight: '600', color: '#fff' }}>Clear all</Text>
             </TouchableOpacity>
           </>
         ) : undefined}
