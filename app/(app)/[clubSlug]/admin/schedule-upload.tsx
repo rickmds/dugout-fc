@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -24,13 +25,19 @@ import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { zonedTimeToUtc } from '../../../../lib/timezone';
+import { parseFlexibleTime, toTimeString } from '../../../../lib/eventTime';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
+import SmartLocationInput from '../../../../components/ui/SmartLocationInput';
+import PickerSheet from '../../../../components/ui/PickerSheet';
+import { DURATION_OPTIONS, ARRIVAL_OPTIONS } from '../../../../constants/eventTypes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Phase = 'idle' | 'processing' | 'review' | 'importing' | 'done';
 type EventType = 'game' | 'training' | 'other';
+
+type SavedField = { id: string; name: string; address: string | null; lat: number | null; lng: number | null; surface_type: string | null };
 
 type ParsedEvent = {
   _id: string;
@@ -40,8 +47,21 @@ type ParsedEvent = {
   type: EventType;
   location: string | null;
   address: string | null;
+  lat: number | null;
+  lng: number | null;
+  field_id: string | null;
   home_away: 'home' | 'away' | null;
-  surface: 'turf' | 'grass' | null;
+  surface: 'turf' | 'grass' | 'indoor' | null;
+  uniform: 'home' | 'away' | 'training' | null;
+  field_notes: string;
+  player_notes: string;
+  coach_notes: string;
+  video_url: string;
+  duration: number | null;        // per-event override; null = use bulk default
+  arrival: number | null;         // per-event override; null = use bulk default
+  requireRsvp: boolean | null;    // per-event override; null = derive from bulk
+  rsvpLockHours: number | null;   // per-event override; only read when requireRsvp is true
+  round_label: string | null;
   uncertain: boolean;
   uncertainty_reason: string | null;
   duplicate: boolean;
@@ -49,6 +69,44 @@ type ParsedEvent = {
 };
 
 type BulkSettings = { duration: number; arriveEarly: number; rsvpLockHours: number | null };
+
+// Matches AI-extracted venue text (e.g. "Williams Field") against the club's
+// saved fields so the real address auto-fills instead of just a bare name.
+// Normalizes case/punctuation, then tries exact match before falling back to
+// substring containment either direction — good enough for real venue names
+// ("Williams Field" vs "Williams Fields Complex") without over-matching on
+// short/common words.
+function matchSavedField(locationText: string | null, fields: SavedField[]): SavedField | null {
+  if (!locationText || fields.length === 0) return null;
+  const norm = (s: string) => s.toLowerCase().replace(/[^\w\s]/g, '').trim();
+  const loc = norm(locationText);
+  if (!loc) return null;
+
+  const exact = fields.find((f) => norm(f.name) === loc);
+  if (exact) return exact;
+
+  const contains = fields
+    .filter((f) => {
+      const name = norm(f.name);
+      return name.length > 2 && (loc.includes(name) || name.includes(loc));
+    })
+    .sort((a, b) => norm(b.name).length - norm(a.name).length); // prefer the longest/most specific match
+  return contains[0] ?? null;
+}
+
+// tryout_fields.surface_type is free text driven by a web <select> with
+// options like "Natural Grass" / "Artificial Turf" / "Hybrid" / "Indoor" /
+// "Other" — only maps the ones that map cleanly onto events.field_type's
+// turf/grass/indoor constraint; "Hybrid"/"Other" fall through to null rather
+// than guess wrong.
+function mapSurfaceType(surfaceType: string | null | undefined): 'turf' | 'grass' | 'indoor' | null {
+  if (!surfaceType) return null;
+  const s = surfaceType.toLowerCase();
+  if (s.includes('grass')) return 'grass';
+  if (s.includes('turf')) return 'turf';
+  if (s.includes('indoor')) return 'indoor';
+  return null;
+}
 
 const BULK_DURATION_OPTIONS = [45, 60, 75, 90, 105, 120];
 const BULK_ARRIVE_OPTIONS   = [5, 10, 15, 20, 30, 45, 60];
@@ -81,8 +139,9 @@ function fmtDate(iso: string | null): string {
 }
 
 function fmtTime(t: string | null): string {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
+  const parsed = parseFlexibleTime(t);
+  if (!parsed) return '';
+  const { h, m } = parsed;
   return ` · ${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
@@ -95,7 +154,7 @@ function fmtDuration(min: number): string {
 export default function ScheduleUploadScreen() {
   const { primaryColor, rgba, timezone } = useClub();
   const router = useRouter();
-  const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const { clubSlug, tournamentId } = useLocalSearchParams<{ clubSlug: string; tournamentId?: string }>();
   const { team } = useTeam();
   const { profile } = useAuth();
 
@@ -110,7 +169,35 @@ export default function ScheduleUploadScreen() {
   const [processingMsg, setProcessingMsg] = useState(0);
   const [notified, setNotified]   = useState(false);
   const [notifying, setNotifying] = useState(false);
+  const [savedFields, setSavedFields] = useState<SavedField[]>([]);
+  const [tournamentName, setTournamentName] = useState<string | null>(null);
+  // Only set for a DATED (weekend/round-robin) tournament — its games
+  // centralize RSVP at the tournament level, so the per-event RSVP lock
+  // settings below no longer apply. Undated (knockout) imports are unaffected.
+  const [tournamentStartDate, setTournamentStartDate] = useState<string | null>(null);
   const processingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const clubId = team?.club?.id;
+    if (!clubId) return;
+    supabase
+      .from('tryout_fields')
+      .select('id,name,address,lat,lng,surface_type')
+      .eq('club_id', clubId)
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setSavedFields((data ?? []) as SavedField[]));
+  }, [team?.club?.id]);
+
+  // Fetched once at load, not inside handleNotify itself, to avoid a
+  // network round-trip at button-press time.
+  useEffect(() => {
+    if (!tournamentId) return;
+    supabase.from('tournaments').select('name,start_date').eq('id', tournamentId).single()
+      .then(({ data }) => { setTournamentName(data?.name ?? null); setTournamentStartDate(data?.start_date ?? null); });
+  }, [tournamentId]);
+
+  const isDatedTournamentImport = !!tournamentId && !!tournamentStartDate;
 
   const selectedCount  = events.filter((e) => e.selected).length;
   const uncertainCount = events.filter((e) => e.uncertain && e.selected).length;
@@ -172,9 +259,17 @@ export default function ScheduleUploadScreen() {
     // with no fallback or way to cancel.
     const AI_PARSE_TIMEOUT_MS = 40_000;
     const [invokeResult, existingRes] = await Promise.all([
-      withTimeout(supabase.functions.invoke('parse-schedule', { body: { file_base64, file_type } }), AI_PARSE_TIMEOUT_MS),
+      withTimeout(
+        supabase.functions.invoke('parse-schedule', { body: { file_base64, file_type, context: tournamentId ? 'tournament' : undefined } }),
+        AI_PARSE_TIMEOUT_MS
+      ),
+      // Scoped to the same context being imported into — a tournament game
+      // on the same date as an unrelated team event (or a second same-day
+      // pool-play game) must not false-positive as a duplicate of it.
       team
-        ? supabase.from('events').select('event_date, type').eq('team_id', team.id)
+        ? (tournamentId
+            ? supabase.from('events').select('event_date, type').eq('team_id', team.id).eq('tournament_id', tournamentId)
+            : supabase.from('events').select('event_date, type').eq('team_id', team.id).is('tournament_id', null))
         : Promise.resolve({ data: [] as { event_date: string; type: string }[] }),
     ]);
 
@@ -200,6 +295,16 @@ export default function ScheduleUploadScreen() {
       ((existingRes as any).data ?? []).map((e: { event_date: string; type: string }) => `${e.event_date}_${e.type}`)
     );
 
+    // Fetched fresh here (rather than trusting state set by the mount-time
+    // effect) so a fast upload right after screen load still has the real
+    // list to match against, not an empty one from a query still in flight.
+    const clubId = team?.club?.id;
+    const fieldsRes = clubId
+      ? await supabase.from('tryout_fields').select('id,name,address,lat,lng,surface_type').eq('club_id', clubId).eq('is_active', true)
+      : { data: [] as SavedField[] };
+    const fields = (fieldsRes.data ?? []) as SavedField[];
+    if (fields.length) setSavedFields(fields);
+
     const parsed: ParsedEvent[] = (invokeRes.data.events ?? []).map((e: any, i: number) => {
       const type = (['game', 'training', 'other'].includes(e.type) ? e.type : 'other') as EventType;
       const key = e.date ? `${e.date}_${type}` : null;
@@ -209,16 +314,42 @@ export default function ScheduleUploadScreen() {
       // "not duplicate" and both got selected for import. Mark this key
       // seen now so a later row in this same batch is caught too.
       if (key && !isDuplicate) existingKeys.add(key);
+
+      const rawLocation = e.location ?? null;
+      // The AI often only reads a venue name off the source document
+      // ("Williams Field") with no street address — if that name matches
+      // a field the club already saved (with a real address), use it.
+      const matched = matchSavedField(rawLocation, fields);
+      const homeAway = (['home', 'away'].includes(e.home_away) ? e.home_away : null) as 'home' | 'away' | null;
+
       return {
         _id: `evt-${i}`,
         date: e.date ?? null,
         time: e.time ?? null,
         title: e.title ?? 'Untitled',
         type,
-        location: e.location ?? null,
-        address: e.address ?? null,
-        home_away: (['home', 'away'].includes(e.home_away) ? e.home_away : null) as 'home' | 'away' | null,
-        surface: (['turf', 'grass'].includes(e.surface) ? e.surface : null) as 'turf' | 'grass' | null,
+        location: rawLocation,
+        address: matched?.address ?? e.address ?? null,
+        lat: matched?.lat ?? null,
+        lng: matched?.lng ?? null,
+        field_id: matched?.id ?? null,
+        home_away: homeAway,
+        // The club's own saved field data is ground truth and wins over the
+        // AI's guess from the document (which usually doesn't state surface
+        // at all) — only falls back to the AI's value when there's no match
+        // or the field's surface_type doesn't map to a known value.
+        surface: mapSurfaceType(matched?.surface_type)
+          ?? ((['turf', 'grass', 'indoor'].includes(e.surface) ? e.surface : null) as 'turf' | 'grass' | 'indoor' | null),
+        uniform: homeAway,
+        field_notes: '',
+        player_notes: '',
+        coach_notes: '',
+        video_url: '',
+        duration: null,
+        arrival: null,
+        requireRsvp: null,
+        rsvpLockHours: null,
+        round_label: e.round_label ?? null,
         uncertain: !!e.uncertain,
         uncertainty_reason: e.uncertainty_reason ?? null,
         duplicate: isDuplicate,
@@ -258,29 +389,59 @@ export default function ScheduleUploadScreen() {
     setPhase('importing');
 
     const rows = toImport.map((e) => {
-      const rsvpLockAt = bulk.rsvpLockHours != null && e.date && e.time
-        ? (() => {
-            const [h, m] = e.time!.split(':').map(Number);
-            // Anchored to the club's own timezone, not this device's — see
-            // create-event.tsx's computeLockAt for the full reasoning.
-            const dt = zonedTimeToUtc(e.date!, `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`, timezone);
-            dt.setHours(dt.getHours() - bulk.rsvpLockHours!);
-            return dt.toISOString();
-          })()
-        : null;
+      // The AI parser is told to return 24-hour time but isn't guaranteed
+      // to (a source PDF/image showing "6:00 PM" can come back verbatim) —
+      // parseFlexibleTime handles both, and normalizedTime is what actually
+      // gets saved, not the AI's raw (possibly 12-hour) string.
+      const parsedTime = e.time ? parseFlexibleTime(e.time) : null;
+      const normalizedTime = parsedTime ? toTimeString(parsedTime) : null;
+
+      // Per-event overrides win over the bulk defaults — this is what
+      // actually determines RSVP behaviour on the saved row; previously
+      // require_rsvp was never set here at all, so it silently fell back to
+      // the DB's `true` default regardless of what the bulk RSVP chip said.
+      const effectiveRequireRsvp = e.requireRsvp ?? (bulk.rsvpLockHours != null);
+      const effectiveLockHours = e.rsvpLockHours ?? bulk.rsvpLockHours;
+
+      let rsvpLockAt: string | null = null;
+      if (!isDatedTournamentImport && effectiveRequireRsvp && effectiveLockHours != null && e.date && normalizedTime) {
+        try {
+          // Anchored to the club's own timezone, not this device's — see
+          // create-event.tsx's computeLockAt for the full reasoning.
+          const dt = zonedTimeToUtc(e.date, `${normalizedTime}:00`, timezone);
+          dt.setHours(dt.getHours() - effectiveLockHours);
+          rsvpLockAt = dt.toISOString();
+        } catch (err) {
+          // One row's unparseable date/time shouldn't take down the whole
+          // batch — that event still imports below, just without an RSVP
+          // lock time (a coach can set one manually afterward).
+          console.warn('[schedule-upload] could not compute rsvp_lock_at for', e.title, err);
+        }
+      }
 
       return {
         team_id: team.id,
         title: e.title,
         type: e.type,
         event_date: e.date ?? new Date().toISOString().split('T')[0],
-        event_time: e.time ?? null,
+        event_time: normalizedTime,
         location: e.location ?? null,
         address: e.address ?? null,
+        lat: e.lat ?? null,
+        lng: e.lng ?? null,
+        field_id: e.field_id ?? null,
         field_type: e.surface ?? null,
-        uniform: e.home_away ?? null,
-        duration_minutes: bulk.duration,
-        arrival_buffer_minutes: bulk.arriveEarly,
+        field_notes: e.field_notes.trim() || null,
+        home_away: e.home_away ?? null,
+        uniform: e.uniform ?? null,
+        notes: e.player_notes.trim() || null,
+        coach_notes: e.coach_notes.trim() || null,
+        video_url: e.video_url.trim() || null,
+        tournament_id: tournamentId || null,
+        round_label: e.round_label?.trim() || null,
+        duration_minutes: e.duration ?? bulk.duration,
+        arrival_buffer_minutes: e.arrival ?? bulk.arriveEarly,
+        require_rsvp: effectiveRequireRsvp,
         rsvp_lock_at: rsvpLockAt,
         created_by: profile.id,
       };
@@ -302,10 +463,12 @@ export default function ScheduleUploadScreen() {
   async function handleNotify() {
     if (!team || !profile) return;
     setNotifying(true);
-    const body = `Your season schedule is live — ${imported} event${imported !== 1 ? 's' : ''} have been added. Open the Schedule tab to view dates, times, and venues.`;
+    const body = tournamentName
+      ? `Your ${tournamentName} schedule is live — ${imported} game${imported !== 1 ? 's' : ''} have been added. Open the Schedule tab to view dates, times, and venues.`
+      : `Your season schedule is live — ${imported} event${imported !== 1 ? 's' : ''} have been added. Open the Schedule tab to view dates, times, and venues.`;
     await supabase.from('announcements').insert({
       team_id: team.id,
-      title: 'Schedule is live 📅',
+      title: tournamentName ? `${tournamentName} is live 🏆` : 'Schedule is live 📅',
       body,
       pinned: false,
       created_by: profile.id,
@@ -324,12 +487,14 @@ export default function ScheduleUploadScreen() {
   // ─── Bulk card (header for FlatList) ─────────────────────────────────────────
 
   function renderBulkCard() {
-    const summary = `${fmtDuration(bulk.duration)} · ${bulk.arriveEarly} min early · RSVP ${bulk.rsvpLockHours ? `${bulk.rsvpLockHours} hrs before` : 'off'}`;
+    const summary = `${fmtDuration(bulk.duration)} · ${bulk.arriveEarly} min early` + (
+      isDatedTournamentImport ? ' · RSVP via tournament' : ` · RSVP ${bulk.rsvpLockHours ? `${bulk.rsvpLockHours} hrs before` : 'off'}`
+    );
     return (
       <View style={st.bulkCard}>
         <TouchableOpacity style={st.bulkHeader} onPress={() => setBulkOpen((o) => !o)} activeOpacity={0.7}>
           <View style={{ flex: 1 }}>
-            <Text style={st.bulkCardTitle}>BULK SETTINGS</Text>
+            <Text style={st.bulkCardTitle}>DEFAULT SETTINGS <Text style={st.fieldHint}>· edit any event to override</Text></Text>
             {!bulkOpen && <Text style={st.bulkSummary}>{summary}</Text>}
           </View>
           <Ionicons name={bulkOpen ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
@@ -367,20 +532,24 @@ export default function ScheduleUploadScreen() {
               ))}
             </View>
 
-            <Text style={[st.bulkFieldLabel, { marginTop: 12 }]}>RSVP DEADLINE</Text>
-            <View style={st.bulkChipRow}>
-              {BULK_RSVP_OPTIONS.map((opt) => (
-                <TouchableOpacity
-                  key={String(opt.value)}
-                  style={[st.bulkChip, bulk.rsvpLockHours === opt.value && [st.bulkChipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
-                  onPress={() => setBulk((p) => ({ ...p, rsvpLockHours: opt.value }))}
-                >
-                  <Text style={[st.bulkChipText, bulk.rsvpLockHours === opt.value && [st.bulkChipTextActive, { color: primaryColor }]]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {!isDatedTournamentImport && (
+              <>
+                <Text style={[st.bulkFieldLabel, { marginTop: 12 }]}>RSVP DEADLINE</Text>
+                <View style={st.bulkChipRow}>
+                  {BULK_RSVP_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={String(opt.value)}
+                      style={[st.bulkChip, bulk.rsvpLockHours === opt.value && [st.bulkChipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
+                      onPress={() => setBulk((p) => ({ ...p, rsvpLockHours: opt.value }))}
+                    >
+                      <Text style={[st.bulkChipText, bulk.rsvpLockHours === opt.value && [st.bulkChipTextActive, { color: primaryColor }]]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
         )}
       </View>
@@ -391,7 +560,7 @@ export default function ScheduleUploadScreen() {
 
   return (
     <View style={st.container}>
-      <ClubHeader title="AI Schedule Import" onBack={() => router.back()} />
+      <ClubHeader title={tournamentId ? 'Import Tournament Games' : 'AI Schedule Import'} onBack={() => router.back()} />
 
       {/* ── Idle ── */}
       {phase === 'idle' && (
@@ -545,6 +714,12 @@ export default function ScheduleUploadScreen() {
                     {fmtDate(item.date)}{fmtTime(item.time)}
                     {item.location ? ` · ${item.location}` : ''}
                   </Text>
+                  {item.address && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      {item.field_id && <Ionicons name="checkmark-circle" size={10} color={primaryColor} />}
+                      <Text style={[st.eventAddress, !item.selected && { opacity: 0.4 }]} numberOfLines={1}>{item.address}</Text>
+                    </View>
+                  )}
                   {item.uncertain && item.uncertainty_reason && (
                     <View style={st.uncertainRow}>
                       <Text style={st.uncertainText}>{item.uncertainty_reason}</Text>
@@ -628,33 +803,93 @@ export default function ScheduleUploadScreen() {
       )}
 
       {/* ── Edit modal ── */}
-      {editing && <EditEventModal event={editing} onSave={saveEdit} onClose={() => setEditing(null)} />}
+      {editing && (
+        <EditEventModal
+          event={editing}
+          bulk={bulk}
+          savedFields={savedFields}
+          tournamentId={tournamentId}
+          isDatedTournamentImport={isDatedTournamentImport}
+          onSave={saveEdit}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </View>
   );
 }
 
 // ─── Edit modal ───────────────────────────────────────────────────────────────
 
-function EditEventModal({ event, onSave, onClose }: {
+const RSVP_LOCK_CHOICES = [12, 24, 48];
+
+function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournamentImport, onSave, onClose }: {
   event: ParsedEvent;
+  bulk: BulkSettings;
+  savedFields: SavedField[];
+  tournamentId?: string;
+  isDatedTournamentImport?: boolean;
   onSave: (e: ParsedEvent) => void;
   onClose: () => void;
 }) {
-  const { primaryColor } = useClub();
+  const { primaryColor, rgba } = useClub();
   const [date, setDate]         = useState(event.date ?? '');
   const [time, setTime]         = useState(event.time ?? '');
   const [title, setTitle]       = useState(event.title);
   const [type, setType]         = useState<EventType>(event.type);
-  const [location, setLocation] = useState(event.location ?? '');
-  const [address, setAddress]   = useState(event.address ?? '');
+  const [roundLabel, setRoundLabel] = useState(event.round_label ?? '');
   const [homeAway, setHomeAway] = useState<'home' | 'away' | null>(event.home_away);
-  const [surface, setSurface]   = useState<'turf' | 'grass' | null>(event.surface);
+  const [surface, setSurface]   = useState<'turf' | 'grass' | 'indoor' | null>(event.surface);
+  const [uniform, setUniform]   = useState<'home' | 'away' | 'training' | null>(event.uniform ?? event.home_away);
+
+  // Location — mirrors create-event.tsx's pattern: a fieldId links this
+  // event to a saved club field; any manual edit to name/address clears it
+  // since it may no longer match.
+  const [locationName, setLocationName] = useState(event.location ?? '');
+  const [address, setAddress]   = useState(event.address ?? '');
+  const [lat, setLat]           = useState<number | null>(event.lat);
+  const [lng, setLng]           = useState<number | null>(event.lng);
+  const [fieldId, setFieldId]   = useState<string | null>(event.field_id);
+  const [fieldNotes, setFieldNotes] = useState(event.field_notes);
+
+  const [playerNotes, setPlayerNotes] = useState(event.player_notes);
+  const [coachNotes, setCoachNotes]   = useState(event.coach_notes);
+  const [videoUrl, setVideoUrl]       = useState(event.video_url);
+
+  // Duration/arrival stay nullable exactly like create-event.tsx's own
+  // fields — null means "not set for this event," which doImport() already
+  // treats as "use the bulk default." The picker's clear (X) button is what
+  // resets a row back to null/default.
+  const [duration, setDuration]   = useState<number | null>(event.duration);
+  const [arrival, setArrival]     = useState<number | null>(event.arrival);
+  const [showDurationPicker, setShowDurationPicker] = useState(false);
+  const [showArrivalPicker, setShowArrivalPicker]   = useState(false);
+  const [requireRsvp, setRequireRsvp] = useState(event.requireRsvp ?? (bulk.rsvpLockHours != null));
+  const [rsvpLockHours, setRsvpLockHours] = useState(event.rsvpLockHours ?? bulk.rsvpLockHours ?? 24);
 
   function save() {
     if (!title.trim()) { Alert.alert('Required', 'Title cannot be empty.'); return; }
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) { Alert.alert('Invalid date', 'Use YYYY-MM-DD format.'); return; }
     if (time && !/^\d{2}:\d{2}$/.test(time)) { Alert.alert('Invalid time', 'Use HH:MM 24-hour format.'); return; }
-    onSave({ ...event, date: date || null, time: time || null, title: title.trim(), type, location: location.trim() || null, address: address.trim() || null, home_away: homeAway, surface });
+    onSave({
+      ...event,
+      date: date || null,
+      time: time || null,
+      title: title.trim(),
+      type,
+      location: locationName.trim() || null,
+      address: address.trim() || null,
+      lat, lng, field_id: fieldId,
+      home_away: homeAway,
+      surface,
+      uniform,
+      field_notes: fieldNotes,
+      player_notes: playerNotes,
+      coach_notes: coachNotes,
+      video_url: videoUrl,
+      duration, arrival,
+      requireRsvp, rsvpLockHours,
+      round_label: roundLabel.trim() || null,
+    });
   }
 
   const homeAwayOpts: { value: 'home' | 'away' | null; label: string; color: string }[] = [
@@ -663,10 +898,18 @@ function EditEventModal({ event, onSave, onClose }: {
     { value: null,   label: 'N/A',  color: PULSE_COLORS.ui.muted },
   ];
 
-  const surfaceOpts: { value: 'turf' | 'grass' | null; label: string; color: string }[] = [
-    { value: 'turf',  label: 'Turf',    color: '#3B82F6' },
-    { value: 'grass', label: 'Grass',   color: primaryColor },
-    { value: null,    label: 'Unknown', color: PULSE_COLORS.ui.muted },
+  const surfaceOpts: { value: 'turf' | 'grass' | 'indoor' | null; label: string; color: string }[] = [
+    { value: 'turf',   label: 'Turf',    color: '#3B82F6' },
+    { value: 'grass',  label: 'Grass',   color: primaryColor },
+    { value: 'indoor', label: 'Indoor',  color: '#8B5CF6' },
+    { value: null,     label: 'Unknown', color: PULSE_COLORS.ui.muted },
+  ];
+
+  const uniformOpts: { value: 'home' | 'away' | 'training' | null; label: string }[] = [
+    { value: 'home', label: 'Home' },
+    { value: 'away', label: 'Away' },
+    { value: 'training', label: 'Training' },
+    { value: null, label: 'N/A' },
   ];
 
   return (
@@ -683,6 +926,20 @@ function EditEventModal({ event, onSave, onClose }: {
 
             <Text style={st.fieldLabel}>TITLE</Text>
             <TextInput style={st.fieldInput} value={title} onChangeText={setTitle} autoFocus returnKeyType="done" />
+
+            {!!tournamentId && (
+              <>
+                <Text style={[st.fieldLabel, { marginTop: 16 }]}>ROUND <Text style={st.fieldHint}>optional</Text></Text>
+                <TextInput
+                  style={st.fieldInput}
+                  value={roundLabel}
+                  onChangeText={setRoundLabel}
+                  placeholder="Quarterfinal, Pool Play…"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  returnKeyType="done"
+                />
+              </>
+            )}
 
             <Text style={[st.fieldLabel, { marginTop: 16 }]}>TYPE</Text>
             <View style={st.typeRow}>
@@ -713,19 +970,6 @@ function EditEventModal({ event, onSave, onClose }: {
                 </View>
               </>
             )}
-
-            <Text style={[st.fieldLabel, { marginTop: 16 }]}>SURFACE</Text>
-            <View style={st.typeRow}>
-              {surfaceOpts.map((opt) => (
-                <TouchableOpacity
-                  key={String(opt.value)}
-                  style={[st.typeBtn, surface === opt.value && { backgroundColor: opt.color + '22', borderColor: opt.color }]}
-                  onPress={() => setSurface(opt.value)}
-                >
-                  <Text style={[st.typeBtnText, surface === opt.value && { color: opt.color }]}>{opt.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
 
             {/* Free-text date/time entry rather than the DateTimeSheet picker
                 used elsewhere (create-event.tsx): DateTimeSheet always
@@ -759,18 +1003,214 @@ function EditEventModal({ event, onSave, onClose }: {
               returnKeyType="done"
             />
 
-            <Text style={[st.fieldLabel, { marginTop: 16 }]}>VENUE / FIELD <Text style={st.fieldHint}>optional</Text></Text>
-            <TextInput style={st.fieldInput} value={location} onChangeText={setLocation} placeholder="Habernickel Park" placeholderTextColor={PULSE_COLORS.ui.muted} returnKeyType="done" />
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>DURATION</Text>
+            <TouchableOpacity style={st.pickerRow} onPress={() => setShowDurationPicker(true)}>
+              <Text style={duration !== null ? [st.fieldValue, { color: primaryColor }] : st.fieldValueMuted}>
+                {duration !== null ? fmtDuration(duration) : `Default (${fmtDuration(bulk.duration)})`}
+              </Text>
+              {duration !== null ? (
+                <TouchableOpacity onPress={() => setDuration(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+              )}
+            </TouchableOpacity>
 
-            <Text style={[st.fieldLabel, { marginTop: 16 }]}>ADDRESS <Text style={st.fieldHint}>optional</Text></Text>
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>ARRIVE EARLY</Text>
+            <TouchableOpacity style={st.pickerRow} onPress={() => setShowArrivalPicker(true)}>
+              <Text style={arrival !== null ? [st.fieldValue, { color: primaryColor }] : st.fieldValueMuted}>
+                {arrival !== null ? `${arrival} min before` : `Default (${bulk.arriveEarly} min before)`}
+              </Text>
+              {arrival !== null ? (
+                <TouchableOpacity onPress={() => setArrival(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+              )}
+            </TouchableOpacity>
+
+            <PickerSheet
+              visible={showDurationPicker}
+              title="Duration"
+              options={DURATION_OPTIONS}
+              value={duration ?? bulk.duration}
+              onChange={setDuration}
+              onClose={() => setShowDurationPicker(false)}
+            />
+            <PickerSheet
+              visible={showArrivalPicker}
+              title="Arrive how early?"
+              options={ARRIVAL_OPTIONS}
+              value={arrival ?? bulk.arriveEarly}
+              onChange={setArrival}
+              onClose={() => setShowArrivalPicker(false)}
+            />
+
+            {/* ── Location ── */}
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>VENUE / FIELD <Text style={st.fieldHint}>optional</Text></Text>
+
+            {savedFields.length > 0 && (
+              <View style={[st.typeRow, st.wrapRow, { marginBottom: 10 }]}>
+                {savedFields.map((f) => {
+                  const active = fieldId === f.id;
+                  return (
+                    <TouchableOpacity
+                      key={f.id}
+                      style={[st.typeBtn, st.chipBtn, active && { backgroundColor: rgba(0.12), borderColor: primaryColor }]}
+                      onPress={() => {
+                        setFieldId(f.id);
+                        setLocationName(f.name);
+                        setAddress(f.address ?? '');
+                        setLat(f.lat); setLng(f.lng);
+                        const mapped = mapSurfaceType(f.surface_type);
+                        if (mapped) setSurface(mapped);
+                      }}
+                    >
+                      <Text style={[st.typeBtnText, active && { color: primaryColor }]}>{f.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {fieldId ? (
+              <View style={st.selectedFieldBox}>
+                <Ionicons name="checkmark-circle" size={18} color={primaryColor} />
+                <View style={{ flex: 1 }}>
+                  <Text style={st.selectedFieldName}>{locationName}</Text>
+                  <Text style={st.selectedFieldAddress}>{address || 'No address on file for this field'}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setFieldId(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Text style={[st.changeLink, { color: primaryColor }]}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={st.fieldInput}
+                  value={locationName}
+                  onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
+                  placeholder="Habernickel Park"
+                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  returnKeyType="done"
+                />
+                <Text style={[st.fieldLabel, { marginTop: 12 }]}>ADDRESS <Text style={st.fieldHint}>optional</Text></Text>
+                <SmartLocationInput
+                  initialValue={address}
+                  onResult={(r) => {
+                    setFieldId(null);
+                    if (!locationName) setLocationName(r.name);
+                    setAddress(r.address ?? '');
+                    setLat(r.lat ?? null);
+                    setLng(r.lng ?? null);
+                  }}
+                />
+              </>
+            )}
+
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>FIELD DETAILS <Text style={st.fieldHint}>optional</Text></Text>
             <TextInput
-              style={[st.fieldInput, { minHeight: 56 }]}
-              value={address}
-              onChangeText={setAddress}
-              placeholder="1037 Hillcrest Road, Ridgewood, NJ 07450"
+              style={st.fieldInput}
+              value={fieldNotes}
+              onChangeText={setFieldNotes}
+              placeholder="Field 1, Pitch B…"
+              placeholderTextColor={PULSE_COLORS.ui.muted}
+              returnKeyType="done"
+            />
+
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>SURFACE</Text>
+            <View style={st.typeRow}>
+              {surfaceOpts.map((opt) => (
+                <TouchableOpacity
+                  key={String(opt.value)}
+                  style={[st.typeBtn, surface === opt.value && { backgroundColor: opt.color + '22', borderColor: opt.color }]}
+                  onPress={() => setSurface(opt.value)}
+                >
+                  <Text style={[st.typeBtnText, surface === opt.value && { color: opt.color }]}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>UNIFORM</Text>
+            <View style={st.typeRow}>
+              {uniformOpts.map((opt) => (
+                <TouchableOpacity
+                  key={String(opt.value)}
+                  style={[st.typeBtn, uniform === opt.value && { backgroundColor: rgba(0.12), borderColor: primaryColor }]}
+                  onPress={() => setUniform(opt.value)}
+                >
+                  <Text style={[st.typeBtnText, uniform === opt.value && { color: primaryColor }]}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* ── Details ── */}
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>TEAM MESSAGE <Text style={st.fieldHint}>visible to players &amp; parents</Text></Text>
+            <TextInput
+              style={[st.fieldInput, st.notesInput]}
+              value={playerNotes}
+              onChangeText={setPlayerNotes}
+              placeholder="Visible to all players and parents…"
               placeholderTextColor={PULSE_COLORS.ui.muted}
               multiline
             />
+
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>COACH NOTES <Text style={st.fieldHint}>coach only</Text></Text>
+            <TextInput
+              style={[st.fieldInput, st.notesInput]}
+              value={coachNotes}
+              onChangeText={setCoachNotes}
+              placeholder="Notes for coaching staff…"
+              placeholderTextColor={PULSE_COLORS.ui.muted}
+              multiline
+            />
+
+            <Text style={[st.fieldLabel, { marginTop: 16 }]}>VIDEO LINK <Text style={st.fieldHint}>optional</Text></Text>
+            <TextInput
+              style={st.fieldInput}
+              value={videoUrl}
+              onChangeText={setVideoUrl}
+              placeholder="Veo, YouTube, Hudl URL…"
+              placeholderTextColor={PULSE_COLORS.ui.muted}
+              autoCapitalize="none"
+              keyboardType="url"
+              returnKeyType="done"
+            />
+
+            {/* ── RSVP — hidden for a dated tournament import, since RSVP
+                 lives at the tournament level for those games ── */}
+            {!isDatedTournamentImport && (
+              <>
+                <View style={[st.switchRow, { marginTop: 20 }]}>
+                  <Text style={st.fieldLabel}>REQUIRE RSVP</Text>
+                  <Switch
+                    value={requireRsvp}
+                    onValueChange={setRequireRsvp}
+                    trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                    thumbColor="#fff"
+                  />
+                </View>
+
+                {requireRsvp && (
+                  <>
+                    <Text style={[st.fieldLabel, { marginTop: 12 }]}>RSVP CLOSES</Text>
+                    <View style={[st.typeRow, st.wrapRow]}>
+                      {RSVP_LOCK_CHOICES.map((v) => (
+                        <TouchableOpacity
+                          key={v}
+                          style={[st.typeBtn, st.chipBtn, rsvpLockHours === v && { backgroundColor: rgba(0.12), borderColor: primaryColor }]}
+                          onPress={() => setRsvpLockHours(v)}
+                        >
+                          <Text style={[st.typeBtnText, rsvpLockHours === v && { color: primaryColor }]}>{v} hrs before</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
 
             <View style={{ height: 48 }} />
           </ScrollView>
@@ -876,4 +1316,30 @@ const st = StyleSheet.create({
   typeRow: { flexDirection: 'row', gap: 8 },
   typeBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border },
   typeBtnText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+
+  // Wrapping chip rows (variable item counts: saved fields, duration,
+  // arrive-early, RSVP lock hours) — typeBtn's flex:1 only makes sense for
+  // fixed 2-3 item rows, so these override it to a natural width per chip.
+  wrapRow: { flexWrap: 'wrap' },
+  chipBtn: { flex: 0, paddingHorizontal: 14 },
+
+  notesInput: { minHeight: 64, textAlignVertical: 'top' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+
+  pickerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14,
+  },
+  fieldValue: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  fieldValueMuted: { fontSize: 15, fontWeight: '400', color: PULSE_COLORS.ui.muted },
+
+  selectedFieldBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+  },
+  selectedFieldName: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  selectedFieldAddress: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  changeLink: { fontSize: 13, fontWeight: '700' },
 });

@@ -1,4 +1,47 @@
 /**
+ * Parses a time string that might be 12-hour ("6:00 PM", "6:00pm", "6 PM",
+ * "6:00 p.m.") or 24-hour ("18:00", "06:00"). Only converts when an AM/PM
+ * marker is actually present — a bare "6:00" is trusted as already being
+ * 24-hour (6am), which is both the correct reading and idempotent for
+ * genuinely-24-hour input. Returns null for anything that isn't a real time
+ * (e.g. "TBD"), rather than silently producing NaN that only fails much
+ * later at a `.toISOString()` call several steps downstream.
+ *
+ * This exists because AI-parsed schedule uploads are told to return 24-hour
+ * time but aren't guaranteed to — this is the client-side safety net.
+ */
+export function parseFlexibleTime(input: string | null | undefined): { h: number; m: number } | null {
+  if (!input) return null;
+  const s = input.trim();
+
+  const twelveHour = s.match(/^(\d{1,2})(?::(\d{2}))?\s*([AaPp])\.?[Mm]\.?$/);
+  if (twelveHour) {
+    let h = parseInt(twelveHour[1], 10);
+    const m = twelveHour[2] ? parseInt(twelveHour[2], 10) : 0;
+    if (h < 1 || h > 12 || m < 0 || m > 59) return null;
+    const isPM = twelveHour[3].toLowerCase() === 'p';
+    if (isPM && h !== 12) h += 12;
+    if (!isPM && h === 12) h = 0;
+    return { h, m };
+  }
+
+  const twentyFourHour = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (twentyFourHour) {
+    const h = parseInt(twentyFourHour[1], 10);
+    const m = parseInt(twentyFourHour[2], 10);
+    if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+    return { h, m };
+  }
+
+  return null;
+}
+
+/** Formats a parsed time back to the "HH:MM" 24-hour string the DB and the rest of the app expect. */
+export function toTimeString(t: { h: number; m: number }): string {
+  return `${String(t.h).padStart(2, '0')}:${String(t.m).padStart(2, '0')}`;
+}
+
+/**
  * Given an event's kickoff time ("HH:MM") and how many minutes early a
  * coach wants players to arrive, returns the arrival time as a 12-hour
  * clock string (e.g. "9:40 AM").

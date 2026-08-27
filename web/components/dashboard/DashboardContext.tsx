@@ -217,6 +217,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
               setClub(prev => prev ? { ...prev, suspended_at: data.suspended_at } : prev);
             }
           });
+          // Same staleness class as club.suspended_at above — a team added
+          // in another tab (or the mobile app) never pushes anything to
+          // this one, so it just sits missing from the team switcher.
+          loadTeams(profile).then(setTeams);
         }
       });
     }

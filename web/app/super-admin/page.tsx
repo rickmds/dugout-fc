@@ -521,6 +521,10 @@ function App({ user }: { user: User }) {
         const cid = teamToClubRef.current[p.team_id];
         addActivity({ id: `pl-${p.id}`, icon: '🎽', text: `${p.full_name} added to roster`, club: cid ? (clubNameRef.current[cid] ?? '?') : '?', ts: new Date(), isLive: true });
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'teams' }, payload => {
+        const t = payload.new as { id: string; club_id: string; name: string };
+        addActivity({ id: `tm-${t.id}`, icon: '🏟️', text: `New team: ${t.name}`, club: clubNameRef.current[t.club_id] ?? '?', ts: new Date(), isLive: true });
+      })
       .subscribe(status => setLiveConnected(status === 'SUBSCRIBED'));
     return () => { supabase.removeChannel(channel); };
   }, [addActivity]);

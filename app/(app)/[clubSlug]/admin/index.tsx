@@ -394,13 +394,22 @@ export default function AdminPanel() {
         onBack={() => router.back()}
         onPressTitle={(isOrgAdmin || allTeams.length > 1) ? () => { setSearch(''); setPickerVisible(true); } : undefined}
         right={
-          <TouchableOpacity
-            style={[headerBtnStyle as object, { backgroundColor: secondaryColor }]}
-            onPress={() => router.push(`/(app)/${slug}/create-event` as any)}
-          >
-            <Ionicons name="add" size={16} color={onSecondary} />
-            <Text style={{ color: onSecondary, fontWeight: '800', fontSize: 12 }}>Event</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              style={[headerBtnStyle as object, { backgroundColor: PULSE_COLORS.ui.surfaceAlt }]}
+              onPress={() => router.push(`/(app)/${slug}/create-tournament` as any)}
+            >
+              <Ionicons name="trophy-outline" size={14} color={PULSE_COLORS.ui.textSecondary} />
+              <Text style={{ color: PULSE_COLORS.ui.textSecondary, fontWeight: '800', fontSize: 12 }}>Tournament</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[headerBtnStyle as object, { backgroundColor: secondaryColor }]}
+              onPress={() => router.push(`/(app)/${slug}/create-event` as any)}
+            >
+              <Ionicons name="add" size={16} color={onSecondary} />
+              <Text style={{ color: onSecondary, fontWeight: '800', fontSize: 12 }}>Event</Text>
+            </TouchableOpacity>
+          </View>
         }
       />
 

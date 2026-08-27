@@ -22,6 +22,7 @@ import { useAuth } from '../../../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../../../constants/colors';
 import { useClub } from '../../../../../../hooks/useClub';
 import ClubHeader from '../../../../../../components/ui/ClubHeader';
+import { getGameResult, sendTournamentResultPush } from '../../../../../../lib/tournaments';
 import {
   Formation,
   FORMATIONS_BY_FORMAT,
@@ -280,6 +281,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
   const [playerStats,     setPlayerStats]     = useState<Record<string, PlayerStatEntry>>({});
   const [statsSaving,     setStatsSaving]     = useState(false);
   const [clubId,          setClubId]          = useState<string | null>(null);
+  const [tournamentId,    setTournamentId]    = useState<string | null>(null);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const pendingCloseRef   = useRef(false);
@@ -366,11 +368,12 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
     if (!eventId) return;
 
     let loadedAgeGroup: string | null = null;
-    const { data: ev } = await supabase.from('events').select('title, team_id, score_home, score_away').eq('id', eventId).single();
+    const { data: ev } = await supabase.from('events').select('title, team_id, score_home, score_away, tournament_id, type').eq('id', eventId).single();
     if (ev) {
       setEventTitle((ev as any).title ?? '');
       setScoreHome((ev as any).score_home ?? 0);
       setScoreAway((ev as any).score_away ?? 0);
+      setTournamentId((ev as any).tournament_id ?? null);
       const tid = (ev as any).team_id as string;
       setTeamId(tid);
       const { data: td } = await supabase.from('teams').select('age_group,club_id').eq('id', tid).single();
@@ -1246,7 +1249,12 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                     ? <ActivityIndicator size="small" color={tokenTextColor} />
                     : <Text style={[st.overlayBtnText, { color: tokenTextColor }]}>Start 2nd Half</Text>}
                 </TouchableOpacity>
-              : <TouchableOpacity style={[st.overlayBtn, { backgroundColor: primaryColor }]} onPress={async () => { await saveScore(scoreHome, scoreAway); pendingCloseRef.current = true; setOverlay(null); }}>
+              : <TouchableOpacity style={[st.overlayBtn, { backgroundColor: primaryColor }]} onPress={async () => {
+                  await saveScore(scoreHome, scoreAway);
+                  sendTournamentResultPush(tournamentId, teamId, scoreHome, scoreAway);
+                  pendingCloseRef.current = true;
+                  setOverlay(null);
+                }}>
                   <Text style={[st.overlayBtnText, { color: tokenTextColor }]}>Save Result & Close</Text>
                 </TouchableOpacity>}
           </View>

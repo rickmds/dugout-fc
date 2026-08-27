@@ -46,11 +46,20 @@ export async function GET(req: NextRequest) {
   }
 
   const eligible = (candidates ?? []).filter(ev => {
-    const start = zonedTimeToUtc(ev.event_date, ev.event_time!, ev.teams?.clubs?.timezone ?? 'America/New_York');
-    const durationMinutes = ev.duration_minutes ?? FALLBACK_GAME_DURATION_MINUTES;
-    const windowStart = new Date(start.getTime() + durationMinutes * 60000);
-    const windowEnd   = new Date(windowStart.getTime() + PROMPT_WINDOW_MINUTES * 60000);
-    return now >= windowStart && now <= windowEnd;
+    // One event with a bad date/time/timezone must not throw here — this
+    // runs inside .filter() over every candidate, so an uncaught throw
+    // would kill reflection prompts for every OTHER event in this run too,
+    // not just the bad one, with nobody watching a cron job to notice.
+    try {
+      const start = zonedTimeToUtc(ev.event_date, ev.event_time!, ev.teams?.clubs?.timezone ?? 'America/New_York');
+      const durationMinutes = ev.duration_minutes ?? FALLBACK_GAME_DURATION_MINUTES;
+      const windowStart = new Date(start.getTime() + durationMinutes * 60000);
+      const windowEnd   = new Date(windowStart.getTime() + PROMPT_WINDOW_MINUTES * 60000);
+      return now >= windowStart && now <= windowEnd;
+    } catch (err) {
+      console.error(`reflection-prompts cron: skipping event ${ev.id}`, err);
+      return false;
+    }
   });
 
   let notified = 0;

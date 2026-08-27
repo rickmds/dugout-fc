@@ -57,6 +57,7 @@ type NextEvent = {
   field_type: string | null;
   rsvp_lock_at: string | null;
   arrival_buffer_minutes: number | null;
+  tournament_id: string | null;
 };
 
 type Headcount = { going: number; notGoing: number; tbd: number; confirmedGuests?: number };
@@ -292,6 +293,11 @@ export default function HomeScreen() {
   const [nextTrainingWeather, setNextTrainingWeather]   = useState<WeatherData | null>(null);
   const [nextGameDriveTime, setNextGameDriveTime]       = useState<string | null>(null);
   const [nextTrainingDriveTime, setNextTrainingDriveTime] = useState<string | null>(null);
+  // Dated (weekend/round-robin) tournaments centralize RSVP at the tournament
+  // level — a next-event card linked to one of these shows a link instead of
+  // Going/Can't-go buttons. Undated (knockout) tournaments keep independent
+  // per-game RSVP, so they're deliberately excluded from this set.
+  const [datedTournamentIds, setDatedTournamentIds] = useState<Set<string>>(new Set());
   // A guardian can have more than one player on this team (e.g. twins) —
   // every section below (hero card, quick RSVP, season stats, fees) is
   // keyed per player rather than assuming a single "my player".
@@ -538,8 +544,8 @@ export default function HomeScreen() {
     // there's simply nothing to show.
     const CRITICAL_TIMEOUT_MS = 10_000;
     const criticalResult = await withTimeout(Promise.all([
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
+      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
       supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       // get_my_guarded_players() also checks player_guardians — a second
       // guardian otherwise never saw their own kid's card/RSVP on Home at all.
@@ -549,6 +555,7 @@ export default function HomeScreen() {
       // rendered once per guarded player.
       (supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).order('full_name'),
       sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
+      supabase.from('tournaments').select('id, start_date').eq('team_id', team.id),
     ]), CRITICAL_TIMEOUT_MS);
 
     if (criticalResult === TIMEOUT) {
@@ -564,6 +571,7 @@ export default function HomeScreen() {
       announcementRes,
       playerRes,
       { data: calloutData },
+      { data: tournamentRows },
     ] = criticalResult;
     setLoadError(false);
 
@@ -571,9 +579,15 @@ export default function HomeScreen() {
     const nextT = (trainingEvents as NextEvent[])?.[0] ?? null;
     const guardedPlayers = ((playerRes as any).data as MyPlayer[] | null) ?? [];
     const activeCallouts = (calloutData ?? []) as Callout[];
+    const datedIds = new Set(
+      ((tournamentRows ?? []) as { id: string; start_date: string | null }[])
+        .filter((t) => t.start_date != null)
+        .map((t) => t.id)
+    );
 
     setNextGame(nextG);
     setNextTraining(nextT);
+    setDatedTournamentIds(datedIds);
     setNextGameWeather(null);
     setNextTrainingWeather(null);
     setNextGameDriveTime(null);
@@ -907,6 +921,15 @@ export default function HomeScreen() {
       setPulseGamePct(gameIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(gameIds)) / (gameIds.length * playerN)) * 100) : null);
       setPulseTrainingEvents(trainingIds.length);
       setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(trainingIds)) / (trainingIds.length * playerN)) * 100) : null);
+    } else {
+      // Without this, switching to a team with no players (or viewing as a
+      // non-coach) left these four at whatever the PREVIOUSLY active team
+      // last set them to — a brand-new, empty team would silently show a
+      // prior team's real attendance numbers.
+      setPulseGameEvents(0);
+      setPulseGamePct(null);
+      setPulseTrainingEvents(0);
+      setPulseTrainingPct(null);
     }
 
     // Polls
@@ -1236,9 +1259,12 @@ export default function HomeScreen() {
       : event?.uniform === 'away' ? awayKitColor
       : event?.uniform === 'training' ? trainingKitColor
       : null;
-    const uniformLabel = event?.type === 'game'
-      ? (event?.home_away === 'away' ? 'AWAY' : 'HOME')
+    // null for a tournament game (neutral venue, no home/away concept) —
+    // must not default to HOME.
+    const uniformLabel = event?.type === 'game' && event?.home_away
+      ? (event.home_away === 'away' ? 'AWAY' : 'HOME')
       : null;
+    const isDatedTournamentGame = !!event?.tournament_id && datedTournamentIds.has(event.tournament_id);
 
     return (
       <View key={label}>
@@ -1396,6 +1422,15 @@ export default function HomeScreen() {
             {/* RSVP — one row per guarded player, so a family with more than
                 one on this team (e.g. twins) gets independent controls */}
             {!isCoach && myPlayers.length > 0 ? (
+              isDatedTournamentGame ? (
+                <TouchableOpacity
+                  onPress={() => router.push(`/(app)/${slug}/tournament/${event.tournament_id}` as never)}
+                >
+                  <Text style={[styles.rsvpBtnText, { color: primaryColor, fontWeight: '700' }]}>
+                    RSVP via tournament →
+                  </Text>
+                </TouchableOpacity>
+              ) : (
               <View style={{ gap: 8 }}>
                 {myPlayers.map((p) => {
                   const rsvpStatus = rsvpStatusByPlayer[p.id] ?? null;
@@ -1449,6 +1484,7 @@ export default function HomeScreen() {
                   );
                 })}
               </View>
+              )
             ) : null}
           </TouchableOpacity>
         ) : (

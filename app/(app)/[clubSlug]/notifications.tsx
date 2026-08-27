@@ -67,6 +67,11 @@ const TYPE_CFG: Record<string, { icon: React.ComponentProps<typeof Ionicons>['na
   payment_confirmed:    { icon: 'checkmark-circle-outline',  color: PULSE_COLORS.status.success },
   payment_failed:       { icon: 'close-circle-outline',      color: PULSE_COLORS.status.error },
   payment_received:     { icon: 'cash-outline',                color: PULSE_COLORS.status.success },
+  tournament_rsvp_reminder: { icon: 'time-outline',            color: '#EAB308' },
+  tournament_advance:       { icon: 'trophy-outline',          color: '#EAB308' },
+  tournament_eliminated:    { icon: 'flag-outline',            color: '#EAB308' },
+  tournament_game_day:      { icon: 'football-outline',        color: '#EAB308' },
+  tournament_cancelled:     { icon: 'close-circle-outline',    color: PULSE_COLORS.status.error },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -284,6 +289,15 @@ export default function NotificationsScreen() {
       case 'event_cancelled':
       case 'field_closure':
         router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+        break;
+      case 'tournament_rsvp_reminder':
+      case 'tournament_advance':
+      case 'tournament_eliminated':
+      case 'tournament_game_day':
+      case 'tournament_cancelled':
+        d?.tournament_id
+          ? router.push(`/(app)/${slug}/tournament/${d.tournament_id}` as any)
+          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
         break;
       case 'new_announcement':
         router.push(`/(app)/${slug}/(tabs)/chat` as any); break;

@@ -415,7 +415,9 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
   function onPressIn() { Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start(); }
   function onPressOut() { Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 20 }).start(); }
 
-  const homeAwayLabel = event.home_away === 'away' ? 'AWAY' : 'HOME';
+  // null for a tournament game (neutral venue, no home/away concept) —
+  // must not default to HOME.
+  const homeAwayLabel = event.home_away === 'away' ? 'AWAY' : event.home_away === 'home' ? 'HOME' : null;
   const homeAwayColor = event.home_away === 'away' ? '#60A5FA' : '#22C55E';
   const kitLabel = event.uniform === 'home' ? 'Home Kit'
     : event.uniform === 'away' ? 'Away Kit'
@@ -467,7 +469,7 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
           )}
 
           <View style={styles.cardTopRow}>
-            <Text style={[styles.homeAwayLabel, { color: homeAwayColor }]}>{homeAwayLabel}</Text>
+            {homeAwayLabel && <Text style={[styles.homeAwayLabel, { color: homeAwayColor }]}>{homeAwayLabel}</Text>}
             <Text style={styles.teamLabel} numberOfLines={1}>
               {event.team_name}{event.club?.name ? ` · ${event.club.name}` : ''}
             </Text>

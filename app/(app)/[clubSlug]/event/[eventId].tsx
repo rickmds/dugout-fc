@@ -32,6 +32,7 @@ import ReflectionSheet, { FACES } from '../../../../components/reflection/Reflec
 import ShoutoutSheet from '../../../../components/shoutout/ShoutoutSheet';
 import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
 import { sendProfilesPush } from '../../../../lib/push';
+import { getGameResult, RESULT_COLORS, sendTournamentResultPush } from '../../../../lib/tournaments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
 import CreatePollModal from '../../../../components/home/CreatePollModal';
@@ -190,6 +191,12 @@ type EventDetail = {
   cancelled_at: string | null;
   cancellation_reason: string | null;
   home_away: 'home' | 'away' | null;
+  tournament_id: string | null;
+  round_label: string | null;
+  tournament_name: string | null;
+  tournament_start_date: string | null;
+  score_home: number | null;
+  score_away: number | null;
 };
 
 type Player = {
@@ -327,7 +334,7 @@ function rsvpDeadlineLabel(lockAt: string): string {
 }
 
 export default function EventDetailScreen() {
-  const { primaryColor, rgba, homeKitColor, awayKitColor, trainingKitColor } = useClub();
+  const { primaryColor, rgba, homeKitColor, awayKitColor, trainingKitColor, clubName, logoUrl } = useClub();
   const { eventId, clubSlug, section } = useLocalSearchParams<{ eventId: string; clubSlug: string; section?: string }>();
   const { team, allTeams, selectTeam, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
@@ -379,6 +386,11 @@ export default function EventDetailScreen() {
   const [deleting, setDeleting] = useState(false);
   const [matchStats, setMatchStats] = useState<MatchStatRow[] | null>(null);
   const [matchTrackerOpen, setMatchTrackerOpen] = useState(false);
+  const [scoreModalOpen, setScoreModalOpen] = useState(false);
+  const [scoreHomeInput, setScoreHomeInput] = useState(0);
+  const [scoreAwayInput, setScoreAwayInput] = useState(0);
+  const [savingScore, setSavingScore] = useState(false);
+  const [sessionPlanExists, setSessionPlanExists] = useState(false);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [driveTime, setDriveTime] = useState<string | null>(null);
 
@@ -437,7 +449,7 @@ export default function EventDetailScreen() {
     setLoading(true);
 
     const { data: eventRow } = await supabase.from('events')
-      .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away')
+      .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away,tournament_id,round_label,score_home,score_away,tournaments(name,start_date)')
       .eq('id', eventId).single();
 
     // A notification tap lands here without ever switching the active team
@@ -459,7 +471,7 @@ export default function EventDetailScreen() {
 
     try {
 
-    const [playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
+    const [playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes, sessionPlanRes] = await Promise.all([
       supabase.from('players').select('id,full_name,jersey_number,position,profile_id')
         .eq('team_id', team.id).order('jersey_number'),
       supabase.from('event_rsvps').select('player_id,status').eq('event_id', eventId),
@@ -472,9 +484,20 @@ export default function EventDetailScreen() {
         .eq('event_id', eventId).eq('status', 'full_time').maybeSingle(),
       supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId),
       supabase.from('event_attendance').select('player_id,status').eq('event_id', eventId),
+      (supabase as any).from('session_plans').select('id').eq('event_id', eventId).maybeSingle(),
     ]);
+    setSessionPlanExists(!!sessionPlanRes.data);
 
-    setEvent(eventRow as unknown as EventDetail);
+    // Supabase's join-cardinality inference for tournaments(name) isn't
+    // guaranteed to return an object vs a one-element array — same gotcha
+    // as TeamContext's clubs(*) join — so normalize defensively.
+    const tRaw = (eventRow as any)?.tournaments;
+    const tournamentJoin = Array.isArray(tRaw) ? tRaw[0] ?? null : tRaw ?? null;
+    setEvent(eventRow ? {
+      ...eventRow,
+      tournament_name: tournamentJoin?.name ?? null,
+      tournament_start_date: tournamentJoin?.start_date ?? null,
+    } as unknown as EventDetail : null);
     setPlayers((playersRes.data ?? []) as Player[]);
     setRsvps((rsvpsRes.data ?? []) as RsvpRow[]);
     markEventNotificationsRead();
@@ -702,7 +725,7 @@ export default function EventDetailScreen() {
 
   function openDuplicate() {
     if (!event) return;
-    router.push(`/(app)/${clubSlug}/create-event?duplicateFrom=${event.id}` as any);
+    router.push(`/(app)/${clubSlug}/create-event?duplicateFrom=${event.id}&tournamentId=${event.tournament_id ?? ''}` as any);
   }
 
   function openLineup() {
@@ -726,6 +749,33 @@ export default function EventDetailScreen() {
       return;
     }
     setMatchTrackerOpen(true);
+  }
+
+  // A lightweight alternative to Match Tracker for a coach who just wants to
+  // log the final result — Match Tracker (lineup, live clock, subs) is a lot
+  // of setup for a coach who didn't run it live and just wants the score in.
+  function openScoreModal() {
+    if (!event) return;
+    setScoreHomeInput(event.score_home ?? 0);
+    setScoreAwayInput(event.score_away ?? 0);
+    setScoreModalOpen(true);
+  }
+
+  async function handleSaveScore() {
+    if (!event) return;
+    setSavingScore(true);
+    const { error } = await supabase.from('events')
+      .update({ score_home: scoreHomeInput, score_away: scoreAwayInput })
+      .eq('id', event.id);
+    setSavingScore(false);
+    if (error) {
+      Alert.alert('Error', 'Could not save the score. Please check your connection and try again.');
+      return;
+    }
+    setEvent((prev) => prev ? { ...prev, score_home: scoreHomeInput, score_away: scoreAwayInput } : prev);
+    setScoreModalOpen(false);
+    // Only fires once, here, on an explicit save — not on every +/- tap.
+    sendTournamentResultPush(event.tournament_id, event.team_id, scoreHomeInput, scoreAwayInput);
   }
 
   function confirmDelete() {
@@ -1284,7 +1334,10 @@ export default function EventDetailScreen() {
     ? computeLeaveBy(event.event_time, event.arrival_buffer_minutes, driveMins, 5)
     : null;
   const rsvpClosed = event.rsvp_lock_at ? new Date(event.rsvp_lock_at) <= new Date() : false;
-  const deadlineLabel = event.rsvp_lock_at ? rsvpDeadlineLabel(event.rsvp_lock_at) : null;
+  // A dated (weekend/round-robin) tournament's games no longer carry a
+  // meaningful per-game deadline — RSVP happens once at the tournament level.
+  const isDatedTournamentGame = !!event.tournament_id && !!event.tournament_start_date;
+  const deadlineLabel = event.rsvp_lock_at && !isDatedTournamentGame ? rsvpDeadlineLabel(event.rsvp_lock_at) : null;
 
   function switchToAvailability(tab: 'attending' | 'not_attending' | 'none') {
     setActiveRsvpTab(tab);
@@ -1536,6 +1589,26 @@ export default function EventDetailScreen() {
                 </Text>
               </View>
             )}
+            {event.tournament_id && event.tournament_name && (
+              <TouchableOpacity
+                style={[styles.homeAwayBadge, { backgroundColor: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)' }]}
+                onPress={() => router.push(`/(app)/${clubSlug}/tournament/${event.tournament_id}` as any)}
+              >
+                <Text style={[styles.homeAwayText, { color: '#EAB308' }]} numberOfLines={1}>
+                  🏆 {event.tournament_name}{event.round_label ? ` · ${event.round_label}` : ''}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {(() => {
+              const result = getGameResult(event);
+              return result ? (
+                <View style={[styles.homeAwayBadge, { backgroundColor: `${RESULT_COLORS[result.label]}22`, borderColor: `${RESULT_COLORS[result.label]}55` }]}>
+                  <Text style={[styles.homeAwayText, { color: RESULT_COLORS[result.label] }]}>
+                    {result.label} {result.ourScore}–{result.oppScore}
+                  </Text>
+                </View>
+              ) : null;
+            })()}
           </View>
           <Text style={[styles.title, event.cancelled_at ? styles.titleCancelled : null]}>{event.title}</Text>
 
@@ -1774,7 +1847,16 @@ export default function EventDetailScreen() {
                             {deadlineLabel}
                           </Text>
                         )}
-                        {!rsvpClosed && upcoming && (
+                        {isDatedTournamentGame ? (
+                          <TouchableOpacity
+                            style={{ marginTop: 10 }}
+                            onPress={() => router.push(`/(app)/${clubSlug}/tournament/${event.tournament_id}` as any)}
+                          >
+                            <Text style={[styles.metaSecondary, { color: primaryColor, fontWeight: '700' }]}>
+                              Manage RSVP for {event.tournament_name} →
+                            </Text>
+                          </TouchableOpacity>
+                        ) : !rsvpClosed && upcoming && (
                           <View style={[styles.rsvpInlineRow, { marginTop: 10 }]}>
                             <TouchableOpacity
                               style={[styles.rsvpInlineBtn, status === 'attending' && styles.rsvpInlineBtnGoing]}
@@ -2072,6 +2154,13 @@ export default function EventDetailScreen() {
                   <Ionicons name="timer-outline" size={17} color={primaryColor} />
                 </View>
                 <Text style={styles.actionBtnText}>Match Tracker</Text>
+                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openScoreModal} activeOpacity={0.7}>
+                <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
+                  <Ionicons name="football-outline" size={17} color={primaryColor} />
+                </View>
+                <Text style={styles.actionBtnText}>{event.score_home != null ? 'Edit Score' : 'Enter Score'}</Text>
                 <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
               </TouchableOpacity>
             </View>
@@ -2960,6 +3049,78 @@ export default function EventDetailScreen() {
         )}
       </Modal>
 
+      {/* Lightweight score entry — an alternative to Match Tracker for a
+          coach who just wants to log the final result after the fact */}
+      <Modal
+        visible={scoreModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setScoreModalOpen(false)}
+      >
+        <View style={styles.scoreModalOverlay}>
+          <View style={styles.scoreModalCard}>
+            <Text style={styles.scoreModalTitle}>{event?.score_home != null ? 'Edit Score' : 'Enter Score'}</Text>
+
+            <View style={styles.scoreModalRow}>
+              <View style={styles.scoreModalTeam}>
+                {logoUrl ? (
+                  <Image source={{ uri: logoUrl }} style={styles.scoreModalLogo} />
+                ) : (
+                  <View style={[styles.scoreModalLogoFb, { backgroundColor: rgba(0.14) }]}>
+                    <Text style={[styles.scoreModalLogoFbText, { color: primaryColor }]}>
+                      {(clubName || 'US').slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+                <Text style={[styles.scoreModalName, { color: primaryColor }]} numberOfLines={1}>
+                  {(clubName || 'Us').split(' ')[0]}
+                </Text>
+                <Text style={[styles.scoreModalNum, { color: primaryColor }]}>{scoreHomeInput}</Text>
+                <View style={styles.scoreModalBtns}>
+                  <TouchableOpacity onPress={() => setScoreHomeInput((n) => Math.max(0, n - 1))} style={styles.scoreModalBtn} hitSlop={8}>
+                    <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setScoreHomeInput((n) => n + 1)} style={[styles.scoreModalBtn, { borderColor: primaryColor + '55', backgroundColor: primaryColor + '18' }]} hitSlop={8}>
+                    <Ionicons name="add" size={20} color={primaryColor} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={styles.scoreModalSep}>—</Text>
+
+              <View style={styles.scoreModalTeam}>
+                <View style={styles.scoreModalOppBadge}>
+                  <Ionicons name="shield-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                </View>
+                <Text style={styles.scoreModalName} numberOfLines={1}>
+                  {(event?.title ?? '').replace(/^(vs\.?|@)\s+/i, '').trim() || 'Them'}
+                </Text>
+                <Text style={[styles.scoreModalNum, { color: PULSE_COLORS.ui.textSecondary }]}>{scoreAwayInput}</Text>
+                <View style={styles.scoreModalBtns}>
+                  <TouchableOpacity onPress={() => setScoreAwayInput((n) => Math.max(0, n - 1))} style={styles.scoreModalBtn} hitSlop={8}>
+                    <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setScoreAwayInput((n) => n + 1)} style={[styles.scoreModalBtn, { borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.08)' }]} hitSlop={8}>
+                    <Ionicons name="add" size={20} color={PULSE_COLORS.ui.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.scoreModalActions}>
+              <TouchableOpacity style={styles.scoreModalCancelBtn} onPress={() => setScoreModalOpen(false)} disabled={savingScore}>
+                <Text style={styles.scoreModalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.scoreModalSaveBtn, { backgroundColor: primaryColor }]} onPress={handleSaveScore} disabled={savingScore}>
+                {savingScore
+                  ? <ActivityIndicator size="small" color="#000" />
+                  : <Text style={styles.scoreModalSaveBtnText}>Save Score</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {isCoach && team && profile && event && (
         <CreatePollModal
           visible={showEventPollModal}
@@ -3586,4 +3747,37 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
     alignItems: 'center', justifyContent: 'center',
   },
+
+  // Score entry modal
+  scoreModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  scoreModalCard: {
+    width: '100%', maxWidth: 380, backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 20,
+  },
+  scoreModalTitle: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center', marginBottom: 18 },
+  scoreModalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
+  scoreModalTeam: { flex: 1, alignItems: 'center', gap: 6 },
+  scoreModalLogo: { width: 32, height: 32, borderRadius: 8 },
+  scoreModalLogoFb: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  scoreModalLogoFbText: { fontSize: 12, fontWeight: '800' },
+  scoreModalOppBadge: {
+    width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  scoreModalName: { fontSize: 12.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, maxWidth: 100 },
+  scoreModalNum: { fontSize: 34, fontWeight: '900' },
+  scoreModalBtns: { flexDirection: 'row', gap: 8, marginTop: 2 },
+  scoreModalBtn: {
+    width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+  },
+  scoreModalSep: { fontSize: 20, fontWeight: '700', color: PULSE_COLORS.ui.muted, marginTop: 30 },
+  scoreModalActions: { flexDirection: 'row', gap: 10, marginTop: 22 },
+  scoreModalCancelBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  scoreModalCancelBtnText: { fontSize: 14.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  scoreModalSaveBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
+  scoreModalSaveBtnText: { fontSize: 14.5, fontWeight: '800', color: '#000' },
 });

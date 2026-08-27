@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
@@ -57,11 +58,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     let teams: Team[];
 
-    if (profile.role === 'org_admin') {
+    if (profile.role === 'org_admin' || profile.role === 'app_admin') {
       // Org admins implicitly manage every team in their home club (no
       // team_members row needed — RLS grants this by role+club_id), but may
       // ALSO be an explicit team_members guest coach on teams at other
       // clubs. Fetch both and merge, so a cross-club guest team isn't lost.
+      //
+      // app_admin (Rick) gets the identical treatment for his own home
+      // club — RLS already grants app_admin unconditional SELECT on every
+      // team regardless of club (current_user_role() = 'app_admin' in the
+      // teams policy), but this hook itself only ever asked for that when
+      // role was exactly 'org_admin', so a brand-new team never showed up
+      // for him here until he was also explicitly added via team_members —
+      // a gap that has nothing to do with RLS or staleness, just this
+      // branch never having covered his own role. Tagged as 'org_admin'
+      // rather than a new tier since "implicit full access to every team
+      // in this club" is exactly what that tier already means everywhere
+      // else in the app that reads myRole.
       const [homeRes, memberRes, saved] = await Promise.all([
         supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at'),
         supabase.from('team_members').select('role, teams(*, clubs(*))').eq('profile_id', profile.id),
@@ -100,6 +113,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetchTeams();
   }, [fetchTeams]);
+
+  // A team created elsewhere (the web dashboard, another device) never
+  // pushes anything to an already-open app — it just sits missing from the
+  // switcher until the app is force-quit and relaunched. Refetch whenever
+  // the app returns to the foreground, mirroring useAuth.tsx's identical
+  // fix for profile/club staleness. Kept in a ref so this listener doesn't
+  // get torn down and resubscribed on every profile change.
+  const fetchTeamsRef = useRef(fetchTeams);
+  useEffect(() => { fetchTeamsRef.current = fetchTeams; }, [fetchTeams]);
+
+  useEffect(() => {
+    function onAppStateChange(next: AppStateStatus) {
+      if (next === 'active') fetchTeamsRef.current();
+    }
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
+  }, []);
 
   const selectTeam = useCallback(async (teamId: string) => {
     setSelectedTeamId(teamId);

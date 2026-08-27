@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -24,14 +22,12 @@ import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
+import SmartLocationInput from '../../../components/ui/SmartLocationInput';
+import PickerSheet from '../../../components/ui/PickerSheet';
+import { DURATION_OPTIONS, ARRIVAL_OPTIONS } from '../../../constants/eventTypes';
 import { zonedTimeToUtc } from '../../../lib/timezone';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
-if (!PLACES_KEY && __DEV__) {
-  console.warn('[create-event] EXPO_PUBLIC_GOOGLE_PLACES_KEY is not set — location autocomplete will not work.');
-}
 
 type EventType = 'game' | 'training' | 'other';
 type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly';
@@ -44,20 +40,6 @@ const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string 
   training: { label: 'Training', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
   other:    { label: 'Other',    color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)' },
 };
-
-const DURATION_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-  const mins = (i + 1) * 5;
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return {
-    label: h > 0 && m > 0 ? `${h}h ${m}min` : h > 0 ? `${h}h` : `${m}min`,
-    value: mins,
-  };
-});
-
-const ARRIVAL_OPTIONS = Array.from({ length: 12 }, (_, i) => ({
-  label: `${(i + 1) * 5} min before`,
-  value: (i + 1) * 5,
-}));
 
 const RSVP_LOCK_OPTIONS = [
   { label: 'At event start', value: 0 },
@@ -96,6 +78,20 @@ function fmtTime(d: Date): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+// Inclusive list of every date a dated tournament spans, for the day-chip
+// picker — bounded by the tournament's own length (a handful of days at
+// most), never an open-ended range.
+function datesInRange(startStr: string, endStr: string): Date[] {
+  const out: Date[] = [];
+  const cur = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  while (cur.getTime() <= end.getTime()) {
+    out.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
 function fmtDuration(mins: number): string {
   const h = Math.floor(mins / 60), m = mins % 60;
   return h > 0 && m > 0 ? `${h}h ${m}min` : h > 0 ? `${h}h` : `${m}min`;
@@ -106,15 +102,19 @@ function fmtDuration(mins: number): string {
 function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null, timezone: string): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
-  // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
-  // appending our own ":00", otherwise this builds an invalid date string
-  // and every bucket comparison below silently falls through to 48.
-  const eventAt = zonedTimeToUtc(eventDate, `${eventTime.slice(0, 5)}:00`, timezone);
-  const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
-  if (diffHours <= 0)  return 0;
-  if (diffHours <= 12) return 12;
-  if (diffHours <= 24) return 24;
-  return 48;
+  try {
+    // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
+    // appending our own ":00", otherwise this builds an invalid date string
+    // and every bucket comparison below silently falls through to 48.
+    const eventAt = zonedTimeToUtc(eventDate, `${eventTime.slice(0, 5)}:00`, timezone);
+    const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
+    if (diffHours <= 0)  return 0;
+    if (diffHours <= 12) return 12;
+    if (diffHours <= 24) return 24;
+    return 48;
+  } catch {
+    return 24;
+  }
 }
 
 function ordinalWeekdayLabel(d: Date): string {
@@ -184,182 +184,6 @@ function generateRecurringDates(
   return dates;
 }
 
-// ─── PickerSheet ─────────────────────────────────────────────────────────────
-
-function PickerSheet({
-  visible, title, options, value, onChange, onClose,
-}: {
-  visible: boolean;
-  title: string;
-  options: { label: string; value: number }[];
-  value: number;
-  onChange: (v: number) => void;
-  onClose: () => void;
-}) {
-  const { primaryColor, rgba } = useClub();
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={ps.overlay} activeOpacity={1} onPress={onClose} />
-      <View style={ps.sheet}>
-        <View style={ps.handle} />
-        <Text style={ps.title}>{title}</Text>
-        <FlatList
-          data={options}
-          keyExtractor={(o) => String(o.value)}
-          style={{ maxHeight: 320 }}
-          initialScrollIndex={Math.max(0, options.findIndex((o) => o.value === value))}
-          getItemLayout={(_, i) => ({ length: 52, offset: 52 * i, index: i })}
-          renderItem={({ item }) => {
-            const sel = item.value === value;
-            return (
-              <TouchableOpacity
-                style={[ps.row, sel && [ps.rowSelected, { backgroundColor: rgba(0.08) }]]}
-                onPress={() => { onChange(item.value); onClose(); }}
-              >
-                <Text style={[ps.rowText, sel && [ps.rowTextSelected, { color: primaryColor }]]}>{item.label}</Text>
-                {sel && <Ionicons name="checkmark" size={18} color={primaryColor} />}
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </View>
-    </Modal>
-  );
-}
-
-const ps = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40,
-  },
-  handle: {
-    width: 40, height: 4, backgroundColor: PULSE_COLORS.ui.border,
-    borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4,
-  },
-  title: {
-    fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text,
-    padding: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  row: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, height: 52,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  rowSelected: { backgroundColor: 'rgba(34,197,94,0.08)' },
-  rowText: { fontSize: 15, color: PULSE_COLORS.ui.text },
-  rowTextSelected: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
-});
-
-// ─── Smart Location Input ─────────────────────────────────────────────────────
-
-type PlaceSuggestion = { place_id: string; description: string; structured_formatting?: { main_text: string; secondary_text?: string } };
-
-function SmartLocationInput({
-  onResult,
-  initialValue = '',
-}: {
-  onResult: (r: { name: string; address?: string; lat?: number; lng?: number }) => void;
-  initialValue?: string;
-}) {
-  const { primaryColor } = useClub();
-  const [text, setText] = useState(initialValue);
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [fetching, setFetching] = useState(false);
-  const [pinned, setPinned] = useState(!!initialValue);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  function handleChange(val: string) {
-    setText(val);
-    setPinned(false);
-    // Only a real selection (pick, below) should ever populate the venue
-    // name — echoing every keystroke here used to "poison" the parent's
-    // locationName with just the first character typed, which then
-    // permanently blocked pick() from ever filling in the real name
-    // (see the !locationName guard where onResult is consumed).
-    if (timer.current) clearTimeout(timer.current);
-    if (val.length < 3) { setSuggestions([]); return; }
-    timer.current = setTimeout(() => search(val), 350);
-  }
-
-  async function search(val: string) {
-    if (!PLACES_KEY) { setSuggestions([]); return; }
-    setFetching(true);
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(val)}&key=${PLACES_KEY}&components=country:us`
-      );
-      const json = await res.json();
-      setSuggestions((json.predictions ?? []).slice(0, 5));
-    } catch { setSuggestions([]); }
-    setFetching(false);
-  }
-
-  async function pick(s: PlaceSuggestion) {
-    setText(s.description);
-    setPinned(true);
-    setSuggestions([]);
-    // The place's own name (e.g. "Williams Field"), not the full
-    // description string (which also has the street/city tacked on).
-    const name = s.structured_formatting?.main_text ?? s.description;
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${s.place_id}&fields=geometry&key=${PLACES_KEY}`
-      );
-      const json = await res.json();
-      const loc = json.result?.geometry?.location;
-      onResult({ name, address: s.description, lat: loc?.lat, lng: loc?.lng });
-    } catch {
-      onResult({ name, address: s.description });
-    }
-  }
-
-  function clear() {
-    setText(''); setSuggestions([]); setPinned(false);
-    onResult({ name: '' });
-  }
-
-  return (
-    <View style={{ zIndex: 20 }}>
-      <View style={styles.inputRow}>
-        <Ionicons
-          name={pinned ? 'location' : 'location-outline'}
-          size={16}
-          color={pinned ? primaryColor : PULSE_COLORS.ui.muted}
-        />
-        <TextInput
-          style={styles.inlineInput}
-          value={text}
-          onChangeText={handleChange}
-          placeholder="Location name or address…"
-          placeholderTextColor={PULSE_COLORS.ui.muted}
-          returnKeyType="search"
-        />
-        {fetching && <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />}
-        {text.length > 0 && !fetching && (
-          <TouchableOpacity onPress={clear}>
-            <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
-          </TouchableOpacity>
-        )}
-      </View>
-      {suggestions.length > 0 && (
-        <View style={styles.suggestionBox}>
-          {suggestions.map((s, i) => (
-            <TouchableOpacity
-              key={s.place_id}
-              style={[styles.suggestionRow, i < suggestions.length - 1 && styles.suggestionBorder]}
-              onPress={() => pick(s)}
-            >
-              <Ionicons name="location-outline" size={14} color={PULSE_COLORS.ui.muted} />
-              <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
 // ─── Section helpers ──────────────────────────────────────────────────────────
 
 function SectionHeader({ title }: { title: string }) {
@@ -404,14 +228,22 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 export default function CreateEventScreen() {
   const { primaryColor, secondaryColor, onSecondary, rgba, timezone } = useClub();
   const router = useRouter();
-  const { clubSlug, duplicateFrom } = useLocalSearchParams<{ clubSlug: string; duplicateFrom?: string }>();
+  const { clubSlug, duplicateFrom, tournamentId } = useLocalSearchParams<{ clubSlug: string; duplicateFrom?: string; tournamentId?: string }>();
   const { team } = useTeam();
   const { profile } = useAuth();
 
   // Event basics
-  const [eventType, setEventType] = useState<EventType>('training');
+  const [eventType, setEventType] = useState<EventType>(tournamentId ? 'game' : 'training');
   const [title, setTitle] = useState('');
   const [homeAway, setHomeAway] = useState<'home' | 'away'>('home');
+  const [roundLabel, setRoundLabel] = useState('');
+  // tournament_id carried over from a duplicated event when no explicit
+  // route tournamentId overrides it — see the duplicateFrom effect below.
+  const [duplicatedTournamentId, setDuplicatedTournamentId] = useState<string | null>(null);
+  // Only set for a DATED (weekend/round-robin) tournament — an undated
+  // knockout tournament's next round date is genuinely unknown until
+  // scheduled, so the normal free date picker stays for that case.
+  const [tournamentDateRange, setTournamentDateRange] = useState<{ start: string; end: string } | null>(null);
 
   // Date & time
   const [date, setDate] = useState(() => {
@@ -423,9 +255,9 @@ export default function CreateEventScreen() {
     const d = new Date(); d.setHours(10, 0, 0, 0); return d;
   });
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [duration, setDuration] = useState<number | null>(null);
+  const [duration, setDuration] = useState<number | null>(tournamentId ? 60 : null);
   const [showDurationPicker, setShowDurationPicker] = useState(false);
-  const [arrival, setArrival] = useState<number | null>(null);
+  const [arrival, setArrival] = useState<number | null>(tournamentId ? 30 : null);
   const [showArrivalPicker, setShowArrivalPicker] = useState(false);
 
   // Location
@@ -465,6 +297,11 @@ export default function CreateEventScreen() {
   const [attemptedSave, setAttemptedSave] = useState(false);
   const [loadingDuplicate, setLoadingDuplicate] = useState(!!duplicateFrom);
 
+  // Dated (weekend/round-robin) tournament games centralize RSVP at the
+  // tournament level — Require RSVP / RSVP lock no longer apply per game.
+  // Undated (knockout) tournament games keep independent per-round RSVP.
+  const isDatedTournamentGame = !!tournamentId && !!tournamentDateRange;
+
   useEffect(() => {
     const clubId = team?.club?.id;
     if (!clubId) return;
@@ -477,6 +314,18 @@ export default function CreateEventScreen() {
       .then(({ data }) => setSavedFields((data ?? []) as typeof savedFields));
   }, [team?.club?.id]);
 
+  useEffect(() => {
+    if (!tournamentId) return;
+    supabase
+      .from('tournaments')
+      .select('start_date,end_date')
+      .eq('id', tournamentId)
+      .single()
+      .then(({ data }) => {
+        if (data?.start_date) setTournamentDateRange({ start: data.start_date, end: data.end_date ?? data.start_date });
+      });
+  }, [tournamentId]);
+
   // Pre-fills the form from an existing event — everything except the
   // date (pushed a week forward, since "same thing again next week" is
   // the common case) and the recording link (never relevant to a future
@@ -486,7 +335,7 @@ export default function CreateEventScreen() {
     (async () => {
       const { data, error } = await supabase
         .from('events')
-        .select('title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,require_rsvp,rsvp_lock_at')
+        .select('title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,require_rsvp,rsvp_lock_at,tournament_id,round_label')
         .eq('id', duplicateFrom)
         .single();
       if (error || !data) {
@@ -536,6 +385,12 @@ export default function CreateEventScreen() {
       setCoachNotes(data.coach_notes ?? '');
       setRequireRsvp(data.require_rsvp ?? true);
       setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time, timezone));
+      // Prefer an explicit route tournamentId (arriving via "+ Add Game" on
+      // a specific tournament) over the duplicated event's own — falls back
+      // to it so "duplicate this game" from the event page itself still
+      // preserves tournament membership.
+      setRoundLabel((tournamentId ? '' : data.round_label) ?? '');
+      setDuplicatedTournamentId((data as any).tournament_id ?? null);
       setLoadingDuplicate(false);
     })();
   }, [duplicateFrom]);
@@ -560,16 +415,25 @@ export default function CreateEventScreen() {
 
     function computeLockAt(dateStr: string): string | null {
       if (!requireRsvp || !eventTime) return null;
-      // Anchored to the club's own timezone, not this device's — otherwise
-      // a coach traveling in a different timezone than their club saves a
-      // deadline that's off by however many hours separate the two.
-      const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
-      dt.setHours(dt.getHours() - rsvpLockHours); // 0 = lock at event start
-      return dt.toISOString();
+      try {
+        // Anchored to the club's own timezone, not this device's — otherwise
+        // a coach traveling in a different timezone than their club saves a
+        // deadline that's off by however many hours separate the two.
+        const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
+        dt.setHours(dt.getHours() - rsvpLockHours); // 0 = lock at event start
+        return dt.toISOString();
+      } catch (err) {
+        console.warn('[create-event] could not compute rsvp_lock_at', err);
+        return null;
+      }
     }
 
+    // Tournament games are at a neutral venue — there's no "our home field"
+    // to be away from, so the Home/Away tile is hidden and every tournament
+    // game's title is prefixed "vs" rather than deriving it from homeAway
+    // state that the coach never actually saw or set.
     const savedTitle = eventType === 'game'
-      ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
+      ? `${(tournamentId || homeAway === 'home') ? 'vs' : '@'} ${title.trim()}`
       : title.trim();
 
     const base = {
@@ -587,12 +451,14 @@ export default function CreateEventScreen() {
       field_type: fieldType ?? null,
       field_notes: fieldNotes.trim() || null,
       uniform: uniform ?? null,
-      home_away: eventType === 'game' ? homeAway : null,
+      home_away: (eventType === 'game' && !tournamentId) ? homeAway : null,
       notes: playerNotes.trim() || null,
       coach_notes: coachNotes.trim() || null,
       video_url: videoUrl.trim() || null,
       require_rsvp: requireRsvp,
       created_by: profile?.id,
+      tournament_id: tournamentId || duplicatedTournamentId || null,
+      round_label: roundLabel.trim() || null,
     };
 
     let newEventId: string | undefined;
@@ -601,7 +467,7 @@ export default function CreateEventScreen() {
       const { data: created, error } = await supabase.from('events').insert({
         ...base,
         event_date: eventDate,
-        rsvp_lock_at: computeLockAt(eventDate),
+        rsvp_lock_at: isDatedTournamentGame ? null : computeLockAt(eventDate),
       }).select('id').single();
       if (error || !created) {
         setSaving(false);
@@ -702,22 +568,28 @@ export default function CreateEventScreen() {
           {/* ── Event Info ──────────────────────────────── */}
           <SectionHeader title="Event" />
           <Card>
-            <View style={styles.typeRow}>
-              {(['game', 'training', 'other'] as EventType[]).map((t) => {
-                const cfg = TYPE_CONFIG[t];
-                const active = eventType === t;
-                return (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.typeChip, active && { borderColor: cfg.color, backgroundColor: cfg.bg }]}
-                    onPress={() => setEventType(t)}
-                  >
-                    <Text style={[styles.typeChipText, active && { color: cfg.color }]}>{cfg.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            {eventType === 'game' && (
+            {/* A tournament game is always type 'game' — the picker only
+                adds noise there. */}
+            {!tournamentId && (
+              <View style={styles.typeRow}>
+                {(['game', 'training', 'other'] as EventType[]).map((t) => {
+                  const cfg = TYPE_CONFIG[t];
+                  const active = eventType === t;
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[styles.typeChip, active && { borderColor: cfg.color, backgroundColor: cfg.bg }]}
+                      onPress={() => setEventType(t)}
+                    >
+                      <Text style={[styles.typeChipText, active && { color: cfg.color }]}>{cfg.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+            {/* A tournament game is at a neutral venue — no "our home field"
+                to be away from — so this tile is meaningless there. */}
+            {eventType === 'game' && !tournamentId && (
               <>
                 <RowDivider />
                 <View style={styles.homeAwayRow}>
@@ -751,6 +623,21 @@ export default function CreateEventScreen() {
                 returnKeyType="done"
               />
             </View>
+            {!!tournamentId && (
+              <>
+                <RowDivider />
+                <View style={styles.titleRow}>
+                  <TextInput
+                    style={styles.titleInput}
+                    value={roundLabel}
+                    onChangeText={setRoundLabel}
+                    placeholder="Round (e.g. Quarterfinal, Pool Play)"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    returnKeyType="done"
+                  />
+                </View>
+              </>
+            )}
           </Card>
           {attemptedSave && !title.trim() && (
             <Text style={styles.titleRequiredHint}>Title required</Text>
@@ -762,9 +649,29 @@ export default function CreateEventScreen() {
           {/* ── Date & Time ─────────────────────────────── */}
           <SectionHeader title="Date & Time" />
           <Card>
-            <FieldRow icon="calendar-outline" label="Date" onPress={() => setShowDatePicker(true)}>
-              <ValueText v={fmtDate(date)} color={primaryColor} />
-            </FieldRow>
+            {tournamentDateRange ? (
+              // Dated (weekend/round-robin) tournament — the game can only
+              // fall on one of the tournament's own known days, so pick from
+              // a bounded chip row instead of an open calendar.
+              <View style={styles.typeRow}>
+                {datesInRange(tournamentDateRange.start, tournamentDateRange.end).map((d) => {
+                  const active = toDbDate(d) === toDbDate(date);
+                  return (
+                    <TouchableOpacity
+                      key={toDbDate(d)}
+                      style={[styles.typeChip, active && { borderColor: primaryColor, backgroundColor: rgba(0.12) }]}
+                      onPress={() => setDate(d)}
+                    >
+                      <Text style={[styles.typeChipText, active && { color: primaryColor }]}>{fmtDate(d)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <FieldRow icon="calendar-outline" label="Date" onPress={() => setShowDatePicker(true)}>
+                <ValueText v={fmtDate(date)} color={primaryColor} />
+              </FieldRow>
+            )}
 
             <RowDivider />
             <FieldRow
@@ -991,34 +898,40 @@ export default function CreateEventScreen() {
               </View>
             </View>
 
-            <RowDivider />
-            <FieldRow icon="checkmark-circle-outline" label="Require RSVP">
-              <Switch
-                value={requireRsvp}
-                onValueChange={setRequireRsvp}
-                trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
-                thumbColor="#fff"
-              />
-            </FieldRow>
-
-            {requireRsvp && (
+            {/* A dated tournament game's RSVP lives at the tournament level —
+                these controls no longer do anything for it. */}
+            {!isDatedTournamentGame && (
               <>
                 <RowDivider />
-                <FieldRow icon="timer-outline" label="RSVP closes">
-                  <View style={styles.chipRow}>
-                    {RSVP_LOCK_OPTIONS.map((o) => (
-                      <TouchableOpacity
-                        key={o.value}
-                        style={[styles.chip, rsvpLockHours === o.value && [styles.chipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
-                        onPress={() => setRsvpLockHours(o.value)}
-                      >
-                        <Text style={[styles.chipText, rsvpLockHours === o.value && [styles.chipTextActive, { color: primaryColor }]]}>
-                          {o.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                <FieldRow icon="checkmark-circle-outline" label="Require RSVP">
+                  <Switch
+                    value={requireRsvp}
+                    onValueChange={setRequireRsvp}
+                    trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                    thumbColor="#fff"
+                  />
                 </FieldRow>
+
+                {requireRsvp && (
+                  <>
+                    <RowDivider />
+                    <FieldRow icon="timer-outline" label="RSVP closes">
+                      <View style={styles.chipRow}>
+                        {RSVP_LOCK_OPTIONS.map((o) => (
+                          <TouchableOpacity
+                            key={o.value}
+                            style={[styles.chip, rsvpLockHours === o.value && [styles.chipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
+                            onPress={() => setRsvpLockHours(o.value)}
+                          >
+                            <Text style={[styles.chipText, rsvpLockHours === o.value && [styles.chipTextActive, { color: primaryColor }]]}>
+                              {o.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </FieldRow>
+                  </>
+                )}
               </>
             )}
             <RowDivider />
@@ -1033,6 +946,9 @@ export default function CreateEventScreen() {
           </Card>
 
           {/* ── Recurrence ──────────────────────────────── */}
+          {/* A tournament game is never a recurring series. */}
+          {!tournamentId && (
+          <>
           <SectionHeader title="Repeat" />
           <Card>
             <View style={styles.typeRow}>
@@ -1127,8 +1043,10 @@ export default function CreateEventScreen() {
               </>
             )}
           </Card>
+          </>
+          )}
 
-          {recurrence !== 'none' && (() => {
+          {!tournamentId && recurrence !== 'none' && (() => {
             const recurDates = generateRecurringDates(date, recurrence, weekDays, monthlyMode, endMode, endDate);
             const total = recurDates.length + 1;
             return (
@@ -1294,25 +1212,7 @@ const styles = StyleSheet.create({
   locationInputRow: {
     paddingHorizontal: 16, paddingVertical: 12,
   },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
   inlineInput: { flex: 1, color: PULSE_COLORS.ui.text, fontSize: 14 },
-
-  suggestionBox: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 10, marginTop: 4, overflow: 'hidden',
-  },
-  suggestionRow: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    padding: 12,
-  },
-  suggestionBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  suggestionText: { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.text, lineHeight: 18 },
 
   chipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
   chip: {

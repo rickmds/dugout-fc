@@ -2,9 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -24,10 +22,11 @@ import { zonedTimeToUtc } from '../../../../lib/timezone';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { sendTeamPush } from '../../../../lib/push';
 import { DateTimeSheet } from '../../../../components/ui/DateTimeSheet';
+import SmartLocationInput from '../../../../components/ui/SmartLocationInput';
+import PickerSheet from '../../../../components/ui/PickerSheet';
+import { DURATION_OPTIONS, ARRIVAL_OPTIONS } from '../../../../constants/eventTypes';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 type EventType = 'game' | 'training' | 'other';
 type UniformOption = 'home' | 'away' | 'training';
@@ -41,20 +40,6 @@ const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string 
   training: { label: 'Training', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
   other:    { label: 'Other',    color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)' },
 };
-
-const DURATION_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-  const mins = (i + 1) * 5;
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return {
-    label: h > 0 && m > 0 ? `${h}h ${m}min` : h > 0 ? `${h}h` : `${m}min`,
-    value: mins,
-  };
-});
-
-const ARRIVAL_OPTIONS = Array.from({ length: 12 }, (_, i) => ({
-  label: `${(i + 1) * 5} min before`,
-  value: (i + 1) * 5,
-}));
 
 const RSVP_LOCK_OPTIONS = [
   { label: 'At event start', value: 0 },
@@ -98,192 +83,21 @@ function parseGameTitle(title: string): { homeAway: 'home' | 'away'; opponent: s
 function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTime: string | null, timezone: string): number {
   if (!rsvpLockAt || !eventTime) return 24;
   const lockAt = new Date(rsvpLockAt);
-  // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
-  // appending our own ":00", otherwise this builds an invalid date string
-  // ("...T18:00:00:00"), diffHours comes out NaN, and every comparison
-  // below silently falls through to the last bucket (48) regardless of
-  // what's actually saved.
-  const eventAt = zonedTimeToUtc(eventDate, `${eventTime.slice(0, 5)}:00`, timezone);
-  const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
-  if (diffHours <= 0)  return 0;
-  if (diffHours <= 12) return 12;
-  if (diffHours <= 24) return 24;
-  return 48;
-}
-
-// ─── PickerSheet ──────────────────────────────────────────────────────────────
-
-function PickerSheet({
-  visible, title, options, value, onChange, onClose,
-}: {
-  visible: boolean;
-  title: string;
-  options: { label: string; value: number }[];
-  value: number;
-  onChange: (v: number) => void;
-  onClose: () => void;
-}) {
-  const { primaryColor, rgba } = useClub();
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={ps.overlay} activeOpacity={1} onPress={onClose} />
-      <View style={ps.sheet}>
-        <View style={ps.handle} />
-        <Text style={ps.title}>{title}</Text>
-        <FlatList
-          data={options}
-          keyExtractor={(o) => String(o.value)}
-          style={{ maxHeight: 320 }}
-          initialScrollIndex={Math.max(0, options.findIndex((o) => o.value === value))}
-          getItemLayout={(_, i) => ({ length: 52, offset: 52 * i, index: i })}
-          renderItem={({ item }) => {
-            const sel = item.value === value;
-            return (
-              <TouchableOpacity
-                style={[ps.row, sel && [ps.rowSelected, { backgroundColor: rgba(0.08) }]]}
-                onPress={() => { onChange(item.value); onClose(); }}
-              >
-                <Text style={[ps.rowText, sel && [ps.rowTextSelected, { color: primaryColor }]]}>{item.label}</Text>
-                {sel && <Ionicons name="checkmark" size={18} color={primaryColor} />}
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </View>
-    </Modal>
-  );
-}
-
-const ps = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40,
-  },
-  handle: {
-    width: 40, height: 4, backgroundColor: PULSE_COLORS.ui.border,
-    borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4,
-  },
-  title: {
-    fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text,
-    padding: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  row: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, height: 52,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  rowSelected: { backgroundColor: 'rgba(34,197,94,0.08)' },
-  rowText: { fontSize: 15, color: PULSE_COLORS.ui.text },
-  rowTextSelected: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
-});
-
-// ─── Smart Location Input ─────────────────────────────────────────────────────
-
-type PlaceSuggestion = { place_id: string; description: string; structured_formatting?: { main_text: string; secondary_text?: string } };
-
-function SmartLocationInput({
-  onResult,
-  initialValue = '',
-}: {
-  onResult: (r: { name: string; address?: string; lat?: number; lng?: number }) => void;
-  initialValue?: string;
-}) {
-  const { primaryColor } = useClub();
-  const [text, setText] = useState(initialValue);
-  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [fetching, setFetching] = useState(false);
-  const [pinned, setPinned] = useState(!!initialValue);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  function handleChange(val: string) {
-    setText(val);
-    setPinned(false);
-    // Only a real selection (pick, below) should ever populate the venue
-    // name — echoing every keystroke here used to "poison" the parent's
-    // locationName with just the first character typed, which then
-    // permanently blocked pick() from ever filling in the real name
-    // (see the !locationName guard where onResult is consumed).
-    if (timer.current) clearTimeout(timer.current);
-    if (val.length < 3) { setSuggestions([]); return; }
-    timer.current = setTimeout(() => search(val), 350);
+  try {
+    // Postgres serializes `time` as "HH:MM:SS" — slice to "HH:MM" before
+    // appending our own ":00", otherwise this builds an invalid date string
+    // ("...T18:00:00:00"), diffHours comes out NaN, and every comparison
+    // below silently falls through to the last bucket (48) regardless of
+    // what's actually saved.
+    const eventAt = zonedTimeToUtc(eventDate, `${eventTime.slice(0, 5)}:00`, timezone);
+    const diffHours = Math.round((eventAt.getTime() - lockAt.getTime()) / 3600000);
+    if (diffHours <= 0)  return 0;
+    if (diffHours <= 12) return 12;
+    if (diffHours <= 24) return 24;
+    return 48;
+  } catch {
+    return 24;
   }
-
-  async function search(val: string) {
-    setFetching(true);
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(val)}&key=${PLACES_KEY}&components=country:us`
-      );
-      const json = await res.json();
-      setSuggestions((json.predictions ?? []).slice(0, 5));
-    } catch { setSuggestions([]); }
-    setFetching(false);
-  }
-
-  async function pick(s: PlaceSuggestion) {
-    setText(s.description);
-    setPinned(true);
-    setSuggestions([]);
-    // The place's own name (e.g. "Williams Field"), not the full
-    // description string (which also has the street/city tacked on).
-    const name = s.structured_formatting?.main_text ?? s.description;
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${s.place_id}&fields=geometry&key=${PLACES_KEY}`
-      );
-      const json = await res.json();
-      const loc = json.result?.geometry?.location;
-      onResult({ name, address: s.description, lat: loc?.lat, lng: loc?.lng });
-    } catch {
-      onResult({ name, address: s.description });
-    }
-  }
-
-  function clear() {
-    setText(''); setSuggestions([]); setPinned(false);
-    onResult({ name: '' });
-  }
-
-  return (
-    <View style={{ zIndex: 20 }}>
-      <View style={styles.inputRow}>
-        <Ionicons
-          name={pinned ? 'location' : 'location-outline'}
-          size={16}
-          color={pinned ? primaryColor : PULSE_COLORS.ui.muted}
-        />
-        <TextInput
-          style={styles.inlineInput}
-          value={text}
-          onChangeText={handleChange}
-          placeholder="Location name or address…"
-          placeholderTextColor={PULSE_COLORS.ui.muted}
-          returnKeyType="search"
-        />
-        {fetching && <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />}
-        {text.length > 0 && !fetching && (
-          <TouchableOpacity onPress={clear}>
-            <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
-          </TouchableOpacity>
-        )}
-      </View>
-      {suggestions.length > 0 && (
-        <View style={styles.suggestionBox}>
-          {suggestions.map((s, i) => (
-            <TouchableOpacity
-              key={s.place_id}
-              style={[styles.suggestionRow, i < suggestions.length - 1 && styles.suggestionBorder]}
-              onPress={() => pick(s)}
-            >
-              <Ionicons name="location-outline" size={14} color={PULSE_COLORS.ui.muted} />
-              <Text style={styles.suggestionText} numberOfLines={2}>{s.description}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
-  );
 }
 
 // ─── Section helpers ──────────────────────────────────────────────────────────
@@ -355,6 +169,15 @@ export default function EditEventScreen() {
   const [eventType, setEventType] = useState<EventType>('training');
   const [title, setTitle] = useState('');
   const [homeAway, setHomeAway] = useState<'home' | 'away'>('home');
+  // Tournament membership itself isn't reassignable from this generic edit
+  // screen — tournamentId is display-only context, round_label is the only
+  // editable field.
+  const [tournamentId, setTournamentId] = useState<string | null>(null);
+  const [roundLabel, setRoundLabel] = useState('');
+  // Only set for a DATED (weekend/round-robin) tournament — its games
+  // centralize RSVP at the tournament level, so Require RSVP / RSVP lock no
+  // longer apply per game. Undated (knockout) games are unaffected.
+  const [tournamentStartDate, setTournamentStartDate] = useState<string | null>(null);
 
   // Date & time
   const [date, setDate] = useState(new Date());
@@ -426,7 +249,7 @@ export default function EditEventScreen() {
   async function loadEvent() {
     const { data } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,event_group_id,teams(club_id)')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,event_group_id,tournament_id,round_label,teams(club_id),tournaments(start_date)')
       .eq('id', eventId)
       .single();
     if (data) setEventTeamId((data as any).team_id ?? null);
@@ -469,6 +292,12 @@ export default function EditEventScreen() {
       setTitle(data.title);
     }
 
+    setTournamentId((data as any).tournament_id ?? null);
+    setRoundLabel((data as any).round_label ?? '');
+    const tRaw = (data as any).tournaments;
+    const tournamentJoin = Array.isArray(tRaw) ? tRaw[0] ?? null : tRaw ?? null;
+    setTournamentStartDate(tournamentJoin?.start_date ?? null);
+
     const d = new Date(data.event_date + 'T00:00:00');
     setDate(d);
 
@@ -508,6 +337,8 @@ export default function EditEventScreen() {
     setLoading(false);
   }
 
+  const isDatedTournamentGame = !!tournamentId && !!tournamentStartDate;
+
   async function handleSave(scope: RecurringScope) {
     if (!title.trim() || !eventId) return;
     setSaving(true);
@@ -516,12 +347,17 @@ export default function EditEventScreen() {
     const eventTime = hasTime ? toDbTime(startTime) : null;
 
     function computeLockAtFor(dateStr: string): string | null {
-      if (!requireRsvp || !eventTime) return null;
-      // Anchored to the club's own timezone, not this device's — see
-      // create-event.tsx's computeLockAt for the full reasoning.
-      const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
-      dt.setHours(dt.getHours() - rsvpLockHours);
-      return dt.toISOString();
+      if (isDatedTournamentGame || !requireRsvp || !eventTime) return null;
+      try {
+        // Anchored to the club's own timezone, not this device's — see
+        // create-event.tsx's computeLockAt for the full reasoning.
+        const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
+        dt.setHours(dt.getHours() - rsvpLockHours);
+        return dt.toISOString();
+      } catch (err) {
+        console.warn('[edit-event] could not compute rsvp_lock_at', err);
+        return null;
+      }
     }
 
     const savedTitle = eventType === 'game'
@@ -550,6 +386,7 @@ export default function EditEventScreen() {
       coach_notes: coachNotes.trim() || null,
       video_url: videoUrl.trim() || null,
       require_rsvp: requireRsvp,
+      round_label: roundLabel.trim() || null,
     };
 
     // Combining cross-team propagation with the recurring "future" scope
@@ -886,6 +723,21 @@ export default function EditEventScreen() {
                 returnKeyType="done"
               />
             </View>
+            {!!tournamentId && (
+              <>
+                <RowDivider />
+                <View style={styles.titleRow}>
+                  <TextInput
+                    style={styles.titleInput}
+                    value={roundLabel}
+                    onChangeText={setRoundLabel}
+                    placeholder="Round (e.g. Quarterfinal, Pool Play)"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    returnKeyType="done"
+                  />
+                </View>
+              </>
+            )}
           </Card>
 
           {/* ── Date & Time ─────────────────────────────── */}
@@ -1119,34 +971,38 @@ export default function EditEventScreen() {
               </View>
             </View>
 
-            <RowDivider />
-            <FieldRow icon="checkmark-circle-outline" label="Require RSVP">
-              <Switch
-                value={requireRsvp}
-                onValueChange={setRequireRsvp}
-                trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
-                thumbColor="#fff"
-              />
-            </FieldRow>
-
-            {requireRsvp && (
+            {!isDatedTournamentGame && (
               <>
                 <RowDivider />
-                <FieldRow icon="timer-outline" label="RSVP closes">
-                  <View style={styles.chipRow}>
-                    {RSVP_LOCK_OPTIONS.map((o) => (
-                      <TouchableOpacity
-                        key={o.value}
-                        style={[styles.chip, rsvpLockHours === o.value && [styles.chipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
-                        onPress={() => setRsvpLockHours(o.value)}
-                      >
-                        <Text style={[styles.chipText, rsvpLockHours === o.value && [styles.chipTextActive, { color: primaryColor }]]}>
-                          {o.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                <FieldRow icon="checkmark-circle-outline" label="Require RSVP">
+                  <Switch
+                    value={requireRsvp}
+                    onValueChange={setRequireRsvp}
+                    trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                    thumbColor="#fff"
+                  />
                 </FieldRow>
+
+                {requireRsvp && (
+                  <>
+                    <RowDivider />
+                    <FieldRow icon="timer-outline" label="RSVP closes">
+                      <View style={styles.chipRow}>
+                        {RSVP_LOCK_OPTIONS.map((o) => (
+                          <TouchableOpacity
+                            key={o.value}
+                            style={[styles.chip, rsvpLockHours === o.value && [styles.chipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
+                            onPress={() => setRsvpLockHours(o.value)}
+                          >
+                            <Text style={[styles.chipText, rsvpLockHours === o.value && [styles.chipTextActive, { color: primaryColor }]]}>
+                              {o.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </FieldRow>
+                  </>
+                )}
               </>
             )}
             <RowDivider />
@@ -1343,21 +1199,7 @@ const styles = StyleSheet.create({
   selectedFieldAddress: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 2 },
   changeLink: { fontSize: 13, fontWeight: '700' },
   locationInputRow: { paddingHorizontal: 16, paddingVertical: 12 },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
   inlineInput: { flex: 1, color: PULSE_COLORS.ui.text, fontSize: 14 },
-  suggestionBox: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 10, marginTop: 4, overflow: 'hidden',
-  },
-  suggestionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12 },
-  suggestionBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  suggestionText: { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.text, lineHeight: 18 },
 
   chipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
   chip: {

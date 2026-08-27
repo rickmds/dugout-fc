@@ -26,12 +26,18 @@ async function getUserOrigin(): Promise<string | null> {
 function toDepartureTimestamp(eventDate: string | undefined, eventTime: string | null | undefined, timezone: string): number {
   const nowSec = Math.floor(Date.now() / 1000);
   if (!eventDate) return nowSec;
-  // Anchored to the club's own timezone, not this device's — otherwise a
-  // parent traveling in a different timezone than their club gets traffic
-  // predicted for the wrong actual moment.
-  const target = zonedTimeToUtc(eventDate, `${eventTime ?? '12:00'}:00`, timezone);
-  const targetSec = Math.floor(target.getTime() / 1000);
-  return Number.isFinite(targetSec) ? Math.max(targetSec, nowSec) : nowSec;
+  try {
+    // Anchored to the club's own timezone, not this device's — otherwise a
+    // parent traveling in a different timezone than their club gets traffic
+    // predicted for the wrong actual moment.
+    const target = zonedTimeToUtc(eventDate, `${eventTime ?? '12:00'}:00`, timezone);
+    const targetSec = Math.floor(target.getTime() / 1000);
+    return Number.isFinite(targetSec) ? Math.max(targetSec, nowSec) : nowSec;
+  } catch {
+    // Bad/unresolvable date, time, or timezone -- predicting for "now" beats
+    // giving up on the drive time estimate entirely.
+    return nowSec;
+  }
 }
 
 // Resolve a venue name / address to "lat,lng" using Google Geocoding

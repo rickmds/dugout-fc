@@ -28,6 +28,7 @@ import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../comp
 import ScheduleSkeleton from '../../../../components/schedule/ScheduleSkeleton';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
 import { fetchDriveTimes } from '../../../../lib/drivetime';
+import { getGameResult, RESULT_COLORS, formatTournamentDateRange, formatGameCountdown } from '../../../../lib/tournaments';
 
 type EventType = 'game' | 'training' | 'other';
 type Tab = 'upcoming' | 'past' | 'calendar';
@@ -53,9 +54,30 @@ type Event = {
   score_away: number | null;
   rsvp_lock_at: string | null;
   video_url: string | null;
+  tournament_id: string | null;
+  round_label: string | null;
   isGuest?: boolean;
   guestStatus?: 'confirmed' | 'pending';
 };
+
+type Tournament = { id: string; name: string; location: string | null; start_date: string | null; end_date: string | null; cancelled_at: string | null };
+
+type TournamentMarker = {
+  tournament: Tournament;
+  games: Event[];
+  gameCount: number;
+  dateRange: string;
+  wins: number; losses: number; draws: number;
+};
+
+// A mixed chronological stream of real events and tournament markers, so a
+// dated tournament slots into the schedule at its own start date rather than
+// only ever living in a pinned header banner. `date`/`time` are normalized
+// across both kinds purely for sorting/grouping — a tournament marker sorts
+// to midnight on its start date, ahead of any real event later that day.
+type ScheduleItem =
+  | { kind: 'event'; date: string; time: string; endDate: string; data: Event }
+  | { kind: 'tournament'; date: string; time: string; endDate: string; data: TournamentMarker };
 
 const TEAM_PALETTE = ['#3B82F6', '#22c55e', '#F59E0B', '#8B5CF6', '#EF4444', '#06B6D4'];
 
@@ -111,13 +133,30 @@ function isToday(dateStr: string): boolean {
   return dateStr === getTodayStr();
 }
 
-function groupByMonth(evs: Event[]): { title: string; data: Event[] }[] {
-  const groups = new Map<string, Event[]>();
-  for (const e of evs) {
-    const d = new Date(e.event_date + 'T00:00:00');
+// Undated tournaments are this app's stand-in for a knockout/State-Cup
+// format (dates unknown until each round is scheduled) — so "still active"
+// isn't just "has an upcoming-dated game," it's "hasn't been eliminated
+// yet." A dated (round-robin/weekend) tournament plays every game
+// regardless of result, so it never needs this — pure date math already
+// moves it from Upcoming to Past correctly on its own.
+function isKnockoutStillAlive(games: { type: string; event_date: string; event_time: string | null; duration_minutes: number | null; score_home: number | null; score_away: number | null; cancelled_at: string | null }[]): boolean {
+  if (games.length === 0) return true; // fresh entry, nothing decided yet
+  if (games.some((g) => isUpcoming(g))) return true; // next round already scheduled
+  const played = games.filter((g) => !g.cancelled_at);
+  if (played.length === 0) return true;
+  // games arrive date-ascending, so the last one is the most recently played.
+  const result = getGameResult(played[played.length - 1]);
+  if (!result) return true; // no score recorded yet — don't assume eliminated on missing data
+  return result.label !== 'L';
+}
+
+function groupItemsByMonth(items: ScheduleItem[]): { title: string; data: ScheduleItem[] }[] {
+  const groups = new Map<string, ScheduleItem[]>();
+  for (const item of items) {
+    const d = new Date(item.date + 'T00:00:00');
     const key = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(e);
+    groups.get(key)!.push(item);
   }
   return Array.from(groups.entries()).map(([title, data]) => ({ title, data }));
 }
@@ -133,17 +172,6 @@ function buildCalendarDays(year: number, month: number): (number | null)[] {
   return days;
 }
 
-const RESULT_COLORS = { W: '#22c55e', L: '#ef4444', D: '#9ca3af' } as const;
-
-function getGameResult(event: Event): { label: 'W' | 'L' | 'D'; ourScore: number; oppScore: number } | null {
-  if (event.type !== 'game' || event.score_home == null || event.score_away == null) return null;
-  // Match tracker always writes score_home = our score, score_away = opponent score
-  const ourScore = event.score_home;
-  const oppScore = event.score_away;
-  const label = ourScore > oppScore ? 'W' : ourScore < oppScore ? 'L' : 'D';
-  return { label, ourScore, oppScore };
-}
-
 export default function ScheduleScreen() {
   const { primaryColor, rgba, secondaryColor, onSecondary, logoUrl, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
   const { team, allTeams, loading: teamLoading } = useTeam();
@@ -152,6 +180,7 @@ export default function ScheduleScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
 
   const [events, setEvents] = useState<Event[]>([]);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [rsvpCounts, setRsvpCounts] = useState<Record<string, RsvpCounts>>({});
   // event_id -> player_id -> status. A guardian can have more than one
   // player on the same team (e.g. twins) — every RSVP row below is keyed
@@ -210,9 +239,9 @@ export default function ScheduleScreen() {
     const isMultiTeam = !isCoach && allTeams.length > 1;
     const teamIds = (isMultiTeam || showAllTeams) ? allTeams.map((t) => t.id) : [team.id];
 
-    const [eventsRes, playersRes, countRes] = await Promise.all([
+    const [eventsRes, playersRes, countRes, tournamentsRes] = await Promise.all([
       supabase.from('events')
-        .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at, video_url')
+        .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at, video_url, tournament_id, round_label')
         .in('team_id', teamIds).order('event_date').order('event_time'),
       // get_my_guarded_players() checks player_guardians as well as the
       // legacy players.profile_id column — a direct .eq('profile_id', ...)
@@ -224,10 +253,12 @@ export default function ScheduleScreen() {
         ? (supabase as any).rpc('get_my_guarded_players').select('id, team_id, full_name').in('team_id', teamIds).order('full_name')
         : Promise.resolve({ data: [] }),
       supabase.from('players').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
+      supabase.from('tournaments').select('id, name, location, start_date, end_date, cancelled_at').in('team_id', teamIds),
     ]);
 
     const evs = (eventsRes.data as unknown as Event[]) ?? [];
     setPlayerCount(countRes.count ?? 0);
+    setTournaments((tournamentsRes.data as Tournament[]) ?? []);
 
     const pRows = ((playersRes as any).data ?? []) as { id: string; team_id: string; full_name: string }[];
     const playersByTeam = new Map<string, { id: string; full_name: string }[]>();
@@ -325,7 +356,7 @@ export default function ScheduleScreen() {
 
     const { data: guestEvData } = await supabase
       .from('events')
-      .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at, video_url')
+      .select('id, title, type, team_id, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, field_type, cancelled_at, home_away, score_home, score_away, rsvp_lock_at, video_url, tournament_id, round_label')
       .in('id', guestEventIds);
 
     const guestEvs: Event[] = ((guestEvData ?? []) as unknown as Event[]).map(e => ({
@@ -521,6 +552,14 @@ export default function ScheduleScreen() {
               ) : (
                 <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
                   <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
+                </View>
+              )}
+              {item.tournament_id && tournamentsById.has(item.tournament_id) && (
+                <View style={[styles.typeBadge, styles.tournamentBadge]}>
+                  <Ionicons name="trophy" size={10} color="#EAB308" />
+                  <Text style={[styles.typeText, { color: '#EAB308' }]} numberOfLines={1}>
+                    {tournamentsById.get(item.tournament_id)!.name}
+                  </Text>
                 </View>
               )}
               {isGuest && (
@@ -763,17 +802,126 @@ export default function ScheduleScreen() {
   );
   const isMultiView = showAllTeams || (!isCoach && allTeams.length > 1);
 
+  const tournamentsById = useMemo(
+    () => new Map(tournaments.map((t) => [t.id, t])),
+    [tournaments]
+  );
+
+  const gamesByTournamentId = useMemo(() => {
+    const map = new Map<string, Event[]>();
+    for (const e of events) {
+      if (!e.tournament_id) continue;
+      const arr = map.get(e.tournament_id) ?? [];
+      arr.push(e);
+      map.set(e.tournament_id, arr);
+    }
+    return map;
+  }, [events]);
+
+  const buildTournamentMarker = useCallback((t: Tournament): TournamentMarker => {
+    const games = gamesByTournamentId.get(t.id) ?? [];
+    let wins = 0, losses = 0, draws = 0;
+    for (const g of games) {
+      const r = getGameResult(g);
+      if (!r) continue;
+      if (r.label === 'W') wins++; else if (r.label === 'L') losses++; else draws++;
+    }
+    return {
+      tournament: t,
+      games,
+      gameCount: games.length,
+      dateRange: games.length > 0
+        ? formatTournamentDateRange(games.map((g) => g.event_date))
+        : formatTournamentDateRange([t.start_date, t.end_date]),
+      wins, losses, draws,
+    };
+  }, [gamesByTournamentId]);
+
+  // Undated tournaments (State Cup — dates unknown until each round is
+  // scheduled) have no natural chronological slot, so they stay pinned in
+  // the Upcoming header instead. Pinned only while still alive in the
+  // knockout — a team that keeps winning stays pinned indefinitely between
+  // rounds, even though its last played game's date is technically in the
+  // past; a loss (or the tournament running out of games) "graduates" it,
+  // and its games fall back to showing individually in Past (still
+  // trophy-tagged) rather than vanishing along with the card.
+  const undatedTournaments = useMemo<TournamentMarker[]>(() =>
+    tournaments
+      .filter((t) => !t.start_date)
+      .filter((t) => !t.cancelled_at)
+      .filter((t) => isKnockoutStillAlive(gamesByTournamentId.get(t.id) ?? []))
+      .map(buildTournamentMarker),
+    [tournaments, gamesByTournamentId, buildTournamentMarker]
+  );
+
+  // Dated tournaments (weekend format — the date is known up front) DO get
+  // a chronological slot: a special marker card sorted to start_date,
+  // alongside every real event. Unlike undated ones, a dated tournament's
+  // card never disappears — it just moves from Upcoming to Past by date,
+  // same as any event — so its games stay nested inside it permanently.
+  const datedTournamentItems = useMemo<Extract<ScheduleItem, { kind: 'tournament' }>[]>(() =>
+    tournaments
+      .filter((t) => !!t.start_date)
+      .filter((t) => !t.cancelled_at)
+      .map((t) => ({
+        kind: 'tournament' as const,
+        date: t.start_date!,
+        time: '00:00',
+        endDate: t.end_date ?? t.start_date!,
+        data: buildTournamentMarker(t),
+      })),
+    [tournaments, buildTournamentMarker]
+  );
+
+  // A game "belongs" to a visible tournament card (dated, or undated-and-
+  // still-active) gets nested inside that card instead of also appearing as
+  // its own separate row — that's the whole point of the card: one place to
+  // see the whole tournament instead of it and its games competing for the
+  // same space.
+  const tournamentIdsWithCard = useMemo(() => new Set([
+    ...undatedTournaments.map((m) => m.tournament.id),
+    ...datedTournamentItems.map((item) => item.data.tournament.id),
+  ]), [undatedTournaments, datedTournamentItems]);
+
+  const scheduleItems = useMemo<ScheduleItem[]>(() => {
+    const eventItems: ScheduleItem[] = events
+      .filter((e) => !e.tournament_id || !tournamentIdsWithCard.has(e.tournament_id))
+      .map((e) => ({
+        kind: 'event', date: e.event_date, time: e.event_time ?? '00:00', endDate: e.event_date, data: e,
+      }));
+    return [...eventItems, ...datedTournamentItems].sort((a, b) => {
+      const d = a.date.localeCompare(b.date);
+      return d !== 0 ? d : a.time.localeCompare(b.time);
+    });
+  }, [events, datedTournamentItems, tournamentIdsWithCard]);
+
+  function isItemUpcoming(item: ScheduleItem): boolean {
+    return item.kind === 'event'
+      ? isUpcoming(item.data)
+      : isUpcoming({ event_date: item.endDate, event_time: null, duration_minutes: null });
+  }
+
   // ── Data splits ──
   const upcomingEvents = useMemo(
     () => events.filter((e) => isUpcoming(e)),
     [events]
   );
+  // Real events only (no tournament markers) — feeds the Season Record
+  // card below, which counts actual game results, not container cards.
   const pastEvents = useMemo(
-    () => events.filter((e) => !isUpcoming(e)).reverse(),
+    () => events.filter((e) => !isUpcoming(e)),
     [events]
   );
-  const upcomingSections = useMemo(() => groupByMonth(upcomingEvents), [upcomingEvents]);
-  const pastSections     = useMemo(() => groupByMonth(pastEvents), [pastEvents]);
+  const upcomingScheduleItems = useMemo(
+    () => scheduleItems.filter(isItemUpcoming),
+    [scheduleItems]
+  );
+  const pastScheduleItems = useMemo(
+    () => scheduleItems.filter((item) => !isItemUpcoming(item)).reverse(),
+    [scheduleItems]
+  );
+  const upcomingSections = useMemo(() => groupItemsByMonth(upcomingScheduleItems), [upcomingScheduleItems]);
+  const pastSections     = useMemo(() => groupItemsByMonth(pastScheduleItems), [pastScheduleItems]);
 
   // Season W/L/D record
   let seasonWins = 0, seasonLosses = 0, seasonDraws = 0;
@@ -818,6 +966,103 @@ export default function ScheduleScreen() {
         </View>
       </View>
     );
+  }
+
+  // Deliberately nothing like renderCard's striped, badge-row event layout —
+  // a tournament is a container, not a single event, and should read that
+  // way immediately: a big, unmistakable gold card, its games nested inside
+  // rather than also competing for their own separate rows nearby.
+  const TOURNAMENT_GAMES_CAP = 4;
+
+  function renderTournamentCard({ tournament, games, gameCount, dateRange, wins, losses, draws }: TournamentMarker) {
+    const hasRecord = gameCount > 0;
+    // Soonest-upcoming first (what a parent actually wants to see next),
+    // padded out with the most recent past games for context if there
+    // aren't enough upcoming ones to fill the cap.
+    const upcomingGames = games.filter((g) => isUpcoming(g));
+    const recentPastGames = games.filter((g) => !isUpcoming(g)).slice().reverse();
+    const visibleGames = [...upcomingGames, ...recentPastGames].slice(0, TOURNAMENT_GAMES_CAP);
+    const overflowCount = gameCount - visibleGames.length;
+    const openTournament = () => router.push(`/(app)/${clubSlug}/tournament/${tournament.id}` as any);
+
+    return (
+      <View key={tournament.id} style={styles.tournamentBigCard}>
+        <TouchableOpacity style={styles.tournamentBigHeader} onPress={openTournament} activeOpacity={0.8}>
+          <View style={styles.tournamentBigIcon}>
+            <Text style={{ fontSize: 26 }}>🏆</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.tournamentEyebrow}>TOURNAMENT</Text>
+            <Text style={styles.tournamentBigName} numberOfLines={1}>{tournament.name}</Text>
+            <Text style={styles.tournamentBigMeta} numberOfLines={1}>
+              {dateRange}{tournament.location ? ` · ${tournament.location}` : ''}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#EAB308" />
+        </TouchableOpacity>
+
+        {hasRecord && (
+          <Text style={styles.tournamentBigRecord}>
+            {wins}W · {losses}L · {draws}D · {gameCount} game{gameCount !== 1 ? 's' : ''}
+          </Text>
+        )}
+
+        {visibleGames.length > 0 ? (
+          <View style={styles.tournamentGamesList}>
+            {visibleGames.map((g) => {
+              const result = !isUpcoming(g) ? getGameResult(g) : null;
+              return (
+                <TouchableOpacity
+                  key={g.id}
+                  style={styles.tournamentGameRow}
+                  onPress={() => router.push(`/(app)/${clubSlug}/event/${g.id}` as any)}
+                  activeOpacity={0.7}
+                >
+                  {g.round_label ? (
+                    <View style={styles.tournamentGameStage}>
+                      <Text style={styles.tournamentGameStageText} numberOfLines={1}>{g.round_label.toUpperCase()}</Text>
+                    </View>
+                  ) : null}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tournamentGameTitle} numberOfLines={1}>{g.title}</Text>
+                    <Text style={styles.tournamentGameMeta} numberOfLines={1}>
+                      {new Date(g.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {g.event_time ? ` · ${formatTime(g.event_time)}` : ''}
+                    </Text>
+                  </View>
+                  {g.cancelled_at ? (
+                    <Text style={[styles.tournamentGameBadge, { color: '#ef4444' }]}>Cancelled</Text>
+                  ) : result ? (
+                    <Text style={[styles.tournamentGameBadge, { color: RESULT_COLORS[result.label] }]}>
+                      {result.label} {result.ourScore}–{result.oppScore}
+                    </Text>
+                  ) : isUpcoming(g) ? (
+                    <Text style={[styles.tournamentGameBadge, { color: primaryColor }]}>
+                      {formatGameCountdown(g.event_date)}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+            {overflowCount > 0 && (
+              <TouchableOpacity style={styles.tournamentMoreRow} onPress={openTournament}>
+                <Text style={[styles.tournamentMoreText, { color: primaryColor }]}>
+                  +{overflowCount} more · View full tournament
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <TouchableOpacity onPress={openTournament}>
+            <Text style={styles.tournamentNoGames}>No games yet — tap to add the first one.</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
+  function renderScheduleItem(item: ScheduleItem) {
+    return item.kind === 'event' ? renderCard(item.data) : renderTournamentCard(item.data);
   }
 
   function handleSyncCalendar() {
@@ -923,7 +1168,7 @@ export default function ScheduleScreen() {
 
       {/* ── Upcoming tab ── */}
       {activeTab === 'upcoming' && (
-        upcomingEvents.length === 0 ? (
+        upcomingScheduleItems.length === 0 && undatedTournaments.length === 0 ? (
           <View style={styles.empty}>
             {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} contentFit="contain" /> : null}
             <View style={[styles.emptyIconWrap, { backgroundColor: rgba(0.1) }]}>
@@ -942,7 +1187,7 @@ export default function ScheduleScreen() {
         ) : (
           <SectionList
             sections={upcomingSections}
-            keyExtractor={(e) => e.id}
+            keyExtractor={(item) => item.kind === 'event' ? item.data.id : `tournament-${item.data.tournament.id}`}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
             initialNumToRender={10}
@@ -951,39 +1196,42 @@ export default function ScheduleScreen() {
             removeClippedSubviews
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
             ListHeaderComponent={
-              <TouchableOpacity
-                style={[styles.syncBanner, { backgroundColor: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.13)' }]}
-                onPress={handleSyncCalendar}
-                activeOpacity={0.75}
-              >
-                <View style={[styles.syncIconWrap, { backgroundColor: primaryColor }]}>
-                  <Ionicons name="calendar" size={20} color="#ffffff" />
-                </View>
-                <View style={styles.syncBannerText}>
-                  <Text style={[styles.syncBannerTitle, { color: '#ffffff' }]}>Sync schedule to calendar</Text>
-                  <View style={styles.syncPlatforms}>
-                    <Ionicons name="logo-apple" size={11} color={PULSE_COLORS.ui.muted} />
-                    <Text style={styles.syncPlatformText}>Apple</Text>
-                    <Text style={styles.syncDot}>·</Text>
-                    <Ionicons name="logo-google" size={11} color={PULSE_COLORS.ui.muted} />
-                    <Text style={styles.syncPlatformText}>Google</Text>
-                    <Text style={styles.syncDot}>· Copy link</Text>
+              <>
+                {undatedTournaments.map((marker) => renderTournamentCard(marker))}
+                <TouchableOpacity
+                  style={[styles.syncBanner, { backgroundColor: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.13)' }]}
+                  onPress={handleSyncCalendar}
+                  activeOpacity={0.75}
+                >
+                  <View style={[styles.syncIconWrap, { backgroundColor: primaryColor }]}>
+                    <Ionicons name="calendar" size={20} color="#ffffff" />
                   </View>
-                </View>
-                <View style={[styles.syncChevron, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-                  <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
-                </View>
-              </TouchableOpacity>
+                  <View style={styles.syncBannerText}>
+                    <Text style={[styles.syncBannerTitle, { color: '#ffffff' }]}>Sync schedule to calendar</Text>
+                    <View style={styles.syncPlatforms}>
+                      <Ionicons name="logo-apple" size={11} color={PULSE_COLORS.ui.muted} />
+                      <Text style={styles.syncPlatformText}>Apple</Text>
+                      <Text style={styles.syncDot}>·</Text>
+                      <Ionicons name="logo-google" size={11} color={PULSE_COLORS.ui.muted} />
+                      <Text style={styles.syncPlatformText}>Google</Text>
+                      <Text style={styles.syncDot}>· Copy link</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.syncChevron, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+                    <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
+                  </View>
+                </TouchableOpacity>
+              </>
             }
             renderSectionHeader={({ section }) => renderSectionHeader(section.title, section.data.length)}
-            renderItem={({ item }) => renderCard(item)}
+            renderItem={({ item }) => renderScheduleItem(item)}
           />
         )
       )}
 
       {/* ── Past tab ── */}
       {activeTab === 'past' && (
-        pastEvents.length === 0 ? (
+        pastScheduleItems.length === 0 ? (
           <View style={styles.empty}>
             <View style={[styles.emptyIconWrap, { backgroundColor: rgba(0.1) }]}>
               <Ionicons name="time-outline" size={26} color={PULSE_COLORS.ui.muted} />
@@ -994,7 +1242,7 @@ export default function ScheduleScreen() {
         ) : (
           <SectionList
             sections={pastSections}
-            keyExtractor={(e) => e.id}
+            keyExtractor={(item) => item.kind === 'event' ? item.data.id : `tournament-${item.data.tournament.id}`}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
             initialNumToRender={10}
@@ -1024,7 +1272,7 @@ export default function ScheduleScreen() {
               </View>
             ) : null}
             renderSectionHeader={({ section }) => renderSectionHeader(section.title, section.data.length)}
-            renderItem={({ item }) => renderCard(item)}
+            renderItem={({ item }) => renderScheduleItem(item)}
           />
         )
       )}
@@ -1166,6 +1414,32 @@ const styles = StyleSheet.create({
   syncPlatformText: { fontSize: 11, color: PULSE_COLORS.ui.muted },
   syncDot: { fontSize: 11, color: PULSE_COLORS.ui.muted },
   syncChevron: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  tournamentBigCard: {
+    borderRadius: 20, padding: 18, marginBottom: 14,
+    borderWidth: 1.5, backgroundColor: 'rgba(234,179,8,0.08)', borderColor: 'rgba(234,179,8,0.4)',
+    shadowColor: '#EAB308', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.18, shadowRadius: 16, elevation: 3,
+  },
+  tournamentBigHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  tournamentBigIcon: {
+    width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(234,179,8,0.16)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.35)',
+  },
+  tournamentEyebrow: { fontSize: 10, fontWeight: '800', color: '#EAB308', letterSpacing: 1.2, marginBottom: 2 },
+  tournamentBigName: { fontSize: 19, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  tournamentBigMeta: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  tournamentBigRecord: { fontSize: 12.5, fontWeight: '700', color: '#EAB308', marginTop: 12 },
+  tournamentGamesList: { marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(234,179,8,0.2)', paddingTop: 10 },
+  tournamentGameRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  tournamentGameStage: {
+    backgroundColor: 'rgba(234,179,8,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3, maxWidth: 84,
+  },
+  tournamentGameStageText: { fontSize: 9, fontWeight: '800', color: '#EAB308', letterSpacing: 0.3 },
+  tournamentGameTitle: { fontSize: 13.5, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  tournamentGameMeta: { fontSize: 11.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  tournamentGameBadge: { fontSize: 11.5, fontWeight: '800' },
+  tournamentMoreRow: { paddingTop: 8, alignItems: 'center' },
+  tournamentMoreText: { fontSize: 12.5, fontWeight: '700' },
+  tournamentNoGames: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 14, fontStyle: 'italic' },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: PULSE_COLORS.brand.green,
@@ -1260,6 +1534,7 @@ const styles = StyleSheet.create({
   },
   driveTimePillText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  tournamentBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(234,179,8,0.12)', maxWidth: 160 },
   kitBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.08)' },
   kitSwatch: { width: 9, height: 9, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
   typeText: { fontSize: 11, fontWeight: '700' },

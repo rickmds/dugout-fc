@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut,
   Layers, DollarSign, Target, LayoutGrid,
-  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ShieldCheck, Trophy,
+  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ShieldCheck, Trophy, Medal,
 } from 'lucide-react';
 import { useDashboard } from './DashboardContext';
 import { contrastText, safeAccent } from '@/lib/colorContrast';
@@ -31,6 +31,7 @@ const CLUB_NAV: NavEntry[] = [
   { section: 'Schedule' },
   { href: '/dashboard/schedule',      icon: CalendarDays,  label: 'Schedule' },
   { href: '/dashboard/games',         icon: Trophy,        label: 'Game Scheduler' },
+  { href: '/dashboard/tournaments',   icon: Medal,         label: 'Tournaments' },
   { section: 'Communicate' },
   { href: '/dashboard/announcements', icon: Megaphone,     label: 'Announcements' },
   { href: '/dashboard/email',         icon: Mail,          label: 'Email' },

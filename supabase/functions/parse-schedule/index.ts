@@ -13,10 +13,11 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), { status: 500, headers: CORS });
   }
 
-  const { file_base64, file_type } = await req.json();
+  const { file_base64, file_type, context } = await req.json();
   if (!file_base64 || !file_type) {
     return new Response(JSON.stringify({ error: 'file_base64 and file_type required' }), { status: 400, headers: CORS });
   }
+  const isTournament = context === 'tournament';
 
   // Build content array based on file type
   const userContent: unknown[] = [];
@@ -33,9 +34,17 @@ serve(async (req) => {
     userContent.push({ type: 'text', text: `Schedule data:\n\n${raw}` });
   }
 
+  const tournamentPreamble = isTournament
+    ? `This is a TOURNAMENT schedule (weekend pool play / bracket, or a single knockout round) — not a regular season schedule. Expect: multiple games in one or two days, a court/field NUMBER rather than a full street address, and opponents that may only be knowable after pool play (e.g. "Winner of Pool A", "TBD"). Extract round_label for every game.\n\n`
+    : '';
+
+  const roundLabelRule = isTournament
+    ? `- round_label: the pool/bracket stage this game belongs to, e.g. "Pool Play", "Group A", "Round of 16", "Quarterfinal", "Semifinal", "Final". Use the document's own wording where possible, normalized to a short human-readable label (e.g. "QF" -> "Quarterfinal"). null only if genuinely not indicated anywhere.`
+    : `- round_label: null unless this document explicitly shows tournament/bracket round structure (e.g. "Quarterfinal", "Pool Play") — for a normal season schedule this is always null.`;
+
   userContent.push({
     type: 'text',
-    text: `Extract all soccer schedule events from this document. Return ONLY a valid JSON object — no markdown, no explanation.
+    text: `${tournamentPreamble}Extract all soccer schedule events from this document. Return ONLY a valid JSON object — no markdown, no explanation.
 
 Required structure:
 {
@@ -49,6 +58,7 @@ Required structure:
       "address": "123 Main St, Springfield, NJ 07081",
       "home_away": "home",
       "surface": "turf",
+      "round_label": null,
       "uncertain": false,
       "uncertainty_reason": null
     }
@@ -59,13 +69,14 @@ Required structure:
 Field rules:
 - date: YYYY-MM-DD. null if you cannot determine it confidently. If year is absent, assume the next upcoming year.
 - time: 24-hour HH:MM (24-hour format). null if not specified.
-- title: For home games use "vs [Cleaned Opponent]". For away games use "@ [Cleaned Opponent]". For training use "Training" or "Practice". For other events use a brief label. Do NOT append "(Home)" or "(Away)" to the title.
+- title: For home games use "vs [Cleaned Opponent]". For away games use "@ [Cleaned Opponent]". For training use "Training" or "Practice". For other events use a brief label. Do NOT append "(Home)" or "(Away)" to the title.${isTournament ? ' If the opponent is not yet determined (e.g. still pending a pool result), use the document\'s own placeholder verbatim, e.g. "vs Winner of Pool A" or "vs TBD".' : ''}
 - Cleaned Opponent: strip division codes, season codes, coach names, and club suffixes from team names. E.g. "FairLawnAllSports-B12A-Rake" → "Fair Lawn All Sports", "Tenafly-B12A-Schwartzberg" → "Tenafly", "CougarSC-B12A-Kolodiy" → "Cougar SC", "Montclair-B12A-Brown" → "Montclair". Make it human-readable.
-- home_away: "home" if the team this schedule belongs to is the Home Team column, "away" if they are the Visitor Team. To identify which team the schedule is for: find the team name that recurs consistently across rows (appearing in Home Team for some rows and Visitor Team for others — it is the same club throughout). null if not applicable (training, other).
+- home_away: "home" if the team this schedule belongs to is the Home Team column, "away" if they are the Visitor Team. To identify which team the schedule is for: find the team name that recurs consistently across rows (appearing in Home Team for some rows and Visitor Team for others — it is the same club throughout). null if not applicable (training, other${isTournament ? ', or a neutral-site tournament game with no designated home team' : ''}).
 - type: "game" if there is a home team vs visitor team structure, "training" for practice/training/conditioning, "other" for everything else.
-- location: field or venue name only — no address. null if not specified.
+- location: field or venue name only — no address.${isTournament ? ' For a tournament, this is often just a court/field number (e.g. "Field 3", "Court 12") rather than a named venue — use whatever the document gives.' : ''} null if not specified.
 - address: join any separate address component columns (Address, City, State, Zipcode) into one string like "230 Northern Pkwy, Ridgewood, NJ 07450". If already combined, use as-is. null if no address present.
 - surface: "turf" if Artificial/Turf/Synthetic/FieldTurf; "grass" if Grass/Natural. null if not specified.
+${roundLabelRule}
 - uncertain: true if the date is ambiguous, row is unclear, or you lack confidence in any required field.
 - uncertainty_reason: brief explanation when uncertain, null otherwise.
 - warnings: array of strings for general parsing issues (empty array if none).`,
