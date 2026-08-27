@@ -141,6 +141,39 @@ export default function AnnouncementsPage() {
     setAiDrafted(true);
   }
 
+  // Shared by the compose-time "Also send by email" toggle and the
+  // per-item "Email team" button — both need the exact same "resolve this
+  // team's invited parents, dedupe by email, invoke the real send-team-email
+  // function" steps. Mirrors email/page.tsx's handleSend, the one proven
+  // working email path in this dashboard.
+  async function emailTeamAnnouncement(teamId: string, title: string, body: string) {
+    const tName = teams.find((t) => t.id === teamId)?.name ?? club?.name ?? 'your team';
+    const { data: inviteData } = await supabase
+      .from('invites')
+      .select('email, players(full_name)')
+      .eq('team_id', teamId);
+
+    const seen = new Set<string>();
+    const to: { email: string; name: string }[] = [];
+    for (const inv of inviteData ?? []) {
+      const email = inv.email as string | null;
+      if (!email) continue;
+      const key = email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      to.push({ email, name: (inv.players as unknown as { full_name: string } | null)?.full_name ?? '' });
+    }
+    if (!to.length) return;
+
+    await supabase.functions.invoke('send-team-email', {
+      body: {
+        to, cc: [], subject: title, body, reply_to: null,
+        from_name: profile?.full_name ?? 'Coach', team_name: tName, attachments: [],
+        club_logo_url: club?.logo_url ?? null, club_name: club?.name ?? null, primary_color: club?.primary_color ?? null,
+      },
+    });
+  }
+
   async function handleSave() {
     if (!form.title.trim() || !form.body.trim() || !form.team_ids.length) return;
     setSaving(true);
@@ -177,6 +210,14 @@ export default function AnnouncementsPage() {
         }
       }
 
+      if (form.email_team) {
+        for (const tid of form.team_ids) {
+          try {
+            await emailTeamAnnouncement(tid, form.title.trim(), form.body.trim());
+          } catch { /* non-critical */ }
+        }
+      }
+
       setComposeMode(false);
       load();
     } finally {
@@ -206,11 +247,7 @@ export default function AnnouncementsPage() {
     if (emailingId === a.id) return;
     setEmailingId(a.id);
     try {
-      await fetch('/api/send-announcement-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_id: a.team_id, title: a.title, body: a.body }),
-      });
+      if (a.team_id) await emailTeamAnnouncement(a.team_id, a.title, a.body);
     } catch { /* non-critical */ }
     setTimeout(() => setEmailingId(null), 2500);
   }

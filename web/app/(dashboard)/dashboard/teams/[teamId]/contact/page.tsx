@@ -151,20 +151,36 @@ export default function TeamContactPage() {
     if (!club || !teamId) return;
     setEmailSaving(true);
     try {
-      const res = await fetch('/api/send-team-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          team_id: teamId,
-          subject: emailForm.subject,
-          body: emailForm.body,
-          from_name: profile?.full_name ?? club.name,
-          club_name: club.name,
-          club_logo_url: club.logo_url,
-          primary_color: club.primary_color,
-        }),
-      });
-      if (res.ok) { setEmailSent(true); setEmailForm({ subject: '', body: '' }); setEmailBullets(''); setEmailAiDone(false); setEmailShowAI(false); }
+      const { data: inviteData } = await supabase
+        .from('invites')
+        .select('email, players(full_name)')
+        .eq('team_id', teamId);
+
+      const seen = new Set<string>();
+      const to: { email: string; name: string }[] = [];
+      for (const inv of inviteData ?? []) {
+        const email = inv.email as string | null;
+        if (!email) continue;
+        const key = email.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        to.push({ email, name: (inv.players as unknown as { full_name: string } | null)?.full_name ?? '' });
+      }
+
+      if (to.length) {
+        const { error } = await supabase.functions.invoke('send-team-email', {
+          body: {
+            to, cc: [], subject: emailForm.subject, body: emailForm.body, reply_to: null,
+            from_name: profile?.full_name ?? club.name,
+            team_name: teamName,
+            attachments: [],
+            club_name: club.name,
+            club_logo_url: club.logo_url,
+            primary_color: club.primary_color,
+          },
+        });
+        if (!error) { setEmailSent(true); setEmailForm({ subject: '', body: '' }); setEmailBullets(''); setEmailAiDone(false); setEmailShowAI(false); }
+      }
     } finally {
       setEmailSaving(false);
     }
