@@ -68,43 +68,56 @@ serve(async (req) => {
 
   const html = buildHtml({ body, from_name, team_name, subject, club_logo_url, club_name, primary_color });
 
-  const resendBody: Record<string, unknown> = {
-    from:    fromAddress,
-    to:      toAddresses,
+  const baseBody: Record<string, unknown> = {
+    from: fromAddress,
+    // Real recipients go in bcc, never to/cc — every parent on the team
+    // otherwise sees every other parent's email address in their inbox.
+    // "to" is the sender's own address so the header isn't blank.
+    to:   [fromAddress],
     subject,
     html,
-    text:    body,
+    text: body,
   };
-
-  if (ccAddresses.length > 0) resendBody.cc = ccAddresses;
-  if (reply_to)               resendBody.reply_to = reply_to;
-
+  if (ccAddresses.length > 0) baseBody.cc = ccAddresses;
+  if (reply_to)               baseBody.reply_to = reply_to;
   if (attachments?.length > 0) {
-    resendBody.attachments = attachments.map((a) => ({
+    baseBody.attachments = attachments.map((a) => ({
       filename:     a.filename,
       content:      a.content,
       content_type: a.type,
     }));
   }
 
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${RESEND_API_KEY}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify(resendBody),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    return new Response(JSON.stringify({ error: err }), {
-      status: 502, headers: { ...CORS, 'Content-Type': 'application/json' },
-    });
+  // Resend caps total recipients per send — batch bcc into chunks so a
+  // large team (or a club-wide "Email Team" blast) can't silently exceed
+  // that limit in one request.
+  const BCC_BATCH_SIZE = 45;
+  const batches: string[][] = [];
+  for (let i = 0; i < toAddresses.length; i += BCC_BATCH_SIZE) {
+    batches.push(toAddresses.slice(i, i + BCC_BATCH_SIZE));
   }
 
-  const data = await res.json();
-  return new Response(JSON.stringify({ id: data.id }), {
+  let sent = 0;
+  for (const batch of batches) {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({ ...baseBody, bcc: batch }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      return new Response(JSON.stringify({ error: err, sent }), {
+        status: 502, headers: { ...CORS, 'Content-Type': 'application/json' },
+      });
+    }
+    sent += batch.length;
+  }
+
+  return new Response(JSON.stringify({ sent }), {
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 });
