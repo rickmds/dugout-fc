@@ -11,6 +11,7 @@ import {
 const TEAM_PALETTE = ['#6366F1', '#F59E0B', '#10B981', '#EC4899', '#14B8A6', '#F97316', '#8B5CF6', '#DC2626'];
 import { supabase } from '@/lib/supabase';
 import { sendEventPush } from '@/lib/pushEvent';
+import { sendTeamEmail } from '@/lib/emailTeam';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { zonedTimeToUtc } from '@/lib/timezone';
 import AIScheduleImport from '@/components/dashboard/AIScheduleImport';
@@ -457,10 +458,23 @@ export default function SchedulePage() {
     }
     setDeleteConfirm(null);
     if (ev) {
+      // "deleted", not "cancelled" — this hard-removes the row (no restore),
+      // unlike handleCancelEvent below which soft-cancels.
       const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
+      const bodyText = `${ev.title} has been deleted`;
       for (const teamId of notifyTeamIds) {
-        sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }).catch(() => {});
+        sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
       }
+      sendTeamEmail({
+        teamIds: notifyTeamIds,
+        subject: 'Event deleted',
+        body: bodyText,
+        fromName: profile?.full_name ?? club?.name ?? 'Coach',
+        teamName: teams.find((t) => t.id === ev.team_id)?.name ?? club?.name ?? '',
+        clubName: club?.name ?? null,
+        logoUrl: club?.logo_url ?? null,
+        primaryColor: club?.primary_color ?? null,
+      });
     }
   }
 
@@ -486,14 +500,28 @@ export default function SchedulePage() {
     if (error) { alert(`Could not cancel event: ${error.message}`); return; }
 
     const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
+    const bodyText = cancelReason.trim() ? `${ev.title} cancelled: ${cancelReason.trim()}` : `${ev.title} has been cancelled`;
     for (const teamId of notifyTeamIds) {
       sendEventPush({
         team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled',
         title: '❌ Event cancelled',
-        body: cancelReason.trim() ? `${ev.title} cancelled: ${cancelReason.trim()}` : `${ev.title} has been cancelled`,
+        body: bodyText,
         data: { type: 'event_cancelled', event_id: ev.id },
       }).catch(() => {});
     }
+    // One deduped call across every notified team, not once per team —
+    // otherwise a family with kids on two linked teams gets the same
+    // cancellation email twice.
+    sendTeamEmail({
+      teamIds: notifyTeamIds,
+      subject: 'Event cancelled',
+      body: bodyText,
+      fromName: profile?.full_name ?? club?.name ?? 'Coach',
+      teamName: teams.find((t) => t.id === ev.team_id)?.name ?? club?.name ?? '',
+      clubName: club?.name ?? null,
+      logoUrl: club?.logo_url ?? null,
+      primaryColor: club?.primary_color ?? null,
+    });
 
     setCancelConfirm(null);
     loadEvents();
@@ -510,6 +538,27 @@ export default function SchedulePage() {
       : await supabase.from('events').update(payload).eq('id', ev.id);
     setRestoringId(null);
     if (error) { alert(`Could not restore event: ${error.message}`); return; }
+
+    const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
+    const bodyText = `${ev.title} is back on`;
+    for (const teamId of notifyTeamIds) {
+      sendEventPush({
+        team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled',
+        title: '✅ Event restored', body: bodyText,
+        data: { type: 'event_cancelled', event_id: ev.id },
+      }).catch(() => {});
+    }
+    sendTeamEmail({
+      teamIds: notifyTeamIds,
+      subject: 'Event restored',
+      body: bodyText,
+      fromName: profile?.full_name ?? club?.name ?? 'Coach',
+      teamName: teams.find((t) => t.id === ev.team_id)?.name ?? club?.name ?? '',
+      clubName: club?.name ?? null,
+      logoUrl: club?.logo_url ?? null,
+      primaryColor: club?.primary_color ?? null,
+    });
+
     loadEvents();
   }
 

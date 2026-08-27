@@ -21,6 +21,7 @@ import { useClub } from '../../../../hooks/useClub';
 import { zonedTimeToUtc } from '../../../../lib/timezone';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { sendTeamPush } from '../../../../lib/push';
+import { sendTeamEmail } from '../../../../lib/emailTeam';
 import { DateTimeSheet } from '../../../../components/ui/DateTimeSheet';
 import SmartLocationInput from '../../../../components/ui/SmartLocationInput';
 import PickerSheet from '../../../../components/ui/PickerSheet';
@@ -142,7 +143,7 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function EditEventScreen() {
-  const { primaryColor, secondaryColor, onSecondary, rgba, timezone } = useClub();
+  const { primaryColor, secondaryColor, onSecondary, rgba, timezone, clubName, logoUrl } = useClub();
   const router = useRouter();
   const { clubSlug, eventId } = useLocalSearchParams<{ clubSlug: string; eventId: string }>();
   const { profile } = useAuth();
@@ -569,20 +570,34 @@ export default function EditEventScreen() {
         ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
         : title.trim();
       const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
+      const bodyText = scope === 'future'
+        ? `${titleLabel} and future sessions cancelled${reason.trim() ? `: ${reason.trim()}` : ''}`
+        : reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`;
       for (const teamId of notifyTeamIds) {
         sendTeamPush({
           teamId,
           title: 'Event cancelled',
-          body: scope === 'future'
-            ? `${titleLabel} and future sessions cancelled${reason.trim() ? `: ${reason.trim()}` : ''}`
-            : reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`,
+          body: bodyText,
           excludeProfileId: profile?.id,
           data: { type: 'event_cancelled', event_id: eventId },
         });
       }
+      // One deduped call across every notified team, not once per team —
+      // otherwise a family with kids on two linked teams gets the same
+      // cancellation email twice.
+      sendTeamEmail({
+        teamIds: notifyTeamIds,
+        subject: 'Event cancelled',
+        body: bodyText,
+        fromName: profile?.full_name ?? 'Coach',
+        teamName: clubName ?? '',
+        clubName,
+        logoUrl,
+        primaryColor,
+      });
     }
     setIsCancelled(true);
-    Alert.alert('Event cancelled', 'Parents have been notified by push notification.');
+    Alert.alert('Event cancelled', 'Parents have been notified by push and email.');
   }
 
   function confirmRestore() {
@@ -606,8 +621,34 @@ export default function EditEventScreen() {
       Alert.alert('Error', 'Could not restore the event. Please try again.');
       return;
     }
+    if (eventTeamId) {
+      const titleLabel = eventType === 'game'
+        ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
+        : title.trim();
+      const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
+      const bodyText = `${titleLabel} is back on`;
+      for (const teamId of notifyTeamIds) {
+        sendTeamPush({
+          teamId,
+          title: 'Event reinstated',
+          body: bodyText,
+          excludeProfileId: profile?.id,
+          data: { type: 'event_cancelled', event_id: eventId },
+        });
+      }
+      sendTeamEmail({
+        teamIds: notifyTeamIds,
+        subject: 'Event reinstated',
+        body: bodyText,
+        fromName: profile?.full_name ?? 'Coach',
+        teamName: clubName ?? '',
+        clubName,
+        logoUrl,
+        primaryColor,
+      });
+    }
     setIsCancelled(false);
-    Alert.alert('Event restored', 'This event is back on. Parents will see it as active.');
+    Alert.alert('Event restored', 'Parents have been notified by push and email.');
   }
 
   const canSave = title.trim().length > 0 && !saving;

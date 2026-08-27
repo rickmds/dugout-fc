@@ -31,7 +31,7 @@ import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../.
 import ReflectionSheet, { FACES } from '../../../../components/reflection/ReflectionSheet';
 import ShoutoutSheet from '../../../../components/shoutout/ShoutoutSheet';
 import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
-import { sendProfilesPush } from '../../../../lib/push';
+import { sendProfilesPush, sendTeamPush } from '../../../../lib/push';
 import { getGameResult, RESULT_COLORS, sendTournamentResultPush } from '../../../../lib/tournaments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
@@ -857,9 +857,21 @@ export default function EventDetailScreen() {
       ? { ...prev, cancelled_at: isUncancel ? null : new Date().toISOString() }
       : prev
     );
+    // This flow already emails parents server-side (inside the edge function
+    // above) — this only adds the push+in-app half, so cancelling here gets
+    // both channels like every other cancel path, not email alone.
+    sendTeamPush({
+      teamId: team.id,
+      title: isUncancel ? 'Event reinstated' : 'Event cancelled',
+      body: isUncancel
+        ? `${event.title} is back on`
+        : cancelReason.trim() ? `${event.title} cancelled: ${cancelReason.trim()}` : `${event.title} has been cancelled`,
+      excludeProfileId: profile?.id,
+      data: { type: 'event_cancelled', event_id: event.id },
+    });
     Alert.alert(
       isUncancel ? 'Event reinstated' : 'Event cancelled',
-      isUncancel ? 'Parents have been notified — the event is back on.' : 'Parents have been notified by email.'
+      isUncancel ? 'Parents have been notified — the event is back on.' : 'Parents have been notified by email and push.'
     );
   }
 

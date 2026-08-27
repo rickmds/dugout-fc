@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { sendEventPush } from '@/lib/pushEvent';
+import { sendTeamEmail } from '@/lib/emailTeam';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
@@ -503,7 +504,20 @@ export default function TeamSchedulePage() {
     delDialogRef.current?.close();
     load();
     if (ev && teamId) {
-      sendEventPush({ team_id: teamId, type: 'event_cancelled', title: '❌ Event cancelled', body: `${ev.title} has been cancelled`, data: { type: 'event_cancelled' } }).catch(() => {});
+      // "deleted", not "cancelled" — this page has no soft-cancel, only a
+      // hard, unrecoverable delete; the push text shouldn't claim otherwise.
+      const bodyText = `${ev.title} has been deleted`;
+      sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
+      sendTeamEmail({
+        teamIds: [teamId],
+        subject: 'Event deleted',
+        body: bodyText,
+        fromName: profile?.full_name ?? club?.name ?? 'Coach',
+        teamName: teams.find((t) => t.id === teamId)?.name ?? club?.name ?? '',
+        clubName: club?.name ?? null,
+        logoUrl: club?.logo_url ?? null,
+        primaryColor: club?.primary_color ?? null,
+      });
     }
   }
 
