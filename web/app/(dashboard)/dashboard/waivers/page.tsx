@@ -271,9 +271,13 @@ export default function WaiversPage() {
     loadWaivers();
   }
 
-  async function sendReminder(player: UnsignedPlayer, quiet = false) {
-    if (!player.parent_email || !activeWaiver) return;
-    await Promise.all([
+  // Returns whether the email actually sent — callers use this to report
+  // real success/failure instead of assuming it worked (send-waiver-reminder
+  // didn't exist at all until this fix; the push half can still succeed
+  // independently, so the two aren't collapsed into one pass/fail).
+  async function sendReminder(player: UnsignedPlayer, quiet = false): Promise<boolean> {
+    if (!player.parent_email || !activeWaiver) return false;
+    const [emailResult] = await Promise.all([
       supabase.functions.invoke('send-waiver-reminder', {
         body: {
           to_email: player.parent_email,
@@ -292,19 +296,33 @@ export default function WaiversPage() {
               data: { type: 'waiver_reminder' },
             },
           })
-        : Promise.resolve(),
+        : Promise.resolve({ error: null }),
     ]);
-    if (!quiet) alert(`Reminder sent to ${player.parent_email}`);
+    const ok = !emailResult.error;
+    if (!quiet) {
+      alert(ok
+        ? `Reminder sent to ${player.parent_email}`
+        : `Could not send the reminder email to ${player.parent_email}. Please check your connection and try again.`);
+    }
+    return ok;
   }
 
   async function handleRemindAll() {
     const withEmail = filteredUnsigned.filter((u) => u.parent_email);
     if (!withEmail.length) return;
     setRemindingAll(true);
-    for (const player of withEmail) await sendReminder(player, true);
+    let failed = 0;
+    for (const player of withEmail) {
+      const ok = await sendReminder(player, true);
+      if (!ok) failed++;
+    }
     setRemindingAll(false);
-    setRemindAllDone(true);
-    setTimeout(() => setRemindAllDone(false), 3000);
+    if (failed > 0) {
+      alert(`${withEmail.length - failed} of ${withEmail.length} reminders sent. ${failed} failed — please check your connection and try again.`);
+    } else {
+      setRemindAllDone(true);
+      setTimeout(() => setRemindAllDone(false), 3000);
+    }
   }
 
   const filteredSigs     = signatures.filter((s) => !sigSearch || s.player_name.toLowerCase().includes(sigSearch.toLowerCase()));
