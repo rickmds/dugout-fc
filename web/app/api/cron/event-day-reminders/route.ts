@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendExpoPush } from '@/lib/expoPush';
 
+// Runs hourly so this can land at 8am in each club's OWN local time, not a
+// single fixed UTC hour that only happens to be reasonable for one
+// timezone — a club in England and a club in California should each get
+// their digest at 8am where THEY are, not both at 8am Eastern.
+const SEND_HOUR = 8;
+
+function localHour(date: Date, timeZone: string): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).format(date),
+    10
+  );
+}
+
+// en-CA formats as YYYY-MM-DD, matching events.event_date's format directly.
+function localDateStr(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -9,22 +27,36 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = supabaseAdmin();
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD in UTC
+  const now = new Date();
 
   type DayEvent = {
-    id: string; title: string; type: string; team_id: string; event_time: string | null; location: string | null;
+    id: string; title: string; type: string; team_id: string; event_date: string; event_time: string | null; location: string | null;
     tournament_id: string | null;
-    teams: { clubs: { slug: string } | null } | null;
+    teams: { clubs: { slug: string; timezone: string | null } | null } | null;
   };
 
-  const { data: events } = await supabase
+  // "Today" is relative to each club's own timezone, not UTC — an event
+  // could be today for a California club while it's already tomorrow (or
+  // still yesterday) in UTC. Cast a wide net (yesterday/today/tomorrow in
+  // UTC covers every real-world offset) and let each event's own club
+  // timezone decide, below, whether it's actually "today, 8am" for it.
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const tomorrow  = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const { data: candidates } = await supabase
     .from('events')
-    .select('id, title, type, team_id, event_time, location, tournament_id, teams(clubs(slug))')
-    .eq('event_date', today)
+    .select('id, title, type, team_id, event_date, event_time, location, tournament_id, teams(clubs(slug, timezone))')
+    .gte('event_date', yesterday)
+    .lte('event_date', tomorrow)
     .is('cancelled_at', null)
     .returns<DayEvent[]>();
 
-  if (!events?.length) return NextResponse.json({ sent: 0, reason: 'no_events_today' });
+  const events = (candidates ?? []).filter(ev => {
+    const clubTimeZone = ev.teams?.clubs?.timezone ?? 'America/New_York';
+    return ev.event_date === localDateStr(now, clubTimeZone) && localHour(now, clubTimeZone) === SEND_HOUR;
+  });
+
+  if (!events.length) return NextResponse.json({ sent: 0, reason: 'no_events_at_send_hour' });
 
   // Batched across the whole day's events instead of one round trip per
   // event for team_members / notifications / push_tokens each — this cron

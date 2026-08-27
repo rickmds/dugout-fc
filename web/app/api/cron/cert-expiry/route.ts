@@ -4,6 +4,20 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Runs hourly so this can land at 8am in each club's OWN local time — see
+// event-day-reminders/route.ts for the full reasoning (same pattern here).
+// Required once this runs hourly instead of once a day: without it, every
+// cert inside the ±1 day window would re-email on every one of that day's
+// 24 runs, not just once.
+const SEND_HOUR = 8;
+
+function localHour(date: Date, timeZone: string): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).format(date),
+    10
+  );
+}
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -22,12 +36,12 @@ export async function GET(req: NextRequest) {
     .lt('expiry_date', today.toISOString().slice(0, 10));
 
   // Fetch certs expiring in exactly 60 or 14 days (±1 day window so daily cron catches them)
-  const { data: expiring } = await sb
+  const { data: candidates } = await sb
     .from('staff_certifications')
     .select(`
       id, cert_type, license_level, custom_label, expiry_date, status, profile_id,
       profiles!staff_certifications_profile_id_fkey(full_name, club_id),
-      clubs!staff_certifications_club_id_fkey(name)
+      clubs!staff_certifications_club_id_fkey(name, timezone)
     `)
     .eq('status', 'verified')
     .gte('expiry_date', today.toISOString().slice(0, 10))
@@ -36,10 +50,15 @@ export async function GET(req: NextRequest) {
       id: string; cert_type: string; license_level: string | null; custom_label: string | null;
       expiry_date: string; status: string; profile_id: string;
       profiles: { full_name: string | null; club_id: string | null } | null;
-      clubs: { name: string } | null;
+      clubs: { name: string; timezone: string | null } | null;
     }[]>();
 
-  if (!expiring?.length) {
+  const expiring = (candidates ?? []).filter(c => {
+    const clubTimeZone = c.clubs?.timezone ?? 'America/New_York';
+    return localHour(today, clubTimeZone) === SEND_HOUR;
+  });
+
+  if (!expiring.length) {
     return NextResponse.json({ sent: 0, expired: 0 });
   }
 

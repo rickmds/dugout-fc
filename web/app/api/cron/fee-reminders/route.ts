@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 
+// Runs hourly so this can land at 8am in each club's OWN local time — see
+// event-day-reminders/route.ts for the full reasoning (same pattern here).
+const SEND_HOUR = 8;
+
+function localHour(date: Date, timeZone: string): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).format(date),
+    10
+  );
+}
+
+type FeeCandidate = { id: string; players: { teams: { clubs: { timezone: string | null } | null } | null } | null };
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -8,22 +21,29 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = supabaseAdmin();
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   // Eligible fees: unpaid/partial, created 7+ days ago, not reminded in the last 7 days
-  const { data: fees, error } = await supabase
+  const { data: candidates, error } = await supabase
     .from('player_fees')
-    .select('id')
+    .select('id, players(teams(clubs(timezone)))')
     .in('status', ['outstanding', 'partial'])
     .lt('created_at', sevenDaysAgo)
-    .or(`last_reminded_at.is.null,last_reminded_at.lt.${sevenDaysAgo}`);
+    .or(`last_reminded_at.is.null,last_reminded_at.lt.${sevenDaysAgo}`)
+    .returns<FeeCandidate[]>();
 
   if (error) {
     console.error('fee-reminders cron: query error', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!fees?.length) {
+  const fees = (candidates ?? []).filter(f => {
+    const clubTimeZone = f.players?.teams?.clubs?.timezone ?? 'America/New_York';
+    return localHour(now, clubTimeZone) === SEND_HOUR;
+  });
+
+  if (!fees.length) {
     return NextResponse.json({ sent: 0 });
   }
 
