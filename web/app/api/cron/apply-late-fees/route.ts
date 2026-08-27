@@ -2,18 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendExpoPush } from '@/lib/expoPush';
 
+// Runs hourly so this can land at 8am in each club's OWN local time — see
+// event-day-reminders/route.ts for the full reasoning (same pattern here).
+const SEND_HOUR = 8;
+
+function localHour(date: Date, timeZone: string): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).format(date),
+    10
+  );
+}
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization')?.replace('Bearer ', '');
-  if (auth !== process.env.CRON_SECRET) {
+  if (!process.env.CRON_SECRET || auth !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const supabase = supabaseAdmin();
+  const now = new Date();
 
-  const { data: clubs } = await supabase
+  const { data: allClubs } = await supabase
     .from('clubs')
-    .select('id, late_fee_type, late_fee_amount, late_fee_grace_days')
+    .select('id, late_fee_type, late_fee_amount, late_fee_grace_days, timezone')
     .eq('late_fee_enabled', true);
+
+  const clubs = (allClubs ?? []).filter(c => localHour(now, c.timezone ?? 'America/New_York') === SEND_HOUR);
 
   if (!clubs?.length) return NextResponse.json({ applied: 0 });
 

@@ -30,6 +30,20 @@ async function sendPush(payload: {
 // that CRON_SECRET is set and the Vercel crons work, removed here to avoid
 // double notifications. Guest-deadline reminders have no Vercel
 // equivalent, so that job stays.
+//
+// Runs hourly (see the pg_cron reschedule migration) and only acts on a
+// club during the one tick that's 8am in ITS OWN local time — same
+// reasoning as web/app/api/cron/event-day-reminders/route.ts: a fixed UTC
+// firing time is only reasonable for one timezone.
+const SEND_HOUR = 8;
+
+function localHour(date: Date, timeZone: string): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).format(date),
+    10
+  );
+}
+
 Deno.serve(async (_req) => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
   const now = new Date();
@@ -38,14 +52,19 @@ Deno.serve(async (_req) => {
   const tomorrow = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   // ── Guest deadline reminder — coaches notified when guests haven't confirmed ──
-  const { data: upcomingEvents } = await supabase
+  const { data: candidates } = await supabase
     .from('events')
-    .select('id, title, team_id, teams!inner(clubs!inner(slug))')
+    .select('id, title, team_id, teams!inner(clubs!inner(slug, timezone))')
     .gte('event_date', todayStr)
     .lte('event_date', tomorrow)
     .is('cancelled_at', null);
 
-  for (const event of upcomingEvents ?? []) {
+  const upcomingEvents = (candidates ?? []).filter((ev: any) => {
+    const clubTimeZone = ev.teams?.clubs?.timezone ?? 'America/New_York';
+    return localHour(now, clubTimeZone) === SEND_HOUR;
+  });
+
+  for (const event of upcomingEvents) {
     const { data: pendingGuests } = await supabase
       .from('event_guests')
       .select('id')
