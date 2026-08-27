@@ -20,97 +20,24 @@ async function sendPush(payload: {
   });
 }
 
+// Game-day pushes and RSVP reminders used to live here too, but they
+// duplicated (with worse logic — no quiet hours, no per-club timezone
+// awareness, no tournament consolidation) the dedicated
+// web/app/api/cron/event-day-reminders and rsvp-reminders Vercel crons.
+// Those crons previously never actually ran (CRON_SECRET was missing from
+// the Vercel production env, so every invocation 401'd) — this edge
+// function's pg_cron job was the only thing actually sending these. Now
+// that CRON_SECRET is set and the Vercel crons work, removed here to avoid
+// double notifications. Guest-deadline reminders have no Vercel
+// equivalent, so that job stays.
 Deno.serve(async (_req) => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
-  const nowIso = now.toISOString();
-  // RSVP reminder window: events whose lock closes within the next 36 hours
-  const window36h = new Date(now.getTime() + 36 * 60 * 60 * 1000).toISOString();
   // Guest deadline window: events within the next 48 hours
   const tomorrow = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-  // ── 1. Game day push — events happening today ────────────────────────────
-  const { data: todayEvents } = await supabase
-    .from('events')
-    .select('id, title, type, team_id, teams!inner(clubs!inner(slug))')
-    .eq('event_date', todayStr)
-    .is('cancelled_at', null);
-
-  for (const event of todayEvents ?? []) {
-    const { data: members } = await supabase
-      .from('team_members')
-      .select('profile_id')
-      .eq('team_id', event.team_id);
-    if (!members?.length) continue;
-
-    const profileIds = members.map((m: any) => m.profile_id as string);
-    const clubSlug = (event.teams as any)?.clubs?.slug ?? '';
-    const typeLabel = event.type === 'game' ? 'Game day' : event.type === 'training' ? 'Training today' : 'Event today';
-
-    await sendPush({
-      profile_ids: profileIds,
-      title: typeLabel,
-      body: event.title,
-      data: { type: 'game_day', event_id: event.id, club_slug: clubSlug },
-    });
-  }
-
-  // ── 2. RSVP reminder — events where lock closes within 36h but is still open ──
-  const { data: rsvpEvents } = await supabase
-    .from('events')
-    .select('id, title, type, team_id, rsvp_lock_at, teams!inner(clubs!inner(slug))')
-    .gt('rsvp_lock_at', nowIso)      // still open right now
-    .lte('rsvp_lock_at', window36h)   // closes within 36 hours
-    .is('cancelled_at', null);
-
-  for (const event of rsvpEvents ?? []) {
-    // Only send to players who haven't responded yet
-    const { data: allPlayers } = await supabase
-      .from('players')
-      .select('id, profile_id')
-      .eq('team_id', event.team_id);
-
-    if (!allPlayers?.length) continue;
-
-    const { data: existingRsvps } = await supabase
-      .from('event_rsvps')
-      .select('player_id')
-      .eq('event_id', event.id);
-
-    const respondedIds = new Set((existingRsvps ?? []).map((r: any) => r.player_id as string));
-    const pendingPlayers = (allPlayers as any[]).filter((p) => !respondedIds.has(p.id));
-    if (!pendingPlayers.length) continue;
-
-    // A player can have more than one guardian (player_guardians, additive
-    // to the legacy single-column players.profile_id) — a second/co-parent
-    // guardian was never reminded before, only whoever's in profile_id.
-    const { data: guardianRows } = await supabase
-      .from('player_guardians')
-      .select('player_id, profile_id')
-      .in('player_id', pendingPlayers.map((p) => p.id));
-
-    const pendingProfileIds = [...new Set([
-      ...pendingPlayers.map((p) => p.profile_id).filter(Boolean),
-      ...(guardianRows ?? []).map((g: any) => g.profile_id as string),
-    ])] as string[];
-
-    if (!pendingProfileIds.length) continue;
-
-    const lockTime = new Date(event.rsvp_lock_at);
-    const hoursLeft = Math.round((lockTime.getTime() - now.getTime()) / (60 * 60 * 1000));
-    const hoursText = hoursLeft <= 1 ? 'less than 1 hour' : `${hoursLeft} hours`;
-    const clubSlug = (event.teams as any)?.clubs?.slug ?? '';
-
-    await sendPush({
-      profile_ids: pendingProfileIds,
-      title: 'RSVP closes soon',
-      body: `${event.title} — ${hoursText} left to respond`,
-      data: { type: 'rsvp_reminder', event_id: event.id, club_slug: clubSlug },
-    });
-  }
-
-  // ── 3. Guest deadline reminder — coaches notified when guests haven't confirmed ──
+  // ── Guest deadline reminder — coaches notified when guests haven't confirmed ──
   const { data: upcomingEvents } = await supabase
     .from('events')
     .select('id, title, team_id, teams!inner(clubs!inner(slug))')
@@ -145,7 +72,7 @@ Deno.serve(async (_req) => {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true, ran_at: nowIso }), {
+  return new Response(JSON.stringify({ ok: true, ran_at: now.toISOString() }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });

@@ -9,7 +9,16 @@ import { sendExpoPush } from '@/lib/expoPush';
 // was "never beforehand"; erring toward a slightly later prompt is the
 // safe direction to be wrong in, erring early is not.
 const FALLBACK_GAME_DURATION_MINUTES = 120;
-const PROMPT_WINDOW_MINUTES = 30;
+
+// This cron scans events across every club in one batch, so quiet hours
+// have to be judged per event against that event's own club timezone, not
+// the server's — same reasoning/shape as rsvp-reminders.ts.
+function localHour(date: Date, timeZone: string): number {
+  return parseInt(
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hour12: false }).format(date),
+    10
+  );
+}
 
 type CandidateEvent = {
   id: string; team_id: string; title: string; event_date: string; event_time: string | null; duration_minutes: number | null;
@@ -51,11 +60,17 @@ export async function GET(req: NextRequest) {
     // would kill reflection prompts for every OTHER event in this run too,
     // not just the bad one, with nobody watching a cron job to notice.
     try {
-      const start = zonedTimeToUtc(ev.event_date, ev.event_time!, ev.teams?.clubs?.timezone ?? 'America/New_York');
+      const clubTimeZone = ev.teams?.clubs?.timezone ?? 'America/New_York';
+      const start = zonedTimeToUtc(ev.event_date, ev.event_time!, clubTimeZone);
       const durationMinutes = ev.duration_minutes ?? FALLBACK_GAME_DURATION_MINUTES;
       const windowStart = new Date(start.getTime() + durationMinutes * 60000);
-      const windowEnd   = new Date(windowStart.getTime() + PROMPT_WINDOW_MINUTES * 60000);
-      return now >= windowStart && now <= windowEnd;
+      if (now < windowStart) return false; // game isn't over yet
+
+      // Quiet hours — a game that ends late at night stays eligible
+      // (never marked sent, so a later tick picks it up) rather than
+      // firing a push at 4am or silently missing its window entirely.
+      const hour = localHour(now, clubTimeZone);
+      return hour >= 7 && hour < 21;
     } catch (err) {
       console.error(`reflection-prompts cron: skipping event ${ev.id}`, err);
       return false;
