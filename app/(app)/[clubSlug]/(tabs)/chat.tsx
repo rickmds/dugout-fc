@@ -62,14 +62,24 @@ function initials(name: string | null): string {
 export default function ChatScreen() {
   const { primaryColor, rgba, secondaryColor } = useClub();
   const router = useRouter();
-  const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const { clubSlug, tab: tabParam } = useLocalSearchParams<{ clubSlug: string; tab?: string }>();
   const { team, loading: teamLoading } = useTeam();
   const { profile, user } = useAuth();
   // team.myRole is scoped to the currently-active team's own club — see
   // TeamContext.tsx's Team type comment.
   const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
-  const [activeTab, setActiveTab] = useState<Tab>('chats');
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam === 'announcements' ? 'announcements' : 'chats');
+
+  // Deep-links from a notification (tap in the notification centre or the OS
+  // push banner) navigate here with ?tab=announcements — this screen usually
+  // stays mounted as part of the tab navigator, so the useState initializer
+  // above only fires on first mount. Without this effect, a second tap while
+  // Chat is already mounted would land on whatever sub-tab was last active
+  // instead of the one the notification is actually about.
+  useEffect(() => {
+    if (tabParam === 'announcements' || tabParam === 'chats') setActiveTab(tabParam);
+  }, [tabParam]);
 
   // Per-section unread dots on the Chats/Announcements sub-tabs — the outer
   // bottom-tab badge only signals "something's unread in Chat" as one combined

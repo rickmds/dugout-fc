@@ -115,7 +115,7 @@ function AppShell() {
           break;
         // ── Chat notifications ───────────────────────────────────────────────
         case 'new_announcement':
-          router.push(`/(app)/${slug}/(tabs)/chat` as any);
+          router.push({ pathname: `/(app)/${slug}/(tabs)/chat` as any, params: { tab: 'announcements' } });
           break;
         case 'new_dm':
           if (data.conversation_id) router.push(`/(app)/${slug}/conversation/${data.conversation_id}` as any);

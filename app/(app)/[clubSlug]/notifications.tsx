@@ -300,7 +300,7 @@ export default function NotificationsScreen() {
           : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
         break;
       case 'new_announcement':
-        router.push(`/(app)/${slug}/(tabs)/chat` as any); break;
+        router.push({ pathname: `/(app)/${slug}/(tabs)/chat` as any, params: { tab: 'announcements' } }); break;
       case 'new_dm':
       case 'new_message':
         d?.conversation_id
