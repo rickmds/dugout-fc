@@ -31,7 +31,7 @@ import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../.
 import ReflectionSheet, { FACES } from '../../../../components/reflection/ReflectionSheet';
 import ShoutoutSheet from '../../../../components/shoutout/ShoutoutSheet';
 import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
-import { sendProfilesPush, sendTeamPush } from '../../../../lib/push';
+import { sendProfilesPush } from '../../../../lib/push';
 import { getGameResult, RESULT_COLORS, sendTournamentResultPush } from '../../../../lib/tournaments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
@@ -383,28 +383,14 @@ export default function EventDetailScreen() {
   const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late'>>(new Map());
   const [savingAttendance, setSavingAttendance] = useState<string | null>(null);
   const [activeRsvpTab, setActiveRsvpTab] = useState<'attending' | 'not_attending' | 'none'>('attending');
-  const [deleting, setDeleting] = useState(false);
   const [matchStats, setMatchStats] = useState<MatchStatRow[] | null>(null);
   const [matchTrackerOpen, setMatchTrackerOpen] = useState(false);
   const [scoreModalOpen, setScoreModalOpen] = useState(false);
   const [scoreHomeInput, setScoreHomeInput] = useState(0);
   const [scoreAwayInput, setScoreAwayInput] = useState(0);
   const [savingScore, setSavingScore] = useState(false);
-  const [sessionPlanExists, setSessionPlanExists] = useState(false);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [driveTime, setDriveTime] = useState<string | null>(null);
-
-  // Cancellation modal state
-  type CancelStep = 'reason' | 'preview';
-  const [cancelVisible, setCancelVisible]   = useState(false);
-  const [cancelStep, setCancelStep]         = useState<CancelStep>('reason');
-  const [cancelReason, setCancelReason]     = useState('');
-  const [cancelSubject, setCancelSubject]   = useState('');
-  const [cancelBody, setCancelBody]         = useState('');
-  const [cancelGenerating, setCancelGenerating] = useState(false);
-  const [cancelSending, setCancelSending]   = useState(false);
-  const [cancelEditMode, setCancelEditMode] = useState(false);
-  const [isUncancel, setIsUncancel]         = useState(false);
 
   const [eventPolls, setEventPolls] = useState<Poll[]>([]);
   const [showEventPollModal, setShowEventPollModal] = useState(false);
@@ -471,7 +457,7 @@ export default function EventDetailScreen() {
 
     try {
 
-    const [playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes, sessionPlanRes] = await Promise.all([
+    const [playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
       supabase.from('players').select('id,full_name,jersey_number,position,profile_id')
         .eq('team_id', team.id).order('jersey_number'),
       supabase.from('event_rsvps').select('player_id,status').eq('event_id', eventId),
@@ -484,9 +470,7 @@ export default function EventDetailScreen() {
         .eq('event_id', eventId).eq('status', 'full_time').maybeSingle(),
       supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId),
       supabase.from('event_attendance').select('player_id,status').eq('event_id', eventId),
-      (supabase as any).from('session_plans').select('id').eq('event_id', eventId).maybeSingle(),
     ]);
-    setSessionPlanExists(!!sessionPlanRes.data);
 
     // Supabase's join-cardinality inference for tournaments(name) isn't
     // guaranteed to return an object vs a one-element array — same gotcha
@@ -776,103 +760,6 @@ export default function EventDetailScreen() {
     setScoreModalOpen(false);
     // Only fires once, here, on an explicit save — not on every +/- tap.
     sendTournamentResultPush(event.tournament_id, event.team_id, scoreHomeInput, scoreAwayInput);
-  }
-
-  function confirmDelete() {
-    Alert.alert('Delete Event', `Delete "${event?.title}"? This cannot be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: handleDelete },
-    ]);
-  }
-
-  async function handleDelete() {
-    if (!event) return;
-    setDeleting(true);
-    const { error } = await supabase.from('events').delete().eq('id', event.id);
-    if (error) {
-      setDeleting(false);
-      Alert.alert('Error', 'Could not delete event. Please try again.');
-      return;
-    }
-    router.back();
-  }
-
-  function openCancelModal(uncancel = false) {
-    setCancelReason('');
-    setCancelSubject('');
-    setCancelBody('');
-    setCancelStep('reason');
-    setCancelEditMode(false);
-    setIsUncancel(uncancel);
-    setCancelVisible(true);
-  }
-
-  async function handleGenerateEmail() {
-    if (!cancelReason.trim() || !event) return;
-    setCancelGenerating(true);
-    const { data, error } = await supabase.functions.invoke('generate-cancellation-email', {
-      body: {
-        mode: 'generate',
-        is_reinstatement: isUncancel,
-        event_title: event.title,
-        event_date: formatDay(event.event_date),
-        event_time: event.event_time ?? null,
-        event_type: event.type,
-        team_name: team?.name ?? 'your team',
-        reason: cancelReason.trim(),
-      },
-    });
-    setCancelGenerating(false);
-    if (error || !data?.subject) {
-      Alert.alert('AI unavailable', 'Could not generate email. Check your connection and try again.');
-      return;
-    }
-    setCancelSubject(data.subject);
-    setCancelBody(data.body);
-    setCancelStep('preview');
-  }
-
-  async function handleConfirmCancel() {
-    if (!event || !team) return;
-    setCancelSending(true);
-    const { error } = await supabase.functions.invoke('generate-cancellation-email', {
-      body: {
-        mode: isUncancel ? 'confirm_uncancel' : 'confirm',
-        event_id: event.id,
-        team_id: team.id,
-        reason: cancelReason.trim(),
-        email_subject: cancelSubject,
-        email_body: cancelBody,
-        coach_name: profile?.full_name ?? 'Coach',
-        team_name: team.name,
-      },
-    });
-    setCancelSending(false);
-    if (error) {
-      Alert.alert('Error', `Could not ${isUncancel ? 'reinstate' : 'cancel'} the event. Please try again.`);
-      return;
-    }
-    setCancelVisible(false);
-    setEvent((prev) => prev
-      ? { ...prev, cancelled_at: isUncancel ? null : new Date().toISOString() }
-      : prev
-    );
-    // This flow already emails parents server-side (inside the edge function
-    // above) — this only adds the push+in-app half, so cancelling here gets
-    // both channels like every other cancel path, not email alone.
-    sendTeamPush({
-      teamId: team.id,
-      title: isUncancel ? 'Event reinstated' : 'Event cancelled',
-      body: isUncancel
-        ? `${event.title} is back on`
-        : cancelReason.trim() ? `${event.title} cancelled: ${cancelReason.trim()}` : `${event.title} has been cancelled`,
-      excludeProfileId: profile?.id,
-      data: { type: 'event_cancelled', event_id: event.id },
-    });
-    Alert.alert(
-      isUncancel ? 'Event reinstated' : 'Event cancelled',
-      isUncancel ? 'Parents have been notified — the event is back on.' : 'Parents have been notified by email and push.'
-    );
   }
 
   function openMaps() {
@@ -1401,14 +1288,12 @@ export default function EventDetailScreen() {
             <TouchableOpacity
               style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' }}
               onPress={openDuplicate}
-              disabled={deleting}
             >
               <Ionicons name="copy-outline" size={20} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
               style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' }}
               onPress={openEdit}
-              disabled={deleting}
             >
               <Ionicons name="pencil-outline" size={20} color="#fff" />
             </TouchableOpacity>
@@ -2272,54 +2157,6 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {/* Danger zone */}
-          {isCoach && (
-            <View style={styles.dangerSection}>
-              {event.cancelled_at && (
-                <TouchableOpacity style={styles.dangerCard} onPress={() => openCancelModal(true)} activeOpacity={0.7}>
-                  <View style={[styles.dangerCardIcon, { backgroundColor: 'rgba(34,197,94,0.1)' }]}>
-                    <Ionicons name="refresh-circle-outline" size={20} color="#22c55e" />
-                  </View>
-                  <View style={styles.dangerCardText}>
-                    <Text style={[styles.dangerCardTitle, { color: '#22c55e' }]}>Reinstate Event</Text>
-                    <Text style={styles.dangerCardSub}>AI writes an "event is back on" email to parents</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
-                </TouchableOpacity>
-              )}
-              {!event.cancelled_at && (
-                <TouchableOpacity style={[styles.dangerCard, event.cancelled_at ? styles.dangerCardBorderTop : undefined]} onPress={() => openCancelModal()} activeOpacity={0.7}>
-                  <View style={styles.dangerCardIcon}>
-                    <Ionicons name="close-circle-outline" size={20} color="#f97316" />
-                  </View>
-                  <View style={styles.dangerCardText}>
-                    <Text style={styles.dangerCardTitle}>Cancel Event</Text>
-                    <Text style={styles.dangerCardSub}>AI writes a cancellation email to all parents</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[styles.dangerCard, !event.cancelled_at && styles.dangerCardBorderTop]}
-                onPress={confirmDelete}
-                disabled={deleting}
-                activeOpacity={0.7}
-              >
-                {deleting ? (
-                  <ActivityIndicator size="small" color={PULSE_COLORS.status.error} style={{ marginRight: 12 }} />
-                ) : (
-                  <View style={[styles.dangerCardIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
-                    <Ionicons name="trash-outline" size={20} color={PULSE_COLORS.status.error} />
-                  </View>
-                )}
-                <View style={styles.dangerCardText}>
-                  <Text style={[styles.dangerCardTitle, { color: PULSE_COLORS.status.error }]}>Delete Event</Text>
-                  <Text style={styles.dangerCardSub}>Permanently removes this event</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
@@ -2329,114 +2166,6 @@ export default function EventDetailScreen() {
         onConfirm={mapApp.confirm}
         onDismiss={mapApp.dismiss}
       />
-
-      {/* ── Cancellation modal ── */}
-      <Modal visible={cancelVisible} transparent animationType="slide" onRequestClose={() => setCancelVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalKAV}>
-            <View style={styles.modalSheet}>
-
-              {/* Header */}
-              <View style={styles.modalHeader}>
-                {cancelStep === 'preview' ? (
-                  <TouchableOpacity onPress={() => setCancelStep('reason')} style={styles.modalBackBtn}>
-                    <Ionicons name="chevron-back" size={20} color={PULSE_COLORS.ui.textSecondary} />
-                    <Text style={styles.modalBackText}>Back</Text>
-                  </TouchableOpacity>
-                ) : <View style={{ width: 60 }} />}
-                <Text style={styles.modalTitle}>
-                  {isUncancel
-                    ? (cancelStep === 'reason' ? 'Reinstate Event' : 'Review Email')
-                    : (cancelStep === 'reason' ? 'Cancel Event' : 'Review Email')}
-                </Text>
-                <TouchableOpacity onPress={() => setCancelVisible(false)} style={styles.modalCloseBtn}>
-                  <Ionicons name="close" size={20} color={PULSE_COLORS.ui.textSecondary} />
-                </TouchableOpacity>
-              </View>
-
-              {cancelStep === 'reason' ? (
-                /* ── Step 1: Reason ── */
-                <>
-                  <Text style={styles.modalHint}>
-                    {isUncancel
-                      ? "What's changed? AI will write an upbeat \"event is back on\" email to all parents."
-                      : 'Type your reason below — AI will write a professional email to parents automatically.'}
-                  </Text>
-                  <TextInput
-                    style={styles.modalTextArea}
-                    value={cancelReason}
-                    onChangeText={setCancelReason}
-                    placeholder="e.g. Field is waterlogged due to heavy rain overnight"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
-                    multiline
-                    textAlignVertical="top"
-                    autoFocus
-                    returnKeyType="default"
-                  />
-                  <TouchableOpacity
-                    style={[styles.modalPrimaryBtn, { backgroundColor: '#f97316' }, (!cancelReason.trim() || cancelGenerating) && { opacity: 0.4 }]}
-                    onPress={handleGenerateEmail}
-                    disabled={!cancelReason.trim() || cancelGenerating}
-                  >
-                    {cancelGenerating
-                      ? <><ActivityIndicator size="small" color="#fff" /><Text style={styles.modalPrimaryBtnText}>Writing email…</Text></>
-                      : <><Ionicons name="sparkles" size={16} color="#fff" /><Text style={styles.modalPrimaryBtnText}>{isUncancel ? 'Write reinstatement email' : 'Write cancellation email'}</Text></>
-                    }
-                  </TouchableOpacity>
-                </>
-              ) : (
-                /* ── Step 2: Preview ── */
-                <>
-                  <View style={styles.emailPreviewCard}>
-                    <View style={styles.emailPreviewHeader}>
-                      <Text style={styles.emailPreviewTo}>To: All parents</Text>
-                      {!cancelEditMode && (
-                        <TouchableOpacity onPress={() => setCancelEditMode(true)}>
-                          <Text style={styles.emailEditLink}>Edit</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                    {cancelEditMode ? (
-                      <>
-                        <TextInput
-                          style={styles.emailSubjectInput}
-                          value={cancelSubject}
-                          onChangeText={setCancelSubject}
-                          placeholderTextColor={PULSE_COLORS.ui.muted}
-                        />
-                        <TextInput
-                          style={styles.emailBodyInput}
-                          value={cancelBody}
-                          onChangeText={setCancelBody}
-                          multiline
-                          textAlignVertical="top"
-                          placeholderTextColor={PULSE_COLORS.ui.muted}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <Text style={styles.emailSubjectPreview}>{cancelSubject}</Text>
-                        <Text style={styles.emailBodyPreview}>{cancelBody}</Text>
-                      </>
-                    )}
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.modalPrimaryBtn, { backgroundColor: isUncancel ? '#22c55e' : '#ef4444' }, cancelSending && { opacity: 0.4 }]}
-                    onPress={handleConfirmCancel}
-                    disabled={cancelSending}
-                  >
-                    {cancelSending
-                      ? <><ActivityIndicator size="small" color="#fff" /><Text style={styles.modalPrimaryBtnText}>Cancelling event…</Text></>
-                      : <><Ionicons name="send" size={15} color="#fff" /><Text style={styles.modalPrimaryBtnText}>{isUncancel ? 'Reinstate event & notify parents' : 'Cancel event & notify parents'}</Text></>
-                    }
-                  </TouchableOpacity>
-                </>
-              )}
-
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
 
       {/* ── Attendance tab (coaches only) ── */}
       {activeMainTab === 'attendance' && isCoach && (
@@ -3509,75 +3238,6 @@ const styles = StyleSheet.create({
   },
   cancelledBannerText: { color: '#ef4444', fontWeight: '700', fontSize: 14 },
   titleCancelled: { textDecorationLine: 'line-through', opacity: 0.5 },
-
-  // Danger zone section
-  dangerSection: {
-    marginTop: 32, marginHorizontal: 16, marginBottom: 8,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 16, overflow: 'hidden',
-  },
-  dangerCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: PULSE_COLORS.ui.surface,
-  },
-  dangerCardBorderTop: { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
-  dangerCardIcon: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: 'rgba(249,115,22,0.1)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dangerCardText: { flex: 1 },
-  dangerCardTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  dangerCardSub: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
-
-  // Cancellation modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  modalKAV: { justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 16, marginBottom: 4,
-  },
-  modalTitle: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  modalBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, width: 60 },
-  modalBackText: { fontSize: 15, color: PULSE_COLORS.ui.textSecondary },
-  modalCloseBtn: { width: 60, alignItems: 'flex-end' },
-  modalHint: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, marginBottom: 16, lineHeight: 20 },
-  modalTextArea: {
-    backgroundColor: PULSE_COLORS.ui.background, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 14, padding: 14, color: PULSE_COLORS.ui.text, fontSize: 15,
-    minHeight: 110, marginBottom: 16, textAlignVertical: 'top',
-  },
-  modalPrimaryBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, borderRadius: 14, paddingVertical: 15,
-  },
-  modalPrimaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-
-  // Email preview card
-  emailPreviewCard: {
-    backgroundColor: PULSE_COLORS.ui.background, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 14, padding: 16, marginBottom: 16,
-  },
-  emailPreviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  emailPreviewTo: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
-  emailEditLink: { fontSize: 13, color: '#f97316', fontWeight: '700' },
-  emailSubjectPreview: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 10 },
-  emailBodyPreview: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, lineHeight: 20 },
-  emailSubjectInput: {
-    fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-    paddingVertical: 8, marginBottom: 10,
-  },
-  emailBodyInput: {
-    fontSize: 14, color: PULSE_COLORS.ui.textSecondary, lineHeight: 20,
-    minHeight: 100, textAlignVertical: 'top',
-  },
 
   // Guest invite banner (shown to the invited person in Details tab)
   guestInviteBanner: {

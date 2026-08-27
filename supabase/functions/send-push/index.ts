@@ -137,16 +137,34 @@ Deno.serve(async (req) => {
 
   const { data: tokens } = await supabase
     .from('push_tokens')
-    .select('token')
+    .select('token, profile_id')
     .in('profile_id', pushProfileIds);
 
   if (!tokens?.length) return new Response(JSON.stringify({ sent: 0 }), { status: 200, headers: CORS });
+
+  // iOS home-screen badge count — for a backgrounded/killed app there's no
+  // client JS running to call setBadgeCountAsync, so the number has to ride
+  // in the push payload itself. One query for every recipient, not one per
+  // profile. Keyed off pushProfileIds (who's actually getting pushed to),
+  // not profileIds — those differ in the new_dm collapse case above, where
+  // someone with an already-unread DM notification for this conversation
+  // gets their row updated in place but no new push.
+  const { data: unreadRows } = await supabase
+    .from('notifications')
+    .select('profile_id')
+    .in('profile_id', pushProfileIds)
+    .eq('read', false);
+  const unreadCountByProfile = new Map<string, number>();
+  for (const row of (unreadRows ?? []) as { profile_id: string }[]) {
+    unreadCountByProfile.set(row.profile_id, (unreadCountByProfile.get(row.profile_id) ?? 0) + 1);
+  }
 
   const messages = tokens.map((t: any) => ({
     to: t.token,
     title,
     body,
     sound: 'default',
+    badge: unreadCountByProfile.get(t.profile_id) ?? 0,
     data: enrichedData,
   }));
 

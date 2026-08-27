@@ -71,6 +71,51 @@ export default function ChatScreen() {
 
   const [activeTab, setActiveTab] = useState<Tab>('chats');
 
+  // Per-section unread dots on the Chats/Announcements sub-tabs — the outer
+  // bottom-tab badge only signals "something's unread in Chat" as one combined
+  // count, so a parent can't tell which section is waiting without opening it.
+  // This doesn't change when anything gets marked read, it only visualizes the
+  // existing unread state more precisely.
+  const [chatsUnread, setChatsUnread] = useState(0);
+  const [announcementsUnread, setAnnouncementsUnread] = useState(0);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    async function fetchTabUnread() {
+      const [chatsRes, announcementsRes] = await Promise.all([
+        supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('profile_id', profile!.id)
+          .eq('read', false)
+          .in('type', ['new_message', 'new_dm']),
+        supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('profile_id', profile!.id)
+          .eq('read', false)
+          .eq('type', 'new_announcement'),
+      ]);
+      setChatsUnread(chatsRes.count ?? 0);
+      setAnnouncementsUnread(announcementsRes.count ?? 0);
+    }
+
+    fetchTabUnread();
+
+    const sub = supabase
+      .channel(uniqueChannelName(`chat-tab-badges-${profile.id}`))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `profile_id=eq.${profile.id}`,
+      }, fetchTabUnread)
+      .subscribe();
+
+    return () => { supabase.removeChannel(sub); };
+  }, [profile?.id]);
+
   if (teamLoading) return <ChatSkeleton />;
 
   const tabs: { key: Tab; label: string }[] = [
@@ -87,9 +132,13 @@ export default function ChatScreen() {
       <View style={[st.tabs, tabs.length === 2 && st.tabsTwo]}>
         {tabs.map(({ key, label }) => {
           const active = activeTab === key;
+          const showDot = (key === 'chats' && chatsUnread > 0) || (key === 'announcements' && announcementsUnread > 0);
           return (
             <TouchableOpacity key={key} style={[st.tab, active && [st.tabActive, { backgroundColor: primaryColor }]]} onPress={() => setActiveTab(key)}>
-              <Text style={[st.tabText, active && st.tabTextActive]}>{label}</Text>
+              <View>
+                <Text style={[st.tabText, active && st.tabTextActive]}>{label}</Text>
+                {showDot && <View style={st.tabDot} />}
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -1720,6 +1769,12 @@ const st = StyleSheet.create({
   tabActive: { backgroundColor: PULSE_COLORS.brand.green },
   tabText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
   tabTextActive: { color: '#000' },
+  tabDot: {
+    position: 'absolute', top: -2, right: -8,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.surface,
+  },
 
   // Conversation list
   convoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },

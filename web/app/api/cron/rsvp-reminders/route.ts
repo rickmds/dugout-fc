@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
       .from('events')
       .select('id, title, team_id, rsvp_lock_at, event_time, teams(clubs(slug, timezone))')
       .is(window.column, null)
+      .is('cancelled_at', null)
       .gt('rsvp_lock_at', now.toISOString())
       .lte('rsvp_lock_at', threshold.toISOString())
       .returns<ReminderEvent[]>();

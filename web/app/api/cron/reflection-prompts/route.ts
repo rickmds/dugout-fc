@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
     .select('id, team_id, title, event_date, event_time, duration_minutes, teams!inner(name, clubs!inner(slug, timezone))')
     .eq('type', 'game')
     .is('reflection_prompt_sent_at', null)
+    .is('cancelled_at', null)
     .not('event_time', 'is', null)
     .gte('event_date', twoDaysAgo)
     .returns<CandidateEvent[]>();

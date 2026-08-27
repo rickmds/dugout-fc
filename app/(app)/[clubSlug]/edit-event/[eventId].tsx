@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -154,6 +155,7 @@ export default function EditEventScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [isCancelled, setIsCancelled] = useState(false);
   const [eventTeamId, setEventTeamId] = useState<string | null>(null);
+  const [eventTeamName, setEventTeamName] = useState<string | null>(null);
   const originalRef = useRef<{ date: string; time: string | null; location: string; videoUrl: string | null } | null>(null);
 
   // Multi-team occurrences (created via the web dashboard's multi-team
@@ -223,6 +225,17 @@ export default function EditEventScreen() {
   // plain one-off event defaults straight to 'this', no prompt at all).
   const [editScope, setEditScope] = useState<RecurringScope | null>(null);
 
+  // Cancel modal — AI drafts a reason-aware email, coach reviews/edits it,
+  // then confirms. Reinstate stays on its own simple flow (handleUncancelEvent
+  // below) since there's no reason/email copy to draft on the way back.
+  const [cancelVisible, setCancelVisible] = useState(false);
+  const [cancelStep, setCancelStep] = useState<'reason' | 'preview'>('reason');
+  const [cancelScope, setCancelScope] = useState<RecurringScope>('this');
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelSubject, setCancelSubject] = useState('');
+  const [cancelBody, setCancelBody] = useState('');
+  const [cancelGenerating, setCancelGenerating] = useState(false);
+
   useEffect(() => {
     if (eventId) loadEvent();
   }, [eventId]);
@@ -250,10 +263,13 @@ export default function EditEventScreen() {
   async function loadEvent() {
     const { data } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,event_group_id,tournament_id,round_label,teams(club_id),tournaments(start_date)')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,event_group_id,tournament_id,round_label,teams(club_id,name),tournaments(start_date)')
       .eq('id', eventId)
       .single();
-    if (data) setEventTeamId((data as any).team_id ?? null);
+    if (data) {
+      setEventTeamId((data as any).team_id ?? null);
+      setEventTeamName(((data as any).teams as { name?: string } | null)?.name ?? null);
+    }
 
     const groupId = (data as any)?.event_group_id ?? null;
     setEventGroupId(groupId);
@@ -527,25 +543,41 @@ export default function EditEventScreen() {
   }
 
   function confirmCancel() {
-    promptCancelReason(editScope ?? 'this');
+    const scope = editScope ?? 'this';
+    setCancelScope(scope);
+    setCancelReason('');
+    setCancelSubject('');
+    setCancelBody('');
+    setCancelStep('reason');
+    setCancelVisible(true);
   }
 
-  function promptCancelReason(scope: RecurringScope) {
-    const propagateGroup = groupPropagates(scope);
-    Alert.prompt(
-      'Cancel Event',
-      propagateGroup
-        ? `This event is also scheduled for ${linkedTeams.map((t) => t.name).join(', ')}. Add a reason for parents (optional) — this cancels it for all of them:`
-        : scope === 'future'
-          ? 'This will cancel this event and every future occurrence. Add a reason for parents (optional):'
-          : 'Add a reason for parents (optional):',
-      [
-        { text: 'Keep Event', style: 'cancel' },
-        { text: 'Cancel Event', style: 'destructive', onPress: (reason: string | undefined) => handleCancelEvent(reason ?? '', scope) },
-      ],
-      'plain-text',
-      '',
-    );
+  async function handleGenerateEmail() {
+    setCancelGenerating(true);
+    const titleLabel = eventType === 'game'
+      ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
+      : title.trim();
+    const reasonText = cancelReason.trim() || 'No reason given';
+    const { data, error } = await supabase.functions.invoke('generate-cancellation-email', {
+      body: {
+        mode: 'generate',
+        is_reinstatement: false,
+        event_title: titleLabel,
+        event_date: fmtDate(date),
+        event_time: hasTime ? toDbTime(startTime) : null,
+        event_type: eventType,
+        team_name: eventTeamName ?? 'your team',
+        reason: cancelScope === 'future' ? `${reasonText} (this and all future occurrences are cancelled)` : reasonText,
+      },
+    });
+    setCancelGenerating(false);
+    if (error || !data?.subject) {
+      Alert.alert('Could not generate email', 'Check your connection and try again.');
+      return;
+    }
+    setCancelSubject(data.subject);
+    setCancelBody(data.body ?? '');
+    setCancelStep('preview');
   }
 
   async function handleCancelEvent(reason: string, scope: RecurringScope) {
@@ -566,18 +598,12 @@ export default function EditEventScreen() {
       return;
     }
     if (eventTeamId) {
-      const titleLabel = eventType === 'game'
-        ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
-        : title.trim();
       const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
-      const bodyText = scope === 'future'
-        ? `${titleLabel} and future sessions cancelled${reason.trim() ? `: ${reason.trim()}` : ''}`
-        : reason.trim() ? `${titleLabel} cancelled: ${reason.trim()}` : `${titleLabel} has been cancelled`;
       for (const teamId of notifyTeamIds) {
         sendTeamPush({
           teamId,
-          title: 'Event cancelled',
-          body: bodyText,
+          title: cancelSubject,
+          body: cancelBody.slice(0, 200),
           excludeProfileId: profile?.id,
           data: { type: 'event_cancelled', event_id: eventId },
         });
@@ -587,8 +613,8 @@ export default function EditEventScreen() {
       // cancellation email twice.
       sendTeamEmail({
         teamIds: notifyTeamIds,
-        subject: 'Event cancelled',
-        body: bodyText,
+        subject: cancelSubject,
+        body: cancelBody,
         fromName: profile?.full_name ?? 'Coach',
         teamName: clubName ?? '',
         clubName,
@@ -597,6 +623,7 @@ export default function EditEventScreen() {
       });
     }
     setIsCancelled(true);
+    setCancelVisible(false);
     Alert.alert('Event cancelled', 'Parents have been notified by push and email.');
   }
 
@@ -1138,6 +1165,108 @@ export default function EditEventScreen() {
         onChange={setArrival}
         onClose={() => setShowArrivalPicker(false)}
       />
+
+      {/* Cancel modal — AI drafts the parent email, coach reviews before it sends */}
+      <Modal
+        visible={cancelVisible}
+        animationType="slide"
+        transparent
+        presentationStyle="pageSheet"
+        onRequestClose={() => { if (!cancelling) setCancelVisible(false); }}
+      >
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.cmSheet}>
+            <View style={styles.cmHandle} />
+            <View style={styles.cmHeader}>
+              <TouchableOpacity onPress={() => setCancelVisible(false)} disabled={cancelling}>
+                <Text style={styles.cmCancel}>Close</Text>
+              </TouchableOpacity>
+              <Text style={styles.cmTitle}>Cancel Event</Text>
+              <View style={{ width: 40 }} />
+            </View>
+            <ScrollView style={styles.cmBody} keyboardShouldPersistTaps="handled">
+              {cancelStep === 'reason' ? (
+                <>
+                  {(groupPropagates(cancelScope) || cancelScope === 'future') && (
+                    <View style={styles.cmInfoBanner}>
+                      <Ionicons name="information-circle-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                      <Text style={styles.cmInfoText}>
+                        {groupPropagates(cancelScope)
+                          ? `This also cancels the event for ${linkedTeams.map((t) => t.name).join(', ')}.`
+                          : 'This cancels this event and every future occurrence.'}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.cmLabel}>Reason for parents (optional)</Text>
+                  <TextInput
+                    style={[styles.cmInput, styles.cmTextarea]}
+                    value={cancelReason}
+                    onChangeText={setCancelReason}
+                    placeholder="e.g. Heavy rain forecast, field unsafe"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    multiline
+                    textAlignVertical="top"
+                    autoFocus
+                  />
+                  <Text style={styles.cmHint}>AI will draft a short cancellation email to parents. You'll review and can edit it before anything sends.</Text>
+
+                  <TouchableOpacity
+                    style={[styles.cmPrimaryBtn, { backgroundColor: '#F59E0B', marginTop: 24 }]}
+                    onPress={handleGenerateEmail}
+                    disabled={cancelGenerating}
+                  >
+                    {cancelGenerating
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <>
+                          <Ionicons name="sparkles" size={16} color="#fff" />
+                          <Text style={styles.cmPrimaryBtnText}>Draft cancellation email</Text>
+                        </>
+                    }
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.cmLabel}>Email subject</Text>
+                  <TextInput
+                    style={styles.cmInput}
+                    value={cancelSubject}
+                    onChangeText={setCancelSubject}
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                  />
+
+                  <Text style={[styles.cmLabel, { marginTop: 20 }]}>Email body</Text>
+                  <TextInput
+                    style={[styles.cmInput, styles.cmTextarea, { height: 180 }]}
+                    value={cancelBody}
+                    onChangeText={setCancelBody}
+                    multiline
+                    textAlignVertical="top"
+                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                  />
+                  <Text style={styles.cmHint}>Edit before sending. Parents get this by push notification and email.</Text>
+
+                  <TouchableOpacity
+                    style={[styles.cmPrimaryBtn, { backgroundColor: '#F59E0B', marginTop: 24 }, (cancelling || !cancelSubject.trim() || !cancelBody.trim()) && { opacity: 0.5 }]}
+                    onPress={() => handleCancelEvent(cancelReason, cancelScope)}
+                    disabled={cancelling || !cancelSubject.trim() || !cancelBody.trim()}
+                  >
+                    {cancelling
+                      ? <><ActivityIndicator size="small" color="#fff" /><Text style={styles.cmPrimaryBtnText}>Cancelling…</Text></>
+                      : <><Ionicons name="close-circle-outline" size={16} color="#fff" /><Text style={styles.cmPrimaryBtnText}>Cancel event & notify parents</Text></>
+                    }
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.cmGhostBtn} onPress={handleGenerateEmail} disabled={cancelGenerating}>
+                    <Ionicons name="refresh" size={14} color={primaryColor} />
+                    <Text style={[styles.cmGhostBtnText, { color: primaryColor }]}>{cancelGenerating ? 'Regenerating…' : 'Regenerate'}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1280,4 +1409,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.08)',
   },
   deleteBtnText: { color: '#EF4444', fontWeight: '700', fontSize: 15 },
+
+  // Cancel modal (AI-drafted email preview)
+  cmSheet: { flex: 1, marginTop: 60, backgroundColor: PULSE_COLORS.ui.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  cmHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginTop: 10 },
+  cmHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  cmCancel: { fontSize: 15, color: PULSE_COLORS.ui.muted },
+  cmTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  cmBody: { padding: 20 },
+  cmLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 8, textTransform: 'uppercase' },
+  cmInput: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: PULSE_COLORS.ui.text },
+  cmTextarea: { height: 110, textAlignVertical: 'top' },
+  cmHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 10, lineHeight: 17 },
+  cmInfoBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: 10, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, marginBottom: 16 },
+  cmInfoText: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18, flex: 1 },
+  cmPrimaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 12 },
+  cmPrimaryBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  cmGhostBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, marginTop: 8 },
+  cmGhostBtnText: { fontSize: 13, fontWeight: '600' },
 });

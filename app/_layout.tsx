@@ -8,6 +8,8 @@ import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { TeamProvider, useActiveTeam } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { resolveNotificationTeamId } from '../lib/resolveNotificationTeamId';
+import { supabase } from '../lib/supabase';
+import { uniqueChannelName } from '../lib/realtime';
 import WebPushPrompt from '../components/ui/WebPushPrompt';
 import UpdateRequiredModal from '../components/ui/UpdateRequiredModal';
 import ClubSuspendedModal from '../components/ui/ClubSuspendedModal';
@@ -16,10 +18,19 @@ import { checkVersionGate } from '../lib/versionGate';
 
 SplashScreen.preventAutoHideAsync();
 
+async function syncBadge(profileId: string) {
+  const { count } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('profile_id', profileId)
+    .eq('read', false);
+  await Notifications.setBadgeCountAsync(count ?? 0);
+}
+
 function AppShell() {
   usePushNotifications();
   const router = useRouter();
-  const { club } = useAuth();
+  const { club, profile } = useAuth();
   const { team, allTeams, selectTeam } = useActiveTeam();
   const [updateRequired, setUpdateRequired] = useState(false);
 
@@ -33,10 +44,36 @@ function AppShell() {
   useEffect(() => {
     checkVersionGate().then(setUpdateRequired);
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') checkVersionGate().then(setUpdateRequired);
+      if (state === 'active') {
+        checkVersionGate().then(setUpdateRequired);
+        if (profile?.id) syncBadge(profile.id);
+      }
     });
     return () => sub.remove();
-  }, []);
+  }, [profile?.id]);
+
+  // iOS home-screen app-icon badge — mirrors the same global unread count the
+  // Home tab already computes (notifications where read=false, no type
+  // filter; notifications has no club_id so this is correctly cross-club).
+  // Covers the app staying open; the AppState listener above covers coming
+  // back to the foreground; send-push's own badge field covers backgrounded/
+  // killed-app pushes where no client JS runs to update this.
+  useEffect(() => {
+    if (!profile?.id) return;
+    syncBadge(profile.id);
+
+    const sub = supabase
+      .channel(uniqueChannelName(`app-badge-${profile.id}`))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `profile_id=eq.${profile.id}`,
+      }, () => syncBadge(profile.id))
+      .subscribe();
+
+    return () => { supabase.removeChannel(sub); };
+  }, [profile?.id]);
 
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
