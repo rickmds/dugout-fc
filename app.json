@@ -14,6 +14,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.pulsefc.mobile",
+      "appleTeamId": "5U6J5AR2B4",
       "associatedDomains": [
         "applinks:pulse-fc.app",
         "applinks:www.pulse-fc.app"
