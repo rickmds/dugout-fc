@@ -96,10 +96,8 @@ Logs into /super-admin on web dashboard → sees all clubs, team counts, active 
 ---
 
 ## Authentication
-- Email + password via Supabase Auth
-- Google OAuth via Supabase Auth
-- Apple Sign-In via Supabase Auth (required for App Store)
-- All three on the login and signup screens
+- Mobile app: email + password via Supabase Auth only. Google OAuth and Apple Sign-In were removed from the mobile app in August 2026 after an App Store rejection ("App displayed an error when Sign in with Apple") — rather than debug a review-only repro, both were dropped together (removing just one would trip Guideline 4.8, which requires Sign in with Apple whenever another third-party login is offered). `lib/auth.ts` and `components/ui/SocialButton.tsx` no longer exist.
+- Web (pulsefc.app onboarding wizard): still offers email/password, Google, and Apple for org_admin signup — unaffected by the mobile-only removal above.
 - New org_admin signups via pulsefc.app automatically get role = org_admin
 - New parent signups via invite link automatically get role = player and are joined to the correct team
 
@@ -110,7 +108,7 @@ Logs into /super-admin on web dashboard → sees all clubs, team counts, active 
 What a brand new user sees before reaching the Home tab:
 
 1. Welcome screen — Pulse FC logo, tagline, Sign Up / Log In buttons
-2. Auth screen — email/password, Google, Apple
+2. Auth screen — email/password only (see Authentication section above)
 3. Auto invite-match — silently checks for a pending invite matching the email just used to sign up (covers the ~99% of parents/coaches who signed up with the same email their invite was sent to); if found, a one-tap confirm card joins the team(s) directly, skipping steps 4–5 below entirely
 4. If no invite matched — role picker (Parent/Player, Coach, Club Admin) → a short benefits screen for that role → the matching next step (join with a code, set up a solo team, or create a club)
 5. Welcome tour — role-aware swipeable run-through of what the app does for them, shown once, right after landing in the app for the first time (gated centrally in `(app)/_layout.tsx` via `profiles.onboarded_at`, not tied to any one join path)
