@@ -96,8 +96,8 @@ Logs into /super-admin on web dashboard → sees all clubs, team counts, active 
 ---
 
 ## Authentication
-- Mobile app: email + password via Supabase Auth only. Google OAuth and Apple Sign-In were removed from the mobile app in August 2026 after an App Store rejection ("App displayed an error when Sign in with Apple") — rather than debug a review-only repro, both were dropped together (removing just one would trip Guideline 4.8, which requires Sign in with Apple whenever another third-party login is offered). `lib/auth.ts` and `components/ui/SocialButton.tsx` no longer exist.
-- Web (pulsefc.app onboarding wizard): still offers email/password, Google, and Apple for org_admin signup — unaffected by the mobile-only removal above.
+- Mobile app: email + password via Supabase Auth is the only sign-in method actually shown to users. Google OAuth and Apple Sign-In are still fully wired (`lib/auth.ts`, `components/ui/SocialButton.tsx`, native `expo-apple-authentication` config) but hidden behind `SOCIAL_AUTH_ENABLED = false` in `lib/auth.ts` — flipped off in August 2026 after an App Store rejection ("App displayed an error when Sign in with Apple"). Both are hidden together, not just Apple: showing Google without Apple would trip Guideline 4.8, which requires Sign in with Apple whenever another third-party login is offered. Re-enabling is a one-line flip of that flag once the underlying bug is understood — do not re-delete the surrounding code as a "cleanup."
+- Web (pulsefc.app onboarding wizard): still offers email/password, Google, and Apple for org_admin signup — unaffected by the mobile flag above.
 - New org_admin signups via pulsefc.app automatically get role = org_admin
 - New parent signups via invite link automatically get role = player and are joined to the correct team
 

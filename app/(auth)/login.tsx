@@ -14,10 +14,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { routeAfterAuth as sharedRouteAfterAuth } from '../../lib/authRouting';
+import { signInWithApple, signInWithGoogle, SOCIAL_AUTH_ENABLED } from '../../lib/auth';
+import { routeAfterAuth as sharedRouteAfterAuth, recoverOrShowError as sharedRecoverOrShowError } from '../../lib/authRouting';
 import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
+import SocialButton from '../../components/ui/SocialButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 
 function mapAuthError(message: string): string {
@@ -34,6 +36,7 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
 
   async function routeAfterAuth(userId: string, isSso = false) {
     const result = await sharedRouteAfterAuth(router, userId, refreshProfile, { isSso });
@@ -111,6 +114,46 @@ export default function LoginScreen() {
     setInfo('Check your email for a link to reset your password.');
   }
 
+  // See lib/authRouting.ts — shared with register.tsx so both SSO paths
+  // self-heal the same way instead of each keeping their own copy.
+  async function recoverOrShowError(message: string, isSso: boolean) {
+    return sharedRecoverOrShowError(message, isSso, routeAfterAuth, setError);
+  }
+
+  async function handleGoogle() {
+    setError(null); setInfo(null);
+    setSocialLoading('google');
+    try {
+      await signInWithGoogle();
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        await routeAfterAuth(data.user.id, true);
+      } else {
+        setSocialLoading(null);
+        return;
+      }
+    } catch (e) {
+      await recoverOrShowError(e instanceof Error ? e.message : 'Google sign-in failed.', true);
+    } finally { setSocialLoading(null); }
+  }
+
+  async function handleApple() {
+    setError(null); setInfo(null);
+    setSocialLoading('apple');
+    try {
+      await signInWithApple();
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        await routeAfterAuth(data.user.id, true);
+      } else {
+        setSocialLoading(null);
+        return;
+      }
+    } catch (e) {
+      await recoverOrShowError(e instanceof Error ? e.message : 'Apple sign-in failed.', true);
+    } finally { setSocialLoading(null); }
+  }
+
   return (
     <SafeAreaView style={st.root} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" />
@@ -184,6 +227,21 @@ export default function LoginScreen() {
           </View>
 
           <PrimaryButton title="Log in" onPress={handleLogin} loading={loading} />
+
+          {/* ── Social (hidden — see lib/auth.ts SOCIAL_AUTH_ENABLED) ── */}
+          {SOCIAL_AUTH_ENABLED && (
+            <>
+              <View style={st.divider}>
+                <View style={st.dividerLine} />
+                <Text style={st.dividerText}>or continue with</Text>
+                <View style={st.dividerLine} />
+              </View>
+              {Platform.OS === 'ios' && (
+                <SocialButton provider="apple" onPress={handleApple} loading={socialLoading === 'apple'} />
+              )}
+              <SocialButton provider="google" onPress={handleGoogle} loading={socialLoading === 'google'} />
+            </>
+          )}
 
           {/* ── Register ── */}
           <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={st.registerLink} activeOpacity={0.7}>
@@ -264,6 +322,11 @@ const st = StyleSheet.create({
   },
   passwordLabel: { fontSize: 13, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary },
   forgotText:    { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
+
+  // Divider
+  divider:     { flexDirection: 'row', alignItems: 'center', marginVertical: 24, gap: 10 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  dividerText: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
 
   // Register
   registerLink: { marginTop: 32, alignItems: 'center' },

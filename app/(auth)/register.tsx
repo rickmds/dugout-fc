@@ -4,10 +4,12 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { routeAfterAuth } from '../../lib/authRouting';
+import { signInWithApple, signInWithGoogle, SOCIAL_AUTH_ENABLED } from '../../lib/auth';
+import { routeAfterAuth, recoverOrShowError as sharedRecoverOrShowError } from '../../lib/authRouting';
 import { PULSE_COLORS } from '../../constants/colors';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
+import SocialButton from '../../components/ui/SocialButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 
 function mapAuthError(message: string): string {
@@ -23,6 +25,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
 
@@ -94,6 +97,50 @@ export default function RegisterScreen() {
     }
   }
 
+  // See lib/authRouting.ts — shared with login.tsx. If a network leg inside
+  // signInWithGoogle/Apple times out or throws, the request can still have
+  // completed successfully server-side (the account now exists), so check
+  // for a real session before showing a false failure error.
+  async function recoverOrShowError(message: string, isSso: boolean) {
+    return sharedRecoverOrShowError(message, isSso, routeAfterRegister, setError);
+  }
+
+  async function handleGoogle() {
+    setError(null);
+    setSocialLoading('google');
+    try {
+      await signInWithGoogle();
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        setSocialLoading(null);
+        return;
+      }
+      await routeAfterRegister(data.user.id, true);
+    } catch (e) {
+      await recoverOrShowError(e instanceof Error ? e.message : 'Google sign-in failed.', true);
+    } finally {
+      setSocialLoading(null);
+    }
+  }
+
+  async function handleApple() {
+    setError(null);
+    setSocialLoading('apple');
+    try {
+      await signInWithApple();
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        setSocialLoading(null);
+        return;
+      }
+      await routeAfterRegister(data.user.id, true);
+    } catch (e) {
+      await recoverOrShowError(e instanceof Error ? e.message : 'Apple sign-in failed.', true);
+    } finally {
+      setSocialLoading(null);
+    }
+  }
+
   async function handleResend() {
     setResendLoading(true);
     try {
@@ -161,6 +208,21 @@ export default function RegisterScreen() {
 
         <PrimaryButton title="Create account" onPress={handleRegister} loading={loading} style={styles.createButton} />
 
+        {/* ── Social (hidden — see lib/auth.ts SOCIAL_AUTH_ENABLED) ── */}
+        {SOCIAL_AUTH_ENABLED && (
+          <>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+            <SocialButton provider="google" onPress={handleGoogle} loading={socialLoading === 'google'} />
+            {Platform.OS === 'ios' && (
+              <SocialButton provider="apple" onPress={handleApple} loading={socialLoading === 'apple'} />
+            )}
+          </>
+        )}
+
         <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={styles.switchLink}>
           <Text style={styles.switchText}>
             Already have an account? <Text style={styles.switchTextBold}>Log in</Text>
@@ -207,6 +269,21 @@ const styles = StyleSheet.create({
   },
   createButton: {
     marginTop: 8,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: PULSE_COLORS.ui.border,
+  },
+  dividerText: {
+    color: PULSE_COLORS.ui.textSecondary,
+    marginHorizontal: 12,
+    fontSize: 13,
   },
   switchLink: {
     marginTop: 28,
