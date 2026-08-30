@@ -166,36 +166,43 @@ function AppShell() {
   );
 }
 
-function SplashVideo({ onFinished }: { onFinished: () => void }) {
+function SplashVideo({ ready, onFinished }: { ready: boolean; onFinished: () => void }) {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const finishedRef = useRef(false);
+  const [videoEnded, setVideoEnded] = useState(false);
   const player = useVideoPlayer(require('../assets/Splash.mp4'), (p) => {
     p.loop = false;
     p.muted = true;
     p.play();
   });
 
-  const finish = () => {
-    if (finishedRef.current) return;
+  useEffect(() => {
+    const sub = player.addListener('playToEnd', () => setVideoEnded(true));
+    // Safety net: the splash video is ~5s. If playback never completes for any
+    // reason (codec/autoplay differences on some devices), don't leave the app
+    // stuck behind a permanent full-screen black overlay.
+    const fallback = setTimeout(() => setVideoEnded(true), 7000);
+    return () => {
+      sub.remove();
+      clearTimeout(fallback);
+    };
+  }, [player]);
+
+  // Don't start fading until auth (session/profile/club) has actually
+  // resolved too — otherwise the video ends, the fade reveals the app
+  // underneath mid-navigation, and whoever's watching sees a flash of the
+  // loading spinner (or even the login screen) before it settles on Home.
+  // useAuth's own retry logic bounds `loading` to flip false within ~10s
+  // regardless of network conditions, so this never hangs indefinitely.
+  useEffect(() => {
+    if (!videoEnded || !ready || finishedRef.current) return;
     finishedRef.current = true;
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 400,
       useNativeDriver: true,
     }).start(() => onFinished());
-  };
-
-  useEffect(() => {
-    const sub = player.addListener('playToEnd', finish);
-    // Safety net: the splash video is ~5s. If playback never completes for any
-    // reason (codec/autoplay differences on some devices), don't leave the app
-    // stuck behind a permanent full-screen black overlay.
-    const fallback = setTimeout(finish, 7000);
-    return () => {
-      sub.remove();
-      clearTimeout(fallback);
-    };
-  }, [player]);
+  }, [videoEnded, ready]);
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.overlay, { opacity: fadeAnim }]}>
@@ -210,15 +217,26 @@ function SplashVideo({ onFinished }: { onFinished: () => void }) {
 }
 
 export default function RootLayout() {
-  const [splashDone, setSplashDone] = useState(false);
-
   return (
     <AuthProvider>
       <TeamProvider>
-        <AppShell />
-        {!splashDone && <SplashVideo onFinished={() => setSplashDone(true)} />}
+        <RootLayoutInner />
       </TeamProvider>
     </AuthProvider>
+  );
+}
+
+function RootLayoutInner() {
+  // Reading loading here (inside AuthProvider) rather than in RootLayout
+  // itself, which sits above the provider and can't call useAuth() at all.
+  const { loading } = useAuth();
+  const [splashDone, setSplashDone] = useState(false);
+
+  return (
+    <>
+      <AppShell />
+      {!splashDone && <SplashVideo ready={!loading} onFinished={() => setSplashDone(true)} />}
+    </>
   );
 }
 
