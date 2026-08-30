@@ -246,6 +246,34 @@ function emptyResult(): ParsedResult {
   return { teams: [], players: [], events: [], coaches: [] };
 }
 
+export type RawTable = { fileName: string; headers: string[]; rows: Record<string, string>[] };
+
+// Independent of extractFromCSV below — returned to the client regardless of
+// whether the deterministic parser recognised this file's layout or it fell
+// through to Claude, so the onboarding UI can offer "fill this field from
+// column X" even when Claude did the actual extraction (e.g. a roster with
+// no Type/Role column, which never goes through the deterministic path at
+// all). Only meaningful for genuinely tabular CSV/Excel input — a PDF/image
+// has no rawTable and remapping isn't offered for it.
+function extractRawTable(text: string, fileName: string): RawTable | null {
+  const rows = parseCSV(text);
+  if (rows.length < 2) return null;
+  const headerIdx = rows.findIndex(r => r.length > 2 && !r[0].startsWith('#') && /[a-zA-Z]/.test(r[0]));
+  if (headerIdx < 0) return null;
+  const headers = rows[headerIdx];
+  const dataRows = rows.slice(headerIdx + 1).filter(r => !r[0].startsWith('#') && r.some(f => f));
+  if (headers.length < 2 || dataRows.length === 0) return null;
+  return {
+    fileName,
+    headers,
+    rows: dataRows.map(r => {
+      const obj: Record<string, string> = {};
+      headers.forEach((h, i) => { obj[h] = (r[i] ?? '').trim(); });
+      return obj;
+    }),
+  };
+}
+
 function extractFromCSV(text: string): ParsedResult | null {
   const rows = parseCSV(text);
   if (rows.length < 2) return null;
@@ -293,7 +321,7 @@ function extractFromCSV(text: string): ParsedResult | null {
     const iLast   = colIdx(headers, 'Last Name', 'LastName');
     const iJersey = colIdx(headers, 'Jersey #', 'Jersey Number', 'Jersey', '#');
     const iPos    = colIdx(headers, 'Role / Position', 'Position', 'Pos');
-    const iEmail  = colIdx(headers, 'Email', 'Parent Email');
+    const iEmail  = colIdx(headers, 'Email', 'Parent Email', 'Email Primary', 'Primary Email', 'Guardian Email');
     const iDate     = colIdx(headers, 'Event Date', 'Game Date', 'Date');
     const iTime     = colIdx(headers, 'Event Time', 'Game Time', 'Time');
     const iOpp      = colIdx(headers, 'Opponent / Note', 'Opponent', 'Title');
@@ -401,7 +429,7 @@ function extractFromCSV(text: string): ParsedResult | null {
     const iLast   = colIdx(headers, 'Last Name', 'LastName');
     const iJersey = colIdx(headers, 'Jersey Number', 'Jersey #', 'Jersey', '#');
     const iPos    = colIdx(headers, 'Position', 'Pos');
-    const iEmail  = colIdx(headers, 'Parent Email', 'Email');
+    const iEmail  = colIdx(headers, 'Parent Email', 'Email', 'Email Primary', 'Primary Email', 'Guardian Email');
     const iAG     = colIdx(headers, 'Age Group', 'Age');
 
     for (const row of data) {
@@ -555,6 +583,15 @@ Rules:
   "Sod", "Grass" as "grass". Empty string if surface isn't stated.
 - notes: any team-facing notes or instructions visible to all (e.g. "Bring extra water", "Wear training kit"), empty string if none
 - coach_notes: any coach-only or internal notes (e.g. "Focus on set pieces", "Call-up players available"), empty string if none
+- parent_email (on players): pull from any column that's plausibly a
+  guardian's contact address — "Email", "Parent Email", "Email Primary",
+  "Primary Email", "Guardian Email", "Contact Email", etc. When a roster
+  splits this across two columns (e.g. "Email Primary" and "Email
+  Secondary" for a second guardian), use the primary one — never leave
+  parent_email blank just because there's more than one email-shaped
+  column on the row; picking the primary/first one is always better than
+  reporting nothing. Only leave it empty if the row genuinely has no email
+  value in any column.
 - confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain
 - reason: REQUIRED whenever confidence is "medium" or "low" — a short,
   specific, human-readable sentence a club admin can act on, naming the
@@ -886,6 +923,7 @@ export async function POST(req: NextRequest) {
         let result = emptyResult();
         const forClaude: FileInput[] = [];
         const fileOutcomes: FileOutcome[] = [];
+        const rawTables: RawTable[] = [];
         const emitProgress = () => emit({
           type: 'progress',
           teams: result.teams.length, players: result.players.length,
@@ -915,6 +953,15 @@ export async function POST(req: NextRequest) {
           }
 
           if (normalized.text) {
+            // For manual column remapping in the review UI — captured
+            // regardless of whether the deterministic parser below
+            // recognises this file's layout, since a roster with no
+            // Type/Role column falls straight through to Claude and still
+            // benefits from being able to say "actually, parent email is
+            // this column."
+            const rawTable = extractRawTable(normalized.text, file.name);
+            if (rawTable) rawTables.push(rawTable);
+
             const parsed = extractFromCSV(normalized.text);
             if (parsed) {
               result = merge(result, parsed);
@@ -958,7 +1005,7 @@ export async function POST(req: NextRequest) {
         // review screen a time <input> can't render.
         result.events = result.events.map(e => ({ ...e, event_time: to24h(e.event_time) }));
 
-        emit({ type: 'done', ...result, fileOutcomes });
+        emit({ type: 'done', ...result, fileOutcomes, rawTables });
       } catch (err) {
         console.error('[parse-all] error:', err);
         Sentry.captureException(err, { tags: { route: 'parse-all', stage: 'handler' } });

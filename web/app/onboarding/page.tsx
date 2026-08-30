@@ -28,6 +28,12 @@ type UploadedFile = {
 
 type FileOutcome = { name: string; ok: boolean; error?: string };
 
+// One entry per uploaded CSV/Excel file — lets the review screen offer
+// "actually, parent email is this column" when the AI didn't find/use the
+// right one. Not populated for PDF/image uploads (no reliable per-row
+// correspondence to remap against there).
+type RawTable = { fileName: string; headers: string[]; rows: Record<string, string>[] };
+
 type ParentInvite = { inviteId: string; playerName: string; email: string };
 type CoachPayload = { club_id: string; clubName: string; clubColor: string; coaches: { full_name: string; email: string; team_ids: string[] }[] };
 
@@ -914,6 +920,7 @@ function ReviewStep({
   coaches, setCoaches,
   fileOutcomes, setFileOutcomes,
   filePayloads, setFilePayloads,
+  rawTables,
   saving, setSaving,
   onConfirm,
 }: {
@@ -924,6 +931,7 @@ function ReviewStep({
   coaches: CRow[]; setCoaches: React.Dispatch<React.SetStateAction<CRow[]>>;
   fileOutcomes: FileOutcome[]; setFileOutcomes: React.Dispatch<React.SetStateAction<FileOutcome[]>>;
   filePayloads: Record<string, UploadedFile['payload']>; setFilePayloads: React.Dispatch<React.SetStateAction<Record<string, UploadedFile['payload']>>>;
+  rawTables: RawTable[];
   // Lifted to the parent so the wizard's outer Back button can hide itself
   // while a save is in flight instead of letting the coach navigate away
   // mid-write and get silently teleported to Done if it later succeeds.
@@ -971,6 +979,47 @@ function ReviewStep({
 
   function updateT(id: string, f: keyof TRow, v: string)  { setTeams(p   => p.map(r => r.id === id ? { ...r, [f]: v } : r)); }
   function updateP(id: string, f: keyof PRow, v: string)  { setPlayers(p => p.map(r => r.id === id ? { ...r, [f]: v } : r)); }
+
+  // ── Manual column remapping (CSV/Excel imports only — see rawTables) ──
+  // The AI/deterministic parser sometimes doesn't recognise a column (e.g.
+  // "Email Primary" instead of "Parent Email"), leaving a field blank for
+  // every row even though the source data is right there. Rather than
+  // hand-typing each one, let the coach pick which raw column a field
+  // should actually come from and bulk-apply it, matched by player name.
+  function normName(s: string) { return s.trim().toLowerCase().replace(/\s+/g, ' '); }
+
+  function findRawHeader(headers: string[], ...candidates: string[]): string | null {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const c of candidates) {
+      const target = norm(c);
+      const found = headers.find(h => norm(h) === target);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function rawRowName(row: Record<string, string>, headers: string[]): string {
+    const nameHeader = findRawHeader(headers, 'Full Name', 'Name', 'Player Name', 'Player');
+    if (nameHeader) return (row[nameHeader] ?? '').trim();
+    const first = findRawHeader(headers, 'First Name', 'First');
+    const last  = findRawHeader(headers, 'Last Name', 'Last');
+    if (first || last) return [first ? row[first] : '', last ? row[last] : ''].filter(Boolean).join(' ').trim();
+    return '';
+  }
+
+  function applyColumnRemap(field: 'parent_email' | 'jersey_number' | 'position', table: RawTable, column: string) {
+    const byName = new Map<string, string>();
+    for (const row of table.rows) {
+      const name = normName(rawRowName(row, table.headers));
+      const val = (row[column] ?? '').trim();
+      if (name && val) byName.set(name, val);
+    }
+    if (byName.size === 0) return;
+    setPlayers(prev => prev.map(p => {
+      const val = byName.get(normName(p.full_name));
+      return val ? { ...p, [field]: val } : p;
+    }));
+  }
   function updateE(id: string, f: keyof ERow, v: string)  { setEvents(p  => p.map(r => r.id === id ? { ...r, [f]: v } : r)); }
   function updateVenue(id: string, venue: 'home' | 'away') {
     setEvents(prev => prev.map(e => {
@@ -1750,6 +1799,57 @@ function ReviewStep({
         );
       })()}
 
+      {/* ── Manual column remapping — only when a CSV/Excel raw table is
+          available (PDFs/photos have no reliable row-by-row correspondence
+          to remap against) ── */}
+      {rawTables.length > 0 && players.length > 0 && (
+        <div className="mb-5 p-4 rounded-xl border border-[#2a2410] bg-[#120f08]">
+          <p className="text-[11px] font-bold text-[#eab308] uppercase tracking-widest mb-1">Didn&apos;t match a column right?</p>
+          <p className="text-xs text-[#9ca3af] mb-3">
+            Pick which column from your file a field should actually come from — applied to every player matched by name.
+          </p>
+          <div className="flex flex-col gap-2.5">
+            {([
+              { key: 'parent_email' as const, label: 'Parent email' },
+              { key: 'jersey_number' as const, label: 'Jersey #' },
+              { key: 'position' as const, label: 'Position' },
+            ]).map(({ key, label }) => {
+              const missing = players.filter(p => !p[key].trim()).length;
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <span className="text-xs text-[#ccc] w-28 shrink-0">{label}</span>
+                  <span className="text-[11px] text-[#666] w-32 shrink-0">
+                    {missing > 0 ? `${missing} player${missing !== 1 ? 's' : ''} missing` : 'all filled'}
+                  </span>
+                  <select
+                    defaultValue=""
+                    onChange={e => {
+                      const raw = e.target.value;
+                      const sep = raw.indexOf(' ');
+                      if (sep < 0) return;
+                      const table = rawTables[Number(raw.slice(0, sep))];
+                      const column = raw.slice(sep + 1);
+                      if (table && column) applyColumnRemap(key, table, column);
+                      e.target.value = ''; // reset — picking the same column again should still re-apply
+                    }}
+                    style={{ ...SI, fontSize: 11, width: 'auto', flex: 1 }}
+                  >
+                    <option value="">— Choose a column —</option>
+                    {rawTables.map((t, ti) => (
+                      <optgroup key={ti} label={rawTables.length > 1 ? t.fileName : undefined}>
+                        {t.headers.map(h => (
+                          <option key={h} value={`${ti} ${h}`}>{h}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Schedule defaults ──────────────────────────────────────────── */}
       <div className="mb-5 p-4 rounded-xl border border-[#1e2a1e] bg-[#0a120a]">
         <p className="text-[11px] font-bold text-[#22c55e] uppercase tracking-widest mb-3">Schedule defaults — applied to all events on confirm</p>
@@ -2098,6 +2198,10 @@ export default function OnboardingPage() {
   // kept around so a failed file can be retried without re-uploading.
   const [fileOutcomes, setFileOutcomes] = useState<FileOutcome[]>([]);
   const [filePayloads, setFilePayloads] = useState<Record<string, UploadedFile['payload']>>({});
+  // Raw CSV/Excel headers+rows from the last import — lets the review
+  // screen offer manual column remapping when the AI didn't find/use the
+  // right column for a field (e.g. an email column named unusually).
+  const [rawTables, setRawTables] = useState<RawTable[]>([]);
 
   const abortRef        = useRef<AbortController | null>(null);
   const [processingDone, setProcessingDone]         = useState(false);
@@ -2239,7 +2343,7 @@ export default function OnboardingPage() {
       if (!outcome.ok) {
         console.error('parse-all error:', outcome.error);
         setTeams([{ id: uid(), name: '', alt_names: [], age_group: '', gender: '', conf: 'high', reason: '' }]);
-        setPlayers([]); setEvents([]); setCoaches([]);
+        setPlayers([]); setEvents([]); setCoaches([]); setRawTables([]);
         setFileOutcomes(uploadedFiles.map(f => ({ name: f.name, ok: false, error: outcome.error || 'Import failed' })));
         setProcessingCounts({ teams: 0, players: 0, events: 0, coaches: 0 });
         setProcessingFailed(true);
@@ -2248,6 +2352,7 @@ export default function OnboardingPage() {
         populateFromAI(data);
         const d = data as Record<string, unknown[]>;
         setFileOutcomes(Array.isArray(d.fileOutcomes) ? d.fileOutcomes as FileOutcome[] : []);
+        setRawTables(Array.isArray(d.rawTables) ? d.rawTables as RawTable[] : []);
         setProcessingCounts({
           teams:   Array.isArray(d.teams)   ? d.teams.length   : 0,
           players: Array.isArray(d.players) ? d.players.length : 0,
@@ -2323,6 +2428,7 @@ export default function OnboardingPage() {
             coaches={coaches} setCoaches={setCoaches}
             fileOutcomes={fileOutcomes} setFileOutcomes={setFileOutcomes}
             filePayloads={filePayloads} setFilePayloads={setFilePayloads}
+            rawTables={rawTables}
             saving={reviewSaving} setSaving={setReviewSaving}
             onConfirm={(invites, coachPayload, skipped) => { setParentInvites(invites); setPendingCoachPayload(coachPayload); setSkippedCoachNames(skipped); setStep('done'); }}
           />
