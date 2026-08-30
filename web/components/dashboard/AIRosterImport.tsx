@@ -20,7 +20,11 @@ type ReviewPlayer = {
   full_name: string;
   jersey_number: number | null;
   position: string | null;
+  date_of_birth: string | null;
+  parent_name: string | null;
   parent_email: string | null;
+  parent_name_secondary: string | null;
+  parent_email_secondary: string | null;
   uncertain: boolean;
   uncertaintyReason: string | null;
   duplicate: boolean;
@@ -143,7 +147,9 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
       const jersey = p.jersey_number ? parseInt(p.jersey_number, 10) : NaN;
       return {
         _id: uid(), full_name: p.full_name, jersey_number: Number.isFinite(jersey) ? jersey : null,
-        position: p.position || null, parent_email: p.parent_email || null,
+        position: p.position || null, date_of_birth: p.date_of_birth || null,
+        parent_name: p.parent_name || null, parent_email: p.parent_email || null,
+        parent_name_secondary: p.parent_name_secondary || null, parent_email_secondary: p.parent_email_secondary || null,
         uncertain, uncertaintyReason: reason,
         duplicate: dup, selected: !uncertain && !dup,
         teamId, teamName: team?.name ?? '',
@@ -186,7 +192,9 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
         const jersey = p.jersey_number ? parseInt(p.jersey_number, 10) : NaN;
         return {
           _id: uid(), full_name: p.full_name, jersey_number: Number.isFinite(jersey) ? jersey : null,
-          position: p.position || null, parent_email: p.parent_email || null,
+          position: p.position || null, date_of_birth: p.date_of_birth || null,
+        parent_name: p.parent_name || null, parent_email: p.parent_email || null,
+        parent_name_secondary: p.parent_name_secondary || null, parent_email_secondary: p.parent_email_secondary || null,
           uncertain, uncertaintyReason: reason,
           duplicate: dup, selected: !uncertain && !dup,
           teamId: assignedTeamId, teamName: assignedTeamName,
@@ -232,14 +240,23 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
       for (const p of toImport) {
         const { data: pd } = await supabase.from('players').insert({
           team_id: p.teamId, full_name: p.full_name,
-          jersey_number: p.jersey_number, position: p.position,
+          jersey_number: p.jersey_number, position: p.position, date_of_birth: p.date_of_birth,
         }).select('id').single<{ id: string }>();
         if (!pd) continue;
         stats.players++;
         if (p.parent_email?.trim()) {
           await supabase.from('invites').insert({
             team_id: p.teamId, club_id: profile?.club_id, player_id: pd.id,
-            email: p.parent_email.trim(), created_by: profile?.id,
+            email: p.parent_email.trim(), guardian_name: p.parent_name?.trim() || null, created_by: profile?.id,
+          });
+          stats.invites++;
+        }
+        // Second guardian — own invite, so both accounts end up linked to
+        // the same player via player_guardians once each one signs up.
+        if (p.parent_email_secondary?.trim()) {
+          await supabase.from('invites').insert({
+            team_id: p.teamId, club_id: profile?.club_id, player_id: pd.id,
+            email: p.parent_email_secondary.trim(), guardian_name: p.parent_name_secondary?.trim() || null, created_by: profile?.id,
           });
           stats.invites++;
         }
@@ -268,14 +285,21 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
         for (const p of toImport) {
           const { data: pd } = await supabase.from('players').insert({
             team_id: resolvedTeamId, full_name: p.full_name,
-            jersey_number: p.jersey_number, position: p.position,
+            jersey_number: p.jersey_number, position: p.position, date_of_birth: p.date_of_birth,
           }).select('id').single<{ id: string }>();
           if (!pd) continue;
           stats.players++;
           if (p.parent_email?.trim()) {
             await supabase.from('invites').insert({
               team_id: resolvedTeamId, club_id: profile?.club_id, player_id: pd.id,
-              email: p.parent_email.trim(), created_by: profile?.id,
+              email: p.parent_email.trim(), guardian_name: p.parent_name?.trim() || null, created_by: profile?.id,
+            });
+            stats.invites++;
+          }
+          if (p.parent_email_secondary?.trim()) {
+            await supabase.from('invites').insert({
+              team_id: resolvedTeamId, club_id: profile?.club_id, player_id: pd.id,
+              email: p.parent_email_secondary.trim(), guardian_name: p.parent_name_secondary?.trim() || null, created_by: profile?.id,
             });
             stats.invites++;
           }
@@ -311,7 +335,9 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
 
   const allPlayers     = mode === 'single' ? players : reviewTeams.flatMap((t) => t.players);
   const selectedCount  = allPlayers.filter((p) => p.selected).length;
-  const inviteCount    = allPlayers.filter((p) => p.selected && p.parent_email).length;
+  const selectedPlayers = allPlayers.filter((p) => p.selected);
+  const inviteCount    = selectedPlayers.filter((p) => p.parent_email).length
+    + selectedPlayers.filter((p) => p.parent_email_secondary).length;
   const dupCount       = allPlayers.filter((p) => p.duplicate).length;
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -572,6 +598,7 @@ function PlayerRow({ player: p, primary, onToggle }: { player: ReviewPlayer; pri
           )}
           <span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{p.full_name}</span>
           {p.position && <span style={{ fontSize: '11px', color: '#64748B' }}>{p.position}</span>}
+          {p.date_of_birth && <span style={{ fontSize: '11px', color: '#94A3B8' }}>DOB {p.date_of_birth}</span>}
           {p.duplicate && (
             <span style={{ fontSize: '10px', fontWeight: '700', color: '#60A5FA', background: 'rgba(96,165,250,0.12)', borderRadius: '5px', padding: '1px 6px' }}>
               Already on roster
@@ -588,6 +615,12 @@ function PlayerRow({ player: p, primary, onToggle }: { player: ReviewPlayer; pri
           </div>
         ) : (
           <span style={{ fontSize: '11px', color: '#CBD5E1', fontStyle: 'italic' }}>No parent email</span>
+        )}
+        {p.parent_email_secondary && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
+            <Mail size={11} color="#93C5FD" />
+            <span style={{ fontSize: '12px', color: '#93C5FD' }}>{p.parent_email_secondary} · 2nd guardian</span>
+          </div>
         )}
         {p.uncertain && p.uncertaintyReason && (
           <div style={{ fontSize: '11px', color: '#F59E0B', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
