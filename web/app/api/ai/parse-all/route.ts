@@ -189,7 +189,11 @@ const PlayerSchema = z.object({
   full_name: z.string(),
   jersey_number: z.string(),
   position: z.string(),
+  date_of_birth: z.string(),
+  parent_name: z.string(),
   parent_email: z.string(),
+  parent_name_secondary: z.string(),
+  parent_email_secondary: z.string(),
   team_name: z.string(),
   confidence: ConfidenceSchema,
   reason: z.string().optional(),
@@ -332,6 +336,10 @@ function extractFromCSV(text: string): ParsedResult | null {
     const iJersey = colIdx(headers, 'Jersey #', 'Jersey Number', 'Jersey', '#');
     const iPos    = colIdx(headers, 'Role / Position', 'Position', 'Pos');
     const iEmail  = colIdx(headers, 'Email', 'Parent Email', 'Email Primary', 'Primary Email', 'Guardian Email');
+    const iEmail2 = colIdx(headers, 'Email Secondary', 'Secondary Email', 'Parent Email 2', 'Email 2');
+    const iPName  = colIdx(headers, 'Parent Name', 'Guardian Name', 'Parent');
+    const iPName2 = colIdx(headers, 'Parent Name Secondary', 'Secondary Parent Name', 'Guardian Name Secondary', 'Parent 2');
+    const iDOB    = colIdx(headers, 'DOB', 'Date of Birth', 'Birthdate', 'Birth Date');
     const iDate     = colIdx(headers, 'Event Date', 'Game Date', 'Date');
     const iTime     = colIdx(headers, 'Event Time', 'Game Time', 'Time');
     const iOpp      = colIdx(headers, 'Opponent / Note', 'Opponent', 'Title');
@@ -366,7 +374,11 @@ function extractFromCSV(text: string): ParsedResult | null {
           full_name:     name,
           jersey_number: iJersey >= 0 ? (row[iJersey] ?? '').trim() : '',
           position:      iPos    >= 0 ? (row[iPos]    ?? '').trim() : '',
+          date_of_birth: iDOB    >= 0 ? toIsoDate((row[iDOB] ?? '').trim()) : '',
+          parent_name:   iPName  >= 0 ? (row[iPName]  ?? '').trim() : '',
           parent_email:  iEmail  >= 0 ? (row[iEmail]  ?? '').trim() : '',
+          parent_name_secondary:  iPName2 >= 0 ? (row[iPName2] ?? '').trim() : '',
+          parent_email_secondary: iEmail2 >= 0 ? (row[iEmail2] ?? '').trim() : '',
           team_name:     team,
           confidence:    'high',
         });
@@ -440,6 +452,10 @@ function extractFromCSV(text: string): ParsedResult | null {
     const iJersey = colIdx(headers, 'Jersey Number', 'Jersey #', 'Jersey', '#');
     const iPos    = colIdx(headers, 'Position', 'Pos');
     const iEmail  = colIdx(headers, 'Parent Email', 'Email', 'Email Primary', 'Primary Email', 'Guardian Email');
+    const iEmail2 = colIdx(headers, 'Email Secondary', 'Secondary Email', 'Parent Email 2', 'Email 2');
+    const iPName  = colIdx(headers, 'Parent Name', 'Guardian Name', 'Parent');
+    const iPName2 = colIdx(headers, 'Parent Name Secondary', 'Secondary Parent Name', 'Guardian Name Secondary', 'Parent 2');
+    const iDOB    = colIdx(headers, 'DOB', 'Date of Birth', 'Birthdate', 'Birth Date');
     const iAG     = colIdx(headers, 'Age Group', 'Age');
 
     for (const row of data) {
@@ -458,7 +474,11 @@ function extractFromCSV(text: string): ParsedResult | null {
           full_name:     name,
           jersey_number: iJersey >= 0 ? (row[iJersey] ?? '').trim() : '',
           position:      iPos    >= 0 ? (row[iPos]    ?? '').trim() : '',
+          date_of_birth: iDOB    >= 0 ? toIsoDate((row[iDOB] ?? '').trim()) : '',
+          parent_name:   iPName  >= 0 ? (row[iPName]  ?? '').trim() : '',
           parent_email:  iEmail  >= 0 ? (row[iEmail]  ?? '').trim() : '',
+          parent_name_secondary:  iPName2 >= 0 ? (row[iPName2] ?? '').trim() : '',
+          parent_email_secondary: iEmail2 >= 0 ? (row[iEmail2] ?? '').trim() : '',
           team_name:     team,
           confidence:    'high',
         });
@@ -511,7 +531,7 @@ function extractFromCSV(text: string): ParsedResult | null {
 const CLAUDE_SYSTEM = `You are analysing soccer club documents to extract structured data.
 Return ONLY valid minified JSON with exactly these 4 keys, no markdown, no explanation:
 {"teams":[{"name":"","alt_names":[],"age_group":"","gender":"","confidence":"high","reason":""}],
- "players":[{"full_name":"","jersey_number":"","position":"","parent_email":"","team_name":"","confidence":"high","reason":""}],
+ "players":[{"full_name":"","jersey_number":"","position":"","date_of_birth":"","parent_name":"","parent_email":"","parent_name_secondary":"","parent_email_secondary":"","team_name":"","confidence":"high","reason":""}],
  "events":[{"title":"","type":"game","home_away":"","event_date":"YYYY-MM-DD","event_time":"HH:MM","location":"","address":"","uniform":"","duration_minutes":"","arrival_buffer_minutes":"","field_notes":"","field_type":"","notes":"","coach_notes":"","team_name":"","confidence":"high","reason":""}],
  "coaches":[{"full_name":"","email":"","team_name":"","confidence":"high","reason":""}]}
 Rules:
@@ -593,15 +613,28 @@ Rules:
   "Sod", "Grass" as "grass". Empty string if surface isn't stated.
 - notes: any team-facing notes or instructions visible to all (e.g. "Bring extra water", "Wear training kit"), empty string if none
 - coach_notes: any coach-only or internal notes (e.g. "Focus on set pieces", "Call-up players available"), empty string if none
-- parent_email (on players): pull from any column that's plausibly a
-  guardian's contact address — "Email", "Parent Email", "Email Primary",
-  "Primary Email", "Guardian Email", "Contact Email", etc. When a roster
-  splits this across two columns (e.g. "Email Primary" and "Email
-  Secondary" for a second guardian), use the primary one — never leave
-  parent_email blank just because there's more than one email-shaped
-  column on the row; picking the primary/first one is always better than
-  reporting nothing. Only leave it empty if the row genuinely has no email
-  value in any column.
+- parent_email / parent_email_secondary (on players): a roster often has
+  contact info for TWO guardians (e.g. "Email Primary" and "Email
+  Secondary" columns, or "Mother Email" / "Father Email", or "Parent 1
+  Email" / "Parent 2 Email") — capture BOTH when both exist: the first/
+  primary one as parent_email, the second one as parent_email_secondary.
+  Recognize any column that's plausibly a guardian's contact address —
+  "Email", "Parent Email", "Email Primary", "Primary Email", "Guardian
+  Email", "Contact Email", "Mother Email", "Father Email", etc. Never leave
+  parent_email blank just because there's more than one email-shaped column
+  on the row — picking the primary/first one is always better than
+  reporting nothing. parent_email_secondary is genuinely optional — empty
+  string is correct when the roster only ever gives one guardian's contact.
+- parent_name / parent_name_secondary (on players): the guardian's own name
+  if the roster gives one (e.g. "Parent Name", "Mother", "Father",
+  "Guardian Name", or a name column adjacent to Email Primary/Secondary) —
+  matched to the same guardian as parent_email/parent_email_secondary
+  respectively. Empty string if the roster only has the player's own name.
+- date_of_birth (on players): YYYY-MM-DD if the roster has a DOB/Date of
+  Birth/Birthdate column. A roster sometimes gives age or birth year
+  instead of a full date (e.g. "Grade" or "Age" alone) — leave
+  date_of_birth empty in that case rather than guessing a month and day
+  that weren't actually stated.
 - confidence: "high"=clearly stated, "medium"=inferred, "low"=uncertain
 - reason: REQUIRED whenever confidence is "medium" or "low" — a short,
   specific, human-readable sentence a club admin can act on, naming the

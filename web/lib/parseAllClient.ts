@@ -8,7 +8,11 @@ export type ParseAllPayload = { base64?: string; mimeType?: string; text?: strin
 export type ParseAllCounts = { teams: number; players: number; events: number; coaches: number };
 export type ParseAllFileOutcome = { name: string; ok: boolean; error?: string };
 export type ExtractedTeam = { name: string; alt_names: string[]; age_group: string; gender: string; confidence: string };
-export type ExtractedPlayer = { full_name: string; jersey_number: string; position: string; parent_email: string; team_name: string; confidence: string };
+export type ExtractedPlayer = {
+  full_name: string; jersey_number: string; position: string; date_of_birth: string;
+  parent_name: string; parent_email: string; parent_name_secondary: string; parent_email_secondary: string;
+  team_name: string; confidence: string;
+};
 export type ExtractedCoach = { full_name: string; email: string; team_name: string; confidence: string };
 export type ExtractedEvent = {
   title: string; type: string; home_away: string; event_date: string; event_time: string;

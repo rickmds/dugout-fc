@@ -15,7 +15,11 @@ type Step = 'auth' | 'club' | 'upload' | 'processing' | 'review' | 'done';
 type Conf = 'high' | 'medium' | 'low';
 
 type TRow = { id: string; name: string; alt_names: string[]; age_group: string; gender: string; conf: Conf; reason: string };
-type PRow = { id: string; full_name: string; jersey_number: string; position: string; parent_email: string; local_team_id: string; conf: Conf; reason: string };
+type PRow = {
+  id: string; full_name: string; jersey_number: string; position: string; date_of_birth: string;
+  parent_name: string; parent_email: string; parent_name_secondary: string; parent_email_secondary: string;
+  local_team_id: string; conf: Conf; reason: string;
+};
 type ERow = { id: string; title: string; type: string; home_away: string; event_date: string; event_time: string; location: string; address: string; lat: string; lng: string; uniform: string; duration_minutes: string; arrival_buffer_minutes: string; field_notes: string; field_type: string; notes: string; coach_notes: string; local_team_id: string; conf: Conf; reason: string };
 type CRow = { id: string; full_name: string; email: string; local_team_id: string };
 
@@ -958,7 +962,8 @@ function ReviewStep({
   // mergeParsedData's dedup for the AI-import path above.
   const savedTeamIds   = useRef<Map<string, string>>(new Map()); // local team id   -> db id
   const savedPlayerIds = useRef<Map<string, string>>(new Map()); // local player id -> db id
-  const savedInviteIds = useRef<Map<string, string>>(new Map()); // local player id -> db invite id
+  const savedInviteIds = useRef<Map<string, string>>(new Map()); // local player id -> db invite id (primary guardian)
+  const savedInviteIds2 = useRef<Map<string, string>>(new Map()); // local player id -> db invite id (secondary guardian)
   const savedEventIds  = useRef<Set<string>>(new Set());         // local event ids already saved
 
   type EventDefaults = { duration: number; arriveEarly: number; rsvpLockHours: number };
@@ -1007,11 +1012,26 @@ function ReviewStep({
     return '';
   }
 
-  function applyColumnRemap(field: 'parent_email' | 'jersey_number' | 'position', table: RawTable, column: string) {
+  // <input type="date"> silently shows blank for anything but YYYY-MM-DD —
+  // a raw DOB column is just as likely to be MM/DD/YYYY, so normalize it on
+  // the way in rather than letting the remap look like it did nothing.
+  function toIsoDateClient(raw: string): string {
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (m) {
+      const y = m[3].length === 2 ? `20${m[3]}` : m[3];
+      return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+    }
+    return raw;
+  }
+
+  function applyColumnRemap(field: 'parent_email' | 'parent_email_secondary' | 'jersey_number' | 'position' | 'date_of_birth', table: RawTable, column: string) {
     const byName = new Map<string, string>();
     for (const row of table.rows) {
       const name = normName(rawRowName(row, table.headers));
-      const val = (row[column] ?? '').trim();
+      let val = (row[column] ?? '').trim();
+      if (val && field === 'date_of_birth') val = toIsoDateClient(val);
       if (name && val) byName.set(name, val);
     }
     if (byName.size === 0) return;
@@ -1116,7 +1136,9 @@ function ReviewStep({
         existingKeys.add(key);
         newRows.push({
           id: uid(), full_name: p.full_name ?? '', jersey_number: p.jersey_number ?? '',
-          position: p.position ?? '', parent_email: p.parent_email ?? '',
+          position: p.position ?? '', date_of_birth: p.date_of_birth ?? '',
+          parent_name: p.parent_name ?? '', parent_email: p.parent_email ?? '',
+          parent_name_secondary: p.parent_name_secondary ?? '', parent_email_secondary: p.parent_email_secondary ?? '',
           local_team_id, conf: (p.confidence ?? 'high') as Conf,
           reason: p.reason ?? '',
         });
@@ -1222,6 +1244,8 @@ function ReviewStep({
     for (const p of players) {
       const email = p.parent_email.trim();
       if (email && !EMAIL_RE.test(email)) badEmails.push(`${p.full_name.trim() || 'Player'}: "${email}"`);
+      const email2 = p.parent_email_secondary.trim();
+      if (email2 && !EMAIL_RE.test(email2)) badEmails.push(`${p.full_name.trim() || 'Player'} (2nd guardian): "${email2}"`);
     }
     for (const c of coaches) {
       const email = c.email.trim();
@@ -1268,7 +1292,10 @@ function ReviewStep({
         let playerDbId = savedPlayerIds.current.get(p.id);
         if (!playerDbId) {
           const { data: pd, error: playerErr } = await supabase.from('players')
-            .insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: parseJersey(p.jersey_number), position: p.position || null })
+            .insert({
+              team_id: tId, full_name: p.full_name.trim(), jersey_number: parseJersey(p.jersey_number),
+              position: p.position || null, date_of_birth: p.date_of_birth || null,
+            })
             .select('id').single();
           if (playerErr || !pd) { failedPlayers.push(p.full_name.trim()); continue; }
           playerDbId = (pd as { id: string }).id;
@@ -1279,13 +1306,34 @@ function ReviewStep({
           let inviteDbId = savedInviteIds.current.get(p.id);
           if (!inviteDbId) {
             const { data: inv, error: inviteErr } = await supabase.from('invites')
-              .insert({ team_id: tId, club_id: clubId, player_id: playerDbId, email: p.parent_email.trim(), created_by: user?.id })
+              .insert({
+                team_id: tId, club_id: clubId, player_id: playerDbId, email: p.parent_email.trim(),
+                guardian_name: p.parent_name.trim() || null, created_by: user?.id,
+              })
               .select('id').single();
             if (inviteErr || !inv) { failedInvites.push(`${p.full_name.trim()} (${p.parent_email.trim()})`); continue; }
             inviteDbId = (inv as { id: string }).id;
             savedInviteIds.current.set(p.id, inviteDbId);
           }
           invites.push({ inviteId: inviteDbId, playerName: p.full_name.trim(), email: p.parent_email.trim() });
+        }
+
+        // Second guardian — same player, own invite/join, so both accounts
+        // end up linked via player_guardians once each one signs up.
+        if (p.parent_email_secondary.trim()) {
+          let inviteDbId2 = savedInviteIds2.current.get(p.id);
+          if (!inviteDbId2) {
+            const { data: inv2, error: inviteErr2 } = await supabase.from('invites')
+              .insert({
+                team_id: tId, club_id: clubId, player_id: playerDbId, email: p.parent_email_secondary.trim(),
+                guardian_name: p.parent_name_secondary.trim() || null, created_by: user?.id,
+              })
+              .select('id').single();
+            if (inviteErr2 || !inv2) { failedInvites.push(`${p.full_name.trim()} (${p.parent_email_secondary.trim()})`); continue; }
+            inviteDbId2 = (inv2 as { id: string }).id;
+            savedInviteIds2.current.set(p.id, inviteDbId2);
+          }
+          invites.push({ inviteId: inviteDbId2, playerName: p.full_name.trim(), email: p.parent_email_secondary.trim() });
         }
       }
 
@@ -1406,7 +1454,7 @@ function ReviewStep({
     return (
       <div key={p.id} className={`grid gap-1.5 items-center p-1.5 rounded-lg border ${
         p.conf === 'low' ? 'border-red-900/60 bg-red-950/20' : p.conf === 'medium' ? 'border-amber-900/60 bg-amber-950/20' : 'border-[#1e1e1e]'
-      }`} style={{ gridTemplateColumns: '48px 1fr 72px 120px 1fr 150px 32px' }}>
+      }`} style={{ gridTemplateColumns: '48px 1fr 72px 120px 1fr 110px 1fr 150px 32px' }}>
         <input value={p.jersey_number} onChange={e => updateP(p.id, 'jersey_number', e.target.value)} placeholder="#" style={{ ...SI, textAlign: 'center' }} />
         <input value={p.full_name}     onChange={e => updateP(p.id, 'full_name', e.target.value)}     placeholder="Full name" style={SI} />
         <div className="flex justify-center items-center"><ConfBadge conf={p.conf} reason={p.reason} /></div>
@@ -1414,6 +1462,8 @@ function ReviewStep({
           {POSITIONS.map(pos => <option key={pos} value={pos}>{pos || '—'}</option>)}
         </select>
         <input value={p.parent_email} onChange={e => updateP(p.id, 'parent_email', e.target.value)} placeholder="Parent email" type="email" style={SI} />
+        <input value={p.date_of_birth} onChange={e => updateP(p.id, 'date_of_birth', e.target.value)} type="date" style={SI} title="Date of birth" />
+        <input value={p.parent_email_secondary} onChange={e => updateP(p.id, 'parent_email_secondary', e.target.value)} placeholder="2nd guardian email" type="email" style={SI} title="Second guardian's email — invites them too" />
         <select value={p.local_team_id} onChange={e => updateP(p.id, 'local_team_id', e.target.value)}
           style={{ ...SI, color: isUnassigned(p.local_team_id) ? '#f59e0b' : undefined }}>
           <option value="">Unassigned</option>
@@ -1612,10 +1662,10 @@ function ReviewStep({
             <div>
               <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mb-2">Roster</p>
               <div className="overflow-x-auto">
-                {teamPlayers.length > 0 && colHdr(['#','Name','','Position','Parent email','Team',''], '48px 1fr 72px 120px 1fr 150px 32px')}
+                {teamPlayers.length > 0 && colHdr(['#','Name','','Position','Parent email','DOB','2nd guardian','Team',''], '48px 1fr 72px 120px 1fr 110px 1fr 150px 32px')}
                 <div className="flex flex-col gap-1.5 min-w-[620px]">{teamPlayers.map(renderPlayerRow)}</div>
               </div>
-              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: t.id, conf: 'high', reason: '' }])}
+              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', date_of_birth: '', parent_name: '', parent_email: '', parent_name_secondary: '', parent_email_secondary: '', local_team_id: t.id, conf: 'high', reason: '' }])}
                 className="mt-3 w-full py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
                 + Add player
               </button>
@@ -1704,7 +1754,7 @@ function ReviewStep({
               <div>
                 <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest mb-2">Players</p>
                 <div className="overflow-x-auto">
-                  {colHdr(['#','Name','','Position','Parent email','Team',''], '48px 1fr 72px 120px 1fr 150px 32px')}
+                  {colHdr(['#','Name','','Position','Parent email','DOB','2nd guardian','Team',''], '48px 1fr 72px 120px 1fr 110px 1fr 150px 32px')}
                   <div className="flex flex-col gap-1.5 min-w-[620px]">{uPlayers.map(renderPlayerRow)}</div>
                 </div>
               </div>
@@ -1719,7 +1769,7 @@ function ReviewStep({
               </div>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', parent_email: '', local_team_id: '', conf: 'high', reason: '' }])}
+              <button onClick={() => setPlayers(p => [...p, { id: uid(), full_name: '', jersey_number: '', position: '', date_of_birth: '', parent_name: '', parent_email: '', parent_name_secondary: '', parent_email_secondary: '', local_team_id: '', conf: 'high', reason: '' }])}
                 className="flex-1 py-2 rounded-xl border border-dashed border-[#222] text-[#555] text-sm hover:border-[#22c55e] hover:text-[#22c55e] transition-all">
                 + Add player
               </button>
@@ -1811,6 +1861,8 @@ function ReviewStep({
           <div className="flex flex-col gap-2.5">
             {([
               { key: 'parent_email' as const, label: 'Parent email' },
+              { key: 'parent_email_secondary' as const, label: '2nd guardian email' },
+              { key: 'date_of_birth' as const, label: 'Date of birth' },
               { key: 'jersey_number' as const, label: 'Jersey #' },
               { key: 'position' as const, label: 'Position' },
             ]).map(({ key, label }) => {
@@ -2285,7 +2337,9 @@ export default function OnboardingPage() {
     setTeams(teamRows);
     setPlayers(((data.players ?? []) as Record<string, string>[]).map(p => ({
       id: uid(), full_name: p.full_name ?? '', jersey_number: p.jersey_number ?? '',
-      position: p.position ?? '', parent_email: p.parent_email ?? '',
+      position: p.position ?? '', date_of_birth: p.date_of_birth ?? '',
+      parent_name: p.parent_name ?? '', parent_email: p.parent_email ?? '',
+      parent_name_secondary: p.parent_name_secondary ?? '', parent_email_secondary: p.parent_email_secondary ?? '',
       local_team_id: matchTeamId(p.team_name, teamRows), conf: (p.confidence ?? 'high') as Conf,
       reason: p.reason ?? '',
     })));
