@@ -71,6 +71,17 @@ export default function ChatScreen() {
 
   const [activeTab, setActiveTab] = useState<Tab>(tabParam === 'announcements' ? 'announcements' : 'chats');
 
+  // Lazy-mount: a tab's data fetch + realtime subscriptions only start once
+  // it's actually been selected. Without this, opening Chat at all fires
+  // all three sub-tabs' fetches and channels regardless of which one the
+  // person actually wants. Once visited a tab stays mounted (not re-added
+  // to a re-created Set) so switching back preserves its scroll/draft state
+  // exactly like the existing display:none toggling already does.
+  const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(() => new Set([tabParam === 'announcements' ? 'announcements' : 'chats']));
+  useEffect(() => {
+    setVisitedTabs((prev) => (prev.has(activeTab) ? prev : new Set(prev).add(activeTab)));
+  }, [activeTab]);
+
   // Deep-links from a notification (tap in the notification centre or the OS
   // push banner) navigate here with ?tab=announcements — this screen usually
   // stays mounted as part of the tab navigator, so the useState initializer
@@ -155,14 +166,14 @@ export default function ChatScreen() {
       </View>
 
       <View style={{ flex: 1, display: activeTab === 'chats' ? 'flex' : 'none' }}>
-        <ChatsTab team={team} profile={profile} clubSlug={clubSlug} />
+        {visitedTabs.has('chats') && <ChatsTab team={team} profile={profile} clubSlug={clubSlug} />}
       </View>
       <View style={{ flex: 1, display: activeTab === 'announcements' ? 'flex' : 'none' }}>
-        <AnnouncementsTab team={team} profile={profile} coachEmail={user?.email ?? null} />
+        {visitedTabs.has('announcements') && <AnnouncementsTab team={team} profile={profile} coachEmail={user?.email ?? null} />}
       </View>
       {isCoach && (
         <View style={{ flex: 1, display: activeTab === 'email' ? 'flex' : 'none' }}>
-          <EmailTab team={team} profile={profile} coachEmail={user?.email ?? null} />
+          {visitedTabs.has('email') && <EmailTab team={team} profile={profile} coachEmail={user?.email ?? null} />}
         </View>
       )}
     </View>
@@ -214,12 +225,11 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
     }
   }, [team?.id, profile?.id]);
 
-  async function fetchConvos() {
-    if (!team || !profile) return;
-    setLoading(true);
-    setLoadError(false);
-
-    // Get/create team group conversation
+  // Split out of fetchConvos so it can run in parallel with the
+  // participant-list query below — neither needs the other's result, they
+  // were just written one after another for no real reason.
+  async function ensureTeamGroupConversation(): Promise<{ id: string; title: string | null } | null> {
+    if (!team || !profile) return null;
     const { data: tgRows } = await supabase
       .from('conversations')
       .select('id, title')
@@ -246,9 +256,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         teamConv = raceRows?.[0] ?? null;
         if (!teamConv) {
           console.error('[Chat] Could not create team_group conversation:', error.message);
-          setLoadError(true);
-          setLoading(false);
-          return;
+          return null;
         }
       } else {
         teamConv = newTg;
@@ -261,14 +269,29 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         { onConflict: 'conversation_id,profile_id', ignoreDuplicates: true },
       );
     }
+    return teamConv;
+  }
 
-    // Get all conversations where I'm a participant
-    const { data: myParts } = await supabase
-      .from('conversation_participants')
-      .select('conversation_id')
-      .eq('profile_id', profile.id);
+  async function fetchConvos() {
+    if (!team || !profile) return;
+    setLoading(true);
+    setLoadError(false);
 
-    const allIds = (myParts ?? []).map((p: any) => p.conversation_id);
+    // myParts doesn't depend on the team_group conversation existing (its
+    // id gets filtered out of allIds below regardless of whether the
+    // upsert above has landed yet), so there's no reason to wait for it.
+    const [teamConv, myPartsRes] = await Promise.all([
+      ensureTeamGroupConversation(),
+      supabase.from('conversation_participants').select('conversation_id').eq('profile_id', profile.id),
+    ]);
+
+    if (!teamConv) {
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+
+    const allIds = (myPartsRes.data ?? []).map((p: any) => p.conversation_id);
 
     // Get direct conversations (not team_group — we handle that separately)
     const directIds = allIds.filter((id: string) => id !== teamConv?.id);

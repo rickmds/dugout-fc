@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -372,28 +372,27 @@ export default function HomeScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [profile?.id]);
 
-  // Track current poll IDs in a ref so the vote subscription doesn't need to remount
-  const pollIdsRef = useRef<string[]>([]);
+  // Realtime: sync poll votes across all users when anyone votes. Filtered
+  // to this team's own poll ids — without that, every vote on any poll at
+  // any club on the platform pushes to every open device. Poll ids only
+  // change when a poll is created/deleted (not on every vote), so keying
+  // the effect on their joined value resubscribes rarely, not per-vote.
+  const pollIds = useMemo(() => polls.map(p => p.id), [polls]);
+  const pollIdsKey = pollIds.join(',');
   useEffect(() => {
-    pollIdsRef.current = polls.map(p => p.id);
-  }, [polls]);
-
-  // Realtime: sync poll votes across all users when anyone votes
-  useEffect(() => {
-    if (!team?.id) return;
+    if (!team?.id || pollIds.length === 0) return;
     const channel = supabase
       .channel(uniqueChannelName(`poll-votes-${team.id}`))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'team_poll_votes',
+        filter: `poll_id=in.(${pollIdsKey})`,
       }, async () => {
-        const ids = pollIdsRef.current;
-        if (ids.length === 0) return;
         const { data } = await (supabase as any)
           .from('team_poll_votes')
           .select('poll_id, option_id, profile_id')
-          .in('poll_id', ids);
+          .in('poll_id', pollIds);
         if (data) {
           setPolls(prev => prev.map(p => ({
             ...p,
@@ -403,7 +402,8 @@ export default function HomeScreen() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [team?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team?.id, pollIdsKey]);
 
   // Team picker
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);

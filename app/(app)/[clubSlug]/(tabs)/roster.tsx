@@ -21,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { sendCoachInvites, sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -80,13 +81,20 @@ function splitName(full: string): [string, string] {
 // ─── Player card ─────────────────────────────────────────────────────────────
 
 const PlayerCard = memo(function PlayerCard({
-  item, isCoach, myProfileId, onPress,
+  item, isCoach, myProfileId, onPressPlayer,
 }: {
   item: Player;
   isCoach: boolean;
   myProfileId: string | null;
-  onPress: () => void;
+  onPressPlayer: (id: string) => void;
 }) {
+  // A closure recreated on every PlayerCard render, but that's fine here —
+  // it only matters for props passed IN to a memoized component, not for
+  // one built fresh inside its own render. The point of onPressPlayer being
+  // a stable prop is so *this* card doesn't get a new function reference
+  // (and therefore skip memo) just because some unrelated part of the
+  // roster screen re-rendered.
+  const onPress = () => onPressPlayer(item.id);
   const { primaryColor } = useClub();
   const [imgErr, setImgErr] = useState(false);
   const isMyPlayer   = item.profile_id !== null && item.profile_id === myProfileId;
@@ -259,6 +267,15 @@ export default function RosterScreen() {
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
 
+  // Stable across renders so PlayerCard's memo() isn't defeated by a fresh
+  // closure every time RosterScreen re-renders (e.g. every keystroke while
+  // the Add Player modal is open) — passing a new onPress function each
+  // time meant every card behind the modal re-rendered on every character typed.
+  const handlePlayerPress = useCallback(
+    (id: string) => router.push(`/(app)/${clubSlug}/player/${id}` as any),
+    [router, clubSlug]
+  );
+
   const [search, setSearch]             = useState('');
   const [players, setPlayers]           = useState<Player[]>([]);
   const [coaches, setCoaches]           = useState<Coach[]>([]);
@@ -396,16 +413,26 @@ export default function RosterScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSaving(true);
 
-    const { data: playerData, error: playerError } = await supabase
-      .from('players')
-      .insert({
-        team_id: team.id,
-        full_name: name.trim(),
-        jersey_number: jersey ? parseInt(jersey, 10) : null,
-        position: position || null,
-      })
-      .select('id')
-      .single();
+    const playerResult = await withTimeout(
+      supabase
+        .from('players')
+        .insert({
+          team_id: team.id,
+          full_name: name.trim(),
+          jersey_number: jersey ? parseInt(jersey, 10) : null,
+          position: position || null,
+        })
+        .select('id')
+        .single(),
+      8000
+    );
+
+    if (playerResult === TIMEOUT) {
+      setSaving(false);
+      Alert.alert('Could not add player', 'Check your connection and try again.');
+      return;
+    }
+    const { data: playerData, error: playerError } = playerResult;
 
     if (playerError || !playerData?.id) {
       setSaving(false);
@@ -414,18 +441,22 @@ export default function RosterScreen() {
     }
 
     if (parentEmail.trim()) {
-      const { data: inviteData } = await supabase
-        .from('invites')
-        .insert({
-          team_id: team.id,
-          club_id: team.club_id,
-          player_id: playerData.id,
-          email: parentEmail.trim(),
-          role: 'parent',
-          created_by: profile.id,
-        } as any)
-        .select('id')
-        .single();
+      const inviteResult = await withTimeout(
+        supabase
+          .from('invites')
+          .insert({
+            team_id: team.id,
+            club_id: team.club_id,
+            player_id: playerData.id,
+            email: parentEmail.trim(),
+            role: 'parent',
+            created_by: profile.id,
+          } as any)
+          .select('id')
+          .single(),
+        8000
+      );
+      const inviteData = inviteResult === TIMEOUT ? null : inviteResult.data;
 
       if (inviteData?.id) {
         await sendParentInviteEmail((inviteData as any).id as string, name.trim());
@@ -573,7 +604,7 @@ export default function RosterScreen() {
             item={item}
             isCoach={isCoach}
             myProfileId={myProfileId}
-            onPress={() => router.push(`/(app)/${clubSlug}/player/${item.id}` as any)}
+            onPressPlayer={handlePlayerPress}
           />
         )}
       />

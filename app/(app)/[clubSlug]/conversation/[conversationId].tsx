@@ -16,6 +16,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
+import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { uniqueChannelName } from '../../../../lib/realtime';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
@@ -332,11 +333,19 @@ export default function ConversationScreen() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
 
     try {
-      const { data: inserted, error } = await supabase
-        .from('messages')
-        .insert({ conversation_id: conversationId, sender_id: profile.id, body })
-        .select('id')
-        .single();
+      const result = await withTimeout(
+        supabase.from('messages').insert({ conversation_id: conversationId, sender_id: profile.id, body }).select('id').single(),
+        8000
+      );
+
+      if (result === TIMEOUT) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setText(body);
+        Alert.alert('Could not send', 'Check your connection and try again.');
+        return;
+      }
+
+      const { data: inserted, error } = result;
 
       if (error) {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));

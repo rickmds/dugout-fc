@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef, memo } from 'react';
 import type { ErrorBoundaryProps } from 'expo-router';
 import {
   ActivityIndicator,
@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { computeArriveBy } from '../../../../lib/eventTime';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -186,6 +187,7 @@ export default function ScheduleScreen() {
   // player on the same team (e.g. twins) — every RSVP row below is keyed
   // per player rather than assuming a single "my player".
   const [myRsvpsByPlayer, setMyRsvpsByPlayer] = useState<Record<string, Record<string, MyRsvp>>>({});
+  const [rsvpSavingId, setRsvpSavingId] = useState<string | null>(null);
   const [myPlayersByTeam, setMyPlayersByTeam] = useState<Map<string, { id: string; full_name: string }[]>>(new Map());
   const [playerCount, setPlayerCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -427,26 +429,36 @@ export default function ScheduleScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const current = myRsvpsByPlayer[eventId]?.[playerId] ?? null;
+    setRsvpSavingId(playerId);
     try {
       if (current === status) {
-        const { error } = await supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', playerId);
-        if (error) {
-          Alert.alert('Error', 'Could not update RSVP. Please try again.');
+        const result = await withTimeout(
+          supabase.from('event_rsvps').delete().eq('event_id', eventId).eq('player_id', playerId),
+          8000
+        );
+        if (result === TIMEOUT || result.error) {
+          Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
           return;
         }
       } else {
-        const { error } = await supabase.from('event_rsvps').upsert(
-          { event_id: eventId, player_id: playerId, responded_by: profile?.id, status },
-          { onConflict: 'event_id,player_id' }
+        const result = await withTimeout(
+          supabase.from('event_rsvps').upsert(
+            { event_id: eventId, player_id: playerId, responded_by: profile?.id, status },
+            { onConflict: 'event_id,player_id' }
+          ),
+          8000
         );
-        if (error) {
-          Alert.alert('Error', 'Could not update RSVP. Please try again.');
+        if (result === TIMEOUT || result.error) {
+          Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
           return;
         }
       }
       await fetchRsvpData(events, myPlayersByTeam);
     } catch (e) {
       console.error('handleRsvp error', e);
+      Alert.alert('Could not save your RSVP', 'Check your connection and try again.');
+    } finally {
+      setRsvpSavingId(null);
     }
   }
 
@@ -466,335 +478,42 @@ export default function ScheduleScreen() {
     else setCalMonth(m => m + 1);
   }
 
-  // ── Shared event card renderer ──
+  // ── Shared event card renderer — thin wrapper narrowing each map down to
+  // just this item's own slice before handing off to the memoized
+  // component below, so a weather/drive-time update for one event doesn't
+  // force every other visible card to re-render too. ──
   function renderCard(item: Event) {
-    const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.other;
-    const counts = rsvpCounts[item.id];
-    // A guardian can have more than one player on this team (e.g. twins) —
-    // every one of them gets their own status chip and RSVP row below.
-    const myPlayers = myPlayersByTeam.get(item.team_id) ?? [];
-    const isMultiPlayer = myPlayers.length > 1;
-    const isPast = !isUpcoming(item);
-    const today = isToday(item.event_date);
-    const isCancelled = !!item.cancelled_at;
-    const isGuest = !!item.isGuest;
-    const d = new Date(item.event_date + 'T00:00:00');
-    const pending = playerCount > 0 && counts != null
-      ? Math.max(0, playerCount - counts.attending - counts.not_attending)
-      : null;
-
-    const showKitBadge = item.uniform === 'home' || item.uniform === 'away' || item.uniform === 'training';
-    const result = isPast ? getGameResult(item) : null;
-    const resultColor = result ? RESULT_COLORS[result.label] : null;
-
     return (
-      <TouchableOpacity
+      <EventCard
         key={item.id}
-        style={[styles.eventCard, (isPast || isCancelled) && styles.eventCardPast]}
+        item={item}
+        isCoach={isCoach}
+        isMultiView={isMultiView}
+        clubSlug={clubSlug}
+        myTeamId={team?.id}
+        teamNameMap={teamNameMap}
+        tournamentsById={tournamentsById}
+        playerCount={playerCount}
+        myPlayers={myPlayersByTeam.get(item.team_id) ?? []}
+        myRsvpsForItem={myRsvpsByPlayer[item.id]}
+        rsvpSavingId={rsvpSavingId}
+        homeKitColor={homeKitColor}
+        awayKitColor={awayKitColor}
+        trainingKitColor={trainingKitColor}
+        driveTime={driveTimeMap[item.id]}
+        weather={weatherMap[item.id]}
+        guestTeamName={guestTeamNames[item.id]}
+        guestCount={guestCountsMap[item.id]}
+        counts={rsvpCounts[item.id]}
+        allTeams={allTeams}
+        primaryColor={primaryColor}
+        rgba={rgba}
+        onRsvp={handleRsvp}
         onPress={() => router.push(`/(app)/${clubSlug}/event/${item.id}` as any)}
-        activeOpacity={0.75}
-      >
-        <View style={[styles.typeStripe, {
-          backgroundColor: isCancelled ? '#ef4444'
-            : (isGuest && item.guestStatus === 'pending') ? '#F59E0B'
-            : isGuest ? '#F97316'
-            : cfg.color,
-        }]} />
-
-        <View style={[
-          styles.dateCol,
-          item.type === 'game' && item.uniform === 'home' && { backgroundColor: `${homeKitColor}18` },
-          item.type === 'game' && item.uniform === 'away' && { backgroundColor: `${awayKitColor}18` },
-        ]}>
-          <Text style={[styles.dateWday, today && [styles.todayText, { color: primaryColor }]]}>
-            {d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
-          </Text>
-          <Text style={[styles.dateDay, today && [styles.todayText, { color: primaryColor }]]}>
-            {d.toLocaleDateString('en-US', { day: 'numeric' })}
-          </Text>
-          <Text style={[styles.dateMon, today && [styles.todayText, { color: primaryColor }]]}>
-            {today ? 'TODAY' : d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
-          </Text>
-          {item.type === 'game' && item.uniform === 'home' && (
-            <View style={styles.homeAwayTag}>
-              <View style={[styles.homeAwaySwatch, { backgroundColor: homeKitColor }]} />
-              <Text style={styles.homeAwayTagText}>HOME</Text>
-            </View>
-          )}
-          {item.type === 'game' && item.uniform === 'away' && (
-            <View style={styles.homeAwayTag}>
-              <View style={[styles.homeAwaySwatch, { backgroundColor: awayKitColor }]} />
-              <Text style={styles.homeAwayTagText}>AWAY</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.eventBody}>
-
-          {/* Badges + drive time all wrap together as one flowing group —
-              keeping the drive time pill in a separate space-between
-              column meant its reserved width applied to every wrapped
-              line, so an overflow badge like "Grass" could end up alone
-              on a line with a big stranded gap next to it. */}
-          <View style={styles.badgeRow}>
-              {isMultiView && item.team_id !== team?.id && teamNameMap.has(item.team_id) && (
-                <View style={[styles.typeBadge, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-                  <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]} numberOfLines={1}>
-                    {teamNameMap.get(item.team_id)}
-                  </Text>
-                </View>
-              )}
-              {isCancelled ? (
-                <View style={styles.cancelledBadge}>
-                  <Ionicons name="close-circle" size={11} color="#ef4444" />
-                  <Text style={styles.cancelledBadgeText}>CANCELLED</Text>
-                </View>
-              ) : (
-                <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
-                  <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
-                </View>
-              )}
-              {item.tournament_id && tournamentsById.has(item.tournament_id) && (
-                <View style={[styles.typeBadge, styles.tournamentBadge]}>
-                  <Ionicons name="trophy" size={10} color="#EAB308" />
-                  <Text style={[styles.typeText, { color: '#EAB308' }]} numberOfLines={1}>
-                    {tournamentsById.get(item.tournament_id)!.name}
-                  </Text>
-                </View>
-              )}
-              {isGuest && (
-                item.guestStatus === 'pending' ? (
-                  <View style={[styles.typeBadge, { backgroundColor: 'rgba(245,158,11,0.14)', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                    <Ionicons name="time-outline" size={10} color="#F59E0B" />
-                    <Text style={[styles.typeText, { color: '#F59E0B' }]}>Invite pending</Text>
-                  </View>
-                ) : (
-                  <View style={[styles.typeBadge, { backgroundColor: 'rgba(249,115,22,0.12)' }]}>
-                    <Text style={[styles.typeText, { color: '#F97316' }]}>Guest</Text>
-                  </View>
-                )
-              )}
-              {item.video_url ? (
-                <View style={styles.videoBadge}>
-                  <Ionicons name="play-circle" size={11} color="#A855F7" />
-                  <Text style={styles.videoBadgeText}>Video</Text>
-                </View>
-              ) : null}
-              {showKitBadge && !isPast && (() => {
-                const kitColor = item.uniform === 'home' ? homeKitColor
-                  : item.uniform === 'away' ? awayKitColor
-                  : trainingKitColor;
-                const kitLabel = item.uniform === 'home' ? 'Home Kit'
-                  : item.uniform === 'away' ? 'Away Kit'
-                  : 'Training Kit';
-                return (
-                  <View style={styles.kitBadge}>
-                    <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
-                    <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]}>{kitLabel}</Text>
-                  </View>
-                );
-              })()}
-              {item.field_type && !isPast && (
-                <View style={[styles.typeBadge, {
-                  backgroundColor: item.field_type === 'turf' ? 'rgba(59,130,246,0.10)' : rgba(0.07),
-                }]}>
-                  <Text style={[styles.typeText, { color: item.field_type === 'turf' ? '#3B82F6' : '#6EE7B7' }]}>
-                    {item.field_type === 'turf' ? 'Turf' : 'Grass'}
-                  </Text>
-                </View>
-              )}
-              {/* Status chip — "Confirmed" for guests, single-player RSVP status
-                  for team members. Skipped when there's more than one guarded
-                  player on this team (e.g. twins) — one small chip can't
-                  represent two independent statuses, and the full per-child
-                  rows below already cover that case. */}
-              {!isCoach && !isPast && (
-                isGuest ? (
-                  item.guestStatus === 'pending' ? (
-                    <View style={[styles.myStatusChip, { backgroundColor: 'rgba(245,158,11,0.12)' }]}>
-                      <Ionicons name="ellipse-outline" size={11} color="#F59E0B" />
-                      <Text style={[styles.myStatusChipText, { color: '#F59E0B' }]}>Respond</Text>
-                    </View>
-                  ) : (
-                    <View style={[styles.myStatusChip, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
-                      <Ionicons name="checkmark-circle" size={11} color={PULSE_COLORS.rsvp.attending} />
-                      <Text style={[styles.myStatusChipText, { color: PULSE_COLORS.rsvp.attending }]}>Confirmed</Text>
-                    </View>
-                  )
-                ) : (() => {
-                  if (isMultiPlayer || myPlayers.length === 0) return null;
-                  const soloStatus = myRsvpsByPlayer[item.id]?.[myPlayers[0].id] ?? null;
-                  if (!soloStatus) return null;
-                  return (
-                    <View style={[
-                      styles.myStatusChip,
-                      { backgroundColor: soloStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
-                    ]}>
-                      <Ionicons
-                        name={soloStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
-                        size={11}
-                        color={soloStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
-                      />
-                      <Text style={[
-                        styles.myStatusChipText,
-                        { color: soloStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
-                      ]}>
-                        {soloStatus === 'attending' ? 'Going' : "Can't go"}
-                      </Text>
-                    </View>
-                  );
-                })()
-              )}
-              {!isPast && !isCancelled && driveTimeMap[item.id] && (
-                <View style={styles.driveTimePill}>
-                  <Ionicons name="car-outline" size={10} color={PULSE_COLORS.ui.textSecondary} />
-                  <Text style={styles.driveTimePillText}>{driveTimeMap[item.id]}</Text>
-                </View>
-              )}
-          </View>
-
-          <Text style={[styles.eventTitle, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>{item.title}</Text>
-
-          {/* Team indicator */}
-          {!isCoach && (() => {
-            if (isGuest && guestTeamNames[item.id]) {
-              return (
-                <View style={styles.teamDotRow}>
-                  <View style={[styles.teamDot, { backgroundColor: '#F97316' }]} />
-                  <Text style={[styles.teamDotLabel, { color: '#F97316' }]}>{guestTeamNames[item.id]}</Text>
-                </View>
-              );
-            }
-            if (allTeams.length <= 1) return null;
-            const tIdx = allTeams.findIndex((t) => t.id === item.team_id);
-            if (tIdx < 0) return null;
-            const tColor = TEAM_PALETTE[tIdx % TEAM_PALETTE.length];
-            return (
-              <View style={styles.teamDotRow}>
-                <View style={[styles.teamDot, { backgroundColor: tColor }]} />
-                <Text style={[styles.teamDotLabel, { color: tColor }]}>{allTeams[tIdx].name}</Text>
-              </View>
-            );
-          })()}
-
-          {(item.event_time || item.location) && (
-            <Text style={[styles.eventMeta, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>
-              {[
-                item.event_time
-                  ? (item.duration_minutes
-                      ? `${formatTime(item.event_time)} – ${computeEndTime(item.event_time, item.duration_minutes)}`
-                      : formatTime(item.event_time))
-                  : null,
-                (item.event_time && item.arrival_buffer_minutes != null)
-                  ? `Arrive ${computeArriveBy(item.event_time, item.arrival_buffer_minutes)}`
-                  : null,
-                item.location,
-              ].filter(Boolean).join('  ·  ')}
-            </Text>
-          )}
-
-          {/* Weather */}
-          {!isPast && !isCancelled && weatherMap[item.id] && (
-            <View style={styles.contextBlock}>
-              <View style={styles.contextWeatherRow}>
-                <Text style={styles.contextWeatherEmoji}>{weatherMap[item.id].icon}</Text>
-                <Text style={styles.contextWeatherTemp}>{weatherMap[item.id].temp_f}°F</Text>
-                <Text style={styles.contextWeatherCond} numberOfLines={1}>{weatherMap[item.id].condition}</Text>
-                {weatherMap[item.id].precip_chance >= 20 && (
-                  <View style={styles.contextRainPill}>
-                    <Text style={styles.contextRainPillText}>💧 {weatherMap[item.id].precip_chance}%</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* Coach RSVP summary */}
-          {isCoach && !isPast && !isCancelled && (() => {
-            const confirmedGuests = guestCountsMap[item.id] ?? 0;
-            const totalGoing = (counts?.attending ?? 0) + confirmedGuests;
-            return (
-              <View style={styles.rsvpSummaryRow}>
-                <View style={styles.rsvpStat}>
-                  <Ionicons name="checkmark-circle" size={13} color={PULSE_COLORS.rsvp.attending} />
-                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.attending }]}>{totalGoing}</Text>
-                  {confirmedGuests > 0 && (
-                    <View style={styles.guestCountPill}>
-                      <Text style={styles.guestCountPillText}>+{confirmedGuests}G</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.rsvpStat}>
-                  <Ionicons name="close-circle" size={13} color={PULSE_COLORS.rsvp.not_attending} />
-                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.not_attending }]}>
-                    {counts?.not_attending ?? 0}
-                  </Text>
-                </View>
-                {pending != null && pending > 0 && (
-                  <View style={styles.rsvpStat}>
-                    <Ionicons name="ellipse-outline" size={13} color={PULSE_COLORS.ui.muted} />
-                    <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.ui.muted }]}>{pending}</Text>
-                  </View>
-                )}
-              </View>
-            );
-          })()}
-
-          {/* Parent RSVP buttons — one row per guarded player on this team, so
-              a family with more than one (e.g. twins) gets independent,
-              always-visible controls for each rather than picking just one. */}
-          {!isCoach && !isGuest && myPlayers.length > 0 && !isPast && !isCancelled && (
-            <View style={{ gap: 6, marginTop: 6 }}>
-              {myPlayers.map((p) => {
-                const status = myRsvpsByPlayer[item.id]?.[p.id] ?? null;
-                return (
-                  <View key={p.id} style={isMultiPlayer ? styles.childRsvpRow : undefined}>
-                    {isMultiPlayer && (
-                      <Text style={styles.childRsvpName} numberOfLines={1}>{p.full_name.split(' ')[0]}</Text>
-                    )}
-                    <View style={[styles.rsvpRow, { marginTop: 0 }]}>
-                      <TouchableOpacity
-                        style={[styles.rsvpBtn, status === 'attending' && styles.rsvpBtnGoing]}
-                        onPress={() => handleRsvp(item.id, p.id, 'attending')}
-                      >
-                        <Ionicons
-                          name="checkmark-circle-outline"
-                          size={13}
-                          color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
-                        />
-                        <Text style={[styles.rsvpBtnText, status === 'attending' && { color: '#000' }]}>Going</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.rsvpBtn, status === 'not_attending' && styles.rsvpBtnNotGoing]}
-                        onPress={() => handleRsvp(item.id, p.id, 'not_attending')}
-                      >
-                        <Ionicons
-                          name="close-circle-outline"
-                          size={13}
-                          color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
-                        />
-                        <Text style={[styles.rsvpBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
-
-        {/* Right result column — past games with a score */}
-        {isPast && item.type === 'game' && result && resultColor && (
-          <View style={[styles.resultCol, { backgroundColor: `${resultColor}12`, borderLeftColor: `${resultColor}30` }]}>
-            <Text style={[styles.resultColLabel, { color: resultColor }]}>{result.label}</Text>
-            <Text style={[styles.resultColScore, { color: resultColor }]}>
-              {result.ourScore}–{result.oppScore}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
+      />
     );
   }
+
 
   const teamNameMap = useMemo(
     () => new Map(allTeams.map((t) => [t.id, t.name])),
@@ -1381,6 +1100,376 @@ export default function ScheduleScreen() {
     </View>
   );
 }
+
+type EventCardProps = {
+  item: Event;
+  isCoach: boolean;
+  isMultiView: boolean;
+  clubSlug: string;
+  myTeamId: string | undefined;
+  teamNameMap: Map<string, string>;
+  tournamentsById: Map<string, Tournament>;
+  playerCount: number;
+  myPlayers: { id: string; full_name: string }[];
+  myRsvpsForItem: Record<string, MyRsvp> | undefined;
+  rsvpSavingId: string | null;
+  homeKitColor: string;
+  awayKitColor: string;
+  trainingKitColor: string;
+  driveTime: string | undefined;
+  weather: WeatherData | undefined;
+  guestTeamName: string | undefined;
+  guestCount: number | undefined;
+  counts: RsvpCounts | undefined;
+  allTeams: { id: string; name: string }[];
+  primaryColor: string;
+  rgba: (alpha: number) => string;
+  onRsvp: (eventId: string, playerId: string, status: 'attending' | 'not_attending') => void;
+  onPress: () => void;
+};
+
+const EventCard = memo(function EventCardImpl({
+  item, isCoach, isMultiView, clubSlug, myTeamId, teamNameMap, tournamentsById, playerCount,
+  myPlayers, myRsvpsForItem, rsvpSavingId, homeKitColor, awayKitColor, trainingKitColor,
+  driveTime, weather, guestTeamName, guestCount, counts, allTeams, primaryColor, rgba, onRsvp, onPress,
+}: EventCardProps) {
+  const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.other;
+  // A guardian can have more than one player on this team (e.g. twins) —
+  // every one of them gets their own status chip and RSVP row below.
+  const isMultiPlayer = myPlayers.length > 1;
+  const isPast = !isUpcoming(item);
+  const today = isToday(item.event_date);
+  const isCancelled = !!item.cancelled_at;
+  const isGuest = !!item.isGuest;
+  const d = new Date(item.event_date + 'T00:00:00');
+  const pending = playerCount > 0 && counts != null
+    ? Math.max(0, playerCount - counts.attending - counts.not_attending)
+    : null;
+
+  const showKitBadge = item.uniform === 'home' || item.uniform === 'away' || item.uniform === 'training';
+  const result = isPast ? getGameResult(item) : null;
+  const resultColor = result ? RESULT_COLORS[result.label] : null;
+
+  return (
+    <TouchableOpacity
+      style={[styles.eventCard, (isPast || isCancelled) && styles.eventCardPast]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <View style={[styles.typeStripe, {
+        backgroundColor: isCancelled ? '#ef4444'
+          : (isGuest && item.guestStatus === 'pending') ? '#F59E0B'
+          : isGuest ? '#F97316'
+          : cfg.color,
+      }]} />
+
+      <View style={[
+        styles.dateCol,
+        item.type === 'game' && item.uniform === 'home' && { backgroundColor: `${homeKitColor}18` },
+        item.type === 'game' && item.uniform === 'away' && { backgroundColor: `${awayKitColor}18` },
+      ]}>
+        <Text style={[styles.dateWday, today && [styles.todayText, { color: primaryColor }]]}>
+          {d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
+        </Text>
+        <Text style={[styles.dateDay, today && [styles.todayText, { color: primaryColor }]]}>
+          {d.toLocaleDateString('en-US', { day: 'numeric' })}
+        </Text>
+        <Text style={[styles.dateMon, today && [styles.todayText, { color: primaryColor }]]}>
+          {today ? 'TODAY' : d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
+        </Text>
+        {item.type === 'game' && item.uniform === 'home' && (
+          <View style={styles.homeAwayTag}>
+            <View style={[styles.homeAwaySwatch, { backgroundColor: homeKitColor }]} />
+            <Text style={styles.homeAwayTagText}>HOME</Text>
+          </View>
+        )}
+        {item.type === 'game' && item.uniform === 'away' && (
+          <View style={styles.homeAwayTag}>
+            <View style={[styles.homeAwaySwatch, { backgroundColor: awayKitColor }]} />
+            <Text style={styles.homeAwayTagText}>AWAY</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.eventBody}>
+
+        {/* Badges + drive time all wrap together as one flowing group —
+            keeping the drive time pill in a separate space-between
+            column meant its reserved width applied to every wrapped
+            line, so an overflow badge like "Grass" could end up alone
+            on a line with a big stranded gap next to it. */}
+        <View style={styles.badgeRow}>
+            {isMultiView && item.team_id !== myTeamId && teamNameMap.has(item.team_id) && (
+              <View style={[styles.typeBadge, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
+                <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]} numberOfLines={1}>
+                  {teamNameMap.get(item.team_id)}
+                </Text>
+              </View>
+            )}
+            {isCancelled ? (
+              <View style={styles.cancelledBadge}>
+                <Ionicons name="close-circle" size={11} color="#ef4444" />
+                <Text style={styles.cancelledBadgeText}>CANCELLED</Text>
+              </View>
+            ) : (
+              <View style={[styles.typeBadge, { backgroundColor: cfg.bg }]}>
+                <Text style={[styles.typeText, { color: cfg.color }]}>{cfg.label}</Text>
+              </View>
+            )}
+            {item.tournament_id && tournamentsById.has(item.tournament_id) && (
+              <View style={[styles.typeBadge, styles.tournamentBadge]}>
+                <Ionicons name="trophy" size={10} color="#EAB308" />
+                <Text style={[styles.typeText, { color: '#EAB308' }]} numberOfLines={1}>
+                  {tournamentsById.get(item.tournament_id)!.name}
+                </Text>
+              </View>
+            )}
+            {isGuest && (
+              item.guestStatus === 'pending' ? (
+                <View style={[styles.typeBadge, { backgroundColor: 'rgba(245,158,11,0.14)', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                  <Ionicons name="time-outline" size={10} color="#F59E0B" />
+                  <Text style={[styles.typeText, { color: '#F59E0B' }]}>Invite pending</Text>
+                </View>
+              ) : (
+                <View style={[styles.typeBadge, { backgroundColor: 'rgba(249,115,22,0.12)' }]}>
+                  <Text style={[styles.typeText, { color: '#F97316' }]}>Guest</Text>
+                </View>
+              )
+            )}
+            {item.video_url ? (
+              <View style={styles.videoBadge}>
+                <Ionicons name="play-circle" size={11} color="#A855F7" />
+                <Text style={styles.videoBadgeText}>Video</Text>
+              </View>
+            ) : null}
+            {showKitBadge && !isPast && (() => {
+              const kitColor = item.uniform === 'home' ? homeKitColor
+                : item.uniform === 'away' ? awayKitColor
+                : trainingKitColor;
+              const kitLabel = item.uniform === 'home' ? 'Home Kit'
+                : item.uniform === 'away' ? 'Away Kit'
+                : 'Training Kit';
+              return (
+                <View style={styles.kitBadge}>
+                  <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
+                  <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]}>{kitLabel}</Text>
+                </View>
+              );
+            })()}
+            {item.field_type && !isPast && (
+              <View style={[styles.typeBadge, {
+                backgroundColor: item.field_type === 'turf' ? 'rgba(59,130,246,0.10)' : rgba(0.07),
+              }]}>
+                <Text style={[styles.typeText, { color: item.field_type === 'turf' ? '#3B82F6' : '#6EE7B7' }]}>
+                  {item.field_type === 'turf' ? 'Turf' : 'Grass'}
+                </Text>
+              </View>
+            )}
+            {/* Status chip — "Confirmed" for guests, single-player RSVP status
+                for team members. Skipped when there's more than one guarded
+                player on this team (e.g. twins) — one small chip can't
+                represent two independent statuses, and the full per-child
+                rows below already cover that case. */}
+            {!isCoach && !isPast && (
+              isGuest ? (
+                item.guestStatus === 'pending' ? (
+                  <View style={[styles.myStatusChip, { backgroundColor: 'rgba(245,158,11,0.12)' }]}>
+                    <Ionicons name="ellipse-outline" size={11} color="#F59E0B" />
+                    <Text style={[styles.myStatusChipText, { color: '#F59E0B' }]}>Respond</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.myStatusChip, { backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+                    <Ionicons name="checkmark-circle" size={11} color={PULSE_COLORS.rsvp.attending} />
+                    <Text style={[styles.myStatusChipText, { color: PULSE_COLORS.rsvp.attending }]}>Confirmed</Text>
+                  </View>
+                )
+              ) : (() => {
+                if (isMultiPlayer || myPlayers.length === 0) return null;
+                const soloStatus = myRsvpsForItem?.[myPlayers[0].id] ?? null;
+                if (!soloStatus) return null;
+                return (
+                  <View style={[
+                    styles.myStatusChip,
+                    { backgroundColor: soloStatus === 'attending' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)' }
+                  ]}>
+                    <Ionicons
+                      name={soloStatus === 'attending' ? 'checkmark-circle' : 'close-circle'}
+                      size={11}
+                      color={soloStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending}
+                    />
+                    <Text style={[
+                      styles.myStatusChipText,
+                      { color: soloStatus === 'attending' ? PULSE_COLORS.rsvp.attending : PULSE_COLORS.rsvp.not_attending }
+                    ]}>
+                      {soloStatus === 'attending' ? 'Going' : "Can't go"}
+                    </Text>
+                  </View>
+                );
+              })()
+            )}
+            {!isPast && !isCancelled && driveTime && (
+              <View style={styles.driveTimePill}>
+                <Ionicons name="car-outline" size={10} color={PULSE_COLORS.ui.textSecondary} />
+                <Text style={styles.driveTimePillText}>{driveTime}</Text>
+              </View>
+            )}
+        </View>
+
+        <Text style={[styles.eventTitle, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>{item.title}</Text>
+
+        {/* Team indicator */}
+        {!isCoach && (() => {
+          if (isGuest && guestTeamName) {
+            return (
+              <View style={styles.teamDotRow}>
+                <View style={[styles.teamDot, { backgroundColor: '#F97316' }]} />
+                <Text style={[styles.teamDotLabel, { color: '#F97316' }]}>{guestTeamName}</Text>
+              </View>
+            );
+          }
+          if (allTeams.length <= 1) return null;
+          const tIdx = allTeams.findIndex((t) => t.id === item.team_id);
+          if (tIdx < 0) return null;
+          const tColor = TEAM_PALETTE[tIdx % TEAM_PALETTE.length];
+          return (
+            <View style={styles.teamDotRow}>
+              <View style={[styles.teamDot, { backgroundColor: tColor }]} />
+              <Text style={[styles.teamDotLabel, { color: tColor }]}>{allTeams[tIdx].name}</Text>
+            </View>
+          );
+        })()}
+
+        {(item.event_time || item.location) && (
+          <Text style={[styles.eventMeta, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>
+            {[
+              item.event_time
+                ? (item.duration_minutes
+                    ? `${formatTime(item.event_time)} – ${computeEndTime(item.event_time, item.duration_minutes)}`
+                    : formatTime(item.event_time))
+                : null,
+              (item.event_time && item.arrival_buffer_minutes != null)
+                ? `Arrive ${computeArriveBy(item.event_time, item.arrival_buffer_minutes)}`
+                : null,
+              item.location,
+            ].filter(Boolean).join('  ·  ')}
+          </Text>
+        )}
+
+        {/* Weather */}
+        {!isPast && !isCancelled && weather && (
+          <View style={styles.contextBlock}>
+            <View style={styles.contextWeatherRow}>
+              <Text style={styles.contextWeatherEmoji}>{weather.icon}</Text>
+              <Text style={styles.contextWeatherTemp}>{weather.temp_f}°F</Text>
+              <Text style={styles.contextWeatherCond} numberOfLines={1}>{weather.condition}</Text>
+              {weather.precip_chance >= 20 && (
+                <View style={styles.contextRainPill}>
+                  <Text style={styles.contextRainPillText}>💧 {weather.precip_chance}%</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Coach RSVP summary */}
+        {isCoach && !isPast && !isCancelled && (() => {
+          const confirmedGuests = guestCount ?? 0;
+          const totalGoing = (counts?.attending ?? 0) + confirmedGuests;
+          return (
+            <View style={styles.rsvpSummaryRow}>
+              <View style={styles.rsvpStat}>
+                <Ionicons name="checkmark-circle" size={13} color={PULSE_COLORS.rsvp.attending} />
+                <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.attending }]}>{totalGoing}</Text>
+                {confirmedGuests > 0 && (
+                  <View style={styles.guestCountPill}>
+                    <Text style={styles.guestCountPillText}>+{confirmedGuests}G</Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.rsvpStat}>
+                <Ionicons name="close-circle" size={13} color={PULSE_COLORS.rsvp.not_attending} />
+                <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.rsvp.not_attending }]}>
+                  {counts?.not_attending ?? 0}
+                </Text>
+              </View>
+              {pending != null && pending > 0 && (
+                <View style={styles.rsvpStat}>
+                  <Ionicons name="ellipse-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.ui.muted }]}>{pending}</Text>
+                </View>
+              )}
+            </View>
+          );
+        })()}
+
+        {/* Parent RSVP buttons — one row per guarded player on this team, so
+            a family with more than one (e.g. twins) gets independent,
+            always-visible controls for each rather than picking just one. */}
+        {!isCoach && !isGuest && myPlayers.length > 0 && !isPast && !isCancelled && (
+          <View style={{ gap: 6, marginTop: 6 }}>
+            {myPlayers.map((p) => {
+              const status = myRsvpsForItem?.[p.id] ?? null;
+              const rsvpLoading = rsvpSavingId === p.id;
+              return (
+                <View key={p.id} style={isMultiPlayer ? styles.childRsvpRow : undefined}>
+                  {isMultiPlayer && (
+                    <Text style={styles.childRsvpName} numberOfLines={1}>{p.full_name.split(' ')[0]}</Text>
+                  )}
+                  <View style={[styles.rsvpRow, { marginTop: 0 }]}>
+                    <TouchableOpacity
+                      style={[styles.rsvpBtn, status === 'attending' && styles.rsvpBtnGoing]}
+                      onPress={() => onRsvp(item.id, p.id, 'attending')}
+                      disabled={rsvpLoading}
+                    >
+                      {rsvpLoading
+                        ? <ActivityIndicator size="small" color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted} />
+                        : <>
+                            <Ionicons
+                              name="checkmark-circle-outline"
+                              size={13}
+                              color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
+                            />
+                            <Text style={[styles.rsvpBtnText, status === 'attending' && { color: '#000' }]}>Going</Text>
+                          </>
+                      }
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.rsvpBtn, status === 'not_attending' && styles.rsvpBtnNotGoing]}
+                      onPress={() => onRsvp(item.id, p.id, 'not_attending')}
+                      disabled={rsvpLoading}
+                    >
+                      {rsvpLoading
+                        ? <ActivityIndicator size="small" color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted} />
+                        : <>
+                            <Ionicons
+                              name="close-circle-outline"
+                              size={13}
+                              color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
+                            />
+                            <Text style={[styles.rsvpBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
+                          </>
+                      }
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {/* Right result column — past games with a score */}
+      {isPast && item.type === 'game' && result && resultColor && (
+        <View style={[styles.resultCol, { backgroundColor: `${resultColor}12`, borderLeftColor: `${resultColor}30` }]}>
+          <Text style={[styles.resultColLabel, { color: resultColor }]}>{result.label}</Text>
+          <Text style={[styles.resultColScore, { color: resultColor }]}>
+            {result.ourScore}–{result.oppScore}
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },

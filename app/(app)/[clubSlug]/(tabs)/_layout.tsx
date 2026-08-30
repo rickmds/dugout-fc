@@ -60,14 +60,9 @@ export default function TabsLayout() {
 
   useEffect(() => {
     if (!profile?.id) return;
+    let sub: ReturnType<typeof supabase.channel> | null = null;
 
-    async function fetchPendingGuests() {
-      // get_my_guarded_players() also checks player_guardians — otherwise a
-      // second guardian's own kid never counted toward this badge.
-      const { data: playerRows } = await (supabase as any)
-        .rpc('get_my_guarded_players')
-        .select('id');
-      const playerIds = (playerRows ?? []).map((p: { id: string }) => p.id);
+    async function fetchPendingGuests(playerIds: string[]) {
       if (playerIds.length === 0) { setPendingGuestCount(0); return; }
       const { count } = await supabase
         .from('event_guests')
@@ -77,18 +72,33 @@ export default function TabsLayout() {
       setPendingGuestCount(count ?? 0);
     }
 
-    fetchPendingGuests();
+    async function init() {
+      // get_my_guarded_players() also checks player_guardians — otherwise a
+      // second guardian's own kid never counted toward this badge.
+      const { data: playerRows } = await (supabase as any)
+        .rpc('get_my_guarded_players')
+        .select('id');
+      const playerIds = (playerRows ?? []).map((p: { id: string }) => p.id);
+      await fetchPendingGuests(playerIds);
+      if (playerIds.length === 0) return;
 
-    const sub = supabase
-      .channel(uniqueChannelName(`guest-badge-${profile.id}`))
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'event_guests',
-      }, fetchPendingGuests)
-      .subscribe();
+      // Filtered to this guardian's own players — without this, every
+      // event_guests write from every team at every club on the platform
+      // pushes to every open device and triggers a re-fetch.
+      sub = supabase
+        .channel(uniqueChannelName(`guest-badge-${profile!.id}`))
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'event_guests',
+          filter: `player_id=in.(${playerIds.join(',')})`,
+        }, () => fetchPendingGuests(playerIds))
+        .subscribe();
+    }
 
-    return () => { supabase.removeChannel(sub); };
+    init();
+
+    return () => { if (sub) supabase.removeChannel(sub); };
   }, [profile?.id]);
 
   return (
