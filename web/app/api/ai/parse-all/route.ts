@@ -75,8 +75,18 @@ function excelCellToString(v: ExcelJS.CellValue): string {
   }
   if (typeof v === 'object') {
     if ('result' in v && v.result != null) return excelCellToString(v.result as ExcelJS.CellValue); // formula
-    if ('text' in v && typeof v.text === 'string') return v.text; // hyperlink
+    // Hyperlink cell's .text is normally a plain string, but some exporters
+    // (seen from a Google Sheets → Excel export) nest a rich-text object
+    // here instead — recurse rather than assuming it's always a string.
+    if ('text' in v && v.text != null) return excelCellToString(v.text as ExcelJS.CellValue);
     if ('richText' in v && Array.isArray(v.richText)) return v.richText.map(t => t.text).join('');
+    // Unrecognised object shape — never fall through to String(v) below,
+    // which stringifies a plain object to the literal text "[object
+    // Object]" and silently poisons whatever field reads this cell (seen
+    // for real: a parent-email column that came out as the string
+    // "[object Object]" for a hyperlinked cell whose shape didn't match
+    // any case above). An empty cell is always a safer failure than that.
+    return '';
   }
   return String(v);
 }
