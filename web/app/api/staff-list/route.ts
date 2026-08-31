@@ -112,7 +112,14 @@ export async function GET(req: NextRequest) {
   }
 
   const homeRows = await Promise.all((homeProfiles ?? []).map(async (p) => {
-    const { data: tm } = await db.from('team_members').select('team_id').eq('profile_id', p.id);
+    // Scoped to THIS club's own teams — a home-club profile who's ALSO a
+    // cross-club coach elsewhere (e.g. Rick coaching at Maroons) has
+    // team_members rows there too; without this filter they'd leak onto
+    // this club's staff list as raw team ids (not in this club's own
+    // `teams` list, so the UI can't resolve them to a name at all).
+    const { data: tm } = teamIds.length
+      ? await db.from('team_members').select('team_id').eq('profile_id', p.id).in('team_id', teamIds)
+      : { data: [] as { team_id: string }[] };
     return toActiveRow(p.id, p.full_name, p.role, p.avatar_url, p.created_at, 'home', (tm ?? []).map(t => t.team_id as string));
   }));
 
