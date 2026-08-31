@@ -179,7 +179,7 @@ export default function SchedulePage() {
   // always stays scoped to their own row (plain .eq('id', editId)).
   const [editGroupId, setEditGroupId] = useState<string | null>(null);
   const [linkedTeams, setLinkedTeams] = useState<{ id: string; name: string }[]>([]);
-  const isOrgAdmin = profile?.role === 'org_admin';
+  const isOrgAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
   const [saving, setSaving]         = useState(false);
   const [savedFields, setSavedFields] = useState<{ id: string; name: string; address: string | null; lat: number | null; lng: number | null }[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; title: string } | null>(null);

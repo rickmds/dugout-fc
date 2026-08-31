@@ -80,7 +80,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
   const [phase, setPhase]         = useState<Phase>('idle');
-  const [mode, setMode]           = useState<ImportMode>(profile?.role === 'org_admin' && teams.length > 1 ? 'club' : 'single');
+  const [mode, setMode]           = useState<ImportMode>((profile?.role === 'org_admin' || profile?.role === 'app_admin') && teams.length > 1 ? 'club' : 'single');
   const [teamId, setTeamId]       = useState(teams[0]?.id ?? '');
   const [players, setPlayers]     = useState<ReviewPlayer[]>([]);
   const [reviewTeams, setReviewTeams] = useState<ReviewTeam[]>([]);
@@ -93,7 +93,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
   const fileRef  = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const isOrgAdmin = profile?.role === 'org_admin';
+  const isOrgAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
 
   // ── File handling ──────────────────────────────────────────────────────────
 
