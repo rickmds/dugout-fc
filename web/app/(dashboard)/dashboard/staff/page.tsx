@@ -431,11 +431,6 @@ export default function StaffPage() {
                     {isMe && (
                       <span style={{ fontSize: '11px', color: primary, background: `${primary}15`, borderRadius: '4px', padding: '2px 8px', fontWeight: '700' }}>You</span>
                     )}
-                    {s.via !== 'home' && (
-                      <span title="Home club is elsewhere — access to this club only" style={{ fontSize: '11px', color: '#64748B', background: '#F1F5F9', borderRadius: '4px', padding: '2px 8px', fontWeight: '600' }}>
-                        Other club
-                      </span>
-                    )}
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>

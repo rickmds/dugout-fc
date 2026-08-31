@@ -106,15 +106,27 @@ export async function GET(req: NextRequest) {
     return toActiveRow(p.id, p.full_name, p.role, p.avatar_url, p.created_at, 'home', (tm ?? []).map(t => t.team_id as string));
   }));
 
+  // A person can reach this club via club_admins AND independently have
+  // team_members rows here too (e.g. added as a coach before later being
+  // made org_admin) — same person, two separate DB facts. Show them once:
+  // club_admins wins (it's the superset — implicit access to every team),
+  // but keep their team_members list on that one row rather than dropping
+  // it, so downgrading them back to coach in the edit modal still shows
+  // which teams they were actually on.
   const clubAdminOnlyRows = await Promise.all(clubAdminIds.map(async (id) => {
     const p = extraProfileById.get(id);
-    return toActiveRow(id, p?.full_name ?? null, 'org_admin', p?.avatar_url ?? null, clubAdminCreatedAt.get(id) ?? new Date().toISOString(), 'club_admins', []);
+    return toActiveRow(id, p?.full_name ?? null, 'org_admin', p?.avatar_url ?? null, clubAdminCreatedAt.get(id) ?? new Date().toISOString(), 'club_admins', crossClubTeamsByProfile.get(id) ?? []);
   }));
 
-  const crossClubCoachOnlyRows = await Promise.all([...crossClubTeamsByProfile.entries()].map(async ([id, teamIds]) => {
-    const p = extraProfileById.get(id);
-    return toActiveRow(id, p?.full_name ?? null, 'coach', p?.avatar_url ?? null, earliestByProfile.get(id) ?? new Date().toISOString(), 'team_members', teamIds);
-  }));
+  const clubAdminIdSet = new Set(clubAdminIds);
+  const crossClubCoachOnlyRows = await Promise.all(
+    [...crossClubTeamsByProfile.entries()]
+      .filter(([id]) => !clubAdminIdSet.has(id))
+      .map(async ([id, teamIds]) => {
+        const p = extraProfileById.get(id);
+        return toActiveRow(id, p?.full_name ?? null, 'coach', p?.avatar_url ?? null, earliestByProfile.get(id) ?? new Date().toISOString(), 'team_members', teamIds);
+      })
+  );
 
   const activeRows = [...homeRows, ...clubAdminOnlyRows, ...crossClubCoachOnlyRows];
 
