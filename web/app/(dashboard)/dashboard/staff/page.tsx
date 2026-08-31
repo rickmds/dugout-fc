@@ -539,42 +539,39 @@ export default function StaffPage() {
 
             <div style={{ overflowY: 'auto', flex: 1, padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-              {/* ── PROFILE section ── */}
-              <div>
-                <div style={sectionLabelSt}>Profile</div>
-                {editModal.staff.via !== 'home' && (
-                  <p style={{ fontSize: '12px', color: '#94A3B8', margin: '0 0 12px', lineHeight: '1.5' }}>
-                    This person&apos;s home club is elsewhere — their name and login email are managed there. You can only change their role and team access at this club.
-                  </p>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', opacity: editModal.staff.via !== 'home' ? 0.5 : 1 }}>
-                  <div>
-                    <label style={labelSt}>Full name</label>
-                    <input
-                      value={editModal.name}
-                      onChange={(e) => setEditModal((m) => m ? { ...m, name: e.target.value } : null)}
-                      placeholder="e.g. Sarah Johnson"
-                      style={inputSt}
-                      disabled={editModal.staff.via !== 'home'}
-                      autoFocus
-                    />
-                  </div>
-                  <div>
-                    <label style={labelSt}>Email address</label>
-                    <input
-                      type="email"
-                      value={editModal.email}
-                      onChange={(e) => setEditModal((m) => m ? { ...m, email: e.target.value, emailError: null } : null)}
-                      placeholder="coach@example.com"
-                      style={inputSt}
-                      disabled={editModal.staff.via !== 'home'}
-                    />
-                    {editModal.emailError && (
-                      <p style={{ fontSize: '12px', color: '#EF4444', margin: '6px 0 0' }}>{editModal.emailError}</p>
-                    )}
+              {/* ── PROFILE section — only for home-club rows; a cross-club
+                   row's name/email belong to their account elsewhere, so
+                   there's nothing editable here to show ── */}
+              {editModal.staff.via === 'home' && (
+                <div>
+                  <div style={sectionLabelSt}>Profile</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={labelSt}>Full name</label>
+                      <input
+                        value={editModal.name}
+                        onChange={(e) => setEditModal((m) => m ? { ...m, name: e.target.value } : null)}
+                        placeholder="e.g. Sarah Johnson"
+                        style={inputSt}
+                        autoFocus
+                      />
+                    </div>
+                    <div>
+                      <label style={labelSt}>Email address</label>
+                      <input
+                        type="email"
+                        value={editModal.email}
+                        onChange={(e) => setEditModal((m) => m ? { ...m, email: e.target.value, emailError: null } : null)}
+                        placeholder="coach@example.com"
+                        style={inputSt}
+                      />
+                      {editModal.emailError && (
+                        <p style={{ fontSize: '12px', color: '#EF4444', margin: '6px 0 0' }}>{editModal.emailError}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* ── ROLE section ── */}
               <div>
