@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { requireRole } from '@/lib/apiAuth';
+import { requireRole, hasClubAccess } from '@/lib/apiAuth';
 
 type Body =
   | { kind: 'pending'; invite_id: string; email: string }
@@ -19,10 +19,10 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
 
   if (body.kind === 'pending') {
-    const { data: invite } = await db.from('invites').select('team_id, teams(club_id)').eq('id', body.invite_id).single<{ team_id: string; teams: { club_id: string } | null }>();
+    const { data: invite } = await db.from('invites').select('team_id, club_id, teams(club_id)').eq('id', body.invite_id).single<{ team_id: string | null; club_id: string | null; teams: { club_id: string } | null }>();
     if (!invite) return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
-    const clubId = invite.teams?.club_id;
-    if (auth.role !== 'app_admin' && clubId !== auth.clubId) {
+    const clubId = invite.team_id ? invite.teams?.club_id : invite.club_id;
+    if (!clubId || !(await hasClubAccess(auth, clubId, ['org_admin', 'app_admin']))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
     const { error } = await db.from('invites').update({ email }).eq('id', body.invite_id);
@@ -32,9 +32,8 @@ export async function POST(req: NextRequest) {
 
   if (body.kind === 'active') {
     const { data: profile } = await db.from('profiles').select('club_id').eq('id', body.profile_id).single();
-    if (!profile) return NextResponse.json({ error: 'Staff member not found' }, { status: 404 });
-    if (auth.role !== 'app_admin' && profile.club_id !== auth.clubId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!profile || !profile.club_id || !(await hasClubAccess(auth, profile.club_id, ['org_admin', 'app_admin']))) {
+      return NextResponse.json({ error: 'Staff member not found' }, { status: 404 });
     }
     const { error } = await db.auth.admin.updateUserById(body.profile_id, { email });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

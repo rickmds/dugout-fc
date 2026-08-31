@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { requireRole } from '@/lib/apiAuth';
+import { requireRole, hasClubAccess } from '@/lib/apiAuth';
 
 // All wizard DB writes go through here using the service role key (bypasses RLS)
 
@@ -13,13 +13,16 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
 
   if (action === 'create_club') {
-    const { name, slug, primary_color, secondary_color, tagline, logo_base64, logo_mime, logo_name } = body;
+    const { name, slug, primary_color, secondary_color, tagline, logo_base64, logo_mime, logo_name, as_additional_club } = body;
 
     // Without this, a replayed request (a duplicate tab left open from a
     // previous onboarding session, a retried click) from an org_admin who
     // already has a club silently creates a second club and reassigns them
-    // to it, orphaning the one they actually run.
-    if (auth.clubId) {
+    // to it, orphaning the one they actually run. A deliberate second club
+    // (as_additional_club, set by the dashboard's "+ Add another club"
+    // entry point) is exempt — it never touches profiles below, only adds
+    // a club_admins row, so there's nothing to orphan.
+    if (auth.clubId && !as_additional_club) {
       return NextResponse.json({ error: 'You already belong to a club.' }, { status: 409 });
     }
 
@@ -61,8 +64,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Link profile to club and ensure org_admin role
-    await db.from('profiles').upsert({ id: auth.userId, club_id: data.id, role: 'org_admin' });
+    if (as_additional_club && auth.clubId) {
+      // Never touch profiles here — that's the org_admin's real home
+      // identity at their first club. club_admins grants the same
+      // implicit "every team in this club" access, purely additively.
+      await db.from('club_admins').upsert(
+        { club_id: data.id, profile_id: auth.userId },
+        { onConflict: 'club_id,profile_id', ignoreDuplicates: true },
+      );
+    } else {
+      // Link profile to club and ensure org_admin role
+      await db.from('profiles').upsert({ id: auth.userId, club_id: data.id, role: 'org_admin' });
+    }
 
     return NextResponse.json({ club: data });
   }
@@ -70,13 +83,14 @@ export async function POST(req: NextRequest) {
   if (action === 'create_team') {
     const { club_id, name, age_group, season } = body;
 
-    // Verify the club belongs to the authenticated user
-    if (club_id !== auth.clubId) {
+    // Verify the caller has org-admin rights over this club — either as
+    // their home club or, since multi-club membership, via club_admins.
+    if (!(await hasClubAccess(auth, club_id, ['org_admin', 'app_admin']))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { data, error } = await db.from('teams')
-      .insert({ club_id: auth.clubId, name, age_group: age_group || null, season: season || null })
+      .insert({ club_id, name, age_group: age_group || null, season: season || null })
       .select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -90,9 +104,10 @@ export async function POST(req: NextRequest) {
     const { team_id, players } = body;
     if (!players?.length) return NextResponse.json({ ok: true });
 
-    // Verify the team belongs to the authenticated user's club
+    // Verify the team's club belongs to the authenticated user (home club
+    // or a second club via club_admins)
     const { data: teamRow } = await db.from('teams').select('club_id').eq('id', team_id).single();
-    if (!teamRow || teamRow.club_id !== auth.clubId) {
+    if (!teamRow || !(await hasClubAccess(auth, teamRow.club_id, ['org_admin', 'app_admin']))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

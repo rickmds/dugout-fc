@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { requireRole } from '@/lib/apiAuth';
+import { requireRole, hasClubAccess } from '@/lib/apiAuth';
 import { inviteFirst, inviteClubWide, resendSetupEmail, resolveAccent } from '@/lib/coachInvite';
 
 type Body =
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const team = invite.teams;
     const clubId = invite.team_id ? team?.club_id : invite.club_id;
     const club = invite.team_id ? team?.clubs : invite.clubs;
-    if (!clubId || (auth.role !== 'app_admin' && clubId !== auth.clubId)) {
+    if (!clubId || !(await hasClubAccess(auth, clubId, ['org_admin', 'app_admin', 'coach']))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -69,9 +69,8 @@ export async function POST(req: NextRequest) {
 
   if (body.kind === 'active') {
     const { data: profile } = await db.from('profiles').select('full_name, role, club_id').eq('id', body.profile_id).single();
-    if (!profile) return NextResponse.json({ error: 'Staff member not found' }, { status: 404 });
-    if (auth.role !== 'app_admin' && profile.club_id !== auth.clubId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!profile || !profile.club_id || !(await hasClubAccess(auth, profile.club_id, ['org_admin', 'app_admin']))) {
+      return NextResponse.json({ error: 'Staff member not found' }, { status: 404 });
     }
     const { data: userRes } = await db.auth.admin.getUserById(body.profile_id);
     const email = userRes?.user?.email;
@@ -99,10 +98,10 @@ export async function DELETE(req: NextRequest) {
   if (!invite_id) return NextResponse.json({ error: 'invite_id required' }, { status: 400 });
 
   const db = supabaseAdmin();
-  const { data: invite } = await db.from('invites').select('team_id, teams(club_id)').eq('id', invite_id).single<{ team_id: string; teams: { club_id: string } | null }>();
+  const { data: invite } = await db.from('invites').select('team_id, club_id, teams(club_id)').eq('id', invite_id).single<{ team_id: string | null; club_id: string | null; teams: { club_id: string } | null }>();
   if (!invite) return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
-  const clubId = invite.teams?.club_id;
-  if (auth.role !== 'app_admin' && clubId !== auth.clubId) {
+  const clubId = invite.team_id ? invite.teams?.club_id : invite.club_id;
+  if (!clubId || !(await hasClubAccess(auth, clubId, ['org_admin', 'app_admin']))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

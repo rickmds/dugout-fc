@@ -23,7 +23,7 @@ type InviteDetails = {
   role:             string;
 };
 
-type Step = 'loading' | 'invalid' | 'already_accepted' | 'welcome' | 'signup' | 'login' | 'confirm_switch' | 'success';
+type Step = 'loading' | 'invalid' | 'already_accepted' | 'welcome' | 'signup' | 'login' | 'success';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ function JoinContent() {
   const [fallbackClub,  setFallbackClub] = useState<FallbackClub | null>(null);
   const [successEmail,  setSuccessEmail] = useState('');
   const [successWarning, setSuccessWarning] = useState<string | null>(null);
-  const [switchWarning, setSwitchWarning] = useState<string | null>(null);
+
 
   // Form state
   const [fullName,      setFullName]     = useState('');
@@ -179,46 +179,17 @@ function JoinContent() {
     }
 
     const { data: rpcData, error: rpcErr } = await supabase.rpc('accept_invite', { p_token: token });
-    const result = rpcData as { error?: string; warning?: string | null; needs_confirmation?: boolean } | null;
-
-    if (rpcErr || result?.error) {
-      setError('Could not join the team. The invite may have expired or already been used.');
-      setSubmitting(false);
-      return;
-    }
-
-    if (result?.needs_confirmation) {
-      setSwitchWarning(result.warning ?? null);
-      setSubmitting(false);
-      setStep('confirm_switch');
-      return;
-    }
-
-    setSuccessEmail(email.trim().toLowerCase());
-    setSuccessWarning(result?.warning ?? null);
-    setSubmitting(false);
-    setStep('success');
-  }
-
-  // Only reached after the RPC above reports that accepting this invite
-  // would move the signed-in coach/admin's home club — the accept only
-  // actually runs once they've seen that and chosen to proceed.
-  async function handleConfirmSwitch() {
-    setSubmitting(true);
-
-    const { data: rpcData, error: rpcErr } = await supabase.rpc('accept_invite', { p_token: token, p_confirm_switch: true });
     const result = rpcData as { error?: string; warning?: string | null } | null;
 
-    setSubmitting(false);
-
     if (rpcErr || result?.error) {
       setError('Could not join the team. The invite may have expired or already been used.');
-      setStep('login');
+      setSubmitting(false);
       return;
     }
 
     setSuccessEmail(email.trim().toLowerCase());
     setSuccessWarning(result?.warning ?? null);
+    setSubmitting(false);
     setStep('success');
   }
 
@@ -507,35 +478,6 @@ function JoinContent() {
 
               <button style={s.ghostBtn} onClick={() => { setStep('welcome'); setError(null); }}>
                 ← Back
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Confirm club switch ── */}
-        {step === 'confirm_switch' && invite && (
-          <div className="step">
-            <ClubHeader invite={invite} accent={accent} compact />
-
-            <div style={{ padding: '24px 28px 32px' }}>
-              <h2 style={s.formHeading}>Move your account to this club?</h2>
-              <p style={s.formSub}>{switchWarning ?? 'Accepting this invite will move your account from your current club to this one.'}</p>
-
-              {error && <div style={s.errorBox}>{error}</div>}
-
-              <button
-                style={{ ...s.primaryBtn, background: submitting ? `${accent}99` : accent, color: accentText, marginBottom: 16, marginTop: 8 }}
-                className="join-btn"
-                onClick={handleConfirmSwitch}
-                disabled={submitting}
-              >
-                {submitting
-                  ? <><Spinner color={accentText} />Moving your account…</>
-                  : 'Yes, move my account & join →'}
-              </button>
-
-              <button style={s.ghostBtn} onClick={() => { setStep('login'); setError(null); }}>
-                ← Cancel
               </button>
             </div>
           </div>

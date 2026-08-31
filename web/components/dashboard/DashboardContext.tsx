@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { type PlanId, PLAN_LIMITS, type PlanLimits } from '@/lib/plans';
@@ -57,6 +57,13 @@ export type Team = {
 type DashboardCtx = {
   profile: Profile | null;
   club: Club | null;
+  // Every club this profile can fully administer — their home club
+  // (profiles.club_id) plus any additional club_admins rows. Coach-only
+  // cross-club access doesn't need a switcher entry: loadTeams' coach
+  // branch already returns teams across every club a coach belongs to in
+  // one flat list, with no per-club "administer this one" concept to pick.
+  myClubs: Club[];
+  switchClub: (clubId: string) => void;
   teams: Team[];
   selectedTeamId: string | null;
   setSelectedTeamId: (id: string) => void;
@@ -68,6 +75,12 @@ type DashboardCtx = {
   canUse: (feature: keyof PlanLimits) => boolean;
 };
 
+const CLUB_SELECT = 'id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at';
+
+function viewingClubStorageKey(profileId: string) {
+  return `pulse_dashboard_viewing_club_${profileId}`;
+}
+
 const Ctx = createContext<DashboardCtx | null>(null);
 
 export function useDashboard() {
@@ -78,12 +91,21 @@ export function useDashboard() {
 
 // Role-branched teams query, pulled out so it can run in `Promise.all`
 // alongside the clubs/subscriptions fetches instead of after them.
-async function loadTeams(prof: Profile): Promise<Team[]> {
-  if (prof.role === 'org_admin' && prof.club_id) {
+// `clubId` defaults to the profile's home club, but switchClub() passes a
+// second club here explicitly — an org_admin (home-club role or a
+// club_admins row) gets that club's full team list, same as their own.
+async function loadTeams(prof: Profile, clubId?: string | null): Promise<Team[]> {
+  // An explicit clubId means switchClub() is calling this for a club from
+  // myClubs — by construction (home club, or a club_admins row), the
+  // caller is already known to administer it, regardless of what their
+  // global home-club role happens to be.
+  const effectiveClubId = clubId ?? prof.club_id;
+  const asOrgAdmin = clubId ? true : prof.role === 'org_admin';
+  if (asOrgAdmin && effectiveClubId) {
     const { data } = await supabase
       .from('teams')
       .select('id, name, age_group, gender, season, club_id')
-      .eq('club_id', prof.club_id)
+      .eq('club_id', effectiveClubId)
       .order('name');
     return (data ?? []) as Team[];
   }
@@ -100,10 +122,17 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   const [profile, setProfile]             = useState<Profile | null>(null);
   const [club, setClub]                   = useState<Club | null>(null);
+  const [myClubs, setMyClubs]             = useState<Club[]>([]);
   const [teams, setTeams]                 = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [loading, setLoading]             = useState(true);
   const [plan, setPlan]                   = useState<PlanId>('free');
+
+  // The club currently being viewed — starts as the home club, but can be
+  // switched to any club in myClubs. Tracked outside `club` state itself
+  // so the visibility-change effect below (and switchClub) always know
+  // which club's staleness to check, not just the home one.
+  const viewingClubIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,27 +161,31 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const prof = p as Profile;
       setProfile(prof);
 
-      // `clubs`, `subscriptions`, and `teams` each only depend on
-      // `prof.club_id`/`prof`, not on each other's results, so fetch them
-      // together instead of serially — collapses 3 round trips into 1.
-      if (prof.club_id) {
-        const clubId = prof.club_id;
-        const [{ data: c }, { data: sub }, teamRows] = await Promise.all([
-          supabase
-            .from('clubs')
-            .select('id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at')
-            .eq('id', clubId)
-            .single(),
-          supabase
-            .from('subscriptions')
-            .select('plan')
-            .eq('club_id', clubId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-          loadTeams(prof),
+      const { data: adminRows } = await supabase.from('club_admins').select('club_id').eq('profile_id', prof.id);
+      const allClubIds = [...new Set([
+        ...(prof.club_id ? [prof.club_id] : []),
+        ...(adminRows ?? []).map(r => r.club_id as string),
+      ])];
+
+      // A previously-switched-to club (persisted across reloads), only
+      // honored if it's still one this profile actually administers.
+      const savedClubId = typeof window !== 'undefined' ? window.localStorage.getItem(viewingClubStorageKey(prof.id)) : null;
+      const viewClubId = savedClubId && allClubIds.includes(savedClubId) ? savedClubId : prof.club_id;
+      viewingClubIdRef.current = viewClubId;
+
+      // `clubs` (every club this profile administers, in one query),
+      // `subscriptions`, and `teams` each only depend on `prof`/`viewClubId`,
+      // not each other's results, so fetch them together instead of serially.
+      if (viewClubId) {
+        const [{ data: clubRows }, { data: sub }, teamRows] = await Promise.all([
+          allClubIds.length ? supabase.from('clubs').select(CLUB_SELECT).in('id', allClubIds) : Promise.resolve({ data: [] as Club[] }),
+          supabase.from('subscriptions').select('plan').eq('club_id', viewClubId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          loadTeams(prof, viewClubId === prof.club_id ? null : viewClubId),
         ]);
-        if (c) setClub(c as Club);
+        const clubsList = (clubRows ?? []) as Club[];
+        setMyClubs(clubsList);
+        const viewedClub = clubsList.find(c => c.id === viewClubId) ?? null;
+        if (viewedClub) setClub(viewedClub);
         setPlan((sub?.plan as PlanId) ?? 'free');
         setTeams(teamRows);
         if (teamRows.length >= 1) {
@@ -175,6 +208,26 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }
   }, [router]);
+
+  const switchClub = useCallback((clubId: string) => {
+    if (!profile || clubId === viewingClubIdRef.current) return;
+    const target = myClubs.find(c => c.id === clubId);
+    if (!target) return; // not a club this profile actually administers
+    viewingClubIdRef.current = clubId;
+    window.localStorage.setItem(viewingClubStorageKey(profile.id), clubId);
+    setClub(target);
+    setLoading(true);
+    (async () => {
+      const [{ data: sub }, teamRows] = await Promise.all([
+        supabase.from('subscriptions').select('plan').eq('club_id', clubId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        loadTeams(profile, clubId),
+      ]);
+      setPlan((sub?.plan as PlanId) ?? 'free');
+      setTeams(teamRows);
+      setSelectedTeamId(teamRows[0]?.id ?? null);
+      setLoading(false);
+    })();
+  }, [profile, myClubs]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
@@ -211,8 +264,12 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         // suspended while this tab sat in the background — the suspended
         // block screen only renders off club.suspended_at in state, and
         // nothing else here ever refreshes it after the initial load().
-        if (profile?.club_id) {
-          supabase.from('clubs').select('suspended_at').eq('id', profile.club_id).single().then(({ data }) => {
+        // Uses the CURRENTLY VIEWED club (which can differ from the home
+        // club after switchClub), not profile.club_id — otherwise a
+        // switched-to second club's staleness would never get caught.
+        const viewingId = viewingClubIdRef.current;
+        if (profile && viewingId) {
+          supabase.from('clubs').select('suspended_at').eq('id', viewingId).single().then(({ data }) => {
             if (data && data.suspended_at !== club?.suspended_at) {
               setClub(prev => prev ? { ...prev, suspended_at: data.suspended_at } : prev);
             }
@@ -220,13 +277,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
           // Same staleness class as club.suspended_at above — a team added
           // in another tab (or the mobile app) never pushes anything to
           // this one, so it just sits missing from the team switcher.
-          loadTeams(profile).then(setTeams);
+          loadTeams(profile, viewingId === profile.club_id ? null : viewingId).then(setTeams);
         }
       });
     }
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [router, profile?.club_id, club?.suspended_at]);
+  }, [router, profile, club?.suspended_at]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -240,7 +297,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <Ctx.Provider value={{ profile, club, teams, selectedTeamId, setSelectedTeamId, loading, reload: load, signOut, plan, limits, canUse }}>
+    <Ctx.Provider value={{ profile, club, myClubs, switchClub, teams, selectedTeamId, setSelectedTeamId, loading, reload: load, signOut, plan, limits, canUse }}>
       {children}
     </Ctx.Provider>
   );

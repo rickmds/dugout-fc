@@ -477,7 +477,7 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
 
 // ─── Step 2: Club ─────────────────────────────────────────────────────────────
 
-function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
+function ClubStep({ onDone, asAdditionalClub }: { onDone: (data: ClubResult) => void; asAdditionalClub?: boolean }) {
   const [name, setName]           = useState('');
   const [slug, setSlug]           = useState('');
   const [slugEdited, setSlugEdited] = useState(false);
@@ -540,7 +540,7 @@ function ClubStep({ onDone }: { onDone: (data: ClubResult) => void }) {
           'Content-Type': 'application/json',
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ action: 'create_club', name: name.trim(), slug: slug.trim(), primary_color: primary, user_id: session?.user?.id, logo_base64: logoBase64, logo_mime: logoMime, logo_name: logoName }),
+        body: JSON.stringify({ action: 'create_club', name: name.trim(), slug: slug.trim(), primary_color: primary, user_id: session?.user?.id, logo_base64: logoBase64, logo_mime: logoMime, logo_name: logoName, as_additional_club: !!asAdditionalClub }),
       });
       const json = await res.json();
       if (!res.ok) { setError(friendlyApiError(res.status, json.error, 'Failed to create club. Please try again.')); setLoading(false); return; }
@@ -2263,10 +2263,23 @@ export default function OnboardingPage() {
   // these instead of a random-number animation while work is in flight.
   const [liveCounts, setLiveCounts] = useState<ProcessingCounts | null>(null);
 
+  // Deliberately starting a SECOND club under an account that already has
+  // one (the dashboard's "+ Add another club" link) — set by the
+  // ?new_club=1 query param. Distinct from the ordinary resume-into-my-
+  // existing-club path below, which exists specifically to stop an
+  // abandoned/replayed session from creating an unwanted duplicate club.
+  const [asAdditionalClub, setAsAdditionalClub] = useState(false);
+
   useEffect(() => {
     async function resume() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return; // stay on 'auth' — not logged in yet
+
+      if (new URLSearchParams(window.location.search).get('new_club') === '1') {
+        setAsAdditionalClub(true);
+        setStep('club');
+        return;
+      }
 
       const { data: profile } = await supabase
         .from('profiles')
@@ -2462,7 +2475,7 @@ export default function OnboardingPage() {
           <AuthStep onDone={() => setStep('club')} />
         )}
         {step === 'club' && (
-          <ClubStep onDone={(d) => {
+          <ClubStep asAdditionalClub={asAdditionalClub} onDone={(d) => {
             setClubId(d.id); setClubName(d.name); setClubSlug(d.slug); setPrimaryColor(d.primaryColor); setClubLogoUrl(d.logoUrl);
             setStep('upload');
           }} />

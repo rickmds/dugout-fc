@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { requireRole } from '@/lib/apiAuth';
+import { requireRole, hasClubAccess } from '@/lib/apiAuth';
 import { inviteFirst, inviteClubWide, resolveAccent } from '@/lib/coachInvite';
 
 type CoachInput = { full_name: string; email: string; team_ids: string[]; role?: 'coach' | 'org_admin' };
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   if (!club_id || !Array.isArray(coaches) || coaches.length === 0) {
     return NextResponse.json({ error: 'club_id and coaches[] required' }, { status: 400 });
   }
-  if (auth.role !== 'app_admin' && auth.clubId !== club_id) {
+  if (!(await hasClubAccess(auth, club_id, ['org_admin', 'app_admin', 'coach']))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 

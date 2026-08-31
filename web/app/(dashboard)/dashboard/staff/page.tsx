@@ -5,6 +5,14 @@ import { Plus, Mail, X, Trash2, Search, Check, Pencil, Shield, User, Users } fro
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
+// Which table(s) this person's access to THIS club actually lives in —
+// 'home' means profiles.club_id points here (safe to edit name/email/role
+// directly); 'club_admins'/'team_members' mean their real home club is
+// elsewhere and this club only sees them via the additive multi-club
+// tables — editing/removing must never touch their `profiles` row (that's
+// someone else's home identity), only the club-scoped membership row.
+type StaffVia = 'home' | 'club_admins' | 'team_members';
+
 type StaffMember = {
   kind: 'active' | 'pending';
   id: string;
@@ -16,6 +24,7 @@ type StaffMember = {
   lastSignInAt: string | null;
   invitedAt: string | null;
   assigned_teams: string[];
+  via: StaffVia;
 };
 
 type EmailEditTarget = { kind: 'active' | 'pending'; id: string; current: string | null };
@@ -79,7 +88,7 @@ export default function StaffPage() {
     const data = await res.json() as { staff?: Array<{
       kind: 'active' | 'pending'; id?: string; inviteId?: string; full_name?: string | null; role?: string | null;
       avatar_url?: string | null; email?: string | null; createdAt?: string | null; lastSignInAt?: string | null;
-      invitedAt?: string | null; assigned_teams?: string[]; teamIds?: string[];
+      invitedAt?: string | null; assigned_teams?: string[]; teamIds?: string[]; via?: StaffVia;
     }> };
     if (!res.ok || !data.staff) { setLoading(false); return; }
 
@@ -94,6 +103,7 @@ export default function StaffPage() {
       lastSignInAt: s.lastSignInAt ?? null,
       invitedAt: s.invitedAt ?? null,
       assigned_teams: (s.kind === 'active' ? s.assigned_teams : s.teamIds) ?? [],
+      via: s.via ?? 'home',
     })));
     setLoading(false);
   }, [club]);
@@ -118,13 +128,24 @@ export default function StaffPage() {
   }
 
   // ── Save edit ────────────────────────────────────────────────────────────────
+  // 'home' rows: profiles.club_id points here — name/email/role/teams are
+  // this club's to manage directly, exactly as before.
+  // 'club_admins'/'team_members' rows: their real home club is elsewhere;
+  // profiles.full_name/email/club_id/role belong to THAT identity, not this
+  // club's business, and RLS won't permit writing them from here anyway
+  // (profiles_update_by_admin only allows updating a row whose OWN club_id
+  // you administer). Only the club-scoped membership table changes: an
+  // org_admin↔coach toggle here means adding/removing a club_admins row
+  // (org-admin-level, club-wide) vs. team_members rows (coach, per-team) —
+  // never touching `profiles`.
   async function saveEdit() {
-    if (!editModal) return;
+    if (!editModal || !club) return;
     setEditModal((m) => m ? { ...m, saving: true, emailError: null, saveError: null } : null);
 
     const { staff: s, name, email, role, teamDraft } = editModal;
+    const via = s.via;
 
-    if (email.trim() && email.trim().toLowerCase() !== (s.email ?? '').toLowerCase()) {
+    if (via === 'home' && email.trim() && email.trim().toLowerCase() !== (s.email ?? '').toLowerCase()) {
       const headers = await authHeaders();
       const res = await fetch('/api/staff-edit-email', {
         method: 'POST', headers,
@@ -139,45 +160,83 @@ export default function StaffPage() {
 
     const toAdd    = teamDraft.filter((id) => !s.assigned_teams.includes(id));
     const toRemove = s.assigned_teams.filter((id) => !teamDraft.includes(id));
+    const ops: PromiseLike<{ error: { message: string } | null }>[] = [];
 
-    const [profileRes, ...teamResults] = await Promise.all([
-      supabase.from('profiles').update({ full_name: name.trim() || null, role }).eq('id', s.id),
-      ...toAdd.map((teamId) =>
-        supabase.from('team_members').insert({ profile_id: s.id, team_id: teamId, role: 'coach' })
-      ),
-      ...toRemove.map((teamId) =>
-        supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)
-      ),
-    ]);
+    if (via === 'home') {
+      ops.push(supabase.from('profiles').update({ full_name: name.trim() || null, role }).eq('id', s.id));
+      ops.push(...toAdd.map((teamId) => supabase.from('team_members').insert({ profile_id: s.id, team_id: teamId, role: 'coach' })));
+      ops.push(...toRemove.map((teamId) => supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)));
+    } else if (via === 'club_admins') {
+      if (role === 'coach') {
+        // Downgraded from admin to coach at THIS club — drop club-wide
+        // admin rights here, fall back to the per-team rows the coach
+        // toggle picks below (their home club elsewhere is untouched).
+        ops.push(supabase.from('club_admins').delete().eq('club_id', club.id).eq('profile_id', s.id));
+        ops.push(...teamDraft.map((teamId) => supabase.from('team_members').upsert({ profile_id: s.id, team_id: teamId, role: 'coach' }, { onConflict: 'team_id,profile_id', ignoreDuplicates: true })));
+      } else {
+        ops.push(supabase.from('club_admins').upsert({ club_id: club.id, profile_id: s.id }, { onConflict: 'club_id,profile_id', ignoreDuplicates: true }));
+      }
+    } else {
+      // via === 'team_members'
+      if (role === 'org_admin') {
+        // Promoted to admin at THIS club — club_admins grants implicit
+        // access to every team here, so the individual team_members rows
+        // on this club's teams become redundant; drop them.
+        ops.push(supabase.from('club_admins').upsert({ club_id: club.id, profile_id: s.id }, { onConflict: 'club_id,profile_id', ignoreDuplicates: true }));
+        ops.push(supabase.from('team_members').delete().eq('profile_id', s.id).in('team_id', teams.map((t) => t.id)));
+      } else {
+        ops.push(...toAdd.map((teamId) => supabase.from('team_members').insert({ profile_id: s.id, team_id: teamId, role: 'coach' })));
+        ops.push(...toRemove.map((teamId) => supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)));
+      }
+    }
 
-    const firstError = profileRes.error ?? teamResults.find((r) => r.error)?.error;
+    const results = await Promise.all(ops);
+    const firstError = results.find((r) => r.error)?.error;
     if (firstError) {
       setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not save: ${firstError.message}` } : null);
       return;
     }
 
     setStaff((prev) => prev.map((m) =>
-      m.id !== s.id ? m : { ...m, full_name: name.trim() || null, email: email.trim() || m.email, role, assigned_teams: teamDraft }
+      m.id !== s.id ? m : {
+        ...m,
+        full_name: via === 'home' ? (name.trim() || null) : m.full_name,
+        email: via === 'home' ? (email.trim() || m.email) : m.email,
+        role,
+        assigned_teams: role === 'org_admin' ? [] : teamDraft,
+        via: via === 'club_admins' && role === 'coach' ? 'team_members' : via === 'team_members' && role === 'org_admin' ? 'club_admins' : via,
+      }
     ));
     setEditModal(null);
   }
 
   // ── Remove staff ─────────────────────────────────────────────────────────────
+  // 'home': clears profiles.club_id/role AND team_members (unchanged —
+  // several RLS policies key off team_members.role='coach' independent of
+  // the profile, so clearing profiles alone would leave write access
+  // behind). 'club_admins'/'team_members': never touch `profiles` — that's
+  // someone else's home-club identity, only remove THIS club's own
+  // membership rows.
   async function removeStaff() {
-    if (!editModal) return;
+    if (!editModal || !club) return;
     setEditModal((m) => m ? { ...m, saving: true, saveError: null } : null);
     const { staff: s } = editModal;
-    // Clearing profiles.club_id/role alone leaves their team_members rows in
-    // place — several RLS policies (attendance, fees, photos, polls) key off
-    // team_members.role='coach' independent of the profile, so a "removed"
-    // coach kept full write access to every team they were still on.
-    const [profileRes, ...teamResults] = await Promise.all([
-      supabase.from('profiles').update({ club_id: null, role: 'player' }).eq('id', s.id),
-      ...s.assigned_teams.map((teamId) =>
-        supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)
-      ),
-    ]);
-    const firstError = profileRes.error ?? teamResults.find((r) => r.error)?.error;
+
+    const ops: PromiseLike<{ error: { message: string } | null }>[] =
+      s.via === 'home'
+        ? [
+            supabase.from('profiles').update({ club_id: null, role: 'player' }).eq('id', s.id),
+            ...s.assigned_teams.map((teamId) => supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)),
+          ]
+        : s.via === 'club_admins'
+          ? [
+              supabase.from('club_admins').delete().eq('club_id', club.id).eq('profile_id', s.id),
+              supabase.from('team_members').delete().eq('profile_id', s.id).in('team_id', teams.map((t) => t.id)),
+            ]
+          : s.assigned_teams.map((teamId) => supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId));
+
+    const results = await Promise.all(ops);
+    const firstError = results.find((r) => r.error)?.error;
     if (firstError) {
       setEditModal((m) => m ? { ...m, saving: false, saveError: `Could not remove: ${firstError.message}` } : null);
       return;
@@ -372,6 +431,11 @@ export default function StaffPage() {
                     {isMe && (
                       <span style={{ fontSize: '11px', color: primary, background: `${primary}15`, borderRadius: '4px', padding: '2px 8px', fontWeight: '700' }}>You</span>
                     )}
+                    {s.via !== 'home' && (
+                      <span title="Home club is elsewhere — access to this club only" style={{ fontSize: '11px', color: '#64748B', background: '#F1F5F9', borderRadius: '4px', padding: '2px 8px', fontWeight: '600' }}>
+                        Other club
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
@@ -483,7 +547,12 @@ export default function StaffPage() {
               {/* ── PROFILE section ── */}
               <div>
                 <div style={sectionLabelSt}>Profile</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {editModal.staff.via !== 'home' && (
+                  <p style={{ fontSize: '12px', color: '#94A3B8', margin: '0 0 12px', lineHeight: '1.5' }}>
+                    This person&apos;s home club is elsewhere — their name and login email are managed there. You can only change their role and team access at this club.
+                  </p>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', opacity: editModal.staff.via !== 'home' ? 0.5 : 1 }}>
                   <div>
                     <label style={labelSt}>Full name</label>
                     <input
@@ -491,6 +560,7 @@ export default function StaffPage() {
                       onChange={(e) => setEditModal((m) => m ? { ...m, name: e.target.value } : null)}
                       placeholder="e.g. Sarah Johnson"
                       style={inputSt}
+                      disabled={editModal.staff.via !== 'home'}
                       autoFocus
                     />
                   </div>
@@ -502,6 +572,7 @@ export default function StaffPage() {
                       onChange={(e) => setEditModal((m) => m ? { ...m, email: e.target.value, emailError: null } : null)}
                       placeholder="coach@example.com"
                       style={inputSt}
+                      disabled={editModal.staff.via !== 'home'}
                     />
                     {editModal.emailError && (
                       <p style={{ fontSize: '12px', color: '#EF4444', margin: '6px 0 0' }}>{editModal.emailError}</p>

@@ -1,52 +1,122 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { requireRole } from '@/lib/apiAuth';
+import { requireRole, hasClubAccess } from '@/lib/apiAuth';
 
 // Coaches invited to exactly one team go through the invites table and
 // don't get a `profiles` row until they accept (see lib/coachInvite.ts) —
 // so the Staff page needs to merge two sources to show everyone: accepted
 // staff (profiles, joined against auth.users for email/last-active) and
 // still-pending team-based coach invites.
+//
+// Since multi-club membership, "staff at this club" is no longer just
+// "profiles.club_id = this club" — a person can also reach a club as an
+// org_admin via club_admins (a second club, home club is elsewhere) or as
+// a coach via team_members (already club-independent). Each row below is
+// tagged with `via` so the client knows which table(s) an edit/remove
+// action needs to touch — writing to `profiles` for a non-home row would
+// silently corrupt that person's real home-club identity.
 export async function GET(req: NextRequest) {
-  const auth = await requireRole(req, ['org_admin', 'app_admin']);
+  // Broadened beyond org_admin/app_admin so a person whose HOME role is
+  // 'coach' but who is ALSO org_admin of this specific club via
+  // club_admins can get past this first gate — the real authorization
+  // happens below via hasClubAccess, scoped to this exact club_id.
+  const auth = await requireRole(req, ['org_admin', 'app_admin', 'coach']);
   if (!auth.ok) return auth.response;
 
   const club_id = req.nextUrl.searchParams.get('club_id');
   if (!club_id) return NextResponse.json({ error: 'club_id required' }, { status: 400 });
-  if (auth.role !== 'app_admin' && auth.clubId !== club_id) {
+  if (!(await hasClubAccess(auth, club_id, ['org_admin', 'app_admin']))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const db = supabaseAdmin();
 
-  const { data: profiles } = await db
-    .from('profiles')
-    .select('id, full_name, role, avatar_url, created_at')
-    .eq('club_id', club_id)
-    .in('role', ['coach', 'org_admin'])
-    .order('full_name');
+  const [{ data: homeProfiles }, { data: clubAdminRows }, { data: teams }] = await Promise.all([
+    db.from('profiles')
+      .select('id, full_name, role, avatar_url, created_at')
+      .eq('club_id', club_id)
+      .in('role', ['coach', 'org_admin'])
+      .order('full_name'),
+    db.from('club_admins').select('profile_id, created_at').eq('club_id', club_id),
+    db.from('teams').select('id, name').eq('club_id', club_id),
+  ]);
 
-  const activeRows = await Promise.all((profiles ?? []).map(async (p) => {
-    const [{ data: tm }, { data: userRes }] = await Promise.all([
-      db.from('team_members').select('team_id').eq('profile_id', p.id),
-      db.auth.admin.getUserById(p.id),
-    ]);
+  const teamIds = (teams ?? []).map(t => t.id as string);
+  const teamNameById = new Map((teams ?? []).map(t => [t.id, t.name]));
+  const homeIds = new Set((homeProfiles ?? []).map(p => p.id));
+
+  const { data: crossClubCoachRows } = teamIds.length
+    ? await db.from('team_members')
+        .select('profile_id, team_id, created_at')
+        .eq('role', 'coach')
+        .in('team_id', teamIds)
+    : { data: [] as { profile_id: string; team_id: string; created_at: string }[] };
+
+  // A cross-club coach can have rows on more than one of this club's
+  // teams — collapse to one row per profile, keeping every team_id.
+  const crossClubTeamsByProfile = new Map<string, string[]>();
+  const earliestByProfile = new Map<string, string>();
+  for (const r of crossClubCoachRows ?? []) {
+    if (homeIds.has(r.profile_id)) continue; // already covered by the home-club query
+    const list = crossClubTeamsByProfile.get(r.profile_id) ?? [];
+    list.push(r.team_id);
+    crossClubTeamsByProfile.set(r.profile_id, list);
+    const prev = earliestByProfile.get(r.profile_id);
+    if (!prev || r.created_at < prev) earliestByProfile.set(r.profile_id, r.created_at);
+  }
+
+  const clubAdminIds = (clubAdminRows ?? [])
+    .map(r => r.profile_id as string)
+    .filter(id => !homeIds.has(id));
+  const clubAdminCreatedAt = new Map((clubAdminRows ?? []).map(r => [r.profile_id, r.created_at]));
+
+  const extraProfileIds = [...new Set([...clubAdminIds, ...crossClubTeamsByProfile.keys()])];
+  const { data: extraProfiles } = extraProfileIds.length
+    ? await db.from('profiles').select('id, full_name, avatar_url').in('id', extraProfileIds)
+    : { data: [] as { id: string; full_name: string | null; avatar_url: string | null }[] };
+  const extraProfileById = new Map((extraProfiles ?? []).map(p => [p.id, p]));
+
+  async function toActiveRow(
+    id: string,
+    full_name: string | null,
+    role: string,
+    avatar_url: string | null,
+    createdAt: string,
+    via: 'home' | 'club_admins' | 'team_members',
+    assignedTeams: string[],
+  ) {
+    const { data: userRes } = await db.auth.admin.getUserById(id);
     return {
       kind: 'active' as const,
-      id: p.id,
-      full_name: p.full_name,
-      role: p.role,
-      avatar_url: p.avatar_url,
+      id,
+      full_name,
+      role,
+      avatar_url,
       email: userRes?.user?.email ?? null,
-      assigned_teams: (tm ?? []).map(t => t.team_id as string),
-      createdAt: p.created_at,
+      assigned_teams: assignedTeams,
+      createdAt,
       lastSignInAt: userRes?.user?.last_sign_in_at ?? null,
-      invitedAt: userRes?.user?.invited_at ?? p.created_at,
+      invitedAt: userRes?.user?.invited_at ?? createdAt,
+      via,
     };
+  }
+
+  const homeRows = await Promise.all((homeProfiles ?? []).map(async (p) => {
+    const { data: tm } = await db.from('team_members').select('team_id').eq('profile_id', p.id);
+    return toActiveRow(p.id, p.full_name, p.role, p.avatar_url, p.created_at, 'home', (tm ?? []).map(t => t.team_id as string));
   }));
 
-  const { data: teams } = await db.from('teams').select('id, name').eq('club_id', club_id);
-  const teamNameById = new Map((teams ?? []).map(t => [t.id, t.name]));
+  const clubAdminOnlyRows = await Promise.all(clubAdminIds.map(async (id) => {
+    const p = extraProfileById.get(id);
+    return toActiveRow(id, p?.full_name ?? null, 'org_admin', p?.avatar_url ?? null, clubAdminCreatedAt.get(id) ?? new Date().toISOString(), 'club_admins', []);
+  }));
+
+  const crossClubCoachOnlyRows = await Promise.all([...crossClubTeamsByProfile.entries()].map(async ([id, teamIds]) => {
+    const p = extraProfileById.get(id);
+    return toActiveRow(id, p?.full_name ?? null, 'coach', p?.avatar_url ?? null, earliestByProfile.get(id) ?? new Date().toISOString(), 'team_members', teamIds);
+  }));
+
+  const activeRows = [...homeRows, ...clubAdminOnlyRows, ...crossClubCoachOnlyRows];
 
   const { data: pendingInvites } = await db
     .from('invites')

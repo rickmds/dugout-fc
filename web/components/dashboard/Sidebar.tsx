@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useRef, useEffect, useLayoutEffect } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import {
   LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut,
   Layers, DollarSign, Target, LayoutGrid,
-  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ShieldCheck, Trophy, Medal,
+  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ChevronDown, Plus, ShieldCheck, Trophy, Medal,
 } from 'lucide-react';
 import { useDashboard } from './DashboardContext';
 import { contrastText, safeAccent } from '@/lib/colorContrast';
@@ -71,9 +71,20 @@ const TRYOUTS_NAV: NavEntry[] = [
 ];
 
 export default function Sidebar() {
-  const { profile, club, signOut } = useDashboard();
+  const { profile, club, myClubs, switchClub, signOut } = useDashboard();
   const pathname    = usePathname();
   const router      = useRouter();
+  const [clubMenuOpen, setClubMenuOpen] = useState(false);
+  const clubMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!clubMenuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (clubMenuRef.current && !clubMenuRef.current.contains(e.target as Node)) setClubMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [clubMenuOpen]);
 
   const primary     = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   // Everything below is rendered directly on the sidebar's fixed navy
@@ -150,23 +161,70 @@ export default function Sidebar() {
         </div>
 
         {club && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '34px', height: '34px', borderRadius: '6px', flexShrink: 0,
-              background: club.logo_url ? 'transparent' : accent,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '11px', fontWeight: '800', color: accentText, overflow: 'hidden',
-              border: '1px solid rgba(255,255,255,0.1)',
-            }}>
-              {club.logo_url
-                // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
-                ? <img src={club.logo_url} alt={club.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : initials}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{club.name}</div>
-              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.35)', textTransform: 'capitalize', letterSpacing: '0.3px' }}>{profile?.role?.replace('_', ' ')}</div>
-            </div>
+          <div ref={clubMenuRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => myClubs.length > 1 && setClubMenuOpen(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                background: 'none', border: 'none', padding: 0, margin: 0,
+                cursor: myClubs.length > 1 ? 'pointer' : 'default', fontFamily: 'inherit', textAlign: 'left',
+              }}
+            >
+              <div style={{
+                width: '34px', height: '34px', borderRadius: '6px', flexShrink: 0,
+                background: club.logo_url ? 'transparent' : accent,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '11px', fontWeight: '800', color: accentText, overflow: 'hidden',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}>
+                {club.logo_url
+                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
+                  ? <img src={club.logo_url} alt={club.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : initials}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{club.name}</div>
+                <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.35)', textTransform: 'capitalize', letterSpacing: '0.3px' }}>{profile?.role?.replace('_', ' ')}</div>
+              </div>
+              {myClubs.length > 1 && (
+                <ChevronDown size={14} color="rgba(255,255,255,0.35)" style={{ flexShrink: 0, transform: clubMenuOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              )}
+            </button>
+
+            {clubMenuOpen && myClubs.length > 1 && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50,
+                background: '#1A2436', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px',
+                boxShadow: '0 12px 32px rgba(0,0,0,0.4)', overflow: 'hidden', padding: '4px',
+              }}>
+                {myClubs.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => { switchClub(c.id); setClubMenuOpen(false); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 10px',
+                      background: c.id === club.id ? 'rgba(255,255,255,0.06)' : 'none', border: 'none',
+                      borderRadius: '6px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ fontSize: '12px', fontWeight: c.id === club.id ? '700' : '500', color: c.id === club.id ? '#fff' : 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.name}
+                    </span>
+                  </button>
+                ))}
+                <Link
+                  href="/onboarding?new_club=1"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', marginTop: '2px',
+                    borderTop: '1px solid rgba(255,255,255,0.08)', textDecoration: 'none',
+                  }}
+                  onClick={() => setClubMenuOpen(false)}
+                >
+                  <Plus size={12} color="rgba(255,255,255,0.5)" />
+                  <span style={{ fontSize: '12px', fontWeight: '600', color: 'rgba(255,255,255,0.5)' }}>Add another club</span>
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </div>

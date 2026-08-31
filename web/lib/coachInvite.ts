@@ -130,6 +130,18 @@ export async function inviteClubWide({ db, club_id, clubName, logoUrl, slug, acc
     if (Object.keys(updates).length) {
       await db.from('profiles').update(updates).eq('id', existingUserId);
     }
+    // A second club's org-admin rights can't ride on the single
+    // profiles.role/club_id pair when they already have a different home
+    // club — club_admins is the additive equivalent (implicit access to
+    // every team here, same as a home-club org_admin gets). Without this,
+    // they'd only end up with the coach-level team_members rows below,
+    // silently downgrading an org_admin invite to coach-only access.
+    if (role === 'org_admin' && existing?.club_id && existing.club_id !== club_id) {
+      await db.from('club_admins').upsert(
+        { club_id, profile_id: existingUserId },
+        { onConflict: 'club_id,profile_id', ignoreDuplicates: true },
+      );
+    }
     for (const teamId of teamIds) {
       await db.from('team_members').upsert(
         { team_id: teamId, profile_id: existingUserId, role: 'coach' },
