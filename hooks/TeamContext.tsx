@@ -32,6 +32,15 @@ function normalizeClub(clubs: ClubRow | ClubRow[] | null | undefined): ClubRow |
   return Array.isArray(clubs) ? clubs[0] ?? null : clubs;
 }
 
+// Every team in each given club, tagged 'org_admin' — the club_admins
+// equivalent of the home-club "implicit full access, no team_members row
+// needed" fetch above, for any additional club(s) reached that way.
+async function fetchAdminClubTeams(clubIds: string[]): Promise<Team[]> {
+  if (!clubIds.length) return [];
+  const { data } = await supabase.from('teams').select('*, clubs(*)').in('club_id', clubIds).order('created_at');
+  return ((data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin' } as Team));
+}
+
 const STORAGE_KEY_PREFIX = 'pulse_selected_team_id';
 
 // Namespaced per user — on a shared device, a previous user's last-selected
@@ -50,6 +59,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [selectedTeamId, setSelectedTeamId]   = useState<string | null>(null);
   const [loading, setLoading]                 = useState(true);
 
+  // fetchTeams runs more than once per session — on mount, and again on
+  // every foreground/AppState transition (iOS can fire these repeatedly
+  // and spuriously while a debugger/Simulator is attached). If it always
+  // re-derived the active team from AsyncStorage, one of those spurious
+  // refetches could silently overwrite a selection someone else JUST made
+  // this session (the admin panel's own cross-club team picker, or
+  // ClubSlugGuard reconciling a deep link) with the OLDER persisted value
+  // — which that same correction logic would then immediately try to fix
+  // again, producing a genuine ping-pong between two clubs. Tracked in a
+  // ref (not state) so fetchTeams' own identity doesn't need to depend on
+  // the very state it's about to read.
+  const selectedTeamIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedTeamIdRef.current = selectedTeamId; }, [selectedTeamId]);
+
+  const resolveSelection = useCallback((teams: Team[], saved: string | null) => {
+    const current = teams.find((t) => t.id === selectedTeamIdRef.current);
+    if (current) return current.id; // already-active selection still valid — leave it alone
+    const fromStorage = teams.find((t) => t.id === saved);
+    return fromStorage ? fromStorage.id : (teams[0]?.id ?? null);
+  }, []);
+
   const fetchTeams = useCallback(async () => {
     if (!profile?.club_id) {
       setLoading(false);
@@ -57,6 +87,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     let teams: Team[];
+
+    // club_admins grants the same implicit "every team in this club, no
+    // team_members row needed" access as a home-club org_admin, but for a
+    // SECOND club — fetched for every profile regardless of profile.role,
+    // since a plain coach at their home club can independently be an
+    // org_admin of a different club too (not just the reverse).
+    const [adminClubsRes, memberRes, saved] = await Promise.all([
+      supabase.from('club_admins').select('club_id').eq('profile_id', profile.id),
+      supabase.from('team_members').select('role, teams(*, clubs(*))').eq('profile_id', profile.id),
+      AsyncStorage.getItem(storageKey(profile.id)),
+    ]);
+    const adminClubIds = (adminClubsRes.data ?? []).map((r) => r.club_id as string);
+    const memberTeams = ((memberRes.data ?? []) as any[])
+      .filter((r) => r.teams)
+      .map((r: any) => ({ ...r.teams, club: normalizeClub(r.teams.clubs), myRole: r.role } as Team));
 
     if (profile.role === 'org_admin' || profile.role === 'app_admin') {
       // Org admins implicitly manage every team in their home club (no
@@ -75,40 +120,28 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       // rather than a new tier since "implicit full access to every team
       // in this club" is exactly what that tier already means everywhere
       // else in the app that reads myRole.
-      const [homeRes, memberRes, saved] = await Promise.all([
-        supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at'),
-        supabase.from('team_members').select('role, teams(*, clubs(*))').eq('profile_id', profile.id),
-        AsyncStorage.getItem(storageKey(profile.id)),
-      ]);
+      const homeRes = await supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at');
       const homeTeams = ((homeRes.data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin' } as Team));
-      const memberTeams = ((memberRes.data ?? []) as any[])
-        .filter((r) => r.teams)
-        .map((r: any) => ({ ...r.teams, club: normalizeClub(r.teams.clubs), myRole: r.role } as Team));
+      const extraAdminTeams = await fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id));
       const byId = new Map<string, Team>();
       // Home-club rows win over an explicit member row for the same team —
       // org_admin's implicit club-wide access shouldn't be shadowed by a
       // lower-tier team_members row that predates them becoming org_admin.
-      for (const t of [...memberTeams, ...homeTeams]) byId.set(t.id, t);
+      for (const t of [...memberTeams, ...extraAdminTeams, ...homeTeams]) byId.set(t.id, t);
       teams = [...byId.values()].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
       setAllTeams(teams);
-      const valid = teams.find((t) => t.id === saved);
-      setSelectedTeamId(valid ? valid.id : (teams[0]?.id ?? null));
+      setSelectedTeamId(resolveSelection(teams, saved));
     } else {
-      const [{ data }, saved] = await Promise.all([
-        supabase.from('team_members').select('role, teams(*, clubs(*))').eq('profile_id', profile.id),
-        AsyncStorage.getItem(storageKey(profile.id)),
-      ]);
-      teams = ((data ?? [])
-        .filter((r: any) => r.teams)
-        .map((r: any) => ({ ...r.teams, club: normalizeClub(r.teams.clubs), myRole: r.role } as Team)))
-        .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+      const extraAdminTeams = await fetchAdminClubTeams(adminClubIds);
+      const byId = new Map<string, Team>();
+      for (const t of [...memberTeams, ...extraAdminTeams]) byId.set(t.id, t);
+      teams = [...byId.values()].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
       setAllTeams(teams);
-      const valid = teams.find((t) => t.id === saved);
-      setSelectedTeamId(valid ? valid.id : (teams[0]?.id ?? null));
+      setSelectedTeamId(resolveSelection(teams, saved));
     }
 
     setLoading(false);
-  }, [profile?.id, profile?.club_id, profile?.role]);
+  }, [profile?.id, profile?.club_id, profile?.role, resolveSelection]);
 
   useEffect(() => {
     fetchTeams();

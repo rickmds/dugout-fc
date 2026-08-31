@@ -10,6 +10,7 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { toLocalDateStr } from '../../../../lib/localDate';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -71,7 +72,7 @@ function getWeekBounds(offset: number): { start: Date; end: Date; label: string 
 }
 
 function toDateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
+  return toLocalDateStr(d);
 }
 
 function fmtDayHeader(dateStr: string): string {

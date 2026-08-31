@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { toLocalDateStr, todayLocalStr } from '../../../../lib/localDate';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { uniqueChannelName } from '../../../../lib/realtime';
 import { computeArriveBy } from '../../../../lib/eventTime';
@@ -533,7 +534,7 @@ export default function HomeScreen() {
     if (lastFetchRef.current && now - lastFetchRef.current < 30_000) return;
 
     setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocalStr();
     const sb = supabase as any;
 
     try {
@@ -871,7 +872,7 @@ export default function HomeScreen() {
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
-      const startStr = startOfMonth.toISOString().split('T')[0];
+      const startStr = toLocalDateStr(startOfMonth);
       const [{ data: gameEvts }, { data: trainingEvts }] = await Promise.all([
         supabase.from('events').select('id').eq('team_id', team.id)
           .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).is('cancelled_at', null),

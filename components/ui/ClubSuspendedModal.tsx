@@ -13,9 +13,8 @@ const SUPPORT_EMAIL = 'support@pulse-fc.app';
 // out *why* the club is suspended (billing, policy, etc.), so they're
 // pointed at Pulse FC support. A coach or parent has no reason to contact
 // Pulse FC directly — they're told to go to their own club instead.
-export default function ClubSuspendedModal() {
-  const { signOut, profile } = useAuth();
-  const isOrgAdmin = profile?.role === 'org_admin';
+export default function ClubSuspendedModal({ isOrgAdmin }: { isOrgAdmin: boolean }) {
+  const { signOut } = useAuth();
 
   return (
     <Modal visible animationType="fade" transparent>

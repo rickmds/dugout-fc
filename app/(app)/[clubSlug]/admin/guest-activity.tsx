@@ -13,6 +13,7 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { useActiveTeam } from '../../../../hooks/TeamContext';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 type GuestRow = {
@@ -46,29 +47,35 @@ export default function GuestActivityScreen() {
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile } = useAuth();
+  const { team } = useActiveTeam();
   const { primaryColor, rgba } = useClub();
 
   const [guests, setGuests] = useState<GuestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'player' | 'coach'>('all');
 
-  const isOrgAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
+  // team.myRole is scoped to the currently-active team's own club — an
+  // org_admin at their home club who's merely a guest/parent on another
+  // club's team must not see that other club's admin tools just because
+  // profile.role is org_admin globally.
+  const isOrgAdmin = team?.myRole === 'org_admin';
+  const activeClubId = team?.club?.id;
 
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [profile?.club_id])
+    }, [activeClubId])
   );
 
   async function load() {
-    if (!profile?.club_id) return;
+    if (!activeClubId) return;
     setLoading(true);
 
     // Get all teams for this club
     const { data: teams } = await supabase
       .from('teams')
       .select('id, name')
-      .eq('club_id', profile.club_id);
+      .eq('club_id', activeClubId);
 
     if (!teams?.length) { setLoading(false); return; }
     const teamIds = teams.map((t) => t.id);

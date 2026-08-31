@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.17"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -160,6 +160,42 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      club_admins: {
+        Row: {
+          club_id: string
+          created_at: string | null
+          id: string
+          profile_id: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string | null
+          id?: string
+          profile_id: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string | null
+          id?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_admins_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "club_admins_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       clubs: {
         Row: {
@@ -3925,6 +3961,8 @@ export type Database = {
           entry_rsvp_lock_at: string | null
           entry_rsvp_reminder_sent_at: string | null
           id: string
+          lat: number | null
+          lng: number | null
           location: string | null
           name: string
           start_date: string | null
@@ -3940,6 +3978,8 @@ export type Database = {
           entry_rsvp_lock_at?: string | null
           entry_rsvp_reminder_sent_at?: string | null
           id?: string
+          lat?: number | null
+          lng?: number | null
           location?: string | null
           name: string
           start_date?: string | null
@@ -3955,6 +3995,8 @@ export type Database = {
           entry_rsvp_lock_at?: string | null
           entry_rsvp_reminder_sent_at?: string | null
           id?: string
+          lat?: number | null
+          lng?: number | null
           location?: string | null
           name?: string
           start_date?: string | null
@@ -5024,12 +5066,7 @@ export type Database = {
         Args: { p_anchor_table: unknown; p_table: unknown }
         Returns: string
       }
-      accept_invite:
-        | { Args: { p_token: string }; Returns: Json }
-        | {
-            Args: { p_confirm_switch?: boolean; p_token: string }
-            Returns: Json
-          }
+      accept_invite: { Args: { p_token: string }; Returns: Json }
       admin_delete_club: { Args: { p_club_id: string }; Returns: undefined }
       admin_delete_player: { Args: { p_player_id: string }; Returns: undefined }
       admin_delete_team: { Args: { p_team_id: string }; Returns: undefined }

@@ -389,6 +389,7 @@ export default function EventDetailScreen() {
   const [scoreHomeInput, setScoreHomeInput] = useState(0);
   const [scoreAwayInput, setScoreAwayInput] = useState(0);
   const [savingScore, setSavingScore] = useState(false);
+  const [sessionPlanExists, setSessionPlanExists] = useState(false);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [driveTime, setDriveTime] = useState<string | null>(null);
 
@@ -457,7 +458,7 @@ export default function EventDetailScreen() {
 
     try {
 
-    const [playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes] = await Promise.all([
+    const [playersRes, rsvpsRes, playerRes, sessionRes, guestsRes, attendanceRes, sessionPlanRes] = await Promise.all([
       supabase.from('players').select('id,full_name,jersey_number,position,profile_id')
         .eq('team_id', team.id).order('jersey_number'),
       supabase.from('event_rsvps').select('player_id,status').eq('event_id', eventId),
@@ -470,7 +471,9 @@ export default function EventDetailScreen() {
         .eq('event_id', eventId).eq('status', 'full_time').maybeSingle(),
       supabase.from('event_guests').select('id,player_id,profile_id,full_name,role,status').eq('event_id', eventId),
       supabase.from('event_attendance').select('player_id,status').eq('event_id', eventId),
+      (supabase as any).from('session_plans').select('id').eq('event_id', eventId).maybeSingle(),
     ]);
+    setSessionPlanExists(!!sessionPlanRes.data);
 
     // Supabase's join-cardinality inference for tournaments(name) isn't
     // guaranteed to return an object vs a one-element array — same gotcha
@@ -760,6 +763,11 @@ export default function EventDetailScreen() {
     setScoreModalOpen(false);
     // Only fires once, here, on an explicit save — not on every +/- tap.
     sendTournamentResultPush(event.tournament_id, event.team_id, scoreHomeInput, scoreAwayInput);
+  }
+
+  function openSessionBuilder() {
+    if (!event) return;
+    router.push(`/(app)/${clubSlug}/admin/events/${event.id}/session-builder` as any);
   }
 
   function openMaps() {
@@ -2058,6 +2066,19 @@ export default function EventDetailScreen() {
                   <Ionicons name="football-outline" size={17} color={primaryColor} />
                 </View>
                 <Text style={styles.actionBtnText}>{event.score_home != null ? 'Edit Score' : 'Enter Score'}</Text>
+                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {isCoach && event.type === 'training' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Actions</Text>
+              <TouchableOpacity style={styles.actionBtn} onPress={openSessionBuilder} activeOpacity={0.7}>
+                <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
+                  <Ionicons name="clipboard-outline" size={17} color={primaryColor} />
+                </View>
+                <Text style={styles.actionBtnText}>{sessionPlanExists ? 'View Session Plan' : 'Session Builder'}</Text>
                 <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
               </TouchableOpacity>
             </View>

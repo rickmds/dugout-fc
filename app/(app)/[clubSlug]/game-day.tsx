@@ -22,6 +22,7 @@ import { computeArriveBy } from '../../../lib/eventTime';
 import { getDrivingMinutes } from '../../../lib/routes';
 import { useMapApp } from '../../../hooks/useMapApp';
 import { MapPickerModal } from '../../../components/ui/MapPickerModal';
+import { useTeam } from '../../../hooks/useTeam';
 
 // This screen shows every upcoming game the signed-in user can see —
 // their own club's (org_admin/coach) plus any team at another club they've
@@ -73,7 +74,9 @@ export default function GameDayScreen() {
   const router = useRouter();
   const mapApp = useMapApp();
 
-  const { events: allEvents, teamCoaches, guestCoachStatuses, loading: eventsLoading } = useGameDayFeed(45);
+  const { allTeams } = useTeam();
+  const teamIds = useMemo(() => allTeams.map((t) => t.id), [allTeams]);
+  const { events: allEvents, teamCoaches, guestCoachStatuses, loading: eventsLoading } = useGameDayFeed(45, teamIds);
   const dates = upcomingDates(allEvents);
   const [selectedDate, setSelectedDate] = useState(localDateStr(0));
 

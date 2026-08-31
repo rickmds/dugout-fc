@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { toLocalDateStr, todayLocalStr } from '../../../../lib/localDate';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { computeArriveBy } from '../../../../lib/eventTime';
 import { useTeam } from '../../../../hooks/useTeam';
@@ -91,7 +92,7 @@ const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string 
   other:    { label: 'Other',    color: '#9CA3AF', bg: 'rgba(156,163,175,0.12)' },
 };
 
-function getTodayStr() { return new Date().toISOString().split('T')[0]; }
+function getTodayStr() { return todayLocalStr(); }
 
 function formatTime(timeStr: string): string {
   const [h, m] = timeStr.split(':').map(Number);
@@ -317,7 +318,7 @@ export default function ScheduleScreen() {
 
     // Drive time: bulk call for upcoming events within 14 days that have a location
     const today = new Date();
-    const cutoff = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const cutoff = toLocalDateStr(new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000));
     const driveEvs = upcomingEvs.filter(e =>
       e.event_date <= cutoff && (e.lat != null || e.address || e.location)
     );

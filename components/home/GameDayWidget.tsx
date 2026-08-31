@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../constants/colors';
@@ -7,6 +7,7 @@ import {
   type FeedEvent, type TeamCoach, type GuestCoachStatus,
 } from '../../hooks/useGameDayFeed';
 import { computeArriveBy } from '../../lib/eventTime';
+import { useTeam } from '../../hooks/useTeam';
 
 // Matches TYPE_CONFIG.game in the Home screen's "Next Game" card — this
 // widget is game-only, so it uses the same fixed amber accent rather than
@@ -32,7 +33,9 @@ function fmtDateLabel(iso: string): string {
 }
 
 const GameDayWidget = memo(function GameDayWidget({ onPress }: { onPress: () => void }) {
-  const { events: allEvents, teamCoaches, guestCoachStatuses, loading } = useGameDayFeed(14);
+  const { allTeams } = useTeam();
+  const teamIds = useMemo(() => allTeams.map((t) => t.id), [allTeams]);
+  const { events: allEvents, teamCoaches, guestCoachStatuses, loading } = useGameDayFeed(14, teamIds);
   if (loading || !allEvents.length) return null;
 
   const dates = upcomingDates(allEvents);

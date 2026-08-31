@@ -158,20 +158,31 @@ export function upcomingDates(events: FeedEvent[]): string[] {
   return [...new Set(events.map((e) => e.event_date))].sort();
 }
 
-// One RLS-scoped fetch covers everyone's real visibility — org_admins see
-// their whole home club via is_team_coach's role+club_id bypass (no
-// team_members row needed), and cross-club guest coaches see whatever
-// team_members rows they hold, regardless of club. No client-side team
-// pre-filter, so neither case is ever silently dropped.
-export function useGameDayFeed(windowDays = 45) {
+// `allowedTeamIds` should be the caller's own TeamContext.allTeams ids —
+// the canonical "every team I actually belong to" list (home club + any
+// additional club_admins clubs + any cross-club team_members rows).
+// Requiring it explicitly, instead of an unfiltered query relying on RLS
+// to scope things, matters specifically for app_admin: is_team_member/
+// is_team_coach's app_admin branch is intentionally UNCONDITIONAL
+// (platform-wide, for /super-admin) — an org_admin's RLS bypass is
+// club-scoped so an unfiltered query happened to come out right for them,
+// but the identical unfiltered query for app_admin returned every game
+// from every club on the platform, not just the ones they're actually
+// involved in.
+export function useGameDayFeed(windowDays: number, allowedTeamIds: string[]) {
   const { profile } = useAuth();
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [teamCoaches, setTeamCoaches] = useState<TeamCoach[]>([]);
   const [guestCoachStatuses, setGuestCoachStatuses] = useState<GuestCoachStatus[]>([]);
   const [loading, setLoading] = useState(true);
+  const teamIdsKey = allowedTeamIds.join(',');
 
   const load = useCallback(async () => {
     if (!profile?.id) return;
+    if (!allowedTeamIds.length) {
+      setEvents([]); setTeamCoaches([]); setGuestCoachStatuses([]); setLoading(false);
+      return;
+    }
     setLoading(true);
 
     const today = localDateStr(0);
@@ -180,6 +191,7 @@ export function useGameDayFeed(windowDays = 45) {
     const { data: evs } = await supabase
       .from('events')
       .select('id, title, event_date, event_time, location, address, lat, lng, duration_minutes, arrival_buffer_minutes, uniform, home_away, rsvp_lock_at, team_id')
+      .in('team_id', allowedTeamIds)
       .eq('type', 'game')
       .gte('event_date', today)
       .lte('event_date', to)
@@ -199,12 +211,15 @@ export function useGameDayFeed(windowDays = 45) {
       supabase.from('players').select('id, team_id').in('team_id', teamIds),
       supabase.from('team_members').select('team_id, role').eq('profile_id', profile.id),
       // Club-wide coach assignments + guest-coach coverage — only useful for
-      // an org_admin's coverage view, but cheap enough to always fetch
-      // alongside everything else rather than a second render pass.
-      profile.role === 'org_admin'
+      // an org_admin's (or app_admin's) coverage view, but cheap enough to
+      // always fetch alongside everything else rather than a second render
+      // pass. Safe to extend to app_admin here: teamIds/eventIds already
+      // come from the root events query above, which is itself scoped to
+      // allowedTeamIds — no risk of this pulling in another club's rows.
+      profile.role === 'org_admin' || profile.role === 'app_admin'
         ? supabase.from('team_members').select('team_id, profile_id, role, profiles(full_name)').in('team_id', teamIds).eq('role', 'coach')
         : Promise.resolve({ data: [] as any[] }),
-      profile.role === 'org_admin'
+      profile.role === 'org_admin' || profile.role === 'app_admin'
         ? supabase.from('event_guests').select('event_id, status').in('event_id', eventIds).eq('role', 'coach').in('status', ['pending', 'confirmed'])
         : Promise.resolve({ data: [] as any[] }),
     ]);
@@ -246,7 +261,7 @@ export function useGameDayFeed(windowDays = 45) {
     for (const m of (membershipRes.data ?? []) as { team_id: string; role: string }[]) {
       if (m.role === 'coach') myRoleByTeam[m.team_id] = 'coach';
     }
-    if (profile.role === 'org_admin') {
+    if (profile.role === 'org_admin' || profile.role === 'app_admin') {
       for (const teamId of teamIds) {
         if (myRoleByTeam[teamId] === 'coach') continue; // don't downgrade a team they actually coach
         const info = teamMap.get(teamId);
@@ -285,7 +300,8 @@ export function useGameDayFeed(windowDays = 45) {
 
     setEvents(built);
     setLoading(false);
-  }, [profile?.id, profile?.club_id, profile?.role, windowDays]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depends on teamIdsKey (stable string), not the teamIds array reference itself
+  }, [profile?.id, profile?.club_id, profile?.role, windowDays, teamIdsKey]);
 
   useEffect(() => { load(); }, [load]);
 

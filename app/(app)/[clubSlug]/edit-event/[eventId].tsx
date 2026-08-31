@@ -17,6 +17,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
+import { useActiveTeam } from '../../../../hooks/TeamContext';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { zonedTimeToUtc } from '../../../../lib/timezone';
@@ -148,6 +149,7 @@ export default function EditEventScreen() {
   const router = useRouter();
   const { clubSlug, eventId } = useLocalSearchParams<{ clubSlug: string; eventId: string }>();
   const { profile } = useAuth();
+  const { allTeams } = useActiveTeam();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -166,7 +168,11 @@ export default function EditEventScreen() {
   // their own team's row.
   const [eventGroupId, setEventGroupId] = useState<string | null>(null);
   const [linkedTeams, setLinkedTeams] = useState<{ id: string; name: string }[]>([]);
-  const isOrgAdmin = profile?.role === 'org_admin';
+  // Resolved from THIS event's own team (eventTeamId), not necessarily the
+  // currently-active team — this screen can be reached via a notification
+  // deep link while a different team is active, and org_admin status is
+  // per-team (club_admins/home club), not a single global profile.role.
+  const isOrgAdmin = allTeams.find((t) => t.id === eventTeamId)?.myRole === 'org_admin';
 
   // Event basics
   const [eventType, setEventType] = useState<EventType>('training');
@@ -273,7 +279,13 @@ export default function EditEventScreen() {
 
     const groupId = (data as any)?.event_group_id ?? null;
     setEventGroupId(groupId);
-    if (isOrgAdmin && groupId) {
+    // Computed from the just-fetched team_id, not the component-level
+    // isOrgAdmin — that's derived from eventTeamId state, which this same
+    // call is still in the middle of setting, so it would still read stale
+    // (pre-load) on first run.
+    const loadedTeamId = (data as any)?.team_id ?? null;
+    const isOrgAdminForLoad = allTeams.find((t) => t.id === loadedTeamId)?.myRole === 'org_admin';
+    if (isOrgAdminForLoad && groupId) {
       const { data: siblings } = await supabase
         .from('events')
         .select('team_id, teams(name)')
@@ -363,17 +375,27 @@ export default function EditEventScreen() {
     const eventDate = toDbDate(date);
     const eventTime = hasTime ? toDbTime(startTime) : null;
 
-    function computeLockAtFor(dateStr: string): string | null {
-      if (isDatedTournamentGame || !requireRsvp || !eventTime) return null;
+    // `undefined` means "computation failed, leave the existing saved value
+    // alone" — distinct from `null`, which means "no deadline applies"
+    // (RSVP not required, or a dated tournament game). Collapsing these two
+    // into one null used to mean any transient failure here (a bad
+    // timezone lookup, an unparseable time) silently WIPED a coach's
+    // already-correct RSVP deadline back to "no deadline" on every save,
+    // including "this and future" saves that touched an entire recurring
+    // series in one shot.
+    function computeLockAtFor(dateStr: string): string | null | undefined {
+      if (isDatedTournamentGame || !requireRsvp) return null;
+      if (!eventTime) return null;
       try {
         // Anchored to the club's own timezone, not this device's — see
         // create-event.tsx's computeLockAt for the full reasoning.
         const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
         dt.setHours(dt.getHours() - rsvpLockHours);
+        if (isNaN(dt.getTime())) throw new Error('computed an invalid date');
         return dt.toISOString();
       } catch (err) {
-        console.warn('[edit-event] could not compute rsvp_lock_at', err);
-        return null;
+        console.warn('[edit-event] could not compute rsvp_lock_at — leaving existing value untouched', err);
+        return undefined;
       }
     }
 
@@ -412,10 +434,11 @@ export default function EditEventScreen() {
     const propagateGroup = scope === 'this' && isOrgAdmin && !!eventGroupId && linkedTeams.length > 0;
 
     if (scope === 'this') {
+      const lockAt = computeLockAtFor(eventDate);
       const updatePayload = {
         ...sharedFields,
         event_date: eventDate,
-        rsvp_lock_at: computeLockAtFor(eventDate),
+        ...(lockAt !== undefined ? { rsvp_lock_at: lockAt } : {}),
       };
       await (propagateGroup
         ? supabase.from('events').update(updatePayload).eq('event_group_id', eventGroupId)
@@ -431,12 +454,20 @@ export default function EditEventScreen() {
         .select('id, event_date, team_id')
         .eq('recurrence_id', recurrenceId)
         .gte('event_date', thresholdDate);
+      // Success/failure of computeLockAtFor depends only on
+      // requireRsvp/eventTime/timezone — constant across every row in this
+      // batch — so one probe tells us whether it's safe to apply per-row,
+      // or whether every row's rsvp_lock_at should be left out of the
+      // upsert entirely (preserving whatever each row already had) instead
+      // of every occurrence in the series getting silently wiped to null
+      // in one shot.
+      const probe = rows?.[0] ? computeLockAtFor(rows[0].event_date) : undefined;
       const upsertRows = (rows ?? []).map((r) => ({
         id: r.id,
         team_id: r.team_id,
         event_date: r.event_date,
         ...sharedFields,
-        rsvp_lock_at: computeLockAtFor(r.event_date),
+        ...(probe !== undefined ? { rsvp_lock_at: computeLockAtFor(r.event_date) } : {}),
       }));
       if (upsertRows.length) await supabase.from('events').upsert(upsertRows);
     }

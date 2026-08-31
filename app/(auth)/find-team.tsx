@@ -96,9 +96,9 @@ export default function FindTeamScreen() {
     }
 
     const { data: rpcData, error: rpcErr } = await (supabase as any).rpc('accept_invite', { p_token: token as string });
-    const result = rpcData as { error?: string; needs_confirmation?: boolean } | null;
+    const result = rpcData as { error?: string } | null;
 
-    if (rpcErr || result?.error || result?.needs_confirmation) {
+    if (rpcErr || result?.error) {
       setJoinLoading(false);
       setClubError('Could not join the team. The invite may have expired or already been used.');
       return;

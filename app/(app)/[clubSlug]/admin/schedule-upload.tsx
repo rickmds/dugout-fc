@@ -20,6 +20,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../../lib/supabase';
+import { todayLocalStr } from '../../../../lib/localDate';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -110,11 +111,18 @@ function mapSurfaceType(surfaceType: string | null | undefined): 'turf' | 'grass
 
 const BULK_DURATION_OPTIONS = [45, 60, 75, 90, 105, 120];
 const BULK_ARRIVE_OPTIONS   = [5, 10, 15, 20, 30, 45, 60];
+// "None" (null) means no RSVP deadline is ever enforced — not "closes
+// immediately" — so a coach who actually wants the deadline to be the
+// event's own start time needs a real, distinct option for that (the same
+// choice create-event.tsx/edit-event.tsx already offer individually).
+// Missing this made "None" the closest-sounding option to that intent,
+// silently leaving every imported event's rsvp_lock_at null instead.
 const BULK_RSVP_OPTIONS: { label: string; value: number | null }[] = [
-  { label: 'None',   value: null },
-  { label: '12 hrs', value: 12 },
-  { label: '24 hrs', value: 24 },
-  { label: '48 hrs', value: 48 },
+  { label: 'At start', value: 0 },
+  { label: 'None',     value: null },
+  { label: '12 hrs',   value: 12 },
+  { label: '24 hrs',   value: 24 },
+  { label: '48 hrs',   value: 48 },
 ];
 
 const TYPE_CFG: Record<EventType, { label: string; color: string }> = {
@@ -423,7 +431,7 @@ export default function ScheduleUploadScreen() {
         team_id: team.id,
         title: e.title,
         type: e.type,
-        event_date: e.date ?? new Date().toISOString().split('T')[0],
+        event_date: e.date ?? todayLocalStr(),
         event_time: normalizedTime,
         location: e.location ?? null,
         address: e.address ?? null,
@@ -487,8 +495,9 @@ export default function ScheduleUploadScreen() {
   // ─── Bulk card (header for FlatList) ─────────────────────────────────────────
 
   function renderBulkCard() {
+    const rsvpSummary = bulk.rsvpLockHours == null ? 'off' : bulk.rsvpLockHours === 0 ? 'at start' : `${bulk.rsvpLockHours} hrs before`;
     const summary = `${fmtDuration(bulk.duration)} · ${bulk.arriveEarly} min early` + (
-      isDatedTournamentImport ? ' · RSVP via tournament' : ` · RSVP ${bulk.rsvpLockHours ? `${bulk.rsvpLockHours} hrs before` : 'off'}`
+      isDatedTournamentImport ? ' · RSVP via tournament' : ` · RSVP ${rsvpSummary}`
     );
     return (
       <View style={st.bulkCard}>
@@ -820,7 +829,7 @@ export default function ScheduleUploadScreen() {
 
 // ─── Edit modal ───────────────────────────────────────────────────────────────
 
-const RSVP_LOCK_CHOICES = [12, 24, 48];
+const RSVP_LOCK_CHOICES = [0, 12, 24, 48];
 
 function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournamentImport, onSave, onClose }: {
   event: ParsedEvent;
@@ -1203,7 +1212,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
                           style={[st.typeBtn, st.chipBtn, rsvpLockHours === v && { backgroundColor: rgba(0.12), borderColor: primaryColor }]}
                           onPress={() => setRsvpLockHours(v)}
                         >
-                          <Text style={[st.typeBtnText, rsvpLockHours === v && { color: primaryColor }]}>{v} hrs before</Text>
+                          <Text style={[st.typeBtnText, rsvpLockHours === v && { color: primaryColor }]}>{v === 0 ? 'At start' : `${v} hrs before`}</Text>
                         </TouchableOpacity>
                       ))}
                     </View>

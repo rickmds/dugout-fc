@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { todayLocalStr } from '../../../../lib/localDate';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -280,7 +281,7 @@ export default function AdminPanel() {
       return;
     }
     if (firstLoad.current) setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocalStr();
 
     const [upRes, playerRes, pastEventsRes, rosterRes] = await Promise.all([
       supabase.from('events')
@@ -465,7 +466,21 @@ export default function AdminPanel() {
               return (
                 <TouchableOpacity
                   style={[tp.row, active && { backgroundColor: `${primaryColor}12` }]}
-                  onPress={() => { selectTeam(item.id); setPickerVisible(false); }}
+                  onPress={() => {
+                    // A team at a DIFFERENT club needs the route itself to
+                    // move too — selectTeam() alone leaves clubSlug pointed
+                    // at the old club, and ClubSlugGuard (app/(app)/[clubSlug]/
+                    // _layout.tsx) then "corrects" the mismatch by silently
+                    // switching back, producing a visible flip-flop between
+                    // both clubs' admin panels right after picking one.
+                    setPickerVisible(false);
+                    if (item.club?.slug && item.club.slug !== clubSlug) {
+                      selectTeam(item.id);
+                      router.replace(`/(app)/${item.club.slug}/admin` as never);
+                    } else {
+                      selectTeam(item.id);
+                    }
+                  }}
                   activeOpacity={0.75}
                 >
                   <View style={[tp.dot, { backgroundColor: active ? primaryColor : PULSE_COLORS.ui.border }]} />

@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { todayLocalStr } from '../../../../lib/localDate';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
@@ -51,11 +52,18 @@ type BulkSettings = { duration: number; arriveEarly: number; rsvpLockHours: numb
 
 const BULK_DURATION_OPTIONS = [45, 60, 75, 90, 105, 120];
 const BULK_ARRIVE_OPTIONS   = [5, 10, 15, 20, 30, 45, 60];
+// "None" (null) means no RSVP deadline is ever enforced — not "closes
+// immediately" — so a coach who actually wants the deadline to be the
+// event's own start time needs a real, distinct option for that (the same
+// choice create-event.tsx/edit-event.tsx already offer individually).
+// Missing this made "None" the closest-sounding option to that intent,
+// silently leaving every imported event's rsvp_lock_at null instead.
 const BULK_RSVP_OPTIONS: { label: string; value: number | null }[] = [
-  { label: 'None',   value: null },
-  { label: '12 hrs', value: 12 },
-  { label: '24 hrs', value: 24 },
-  { label: '48 hrs', value: 48 },
+  { label: 'At start', value: 0 },
+  { label: 'None',     value: null },
+  { label: '12 hrs',   value: 12 },
+  { label: '24 hrs',   value: 24 },
+  { label: '48 hrs',   value: 48 },
 ];
 
 const TYPE_CFG: Record<EventType, { label: string; color: string }> = {
@@ -340,7 +348,7 @@ export default function ClubScheduleScreen() {
           team_id:    teamId,
           title:      e.title,
           type:       e.type,
-          event_date: e.date ?? new Date().toISOString().split('T')[0],
+          event_date: e.date ?? todayLocalStr(),
           event_time: e.time ?? null,
           location:   e.location ?? null,
           address:    e.address ?? null,
@@ -657,7 +665,8 @@ function BulkCard({ bulk, bulkOpen, setBulk, setBulkOpen, primaryColor, rgba }: 
   primaryColor: string;
   rgba: (a: number) => string;
 }) {
-  const summary = `${fmtDuration(bulk.duration)} · ${bulk.arriveEarly} min early · RSVP ${bulk.rsvpLockHours ? `${bulk.rsvpLockHours} hrs before` : 'off'}`;
+  const rsvpSummary = bulk.rsvpLockHours == null ? 'off' : bulk.rsvpLockHours === 0 ? 'at start' : `${bulk.rsvpLockHours} hrs before`;
+  const summary = `${fmtDuration(bulk.duration)} · ${bulk.arriveEarly} min early · RSVP ${rsvpSummary}`;
   return (
     <View style={bk.card}>
       <TouchableOpacity style={bk.header} onPress={() => setBulkOpen((o) => !o)} activeOpacity={0.7}>

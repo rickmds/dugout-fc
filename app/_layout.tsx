@@ -33,6 +33,11 @@ function AppShell() {
   const router = useRouter();
   const { club, profile } = useAuth();
   const { team, allTeams, selectTeam } = useActiveTeam();
+  // The suspended-club gate must track whichever club is actually active
+  // (a team at a second club via club_admins/team_members), not always the
+  // home club — otherwise a suspended home club would block the whole app
+  // even while a different, non-suspended club is genuinely available.
+  const activeClub = team?.club ?? club;
   const [updateRequired, setUpdateRequired] = useState(false);
 
   useEffect(() => {
@@ -162,7 +167,9 @@ function AppShell() {
       <WebPushPrompt />
       <ViewAsBanner />
       {updateRequired && <UpdateRequiredModal />}
-      {!updateRequired && club?.suspended_at && <ClubSuspendedModal />}
+      {!updateRequired && activeClub?.suspended_at && (
+        <ClubSuspendedModal isOrgAdmin={team ? team.myRole === 'org_admin' : profile?.role === 'org_admin'} />
+      )}
     </>
   );
 }

@@ -12,6 +12,7 @@ import {
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { todayLocalStr } from '../../../../lib/localDate';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useTeam } from '../../../../hooks/useTeam';
@@ -19,6 +20,10 @@ import { useAuth } from '../../../../hooks/useAuth';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { getGameResult, RESULT_COLORS, formatTournamentDateRange } from '../../../../lib/tournaments';
 import { sendTeamPush } from '../../../../lib/push';
+import { useTournamentCoords } from '../../../../hooks/useTournamentCoords';
+import { useMapApp } from '../../../../hooks/useMapApp';
+import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
+import SatelliteMapThumb from '../../../../components/ui/SatelliteMapThumb';
 
 type EventType = 'game' | 'training' | 'other';
 type RsvpStatus = 'attending' | 'not_attending';
@@ -37,7 +42,7 @@ type Game = {
 };
 
 type Tournament = {
-  id: string; name: string; location: string | null; team_id: string;
+  id: string; name: string; location: string | null; lat: number | null; lng: number | null; team_id: string;
   start_date: string | null; end_date: string | null; entry_rsvp_lock_at: string | null;
   cancelled_at: string | null; cancellation_reason: string | null;
 };
@@ -56,7 +61,7 @@ function fmtDate(dateStr: string): string {
 }
 
 function isUpcomingDate(dateStr: string): boolean {
-  return dateStr >= new Date().toISOString().split('T')[0];
+  return dateStr >= todayLocalStr();
 }
 
 export default function TournamentDetailScreen() {
@@ -65,6 +70,7 @@ export default function TournamentDetailScreen() {
   const { clubSlug, tournamentId } = useLocalSearchParams<{ clubSlug: string; tournamentId: string }>();
   const { team, allTeams, selectTeam } = useTeam();
   const { profile } = useAuth();
+  const mapApp = useMapApp();
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [games, setGames] = useState<Game[]>([]);
@@ -77,11 +83,18 @@ export default function TournamentDetailScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const coords = useTournamentCoords(
+    tournamentId ?? '',
+    tournament?.location ?? null,
+    tournament?.lat ?? null,
+    tournament?.lng ?? null,
+  );
+
   const load = useCallback(async () => {
     if (!tournamentId) return;
     const { data: tRow } = await supabase
       .from('tournaments')
-      .select('id, name, location, team_id, start_date, end_date, entry_rsvp_lock_at, cancelled_at, cancellation_reason')
+      .select('id, name, location, lat, lng, team_id, start_date, end_date, entry_rsvp_lock_at, cancelled_at, cancellation_reason')
       .eq('id', tournamentId)
       .single();
     if (!tRow) { setLoading(false); setRefreshing(false); return; }
@@ -317,6 +330,18 @@ export default function TournamentDetailScreen() {
             </View>
           </View>
 
+          {tournament?.location && (
+            <View style={{ marginTop: 12 }}>
+              <SatelliteMapThumb
+                lat={coords?.lat ?? null}
+                lng={coords?.lng ?? null}
+                address={tournament.location}
+                onPress={() => mapApp.open({ query: tournament.location ?? '', lat: tournament.lat, lng: tournament.lng })}
+                height={160}
+              />
+            </View>
+          )}
+
           {hasRecord && (
             <View style={styles.recordRow}>
               <View style={[styles.recordChip, { borderColor: 'rgba(34,197,94,0.25)' }]}>
@@ -521,6 +546,12 @@ export default function TournamentDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      <MapPickerModal
+        visible={mapApp.showPicker}
+        onConfirm={mapApp.confirm}
+        onDismiss={mapApp.dismiss}
+      />
     </View>
   );
 }

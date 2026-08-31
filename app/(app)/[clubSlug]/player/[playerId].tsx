@@ -20,6 +20,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { toLocalDateStr } from '../../../../lib/localDate';
 import { sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -534,7 +535,7 @@ export default function PlayerProfileScreen() {
       if (uploaded) newPhotoUrl = uploaded;
     }
 
-    const dobString = editDob ? editDob.toISOString().split('T')[0] : null;
+    const dobString = editDob ? toLocalDateStr(editDob) : null;
 
     // Try full update including extended columns (added in migration 20260619000002+)
     const fullUpdates: Record<string, unknown> = {
