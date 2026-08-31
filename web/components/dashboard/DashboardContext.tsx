@@ -100,7 +100,13 @@ async function loadTeams(prof: Profile, clubId?: string | null): Promise<Team[]>
   // caller is already known to administer it, regardless of what their
   // global home-club role happens to be.
   const effectiveClubId = clubId ?? prof.club_id;
-  const asOrgAdmin = clubId ? true : prof.role === 'org_admin';
+  // app_admin (Rick) needs the identical home-club-scoped branch an
+  // org_admin gets — missing this fell through to the team_members branch
+  // below, which has NO club filter at all, mixing in team_members rows
+  // from every club he coaches at (e.g. Maroons' BU14 Madrid appearing in
+  // MDS Academy's own team picker — and worse, editing/removing it from
+  // there would have deleted the Maroons row, not an MDS one).
+  const asOrgAdmin = clubId ? true : (prof.role === 'org_admin' || prof.role === 'app_admin');
   if (asOrgAdmin && effectiveClubId) {
     const { data } = await supabase
       .from('teams')
