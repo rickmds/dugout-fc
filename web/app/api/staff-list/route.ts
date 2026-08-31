@@ -32,10 +32,20 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
 
   const [{ data: homeProfiles }, { data: clubAdminRows }, { data: teams }] = await Promise.all([
+    // Must include app_admin, not just coach/org_admin — otherwise an
+    // app_admin's own home-club row (e.g. Rick on his own MDS Academy
+    // staff page) never classifies as 'home' and instead falls through to
+    // being tagged as a cross-club club_admins/team_members row. That's
+    // not just a cosmetic mislabel: the edit modal's promote/demote logic
+    // for those rows creates a club_admins grant and deletes ALL of that
+    // person's team_members rows across the (possibly multi-club-
+    // contaminated) current team list — which is exactly how an
+    // app_admin's real cross-club coach assignments got silently wiped
+    // out from their OWN home club's staff page.
     db.from('profiles')
       .select('id, full_name, role, avatar_url, created_at')
       .eq('club_id', club_id)
-      .in('role', ['coach', 'org_admin'])
+      .in('role', ['coach', 'org_admin', 'app_admin'])
       .order('full_name'),
     db.from('club_admins').select('profile_id, created_at').eq('club_id', club_id),
     db.from('teams').select('id, name').eq('club_id', club_id),

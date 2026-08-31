@@ -163,7 +163,14 @@ export default function StaffPage() {
     const ops: PromiseLike<{ error: { message: string } | null }>[] = [];
 
     if (via === 'home') {
-      ops.push(supabase.from('profiles').update({ full_name: name.trim() || null, role }).eq('id', s.id));
+      // s.role (not the possibly-edited `role`) is the source of truth for
+      // whether this is the platform owner — never let the coach/org_admin
+      // toggle's value land in profiles.role for an app_admin row, even if
+      // something upstream let the modal open in an editable state.
+      const profileUpdate = s.role === 'app_admin'
+        ? { full_name: name.trim() || null }
+        : { full_name: name.trim() || null, role };
+      ops.push(supabase.from('profiles').update(profileUpdate).eq('id', s.id));
       ops.push(...toAdd.map((teamId) => supabase.from('team_members').insert({ profile_id: s.id, team_id: teamId, role: 'coach' })));
       ops.push(...toRemove.map((teamId) => supabase.from('team_members').delete().eq('profile_id', s.id).eq('team_id', teamId)));
     } else if (via === 'club_admins') {
@@ -219,6 +226,7 @@ export default function StaffPage() {
   // membership rows.
   async function removeStaff() {
     if (!editModal || !club) return;
+    if (editModal.staff.role === 'app_admin') return; // platform owner — never removable from a club staff page
     setEditModal((m) => m ? { ...m, saving: true, saveError: null } : null);
     const { staff: s } = editModal;
 
@@ -421,8 +429,8 @@ export default function StaffPage() {
                       {isPending ? s.email : (s.full_name ?? 'Unnamed')}
                     </span>
                     {s.role && (
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${s.role === 'org_admin' ? '#DDD6FE' : `${primary}30`}` }}>
-                        {s.role === 'org_admin' ? 'Admin' : 'Coach'}
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: s.role === 'org_admin' || s.role === 'app_admin' ? '#7C3AED' : primary, background: s.role === 'org_admin' || s.role === 'app_admin' ? '#EDE9FE' : `${primary}18`, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${s.role === 'org_admin' || s.role === 'app_admin' ? '#DDD6FE' : `${primary}30`}` }}>
+                        {s.role === 'app_admin' ? 'App Admin' : s.role === 'org_admin' ? 'Admin' : 'Coach'}
                       </span>
                     )}
                     <span style={{ fontSize: '11px', fontWeight: '700', color: status.color, background: status.bg, borderRadius: '4px', padding: '2px 8px', border: `1px solid ${status.border}` }}>
@@ -573,31 +581,44 @@ export default function StaffPage() {
                 </div>
               )}
 
-              {/* ── ROLE section ── */}
-              <div>
-                <div style={sectionLabelSt}>Role</div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    onClick={() => setEditModal((m) => m ? { ...m, role: 'coach' } : null)}
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: `2px solid ${editModal.role === 'coach' ? primary : '#E2E8F0'}`, background: editModal.role === 'coach' ? `${primary}10` : '#FAFAFA', color: editModal.role === 'coach' ? primary : '#64748B', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}
-                  >
-                    <User size={15} />
-                    Coach
-                  </button>
-                  <button
-                    onClick={() => setEditModal((m) => m ? { ...m, role: 'org_admin' } : null)}
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: `2px solid ${editModal.role === 'org_admin' ? '#8B5CF6' : '#E2E8F0'}`, background: editModal.role === 'org_admin' ? 'rgba(139,92,246,0.08)' : '#FAFAFA', color: editModal.role === 'org_admin' ? '#8B5CF6' : '#64748B', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}
-                  >
+              {/* ── ROLE section — not for app_admin (the platform owner):
+                   that's not a per-club role to toggle here, and this
+                   picker only knows about coach/org_admin, so touching it
+                   would silently downgrade a real platform admin ── */}
+              {editModal.staff.role === 'app_admin' ? (
+                <div>
+                  <div style={sectionLabelSt}>Role</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: '2px solid #E2E8F0', background: '#FAFAFA', color: '#64748B', fontWeight: '700', fontSize: '14px' }}>
                     <Shield size={15} />
-                    Admin
-                  </button>
+                    App Admin — platform owner, not editable here
+                  </div>
                 </div>
-                <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px', marginBottom: 0 }}>
-                  {editModal.role === 'org_admin'
-                    ? 'Can manage all teams, branding, staff, and club settings'
-                    : 'Can manage their assigned teams only'}
-                </p>
-              </div>
+              ) : (
+                <div>
+                  <div style={sectionLabelSt}>Role</div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={() => setEditModal((m) => m ? { ...m, role: 'coach' } : null)}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: `2px solid ${editModal.role === 'coach' ? primary : '#E2E8F0'}`, background: editModal.role === 'coach' ? `${primary}10` : '#FAFAFA', color: editModal.role === 'coach' ? primary : '#64748B', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}
+                    >
+                      <User size={15} />
+                      Coach
+                    </button>
+                    <button
+                      onClick={() => setEditModal((m) => m ? { ...m, role: 'org_admin' } : null)}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '12px', borderRadius: '12px', border: `2px solid ${editModal.role === 'org_admin' ? '#8B5CF6' : '#E2E8F0'}`, background: editModal.role === 'org_admin' ? 'rgba(139,92,246,0.08)' : '#FAFAFA', color: editModal.role === 'org_admin' ? '#8B5CF6' : '#64748B', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.1s' }}
+                    >
+                      <Shield size={15} />
+                      Admin
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '8px', marginBottom: 0 }}>
+                    {editModal.role === 'org_admin'
+                      ? 'Can manage all teams, branding, staff, and club settings'
+                      : 'Can manage their assigned teams only'}
+                  </p>
+                </div>
+              )}
 
               {/* ── TEAM ACCESS section ── */}
               <div>
@@ -656,9 +677,10 @@ export default function StaffPage() {
                 </div>
               </div>
 
-              {/* ── DANGER ZONE — not for your own row, to avoid an
-                   accidental self-lockout from the club dashboard ── */}
-              {editModal.staff.id === profile?.id ? null : !editModal.confirmRemove ? (
+              {/* ── DANGER ZONE — not for your own row (avoids an
+                   accidental self-lockout) or any app_admin row (the
+                   platform owner isn't club staff to remove) ── */}
+              {editModal.staff.id === profile?.id || editModal.staff.role === 'app_admin' ? null : !editModal.confirmRemove ? (
                 <button
                   onClick={() => setEditModal((m) => m ? { ...m, confirmRemove: true } : null)}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '12px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '12px', color: '#EF4444', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}
