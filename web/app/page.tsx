@@ -5,6 +5,7 @@ import Ticker from '@/components/Ticker';
 import Reveal from '@/components/Reveal';
 import NavBar from '@/components/NavBar';
 import FeatureTabs from '@/components/FeatureTabs';
+import AndroidTesterCTA from '@/components/AndroidTesterCTA';
 
 const paths = [
   {
@@ -80,12 +81,13 @@ export default async function Home() {
 
             <p className="text-[#888] text-[12px] mb-8">Free for 1 team · No credit card · 20-minute setup · 30-day money-back guarantee</p>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <p className="text-[#888] text-[12px] font-medium">Now live on the App Store</p>
               <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659" target="_blank" rel="noopener noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public, left as <img> for this marketing page */}
                 <img src="/app-store-badge.svg" alt="Download on the App Store" width={108} height={36} style={{ height: '36px', width: 'auto' }} />
               </a>
+              <AndroidTesterCTA size="hero" />
             </div>
           </div>
 
@@ -231,6 +233,9 @@ export default async function Home() {
             {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public, left as <img> for this marketing page */}
             <img src="/app-store-badge.svg" alt="Download on the App Store" width={84} height={28} style={{ height: '28px', width: 'auto' }} />
           </a>
+          <div className="hidden sm:block">
+            <AndroidTesterCTA size="footer" />
+          </div>
         </div>
       </footer>
 
