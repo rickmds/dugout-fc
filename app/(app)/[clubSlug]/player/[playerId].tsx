@@ -128,6 +128,15 @@ function formatShortDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// For a full timestamptz (invites.created_at/accepted_at), not a plain
+// date column — appending 'T00:00:00' the way formatShortDate does turns
+// an already-complete ISO string like "2026-08-31T14:23:45+00:00" into
+// "...+00:00T00:00:00", which Date can't parse and renders as the literal
+// text "Invalid Date".
+function formatShortTimestamp(isoStr: string): string {
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function initials(name: string): string {
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
 }
@@ -1962,7 +1971,7 @@ function GuardiansTab({
         phone: inv?.phone ?? null,
         relationship: inv?.relationship ?? null,
         isAccepted: true,
-        dateLabel: inv?.accepted_at ? formatShortDate(inv.accepted_at) : '',
+        dateLabel: inv?.accepted_at ? formatShortTimestamp(inv.accepted_at) : '',
         invite: inv,
         accessProfileId: a.profileId,
       };
@@ -1974,7 +1983,7 @@ function GuardiansTab({
       phone: inv.phone,
       relationship: inv.relationship,
       isAccepted: false,
-      dateLabel: formatShortDate(inv.created_at),
+      dateLabel: formatShortTimestamp(inv.created_at),
       invite: inv,
       accessProfileId: null,
     })),

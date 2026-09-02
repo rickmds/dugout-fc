@@ -221,12 +221,27 @@ export default function ScheduleScreen() {
   // profile.role is org_admin globally.
   const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
+  // Same stuck-badge bug as messages/announcements/events — this screen is
+  // the real destination for a field_closure push, but nothing cleared
+  // that notification row unless the user separately opened the
+  // Notification Centre and tapped it there.
+  const markFieldClosureNotificationsRead = useCallback(async () => {
+    if (!profile) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .eq('type', 'field_closure');
+  }, [profile?.id]);
+
   useFocusEffect(
     useCallback(() => {
       if (teamLoading) return;
       if (!team) { setLoading(false); return; }
       load();
-    }, [team?.id, teamLoading, profile?.id, showAllTeams])
+      markFieldClosureNotificationsRead();
+    }, [team?.id, teamLoading, profile?.id, showAllTeams, markFieldClosureNotificationsRead])
   );
 
   useEffect(() => {

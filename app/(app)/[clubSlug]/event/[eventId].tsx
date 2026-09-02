@@ -426,7 +426,7 @@ export default function EventDetailScreen() {
         'new_event', 'event_updated', 'event_cancelled', 'schedule_change',
         'game_day', 'event_day_reminder', 'rsvp_reminder', 'attendance_absent',
         'guest_invite', 'guest_coach_invite', 'guest_accepted', 'guest_response',
-        'guest_removed', 'guest_cancelled', 'guest_reminder',
+        'guest_removed', 'guest_cancelled', 'guest_reminder', 'reflection_prompt',
       ])
       .filter('data->>event_id', 'eq', eventId);
   }

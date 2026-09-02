@@ -6,6 +6,7 @@ import { supabase } from '../../../../../lib/supabase';
 import { PULSE_COLORS } from '../../../../../constants/colors';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
 import { SHOUTOUT_TAGS } from '../../../../../components/shoutout/ShoutoutSheet';
+import { useAuth } from '../../../../../hooks/useAuth';
 
 type ShoutoutRow = {
   id: string;
@@ -19,6 +20,7 @@ type ShoutoutRow = {
 export default function PlayerShoutoutsScreen() {
   const { playerId } = useLocalSearchParams<{ clubSlug: string; playerId: string }>();
   const router = useRouter();
+  const { profile } = useAuth();
 
   const [rows, setRows] = useState<ShoutoutRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,8 +36,22 @@ export default function PlayerShoutoutsScreen() {
       setRows((data as any) ?? []);
       setLoading(false);
     }
-    if (playerId) load();
-  }, [playerId]);
+    // Same stuck-badge bug as messages/announcements/events — this screen
+    // is the real destination for a player_shoutout push, but nothing
+    // cleared that notification row unless the user separately opened the
+    // Notification Centre and tapped it there.
+    async function markShoutoutNotificationsRead() {
+      if (!profile || !playerId) return;
+      await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('profile_id', profile.id)
+        .eq('read', false)
+        .eq('type', 'player_shoutout')
+        .filter('data->>player_id', 'eq', playerId);
+    }
+    if (playerId) { load(); markShoutoutNotificationsRead(); }
+  }, [playerId, profile?.id]);
 
   return (
     <View style={st.screen}>

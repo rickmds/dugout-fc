@@ -89,8 +89,23 @@ export default function GuestRequestScreen() {
   const coachProfileIds = useRef<string[]>([]);
 
   useEffect(() => {
-    if (requestId && profile) load();
+    if (requestId && profile) { load(); markGuestRequestNotificationsRead(); }
   }, [requestId, profile?.id]);
+
+  // Same stuck-badge bug as messages/announcements/events — this screen is
+  // the real destination for a guest_request push, but nothing cleared
+  // that notification row unless the user separately opened the
+  // Notification Centre and tapped it there.
+  async function markGuestRequestNotificationsRead() {
+    if (!profile || !requestId) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .eq('type', 'guest_request')
+      .filter('data->>request_id', 'eq', requestId);
+  }
 
   async function load() {
     if (!requestId || !profile) return;

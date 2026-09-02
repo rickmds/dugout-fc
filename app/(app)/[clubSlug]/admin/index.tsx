@@ -373,7 +373,21 @@ export default function AdminPanel() {
     firstLoad.current = false;
   }, [team?.id]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load, teamLoading]));
+  // Same stuck-badge bug as messages/announcements/events — this screen is
+  // the real destination for these admin-routed pushes, but nothing
+  // cleared those notification rows unless the user separately opened the
+  // Notification Centre and tapped them there.
+  const markAdminNotificationsRead = useCallback(async () => {
+    if (!profile) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .in('type', ['invite_accepted', 'evaluation_published', 'waiver_reminder', 'guest_reminder']);
+  }, [profile?.id]);
+
+  useFocusEffect(useCallback(() => { load(); markAdminNotificationsRead(); }, [load, teamLoading, markAdminNotificationsRead]));
 
   const slug = clubSlug ?? '';
   // Keyed off team.myRole (properly scoped to the currently-active team's own
