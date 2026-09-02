@@ -69,6 +69,13 @@ export async function GET(
     'X-PUBLISHED-TTL:PT1H',
   ];
 
+  // REQUIRED by RFC 5545 on every VEVENT (section 3.6.1) — Google/Apple
+  // Calendar infer it and silently tolerate its absence, but Skylight's
+  // parser is stricter and rejected the whole feed without it. One
+  // generation timestamp shared by every event, per spec (it marks when
+  // this calendar instance was produced, not any event's own date).
+  const dtStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
   for (const ev of events ?? []) {
     const d = ev.event_date.replace(/-/g, '');
     const hasTime = Boolean(ev.event_time);
@@ -82,6 +89,7 @@ export async function GET(
 
     lines.push('BEGIN:VEVENT');
     lines.push(`UID:${ev.id}@pulse-fc.app`);
+    lines.push(`DTSTAMP:${dtStamp}`);
     lines.push(hasTime ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`);
     lines.push(hasTime ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`);
     lines.push(`SUMMARY:${esc(ev.title)}`);
