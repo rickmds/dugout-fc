@@ -1496,10 +1496,10 @@ export default function EventDetailScreen() {
             )}
             {event.tournament_id && event.tournament_name && (
               <TouchableOpacity
-                style={[styles.homeAwayBadge, { backgroundColor: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)' }]}
+                style={[styles.homeAwayBadge, { backgroundColor: 'rgba(234,179,8,0.12)', borderColor: 'rgba(234,179,8,0.3)', flexShrink: 1, maxWidth: '100%' }]}
                 onPress={() => router.push(`/(app)/${clubSlug}/tournament/${event.tournament_id}` as any)}
               >
-                <Text style={[styles.homeAwayText, { color: '#EAB308' }]} numberOfLines={1}>
+                <Text style={[styles.homeAwayText, { color: '#EAB308' }]} numberOfLines={1} ellipsizeMode="tail">
                   🏆 {event.tournament_name}{event.round_label ? ` · ${event.round_label}` : ''}
                 </Text>
               </TouchableOpacity>
@@ -2970,7 +2970,7 @@ const styles = StyleSheet.create({
 
   scroll: { padding: 20 },
 
-  typeBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  typeBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 },
   homeAwayBadge: {
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
     borderWidth: 1,
