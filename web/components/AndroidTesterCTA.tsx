@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-export const GOOGLE_GROUP_URL = 'https://groups.google.com/g/pulse-fc-android';
+export const GOOGLE_GROUP_URL = 'https://groups.google.com/g/pulse-fc-android/about';
 export const PLAY_TESTING_URL = 'https://play.google.com/apps/testing/app.pulsefc.mobile';
 
 function AndroidIcon() {
