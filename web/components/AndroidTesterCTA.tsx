@@ -90,7 +90,7 @@ export default function AndroidTesterCTA({ size = 'hero' }: { size?: 'hero' | 'f
         style={isHero ? { padding: '9px 14px', fontSize: 13 } : { padding: '6px 11px', fontSize: 12 }}
       >
         <AndroidIcon />
-        Try it on Android
+        Android Beta
       </button>
 
       <AndroidTesterModal open={open} onClose={() => setOpen(false)} />
