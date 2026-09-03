@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import { AndroidTesterModal } from '@/components/AndroidTesterCTA';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -633,6 +634,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function AppStoreButton({ accent, accentText }: { accent: string; accentText: string }) {
   const [isAndroid, setIsAndroid] = useState(false);
+  const [androidModalOpen, setAndroidModalOpen] = useState(false);
   useEffect(() => {
     setIsAndroid(/android/i.test(navigator.userAgent));
   }, []);
@@ -644,25 +646,27 @@ function AppStoreButton({ accent, accentText }: { accent: string; accentText: st
     textDecoration: 'none', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
     transition: 'filter 0.15s',
     width: '100%', boxSizing: 'border-box',
+    border: 'none', cursor: 'pointer',
   } as const;
 
   if (isAndroid) {
-    // Native Android app isn't on the Play Store yet — the installable PWA
-    // is the bridge until it is (see app.pulse-fc.app).
+    // Native Android app is on Google Play's closed-testing track — route
+    // straight to the beta join flow instead of the app.pulse-fc.app PWA.
     return (
       <>
-        <a href="https://app.pulse-fc.app" className="app-store-btn" style={btnStyle}>
+        <button onClick={() => setAndroidModalOpen(true)} className="app-store-btn" style={btnStyle}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill={accentText}>
             <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/>
           </svg>
           <div style={{ textAlign: 'left' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.85, lineHeight: 1 }}>Add Pulse FC</div>
-            <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1.3 }}>to Home Screen</div>
+            <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.85, lineHeight: 1 }}>Get Pulse FC</div>
+            <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1.3 }}>Android Beta</div>
           </div>
-        </a>
+        </button>
         <p style={{ fontSize: 11.5, color: '#6B7280', textAlign: 'center', margin: '10px 0 0', lineHeight: 1.5 }}>
-          Installs like an app — no Play Store needed yet.
+          Free — takes under a minute to join.
         </p>
+        <AndroidTesterModal open={androidModalOpen} onClose={() => setAndroidModalOpen(false)} accent={accent} />
       </>
     );
   }
