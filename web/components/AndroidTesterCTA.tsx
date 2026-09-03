@@ -5,10 +5,10 @@ import { useEffect, useState } from 'react';
 export const GOOGLE_GROUP_URL = 'https://groups.google.com/g/pulse-fc-android/about';
 export const PLAY_TESTING_URL = 'https://play.google.com/apps/testing/app.pulsefc.mobile';
 
-function AndroidIcon() {
+function PlayIcon({ size }: { size: number }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.6 9.48l1.84-3.18a.4.4 0 00-.69-.4l-1.86 3.22a11.5 11.5 0 00-9.78 0L5.25 5.9a.4.4 0 00-.69.4L6.4 9.48A10.5 10.5 0 001 18h22a10.5 10.5 0 00-5.4-8.52zM7 15.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z" fill="currentColor" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 3.3v17.4a1 1 0 0 0 1.53.85l14.1-8.7a1 1 0 0 0 0-1.7L6.53 2.45A1 1 0 0 0 5 3.3z" fill="currentColor" />
     </svg>
   );
 }
@@ -86,11 +86,20 @@ export default function AndroidTesterCTA({ size = 'hero' }: { size?: 'hero' | 'f
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-xl border border-[#2e2e2e] text-[#ddd] hover:border-[#3e3e3e] hover:text-white transition-all font-semibold"
-        style={isHero ? { padding: '9px 14px', fontSize: 13 } : { padding: '6px 11px', fontSize: 12 }}
+        className="relative inline-flex items-center bg-[#22c55e] text-black hover:bg-[#1db954] transition-colors"
+        style={{
+          gap: isHero ? 8 : 6,
+          borderRadius: isHero ? 10 : 8,
+          padding: isHero ? '0 14px 0 11px' : '0 10px 0 8px',
+          height: isHero ? 36 : 28,
+          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+        }}
       >
-        <AndroidIcon />
-        Android Beta
+        <PlayIcon size={isHero ? 17 : 13} />
+        <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
+          <div style={{ fontSize: isHero ? 8.5 : 7.5, fontWeight: 700, opacity: 0.7, letterSpacing: '0.05em' }}>GET IT ON</div>
+          <div style={{ fontSize: isHero ? 13.5 : 11, fontWeight: 900, letterSpacing: '-0.2px' }}>Android Beta</div>
+        </div>
       </button>
 
       <AndroidTesterModal open={open} onClose={() => setOpen(false)} />
