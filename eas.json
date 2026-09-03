@@ -35,7 +35,7 @@
       },
       "android": {
         "serviceAccountKeyPath": "./play-store-key.json",
-        "track": "production"
+        "track": "alpha"
       }
     }
   }

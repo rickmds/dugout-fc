@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { Users, Plus, ChevronRight } from 'lucide-react';
+import { Users, Plus, ChevronRight, RotateCcw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import PlayerPanel, { type PlayerForPanel } from '@/components/dashboard/PlayerPanel';
@@ -27,6 +27,8 @@ export default function TeamRosterPage() {
   const [pendingCoaches, setPendingCoaches] = useState<PendingCoach[]>([]);
   const [loading, setLoading] = useState(true);
   const [panel,   setPanel]   = useState<Player | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!teamId) return;
@@ -66,6 +68,36 @@ export default function TeamRosterPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
+  const pendingCount = players.filter(p => {
+    const playerInvites = invites.filter(i => i.player_id === p.id);
+    return playerInvites.length > 0 && !playerInvites.some(i => i.accepted_at);
+  }).length;
+
+  async function resendAllPending() {
+    setResending(true); setResendMsg(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch('/api/invites/bulk-resend', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ team_id: teamId }),
+    });
+    setResending(false);
+    if (!res.ok) {
+      setResendMsg('Failed to resend invites — try again.');
+      return;
+    }
+    const { sent, failed } = await res.json();
+    setResendMsg(
+      failed.length
+        ? `Resent ${sent.length}, ${failed.length} failed.`
+        : `Resent ${sent.length} pending invite${sent.length !== 1 ? 's' : ''}.`
+    );
+    setTimeout(() => setResendMsg(null), 4000);
+  }
+
   const inviteStatus = (p: Player) => {
     const playerInvites = invites.filter(i => i.player_id === p.id);
     if (!playerInvites.length) return null;
@@ -81,12 +113,25 @@ export default function TeamRosterPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div style={{ fontSize: '13px', color: '#64748B' }}>{players.length} player{players.length !== 1 ? 's' : ''}</div>
-        <button
-          onClick={() => router.push(`/dashboard/roster?team=${teamId}`)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
-          <Plus size={14} /> Add Player
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ fontSize: '13px', color: '#64748B' }}>{players.length} player{players.length !== 1 ? 's' : ''}</div>
+          {resendMsg && <div style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>{resendMsg}</div>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {pendingCount > 0 && (
+            <button
+              onClick={resendAllPending}
+              disabled={resending}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', background: '#fff', color: '#334155', border: '1px solid #E2E8F0', cursor: resending ? 'default' : 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit', opacity: resending ? 0.6 : 1 }}>
+              <RotateCcw size={14} /> {resending ? 'Sending…' : `Resend ${pendingCount} pending invite${pendingCount !== 1 ? 's' : ''}`}
+            </button>
+          )}
+          <button
+            onClick={() => router.push(`/dashboard/roster?team=${teamId}`)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', background: primary, color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700', fontFamily: 'inherit' }}>
+            <Plus size={14} /> Add Player
+          </button>
+        </div>
       </div>
 
       {/* Coaching staff */}
