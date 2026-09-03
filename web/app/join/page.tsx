@@ -655,8 +655,8 @@ function AppStoreButton({ accent, accentText }: { accent: string; accentText: st
     return (
       <>
         <button onClick={() => setAndroidModalOpen(true)} className="app-store-btn" style={btnStyle}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill={accentText}>
-            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill={accentText}>
+            <path d="M5 3.3v17.4a1 1 0 0 0 1.53.85l14.1-8.7a1 1 0 0 0 0-1.7L6.53 2.45A1 1 0 0 0 5 3.3z"/>
           </svg>
           <div style={{ textAlign: 'left' }}>
             <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.85, lineHeight: 1 }}>Get Pulse FC</div>
