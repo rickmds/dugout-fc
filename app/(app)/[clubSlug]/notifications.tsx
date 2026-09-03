@@ -262,15 +262,24 @@ export default function NotificationsScreen() {
       await supabase.from('notifications').update({ read: true }).eq('id', n.id);
     }
     const d = n.data;
-    const slug = (d?.club_slug as string) ?? clubSlug;
 
     // Switch the active team to match the notification before navigating —
     // otherwise the destination screen renders with whatever team was
     // active beforehand, which on a multi-team account can silently show
     // the wrong roster/chat/schedule even though the URL is correct.
     const targetTeamId = await resolveNotificationTeamId(d);
+    const targetTeam = targetTeamId ? allTeams.find((t) => t.id === targetTeamId) : undefined;
+    // Prefer the resolved team's own club slug over the notification
+    // payload's club_slug (which some types don't carry) and never fall
+    // back to the CURRENT route's clubSlug — for a cross-club notification
+    // that's guaranteed to point at the wrong club.
+    const slug = targetTeam?.club?.slug ?? (d?.club_slug as string) ?? clubSlug;
     if (targetTeamId && targetTeamId !== team?.id && allTeams.some((t) => t.id === targetTeamId)) {
-      await selectTeam(targetTeamId);
+      // Not awaited on purpose — see app/_layout.tsx's identical notification
+      // handler for why: awaiting here yields a tick where ClubSlugGuard on
+      // the still-mounted current screen sees a stale route/team mismatch
+      // and reverts the switch before we ever navigate below.
+      selectTeam(targetTeamId);
     }
 
     switch (n.type) {

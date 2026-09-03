@@ -105,7 +105,15 @@ export default function TournamentDetailScreen() {
     // before running the roster/RSVP queries below, same fix already
     // applied to event/[eventId].tsx for the identical class of bug.
     if (tRow.team_id !== team?.id && allTeams.some((t) => t.id === tRow.team_id)) {
-      await selectTeam(tRow.team_id);
+      const tournamentTeam = allTeams.find((t) => t.id === tRow.team_id);
+      // Not awaited — see app/_layout.tsx's notification handler for why.
+      selectTeam(tRow.team_id);
+      // Reconcile the route too if the tournament's team is in a different
+      // club, same fix as event/[eventId].tsx — otherwise ClubSlugGuard
+      // reverts this switch with nothing to ever converge it.
+      if (tournamentTeam?.club?.slug && tournamentTeam.club.slug !== clubSlug) {
+        router.replace(`/(app)/${tournamentTeam.club.slug}/tournament/${tournamentId}` as any);
+      }
       return;
     }
 

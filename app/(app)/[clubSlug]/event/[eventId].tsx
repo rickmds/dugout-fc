@@ -452,7 +452,18 @@ export default function EventDetailScreen() {
     // finishes and clears loading.
     const eventTeamId = eventRow?.team_id ?? null;
     if (eventTeamId && eventTeamId !== team.id && allTeams.some((t) => t.id === eventTeamId)) {
-      await selectTeam(eventTeamId);
+      const eventTeam = allTeams.find((t) => t.id === eventTeamId);
+      // Not awaited — see app/_layout.tsx's notification handler for why.
+      selectTeam(eventTeamId);
+      // If the event's team is in a DIFFERENT club than the current route,
+      // ClubSlugGuard will otherwise see a route/team mismatch and revert
+      // this switch (no navigation here previously meant nothing ever
+      // reconciled clubSlug, which could loop indefinitely rather than
+      // just flash once) — replace to the correct club's URL for this same
+      // event so the switch and the route land together.
+      if (eventTeam?.club?.slug && eventTeam.club.slug !== clubSlug) {
+        router.replace(`/(app)/${eventTeam.club.slug}/event/${eventId}` as any);
+      }
       return;
     }
 

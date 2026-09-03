@@ -410,10 +410,14 @@ export default function HomeScreen() {
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const hasMultipleTeams = allTeams.length > 1;
 
-  async function handleSelectTeam(teamId: string) {
+  function handleSelectTeam(teamId: string) {
     setTeamPickerOpen(false);
     const newTeam = allTeams.find((t) => t.id === teamId);
-    await selectTeam(teamId);
+    // Not awaited — firing the navigation in the same tick as selectTeam
+    // keeps ClubSlugGuard from ever observing a stale route/team mismatch
+    // and reverting the switch before we navigate (see app/_layout.tsx's
+    // notification handler for the full explanation of this pattern).
+    selectTeam(teamId);
     if (newTeam?.club?.slug && newTeam.club.slug !== slug) {
       router.replace(`/(app)/${newTeam.club.slug}/(tabs)` as never);
     }

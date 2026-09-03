@@ -93,7 +93,14 @@ function AppShell() {
       // the wrong roster/chat/schedule even though the URL is correct.
       const targetTeamId = await resolveNotificationTeamId(data);
       if (targetTeamId && targetTeamId !== team?.id && allTeams.some((t) => t.id === targetTeamId)) {
-        await selectTeam(targetTeamId);
+        // Not awaited on purpose — this yields control back to React between
+        // the team switch and the navigation below, giving ClubSlugGuard on
+        // the still-mounted previous screen a chance to see a route/team
+        // mismatch and "correct" it back before we ever navigate, which then
+        // flips forward again once we do. Firing it (its own setState is
+        // synchronous; only the AsyncStorage write trails behind) keeps both
+        // changes landing in the same tick.
+        selectTeam(targetTeamId);
       }
 
       switch (data?.type) {
