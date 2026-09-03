@@ -949,7 +949,7 @@ function WaiverModal({ club, profile: _profile, primary, wvTemplate, setWvTempla
         <div style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9' }}>
           <div>
             <h2 style={{ fontSize: '17px', fontWeight: '800', color: '#0F172A', margin: 0 }}>✍️ Create a consent / waiver</h2>
-            <p style={{ fontSize: '13px', color: '#64748B', margin: '3px 0 0' }}>AI writes it for you — saves to your Waivers library and attaches to this form</p>
+            <p style={{ fontSize: '13px', color: '#64748B', margin: '3px 0 0' }}>Write it yourself or have AI draft it — saves to your Waivers library and attaches to this form</p>
           </div>
           <button onClick={onClose} style={{ background: '#F1F5F9', border: 'none', borderRadius: '8px', padding: '8px', cursor: 'pointer', display: 'flex', color: '#64748B' }}><X size={16} /></button>
         </div>
@@ -977,9 +977,9 @@ function WaiverModal({ club, profile: _profile, primary, wvTemplate, setWvTempla
             {wvGenerating ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Writing waiver…</> : wvBody ? <><RefreshCw size={14} /> Rewrite</> : <><Sparkles size={14} /> Generate with AI</>}
           </button>
           {wvGenError && <p style={{ fontSize: '12px', color: '#DC2626', margin: '-8px 0 0' }}>{wvGenError}</p>}
-          {wvBody && (
-            <>
-              <div>
+          <div>
+            {wvBody ? (
+              <>
                 <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
                   {(['preview', 'edit'] as const).map((m) => (
                     <button key={m} onClick={() => setWvMode(m)} style={{ padding: '5px 12px', borderRadius: '6px', border: 'none', background: wvMode === m ? '#0F172A' : '#F1F5F9', color: wvMode === m ? '#fff' : '#64748B', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>{m === 'preview' ? '👁 Preview' : '✏️ Edit text'}</button>
@@ -1000,14 +1000,20 @@ function WaiverModal({ club, profile: _profile, primary, wvTemplate, setWvTempla
                   <textarea value={wvBody} onChange={(e) => setWvBody(e.target.value)} rows={8}
                     style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '12px 14px', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
                 )}
-              </div>
-              <div>
-                <label style={labelSt}>Waiver title (shown to parents)</label>
-                <input value={wvTitle} onChange={(e) => setWvTitle(e.target.value)} placeholder="e.g. Season Participation Waiver 2025/26"
-                  style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '10px 13px', fontSize: '14px', fontWeight: '600', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
-              </div>
-            </>
-          )}
+              </>
+            ) : (
+              <>
+                <label style={labelSt}>Or write it yourself</label>
+                <textarea value={wvBody} onChange={(e) => setWvBody(e.target.value)} rows={8} placeholder="Type the waiver text here…"
+                  style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '12px 14px', fontSize: '13px', fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }} />
+              </>
+            )}
+          </div>
+          <div>
+            <label style={labelSt}>Waiver title (shown to parents)</label>
+            <input value={wvTitle} onChange={(e) => setWvTitle(e.target.value)} placeholder="e.g. Season Participation Waiver 2025/26"
+              style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '10px', padding: '10px 13px', fontSize: '14px', fontWeight: '600', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button onClick={onClose} style={{ padding: '12px 18px', background: '#F1F5F9', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
             <button onClick={onSaveAndAttach} disabled={!wvBody.trim() || !wvTitle.trim() || wvSaving}

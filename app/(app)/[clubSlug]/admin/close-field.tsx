@@ -253,6 +253,14 @@ export default function CloseFieldScreen() {
                 <Ionicons name="sparkles" size={16} color="#fff" />
                 <Text style={st.primaryBtnText}>Write notification with AI</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={st.ghostBtn}
+                onPress={() => { setMessage(''); setStep('preview'); }}
+                disabled={!canProceed}
+              >
+                <Text style={[st.ghostBtnText, { color: canProceed ? primaryColor : PULSE_COLORS.ui.muted }]}>Write it myself</Text>
+              </TouchableOpacity>
             </>
           )}
 
@@ -282,7 +290,9 @@ export default function CloseFieldScreen() {
                   value={message}
                   onChangeText={setMessage}
                   multiline
+                  placeholder="What should parents and coaches know?"
                   placeholderTextColor={PULSE_COLORS.ui.muted}
+                  autoFocus={!message}
                 />
               </View>
               <Text style={st.hint}>Edit the message before sending if needed</Text>

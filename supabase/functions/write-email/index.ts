@@ -45,9 +45,9 @@ Write a complete email:
 1. Subject line — concise, max 10 words, no fluff
 2. Body that:
    - Opens with "Hi parents,"
-   - Covers ALL bullet points clearly and in order
+   - Covers ALL bullet points clearly and in order, no filler phrases or padding just to sound polished
    - Matches the specified tone throughout
-   - Closes warmly and naturally (e.g. "See you out there!" or "Thanks for your support.")
+   - Closes in a way that actually fits the tone — a plain "Thanks." is correct for professional/urgent; only use a warmer close ("See you out there!") for friendly/encouraging
    - Does NOT include a signature block — the coach adds that manually
 
 Return ONLY valid JSON (no markdown, no code fences):

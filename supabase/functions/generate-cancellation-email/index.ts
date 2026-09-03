@@ -37,9 +37,9 @@ Event details:
 - Date: ${event_date}${event_time ? `, ${event_time}` : ''}
 - Reason the event is back on: ${reason}
 
-Write a short, upbeat, professional email to parents letting them know the event is reinstated.
-- Tone: positive, enthusiastic, clear. Start with the good news.
-- Keep it brief — 2–3 short paragraphs max.
+Write a short, direct email to parents letting them know the event is reinstated.
+- Tone: clear and direct. Start with the fact — the event is back on.
+- Keep it brief — 2-3 sentences. No filler phrases, no forced enthusiasm.
 - Do NOT include a sign-off name (the app adds it automatically).
 - Return ONLY valid JSON with two fields: "subject" (string) and "body" (string, plain text with \\n for line breaks).`
       : `You are writing a cancellation email on behalf of a youth soccer coach.
@@ -51,10 +51,10 @@ Event details:
 - Date: ${event_date}${event_time ? `, ${event_time}` : ''}
 - Reason given by coach: ${reason}
 
-Write a short, professional, friendly cancellation email to the parents.
+Write a short, direct cancellation email to the parents.
 - Subject line first, then the email body.
-- Tone: warm, apologetic but clear.
-- Keep it brief — 3 short paragraphs max.
+- Tone: clear and direct, not overly formal.
+- Keep it brief — 2-3 sentences. Be direct and informative. No filler phrases like "We understand this may be disappointing" or "We apologize for any inconvenience."
 - Do NOT include a sign-off name (the app adds it automatically).
 - Return ONLY valid JSON with two fields: "subject" (string) and "body" (string, plain text with \\n for line breaks).`;
 

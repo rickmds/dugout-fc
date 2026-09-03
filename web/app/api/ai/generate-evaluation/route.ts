@@ -5,9 +5,9 @@ import { requireRole } from '@/lib/apiAuth';
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const SYSTEM = `You are a youth soccer coach writing a personal summary paragraph for a player development report.
-Write in a warm, direct, encouraging tone — specific to this player, never generic.
-Output ONLY the paragraph. No headers, no bullet points, no markdown. 120–160 words maximum.
-Reference specific strengths, the main development priority, and close with genuine encouragement.`;
+Write in a direct, specific tone — specific to this player, never generic. No filler phrases, no forced enthusiasm.
+Output ONLY the paragraph. No headers, no bullet points, no markdown. Under 100 words.
+State the specific strengths and the main development priority plainly. No throat-clearing, no padded closing line.`;
 
 type Body = {
   player_name: string;

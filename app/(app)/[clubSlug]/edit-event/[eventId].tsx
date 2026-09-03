@@ -1239,7 +1239,7 @@ export default function EditEventScreen() {
                     textAlignVertical="top"
                     autoFocus
                   />
-                  <Text style={styles.cmHint}>AI will draft a short cancellation email to parents. You'll review and can edit it before anything sends.</Text>
+                  <Text style={styles.cmHint}>AI can draft a short cancellation email, or write your own. Either way you'll review it before anything sends.</Text>
 
                   <TouchableOpacity
                     style={[styles.cmPrimaryBtn, { backgroundColor: '#F59E0B', marginTop: 24 }]}
@@ -1254,6 +1254,14 @@ export default function EditEventScreen() {
                         </>
                     }
                   </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.cmGhostBtn}
+                    onPress={() => { setCancelSubject(''); setCancelBody(''); setCancelStep('preview'); }}
+                    disabled={cancelGenerating}
+                  >
+                    <Text style={[styles.cmGhostBtnText, { color: primaryColor }]}>Write it myself</Text>
+                  </TouchableOpacity>
                 </>
               ) : (
                 <>
@@ -1262,7 +1270,9 @@ export default function EditEventScreen() {
                     style={styles.cmInput}
                     value={cancelSubject}
                     onChangeText={setCancelSubject}
+                    placeholder="e.g. Practice cancelled today"
                     placeholderTextColor={PULSE_COLORS.ui.muted}
+                    autoFocus={!cancelSubject}
                   />
 
                   <Text style={[styles.cmLabel, { marginTop: 20 }]}>Email body</Text>
@@ -1272,6 +1282,7 @@ export default function EditEventScreen() {
                     onChangeText={setCancelBody}
                     multiline
                     textAlignVertical="top"
+                    placeholder="What should parents know?"
                     placeholderTextColor={PULSE_COLORS.ui.muted}
                   />
                   <Text style={styles.cmHint}>Edit before sending. Parents get this by push notification and email.</Text>

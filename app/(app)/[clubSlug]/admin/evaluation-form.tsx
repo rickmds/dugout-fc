@@ -738,21 +738,23 @@ export default function EvaluationFormScreen() {
           </TouchableOpacity>
 
           {/* ── COACH SUMMARY ────────────────────────── */}
-          {form.final_text ? (
-            <SectionCard title="COACH'S SUMMARY" color="#EC4899" icon="create-outline">
+          <SectionCard title="COACH'S SUMMARY" color="#EC4899" icon="create-outline">
+            {form.ai_draft ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -4 }}>
                 <Ionicons name="sparkles" size={10} color="#A855F7" />
                 <Text style={{ fontSize: 10, fontWeight: '700', color: '#A855F7' }}>AI drafted · edit before submitting</Text>
               </View>
-              <TextInput
-                style={[inp.base, { minHeight: 140 }]}
-                multiline
-                value={form.final_text}
-                onChangeText={v => setForm(prev => ({ ...prev, final_text: v }))}
-                textAlignVertical="top"
-              />
-            </SectionCard>
-          ) : null}
+            ) : null}
+            <TextInput
+              style={[inp.base, { minHeight: 140 }]}
+              multiline
+              value={form.final_text}
+              onChangeText={v => setForm(prev => ({ ...prev, final_text: v }))}
+              placeholder="Write your summary, or use Generate Coach Summary above"
+              placeholderTextColor={PULSE_COLORS.ui.muted}
+              textAlignVertical="top"
+            />
+          </SectionCard>
 
           {/* ── ACTIONS ──────────────────────────────── */}
           <View style={st.actions}>
