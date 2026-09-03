@@ -253,9 +253,12 @@ export default function ScheduleScreen() {
     if (!team) return;
     setLoading(true);
 
-    // Multi-team: parents with >1 team always merged; coaches can toggle
-    const isMultiTeam = !isCoach && allTeams.length > 1;
-    const teamIds = (isMultiTeam || showAllTeams) ? allTeams.map((t) => t.id) : [team.id];
+    // Everyone — coach or parent — defaults to just their active team;
+    // the "All Teams" toggle below is how anyone with more than one team
+    // opts into a merged view. Previously parents with >1 team (e.g. a
+    // guardian whose kid plays for two clubs) were always force-merged
+    // with no way to see just one team's schedule at a time.
+    const teamIds = showAllTeams ? allTeams.map((t) => t.id) : [team.id];
 
     const [eventsRes, playersRes, countRes, tournamentsRes] = await Promise.all([
       supabase.from('events')
@@ -535,7 +538,7 @@ export default function ScheduleScreen() {
     () => new Map(allTeams.map((t) => [t.id, t.name])),
     [allTeams]
   );
-  const isMultiView = showAllTeams || (!isCoach && allTeams.length > 1);
+  const isMultiView = showAllTeams;
 
   const tournamentsById = useMemo(
     () => new Map(tournaments.map((t) => [t.id, t])),
@@ -856,8 +859,8 @@ export default function ScheduleScreen() {
         ) : undefined}
       />
 
-      {/* All-teams toggle — coaches with multiple teams */}
-      {isCoach && allTeams.length > 1 && (
+      {/* All-teams toggle — anyone (coach or parent) with more than one team */}
+      {allTeams.length > 1 && (
         <View style={styles.allTeamsBar}>
           <TouchableOpacity
             style={[styles.allTeamsBtn, !showAllTeams && [styles.allTeamsBtnActive, { backgroundColor: primaryColor }]]}
