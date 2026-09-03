@@ -31,6 +31,7 @@ import ScheduleSkeleton from '../../../../components/schedule/ScheduleSkeleton';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
 import { fetchDriveTimes } from '../../../../lib/drivetime';
 import { getGameResult, RESULT_COLORS, formatTournamentDateRange, formatGameCountdown } from '../../../../lib/tournaments';
+import { getCalendarSyncUrls } from '../../../../lib/calendarSync';
 
 type EventType = 'game' | 'training' | 'other';
 type Tab = 'upcoming' | 'past' | 'calendar';
@@ -805,9 +806,7 @@ export default function ScheduleScreen() {
 
   function handleSyncCalendar() {
     if (!team) return;
-    const base = `${process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app'}/api/calendar/${team.id}`;
-    const webcal = base.replace('https://', 'webcal://');
-    const google = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+    const { base, webcal, google } = getCalendarSyncUrls(team.id);
     Alert.alert(
       'Sync to Calendar',
       `Add ${team.name}'s schedule to your calendar. Updates automatically when events change.`,

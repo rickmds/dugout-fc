@@ -33,6 +33,7 @@ import ImageEditor from '../../../components/ui/ImageEditor';
 import { useMapApp } from '../../../hooks/useMapApp';
 import { formatPhone } from '../../../lib/formatPhone';
 import { startViewAs } from '../../../lib/viewAs';
+import { getCalendarSyncUrls } from '../../../lib/calendarSync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -467,9 +468,7 @@ export default function SettingsScreen() {
   }
 
   function handleSyncCalendar(teamId: string, teamName: string) {
-    const base = `https://pulse-fc.app/api/calendar/${teamId}`;
-    const webcal = base.replace('https://', 'webcal://');
-    const google = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+    const { base, webcal, google } = getCalendarSyncUrls(teamId);
     Alert.alert(
       `Sync ${teamName}`,
       'Add this team\'s schedule to your calendar. It updates automatically when your coach makes changes.',

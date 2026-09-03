@@ -5,6 +5,43 @@ function esc(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 }
 
+// RFC 5545 §3.1 requires content lines be folded at 75 octets (not
+// characters) — a continuation line starts with a single space, which
+// itself counts toward that line's own 75-octet limit. Stricter ICS
+// parsers reject or truncate unfolded long lines (e.g. a full street
+// address in LOCATION), the same class of strictness that required the
+// DTSTAMP fix above. Iterates by Unicode code point so a multi-byte
+// UTF-8 character never gets split across a fold boundary.
+function foldLine(line: string): string {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+
+  const out: string[] = [];
+  let current = '';
+  let currentBytes = 0;
+  for (const ch of Array.from(line)) {
+    const chBytes = enc.encode(ch).length;
+    if (currentBytes + chBytes > 75) {
+      out.push(current);
+      current = ' ' + ch;
+      currentBytes = 1 + chBytes;
+    } else {
+      current += ch;
+      currentBytes += chBytes;
+    }
+  }
+  if (current) out.push(current);
+  return out.join('\r\n');
+}
+
+// DTEND;VALUE=DATE is the EXCLUSIVE end date per RFC 5545 — DTEND equal to
+// DTSTART describes a zero-length event, which several ICS validators
+// reject outright for an all-day event.
+function addDaysToIcsDate(d: string, days: number): string {
+  const y = Number(d.slice(0, 4)), m = Number(d.slice(4, 6)), day = Number(d.slice(6, 8));
+  return new Date(Date.UTC(y, m - 1, day + days)).toISOString().slice(0, 10).replace(/-/g, '');
+}
+
 // A bare "DTSTART:20260901T180000" (no Z, no TZID) is technically "floating"
 // time per RFC 5545 and should render as 6pm in the VIEWER's own timezone —
 // but Google Calendar's URL-subscription reader (and some other clients)
@@ -82,7 +119,7 @@ export async function GET(
     const durMins = ev.duration_minutes ?? (ev.type === 'game' ? 90 : 60);
 
     const dtStart = hasTime ? localToUtcIcs(ev.event_date, ev.event_time!, timeZone) : d;
-    const dtEnd = hasTime ? localToUtcIcs(ev.event_date, ev.event_time!, timeZone, durMins) : d;
+    const dtEnd = hasTime ? localToUtcIcs(ev.event_date, ev.event_time!, timeZone, durMins) : addDaysToIcsDate(d, 1);
 
     const loc = ev.address || ev.location || '';
     const typeLabel = ev.type === 'game' ? 'Game' : ev.type === 'training' ? 'Training' : 'Event';
@@ -100,7 +137,7 @@ export async function GET(
 
   lines.push('END:VCALENDAR');
 
-  return new NextResponse(lines.join('\r\n'), {
+  return new NextResponse(lines.map(foldLine).join('\r\n'), {
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
