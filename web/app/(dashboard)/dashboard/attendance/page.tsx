@@ -52,8 +52,11 @@ export default function AttendancePage() {
     const teamIds = teams.map(t => t.id);
 
     const [eventsRes, playersRes] = await Promise.all([
+      // A session cancelled before it started never happened, so it's
+      // excluded here; one cancelled after start still counts.
       supabase.from('events').select('id,team_id').in('team_id', teamIds)
-        .gte('event_date', since).lte('event_date', today),
+        .gte('event_date', since).lte('event_date', today)
+        .not('cancelled_before_start', 'eq', true),
       supabase.from('players').select('id,team_id').in('team_id', teamIds),
     ]);
 

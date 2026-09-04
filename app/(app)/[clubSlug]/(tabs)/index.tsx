@@ -878,10 +878,13 @@ export default function HomeScreen() {
       startOfMonth.setHours(0, 0, 0, 0);
       const startStr = toLocalDateStr(startOfMonth);
       const [{ data: gameEvts }, { data: trainingEvts }] = await Promise.all([
+        // A session cancelled before it started never happened — excluded.
+        // One cancelled after start (kids may have already shown up) still
+        // counts, so this isn't a blanket "no cancelled events" filter.
         supabase.from('events').select('id').eq('team_id', team.id)
-          .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).is('cancelled_at', null),
+          .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'eq', true),
         supabase.from('events').select('id').eq('team_id', team.id)
-          .in('type', ['training', 'other']).gte('event_date', startStr).lte('event_date', today).is('cancelled_at', null),
+          .in('type', ['training', 'other']).gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'eq', true),
       ]);
       const gameIds = (gameEvts ?? []).map((e: { id: string }) => e.id);
       const trainingIds = (trainingEvts ?? []).map((e: { id: string }) => e.id);

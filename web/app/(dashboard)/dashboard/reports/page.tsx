@@ -81,7 +81,9 @@ export default function ReportsPage() {
 
     const teamIds = teams.map((t) => t.id);
 
-    let evQ = supabase.from('events').select('id, team_id, type').in('team_id', teamIds);
+    // A session cancelled before it started never happened, so it's
+    // excluded here; one cancelled after start still counts.
+    let evQ = supabase.from('events').select('id, team_id, type').in('team_id', teamIds).not('cancelled_before_start', 'eq', true);
     if (dateFrom) evQ = evQ.gte('event_date', dateFrom);
     if (dateTo)   evQ = evQ.lte('event_date', dateTo);
     const { data: events } = await evQ.limit(2000);
@@ -251,7 +253,8 @@ export default function ReportsPage() {
     setHistoryLoading(true);
     const { data: evData } = await supabase
       .from('events').select('id, title, type, event_date')
-      .eq('team_id', p.team_id).order('event_date', { ascending: false }).limit(20);
+      .eq('team_id', p.team_id).not('cancelled_before_start', 'eq', true)
+      .order('event_date', { ascending: false }).limit(20);
     const evIds = (evData ?? []).map(e => e.id);
     const [rsvpData, attData] = evIds.length ? await Promise.all([
       supabase.from('event_rsvps').select('event_id, status').eq('player_id', p.id).in('event_id', evIds),

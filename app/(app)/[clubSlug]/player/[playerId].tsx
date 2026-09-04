@@ -329,6 +329,12 @@ export default function PlayerProfileScreen() {
       .select('id, title, type, event_date')
       .eq('team_id', team.id)
       .lte('event_date', today)
+      // A session cancelled before it ever started isn't real attendance
+      // history — it never happened. One cancelled after start (e.g. rained
+      // out mid-session) still counts, since kids may have already shown
+      // up; cancelled_before_start is null (safe — behaves as "counts") for
+      // anything never cancelled at all.
+      .not('cancelled_before_start', 'eq', true)
       .order('event_date', { ascending: false })
       .limit(12);
 
