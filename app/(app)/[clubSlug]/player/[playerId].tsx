@@ -701,7 +701,17 @@ export default function PlayerProfileScreen() {
       }).select('id').single();
       if (error) {
         setSavingInvite(false);
-        Alert.alert('Error', 'Could not save guardian. Please try again.');
+        // A duplicate invite for this exact player+email is blocked at the
+        // database level — most often means someone else (a coach, or
+        // another guardian) already invited this same email moments
+        // earlier. "Please try again" would be actively misleading here,
+        // since retrying can never succeed.
+        Alert.alert(
+          'Error',
+          error.code === '23505'
+            ? 'This person has already been invited to this player — check the guardians list below.'
+            : 'Could not save guardian. Please try again.'
+        );
         return;
       }
       if (inviteData?.id) {
