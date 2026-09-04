@@ -99,7 +99,7 @@ export default function LoginScreen() {
     // to treat the same as success rather than leaving the user stuck.
     const TIMEOUT = Symbol('timeout');
     const result = await Promise.race([
-      supabase.auth.resetPasswordForEmail(email, { redirectTo: 'https://pulse-fc.app/reset-password' }),
+      supabase.auth.resetPasswordForEmail(email, { redirectTo: 'https://www.pulse-fc.app/reset-password' }),
       new Promise<typeof TIMEOUT>((resolve) => setTimeout(() => resolve(TIMEOUT), 6000)),
     ]);
     setLoading(false);
@@ -110,7 +110,23 @@ export default function LoginScreen() {
     }
 
     const { error: resetError } = result;
-    if (resetError) { setError(resetError.message); return; }
+    if (resetError) {
+      // Supabase's own send-rate-limit — hit by tapping this more than once
+      // within about a minute, which is exactly what an impatient user does
+      // when nothing visibly happens right away. This isn't a failure (an
+      // earlier tap already sent a real link), so it shouldn't read as a red
+      // error telling them something's wrong.
+      const isRateLimited =
+        (resetError as { status?: number; code?: string }).status === 429 ||
+        (resetError as { code?: string }).code === 'over_email_send_rate_limit' ||
+        /rate limit|security purposes/i.test(resetError.message);
+      if (isRateLimited) {
+        setInfo("We already sent you a reset link a moment ago — check your email (and spam folder). It can take a minute to arrive.");
+        return;
+      }
+      setError(resetError.message);
+      return;
+    }
     setInfo('Check your email for a link to reset your password.');
   }
 
@@ -212,7 +228,7 @@ export default function LoginScreen() {
             <View>
               <View style={st.passwordHeader}>
                 <Text style={st.passwordLabel}>Password</Text>
-                <TouchableOpacity onPress={handleForgotPassword} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity onPress={handleForgotPassword} disabled={loading} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Text style={st.forgotText}>Forgot password?</Text>
                 </TouchableOpacity>
               </View>
