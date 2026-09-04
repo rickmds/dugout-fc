@@ -22,6 +22,11 @@ interface TeamContextValue {
   loading: boolean;
   selectTeam: (teamId: string) => Promise<void>;
   refetch: () => Promise<void>;
+  /** The current selection read synchronously — unlike `team`, this is
+   * never stale-by-one-render, so a consumer that needs to check "did a
+   * switch juuust happen" (ClubSlugGuard) doesn't have to wait on this
+   * provider's own next render to find out. */
+  getActiveTeamId: () => string | null;
 }
 
 // Supabase's join-cardinality inference for `clubs(*)` isn't guaranteed to
@@ -165,9 +170,23 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const selectTeam = useCallback(async (teamId: string) => {
+    // Updated synchronously (not just via the state-watching effect above)
+    // so a reader that consults the ref directly right after this call — not
+    // the reactive `team` value, which only catches up on this component's
+    // next render — sees the new selection immediately. ClubSlugGuard needs
+    // exactly this: it and the switcher live in different parts of the
+    // tree, and route-param changes (from the navigation the switcher fires
+    // right after this) can become visible before React has re-rendered
+    // this provider, so a guard reading the stale `team` value from context
+    // would see a false mismatch and "correct" a switch that just happened.
+    selectedTeamIdRef.current = teamId;
     setSelectedTeamId(teamId);
     if (profile?.id) await AsyncStorage.setItem(storageKey(profile.id), teamId);
   }, [profile?.id]);
+
+  // Lets a reader (ClubSlugGuard) check the truly-current selection without
+  // waiting on this provider's own next render — see selectTeam above.
+  const getActiveTeamId = useCallback(() => selectedTeamIdRef.current, []);
 
   const team = allTeams.find((t) => t.id === selectedTeamId) ?? allTeams[0] ?? null;
 
@@ -178,8 +197,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // stable via useCallback above, so only `team`/`allTeams`/`loading` need
   // to be in the dependency array.
   const value = useMemo<TeamContextValue>(
-    () => ({ team, allTeams, loading, selectTeam, refetch: fetchTeams }),
-    [team, allTeams, loading, selectTeam, fetchTeams]
+    () => ({ team, allTeams, loading, selectTeam, refetch: fetchTeams, getActiveTeamId }),
+    [team, allTeams, loading, selectTeam, fetchTeams, getActiveTeamId]
   );
 
   return (

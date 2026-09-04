@@ -26,17 +26,30 @@ import OfflineBanner from '../../../components/ui/OfflineBanner';
 function ClubSlugGuard({ children }: { children: React.ReactNode }) {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { club, loading: authLoading } = useAuth();
-  const { team, allTeams, loading: teamsLoading, selectTeam } = useTeam();
+  const { allTeams, loading: teamsLoading, selectTeam, getActiveTeamId } = useTeam();
 
   useEffect(() => {
     if (authLoading || teamsLoading || !clubSlug) return;
 
-    const activeSlug = team?.club?.slug ?? club?.slug;
+    // Looked up fresh via getActiveTeamId() + allTeams rather than trusting
+    // the reactive `team` value from context: `team` is only recomputed on
+    // this component's own next render, so right after an intentional
+    // cross-club switch (selectTeam + navigate, fired together — the team
+    // switcher and admin panel picker both do this) this effect could run
+    // against a one-render-stale `team` before the switch had propagated
+    // here, see a false mismatch, and stomp the switch that just happened
+    // by picking whichever team in the target club happens to sort first
+    // instead of the one actually selected. getActiveTeamId() reads a ref
+    // updated synchronously inside selectTeam, so it's never stale this way
+    // — allTeams itself doesn't need to "catch up" to a switch, since the
+    // full team list doesn't change just because the selection did.
+    const activeTeam = allTeams.find((t) => t.id === getActiveTeamId());
+    const activeSlug = activeTeam?.club?.slug ?? club?.slug;
     if (activeSlug === clubSlug) return;
 
     const matchInThisClub = allTeams.find((t) => t.club?.slug === clubSlug);
     if (matchInThisClub) selectTeam(matchInThisClub.id);
-  }, [authLoading, teamsLoading, clubSlug, team?.club?.slug, club?.slug, allTeams, selectTeam]);
+  }, [authLoading, teamsLoading, clubSlug, allTeams, club?.slug, selectTeam, getActiveTeamId]);
 
   return <>{children}</>;
 }
