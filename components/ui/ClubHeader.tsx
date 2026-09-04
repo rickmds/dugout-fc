@@ -31,9 +31,9 @@ export default function ClubHeader({ title, subtitle, right, onBack, onPressTitl
 
         {onPressTitle ? (
           <TouchableOpacity style={styles.textBlock} onPress={onPressTitle} activeOpacity={0.7}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View style={styles.switchablePill}>
               <Text style={styles.title} numberOfLines={1}>{title}</Text>
-              <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.7)" />
+              <Ionicons name="swap-vertical" size={15} color="rgba(255,255,255,0.95)" />
             </View>
             {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
           </TouchableOpacity>
@@ -73,6 +73,19 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   textBlock: { flex: 1 },
+  switchablePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    maxWidth: '100%',
+  },
   title: {
     fontSize: 20,
     fontWeight: '800',

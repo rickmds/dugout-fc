@@ -1563,10 +1563,10 @@ export default function HomeScreen() {
               )}
             </View>
             <Text style={styles.heroClubName}>{clubName}</Text>
-            <View style={styles.heroTeamRow}>
+            <View style={[styles.heroTeamRow, hasMultipleTeams && styles.heroTeamRowSwitchable]}>
               <Text style={styles.heroTeamName}>{teamName}</Text>
               {hasMultipleTeams && (
-                <Ionicons name="chevron-down" size={13} color="rgba(255,255,255,0.6)" style={{ marginTop: 1 }} />
+                <Ionicons name="swap-vertical" size={13} color="rgba(255,255,255,0.95)" style={{ marginTop: 1 }} />
               )}
             </View>
           </TouchableOpacity>
@@ -2640,6 +2640,14 @@ const styles = StyleSheet.create({
   heroBadgeLetters: { fontSize: 28, fontWeight: '900' },
   heroClubName: { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 8 },
   heroTeamRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  heroTeamRowSwitchable: {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
   heroTeamName: { fontSize: 14, fontWeight: '600', color: 'rgba(255,255,255,0.85)', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
   heroGreeting: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '500', textAlign: 'center', marginTop: 10, textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   heroPlayerName: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '600', textAlign: 'center', marginTop: 4, letterSpacing: 0.3 },

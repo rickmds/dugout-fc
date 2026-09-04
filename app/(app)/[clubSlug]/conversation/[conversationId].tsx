@@ -34,7 +34,7 @@ type Message = {
   edited?: boolean;
 };
 
-type ReactionSummary = { emoji: string; count: number; mine: boolean };
+type ReactionSummary = { emoji: string; count: number; mine: boolean; profileIds: string[] };
 
 const COACH_ROLES = new Set(['coach', 'org_admin', 'app_admin']);
 const REACTION_EMOJIS = ['👍', '👎', '❤️', '⚽', '😂', '🔥'];
@@ -60,8 +60,9 @@ function groupReactions(
   const byMessage: Record<string, Record<string, ReactionSummary>> = {};
   for (const r of rows) {
     const forMsg = (byMessage[r.message_id] ??= {});
-    const entry = (forMsg[r.emoji] ??= { emoji: r.emoji, count: 0, mine: false });
+    const entry = (forMsg[r.emoji] ??= { emoji: r.emoji, count: 0, mine: false, profileIds: [] });
     entry.count += 1;
+    entry.profileIds.push(r.profile_id);
     if (r.profile_id === myProfileId) entry.mine = true;
   }
   const out: Record<string, ReactionSummary[]> = {};
@@ -92,6 +93,9 @@ export default function ConversationScreen() {
   const [editText, setEditText]       = useState('');
   const [reactions, setReactions]     = useState<Record<string, ReactionSummary[]>>({});
   const [reactionSheetMsg, setReactionSheetMsg] = useState<Message | null>(null);
+  const [reactorSheet, setReactorSheet] = useState<{ emoji: string; profileIds: string[] } | null>(null);
+  const [reactorNames, setReactorNames] = useState<Record<string, string>>({});
+  const [loadingReactors, setLoadingReactors] = useState(false);
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
   // Set right before the initial batch loads, cleared the first time the
@@ -281,8 +285,8 @@ export default function ConversationScreen() {
           const i = existing.findIndex((r) => r.emoji === raw.emoji);
           const mine = raw.profile_id === profile?.id;
           const next = i === -1
-            ? [...existing, { emoji: raw.emoji, count: 1, mine }]
-            : existing.map((r, idx) => idx === i ? { ...r, count: r.count + 1, mine: r.mine || mine } : r);
+            ? [...existing, { emoji: raw.emoji, count: 1, mine, profileIds: [raw.profile_id] }]
+            : existing.map((r, idx) => idx === i ? { ...r, count: r.count + 1, mine: r.mine || mine, profileIds: [...r.profileIds, raw.profile_id] } : r);
           return { ...prev, [raw.message_id]: next };
         });
       })
@@ -300,12 +304,29 @@ export default function ConversationScreen() {
           const nextCount = existing[i].count - 1;
           const next = nextCount <= 0
             ? existing.filter((_, idx) => idx !== i)
-            : existing.map((r, idx) => idx === i ? { ...r, count: nextCount, mine: wasMine ? false : r.mine } : r);
+            : existing.map((r, idx) => idx === i
+                ? { ...r, count: nextCount, mine: wasMine ? false : r.mine, profileIds: r.profileIds.filter((id) => id !== raw.profile_id) }
+                : r);
           return { ...prev, [raw.message_id]: next };
         });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
+  }
+
+  async function openReactorSheet(emoji: string, profileIds: string[]) {
+    setReactorSheet({ emoji, profileIds });
+    const missing = profileIds.filter((id) => !(id in reactorNames));
+    if (!missing.length) return;
+    setLoadingReactors(true);
+    const { data } = await supabase.from('profiles').select('id, full_name').in('id', missing);
+    setLoadingReactors(false);
+    if (!data) return;
+    setReactorNames((prev) => {
+      const next = { ...prev };
+      for (const p of data as { id: string; full_name: string | null }[]) next[p.id] = p.full_name ?? 'Someone';
+      return next;
+    });
   }
 
   async function toggleReaction(messageId: string, emoji: string) {
@@ -518,6 +539,7 @@ export default function ConversationScreen() {
                           key={r.emoji}
                           style={[st.reactionPill, r.mine && { borderColor: primaryColor, backgroundColor: rgba(0.12) }]}
                           onPress={() => toggleReaction(item.id, r.emoji)}
+                          onLongPress={() => openReactorSheet(r.emoji, r.profileIds)}
                           activeOpacity={0.7}
                         >
                           <Text style={st.reactionPillEmoji}>{r.emoji}</Text>
@@ -610,6 +632,34 @@ export default function ConversationScreen() {
                 )}
                 <TouchableOpacity style={st.reactionSheetCancel} onPress={() => setReactionSheetMsg(null)}>
                   <Text style={st.reactionSheetCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal visible={!!reactorSheet} animationType="slide" transparent onRequestClose={() => setReactorSheet(null)}>
+        <TouchableWithoutFeedback onPress={() => setReactorSheet(null)}>
+          <View style={st.reactionSheetOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={st.reactionSheet}>
+                <View style={st.sheetHandle} />
+                <Text style={st.reactorSheetTitle}>{reactorSheet?.emoji} Reacted by</Text>
+                {loadingReactors ? (
+                  <ActivityIndicator style={{ marginVertical: 16 }} color={primaryColor} />
+                ) : (
+                  reactorSheet?.profileIds.map((id) => (
+                    <View key={id} style={st.reactorRow}>
+                      <View style={[st.reactorAvatar, { backgroundColor: rgba(0.15) }]}>
+                        <Text style={[st.reactorAvatarText, { color: primaryColor }]}>{initials(reactorNames[id] ?? null)}</Text>
+                      </View>
+                      <Text style={st.reactorName}>{reactorNames[id] ?? 'Someone'}</Text>
+                    </View>
+                  ))
+                )}
+                <TouchableOpacity style={st.reactionSheetCancel} onPress={() => setReactorSheet(null)}>
+                  <Text style={st.reactionSheetCancelText}>Close</Text>
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
@@ -750,4 +800,9 @@ const st = StyleSheet.create({
   reactionSheetActionText: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
   reactionSheetCancel: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
   reactionSheetCancelText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  reactorSheetTitle: { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 12, textAlign: 'center' },
+  reactorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  reactorAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  reactorAvatarText: { fontSize: 12, fontWeight: '800' },
+  reactorName: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
 });
