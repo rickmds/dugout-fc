@@ -177,7 +177,7 @@ function buildCalendarDays(year: number, month: number): (number | null)[] {
 
 export default function ScheduleScreen() {
   const { primaryColor, rgba, secondaryColor, onSecondary, logoUrl, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
-  const { team, allTeams, loading: teamLoading } = useTeam();
+  const { team, allTeams, loading: teamLoading, selectTeam } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
@@ -498,6 +498,27 @@ export default function ScheduleScreen() {
     else setCalMonth(m => m + 1);
   }
 
+  // Navigating straight from a card tap (rather than letting the
+  // destination screen notice a team mismatch after mounting and correct
+  // itself) — with "All Teams" on, a card can belong to a team in a
+  // DIFFERENT club than the one currently active. Pushing with the
+  // current (wrong) clubSlug first and fixing it up reactively on the
+  // event screen raced against ClubSlugGuard, which was still watching
+  // the about-to-be-replaced route and could revert the switch back
+  // before the corrective navigation ever landed — the flip-flop this was
+  // reported against. Resolving the correct club up front and navigating
+  // directly to it means ClubSlugGuard never sees a mismatch in the first
+  // place, because the right route is the very first one that mounts.
+  function navigateToEvent(eventId: string, eventTeamId: string) {
+    const eventTeam = allTeams.find((t) => t.id === eventTeamId);
+    if (eventTeam?.club?.slug && eventTeam.club.slug !== clubSlug) {
+      selectTeam(eventTeamId);
+      router.push(`/(app)/${eventTeam.club.slug}/event/${eventId}` as any);
+    } else {
+      router.push(`/(app)/${clubSlug}/event/${eventId}` as any);
+    }
+  }
+
   // ── Shared event card renderer — thin wrapper narrowing each map down to
   // just this item's own slice before handing off to the memoized
   // component below, so a weather/drive-time update for one event doesn't
@@ -529,7 +550,7 @@ export default function ScheduleScreen() {
         primaryColor={primaryColor}
         rgba={rgba}
         onRsvp={handleRsvp}
-        onPress={() => router.push(`/(app)/${clubSlug}/event/${item.id}` as any)}
+        onPress={() => navigateToEvent(item.id, item.team_id)}
       />
     );
   }
@@ -754,7 +775,7 @@ export default function ScheduleScreen() {
                 <TouchableOpacity
                   key={g.id}
                   style={styles.tournamentGameRow}
-                  onPress={() => router.push(`/(app)/${clubSlug}/event/${g.id}` as any)}
+                  onPress={() => navigateToEvent(g.id, g.team_id)}
                   activeOpacity={0.7}
                 >
                   {g.round_label ? (
