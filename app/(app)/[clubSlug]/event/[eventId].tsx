@@ -1200,7 +1200,7 @@ export default function EventDetailScreen() {
     setNudging(true);
     await sendProfilesPush({
       profileIds,
-      title: 'RSVP needed',
+      title: team?.name ? `RSVP needed — ${team.name}` : 'RSVP needed',
       body: `Please respond to ${event.title} — your coach needs a headcount.`,
       data: { type: 'rsvp_reminder', event_id: event.id },
     });

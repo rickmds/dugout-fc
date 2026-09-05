@@ -507,7 +507,8 @@ export default function TeamSchedulePage() {
       // "deleted", not "cancelled" — this page has no soft-cancel, only a
       // hard, unrecoverable delete; the push text shouldn't claim otherwise.
       const bodyText = `${ev.title} has been deleted`;
-      sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
+      const teamLabel = teams.find((t) => t.id === teamId)?.name;
+      sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: teamLabel ? `🗑️ Event deleted — ${teamLabel}` : '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
       sendTeamEmail({
         teamIds: [teamId],
         subject: 'Event deleted',

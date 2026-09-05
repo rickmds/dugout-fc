@@ -514,7 +514,7 @@ export default function CreateEventScreen() {
     if (notifyParents) {
       sendTeamPush({
         teamId: team.id,
-        title: '📅 New event added',
+        title: `📅 New event added — ${team.name}`,
         body: `${savedTitle} — ${fmtDate(date)}`,
         excludeProfileId: profile?.id,
         data: { type: 'new_event', event_id: newEventId },

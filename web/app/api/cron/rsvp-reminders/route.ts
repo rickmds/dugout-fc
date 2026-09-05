@@ -19,7 +19,7 @@ type ReminderEvent = {
   team_id: string;
   rsvp_lock_at: string | null;
   event_time: string | null;
-  teams: { clubs: { slug: string; timezone: string | null } | null } | null;
+  teams: { name: string; clubs: { slug: string; timezone: string | null } | null } | null;
 };
 
 export async function GET(req: NextRequest) {
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
     const threshold = new Date(now.getTime() + window.thresholdHours * 60 * 60 * 1000);
     const { data: events } = await supabase
       .from('events')
-      .select('id, title, team_id, rsvp_lock_at, event_time, teams(clubs(slug, timezone))')
+      .select('id, title, team_id, rsvp_lock_at, event_time, teams(name, clubs(slug, timezone))')
       .is(window.column, null)
       .is('cancelled_at', null)
       .gt('rsvp_lock_at', now.toISOString())
@@ -138,9 +138,12 @@ export async function GET(req: NextRequest) {
       if (!parentProfileIds.length) continue;
 
       const eventLabel = ev.event_time ? `${ev.title} at ${ev.event_time.slice(0, 5)}` : ev.title;
+      // A guardian with players on more than one team can't tell which team
+      // this is about from the generic window title alone.
+      const pushTitle = ev.teams?.name ? `${window.title} — ${ev.teams.name}` : window.title;
       for (const profile_id of parentProfileIds) {
         notificationRows.push({
-          profile_id, type: 'rsvp_reminder', title: window.title, body: window.body(eventLabel),
+          profile_id, type: 'rsvp_reminder', title: pushTitle, body: window.body(eventLabel),
           data: { type: 'rsvp_reminder', event_id: ev.id, club_slug: ev.teams?.clubs?.slug ?? '' },
         });
       }

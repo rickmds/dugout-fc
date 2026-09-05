@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   type DayEvent = {
     id: string; title: string; type: string; team_id: string; event_date: string; event_time: string | null; location: string | null;
     tournament_id: string | null;
-    teams: { clubs: { slug: string; timezone: string | null } | null } | null;
+    teams: { name: string; clubs: { slug: string; timezone: string | null } | null } | null;
   };
 
   // "Today" is relative to each club's own timezone, not UTC — an event
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
   const { data: candidates } = await supabase
     .from('events')
-    .select('id, title, type, team_id, event_date, event_time, location, tournament_id, teams(clubs(slug, timezone))')
+    .select('id, title, type, team_id, event_date, event_time, location, tournament_id, teams(name, clubs(slug, timezone))')
     .gte('event_date', yesterday)
     .lte('event_date', tomorrow)
     .is('cancelled_at', null)
@@ -111,7 +111,9 @@ export async function GET(req: NextRequest) {
     const icon    = ev.type === 'game' ? '🏟️' : ev.type === 'training' ? '⚽' : '📅';
     const kind    = ev.type === 'game' ? 'Game day' : ev.type === 'training' ? 'Training today' : 'Event today';
     const parts   = [ev.title, timeStr, ev.location].filter(Boolean);
-    const pushTitle = `${icon} ${kind}`;
+    // A guardian with players on more than one team can't tell which team
+    // this is about from the icon+kind alone.
+    const pushTitle = ev.teams?.name ? `${icon} ${kind} — ${ev.teams.name}` : `${icon} ${kind}`;
     const pushBody  = parts.join(' · ');
 
     for (const profile_id of profileIds) {
@@ -129,7 +131,7 @@ export async function GET(req: NextRequest) {
 
     const tName = tournamentNameById.get(tournament_id as string) ?? 'Tournament';
     const times = group.map(ev => ev.event_time?.slice(0, 5)).filter((t): t is string => !!t).sort().map(fmt12h);
-    const pushTitle = `🏆 ${tName} today`;
+    const pushTitle = teams?.name ? `🏆 ${tName} today — ${teams.name}` : `🏆 ${tName} today`;
     const pushBody = `${group.length} games today${times.length ? `: ${times.join(', ')}` : ''}`;
 
     for (const profile_id of profileIds) {

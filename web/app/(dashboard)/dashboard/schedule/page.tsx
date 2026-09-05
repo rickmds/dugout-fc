@@ -463,7 +463,8 @@ export default function SchedulePage() {
       const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
       const bodyText = `${ev.title} has been deleted`;
       for (const teamId of notifyTeamIds) {
-        sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
+        const teamLabel = teams.find((t) => t.id === teamId)?.name;
+        sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: teamLabel ? `🗑️ Event deleted — ${teamLabel}` : '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
       }
       sendTeamEmail({
         teamIds: notifyTeamIds,
@@ -502,9 +503,10 @@ export default function SchedulePage() {
     const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
     const bodyText = cancelReason.trim() ? `${ev.title} cancelled: ${cancelReason.trim()}` : `${ev.title} has been cancelled`;
     for (const teamId of notifyTeamIds) {
+      const teamLabel = teams.find((t) => t.id === teamId)?.name;
       sendEventPush({
         team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled',
-        title: '❌ Event cancelled',
+        title: teamLabel ? `❌ Event cancelled — ${teamLabel}` : '❌ Event cancelled',
         body: bodyText,
         data: { type: 'event_cancelled', event_id: ev.id },
       }).catch(() => {});
@@ -542,9 +544,10 @@ export default function SchedulePage() {
     const notifyTeamIds = propagate ? [ev.team_id, ...linkedIds] : [ev.team_id];
     const bodyText = `${ev.title} is back on`;
     for (const teamId of notifyTeamIds) {
+      const teamLabel = teams.find((t) => t.id === teamId)?.name;
       sendEventPush({
         team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled',
-        title: '✅ Event restored', body: bodyText,
+        title: teamLabel ? `✅ Event restored — ${teamLabel}` : '✅ Event restored', body: bodyText,
         data: { type: 'event_cancelled', event_id: ev.id },
       }).catch(() => {});
     }

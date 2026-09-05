@@ -168,6 +168,15 @@ export default function EditEventScreen() {
   // their own team's row.
   const [eventGroupId, setEventGroupId] = useState<string | null>(null);
   const [linkedTeams, setLinkedTeams] = useState<{ id: string; name: string }[]>([]);
+
+  // A guardian on multiple teams (or multiple clubs) can't tell which team a
+  // push notification is about without this — resolves the RECEIVING team's
+  // own name, not just this event's primary team, since propagateGroup can
+  // fan a save out to more than one team's notifications at once.
+  function teamNameFor(teamId: string): string | null {
+    if (teamId === eventTeamId) return eventTeamName;
+    return linkedTeams.find((t) => t.id === teamId)?.name ?? null;
+  }
   // Resolved from THIS event's own team (eventTeamId), not necessarily the
   // currently-active team — this screen can be reached via a notification
   // deep link while a different team is active, and org_admin status is
@@ -476,7 +485,7 @@ export default function EditEventScreen() {
       if (scope === 'future') {
         sendTeamPush({
           teamId: eventTeamId,
-          title: 'Schedule updated',
+          title: teamNameFor(eventTeamId) ? `Schedule updated — ${teamNameFor(eventTeamId)}` : 'Schedule updated',
           body: `${savedTitle} — upcoming sessions updated`,
           excludeProfileId: profile?.id,
           data: { type: 'schedule_change', event_id: eventId },
@@ -486,11 +495,18 @@ export default function EditEventScreen() {
         let pushBody = `${savedTitle} has been updated`;
         if (orig) {
           const newDateStr = eventDate;
+          // Postgres serializes a time column as "HH:MM:SS"; the new value
+          // built from the form is "HH:MM" — compared as-is these are never
+          // equal even when the time genuinely didn't change, so this
+          // branch always won over the location one below it. Slice both
+          // to "HH:MM" before comparing (same fix shape already used for
+          // computeLockHours above).
           const newTimeStr = eventTime;
+          const origTimeStr = orig.time?.slice(0, 5) ?? orig.time;
           const newLocStr = locationName.trim();
           if (newDateStr !== orig.date) {
             pushBody = `${savedTitle} moved to ${fmtDate(date)}`;
-          } else if (newTimeStr !== orig.time) {
+          } else if (newTimeStr !== origTimeStr) {
             pushBody = `${savedTitle} time changed to ${hasTime ? fmtTime(startTime) : 'TBD'}`;
           } else if (newLocStr !== orig.location) {
             pushBody = `${savedTitle} location updated`;
@@ -498,9 +514,10 @@ export default function EditEventScreen() {
         }
         const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
         for (const teamId of notifyTeamIds) {
+          const teamLabel = teamNameFor(teamId);
           sendTeamPush({
             teamId,
-            title: 'Schedule updated',
+            title: teamLabel ? `Schedule updated — ${teamLabel}` : 'Schedule updated',
             body: pushBody,
             excludeProfileId: profile?.id,
             data: { type: 'schedule_change', event_id: eventId },
@@ -509,7 +526,7 @@ export default function EditEventScreen() {
           if (videoUrl.trim() && orig && !orig.videoUrl) {
             sendTeamPush({
               teamId,
-              title: 'Recording available',
+              title: teamLabel ? `Recording available — ${teamLabel}` : 'Recording available',
               body: `Watch the recording for ${savedTitle}`,
               excludeProfileId: profile?.id,
               data: { type: 'video_added', event_id: eventId },
@@ -631,9 +648,13 @@ export default function EditEventScreen() {
     if (eventTeamId) {
       const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
       for (const teamId of notifyTeamIds) {
+        const teamLabel = teamNameFor(teamId);
         sendTeamPush({
           teamId,
-          title: cancelSubject,
+          // Prefixed rather than trusting the AI-drafted subject to include
+          // it — that draft is told the team name but isn't guaranteed to
+          // use it, and a guardian on multiple teams needs this reliably.
+          title: teamLabel ? `${cancelSubject} — ${teamLabel}` : cancelSubject,
           body: cancelBody.slice(0, 200),
           excludeProfileId: profile?.id,
           data: { type: 'event_cancelled', event_id: eventId },
@@ -686,9 +707,10 @@ export default function EditEventScreen() {
       const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
       const bodyText = `${titleLabel} is back on`;
       for (const teamId of notifyTeamIds) {
+        const teamLabel = teamNameFor(teamId);
         sendTeamPush({
           teamId,
-          title: 'Event reinstated',
+          title: teamLabel ? `Event reinstated — ${teamLabel}` : 'Event reinstated',
           body: bodyText,
           excludeProfileId: profile?.id,
           data: { type: 'event_cancelled', event_id: eventId },
