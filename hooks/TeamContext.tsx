@@ -3,6 +3,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
+import { uniqueChannelName } from '../lib/realtime';
 import type { Database } from '../types/database';
 
 type TeamRow = Database['public']['Tables']['teams']['Row'];
@@ -27,6 +28,10 @@ interface TeamContextValue {
    * switch juuust happen" (ClubSlugGuard) doesn't have to wait on this
    * provider's own next render to find out. */
   getActiveTeamId: () => string | null;
+  /** team_ids with at least one unread chat notification (message, DM, or
+   * announcement) — lets a team switcher show which team(s) need
+   * attention without the user having to visit each one to check. */
+  teamsWithUnreadChat: Set<string>;
 }
 
 // Supabase's join-cardinality inference for `clubs(*)` isn't guaranteed to
@@ -190,6 +195,40 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const team = allTeams.find((t) => t.id === selectedTeamId) ?? allTeams[0] ?? null;
 
+  // Which teams have an unread chat notification, so a switcher can flag
+  // them — independent of which team is currently active, so this fetches
+  // and subscribes for the whole profile regardless of `allTeams` loading.
+  const [teamsWithUnreadChat, setTeamsWithUnreadChat] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!profile?.id) { setTeamsWithUnreadChat(new Set()); return; }
+
+    async function fetchUnreadTeams() {
+      const { data } = await supabase
+        .from('notifications')
+        .select('team_id')
+        .eq('profile_id', profile!.id)
+        .eq('read', false)
+        .in('type', ['new_message', 'new_dm', 'new_announcement'])
+        .not('team_id', 'is', null);
+      setTeamsWithUnreadChat(new Set((data ?? []).map((r) => r.team_id as string)));
+    }
+
+    fetchUnreadTeams();
+
+    const sub = supabase
+      .channel(uniqueChannelName(`team-switcher-badges-${profile.id}`))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `profile_id=eq.${profile.id}`,
+      }, fetchUnreadTeams)
+      .subscribe();
+
+    return () => { supabase.removeChannel(sub); };
+  }, [profile?.id]);
+
   // Without this, every render of TeamProvider (including ones triggered by
   // AuthProvider re-rendering above it) hands every consumer a brand-new
   // object by reference, forcing a re-render regardless of whether team/
@@ -197,8 +236,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // stable via useCallback above, so only `team`/`allTeams`/`loading` need
   // to be in the dependency array.
   const value = useMemo<TeamContextValue>(
-    () => ({ team, allTeams, loading, selectTeam, refetch: fetchTeams, getActiveTeamId }),
-    [team, allTeams, loading, selectTeam, fetchTeams, getActiveTeamId]
+    () => ({ team, allTeams, loading, selectTeam, refetch: fetchTeams, getActiveTeamId, teamsWithUnreadChat }),
+    [team, allTeams, loading, selectTeam, fetchTeams, getActiveTeamId, teamsWithUnreadChat]
   );
 
   return (

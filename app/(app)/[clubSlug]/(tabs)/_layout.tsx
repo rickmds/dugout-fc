@@ -5,6 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useAuth } from '../../../../hooks/useAuth';
+import { useTeam } from '../../../../hooks/useTeam';
 import { supabase } from '../../../../lib/supabase';
 import { uniqueChannelName } from '../../../../lib/realtime';
 
@@ -27,17 +28,22 @@ function TabIcon({ focused, primary, children }: { focused: boolean; primary: st
 export default function TabsLayout() {
   const { primaryColor } = useClub();
   const { profile } = useAuth();
+  const { team } = useTeam();
   const [chatUnread, setChatUnread] = useState(0);
   const [pendingGuestCount, setPendingGuestCount] = useState(0);
 
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || !team?.id) return;
 
     async function fetchUnread() {
+      // Scoped to the currently active team — otherwise a multi-team
+      // parent/coach sees another team's new message light up this one's
+      // Chat badge.
       const { count } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('profile_id', profile!.id)
+        .eq('team_id', team!.id)
         .eq('read', false)
         .in('type', ['new_message', 'new_announcement', 'new_dm']);
       setChatUnread(count ?? 0);
@@ -46,7 +52,7 @@ export default function TabsLayout() {
     fetchUnread();
 
     const sub = supabase
-      .channel(uniqueChannelName(`chat-badge-${profile.id}`))
+      .channel(uniqueChannelName(`chat-badge-${profile.id}-${team.id}`))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -56,7 +62,7 @@ export default function TabsLayout() {
       .subscribe();
 
     return () => { supabase.removeChannel(sub); };
-  }, [profile?.id]);
+  }, [profile?.id, team?.id]);
 
   useEffect(() => {
     if (!profile?.id) return;

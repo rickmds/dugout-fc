@@ -52,6 +52,35 @@ Deno.serve(async (req) => {
   const finalClubSlug = clubSlug || (data as any)?.club_slug || '';
   const enrichedData = { ...(data ?? {}), type: resolvedType, club_slug: finalClubSlug };
 
+  // Which team this notification belongs to — stored on the row so every
+  // per-team unread badge (bottom tab bar, chat sub-tabs, team switcher)
+  // can just filter on it instead of guessing. Sends that already carry
+  // team_id (anything routed through sendTeamPush) use it directly; a
+  // profile_ids-only send (e.g. a DM) resolves it from whichever entity
+  // id is in the payload. Mirrors lib/resolveNotificationTeamId.ts —
+  // deliberately leaves guest_request (two teams, no single owner) and
+  // any other unrecognized shape as null rather than guessing.
+  let resolvedTeamId: string | null = team_id ?? null;
+  if (!resolvedTeamId) {
+    const d = enrichedData as Record<string, unknown>;
+    if (typeof d.event_id === 'string') {
+      const { data: row } = await supabase.from('events').select('team_id').eq('id', d.event_id).single();
+      resolvedTeamId = row?.team_id ?? null;
+    } else if (typeof d.conversation_id === 'string') {
+      const { data: row } = await supabase.from('conversations').select('team_id').eq('id', d.conversation_id).single();
+      resolvedTeamId = row?.team_id ?? null;
+    } else if (typeof d.player_fee_id === 'string') {
+      const { data: row } = await supabase.from('player_fees').select('team_id').eq('id', d.player_fee_id).single();
+      resolvedTeamId = row?.team_id ?? null;
+    } else if (typeof d.player_id === 'string') {
+      const { data: row } = await supabase.from('players').select('team_id').eq('id', d.player_id).single();
+      resolvedTeamId = row?.team_id ?? null;
+    } else if (typeof d.announcement_id === 'string') {
+      const { data: row } = await supabase.from('announcements').select('team_id').eq('id', d.announcement_id).single();
+      resolvedTeamId = row?.team_id ?? null;
+    }
+  }
+
   // Resolve profile IDs — either explicit list or all team members
   let profileIds: string[];
   if (directProfileIds?.length) {
@@ -107,7 +136,7 @@ Deno.serve(async (req) => {
       if (newProfileIds.length) {
         await supabase.from('notifications').insert(
           newProfileIds.map((profile_id) => ({
-            profile_id, type: resolvedType, title, body, data: enrichedData,
+            profile_id, type: resolvedType, title, body, data: enrichedData, team_id: resolvedTeamId,
           })),
         );
       }
@@ -118,7 +147,7 @@ Deno.serve(async (req) => {
       // No conversation_id — fall through to normal insert + push
       await supabase.from('notifications').insert(
         profileIds.map((profile_id) => ({
-          profile_id, type: notifType, title, body, data: enrichedData,
+          profile_id, type: notifType, title, body, data: enrichedData, team_id: resolvedTeamId,
         })),
       );
     }
@@ -126,7 +155,7 @@ Deno.serve(async (req) => {
     // All other notification types — always insert
     await supabase.from('notifications').insert(
       profileIds.map((profile_id) => ({
-        profile_id, type: resolvedType, title, body, data: enrichedData,
+        profile_id, type: resolvedType, title, body, data: enrichedData, team_id: resolvedTeamId,
       })),
     );
   }

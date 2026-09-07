@@ -101,20 +101,25 @@ export default function ChatScreen() {
   const [announcementsUnread, setAnnouncementsUnread] = useState(0);
 
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || !team?.id) return;
 
     async function fetchTabUnread() {
+      // Scoped to the currently active team — see _layout.tsx's chatUnread
+      // for why (a multi-team parent/coach shouldn't see another team's
+      // message light up this team's sub-tab dot).
       const [chatsRes, announcementsRes] = await Promise.all([
         supabase
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('profile_id', profile!.id)
+          .eq('team_id', team!.id)
           .eq('read', false)
           .in('type', ['new_message', 'new_dm']),
         supabase
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('profile_id', profile!.id)
+          .eq('team_id', team!.id)
           .eq('read', false)
           .eq('type', 'new_announcement'),
       ]);
@@ -125,7 +130,7 @@ export default function ChatScreen() {
     fetchTabUnread();
 
     const sub = supabase
-      .channel(uniqueChannelName(`chat-tab-badges-${profile.id}`))
+      .channel(uniqueChannelName(`chat-tab-badges-${profile.id}-${team.id}`))
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -135,7 +140,7 @@ export default function ChatScreen() {
       .subscribe();
 
     return () => { supabase.removeChannel(sub); };
-  }, [profile?.id]);
+  }, [profile?.id, team?.id]);
 
   if (teamLoading) return <ChatSkeleton />;
 
@@ -311,11 +316,16 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
 
     let directConvs: any[] = [];
     if (directIds.length > 0) {
+      // conversation_participants isn't team-scoped (a person can be in
+      // conversations across every team they belong to), so without this
+      // team_id filter a multi-team parent/coach's DMs from OTHER teams
+      // rendered here too, in whichever team happened to be active.
       const { data: dc } = await supabase
         .from('conversations')
         .select('id, title, type, created_at')
         .in('id', directIds)
-        .eq('type', 'direct');
+        .eq('type', 'direct')
+        .eq('team_id', team.id);
       directConvs = dc ?? [];
     }
 

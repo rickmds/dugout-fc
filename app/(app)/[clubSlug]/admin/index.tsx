@@ -253,7 +253,7 @@ export default function AdminPanel() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { profile } = useAuth();
-  const { team, allTeams, selectTeam, loading: teamLoading, refetch } = useTeam();
+  const { team, allTeams, selectTeam, loading: teamLoading, refetch, teamsWithUnreadChat } = useTeam();
 
   const [upcoming, setUpcoming] = useState<EventRow[]>([]);
   const [total,    setTotal]    = useState(0);
@@ -499,7 +499,10 @@ export default function AdminPanel() {
                 >
                   <View style={[tp.dot, { backgroundColor: active ? primaryColor : PULSE_COLORS.ui.border }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={[tp.rowName, active && { color: primaryColor }]}>{item.name}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[tp.rowName, active && { color: primaryColor }]}>{item.name}</Text>
+                      {teamsWithUnreadChat.has(item.id) && <View style={tp.unreadDot} />}
+                    </View>
                     {item.age_group ? <Text style={tp.rowMeta}>{item.age_group}{item.season ? `  ·  ${item.season}` : ''}</Text> : null}
                   </View>
                   {active && <Ionicons name="checkmark" size={16} color={primaryColor} />}
@@ -889,6 +892,7 @@ const tp = StyleSheet.create({
   list:        { paddingBottom: 40 },
   row:         { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
   dot:         { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  unreadDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
   rowName:     { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
   rowMeta:     { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
   empty:       { padding: 40, alignItems: 'center' },

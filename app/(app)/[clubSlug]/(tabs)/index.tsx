@@ -282,7 +282,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile, club, refreshProfile, signOut } = useAuth();
-  const { team, allTeams, loading: teamLoading, selectTeam } = useTeam();
+  const { team, allTeams, loading: teamLoading, selectTeam, teamsWithUnreadChat } = useTeam();
   const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
   const fmt = (n: number) => formatCurrency(n, club?.currency);
 
@@ -2143,7 +2143,10 @@ export default function HomeScreen() {
                           <Ionicons name="football-outline" size={18} color={teamColor} />
                         </View>
                         <View style={styles.teamPickerBody}>
-                          <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
+                            {teamsWithUnreadChat.has(t.id) && <View style={styles.teamPickerUnreadDot} />}
+                          </View>
                           {(t.age_group || t.season) ? (
                             <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
                           ) : null}
@@ -2840,6 +2843,7 @@ const styles = StyleSheet.create({
   teamPickerRowActive: { backgroundColor: PULSE_COLORS.ui.surfaceAlt },
   teamPickerIcon: { width: 38, height: 38, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   teamPickerBody: { flex: 1 },
+  teamPickerUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
   teamPickerName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
   teamPickerMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
 

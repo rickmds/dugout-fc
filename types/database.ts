@@ -1893,6 +1893,7 @@ export type Database = {
           profile_id: string
           read: boolean | null
           read_at: string | null
+          team_id: string | null
           title: string
           type: string
         }
@@ -1904,6 +1905,7 @@ export type Database = {
           profile_id: string
           read?: boolean | null
           read_at?: string | null
+          team_id?: string | null
           title: string
           type: string
         }
@@ -1915,6 +1917,7 @@ export type Database = {
           profile_id?: string
           read?: boolean | null
           read_at?: string | null
+          team_id?: string | null
           title?: string
           type?: string
         }
@@ -1924,6 +1927,13 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]
