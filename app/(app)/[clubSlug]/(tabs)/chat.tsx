@@ -198,6 +198,15 @@ type TeamMember = {
   role: string;
 };
 
+// Coaches know a player's name, not necessarily which parent account
+// belongs to them — so the New Message picker groups parents under the
+// player they guardian rather than listing every parent flat.
+type PlayerGroup = {
+  player_id: string;
+  player_name: string;
+  guardians: TeamMember[];
+};
+
 // ─── Chats tab ────────────────────────────────────────────────────────────────
 
 function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Profile | null; clubSlug: string }) {
@@ -209,6 +218,10 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
   const [loadError, setLoadError]       = useState(false);
   const [showNewChat, setShowNewChat]   = useState(false);
   const [teamMembers, setTeamMembers]   = useState<TeamMember[]>([]);
+  const [playerGroups, setPlayerGroups] = useState<PlayerGroup[]>([]);
+  const [coaches, setCoaches]           = useState<TeamMember[]>([]);
+  const [otherParents, setOtherParents] = useState<TeamMember[]>([]);
+  const [expandedPlayers, setExpandedPlayers] = useState<Set<string>>(new Set());
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [groupName, setGroupName]       = useState('');
   const [creating, setCreating]         = useState(false);
@@ -419,19 +432,55 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
 
   async function openNewChat() {
     if (!team || !profile) return;
-    const { data } = await supabase
-      .from('team_members')
-      .select('profile_id, role, profiles:profile_id(full_name)')
-      .eq('team_id', team.id)
-      .neq('profile_id', profile.id);
 
-    setTeamMembers(
-      (data ?? []).map((m: any) => ({
-        profile_id: m.profile_id,
-        full_name: m.profiles?.full_name ?? null,
-        role: m.role,
-      })),
+    const [tmRes, playersRes] = await Promise.all([
+      supabase
+        .from('team_members')
+        .select('profile_id, role, profiles:profile_id(full_name)')
+        .eq('team_id', team.id)
+        .neq('profile_id', profile.id),
+      supabase.from('players').select('id, full_name').eq('team_id', team.id).order('full_name'),
+    ]);
+
+    const members: TeamMember[] = (tmRes.data ?? []).map((m: any) => ({
+      profile_id: m.profile_id,
+      full_name: m.profiles?.full_name ?? null,
+      role: m.role,
+    }));
+    setTeamMembers(members);
+
+    const players = playersRes.data ?? [];
+    const playerIds = players.map((p) => p.id);
+
+    // player_guardians (not the roster's own profile fields) is the real
+    // source of who's linked to each player — a player can have more than
+    // one guardian, and this is what accept_invite() actually populates.
+    const { data: guardianRows } = playerIds.length
+      ? await supabase.from('player_guardians').select('player_id, profile_id').in('player_id', playerIds)
+      : { data: [] as { player_id: string; profile_id: string }[] };
+
+    const memberById = new Map(members.map((m) => [m.profile_id, m]));
+    const guardiansByPlayer = new Map<string, TeamMember[]>();
+    const groupedProfileIds = new Set<string>();
+    for (const g of guardianRows ?? []) {
+      const m = memberById.get(g.profile_id);
+      if (!m || m.role !== 'parent') continue; // only people who can actually be messaged
+      if (!guardiansByPlayer.has(g.player_id)) guardiansByPlayer.set(g.player_id, []);
+      guardiansByPlayer.get(g.player_id)!.push(m);
+      groupedProfileIds.add(m.profile_id);
+    }
+
+    setPlayerGroups(
+      players
+        .map((p) => ({ player_id: p.id, player_name: p.full_name ?? 'Unknown', guardians: guardiansByPlayer.get(p.id) ?? [] }))
+        .filter((g) => g.guardians.length > 0),
     );
+    setCoaches(members.filter((m) => m.role === 'coach'));
+    // Parents with no player_guardians row on this team (data gap, or
+    // added some other way), plus self-managed player accounts, still
+    // need to be reachable — just not nested under a player.
+    setOtherParents(members.filter((m) => m.role !== 'coach' && !groupedProfileIds.has(m.profile_id)));
+    setExpandedPlayers(new Set());
     setSelected(new Set());
     setGroupName('');
     setShowNewChat(true);
@@ -441,6 +490,14 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function togglePlayerExpanded(playerId: string) {
+    setExpandedPlayers((prev) => {
+      const next = new Set(prev);
+      next.has(playerId) ? next.delete(playerId) : next.add(playerId);
       return next;
     });
   }
@@ -495,6 +552,30 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
   }
 
   const isGroup = selected.size > 1;
+
+  function renderPersonRow(m: TeamMember, indent = false) {
+    return (
+      <TouchableOpacity
+        key={m.profile_id}
+        style={[st.pickerRow, indent && st.pickerRowIndent]}
+        onPress={() => toggleMember(m.profile_id)}
+        activeOpacity={0.75}
+      >
+        <View style={[st.checkBox, selected.has(m.profile_id) && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
+          {selected.has(m.profile_id) && <Ionicons name="checkmark" size={14} color="#000" />}
+        </View>
+        <View style={[st.pickerAvatar, { backgroundColor: primaryColor }]}>
+          <Text style={st.pickerAvatarText}>{initials(m.full_name)}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={st.pickerName}>{m.full_name ?? 'Unknown'}</Text>
+          <Text style={st.pickerRole}>
+            {m.role === 'coach' ? 'Coach' : m.role === 'parent' ? 'Parent' : 'Player'}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }
 
   if (!team) {
     return (
@@ -678,27 +759,58 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
               </View>
             )}
             {(() => {
-              const filtered = teamMembers.filter((m) =>
-                !search.trim() || (m.full_name ?? '').toLowerCase().includes(search.toLowerCase()),
+              const q = search.trim().toLowerCase();
+              const matches = (name: string | null) => !q || (name ?? '').toLowerCase().includes(q);
+
+              const filteredCoaches = coaches.filter((m) => matches(m.full_name));
+              const filteredOther = otherParents.filter((m) => matches(m.full_name));
+              const filteredGroups = playerGroups.filter(
+                (g) => !q || matches(g.player_name) || g.guardians.some((m) => matches(m.full_name)),
               );
-              if (filtered.length === 0)
+
+              if (filteredCoaches.length === 0 && filteredOther.length === 0 && filteredGroups.length === 0)
                 return <Text style={{ color: PULSE_COLORS.ui.muted, textAlign: 'center', marginTop: 40 }}>No members found.</Text>;
-              return filtered.map((m) => (
-                <TouchableOpacity key={m.profile_id} style={st.pickerRow} onPress={() => toggleMember(m.profile_id)} activeOpacity={0.75}>
-                  <View style={[st.checkBox, selected.has(m.profile_id) && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
-                    {selected.has(m.profile_id) && <Ionicons name="checkmark" size={14} color="#000" />}
-                  </View>
-                  <View style={[st.pickerAvatar, { backgroundColor: primaryColor }]}>
-                    <Text style={st.pickerAvatarText}>{initials(m.full_name)}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={st.pickerName}>{m.full_name ?? 'Unknown'}</Text>
-                    <Text style={st.pickerRole}>
-                      {m.role === 'coach' ? 'Coach' : m.role === 'parent' ? 'Parent' : 'Player'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ));
+
+              return (
+                <>
+                  {filteredCoaches.length > 0 && (
+                    <>
+                      <Text style={st.pickerSectionLabel}>Coaches</Text>
+                      {filteredCoaches.map((m) => renderPersonRow(m))}
+                    </>
+                  )}
+
+                  {filteredGroups.length > 0 && (
+                    <>
+                      <Text style={st.pickerSectionLabel}>Players</Text>
+                      {filteredGroups.map((g) => {
+                        // While searching, auto-expand so a matching parent
+                        // is visible without an extra tap.
+                        const expanded = expandedPlayers.has(g.player_id) || !!q;
+                        return (
+                          <View key={g.player_id}>
+                            <TouchableOpacity style={st.playerGroupRow} onPress={() => togglePlayerExpanded(g.player_id)} activeOpacity={0.75}>
+                              <Ionicons name={expanded ? 'chevron-down' : 'chevron-forward'} size={16} color={PULSE_COLORS.ui.muted} />
+                              <Text style={st.playerGroupName} numberOfLines={1}>{g.player_name}</Text>
+                              <Text style={st.playerGroupCount}>
+                                {g.guardians.length} {g.guardians.length === 1 ? 'family member' : 'family members'}
+                              </Text>
+                            </TouchableOpacity>
+                            {expanded && g.guardians.map((m) => renderPersonRow(m, true))}
+                          </View>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {filteredOther.length > 0 && (
+                    <>
+                      <Text style={st.pickerSectionLabel}>Other</Text>
+                      {filteredOther.map((m) => renderPersonRow(m))}
+                    </>
+                  )}
+                </>
+              );
             })()}
           </ScrollView>
         </View>
@@ -1842,12 +1954,25 @@ const st = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: '600', color: '#000' },
 
   pickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  pickerRowIndent: { paddingLeft: 40, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
   checkBox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center' },
   checkBoxOn: { backgroundColor: PULSE_COLORS.brand.green, borderColor: PULSE_COLORS.brand.green },
   pickerAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center', justifyContent: 'center' },
   pickerAvatarText: { fontSize: 14, fontWeight: '800', color: '#000' },
   pickerName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 2 },
   pickerRole: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
+  pickerSectionLabel: {
+    fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6,
+  },
+  playerGroupRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
+  playerGroupName: { flex: 1, fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  playerGroupCount: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
 
   // Announcements
   aList: { padding: 16, paddingBottom: 100, flexGrow: 1 },
