@@ -14,6 +14,8 @@ import {
   View,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
@@ -27,12 +29,17 @@ import { sendTeamPush, sendProfilesPush } from '../../../../lib/push';
 
 type Message = {
   id: string;
-  body: string;
+  body: string | null;
   created_at: string;
   sender_id: string;
   sender_name: string | null;
   edited?: boolean;
+  image_url?: string | null;
 };
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+}
 
 type ReactionSummary = { emoji: string; count: number; mine: boolean; profileIds: string[] };
 
@@ -96,6 +103,8 @@ export default function ConversationScreen() {
   const [reactorSheet, setReactorSheet] = useState<{ emoji: string; profileIds: string[] } | null>(null);
   const [reactorNames, setReactorNames] = useState<Record<string, string>>({});
   const [loadingReactors, setLoadingReactors] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{ uri: string } | null>(null);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
   // Set right before the initial batch loads, cleared the first time the
@@ -184,7 +193,7 @@ export default function ConversationScreen() {
   async function fetchMessages() {
     const { data, error } = await supabase
       .from('messages')
-      .select('id, body, created_at, sender_id, edited, profiles:sender_id(full_name)')
+      .select('id, body, created_at, sender_id, edited, image_url, profiles:sender_id(full_name)')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false })
       .limit(PAGE + 1);
@@ -201,7 +210,7 @@ export default function ConversationScreen() {
     const mapped: Message[] = page.map((m: any) => ({
       id: m.id, body: m.body, created_at: m.created_at,
       sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
-      edited: m.edited ?? false,
+      edited: m.edited ?? false, image_url: m.image_url ?? null,
     }));
     awaitingInitialLayoutRef.current = true;
     setMessages(mapped);
@@ -223,7 +232,7 @@ export default function ConversationScreen() {
     const oldest = messages[0].created_at;
     const { data, error } = await supabase
       .from('messages')
-      .select('id, body, created_at, sender_id, edited, profiles:sender_id(full_name)')
+      .select('id, body, created_at, sender_id, edited, image_url, profiles:sender_id(full_name)')
       .eq('conversation_id', conversationId)
       .lt('created_at', oldest)
       .order('created_at', { ascending: false })
@@ -236,7 +245,7 @@ export default function ConversationScreen() {
     const older: Message[] = page.map((m: any) => ({
       id: m.id, body: m.body, created_at: m.created_at,
       sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
-      edited: m.edited ?? false,
+      edited: m.edited ?? false, image_url: m.image_url ?? null,
     }));
     setMessages((prev) => [...older, ...prev]);
     fetchReactions(older.map((m) => m.id));
@@ -252,7 +261,7 @@ export default function ConversationScreen() {
         const raw = payload.new as any;
         setMessages((prev) => {
           if (prev.some((m) => m.id === raw.id)) return prev;
-          return [...prev, { id: raw.id, body: raw.body, created_at: raw.created_at, sender_id: raw.sender_id, sender_name: null, edited: false }];
+          return [...prev, { id: raw.id, body: raw.body, created_at: raw.created_at, sender_id: raw.sender_id, sender_name: null, edited: false, image_url: raw.image_url ?? null }];
         });
         supabase.from('profiles').select('full_name').eq('id', raw.sender_id).single()
           .then(({ data }) => {
@@ -342,26 +351,85 @@ export default function ConversationScreen() {
     }
   }
 
+  async function pickImage(source: 'camera' | 'library') {
+    const perm = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        'Permission needed',
+        `Allow ${source === 'camera' ? 'camera' : 'photo library'} access in Settings to attach a photo.`
+      );
+      return;
+    }
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.75 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.75 });
+    if (result.canceled || !result.assets.length) return;
+    setPendingImage({ uri: result.assets[0].uri });
+  }
+
+  function showAttachOptions() {
+    Alert.alert('Add a photo', undefined, [
+      { text: 'Take Photo', onPress: () => pickImage('camera') },
+      { text: 'Choose from Library', onPress: () => pickImage('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
   async function handleSend() {
-    if (!text.trim() || !profile || sending) return;
+    if ((!text.trim() && !pendingImage) || !profile || sending) return;
     setSending(true);
     const body = text.trim();
+    const localImageUri = pendingImage?.uri ?? null;
     setText('');
+    setPendingImage(null);
 
     const tempId = `temp-${Date.now()}`;
-    const optimistic: Message = { id: tempId, body, created_at: new Date().toISOString(), sender_id: profile.id, sender_name: profile.full_name ?? null };
+    // Shown instantly with the LOCAL file uri — expo-image renders a
+    // file:// uri directly, so there's no need to wait on the upload just
+    // to preview it. Swapped for the real Storage URL once that lands.
+    const optimistic: Message = {
+      id: tempId, body: body || null, created_at: new Date().toISOString(),
+      sender_id: profile.id, sender_name: profile.full_name ?? null,
+      image_url: localImageUri,
+    };
     setMessages((prev) => [...prev, optimistic]);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
 
     try {
+      let uploadedImageUrl: string | null = null;
+      if (localImageUri) {
+        try {
+          const path = `${conversationId}/${uid()}.jpg`;
+          const response = await fetch(localImageUri);
+          const blob = await response.blob();
+          const { error: storageErr } = await supabase.storage
+            .from('chat-images')
+            .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+          if (storageErr) throw storageErr;
+          uploadedImageUrl = supabase.storage.from('chat-images').getPublicUrl(path).data.publicUrl;
+        } catch {
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          setText(body);
+          setPendingImage({ uri: localImageUri });
+          Alert.alert('Could not send photo', 'Check your connection and try again.');
+          return;
+        }
+      }
+
       const result = await withTimeout(
-        supabase.from('messages').insert({ conversation_id: conversationId, sender_id: profile.id, body }).select('id').single(),
+        supabase.from('messages').insert({
+          conversation_id: conversationId, sender_id: profile.id,
+          body: body || null, image_url: uploadedImageUrl,
+        }).select('id').single(),
         8000
       );
 
       if (result === TIMEOUT) {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setText(body);
+        if (localImageUri) setPendingImage({ uri: localImageUri });
         Alert.alert('Could not send', 'Check your connection and try again.');
         return;
       }
@@ -371,14 +439,16 @@ export default function ConversationScreen() {
       if (error) {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setText(body);
+        if (localImageUri) setPendingImage({ uri: localImageUri });
         Alert.alert('Could not send', error.message);
       } else if (inserted) {
-        setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: (inserted as any).id } : m));
+        setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: (inserted as any).id, image_url: uploadedImageUrl } : m));
+        const pushBody = body || '📷 Photo';
         if (convType === 'team_group' && convTeamId) {
           sendTeamPush({
             teamId: convTeamId,
             title: profile?.full_name ?? 'New message',
-            body: body.slice(0, 120),
+            body: pushBody.slice(0, 120),
             excludeProfileId: profile?.id,
             data: { type: 'new_message', conversation_id: conversationId },
           });
@@ -387,7 +457,7 @@ export default function ConversationScreen() {
             profileIds: dmParticipantIds,
             excludeProfileId: profile?.id,
             title: profile?.full_name ?? 'New message',
-            body: body.slice(0, 120),
+            body: pushBody.slice(0, 120),
             data: { type: 'new_dm', conversation_id: conversationId },
           });
         }
@@ -526,8 +596,18 @@ export default function ConversationScreen() {
                     </View>
                   ) : (
                     <TouchableWithoutFeedback onLongPress={() => onLongPress(item)}>
-                      <View style={[st.bubble, isMe ? [st.bubbleMe, { backgroundColor: primaryColor }] : st.bubbleThem]}>
-                        <Text style={[st.bubbleText, isMe && st.bubbleTextMe]}>{item.body}</Text>
+                      <View style={[
+                        st.bubble, isMe ? [st.bubbleMe, { backgroundColor: primaryColor }] : st.bubbleThem,
+                        !!item.image_url && st.bubbleWithImage,
+                      ]}>
+                        {item.image_url && (
+                          <TouchableOpacity onPress={() => setViewerUri(item.image_url!)} activeOpacity={0.85}>
+                            <Image source={{ uri: item.image_url }} style={st.bubbleImage} contentFit="cover" />
+                          </TouchableOpacity>
+                        )}
+                        {!!item.body && (
+                          <Text style={[st.bubbleText, isMe && st.bubbleTextMe, !!item.image_url && st.bubbleTextWithImage]}>{item.body}</Text>
+                        )}
                       </View>
                     </TouchableWithoutFeedback>
                   )}
@@ -560,7 +640,19 @@ export default function ConversationScreen() {
         />
       )}
 
+      {pendingImage && (
+        <View style={st.pendingImageRow}>
+          <Image source={{ uri: pendingImage.uri }} style={st.pendingImageThumb} contentFit="cover" />
+          <TouchableOpacity style={st.pendingImageRemove} onPress={() => setPendingImage(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close-circle" size={22} color={PULSE_COLORS.ui.muted} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={st.inputRow}>
+        <TouchableOpacity style={st.attachBtn} onPress={showAttachOptions} disabled={sending}>
+          <Ionicons name="camera-outline" size={22} color={PULSE_COLORS.ui.muted} />
+        </TouchableOpacity>
         <TextInput
           style={st.input}
           value={text}
@@ -573,9 +665,9 @@ export default function ConversationScreen() {
           blurOnSubmit={false}
         />
         <TouchableOpacity
-          style={[st.sendBtn, { backgroundColor: primaryColor }, (!text.trim() || sending) && st.sendBtnOff]}
+          style={[st.sendBtn, { backgroundColor: primaryColor }, (!text.trim() && !pendingImage || sending) && st.sendBtnOff]}
           onPress={handleSend}
-          disabled={!text.trim() || sending}
+          disabled={(!text.trim() && !pendingImage) || sending}
           activeOpacity={sending ? 1 : 0.7}
         >
           {sending
@@ -583,6 +675,15 @@ export default function ConversationScreen() {
             : <Ionicons name="send" size={16} color={sending ? '#4b5563' : '#000'} />}
         </TouchableOpacity>
       </View>
+
+      <Modal visible={!!viewerUri} transparent animationType="fade" onRequestClose={() => setViewerUri(null)}>
+        <TouchableOpacity style={st.viewerOverlay} activeOpacity={1} onPress={() => setViewerUri(null)}>
+          {viewerUri && <Image source={{ uri: viewerUri }} style={st.viewerImage} contentFit="contain" />}
+          <TouchableOpacity style={st.viewerClose} onPress={() => setViewerUri(null)}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       <Modal visible={!!reactionSheetMsg} animationType="slide" transparent onRequestClose={() => setReactionSheetMsg(null)}>
         <TouchableWithoutFeedback onPress={() => setReactionSheetMsg(null)}>
@@ -609,7 +710,7 @@ export default function ConversationScreen() {
                     style={st.reactionSheetAction}
                     onPress={() => {
                       setEditingId(reactionSheetMsg.id);
-                      setEditText(reactionSheetMsg.body);
+                      setEditText(reactionSheetMsg.body ?? '');
                       setReactionSheetMsg(null);
                     }}
                   >
@@ -727,6 +828,9 @@ const st = StyleSheet.create({
   },
   bubbleText: { fontSize: 15, color: PULSE_COLORS.ui.text, lineHeight: 20 },
   bubbleTextMe: { color: '#000' },
+  bubbleWithImage: { padding: 4, overflow: 'hidden' },
+  bubbleImage: { width: 220, height: 220, borderRadius: 14, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+  bubbleTextWithImage: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 2 },
   timestampRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, marginHorizontal: 4 },
   timestamp: { fontSize: 10, color: PULSE_COLORS.ui.muted },
   editedLabel: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
@@ -772,6 +876,32 @@ const st = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   sendBtnOff: { opacity: 0.4 },
+  attachBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  pendingImageRow: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    paddingHorizontal: 16, paddingTop: 10,
+    backgroundColor: PULSE_COLORS.ui.background,
+  },
+  pendingImageThumb: {
+    width: 64, height: 64, borderRadius: 10,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+  },
+  pendingImageRemove: { marginLeft: -12, marginTop: -8, backgroundColor: PULSE_COLORS.ui.background, borderRadius: 11 },
+
+  // Full-screen image viewer
+  viewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  viewerImage: { width: '100%', height: '80%' },
+  viewerClose: {
+    position: 'absolute', top: 56, right: 20,
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
 
   // Reaction sheet
   reactionSheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },

@@ -1841,27 +1841,30 @@ export type Database = {
       }
       messages: {
         Row: {
-          body: string
+          body: string | null
           conversation_id: string
           created_at: string | null
           edited: boolean | null
           id: string
+          image_url: string | null
           sender_id: string
         }
         Insert: {
-          body: string
+          body?: string | null
           conversation_id: string
           created_at?: string | null
           edited?: boolean | null
           id?: string
+          image_url?: string | null
           sender_id: string
         }
         Update: {
-          body?: string
+          body?: string | null
           conversation_id?: string
           created_at?: string | null
           edited?: boolean | null
           id?: string
+          image_url?: string | null
           sender_id?: string
         }
         Relationships: [
