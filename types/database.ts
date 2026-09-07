@@ -5357,6 +5357,14 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_direct_conversation: {
+        Args: {
+          p_participant_ids: string[]
+          p_team_id: string
+          p_title: string
+        }
+        Returns: string
+      }
       create_guest_request: {
         Args: {
           p_event_id: string

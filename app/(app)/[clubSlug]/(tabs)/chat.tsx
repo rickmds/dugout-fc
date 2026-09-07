@@ -472,27 +472,26 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
       ? (selectedList[0].full_name ?? 'Conversation')
       : (groupName.trim() || selectedList.map((m) => m.full_name?.split(' ')[0] ?? '?').join(', '));
 
-    const { data: conv, error } = await supabase
-      .from('conversations')
-      .insert({ team_id: team.id, type: 'direct', title })
-      .select('id')
-      .single();
+    // Creates the conversation and adds every participant atomically —
+    // doing this as two separate client-side inserts (create, then add
+    // participants) meant the create step's .select() had to read the row
+    // back before any participant existed, which RLS always denied for
+    // type='direct'. See 20260907000004_fix_direct_conversation_creation.sql.
+    const { data: newConvId, error } = await supabase.rpc('create_direct_conversation', {
+      p_team_id: team.id,
+      p_participant_ids: selectedList.map((m) => m.profile_id),
+      p_title: title,
+    });
 
-    if (error || !conv) {
+    if (error || !newConvId) {
       Alert.alert('Error', error?.message ?? 'Could not create conversation.');
       setCreating(false);
       return;
     }
 
-    const participants = [
-      { conversation_id: (conv as any).id, profile_id: profile.id },
-      ...selectedList.map((m) => ({ conversation_id: (conv as any).id, profile_id: m.profile_id })),
-    ];
-    await supabase.from('conversation_participants').insert(participants);
-
     setCreating(false);
     setShowNewChat(false);
-    router.push(`/(app)/${clubSlug}/conversation/${(conv as any).id}` as any);
+    router.push(`/(app)/${clubSlug}/conversation/${newConvId}` as any);
   }
 
   const isGroup = selected.size > 1;
