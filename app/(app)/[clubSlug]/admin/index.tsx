@@ -1,12 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  SectionList,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -18,7 +15,6 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
-import { groupTeamsByAgeGroup, resolveTeamGender, GENDER_DISPLAY_LABELS } from '../../../../lib/teamGrouping';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../../components/ui/TeamEditModal';
 
@@ -253,14 +249,12 @@ export default function AdminPanel() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { profile } = useAuth();
-  const { team, allTeams, selectTeam, loading: teamLoading, refetch, teamsWithUnreadChat } = useTeam();
+  const { team, loading: teamLoading, refetch } = useTeam();
 
   const [upcoming, setUpcoming] = useState<EventRow[]>([]);
   const [total,    setTotal]    = useState(0);
   const [loading,  setLoading]  = useState(true);
   const firstLoad = useRef(true);
-  const [pickerVisible, setPickerVisible] = useState(false);
-  const [search, setSearch]               = useState('');
   const [editTeamOpen, setEditTeamOpen]   = useState(false);
 
   const [attendancePlayers,  setAttendancePlayers]  = useState<AttendancePlayer[]>([]);
@@ -395,15 +389,6 @@ export default function AdminPanel() {
   // who's merely a guest/parent on another club's team must not see that
   // other club's admin tools just because their home-club role is org_admin.
   const isOrgAdmin = team?.myRole === 'org_admin';
-  const [teamGenderFilter, setTeamGenderFilter] = useState<'all' | 'boys' | 'girls' | 'mixed'>('all');
-  const hasMixedTeams = useMemo(() => allTeams.some((t) => resolveTeamGender(t) === 'mixed'), [allTeams]);
-  const filteredTeams = useMemo(
-    () => allTeams
-      .filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
-      .filter((t) => teamGenderFilter === 'all' || resolveTeamGender(t) === teamGenderFilter),
-    [allTeams, search, teamGenderFilter],
-  );
-  const teamSections = useMemo(() => groupTeamsByAgeGroup(filteredTeams), [filteredTeams]);
 
   return (
     <View style={st.root}>
@@ -411,7 +396,6 @@ export default function AdminPanel() {
         title={team?.name ?? 'Select Team'}
         subtitle="Admin Panel"
         onBack={() => router.back()}
-        onPressTitle={(isOrgAdmin || allTeams.length > 1) ? () => { setSearch(''); setTeamGenderFilter('all'); setPickerVisible(true); } : undefined}
         right={
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity
@@ -440,119 +424,6 @@ export default function AdminPanel() {
         onClose={() => setEditTeamOpen(false)}
         onSaved={async () => { setEditTeamOpen(false); await refetch(); }}
       />
-
-      {/* Team picker modal */}
-      <Modal visible={pickerVisible} animationType="slide" onRequestClose={() => setPickerVisible(false)}>
-        <View style={tp.root}>
-          <View style={tp.header}>
-            <Text style={tp.title}>Switch team</Text>
-            <TouchableOpacity onPress={() => setPickerVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close" size={22} color={PULSE_COLORS.ui.text} />
-            </TouchableOpacity>
-          </View>
-          <View style={tp.searchWrap}>
-            <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
-            <TextInput
-              style={tp.searchInput}
-              placeholder="Search teams…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
-              value={search}
-              onChangeText={setSearch}
-              autoFocus
-              autoCorrect={false}
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
-              </TouchableOpacity>
-            )}
-          </View>
-          <View style={tp.genderFilterRow}>
-            {(['all', 'boys', 'girls', ...(hasMixedTeams ? ['mixed'] : [])] as ('all' | 'boys' | 'girls' | 'mixed')[]).map((f) => {
-              const isSelected = teamGenderFilter === f;
-              const tint = f === 'boys' ? PULSE_COLORS.teamTag.boys : f === 'girls' ? PULSE_COLORS.teamTag.girls : f === 'mixed' ? PULSE_COLORS.teamTag.mixed : null;
-              return (
-                <TouchableOpacity
-                  key={f}
-                  style={[tp.genderFilterChip, isSelected && { backgroundColor: tint?.bg ?? `${primaryColor}22`, borderColor: tint?.text ?? primaryColor }]}
-                  onPress={() => setTeamGenderFilter(f)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[tp.genderFilterChipText, isSelected && { color: tint?.text ?? primaryColor }]}>
-                    {f === 'all' ? 'All' : GENDER_DISPLAY_LABELS[f]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <SectionList
-            sections={teamSections}
-            keyExtractor={(t) => t.id}
-            contentContainerStyle={tp.list}
-            keyboardShouldPersistTaps="handled"
-            stickySectionHeadersEnabled
-            renderSectionHeader={({ section: { title, data } }) => (
-              <View style={tp.sectionHeader}>
-                <Text style={tp.sectionHeaderText}>{title}</Text>
-                <Text style={tp.sectionHeaderCount}>{data.length}</Text>
-              </View>
-            )}
-            renderItem={({ item }) => {
-              const active = item.id === team?.id;
-              // Only skip the age-group line when the team's own name
-              // already spells it out ("U12 Boys Premier") — a club that
-              // names teams some other way ("Madrid") still needs it shown.
-              const nameHasAgeGroup = !!item.age_group && item.name.toLowerCase().includes(item.age_group.toLowerCase());
-              const metaText = [!nameHasAgeGroup && item.age_group, item.season].filter(Boolean).join('  ·  ');
-              const resolvedGender = resolveTeamGender(item);
-              const genderTint = resolvedGender === 'boys' ? PULSE_COLORS.teamTag.boys
-                : resolvedGender === 'girls' ? PULSE_COLORS.teamTag.girls
-                : resolvedGender === 'mixed' ? PULSE_COLORS.teamTag.mixed : null;
-              return (
-                <TouchableOpacity
-                  style={[tp.row, active && { backgroundColor: `${primaryColor}12` }]}
-                  onPress={() => {
-                    // A team at a DIFFERENT club needs the route itself to
-                    // move too — selectTeam() alone leaves clubSlug pointed
-                    // at the old club, and ClubSlugGuard (app/(app)/[clubSlug]/
-                    // _layout.tsx) then "corrects" the mismatch by silently
-                    // switching back, producing a visible flip-flop between
-                    // both clubs' admin panels right after picking one.
-                    setPickerVisible(false);
-                    if (item.club?.slug && item.club.slug !== clubSlug) {
-                      selectTeam(item.id);
-                      router.replace(`/(app)/${item.club.slug}/admin` as never);
-                    } else {
-                      selectTeam(item.id);
-                    }
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <View style={[tp.dot, { backgroundColor: active ? primaryColor : PULSE_COLORS.ui.border }]} />
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[tp.rowName, active && { color: primaryColor }]}>{item.name}</Text>
-                      {teamsWithUnreadChat.has(item.id) && <View style={tp.unreadDot} />}
-                    </View>
-                    {!!metaText && <Text style={tp.rowMeta}>{metaText}</Text>}
-                  </View>
-                  {!!resolvedGender && genderTint && (
-                    <View style={[tp.genderPill, { backgroundColor: genderTint.bg }]}>
-                      <Text style={[tp.genderPillText, { color: genderTint.text }]}>{GENDER_DISPLAY_LABELS[resolvedGender]}</Text>
-                    </View>
-                  )}
-                  {active && <Ionicons name="checkmark" size={16} color={primaryColor} />}
-                </TouchableOpacity>
-              );
-            }}
-            ListEmptyComponent={
-              <View style={tp.empty}>
-                <Text style={tp.emptyText}>No teams match "{search}"</Text>
-              </View>
-            }
-          />
-        </View>
-      </Modal>
 
       {loading ? (
         <View style={st.center}>
@@ -669,6 +540,7 @@ export default function AdminPanel() {
               <>
                 {(attendanceExpanded ? attendancePlayers : attendancePlayers.slice(0, 5)).map((p, i) => {
                   const barColor = p.pct >= 75 ? '#22C55E' : p.pct >= 50 ? '#F59E0B' : '#EF4444';
+                  const barBg = p.pct >= 75 ? 'rgba(34,197,94,0.16)' : p.pct >= 50 ? 'rgba(245,158,11,0.16)' : 'rgba(239,68,68,0.16)';
                   return (
                     <View key={p.id}>
                       {i > 0 && <View style={atndSt.divider} />}
@@ -677,12 +549,9 @@ export default function AdminPanel() {
                           <Text style={atndSt.jerseyText}>{p.jersey_number ?? '—'}</Text>
                         </View>
                         <Text style={atndSt.name} numberOfLines={1}>{p.full_name}</Text>
-                        <View style={atndSt.rightCol}>
-                          <Text style={[atndSt.pct, { color: barColor }]}>{p.attended}/{p.total} · {p.pct}%</Text>
-                          <View style={atndSt.barTrack}>
-                            <View style={[atndSt.barFill, { flex: p.pct, backgroundColor: barColor }]} />
-                            {p.pct < 100 && <View style={[atndSt.barEmpty, { flex: 100 - p.pct }]} />}
-                          </View>
+                        <Text style={atndSt.fraction}>{p.attended}/{p.total}</Text>
+                        <View style={[atndSt.pctPill, { backgroundColor: barBg }]}>
+                          <Text style={[atndSt.pctPillText, { color: barColor }]}>{p.pct}%</Text>
                         </View>
                       </View>
                     </View>
@@ -908,37 +777,10 @@ const atndSt = StyleSheet.create({
   jersey:     { width: 28, height: 28, borderRadius: 7, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   jerseyText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.text },
   name:       { flex: 1, fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  rightCol:   { alignItems: 'flex-end', gap: 4, minWidth: 90 },
-  pct:        { fontSize: 11, fontWeight: '700' },
-  barTrack:   { height: 4, borderRadius: 2, overflow: 'hidden', flexDirection: 'row', width: 80, backgroundColor: PULSE_COLORS.ui.border },
-  barFill:    { height: '100%' },
-  barEmpty:   { height: '100%' },
+  fraction:   { fontSize: 12, color: PULSE_COLORS.ui.muted, fontVariant: ['tabular-nums'] },
+  pctPill:    { minWidth: 48, alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  pctPillText:{ fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
   viewAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 12 },
   viewAllText:{ fontSize: 13, fontWeight: '600' },
 });
 
-// ─── Team picker modal styles ─────────────────────────────────────────────────
-
-const tp = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  title:       { fontSize: 20, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
-  searchWrap:  { flexDirection: 'row', alignItems: 'center', gap: 10, margin: 16, backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingHorizontal: 14, paddingVertical: 10 },
-  searchInput: { flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text },
-  genderFilterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
-  genderFilterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  genderFilterChipText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
-  list:        { paddingBottom: 40 },
-  row:         { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  dot:         { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  unreadDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
-  rowName:     { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  rowMeta:     { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
-  genderPill:  { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  genderPillText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted },
-  empty:       { padding: 40, alignItems: 'center' },
-  emptyText:   { fontSize: 14, color: PULSE_COLORS.ui.muted },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8, backgroundColor: PULSE_COLORS.ui.background },
-  sectionHeaderText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, textTransform: 'uppercase', letterSpacing: 0.6 },
-  sectionHeaderCount: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted },
-});
