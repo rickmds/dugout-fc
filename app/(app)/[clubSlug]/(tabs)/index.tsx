@@ -31,7 +31,7 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { positionColor } from '../../../../constants/positions';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import GroupedTeamList from '../../../../components/ui/GroupedTeamList';
-import { resolveTeamGender, nameAlreadySaysAgeGroup, nameAlreadySaysGender, GENDER_DISPLAY_LABELS } from '../../../../lib/teamGrouping';
+import { resolveTeamGender, GENDER_DISPLAY_LABELS } from '../../../../lib/teamGrouping';
 import GameDayWidget from '../../../../components/home/GameDayWidget';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
 import CreatePollModal from '../../../../components/home/CreatePollModal';
@@ -409,6 +409,7 @@ export default function HomeScreen() {
 
   // Team picker
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
+  const [teamGenderFilter, setTeamGenderFilter] = useState<'all' | 'boys' | 'girls' | 'mixed'>('all');
   const hasMultipleTeams = allTeams.length > 1;
 
   function handleSelectTeam(teamId: string) {
@@ -1251,6 +1252,21 @@ export default function HomeScreen() {
   }
   const multiClub = teamsByClub.length > 1;
 
+  // Only a boys/girls quick filter needs a chip — clubs vary in how often
+  // "mixed" teams exist, so that chip only ever appears when there's
+  // actually one to filter to, rather than always occupying a slot for a
+  // dimension most clubs never use. Filtering to a single gender also
+  // means every remaining team already sorts youngest-to-oldest for free
+  // — that's the age-ascending order groupTeamsByAgeGroup already applies,
+  // it just no longer needs to interleave a second gender within it.
+  const hasMixedTeams = allTeams.some((t) => resolveTeamGender(t) === 'mixed');
+  const teamsByClubFiltered = teamsByClub
+    .map((group) => ({
+      ...group,
+      teams: teamGenderFilter === 'all' ? group.teams : group.teams.filter((t) => resolveTeamGender(t) === teamGenderFilter),
+    }))
+    .filter((group) => group.teams.length > 0);
+
   function renderNextCard(
     label: string,
     event: NextEvent | null,
@@ -1550,7 +1566,7 @@ export default function HomeScreen() {
           {/* Logo + club name centred */}
           <TouchableOpacity
             style={styles.heroBrand}
-            onPress={() => hasMultipleTeams && setTeamPickerOpen(true)}
+            onPress={() => { if (hasMultipleTeams) { setTeamGenderFilter('all'); setTeamPickerOpen(true); } }}
             activeOpacity={hasMultipleTeams ? 0.75 : 1}
             onLongPress={handleGreetingTap}
           >
@@ -2122,8 +2138,36 @@ export default function HomeScreen() {
           <View style={styles.devHandle} />
           <Text style={styles.devTitle}>Switch Team</Text>
           <Text style={styles.devSub}>Select which team to view</Text>
+
+          {hasMultipleTeams && (
+            <View style={styles.genderFilterRow}>
+              {(['all', 'boys', 'girls', ...(hasMixedTeams ? ['mixed'] : [])] as ('all' | 'boys' | 'girls' | 'mixed')[]).map((f) => {
+                const isSelected = teamGenderFilter === f;
+                const tint = f === 'boys' ? PULSE_COLORS.teamTag.boys : f === 'girls' ? PULSE_COLORS.teamTag.girls : f === 'mixed' ? PULSE_COLORS.teamTag.mixed : null;
+                return (
+                  <TouchableOpacity
+                    key={f}
+                    style={[
+                      styles.genderFilterChip,
+                      isSelected && { backgroundColor: tint?.bg ?? rgba(0.16), borderColor: tint?.text ?? primaryColor },
+                    ]}
+                    onPress={() => setTeamGenderFilter(f)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.genderFilterChipText, isSelected && { color: tint?.text ?? primaryColor }]}>
+                      {f === 'all' ? 'All' : GENDER_DISPLAY_LABELS[f]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
           <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false} bounces={false}>
-            {teamsByClub.map((group) => (
+            {teamsByClubFiltered.length === 0 && (
+              <Text style={styles.genderFilterEmpty}>No {teamGenderFilter} teams.</Text>
+            )}
+            {teamsByClubFiltered.map((group) => (
               <View key={group.clubId} style={{ marginBottom: 4 }}>
                 {multiClub && (
                   <Text style={styles.teamPickerClubHeader}>{group.clubName}</Text>
@@ -2136,17 +2180,16 @@ export default function HomeScreen() {
                     renderRow={(t) => {
                       const isActive = t.id === team?.id;
                       const teamColor = t.club?.primary_color ?? primaryColor;
-                      // Some clubs name teams after the age/gender ("U12
-                      // Boys Premier"), others don't ("Madrid", or a
-                      // shorthand code like "BU9") — only skip a pill when
-                      // the name already spells that piece out in plain
-                      // English, never assume the convention. Gender falls
-                      // back to a guess from a "BU9"/"GU9"-style prefix when
-                      // the club never set it, same as the row's own sort
-                      // order already does.
+                      // Gender falls back to a guess from a "BU9"/"GU9"-style
+                      // name prefix when the club never set it, same as the
+                      // row's own sort order already does. Always shown —
+                      // a compact pill costs nothing even when the name
+                      // already spells it out, and staying consistent means
+                      // the pills double as a reliable filter key.
                       const resolvedGender = resolveTeamGender(t);
-                      const showAgePill = !!t.age_group && !nameAlreadySaysAgeGroup(t.name, t.age_group);
-                      const showGenderPill = !!resolvedGender && resolvedGender !== 'mixed' && !nameAlreadySaysGender(t.name, resolvedGender);
+                      const genderTint = resolvedGender === 'boys' ? PULSE_COLORS.teamTag.boys
+                        : resolvedGender === 'girls' ? PULSE_COLORS.teamTag.girls
+                        : resolvedGender === 'mixed' ? PULSE_COLORS.teamTag.mixed : null;
                       return (
                         <TouchableOpacity
                           style={[styles.teamPickerRow, isActive && { backgroundColor: rgba(0.1) }]}
@@ -2158,14 +2201,14 @@ export default function HomeScreen() {
                             {teamsWithUnreadChat.has(t.id) && <View style={styles.teamPickerUnreadDot} />}
                           </View>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            {showAgePill && (
-                              <View style={styles.teamPickerPill}>
-                                <Text style={styles.teamPickerPillText}>{t.age_group}</Text>
+                            {!!t.age_group && (
+                              <View style={[styles.teamPickerPill, { backgroundColor: PULSE_COLORS.teamTag.age.bg }]}>
+                                <Text style={[styles.teamPickerPillText, { color: PULSE_COLORS.teamTag.age.text }]}>{t.age_group}</Text>
                               </View>
                             )}
-                            {showGenderPill && (
-                              <View style={styles.teamPickerPill}>
-                                <Text style={styles.teamPickerPillText}>{GENDER_DISPLAY_LABELS[resolvedGender!]}</Text>
+                            {!!resolvedGender && genderTint && (
+                              <View style={[styles.teamPickerPill, { backgroundColor: genderTint.bg }]}>
+                                <Text style={[styles.teamPickerPillText, { color: genderTint.text }]}>{GENDER_DISPLAY_LABELS[resolvedGender]}</Text>
                               </View>
                             )}
                             {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
@@ -2850,6 +2893,13 @@ const styles = StyleSheet.create({
 
 
   // Team picker
+  genderFilterRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  genderFilterChip: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  genderFilterChipText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  genderFilterEmpty: { color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingVertical: 24, fontSize: 13 },
   teamPickerClubHeader: {
     fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
     letterSpacing: 0.8, textTransform: 'uppercase',
