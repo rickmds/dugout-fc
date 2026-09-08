@@ -47,7 +47,7 @@ type Tournament = {
   cancelled_at: string | null; cancellation_reason: string | null;
 };
 
-type RosterPlayer = { id: string; full_name: string };
+type RosterPlayer = { id: string; full_name: string; jersey_number: number | null };
 type TournamentRsvp = { player_id: string; status: RsvpStatus };
 
 function fmtTime(t: string | null): string {
@@ -78,6 +78,10 @@ export default function TournamentDetailScreen() {
   const [myPlayerIds, setMyPlayerIds] = useState<string[]>([]);
   const [entryRsvps, setEntryRsvps] = useState<TournamentRsvp[]>([]);
   const [rsvpSavingId, setRsvpSavingId] = useState<string | null>(null);
+  // Coach-only "who's responded" breakdown — same tap-a-count-to-filter
+  // pattern as the Availability tab on a regular event, so a coach can
+  // chase up specific parents instead of only seeing totals.
+  const [activeEntryTab, setActiveEntryTab] = useState<'attending' | 'not_attending' | 'none'>('none');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -122,7 +126,7 @@ export default function TournamentDetailScreen() {
         .select('id, title, type, event_date, event_time, location, round_label, score_home, score_away, cancelled_at')
         .eq('tournament_id', tournamentId)
         .order('event_date').order('event_time'),
-      supabase.from('players').select('id, full_name').eq('team_id', tRow.team_id),
+      supabase.from('players').select('id, full_name, jersey_number').eq('team_id', tRow.team_id).order('jersey_number'),
       (supabase as any).rpc('get_my_guarded_players').select('id').eq('team_id', tRow.team_id),
       supabase.from('tournament_rsvps').select('player_id, status').eq('tournament_id', tournamentId),
     ]);
@@ -157,6 +161,40 @@ export default function TournamentDetailScreen() {
     } finally {
       setRsvpSavingId(null);
     }
+  }
+
+  // Coach override — same 3-option action sheet (mark in / mark out /
+  // clear) as event/[eventId].tsx's handleCoachOverride, targeting
+  // tournament_rsvps instead of event_rsvps.
+  function handleEntryOverride(playerId: string, playerName: string, currentStatus: RsvpStatus | null) {
+    Alert.alert(
+      playerName,
+      'Override tournament entry RSVP for this player',
+      [
+        { text: '✅ Going', onPress: () => applyEntryOverride(playerId, 'attending') },
+        { text: "❌ Can't go", onPress: () => applyEntryOverride(playerId, 'not_attending') },
+        ...(currentStatus !== null ? [{ text: '⬜ Clear RSVP', onPress: () => clearEntryOverride(playerId) }] : []),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]
+    );
+  }
+
+  async function applyEntryOverride(playerId: string, status: RsvpStatus) {
+    if (!tournamentId) return;
+    const { error } = await supabase.from('tournament_rsvps').upsert(
+      { tournament_id: tournamentId, player_id: playerId, responded_by: profile?.id, status },
+      { onConflict: 'tournament_id,player_id' }
+    );
+    if (error) { Alert.alert('Error', 'Could not update RSVP. Please try again.'); return; }
+    setEntryRsvps((prev) => [...prev.filter((r) => r.player_id !== playerId), { player_id: playerId, status }]);
+  }
+
+  async function clearEntryOverride(playerId: string) {
+    if (!tournamentId) return;
+    const { error } = await supabase.from('tournament_rsvps').delete()
+      .eq('tournament_id', tournamentId).eq('player_id', playerId);
+    if (error) { Alert.alert('Error', 'Could not clear RSVP. Please try again.'); return; }
+    setEntryRsvps((prev) => prev.filter((r) => r.player_id !== playerId));
   }
 
   function confirmCancel() {
@@ -428,20 +466,71 @@ export default function TournamentDetailScreen() {
             )}
 
             {isCoach && (
-              <View style={[styles.rsvpCountRow, myPlayerIds.length > 0 && { marginTop: 14 }]}>
-                <View style={styles.rsvpCountStat}>
-                  <Text style={[styles.rsvpCountNum, { color: PULSE_COLORS.rsvp.attending }]}>{entryAttending.length}</Text>
-                  <Text style={styles.rsvpCountLabel}>IN</Text>
+              <>
+                <View style={[styles.rsvpCountRow, myPlayerIds.length > 0 && { marginTop: 14 }]}>
+                  <TouchableOpacity
+                    style={[styles.rsvpCountStat, activeEntryTab === 'attending' && { backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 12 }]}
+                    onPress={() => setActiveEntryTab('attending')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.rsvpCountNum, { color: PULSE_COLORS.rsvp.attending }]}>{entryAttending.length}</Text>
+                    <Text style={styles.rsvpCountLabel}>IN</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.rsvpCountStat, activeEntryTab === 'not_attending' && { backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 12 }]}
+                    onPress={() => setActiveEntryTab('not_attending')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.rsvpCountNum, { color: PULSE_COLORS.rsvp.not_attending }]}>{entryNotAttending.length}</Text>
+                    <Text style={styles.rsvpCountLabel}>OUT</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.rsvpCountStat, activeEntryTab === 'none' && { backgroundColor: 'rgba(100,116,139,0.08)', borderRadius: 12 }]}
+                    onPress={() => setActiveEntryTab('none')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.rsvpCountNum, { color: PULSE_COLORS.ui.muted }]}>{entryNoResponse.length}</Text>
+                    <Text style={styles.rsvpCountLabel}>PENDING</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.rsvpCountStat}>
-                  <Text style={[styles.rsvpCountNum, { color: PULSE_COLORS.rsvp.not_attending }]}>{entryNotAttending.length}</Text>
-                  <Text style={styles.rsvpCountLabel}>OUT</Text>
-                </View>
-                <View style={styles.rsvpCountStat}>
-                  <Text style={[styles.rsvpCountNum, { color: PULSE_COLORS.ui.muted }]}>{entryNoResponse.length}</Text>
-                  <Text style={styles.rsvpCountLabel}>PENDING</Text>
-                </View>
-              </View>
+
+                {/* Who's in this bucket — tap a player to override their entry RSVP. */}
+                {(() => {
+                  const list = activeEntryTab === 'attending' ? entryAttending
+                    : activeEntryTab === 'not_attending' ? entryNotAttending : entryNoResponse;
+                  if (list.length === 0) {
+                    return (
+                      <Text style={styles.entryListEmpty}>
+                        {activeEntryTab === 'attending' ? 'No one has confirmed yet.'
+                          : activeEntryTab === 'not_attending' ? "No one has said they can't make it."
+                          : 'Everyone has responded.'}
+                      </Text>
+                    );
+                  }
+                  return (
+                    <View style={styles.entryPlayerCard}>
+                      {list.map((p, i) => (
+                        <View key={p.id}>
+                          {i > 0 && <View style={styles.entryPlayerDivider} />}
+                          <TouchableOpacity
+                            style={styles.entryPlayerRow}
+                            onPress={() => handleEntryOverride(p.id, p.full_name, entryMap.get(p.id) ?? null)}
+                            activeOpacity={0.7}
+                          >
+                            <View style={styles.entryJerseyBadge}>
+                              <Text style={styles.entryJerseyNum}>{p.jersey_number ?? '—'}</Text>
+                            </View>
+                            <Text style={styles.entryPlayerName} numberOfLines={1}>{p.full_name}</Text>
+                            {activeEntryTab === 'attending' && <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />}
+                            {activeEntryTab === 'not_attending' && <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />}
+                            {activeEntryTab === 'none' && <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />}
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })()}
+              </>
             )}
 
             <Text style={styles.rsvpCaption}>
@@ -602,6 +691,19 @@ const styles = StyleSheet.create({
   rsvpCountNum: { fontSize: 17, fontWeight: '800' },
   rsvpCountLabel: { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5, marginTop: 1 },
   rsvpCaption: { fontSize: 10.5, color: PULSE_COLORS.ui.muted, marginTop: 12, lineHeight: 14 },
+  entryListEmpty: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 12, textAlign: 'center' },
+  entryPlayerCard: {
+    marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.background, overflow: 'hidden',
+  },
+  entryPlayerDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  entryPlayerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  entryJerseyBadge: {
+    width: 28, height: 28, borderRadius: 7, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  entryJerseyNum: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  entryPlayerName: { flex: 1, fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
 
   aiBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
