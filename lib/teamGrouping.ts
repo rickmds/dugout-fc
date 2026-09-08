@@ -67,11 +67,3 @@ export function groupTeamsByAgeGroup<T extends { age_group: string | null; name:
     })
     .map(([title, data]) => ({ title, data: sortTeams(data) }));
 }
-
-// Same age-then-gender ordering as groupTeamsByAgeGroup, flattened with no
-// section boundaries — for the below-threshold case, where the list is
-// short enough that headers/accordions would just be overhead but the
-// ordering itself is still worth keeping.
-export function sortTeamsByAgeAndGender<T extends { age_group: string | null; name: string; gender?: string | null }>(teams: T[]): T[] {
-  return groupTeamsByAgeGroup(teams).flatMap((s) => s.data);
-}

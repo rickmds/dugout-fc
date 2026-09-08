@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../constants/colors';
-import { groupTeamsByAgeGroup, sortTeamsByAgeAndGender, TEAM_GROUPING_THRESHOLD } from '../../lib/teamGrouping';
+import { groupTeamsByAgeGroup, TEAM_GROUPING_THRESHOLD } from '../../lib/teamGrouping';
 
 type BaseTeam = { id: string; age_group: string | null; name: string; gender?: string | null };
 
@@ -31,6 +31,37 @@ function buildLabeledRows<T extends BaseTeam>(data: T[], showDividers: boolean):
     rows.push({ key: t.id, team: t, divider: showDividers && seenAny && !isNewCluster });
     lastGender = g;
     seenAny = true;
+  }
+  return rows;
+}
+
+// Same idea, for the flat (below-threshold) list — but "does this need a
+// gender label" has to be judged per age band, not across the whole list.
+// buildLabeledRows alone, called once over every team regardless of age,
+// mixes genders *would you look at that* whenever gender happens to
+// alternate across an age boundary (a solo U10 boys team followed by a
+// mixed U11 group followed by a solo U12 boys team) — producing
+// Male/Female/Male even though only U11 actually has both. Grouping by
+// age first and asking the mixing question within each age band fixes
+// that at the source; seenAny stays threaded across the whole sequence
+// (not reset per band) so the divider chain reads as one continuous list
+// rather than restarting at every age boundary.
+function buildFlatRows<T extends BaseTeam>(teams: T[], showDividers: boolean): LabeledRow<T>[] {
+  const sections = groupTeamsByAgeGroup(teams);
+  const rows: LabeledRow<T>[] = [];
+  let seenAny = false;
+  for (const section of sections) {
+    const distinctGenders = new Set(section.data.map((t) => t.gender).filter((g): g is string => !!g && g in GENDER_LABELS));
+    const useLabels = distinctGenders.size >= 2;
+    let lastGender: string | null = null;
+    for (const t of section.data) {
+      const g = t.gender ?? null;
+      const isNewCluster = useLabels && g !== lastGender && g && g in GENDER_LABELS;
+      if (isNewCluster) rows.push({ key: `label-${g}-${t.id}`, label: GENDER_LABELS[g!], divider: false });
+      rows.push({ key: t.id, team: t, divider: showDividers && seenAny && !isNewCluster });
+      lastGender = g;
+      seenAny = true;
+    }
   }
   return rows;
 }
@@ -72,10 +103,9 @@ export default function GroupedTeamList<T extends BaseTeam>({
   const dividerStyle = { ...gs.divider, marginLeft: dividerInset };
 
   if (teams.length <= TEAM_GROUPING_THRESHOLD) {
-    const sorted = sortTeamsByAgeAndGender(teams);
     return (
       <>
-        {buildLabeledRows(sorted, showDividers).map((row) => (
+        {buildFlatRows(teams, showDividers).map((row) => (
           <View key={row.key}>
             {row.label ? (
               <Text style={gs.genderLabel}>{row.label}</Text>

@@ -2121,41 +2121,45 @@ export default function HomeScreen() {
           <View style={styles.devHandle} />
           <Text style={styles.devTitle}>Switch Team</Text>
           <Text style={styles.devSub}>Select which team to view</Text>
-          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false} bounces={false}>
+          <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false} bounces={false}>
             {teamsByClub.map((group) => (
-              <View key={group.clubId}>
+              <View key={group.clubId} style={{ marginBottom: 4 }}>
                 {multiClub && (
                   <Text style={styles.teamPickerClubHeader}>{group.clubName}</Text>
                 )}
-                <GroupedTeamList
-                  teams={group.teams}
-                  showDividers={false}
-                  renderRow={(t) => {
-                    const isActive = t.id === team?.id;
-                    const teamColor = t.club?.primary_color ?? primaryColor;
-                    return (
-                      <TouchableOpacity
-                        style={[styles.teamPickerRow, isActive && styles.teamPickerRowActive]}
-                        onPress={() => handleSelectTeam(t.id)}
-                        activeOpacity={0.75}
-                      >
-                        <View style={[styles.teamPickerIcon, { backgroundColor: rgba(isActive ? 0.18 : 0.08), borderColor: rgba(isActive ? 0.35 : 0.15) }]}>
-                          <Ionicons name="football-outline" size={18} color={teamColor} />
-                        </View>
-                        <View style={styles.teamPickerBody}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
-                            {teamsWithUnreadChat.has(t.id) && <View style={styles.teamPickerUnreadDot} />}
+                <View style={styles.teamCard}>
+                  <GroupedTeamList
+                    teams={group.teams}
+                    showDividers
+                    dividerInset={16}
+                    renderRow={(t) => {
+                      const isActive = t.id === team?.id;
+                      const teamColor = t.club?.primary_color ?? primaryColor;
+                      // Some clubs name teams after the age ("U12 Boys
+                      // Premier"), others don't ("Madrid") — only skip the
+                      // meta line when the name already spells it out, never
+                      // assume the convention.
+                      const nameHasAgeGroup = !!t.age_group && t.name.toLowerCase().includes(t.age_group.toLowerCase());
+                      const metaText = [!nameHasAgeGroup && t.age_group, t.season].filter(Boolean).join('  ·  ');
+                      return (
+                        <TouchableOpacity
+                          style={[styles.teamPickerRow, isActive && { backgroundColor: rgba(0.1) }]}
+                          onPress={() => handleSelectTeam(t.id)}
+                          activeOpacity={0.6}
+                        >
+                          <View style={styles.teamPickerBody}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
+                              {teamsWithUnreadChat.has(t.id) && <View style={styles.teamPickerUnreadDot} />}
+                            </View>
+                            {!!metaText && <Text style={styles.teamPickerMeta}>{metaText}</Text>}
                           </View>
-                          {(t.age_group || t.season) ? (
-                            <Text style={styles.teamPickerMeta}>{[t.age_group, t.season].filter(Boolean).join('  ·  ')}</Text>
-                          ) : null}
-                        </View>
-                        {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
-                      </TouchableOpacity>
-                    );
-                  }}
-                />
+                          {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
+                        </TouchableOpacity>
+                      );
+                    }}
+                  />
+                </View>
               </View>
             ))}
           </ScrollView>
@@ -2836,12 +2840,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8, textTransform: 'uppercase',
     marginTop: 14, marginBottom: 8,
   },
-  teamPickerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 14, padding: 14, marginBottom: 10,
+  // One continuous rounded card per club group — rows are flush dividers
+  // inside it (via GroupedTeamList's showDividers/dividerInset), not each
+  // its own floating box, so the sheet reads as one calm list rather than
+  // a stack of separate buttons.
+  teamCard: {
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface, overflow: 'hidden',
   },
-  teamPickerRowActive: { backgroundColor: PULSE_COLORS.ui.surfaceAlt },
-  teamPickerIcon: { width: 38, height: 38, borderRadius: 11, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  teamPickerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 13,
+  },
   teamPickerBody: { flex: 1 },
   teamPickerUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
   teamPickerName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },

@@ -477,6 +477,11 @@ export default function AdminPanel() {
             )}
             renderItem={({ item }) => {
               const active = item.id === team?.id;
+              // Only skip the age-group line when the team's own name
+              // already spells it out ("U12 Boys Premier") — a club that
+              // names teams some other way ("Madrid") still needs it shown.
+              const nameHasAgeGroup = !!item.age_group && item.name.toLowerCase().includes(item.age_group.toLowerCase());
+              const metaText = [!nameHasAgeGroup && item.age_group, item.season].filter(Boolean).join('  ·  ');
               return (
                 <TouchableOpacity
                   style={[tp.row, active && { backgroundColor: `${primaryColor}12` }]}
@@ -503,7 +508,7 @@ export default function AdminPanel() {
                       <Text style={[tp.rowName, active && { color: primaryColor }]}>{item.name}</Text>
                       {teamsWithUnreadChat.has(item.id) && <View style={tp.unreadDot} />}
                     </View>
-                    {item.age_group ? <Text style={tp.rowMeta}>{item.age_group}{item.season ? `  ·  ${item.season}` : ''}</Text> : null}
+                    {!!metaText && <Text style={tp.rowMeta}>{metaText}</Text>}
                   </View>
                   {active && <Ionicons name="checkmark" size={16} color={primaryColor} />}
                 </TouchableOpacity>
