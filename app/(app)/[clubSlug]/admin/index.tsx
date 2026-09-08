@@ -399,12 +399,12 @@ export default function AdminPanel() {
         right={
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity
-              style={headerBtnStyle as object}
+              style={[headerBtnStyle as object, { backgroundColor: 'rgba(234,179,8,0.18)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.4)' }]}
               onPress={() => router.push(`/(app)/${slug}/create-tournament` as any)}
               activeOpacity={0.7}
             >
-              <Ionicons name="trophy-outline" size={14} color="#fff" />
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>Tournament</Text>
+              <Ionicons name="trophy" size={14} color="#EAB308" />
+              <Text style={{ color: '#EAB308', fontWeight: '800', fontSize: 12 }}>Tournament</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[headerBtnStyle as object, { backgroundColor: secondaryColor }]}
