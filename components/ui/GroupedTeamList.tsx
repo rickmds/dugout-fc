@@ -7,19 +7,40 @@ import { groupTeamsByAgeGroup, TEAM_GROUPING_THRESHOLD } from '../../lib/teamGro
 type BaseTeam = { id: string; age_group: string | null; name: string; gender?: string | null };
 
 const GENDER_LABELS: Record<string, string> = { boys: 'Male', girls: 'Female', mixed: 'Mixed' };
+// Common ways a team's own name already spells out its gender — clubs very
+// often name mixed-gender age groups exactly this way ("U11 Boys Premier" /
+// "U11 Girls Premier"), which makes a "Male"/"Female" header floating above
+// them pure noise: the names already disambiguate on their own.
+const GENDER_NAME_HINTS: Record<string, string[]> = {
+  boys: ['boys', 'male', 'men'],
+  girls: ['girls', 'female', 'women'],
+};
 
 type LabeledRow<T> = { key: string; label?: string; team?: T; divider: boolean };
+
+function nameImpliesGender(name: string, gender: string | null): boolean {
+  if (!gender || !(gender in GENDER_NAME_HINTS)) return false;
+  const lower = name.toLowerCase();
+  return GENDER_NAME_HINTS[gender].some((hint) => lower.includes(hint));
+}
+
+// A cluster needs Male/Female headers only when it genuinely mixes genders
+// AND the names alone don't already make that obvious — if every team in
+// it already says "Boys"/"Girls" (or similar) in its own name, the header
+// would repeat information the eye already has.
+function clusterNeedsGenderLabels<T extends BaseTeam>(data: T[]): boolean {
+  const distinctGenders = new Set(data.map((t) => t.gender).filter((g): g is string => !!g && g in GENDER_LABELS));
+  if (distinctGenders.size < 2) return false;
+  return !data.every((t) => nameImpliesGender(t.name, t.gender ?? null));
+}
 
 // Inline "Male"/"Female" break within an expanded age group — not another
 // tappable level (that would cost an extra tap to reach a team that's one
 // tap away today, and actively hurts the common case of a group with only
 // one or two teams in it), just a visual chunk so scanning a group of 7-9
-// mixed teams isn't one undifferentiated list. Only appears when a group
-// actually mixes genders — a single-gender group showing its own label
-// would just be a redundant line, not new information.
+// mixed teams isn't one undifferentiated list.
 function buildLabeledRows<T extends BaseTeam>(data: T[], showDividers: boolean): LabeledRow<T>[] {
-  const distinctGenders = new Set(data.map((t) => t.gender).filter((g): g is string => !!g && g in GENDER_LABELS));
-  const useLabels = distinctGenders.size >= 2;
+  const useLabels = clusterNeedsGenderLabels(data);
 
   const rows: LabeledRow<T>[] = [];
   let lastGender: string | null = null;
@@ -51,8 +72,7 @@ function buildFlatRows<T extends BaseTeam>(teams: T[], showDividers: boolean): L
   const rows: LabeledRow<T>[] = [];
   let seenAny = false;
   for (const section of sections) {
-    const distinctGenders = new Set(section.data.map((t) => t.gender).filter((g): g is string => !!g && g in GENDER_LABELS));
-    const useLabels = distinctGenders.size >= 2;
+    const useLabels = clusterNeedsGenderLabels(section.data);
     let lastGender: string | null = null;
     for (const t of section.data) {
       const g = t.gender ?? null;
