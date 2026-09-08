@@ -563,22 +563,23 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
 
   const isGroup = selected.size > 1;
 
-  function renderPersonRow(m: TeamMember, indent = false) {
+  function renderPersonRow(m: TeamMember, indent = false, isLast = false) {
+    const checked = selected.has(m.profile_id);
     return (
       <TouchableOpacity
         key={m.profile_id}
-        style={[st.pickerRow, indent && st.pickerRowIndent]}
+        style={[st.pickerRow, indent && st.pickerRowIndent, isLast && st.rowNoBorder]}
         onPress={() => toggleMember(m.profile_id)}
-        activeOpacity={0.75}
+        activeOpacity={0.6}
       >
-        <View style={[st.checkBox, selected.has(m.profile_id) && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
-          {selected.has(m.profile_id) && <Ionicons name="checkmark" size={14} color="#000" />}
+        <View style={[st.checkBox, checked && { backgroundColor: primaryColor, borderColor: primaryColor }]}>
+          {checked && <Ionicons name="checkmark" size={13} color="#000" />}
         </View>
-        <View style={[st.pickerAvatar, { backgroundColor: primaryColor }]}>
-          <Text style={st.pickerAvatarText}>{initials(m.full_name)}</Text>
+        <View style={[st.pickerAvatar, { backgroundColor: rgba(0.16), borderColor: rgba(0.32) }]}>
+          <Text style={[st.pickerAvatarText, { color: primaryColor }]}>{initials(m.full_name)}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={st.pickerName}>{m.full_name ?? 'Unknown'}</Text>
+          <Text style={st.pickerName} numberOfLines={1}>{m.full_name ?? 'Unknown'}</Text>
           <Text style={st.pickerRole}>
             {m.role === 'coach' ? 'Coach' : m.role === 'parent' ? 'Parent' : 'Player'}
           </Text>
@@ -786,37 +787,53 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
                   {filteredCoaches.length > 0 && (
                     <>
                       <Text style={st.pickerSectionLabel}>Coaches</Text>
-                      {filteredCoaches.map((m) => renderPersonRow(m))}
+                      <View style={st.pickerCard}>
+                        {filteredCoaches.map((m, i) => renderPersonRow(m, false, i === filteredCoaches.length - 1))}
+                      </View>
                     </>
                   )}
 
                   {filteredGroups.length > 0 && (
                     <>
                       <Text style={st.pickerSectionLabel}>Players</Text>
-                      {filteredGroups.map((g) => {
-                        // While searching, auto-expand so a matching parent
-                        // is visible without an extra tap.
-                        const expanded = expandedPlayers.has(g.player_id) || !!q;
-                        return (
-                          <View key={g.player_id}>
-                            <TouchableOpacity style={st.playerGroupRow} onPress={() => togglePlayerExpanded(g.player_id)} activeOpacity={0.75}>
-                              <Ionicons name={expanded ? 'chevron-down' : 'chevron-forward'} size={16} color={PULSE_COLORS.ui.muted} />
-                              <Text style={st.playerGroupName} numberOfLines={1}>{g.player_name}</Text>
-                              <Text style={st.playerGroupCount}>
-                                {g.guardians.length} {g.guardians.length === 1 ? 'family member' : 'family members'}
-                              </Text>
-                            </TouchableOpacity>
-                            {expanded && g.guardians.map((m) => renderPersonRow(m, true))}
-                          </View>
-                        );
-                      })}
+                      <View style={st.pickerCard}>
+                        {filteredGroups.map((g, gi) => {
+                          // While searching, auto-expand so a matching parent
+                          // is visible without an extra tap.
+                          const expanded = expandedPlayers.has(g.player_id) || !!q;
+                          const isLastGroup = gi === filteredGroups.length - 1;
+                          return (
+                            <View key={g.player_id}>
+                              <TouchableOpacity
+                                style={[st.playerGroupRow, isLastGroup && !expanded && st.rowNoBorder]}
+                                onPress={() => togglePlayerExpanded(g.player_id)}
+                                activeOpacity={0.6}
+                              >
+                                <View style={st.playerGroupAvatar}>
+                                  <Ionicons name="football-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={st.playerGroupName} numberOfLines={1}>{g.player_name}</Text>
+                                  <Text style={st.playerGroupCount}>
+                                    {g.guardians.length} {g.guardians.length === 1 ? 'family member' : 'family members'}
+                                  </Text>
+                                </View>
+                                <Ionicons name={expanded ? 'chevron-down' : 'chevron-forward'} size={16} color={PULSE_COLORS.ui.muted} />
+                              </TouchableOpacity>
+                              {expanded && g.guardians.map((m, mi) => renderPersonRow(m, true, isLastGroup && mi === g.guardians.length - 1))}
+                            </View>
+                          );
+                        })}
+                      </View>
                     </>
                   )}
 
                   {filteredOther.length > 0 && (
                     <>
                       <Text style={st.pickerSectionLabel}>Other</Text>
-                      {filteredOther.map((m) => renderPersonRow(m))}
+                      <View style={st.pickerCard}>
+                        {filteredOther.map((m, i) => renderPersonRow(m, false, i === filteredOther.length - 1))}
+                      </View>
                     </>
                   )}
                 </>
@@ -1956,32 +1973,46 @@ const st = StyleSheet.create({
   sheetSave: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
   sheetBody: { padding: 20 },
 
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 12, marginBottom: 4, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 14, marginBottom: 8, backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 11 },
   searchInput: { flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text },
   groupNameInput: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: PULSE_COLORS.ui.text, marginTop: 12 },
   selectedChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: PULSE_COLORS.brand.green, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
   chipText: { fontSize: 13, fontWeight: '600', color: '#000' },
 
-  pickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  pickerRowIndent: { paddingLeft: 40, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
-  checkBox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center' },
+  // Inset grouped cards — one rounded, bordered surface per section, rows
+  // divided by hairlines inside it (the last row of a card drops its
+  // border via rowNoBorder so it doesn't double up with the rounded edge).
+  pickerCard: {
+    marginHorizontal: 16, marginBottom: 4,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: PULSE_COLORS.ui.surface, overflow: 'hidden',
+  },
+  rowNoBorder: { borderBottomWidth: 0 },
+  pickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  pickerRowIndent: { paddingLeft: 50, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+  checkBox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.muted, alignItems: 'center', justifyContent: 'center' },
   checkBoxOn: { backgroundColor: PULSE_COLORS.brand.green, borderColor: PULSE_COLORS.brand.green },
-  pickerAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center', justifyContent: 'center' },
-  pickerAvatarText: { fontSize: 14, fontWeight: '800', color: '#000' },
+  pickerAvatar: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  pickerAvatarText: { fontSize: 13, fontWeight: '800' },
   pickerName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 2 },
   pickerRole: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
   pickerSectionLabel: {
     fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted,
-    textTransform: 'uppercase', letterSpacing: 0.5,
-    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6,
+    textTransform: 'uppercase', letterSpacing: 0.6,
+    paddingHorizontal: 20, paddingTop: 18, paddingBottom: 8,
   },
   playerGroupRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
   },
-  playerGroupName: { flex: 1, fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  playerGroupAvatar: {
+    width: 38, height: 38, borderRadius: 11,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  playerGroupName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
   playerGroupCount: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
 
   // Announcements
