@@ -2,36 +2,23 @@ import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PULSE_COLORS } from '../../constants/colors';
-import { groupTeamsByAgeGroup, TEAM_GROUPING_THRESHOLD } from '../../lib/teamGrouping';
+import { groupTeamsByAgeGroup, resolveTeamGender, nameAlreadySaysGender, TEAM_GROUPING_THRESHOLD } from '../../lib/teamGrouping';
 
 type BaseTeam = { id: string; age_group: string | null; name: string; gender?: string | null };
 
 const GENDER_LABELS: Record<string, string> = { boys: 'Male', girls: 'Female', mixed: 'Mixed' };
-// Common ways a team's own name already spells out its gender — clubs very
-// often name mixed-gender age groups exactly this way ("U11 Boys Premier" /
-// "U11 Girls Premier"), which makes a "Male"/"Female" header floating above
-// them pure noise: the names already disambiguate on their own.
-const GENDER_NAME_HINTS: Record<string, string[]> = {
-  boys: ['boys', 'male', 'men'],
-  girls: ['girls', 'female', 'women'],
-};
 
 type LabeledRow<T> = { key: string; label?: string; team?: T; divider: boolean };
 
-function nameImpliesGender(name: string, gender: string | null): boolean {
-  if (!gender || !(gender in GENDER_NAME_HINTS)) return false;
-  const lower = name.toLowerCase();
-  return GENDER_NAME_HINTS[gender].some((hint) => lower.includes(hint));
-}
-
 // A cluster needs Male/Female headers only when it genuinely mixes genders
-// AND the names alone don't already make that obvious — if every team in
-// it already says "Boys"/"Girls" (or similar) in its own name, the header
+// (real value or guessed from the name, e.g. a "BU9"/"GU9" naming code)
+// AND the names alone don't already spell that out — if every team in it
+// already says "Boys"/"Girls" (or similar) in plain English, the header
 // would repeat information the eye already has.
 function clusterNeedsGenderLabels<T extends BaseTeam>(data: T[]): boolean {
-  const distinctGenders = new Set(data.map((t) => t.gender).filter((g): g is string => !!g && g in GENDER_LABELS));
+  const distinctGenders = new Set(data.map((t) => resolveTeamGender(t)).filter((g): g is string => !!g && g in GENDER_LABELS));
   if (distinctGenders.size < 2) return false;
-  return !data.every((t) => nameImpliesGender(t.name, t.gender ?? null));
+  return !data.every((t) => nameAlreadySaysGender(t.name, resolveTeamGender(t)));
 }
 
 // Inline "Male"/"Female" break within an expanded age group — not another
@@ -46,7 +33,7 @@ function buildLabeledRows<T extends BaseTeam>(data: T[], showDividers: boolean):
   let lastGender: string | null = null;
   let seenAny = false;
   for (const t of data) {
-    const g = t.gender ?? null;
+    const g = resolveTeamGender(t);
     const isNewCluster = useLabels && g !== lastGender && g && g in GENDER_LABELS;
     if (isNewCluster) rows.push({ key: `label-${g}-${t.id}`, label: GENDER_LABELS[g!], divider: false });
     rows.push({ key: t.id, team: t, divider: showDividers && seenAny && !isNewCluster });
@@ -75,7 +62,7 @@ function buildFlatRows<T extends BaseTeam>(teams: T[], showDividers: boolean): L
     const useLabels = clusterNeedsGenderLabels(section.data);
     let lastGender: string | null = null;
     for (const t of section.data) {
-      const g = t.gender ?? null;
+      const g = resolveTeamGender(t);
       const isNewCluster = useLabels && g !== lastGender && g && g in GENDER_LABELS;
       if (isNewCluster) rows.push({ key: `label-${g}-${t.id}`, label: GENDER_LABELS[g!], divider: false });
       rows.push({ key: t.id, team: t, divider: showDividers && seenAny && !isNewCluster });

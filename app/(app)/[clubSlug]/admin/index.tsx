@@ -18,7 +18,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
-import { groupTeamsByAgeGroup } from '../../../../lib/teamGrouping';
+import { groupTeamsByAgeGroup, resolveTeamGender, nameAlreadySaysGender, GENDER_DISPLAY_LABELS } from '../../../../lib/teamGrouping';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../../components/ui/TeamEditModal';
 
@@ -482,6 +482,8 @@ export default function AdminPanel() {
               // names teams some other way ("Madrid") still needs it shown.
               const nameHasAgeGroup = !!item.age_group && item.name.toLowerCase().includes(item.age_group.toLowerCase());
               const metaText = [!nameHasAgeGroup && item.age_group, item.season].filter(Boolean).join('  ·  ');
+              const resolvedGender = resolveTeamGender(item);
+              const showGenderPill = !!resolvedGender && resolvedGender !== 'mixed' && !nameAlreadySaysGender(item.name, resolvedGender);
               return (
                 <TouchableOpacity
                   style={[tp.row, active && { backgroundColor: `${primaryColor}12` }]}
@@ -510,6 +512,11 @@ export default function AdminPanel() {
                     </View>
                     {!!metaText && <Text style={tp.rowMeta}>{metaText}</Text>}
                   </View>
+                  {showGenderPill && (
+                    <View style={tp.genderPill}>
+                      <Text style={tp.genderPillText}>{GENDER_DISPLAY_LABELS[resolvedGender!]}</Text>
+                    </View>
+                  )}
                   {active && <Ionicons name="checkmark" size={16} color={primaryColor} />}
                 </TouchableOpacity>
               );
@@ -900,6 +907,8 @@ const tp = StyleSheet.create({
   unreadDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
   rowName:     { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
   rowMeta:     { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  genderPill:  { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  genderPillText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted },
   empty:       { padding: 40, alignItems: 'center' },
   emptyText:   { fontSize: 14, color: PULSE_COLORS.ui.muted },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8, backgroundColor: PULSE_COLORS.ui.background },

@@ -31,6 +31,7 @@ import { PULSE_COLORS } from '../../../../constants/colors';
 import { positionColor } from '../../../../constants/positions';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import GroupedTeamList from '../../../../components/ui/GroupedTeamList';
+import { resolveTeamGender, nameAlreadySaysAgeGroup, nameAlreadySaysGender, GENDER_DISPLAY_LABELS } from '../../../../lib/teamGrouping';
 import GameDayWidget from '../../../../components/home/GameDayWidget';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
 import CreatePollModal from '../../../../components/home/CreatePollModal';
@@ -2135,12 +2136,17 @@ export default function HomeScreen() {
                     renderRow={(t) => {
                       const isActive = t.id === team?.id;
                       const teamColor = t.club?.primary_color ?? primaryColor;
-                      // Some clubs name teams after the age ("U12 Boys
-                      // Premier"), others don't ("Madrid") — only skip the
-                      // meta line when the name already spells it out, never
-                      // assume the convention.
-                      const nameHasAgeGroup = !!t.age_group && t.name.toLowerCase().includes(t.age_group.toLowerCase());
-                      const metaText = [!nameHasAgeGroup && t.age_group, t.season].filter(Boolean).join('  ·  ');
+                      // Some clubs name teams after the age/gender ("U12
+                      // Boys Premier"), others don't ("Madrid", or a
+                      // shorthand code like "BU9") — only skip a pill when
+                      // the name already spells that piece out in plain
+                      // English, never assume the convention. Gender falls
+                      // back to a guess from a "BU9"/"GU9"-style prefix when
+                      // the club never set it, same as the row's own sort
+                      // order already does.
+                      const resolvedGender = resolveTeamGender(t);
+                      const showAgePill = !!t.age_group && !nameAlreadySaysAgeGroup(t.name, t.age_group);
+                      const showGenderPill = !!resolvedGender && resolvedGender !== 'mixed' && !nameAlreadySaysGender(t.name, resolvedGender);
                       return (
                         <TouchableOpacity
                           style={[styles.teamPickerRow, isActive && { backgroundColor: rgba(0.1) }]}
@@ -2148,13 +2154,22 @@ export default function HomeScreen() {
                           activeOpacity={0.6}
                         >
                           <View style={styles.teamPickerBody}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={[styles.teamPickerName, isActive && { color: teamColor }]}>{t.name}</Text>
-                              {teamsWithUnreadChat.has(t.id) && <View style={styles.teamPickerUnreadDot} />}
-                            </View>
-                            {!!metaText && <Text style={styles.teamPickerMeta}>{metaText}</Text>}
+                            <Text style={[styles.teamPickerName, isActive && { color: teamColor }]} numberOfLines={1}>{t.name}</Text>
+                            {teamsWithUnreadChat.has(t.id) && <View style={styles.teamPickerUnreadDot} />}
                           </View>
-                          {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            {showAgePill && (
+                              <View style={styles.teamPickerPill}>
+                                <Text style={styles.teamPickerPillText}>{t.age_group}</Text>
+                              </View>
+                            )}
+                            {showGenderPill && (
+                              <View style={styles.teamPickerPill}>
+                                <Text style={styles.teamPickerPillText}>{GENDER_DISPLAY_LABELS[resolvedGender!]}</Text>
+                              </View>
+                            )}
+                            {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
+                          </View>
                         </TouchableOpacity>
                       );
                     }}
@@ -2852,10 +2867,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 13,
   },
-  teamPickerBody: { flex: 1 },
-  teamPickerUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444' },
-  teamPickerName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  teamPickerMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  teamPickerBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  teamPickerUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', flexShrink: 0 },
+  teamPickerName: { flexShrink: 1, fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  // Compact trailing tags instead of a second text line under the name —
+  // every row stays the same height whether or not it needs one, unlike a
+  // stacked subtitle that only appears for some teams and made the list
+  // look uneven.
+  teamPickerPill: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  teamPickerPillText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
 
   // Fee card
   feeCard: {
