@@ -32,7 +32,7 @@ import ReflectionSheet, { FACES } from '../../../../components/reflection/Reflec
 import ShoutoutSheet from '../../../../components/shoutout/ShoutoutSheet';
 import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
 import { sendProfilesPush } from '../../../../lib/push';
-import { TEAM_PULSE_ENABLED } from '../../../../lib/featureFlags';
+import { TEAM_PULSE_ENABLED, SESSION_BUILDER_ENABLED } from '../../../../lib/featureFlags';
 import { getGameResult, RESULT_COLORS, sendTournamentResultPush } from '../../../../lib/tournaments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
@@ -2083,7 +2083,7 @@ export default function EventDetailScreen() {
             </View>
           )}
 
-          {isCoach && event.type === 'training' && (
+          {SESSION_BUILDER_ENABLED && isCoach && event.type === 'training' && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Actions</Text>
               <TouchableOpacity style={styles.actionBtn} onPress={openSessionBuilder} activeOpacity={0.7}>
