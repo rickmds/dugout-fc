@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { zonedTimeToUtc } from '@/lib/timezone';
 import { sendExpoPush } from '@/lib/expoPush';
+import { TEAM_PULSE_ENABLED } from '@/lib/featureFlags';
 
 // Falls back to a deliberately conservative estimate when an event has no
 // duration_minutes set — long enough to clear warmup, halftime, and extra
@@ -29,6 +30,10 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get('authorization');
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  if (!TEAM_PULSE_ENABLED) {
+    return NextResponse.json({ skipped: true, reason: 'Team Pulse is temporarily disabled' });
   }
 
   const supabase = supabaseAdmin();

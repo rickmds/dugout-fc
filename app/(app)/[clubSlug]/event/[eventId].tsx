@@ -32,6 +32,7 @@ import ReflectionSheet, { FACES } from '../../../../components/reflection/Reflec
 import ShoutoutSheet from '../../../../components/shoutout/ShoutoutSheet';
 import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
 import { sendProfilesPush } from '../../../../lib/push';
+import { TEAM_PULSE_ENABLED } from '../../../../lib/featureFlags';
 import { getGameResult, RESULT_COLORS, sendTournamentResultPush } from '../../../../lib/tournaments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
@@ -1438,7 +1439,7 @@ export default function EventDetailScreen() {
           {/* Post-game reflection — self-directed only; the "never before
               the game ends" rule lives in hasGameEnded(), same estimate the
               push-notification cron uses. */}
-          {myPlayerIds.length > 0 && event.type === 'game' && !event.cancelled_at && hasEventEnded(event) && (
+          {TEAM_PULSE_ENABLED && myPlayerIds.length > 0 && event.type === 'game' && !event.cancelled_at && hasEventEnded(event) && (
             myPlayerIds.map((pid) => {
               const reflection = myReflections[pid];
               const firstName = players.find(p => p.id === pid)?.full_name.split(' ')[0] ?? 'them';

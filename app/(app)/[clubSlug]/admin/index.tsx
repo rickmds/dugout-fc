@@ -11,6 +11,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { todayLocalStr } from '../../../../lib/localDate';
+import { TEAM_PULSE_ENABLED } from '../../../../lib/featureFlags';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
@@ -613,14 +614,16 @@ export default function AdminPanel() {
               label="Gallery"
               desc="Browse and manage all team photos"
               onPress={() => router.push(`/(app)/${slug}/gallery` as any)}
-              showDivider
+              showDivider={TEAM_PULSE_ENABLED}
             />
-            <AiToolCard
-              icon="happy-outline" color="#22c55e" bg="rgba(34,197,94,0.12)"
-              label="Team Pulse"
-              desc="How players are feeling after games, trending up or down"
-              onPress={() => router.push(`/(app)/${slug}/admin/reflections` as any)}
-            />
+            {TEAM_PULSE_ENABLED && (
+              <AiToolCard
+                icon="happy-outline" color="#22c55e" bg="rgba(34,197,94,0.12)"
+                label="Team Pulse"
+                desc="How players are feeling after games, trending up or down"
+                onPress={() => router.push(`/(app)/${slug}/admin/reflections` as any)}
+              />
+            )}
           </View>
 
           {/* Club admin — org_admin only */}

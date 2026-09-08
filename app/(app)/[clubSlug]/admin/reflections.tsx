@@ -7,6 +7,7 @@ import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { FACES } from '../../../../components/reflection/ReflectionSheet';
+import { TEAM_PULSE_ENABLED } from '../../../../lib/featureFlags';
 
 // Coach-facing view. Deliberately trend-only — get_team_reflection_trends()
 // never returns the free-text fields, so there is no code path here that
@@ -63,6 +64,22 @@ export default function TeamReflectionsScreen() {
     if (b.trend === 'down' && a.trend !== 'down') return 1;
     return (a.recent_avg_rating ?? 99) - (b.recent_avg_rating ?? 99);
   });
+
+  // The card that links here is hidden while the flag is off, but a stale
+  // deep link or notification tap can still land here directly.
+  if (!TEAM_PULSE_ENABLED) {
+    return (
+      <View style={st.screen}>
+        <ClubHeader title="Team Pulse" onBack={() => router.back()} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 }}>
+          <Ionicons name="construct-outline" size={32} color={PULSE_COLORS.ui.muted} />
+          <Text style={{ color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', fontSize: 14 }}>
+            Team Pulse is temporarily unavailable.
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={st.screen}>
