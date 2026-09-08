@@ -82,8 +82,11 @@ export default function ReportsPage() {
     const teamIds = teams.map((t) => t.id);
 
     // A session cancelled before it started never happened, so it's
-    // excluded here; one cancelled after start still counts.
-    let evQ = supabase.from('events').select('id, team_id, type').in('team_id', teamIds).not('cancelled_before_start', 'eq', true);
+    // excluded here; one cancelled after start still counts. Must use `is`
+    // (IS NOT TRUE), not `eq` — the column is null for every never-cancelled
+    // event, and `NULL <> true` evaluates to NULL, which a WHERE clause
+    // treats as "exclude", silently dropping every event.
+    let evQ = supabase.from('events').select('id, team_id, type').in('team_id', teamIds).not('cancelled_before_start', 'is', true);
     if (dateFrom) evQ = evQ.gte('event_date', dateFrom);
     if (dateTo)   evQ = evQ.lte('event_date', dateTo);
     const { data: events } = await evQ.limit(2000);
@@ -251,9 +254,10 @@ export default function ReportsPage() {
     setSelectedPlayer(p);
     setPlayerHistory([]);
     setHistoryLoading(true);
+    // Must use `is` (IS NOT TRUE), not `eq` — see loadStats above for why.
     const { data: evData } = await supabase
       .from('events').select('id, title, type, event_date')
-      .eq('team_id', p.team_id).not('cancelled_before_start', 'eq', true)
+      .eq('team_id', p.team_id).not('cancelled_before_start', 'is', true)
       .order('event_date', { ascending: false }).limit(20);
     const evIds = (evData ?? []).map(e => e.id);
     const [rsvpData, attData] = evIds.length ? await Promise.all([

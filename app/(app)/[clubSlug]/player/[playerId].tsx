@@ -332,9 +332,13 @@ export default function PlayerProfileScreen() {
       // A session cancelled before it ever started isn't real attendance
       // history — it never happened. One cancelled after start (e.g. rained
       // out mid-session) still counts, since kids may have already shown
-      // up; cancelled_before_start is null (safe — behaves as "counts") for
-      // anything never cancelled at all.
-      .not('cancelled_before_start', 'eq', true)
+      // up; cancelled_before_start is null for anything never cancelled at
+      // all — the overwhelming majority of events. Must use `is` (IS NOT
+      // TRUE), not `eq` (<> true): SQL's three-valued logic makes `NULL <>
+      // true` evaluate to NULL, which a WHERE clause treats as "exclude",
+      // so the old `.not(...,'eq',true)` silently filtered out every
+      // never-cancelled event — every player's Recent Events showed empty.
+      .not('cancelled_before_start', 'is', true)
       .order('event_date', { ascending: false })
       .limit(12);
 

@@ -883,10 +883,14 @@ export default function HomeScreen() {
         // A session cancelled before it started never happened — excluded.
         // One cancelled after start (kids may have already shown up) still
         // counts, so this isn't a blanket "no cancelled events" filter.
+        // Must use `is` (IS NOT TRUE), not `eq` — the column is null for
+        // every never-cancelled event, and `NULL <> true` is NULL, which a
+        // WHERE clause treats as "exclude", silently dropping every real
+        // event. See player/[playerId].tsx's identical fix for the same bug.
         supabase.from('events').select('id').eq('team_id', team.id)
-          .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'eq', true),
+          .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'is', true),
         supabase.from('events').select('id').eq('team_id', team.id)
-          .in('type', ['training', 'other']).gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'eq', true),
+          .in('type', ['training', 'other']).gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'is', true),
       ]);
       const gameIds = (gameEvts ?? []).map((e: { id: string }) => e.id);
       const trainingIds = (trainingEvts ?? []).map((e: { id: string }) => e.id);

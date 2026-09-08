@@ -53,10 +53,13 @@ export default function AttendancePage() {
 
     const [eventsRes, playersRes] = await Promise.all([
       // A session cancelled before it started never happened, so it's
-      // excluded here; one cancelled after start still counts.
+      // excluded here; one cancelled after start still counts. Must use
+      // `is` (IS NOT TRUE), not `eq` — the column is null for every
+      // never-cancelled event, and `NULL <> true` evaluates to NULL, which
+      // a WHERE clause treats as "exclude", silently dropping every event.
       supabase.from('events').select('id,team_id').in('team_id', teamIds)
         .gte('event_date', since).lte('event_date', today)
-        .not('cancelled_before_start', 'eq', true),
+        .not('cancelled_before_start', 'is', true),
       supabase.from('players').select('id,team_id').in('team_id', teamIds),
     ]);
 
