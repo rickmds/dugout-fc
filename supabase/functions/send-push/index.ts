@@ -188,6 +188,8 @@ Deno.serve(async (req) => {
     unreadCountByProfile.set(row.profile_id, (unreadCountByProfile.get(row.profile_id) ?? 0) + 1);
   }
 
+  const tokenToProfile = new Map(tokens.map((t: any) => [t.token, t.profile_id as string]));
+
   const messages = tokens.map((t: any) => ({
     to: t.token,
     title,
@@ -205,6 +207,17 @@ Deno.serve(async (req) => {
   // shared device, replaced phone) get pruned instead of sitting in
   // push_tokens forever and getting retried on every future send.
   const deadTokens: string[] = [];
+  // Expo's immediate response here is only a "ticket" — it confirms Expo
+  // *accepted* the request, not that Apple/Google ever delivered it to a
+  // device. The real answer only exists in a separate receipts lookup,
+  // available a few minutes later, keyed by the ticket id below. Persist
+  // one row per successfully-ticketed message so check-push-receipts (a
+  // cron) can go find out what actually happened — without this, a batch
+  // that failed silently downstream of Expo was invisible forever.
+  const receiptRows: {
+    ticket_id: string; profile_id: string | null; token: string;
+    team_id: string | null; notification_type: string; title: string; body: string;
+  }[] = [];
   for (const chunk of chunks) {
     try {
       const res = await fetch(EXPO_PUSH_URL, {
@@ -212,10 +225,22 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(chunk),
       });
-      const json = await res.json().catch(() => null) as { data?: Array<{ status: string; details?: { error?: string } }> } | null;
+      const json = await res.json().catch(() => null) as { data?: Array<{ status: string; id?: string; details?: { error?: string } }> } | null;
       json?.data?.forEach((ticket, idx) => {
+        const to = chunk[idx].to;
         if (ticket.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
-          deadTokens.push(chunk[idx].to);
+          deadTokens.push(to);
+        }
+        if (ticket.status === 'ok' && ticket.id) {
+          receiptRows.push({
+            ticket_id: ticket.id,
+            profile_id: tokenToProfile.get(to) ?? null,
+            token: to,
+            team_id: resolvedTeamId,
+            notification_type: resolvedType,
+            title,
+            body,
+          });
         }
       });
     } catch (err) {
@@ -224,6 +249,9 @@ Deno.serve(async (req) => {
   }
   if (deadTokens.length) {
     await supabase.from('push_tokens').delete().in('token', deadTokens);
+  }
+  if (receiptRows.length) {
+    await supabase.from('push_receipts').insert(receiptRows);
   }
 
   return new Response(JSON.stringify({ sent: messages.length }), {

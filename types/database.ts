@@ -2751,6 +2751,69 @@ export type Database = {
           },
         ]
       }
+      push_receipts: {
+        Row: {
+          body: string | null
+          checked_at: string | null
+          created_at: string
+          error_code: string | null
+          error_message: string | null
+          id: string
+          notification_type: string | null
+          profile_id: string | null
+          status: string
+          team_id: string | null
+          ticket_id: string
+          title: string | null
+          token: string
+        }
+        Insert: {
+          body?: string | null
+          checked_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          notification_type?: string | null
+          profile_id?: string | null
+          status?: string
+          team_id?: string | null
+          ticket_id: string
+          title?: string | null
+          token: string
+        }
+        Update: {
+          body?: string | null
+          checked_at?: string | null
+          created_at?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          notification_type?: string | null
+          profile_id?: string | null
+          status?: string
+          team_id?: string | null
+          ticket_id?: string
+          title?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_receipts_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "push_receipts_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       push_tokens: {
         Row: {
           created_at: string | null
