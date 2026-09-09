@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendExpoPush } from '@/lib/expoPush';
+import { resolveProfileEmails } from '@/lib/resolveProfileEmails';
+import { esc } from '@/lib/emailHelpers';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Runs hourly so this can land at 8am in each club's OWN local time — see
 // event-day-reminders/route.ts for the full reasoning (same pattern here).
@@ -144,6 +149,32 @@ export async function GET(req: NextRequest) {
         }))
       );
       if (pushMessages.length) await sendExpoPush(pushMessages);
+
+      // Real money added to what's owed, no other safety net — same
+      // reasoning as payment_failed on the Stripe webhook.
+      const emailMap = await resolveProfileEmails(supabase, allProfileIds);
+      for (const n of notificationRows) {
+        const email = emailMap.get(n.profile_id);
+        if (!email) continue;
+        try {
+          await resend.emails.send({
+            from: 'Pulse FC <support@pulse-fc.app>',
+            to: email,
+            subject: n.title,
+            html: `<!DOCTYPE html><html lang="en"><body style="margin:0;padding:32px;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<div style="max-width:520px;margin:0 auto;background:#111111;border:1px solid #222222;border-radius:16px;overflow:hidden;">
+  <div style="height:3px;background:#f59e0b;"></div>
+  <div style="padding:28px;">
+    <h1 style="margin:0 0 12px;font-size:19px;font-weight:800;color:#f9fafb;">${esc(n.title)}</h1>
+    <p style="margin:0;font-size:15px;color:#d1d5db;line-height:1.7;">${esc(n.body)}</p>
+  </div>
+</div>
+</body></html>`,
+          });
+        } catch (e) {
+          console.error('apply-late-fees: alert email failed', { profile_id: n.profile_id, error: e });
+        }
+      }
     }
   }
 

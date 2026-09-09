@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { resolveAccent, contrastText, esc } from '@/lib/emailHelpers';
 import { applyRefund, splitRefundAmount } from '@/lib/refunds';
 import { sendExpoPush } from '@/lib/expoPush';
+import { resolveProfileEmails } from '@/lib/resolveProfileEmails';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -93,6 +94,28 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ received: true });
+}
+
+// Small, unbranded (club identity isn't the point here — this is an
+// operational alert, not a receipt) staff notification email — reused by
+// both payment_received and payment_disputed below.
+async function sendStaffAlertEmail(opts: { to: string[]; subject: string; heading: string; body: string; accentColor?: string | null }) {
+  if (!opts.to.length) return;
+  const accent = resolveAccent(opts.accentColor);
+  const html = `<!DOCTYPE html><html lang="en"><body style="margin:0;padding:32px;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<div style="max-width:520px;margin:0 auto;background:#111111;border:1px solid #222222;border-radius:16px;overflow:hidden;">
+  <div style="height:3px;background:${accent};"></div>
+  <div style="padding:28px;">
+    <h1 style="margin:0 0 12px;font-size:19px;font-weight:800;color:#f9fafb;">${esc(opts.heading)}</h1>
+    <p style="margin:0;font-size:15px;color:#d1d5db;line-height:1.7;">${esc(opts.body)}</p>
+  </div>
+</div>
+</body></html>`;
+  try {
+    await resend.emails.send({ from: 'Pulse FC <support@pulse-fc.app>', to: opts.to, subject: opts.subject, html });
+  } catch (e) {
+    console.error('sendStaffAlertEmail error:', e);
+  }
 }
 
 type StripeCharge = {
@@ -198,6 +221,16 @@ async function handleDisputeCreated(dispute: StripeDispute) {
       sound: 'default', data: { type: 'payment_disputed', player_fee_id: fee.id },
     })));
   }
+
+  // A dispute needs prompt action (Stripe's own response window is short)
+  // and directly costs real money — too high-stakes to rely on push alone.
+  const adminEmailMap = await resolveProfileEmails(supabase, admins.map(a => a.id));
+  await sendStaffAlertEmail({
+    to: [...adminEmailMap.values()],
+    subject: `⚠️ Payment disputed — ${fee.description} · ${amount}`,
+    heading: '⚠️ Payment disputed',
+    body: `${fee.description} · ${amount} — the payer's bank has disputed this charge. It's already been withdrawn from your balance pending the outcome.`,
+  });
 }
 
 // On a lost dispute the money is gone for good — walk player_fees back down
@@ -265,9 +298,9 @@ async function handlePaymentFailed({ player_fee_id, club_slug, declineReason }: 
 
   const { data: fee } = await supabase
     .from('player_fees')
-    .select('id, description, player_id')
+    .select('id, description, player_id, teams(name, clubs(name, slug, logo_url, primary_color))')
     .eq('id', player_fee_id)
-    .single();
+    .single<{ id: string; description: string; player_id: string; teams: { name: string; clubs: { name: string; slug: string | null; logo_url: string | null; primary_color: string | null } | null } | null }>();
   if (!fee) return;
 
   const { data: player } = await supabase
@@ -310,6 +343,39 @@ async function handlePaymentFailed({ player_fee_id, club_slug, declineReason }: 
       sound: 'default',
       data: { type: 'payment_failed', player_fee_id, club_slug: club_slug ?? '' },
     })));
+  }
+
+  // Real money, no other safety net — unlike a schedule reminder, a
+  // parent who misses this push has no way to know the payment never
+  // actually went through.
+  const parentEmail = (await resolveProfileEmails(supabase, [parentProfileId])).get(parentProfileId);
+  if (parentEmail) {
+    const clubName = fee.teams?.clubs?.name ?? 'Your club';
+    const accent = resolveAccent(fee.teams?.clubs?.primary_color);
+    const html = `<!DOCTYPE html><html lang="en"><body style="margin:0;padding:32px;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<div style="max-width:520px;margin:0 auto;background:#111111;border:1px solid #222222;border-radius:16px;overflow:hidden;">
+  <div style="height:3px;background:#ef4444;"></div>
+  <div style="padding:28px;">
+    <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;">${esc(clubName)}</p>
+    <h1 style="margin:0 0 12px;font-size:19px;font-weight:800;color:#f9fafb;">❌ Payment failed</h1>
+    <p style="margin:0 0 16px;font-size:15px;color:#d1d5db;line-height:1.7;">${esc(fee.description)} — ${esc(declineReason)}</p>
+    <p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">Please open the Pulse FC app and try again with a different card, or contact your club administrator.</p>
+  </div>
+  <div style="border-top:1px solid #1a1a1a;padding:16px 28px;background:#0d0d0d;">
+    <p style="margin:0;font-size:12px;color:#4b5563;">${esc(clubName)} uses <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a> for club management.</p>
+  </div>
+</div>
+</body></html>`;
+    try {
+      await resend.emails.send({
+        from: `${clubName} <support@pulse-fc.app>`,
+        to: parentEmail,
+        subject: `❌ Payment failed — ${fee.description}`,
+        html,
+      });
+    } catch (e) {
+      console.error('payment_failed email error:', e);
+    }
   }
 }
 
@@ -465,6 +531,15 @@ export async function handlePaymentComplete({ player_fee_id, pay_amount: amountP
         data: { type: 'payment_received', player_fee_id, club_slug: club_slug ?? club?.slug ?? '' },
       })));
     }
+
+    const staffEmailMap = await resolveProfileEmails(supabase, staffIds);
+    await sendStaffAlertEmail({
+      to: [...staffEmailMap.values()],
+      subject: `💳 Payment received — ${playerName} · ${fmtAmount}`,
+      heading: '💳 Payment received',
+      body: `${playerName} paid ${fee.description} · ${fmtAmount} for ${teamName}.`,
+      accentColor: club?.primary_color,
+    });
   }
 
   // ── Branded receipt email to parent ───────────────────────────────────────
