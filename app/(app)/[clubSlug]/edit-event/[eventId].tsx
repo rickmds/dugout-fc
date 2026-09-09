@@ -77,6 +77,48 @@ function fmtDuration(mins: number): string {
   return h > 0 && m > 0 ? `${h}h ${m}min` : h > 0 ? `${h}h` : `${m}min`;
 }
 
+// Old-vs-new diff shown to parents on a schedule email — every field a
+// parent would actually notice showing up differently on game day, not an
+// exhaustive diff of every column (coach_notes/field_notes are coach-only
+// and never belong in a parent-facing email regardless of whether they
+// changed).
+type ScheduleChange = { field: string; from: string; to: string };
+
+function describeScheduleChanges(
+  orig: { date: string; time: string | null; location: string; address: string; uniform: 'home' | 'away' | 'training' | null; duration: number | null },
+  next: { date: string; time: string | null; location: string; address: string; uniform: 'home' | 'away' | 'training' | null; duration: number | null },
+): ScheduleChange[] {
+  const changes: ScheduleChange[] = [];
+  if (next.date !== orig.date) {
+    changes.push({ field: 'Date', from: fmtDate(new Date(orig.date + 'T00:00:00')), to: fmtDate(new Date(next.date + 'T00:00:00')) });
+  }
+  const origTime = orig.time?.slice(0, 5) ?? null;
+  if (next.time !== origTime) {
+    const toTimeStr = (t: string) => { const [h, m] = t.split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return fmtTime(d); };
+    changes.push({ field: 'Time', from: origTime ? toTimeStr(origTime) : 'TBD', to: next.time ? toTimeStr(next.time) : 'TBD' });
+  }
+  if (next.location.trim() !== orig.location.trim()) {
+    changes.push({ field: 'Location', from: orig.location.trim() || '(none)', to: next.location.trim() || '(none)' });
+  }
+  if (next.address.trim() !== orig.address.trim()) {
+    changes.push({ field: 'Address', from: orig.address.trim() || '(none)', to: next.address.trim() || '(none)' });
+  }
+  if (next.uniform !== orig.uniform) {
+    const label = (u: typeof orig.uniform) => u ? u.charAt(0).toUpperCase() + u.slice(1) : 'Not set';
+    changes.push({ field: 'Uniform', from: label(orig.uniform), to: label(next.uniform) });
+  }
+  if (next.duration !== orig.duration) {
+    const label = (m: number | null) => m ? fmtDuration(m) : 'Not set';
+    changes.push({ field: 'Duration', from: label(orig.duration), to: label(next.duration) });
+  }
+  return changes;
+}
+
+function scheduleChangesToEmailBody(eventTitle: string, changes: ScheduleChange[]): string {
+  const lines = changes.map((c) => `${c.field}: ${c.from} → ${c.to}`).join('\n');
+  return `${eventTitle} has been updated:\n\n${lines}`;
+}
+
 function parseGameTitle(title: string): { homeAway: 'home' | 'away'; opponent: string } {
   if (title.startsWith('vs ')) return { homeAway: 'home', opponent: title.slice(3) };
   if (title.startsWith('@ '))  return { homeAway: 'away', opponent: title.slice(2) };
@@ -158,7 +200,10 @@ export default function EditEventScreen() {
   const [isCancelled, setIsCancelled] = useState(false);
   const [eventTeamId, setEventTeamId] = useState<string | null>(null);
   const [eventTeamName, setEventTeamName] = useState<string | null>(null);
-  const originalRef = useRef<{ date: string; time: string | null; location: string; videoUrl: string | null } | null>(null);
+  const originalRef = useRef<{
+    date: string; time: string | null; location: string; videoUrl: string | null;
+    address: string; uniform: UniformOption | null; duration: number | null;
+  } | null>(null);
 
   // Multi-team occurrences (created via the web dashboard's multi-team
   // picker) share event_group_id across one row per team. Mobile had no
@@ -369,6 +414,9 @@ export default function EditEventScreen() {
       time: data.event_time ?? null,
       location: data.location ?? '',
       videoUrl: (data as any).video_url ?? null,
+      address: data.address ?? '',
+      uniform: (data.uniform as UniformOption) ?? null,
+      duration: data.duration_minutes ?? null,
     };
 
     setLocationKey(k => k + 1);
@@ -482,6 +530,13 @@ export default function EditEventScreen() {
     }
 
     if (eventTeamId && notifyParents) {
+      const orig = originalRef.current;
+      const nextSnapshot = {
+        date: eventDate, time: eventTime, location: locationName.trim(), address: address,
+        uniform, duration,
+      };
+      const changes = orig ? describeScheduleChanges(orig, nextSnapshot) : [];
+
       if (scope === 'future') {
         sendTeamPush({
           teamId: eventTeamId,
@@ -490,8 +545,22 @@ export default function EditEventScreen() {
           excludeProfileId: profile?.id,
           data: { type: 'schedule_change', event_id: eventId },
         });
+        // Only worth emailing when something a parent would actually
+        // notice differs — a no-op "future" save (e.g. just tweaking
+        // coach_notes) shouldn't generate a change email with nothing in it.
+        if (changes.length > 0) {
+          sendTeamEmail({
+            teamIds: [eventTeamId],
+            subject: `Schedule updated — ${savedTitle}`,
+            body: scheduleChangesToEmailBody(`${savedTitle} (and future sessions)`, changes),
+            fromName: profile?.full_name ?? 'Coach',
+            teamName: teamNameFor(eventTeamId) ?? clubName ?? '',
+            clubName,
+            logoUrl,
+            primaryColor,
+          });
+        }
       } else {
-        const orig = originalRef.current;
         let pushBody = `${savedTitle} has been updated`;
         if (orig) {
           const newDateStr = eventDate;
@@ -513,6 +582,22 @@ export default function EditEventScreen() {
           }
         }
         const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
+        // One deduped call across every notified team, not once per team —
+        // otherwise a family with kids on two linked teams gets the same
+        // change email twice (same reasoning as the cancel/restore emails
+        // above).
+        if (changes.length > 0) {
+          sendTeamEmail({
+            teamIds: notifyTeamIds,
+            subject: `Schedule updated — ${savedTitle}`,
+            body: scheduleChangesToEmailBody(savedTitle, changes),
+            fromName: profile?.full_name ?? 'Coach',
+            teamName: clubName ?? '',
+            clubName,
+            logoUrl,
+            primaryColor,
+          });
+        }
         for (const teamId of notifyTeamIds) {
           const teamLabel = teamNameFor(teamId);
           sendTeamPush({

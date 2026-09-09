@@ -124,6 +124,43 @@ function fmtTime(t: string | null): string {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
+// Old-vs-new diff shown to parents on a schedule-change email — every field
+// a parent would actually notice differing on game day, not an exhaustive
+// diff of every column (coach_notes/field_notes are coach-only and never
+// belong in a parent-facing email regardless of whether they changed).
+type ScheduleChange = { field: string; from: string; to: string };
+
+function describeScheduleChanges(
+  orig: { date: string; time: string | null; location: string; address: string; uniform: string | null; duration: number | null },
+  next: { date: string; time: string | null; location: string; address: string; uniform: string | null; duration: number | null },
+): ScheduleChange[] {
+  const changes: ScheduleChange[] = [];
+  if (next.date !== orig.date) changes.push({ field: 'Date', from: fmtDate(orig.date), to: fmtDate(next.date) });
+  const origTime = orig.time?.slice(0, 5) ?? null;
+  const nextTime = next.time?.slice(0, 5) ?? null;
+  if (nextTime !== origTime) changes.push({ field: 'Time', from: fmtTime(origTime), to: fmtTime(nextTime) });
+  if ((next.location ?? '').trim() !== (orig.location ?? '').trim()) {
+    changes.push({ field: 'Location', from: orig.location.trim() || '(none)', to: next.location.trim() || '(none)' });
+  }
+  if ((next.address ?? '').trim() !== (orig.address ?? '').trim()) {
+    changes.push({ field: 'Address', from: orig.address.trim() || '(none)', to: next.address.trim() || '(none)' });
+  }
+  if (next.uniform !== orig.uniform) {
+    const label = (u: string | null) => u ? u.charAt(0).toUpperCase() + u.slice(1) : 'Not set';
+    changes.push({ field: 'Uniform', from: label(orig.uniform), to: label(next.uniform) });
+  }
+  if (next.duration !== orig.duration) {
+    const label = (m: number | null) => m ? `${m} min` : 'Not set';
+    changes.push({ field: 'Duration', from: label(orig.duration), to: label(next.duration) });
+  }
+  return changes;
+}
+
+function scheduleChangesToEmailBody(eventTitle: string, changes: ScheduleChange[]): string {
+  const lines = changes.map((c) => `${c.field}: ${c.from} → ${c.to}`).join('\n');
+  return `${eventTitle} has been updated:\n\n${lines}`;
+}
+
 function parseGameTitle(title: string): { homeAway: 'home' | 'away'; opponent: string } {
   if (title.startsWith('vs ')) return { homeAway: 'home', opponent: title.slice(3) };
   if (title.startsWith('@ '))  return { homeAway: 'away', opponent: title.slice(2) };
@@ -168,6 +205,10 @@ export default function SchedulePage() {
   const [showModal, setShowModal]   = useState(false);
   const [showAI, setShowAI]         = useState(false);
   const [editId, setEditId]         = useState<string | null>(null);
+  // Snapshot of an event's parent-relevant fields at the moment its edit
+  // dialog opens, so handleSave can email an old-vs-new diff instead of
+  // just "this event was updated".
+  const editOriginalRef = useRef<{ date: string; time: string | null; location: string; address: string; uniform: string | null; duration: number | null } | null>(null);
   const [form, setForm]             = useState<FormState>(emptyForm(selectedTeamId ?? teams[0]?.id ?? ''));
   // Only used when creating (not editing) — lets an admin on multiple teams
   // create the same event for several at once, each getting its own
@@ -418,6 +459,11 @@ export default function SchedulePage() {
       rsvp_lock_hours: computeLockHours(ev.rsvp_lock_at, ev.event_date, ev.event_time, club?.timezone ?? 'America/New_York'),
       push_notify: true,
     });
+    editOriginalRef.current = {
+      date: ev.event_date, time: ev.event_time ?? null,
+      location: ev.location ?? '', address: ev.address ?? '',
+      uniform: ev.uniform ?? null, duration: ev.duration_minutes ?? null,
+    };
     setEditId(ev.id);
     setEditGroupId(ev.event_group_id);
     // Sibling copies (other teams, same occurrence) share event_group_id
@@ -641,6 +687,31 @@ export default function SchedulePage() {
                 data: { event_id: editId },
               });
             } catch { /* non-critical */ }
+          }
+
+          // Only worth emailing when something a parent would actually
+          // notice differs — editing coach_notes alone shouldn't generate
+          // a change email with nothing in it. One deduped call across
+          // every notified team, not once per team, so a family with kids
+          // on two linked teams doesn't get the same change email twice.
+          const changes = editOriginalRef.current
+            ? describeScheduleChanges(editOriginalRef.current, {
+                date: form.event_date, time: eventTime,
+                location: form.location.trim(), address: form.address.trim(),
+                uniform: form.uniform, duration: form.duration_minutes,
+              })
+            : [];
+          if (changes.length > 0) {
+            sendTeamEmail({
+              teamIds: notifyTeamIds,
+              subject: `Schedule updated — ${savedTitle}`,
+              body: scheduleChangesToEmailBody(savedTitle, changes),
+              fromName: profile?.full_name ?? club?.name ?? 'Coach',
+              teamName: club?.name ?? '',
+              clubName: club?.name ?? null,
+              logoUrl: club?.logo_url ?? null,
+              primaryColor: club?.primary_color ?? null,
+            });
           }
         }
       } else {
