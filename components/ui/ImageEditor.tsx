@@ -32,17 +32,10 @@ type Props = {
    * caller that wants to present another Modal right after can wait for the
    * real event instead of guessing a delay (iOS can't stack two Modals). */
   onDismiss?: () => void;
-  /** Opens the crop frame already positioned over this region instead of the
-   * default centered/best-fit view — e.g. an AI-suggested logo location the
-   * person can now fine-tune (pan/zoom) rather than accept blindly or redo
-   * from scratch. Fractions (0.0-1.0) of the ORIGINAL image's own
-   * width/height. */
-  initialRect?: { x: number; y: number; width: number; height: number };
-  title?: string;
 };
 
 export default function ImageEditor({
-  visible, uri, onSave, onCancel, primaryColor = '#22C55E', onDismiss, initialRect, title = 'Edit Photo',
+  visible, uri, onSave, onCancel, primaryColor = '#22C55E', onDismiss,
 }: Props) {
   const insets = useSafeAreaInsets();
 
@@ -107,44 +100,22 @@ export default function ImageEditor({
         minScale.current = startS / ZOOM_FACTOR;
         maxScale.current = startS * ZOOM_FACTOR;
 
-        let scale = startS;
-        let tx = 0;
-        let ty = 0;
-        if (initialRect && initialRect.width > 0 && initialRect.height > 0) {
-          // Scale that fits initialRect's larger dimension exactly to the
-          // crop square ("contain" — never cuts off any part of the
-          // suggested region), then center that rect in the crop frame.
-          const sW = CROP_SIZE / (initialRect.width  * displayW.current);
-          const sH = CROP_SIZE / (initialRect.height * displayH.current);
-          scale = Math.max(minScale.current, Math.min(maxScale.current, Math.min(sW, sH)));
-          const scaledW = displayW.current * scale;
-          const scaledH = displayH.current * scale;
-          const centerXFrac = initialRect.x + initialRect.width  / 2;
-          const centerYFrac = initialRect.y + initialRect.height / 2;
-          tx = scaledW * (0.5 - centerXFrac);
-          ty = scaledH * (0.5 - centerYFrac);
-        }
-
-        currentScale.current = scale;
-        currentTX.current    = tx;
-        currentTY.current    = ty;
-        lastTX.current       = tx;
-        lastTY.current       = ty;
+        currentScale.current = startS;
+        currentTX.current    = 0;
+        currentTY.current    = 0;
+        lastTX.current       = 0;
+        lastTY.current       = 0;
         isPinching.current   = false;
         initialDist.current  = 0;
 
-        // Log-space position of `scale` within [minScale, maxScale] → where
-        // the zoom slider thumb should start (50% only when scale === startS).
-        const logRange = Math.log(maxScale.current) - Math.log(minScale.current);
-        const sx = logRange > 0
-          ? ((Math.log(scale) - Math.log(minScale.current)) / logRange) * TRACK_W
-          : TRACK_W / 2;
+        // startS is exactly the log midpoint of [minScale, maxScale] → slider at 50%
+        const sx = TRACK_W / 2;
         sliderCurX.current   = sx;
         sliderStartX.current = sx;
 
-        aScale.setValue(scale);
-        aTX.setValue(tx);
-        aTY.setValue(ty);
+        aScale.setValue(startS);
+        aTX.setValue(0);
+        aTY.setValue(0);
         aSlider.setValue(sx);
 
         setReady(true);
@@ -356,7 +327,7 @@ export default function ImageEditor({
           <TouchableOpacity onPress={onCancel} style={styles.hBtn} disabled={processing}>
             <Text style={styles.hBtnText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.hTitle}>{title}</Text>
+          <Text style={styles.hTitle}>Edit Photo</Text>
           {processing ? (
             <ActivityIndicator color="#fff" style={{ width: 64 }} />
           ) : (

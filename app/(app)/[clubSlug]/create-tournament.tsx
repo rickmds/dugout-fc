@@ -24,7 +24,6 @@ import { useAuth } from '../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
-import ImageEditor from '../../../components/ui/ImageEditor';
 import SmartLocationInput from '../../../components/ui/SmartLocationInput';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
 import { zonedTimeToUtc } from '../../../lib/timezone';
@@ -103,54 +102,14 @@ export default function CreateTournamentScreen() {
     })();
   }, [tournamentId]);
 
-  // AI logo detection is a starting point, not a final answer — opens the
-  // same pinch/pan crop editor used for manual logo picks, pre-positioned
-  // over the AI's suggested region on the ORIGINAL full-resolution photo
-  // (not the compressed copy sent for parsing) so the coach can nudge/zoom
-  // it right rather than accept a possibly-off crop or redo from scratch.
-  const [aiCropReview, setAiCropReview] = useState<{ uri: string; rect: { x: number; y: number; width: number; height: number } } | null>(null);
-
-  function reviewAiLogo(asset: ImagePicker.ImagePickerAsset, bbox: { x: number; y: number; width: number; height: number }) {
-    // A little padding beyond the AI's own box gives the starting view some
-    // breathing room to confirm the whole logo is in frame before fine-tuning.
-    const PAD = 0.15;
-    const padX = bbox.width * PAD;
-    const padY = bbox.height * PAD;
-    const x0 = Math.max(0, bbox.x - padX);
-    const y0 = Math.max(0, bbox.y - padY);
-    const x1 = Math.min(1, bbox.x + bbox.width + padX);
-    const y1 = Math.min(1, bbox.y + bbox.height + padY);
-    setAiCropReview({ uri: asset.uri, rect: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
-  }
-
-  async function uploadLogoFromLocalUri(uri: string, suffix: string) {
-    setUploadingLogo(true);
-    try {
-      const response = await fetch(uri);
-      const arrayBuffer = await response.arrayBuffer();
-      const path = `${team?.id ?? 'unknown'}/${Date.now()}-${suffix}.png`;
-      const { error } = await supabase.storage
-        .from('tournament-logos')
-        .upload(path, arrayBuffer, { contentType: 'image/png', upsert: false });
-      if (error) { Alert.alert('Upload failed', error.message); return; }
-      const { data: { publicUrl } } = supabase.storage.from('tournament-logos').getPublicUrl(path);
-      setLogoUrl(publicUrl);
-    } catch (e) {
-      Alert.alert('Upload failed', String(e));
-    } finally {
-      setUploadingLogo(false);
-    }
-  }
-
   // Only extracts the tournament's own name/venue/dates — never games. A
   // tournament announcement and the actual bracket/schedule are often two
   // different documents released at different times (especially for a
   // knockout, where there's no game schedule at all yet at creation time),
   // so importing games stays the existing separate step on the detail
-  // screen once the tournament exists. `imageAssets` (same order as the
-  // image-type entries in `files`) is only needed so a detected logo can be
-  // cropped from the real picked photo — empty for a single PDF/file scan.
-  async function scanDocument(files: { file_base64: string; file_type: string }[], imageAssets: ImagePicker.ImagePickerAsset[] = []) {
+  // screen once the tournament exists. No AI logo detection — coaches add
+  // one manually below via pickLogo(), which has proven far more reliable.
+  async function scanDocument(files: { file_base64: string; file_type: string }[]) {
     setScanning(true);
     try {
       const { data, error } = await supabase.functions.invoke('parse-tournament-info', { body: { files } });
@@ -172,10 +131,6 @@ export default function CreateTournamentScreen() {
       if (data.address) setAddress(data.address);
       if (data.start_date) setStartDate(new Date(data.start_date + 'T00:00:00'));
       if (data.end_date) setEndDate(new Date(data.end_date + 'T00:00:00'));
-
-      if (typeof data.logo_image_index === 'number' && data.logo_bbox && imageAssets[data.logo_image_index]) {
-        reviewAiLogo(imageAssets[data.logo_image_index], data.logo_bbox);
-      }
     } catch (err) {
       console.warn('[create-tournament] scanDocument failed', err);
       Alert.alert("Couldn't read that file", 'Check your connection and try again, or enter the details manually.');
@@ -193,9 +148,7 @@ export default function CreateTournamentScreen() {
   // past that once the request is parsed, re-serialized, and sent on.
   // 1200px keeps each image small enough that even a full batch of scans
   // stays well clear of both limits, and is still plenty sharp for reading
-  // flyer text. The ORIGINAL full-resolution asset is kept separately for
-  // the logo crop step, so this compression never limits the final logo's
-  // quality.
+  // flyer text.
   const MAX_SCAN_DIM = 1200;
   async function toSafeScanBase64(asset: ImagePicker.ImagePickerAsset): Promise<string | null> {
     try {
@@ -246,16 +199,11 @@ export default function CreateTournamentScreen() {
     if (!validAssets.length) { Alert.alert('Error', "Couldn't read those photos — try picking them again or use different ones."); return; }
 
     const safeBase64s = await Promise.all(validAssets.map(toSafeScanBase64));
-    const files: { file_base64: string; file_type: string }[] = [];
-    const cropAssets: ImagePicker.ImagePickerAsset[] = [];
-    for (let i = 0; i < validAssets.length; i++) {
-      const b64 = safeBase64s[i];
-      if (!b64) continue; // skip any single image that failed to downscale rather than failing the whole batch
-      files.push({ file_base64: b64, file_type: 'image/jpeg' });
-      cropAssets.push(validAssets[i]);
-    }
+    const files = safeBase64s
+      .filter((b64): b64 is string => !!b64) // skip any single image that failed to downscale rather than failing the whole batch
+      .map((b64) => ({ file_base64: b64, file_type: 'image/jpeg' }));
     if (!files.length) { Alert.alert('Error', "Couldn't read those photos — try picking them again or use different ones."); return; }
-    await scanDocument(files, cropAssets);
+    await scanDocument(files);
   }
 
   async function pickLogo() {
@@ -541,18 +489,6 @@ export default function CreateTournamentScreen() {
         title="RSVP deadline"
         onConfirm={setRsvpDeadline}
         onClose={() => setShowDeadlinePicker(false)}
-      />
-      <ImageEditor
-        visible={!!aiCropReview}
-        uri={aiCropReview?.uri ?? ''}
-        initialRect={aiCropReview?.rect}
-        title="Confirm Logo"
-        primaryColor={primaryColor}
-        onCancel={() => setAiCropReview(null)}
-        onSave={(uri) => {
-          setAiCropReview(null);
-          uploadLogoFromLocalUri(uri, 'ai');
-        }}
       />
     </View>
   );
