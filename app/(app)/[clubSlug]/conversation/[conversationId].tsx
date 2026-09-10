@@ -152,11 +152,25 @@ export default function ConversationScreen() {
           .from('conversation_participants')
           .select('profile_id')
           .eq('conversation_id', conversationId);
-        setDmParticipantIds(
-          ((parts ?? []) as { profile_id: string }[])
-            .map(p => p.profile_id)
-            .filter(id => id !== profile?.id)
-        );
+        const others = ((parts ?? []) as { profile_id: string }[])
+          .map(p => p.profile_id)
+          .filter(id => id !== profile?.id);
+        setDmParticipantIds(others);
+
+        // Coach viewing a 1:1 DM — append which player this parent guardians
+        // so the header is unambiguous, matching the DM list's chat.tsx.
+        const teamId = (conv as any).team_id as string | null;
+        if (isCoach && others.length === 1 && teamId) {
+          const { data: guardianRows } = await supabase
+            .from('player_guardians')
+            .select('players!inner(full_name, team_id)')
+            .eq('profile_id', others[0])
+            .eq('players.team_id', teamId);
+          const names = ((guardianRows ?? []) as any[])
+            .map(g => g.players?.full_name)
+            .filter(Boolean);
+          if (names.length) setTitle(prev => `${prev} · ${names.join(', ')}`);
+        }
       }
     }
 

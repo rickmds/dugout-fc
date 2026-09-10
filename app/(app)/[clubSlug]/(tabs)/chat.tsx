@@ -195,6 +195,11 @@ type ConvoItem = {
   last_at: string | null;
   last_sender_id: string | null;
   isTeam: boolean;
+  // A group DM's title is a joined list of names (contains a comma) even
+  // before any player-name suffix gets appended — tracked separately so the
+  // suffix (which can itself contain a comma, for a parent with 2+ kids on
+  // the team) can never be mistaken for a group DM.
+  isGroup: boolean;
 };
 
 type TeamMember = {
@@ -348,6 +353,49 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
       }
     }
 
+    // Coaches see plenty of parents with similar or shared names — append
+    // which player's guardian each 1:1 DM is with so it's unambiguous at a
+    // glance, without opening the thread. Group DMs keep their existing
+    // joined-name title (no single "other" to resolve a player for).
+    const playerSuffixByConvId = new Map<string, string>();
+    const isCoachHere = team.myRole === 'org_admin' || team.myRole === 'coach';
+    if (isCoachHere && directConvs.length > 0) {
+      const { data: partRows } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id, profile_id')
+        .in('conversation_id', directConvs.map((c: any) => c.id));
+      const othersByConv = new Map<string, string[]>();
+      for (const p of (partRows ?? []) as { conversation_id: string; profile_id: string }[]) {
+        if (p.profile_id === profile.id) continue;
+        if (!othersByConv.has(p.conversation_id)) othersByConv.set(p.conversation_id, []);
+        othersByConv.get(p.conversation_id)!.push(p.profile_id);
+      }
+      const soloOtherIds = [...new Set(
+        [...othersByConv.values()].filter((ids) => ids.length === 1).map((ids) => ids[0])
+      )];
+
+      if (soloOtherIds.length > 0) {
+        const { data: players } = await supabase.from('players').select('id, full_name').eq('team_id', team.id);
+        const playerIds = (players ?? []).map((p: any) => p.id);
+        const { data: guardianRows } = playerIds.length
+          ? await supabase.from('player_guardians').select('player_id, profile_id').in('player_id', playerIds).in('profile_id', soloOtherIds)
+          : { data: [] as { player_id: string; profile_id: string }[] };
+        const playerNameById = new Map((players ?? []).map((p: any) => [p.id, p.full_name ?? 'Unknown']));
+        const namesByProfile = new Map<string, string[]>();
+        for (const g of (guardianRows ?? []) as { player_id: string; profile_id: string }[]) {
+          const name = playerNameById.get(g.player_id);
+          if (!name) continue;
+          if (!namesByProfile.has(g.profile_id)) namesByProfile.set(g.profile_id, []);
+          namesByProfile.get(g.profile_id)!.push(name);
+        }
+        for (const [convId, others] of othersByConv) {
+          if (others.length !== 1) continue;
+          const names = namesByProfile.get(others[0]);
+          if (names?.length) playerSuffixByConvId.set(convId, names.join(', '));
+        }
+      }
+    }
+
     // Build the list: team chat first, then directs sorted by last message
     const items: ConvoItem[] = [];
 
@@ -361,18 +409,22 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         last_at: lm?.created_at ?? null,
         last_sender_id: lm?.sender_id ?? null,
         isTeam: true,
+        isGroup: false,
       });
     }
 
     const sortedDirect = directConvs
       .map((c: any) => ({
         id: c.id,
-        title: c.title ?? 'Conversation',
+        title: playerSuffixByConvId.has(c.id)
+          ? `${c.title ?? 'Conversation'} · ${playerSuffixByConvId.get(c.id)}`
+          : (c.title ?? 'Conversation'),
         type: c.type,
         last_body: lastMsgMap[c.id]?.body ?? null,
         last_at: lastMsgMap[c.id]?.created_at ?? null,
         last_sender_id: lastMsgMap[c.id]?.sender_id ?? null,
         isTeam: false,
+        isGroup: (c.title ?? '').includes(','),
       }))
       .sort((a, b) => {
         const ta = a.last_at ?? '0';
@@ -688,7 +740,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
               activeOpacity={0.75}
             >
               <View style={st.convoAvatar}>
-                {item.type === 'direct' && !item.title.includes(',')
+                {item.type === 'direct' && !item.isGroup
                   ? <Text style={[st.convoAvatarText, { color: primaryColor }]}>{initials(item.title)}</Text>
                   : <Ionicons name="people-outline" size={18} color={primaryColor} />}
               </View>
