@@ -187,11 +187,16 @@ export default function CreateTournamentScreen() {
   // Claude's API hard-rejects any single image whose base64 form exceeds
   // 10 MB — a real phone photo at quality 0.9 clears that easily (a 12MP+
   // shot can be 8-12 MB just as a JPEG, before the ~33% base64 overhead).
-  // Downscale to a long-edge cap well under that ceiling before sending —
-  // 1600px is still plenty sharp for reading flyer text. The ORIGINAL
-  // full-resolution asset is kept separately for the logo crop step, so
-  // this compression never limits the final logo's quality.
-  const MAX_SCAN_DIM = 1600;
+  // Separately, the edge function itself has a hard 256MB memory ceiling
+  // (Supabase Edge Functions run in a Deno isolate) — several images each
+  // comfortably under the 10MB Anthropic limit can still add up to blow
+  // past that once the request is parsed, re-serialized, and sent on.
+  // 1200px keeps each image small enough that even a full batch of scans
+  // stays well clear of both limits, and is still plenty sharp for reading
+  // flyer text. The ORIGINAL full-resolution asset is kept separately for
+  // the logo crop step, so this compression never limits the final logo's
+  // quality.
+  const MAX_SCAN_DIM = 1200;
   async function toSafeScanBase64(asset: ImagePicker.ImagePickerAsset): Promise<string | null> {
     try {
       const w = asset.width ?? 0;
@@ -201,7 +206,7 @@ export default function CreateTournamentScreen() {
         ? [{ resize: w >= h ? { width: MAX_SCAN_DIM } : { height: MAX_SCAN_DIM } }]
         : [];
       const manipulated = await ImageManipulator.manipulateAsync(
-        asset.uri, actions, { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        asset.uri, actions, { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
       return manipulated.base64 ?? null;
     } catch (err) {
@@ -220,7 +225,7 @@ export default function CreateTournamentScreen() {
       // Same 10 MB-per-image ceiling applies here — resize down first
       // rather than sending the raw file straight through.
       const manipulated = await ImageManipulator.manipulateAsync(
-        file.uri, [{ resize: { width: MAX_SCAN_DIM } }], { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        file.uri, [{ resize: { width: MAX_SCAN_DIM } }], { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
       if (!manipulated.base64) { Alert.alert('Error', "Couldn't read that file — try picking it again."); return; }
       await scanDocument([{ file_base64: manipulated.base64, file_type: 'image/jpeg' }]);
@@ -234,7 +239,7 @@ export default function CreateTournamentScreen() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo access in Settings.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], quality: 0.9, base64: true, allowsMultipleSelection: true, selectionLimit: 6,
+      mediaTypes: ['images'], quality: 0.9, base64: true, allowsMultipleSelection: true, selectionLimit: 4,
     });
     if (result.canceled || !result.assets?.length) return;
     const validAssets = result.assets.filter((a) => !!a.base64);
