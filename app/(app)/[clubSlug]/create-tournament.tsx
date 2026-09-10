@@ -111,10 +111,21 @@ export default function CreateTournamentScreen() {
       const w = asset.width ?? 0;
       const h = asset.height ?? 0;
       if (!w || !h) return;
-      const originX = Math.max(0, Math.min(w - 1, Math.round(bbox.x * w)));
-      const originY = Math.max(0, Math.min(h - 1, Math.round(bbox.y * h)));
-      const cropWidth = Math.max(1, Math.min(w - originX, Math.round(bbox.width * w)));
-      const cropHeight = Math.max(1, Math.min(h - originY, Math.round(bbox.height * h)));
+      // AI-estimated boxes run imprecise — pad generously beyond what the
+      // model already returns rather than crop tight, since a bit of extra
+      // background around the logo looks far better than clipping it.
+      const PAD = 0.15;
+      const padX = bbox.width * PAD;
+      const padY = bbox.height * PAD;
+      const x0 = Math.max(0, bbox.x - padX);
+      const y0 = Math.max(0, bbox.y - padY);
+      const x1 = Math.min(1, bbox.x + bbox.width + padX);
+      const y1 = Math.min(1, bbox.y + bbox.height + padY);
+
+      const originX = Math.max(0, Math.min(w - 1, Math.round(x0 * w)));
+      const originY = Math.max(0, Math.min(h - 1, Math.round(y0 * h)));
+      const cropWidth = Math.max(1, Math.min(w - originX, Math.round((x1 - x0) * w)));
+      const cropHeight = Math.max(1, Math.min(h - originY, Math.round((y1 - y0) * h)));
 
       const manipulated = await ImageManipulator.manipulateAsync(
         asset.uri,
