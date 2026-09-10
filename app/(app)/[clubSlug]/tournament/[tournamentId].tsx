@@ -20,6 +20,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { getGameResult, RESULT_COLORS, formatTournamentDateRange } from '../../../../lib/tournaments';
 import { sendTeamPush } from '../../../../lib/push';
+import { sendTeamEmail } from '../../../../lib/emailTeam';
 import { useTournamentCoords } from '../../../../hooks/useTournamentCoords';
 import { useMapApp } from '../../../../hooks/useMapApp';
 import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
@@ -65,7 +66,7 @@ function isUpcomingDate(dateStr: string): boolean {
 }
 
 export default function TournamentDetailScreen() {
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, rgba, clubName, logoUrl } = useClub();
   const router = useRouter();
   const { clubSlug, tournamentId } = useLocalSearchParams<{ clubSlug: string; tournamentId: string }>();
   const { team, allTeams, selectTeam } = useTeam();
@@ -236,16 +237,28 @@ export default function TournamentDetailScreen() {
       .is('score_home', null)
       .is('score_away', null);
 
+    const cancelBody = trimmed ? `${tournament.name} cancelled: ${trimmed}` : `${tournament.name} has been cancelled`;
+
     sendTeamPush({
       teamId: tournament.team_id,
       title: 'Tournament cancelled',
-      body: trimmed ? `${tournament.name} cancelled: ${trimmed}` : `${tournament.name} has been cancelled`,
+      body: cancelBody,
       excludeProfileId: profile?.id,
       data: { type: 'tournament_cancelled', tournament_id: tournamentId, team_id: tournament.team_id },
     });
 
+    const cancelTeamName = allTeams.find((t) => t.id === tournament.team_id)?.name ?? team?.name ?? '';
+    sendTeamEmail({
+      teamIds: [tournament.team_id],
+      subject: 'Tournament cancelled',
+      body: cancelBody,
+      fromName: profile?.full_name ?? 'Coach',
+      teamName: cancelTeamName,
+      clubName, logoUrl, primaryColor,
+    });
+
     setCancelling(false);
-    Alert.alert('Tournament cancelled', 'Parents have been notified by push notification.');
+    Alert.alert('Tournament cancelled', 'Parents have been notified by push and email.');
     load();
   }
 

@@ -5,6 +5,7 @@ import { Megaphone, Send, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { isEligibleTeam, parseAgeGroup } from '@/lib/guestEligibility';
+import { sendTeamEmail } from '@/lib/emailTeam';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -188,13 +189,25 @@ export default function GuestCalloutSection({ eventId, teamId, teamName, teamClu
       .filter((id): id is string => !!id))];
 
     if (profileIds.length) {
+      const requestBody = `${profile.full_name ?? 'A coach'} is looking for ${spots} player${spots !== 1 ? 's' : ''} for ${eventTitle}${note.trim() ? ` — ${note.trim()}` : ''}. Open the app to volunteer.`;
       await supabase.functions.invoke('send-push', {
         body: {
           profile_ids: profileIds,
           title: `${teamName} needs guest players`,
-          body: `${profile.full_name ?? 'A coach'} is looking for ${spots} player${spots !== 1 ? 's' : ''} for ${eventTitle}${note.trim() ? ` — ${note.trim()}` : ''}. Open the app to volunteer.`,
+          body: requestBody,
           data: { type: 'guest_request', request_id: newReq.id, club_slug: club?.slug ?? '' },
         },
+      });
+      const targetNames = otherTeams.filter(t => targetIds.includes(t.id)).map(t => t.name);
+      sendTeamEmail({
+        teamIds: targetIds,
+        subject: `${teamName} needs guest players`,
+        body: requestBody,
+        fromName: profile.full_name ?? 'Coach',
+        teamName: targetNames.length === 1 ? targetNames[0] : club?.name ?? '',
+        clubName: club?.name ?? null,
+        logoUrl: club?.logo_url ?? null,
+        primaryColor: club?.primary_color ?? null,
       });
     }
 

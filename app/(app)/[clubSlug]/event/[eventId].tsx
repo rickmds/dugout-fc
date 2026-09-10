@@ -32,6 +32,8 @@ import ReflectionSheet, { FACES } from '../../../../components/reflection/Reflec
 import ShoutoutSheet from '../../../../components/shoutout/ShoutoutSheet';
 import { fetchDriveTime, parseDurationText } from '../../../../lib/drivetime';
 import { sendProfilesPush } from '../../../../lib/push';
+import { sendProfilesEmail } from '../../../../lib/emailProfiles';
+import { sendTeamEmail } from '../../../../lib/emailTeam';
 import { TEAM_PULSE_ENABLED, SESSION_BUILDER_ENABLED } from '../../../../lib/featureFlags';
 import { getGameResult, RESULT_COLORS, sendTournamentResultPush } from '../../../../lib/tournaments';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -774,7 +776,7 @@ export default function EventDetailScreen() {
     setEvent((prev) => prev ? { ...prev, score_home: scoreHomeInput, score_away: scoreAwayInput } : prev);
     setScoreModalOpen(false);
     // Only fires once, here, on an explicit save — not on every +/- tap.
-    sendTournamentResultPush(event.tournament_id, event.team_id, scoreHomeInput, scoreAwayInput);
+    sendTournamentResultPush(event.tournament_id, event.team_id, scoreHomeInput, scoreAwayInput, profile?.full_name ?? undefined);
   }
 
   function openSessionBuilder() {
@@ -1037,6 +1039,14 @@ export default function EventDetailScreen() {
             body: `Your guest spot for ${event.title} has been removed by the coach.`,
             data: { type: 'guest_removed', event_id: eventId, club_slug: clubSlug },
           }).catch(() => {});
+          sendProfilesEmail({
+            profileIds: [parentId],
+            subject: 'Guest spot removed',
+            body: `Your guest spot for ${event.title} has been removed by the coach.`,
+            fromName: profile?.full_name ?? team?.name ?? 'Coach',
+            teamName: team?.name ?? '',
+            clubName, logoUrl, primaryColor,
+          });
         }
       }},
     ]);
@@ -1061,12 +1071,21 @@ export default function EventDetailScreen() {
             .map(g => g.players?.profile_id as string | null)
             .filter((id): id is string => !!id);
           if (volunteerProfileIds.length > 0) {
+            const cancelBody = `The guest player request for ${event?.title ?? 'the event'} has been cancelled.`;
             sendProfilesPush({
               profileIds: volunteerProfileIds,
               title: 'Guest request cancelled',
-              body: `The guest player request for ${event?.title ?? 'the event'} has been cancelled.`,
+              body: cancelBody,
               data: { type: 'guest_cancelled', event_id: eventId, club_slug: clubSlug },
             }).catch(() => {});
+            sendProfilesEmail({
+              profileIds: volunteerProfileIds,
+              subject: 'Guest request cancelled',
+              body: cancelBody,
+              fromName: profile?.full_name ?? team?.name ?? 'Coach',
+              teamName: team?.name ?? '',
+              clubName, logoUrl, primaryColor,
+            });
           }
         }
       }},
@@ -1111,11 +1130,20 @@ export default function EventDetailScreen() {
     const { data: players } = await supabase.from('players').select('profile_id').in('team_id', requestTargetIds);
     const profileIds = [...new Set(((players ?? []) as any[]).map(p => p.profile_id).filter(Boolean))] as string[];
     if (profileIds.length > 0) {
+      const requestBody = `${profile.full_name ?? 'A coach'} is looking for ${requestSpots} player${requestSpots !== 1 ? 's' : ''} for ${event.title}${requestNote.trim() ? ` — ${requestNote.trim()}` : ''}. Tap to volunteer.`;
       await sendProfilesPush({
         profileIds,
         title: `${team.name} needs guest players`,
-        body: `${profile.full_name ?? 'A coach'} is looking for ${requestSpots} player${requestSpots !== 1 ? 's' : ''} for ${event.title}${requestNote.trim() ? ` — ${requestNote.trim()}` : ''}. Tap to volunteer.`,
+        body: requestBody,
         data: { type: 'guest_request', request_id: newReq.id, club_slug: clubSlug },
+      });
+      sendTeamEmail({
+        teamIds: requestTargetIds,
+        subject: `${team.name} needs guest players`,
+        body: requestBody,
+        fromName: profile.full_name ?? 'Coach',
+        teamName: targetTeams.length === 1 ? targetTeams[0].name : clubName ?? '',
+        clubName, logoUrl, primaryColor,
       });
     }
     setCallouts(prev => [...prev, {

@@ -548,10 +548,24 @@ export default function TeamSchedulePage() {
         const { data, error } = await supabase.from('events').insert(payload).select('id').single<{ id: string }>();
         if (error) throw error;
         if (form.push_notify && data?.id) {
+          const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
           try {
-            const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
             await sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: savedTitle, data: { event_id: data.id } });
           } catch { /* non-critical */ }
+
+          // A brand new event is a one-off, not a recurring nag — missing
+          // it means a family never finds out the session exists at all.
+          const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          sendTeamEmail({
+            teamIds: [teamId],
+            subject: `New ${TYPE_LABELS[form.type]} — ${savedTitle}`,
+            body: `${savedTitle} was just added to ${teamName}'s schedule — ${label}${form.hasTime ? ' at ' + fmtTime(form.event_time) : ''}${form.location.trim() ? ' · ' + form.location.trim() : ''}.`,
+            fromName: profile?.full_name ?? club?.name ?? 'Coach',
+            teamName,
+            clubName: club?.name ?? null,
+            logoUrl: club?.logo_url ?? null,
+            primaryColor: club?.primary_color ?? null,
+          });
         }
       }
       dialogRef.current?.close();

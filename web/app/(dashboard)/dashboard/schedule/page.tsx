@@ -722,11 +722,13 @@ export default function SchedulePage() {
         // every team's copy of this occurrence at once.
         const groupId = createTeamIds.length > 1 ? crypto.randomUUID() : null;
         const failed: string[] = [];
+        const succeededTeamIds: string[] = [];
         for (const teamId of createTeamIds) {
           const { data, error } = await supabase.from('events').insert({ ...basePayload, team_id: teamId, event_group_id: groupId }).select('id').single<{ id: string }>();
           if (error) { failed.push(teams.find((t) => t.id === teamId)?.name ?? teamId); continue; }
           shouldClose = true;
           const eventId = data?.id ?? null;
+          succeededTeamIds.push(teamId);
 
           if (form.push_notify && eventId) {
             const teamName = teams.find((t) => t.id === teamId)?.name ?? 'your team';
@@ -743,6 +745,22 @@ export default function SchedulePage() {
           }
         }
         if (failed.length) alert(`Could not create event for: ${failed.join(', ')}`);
+
+        // One deduped call across every team the event was created for, not
+        // once per team — otherwise a family with kids on two of the
+        // selected teams gets the same "new event" email twice.
+        if (form.push_notify && succeededTeamIds.length) {
+          sendTeamEmail({
+            teamIds: succeededTeamIds,
+            subject: `New ${TYPE_LABELS[form.type]} — ${savedTitle}`,
+            body: `${savedTitle} was just added to the schedule — ${label}${eventTime ? ' at ' + fmtTime(eventTime) : ''}${form.location.trim() ? ' · ' + form.location.trim() : ''}.`,
+            fromName: profile?.full_name ?? club?.name ?? 'Coach',
+            teamName: club?.name ?? '',
+            clubName: club?.name ?? null,
+            logoUrl: club?.logo_url ?? null,
+            primaryColor: club?.primary_color ?? null,
+          });
+        }
       }
     } finally {
       setSaving(false);

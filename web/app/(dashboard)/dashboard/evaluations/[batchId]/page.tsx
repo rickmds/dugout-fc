@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle, Star, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { sendProfilesEmail } from '@/lib/emailProfiles';
 
 type ReportData = {
   bio:   { position: string; birth_year: string; school: string };
@@ -320,14 +321,25 @@ export default function BatchReviewPage() {
       const { data: players } = await supabase.from('players').select('profile_id').in('id', playerIds);
       const profileIds = (players ?? []).map(p => p.profile_id).filter(Boolean) as string[];
       if (profileIds.length) {
+        const evalBody = `Your ${batch.period_label} report from your coach is now available.`;
         supabase.functions.invoke('send-push', {
           body: {
             profile_ids: profileIds,
             title: '📊 Your evaluation is ready',
-            body: `Your ${batch.period_label} report from your coach is now available.`,
+            body: evalBody,
             data: { type: 'evaluation_published' },
           },
         }).catch(() => {});
+        sendProfilesEmail({
+          profileIds,
+          subject: '📊 Your evaluation is ready',
+          body: evalBody,
+          fromName: profile?.full_name ?? club?.name ?? 'Coach',
+          teamName: batch.teams?.name ?? '',
+          clubName: club?.name ?? null,
+          logoUrl: club?.logo_url ?? null,
+          primaryColor: club?.primary_color ?? null,
+        });
       }
     }
 

@@ -18,6 +18,7 @@ import { supabase } from '../../../lib/supabase';
 import { useTeam } from '../../../hooks/useTeam';
 import { useAuth } from '../../../hooks/useAuth';
 import { sendTeamPush } from '../../../lib/push';
+import { sendTeamEmail } from '../../../lib/emailTeam';
 import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
@@ -226,7 +227,7 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function CreateEventScreen() {
-  const { primaryColor, secondaryColor, onSecondary, rgba, timezone } = useClub();
+  const { primaryColor, secondaryColor, onSecondary, rgba, timezone, clubName, logoUrl } = useClub();
   const router = useRouter();
   const { clubSlug, duplicateFrom, tournamentId } = useLocalSearchParams<{ clubSlug: string; duplicateFrom?: string; tournamentId?: string }>();
   const { team } = useTeam();
@@ -518,6 +519,18 @@ export default function CreateEventScreen() {
         body: `${savedTitle} — ${fmtDate(date)}`,
         excludeProfileId: profile?.id,
         data: { type: 'new_event', event_id: newEventId },
+      });
+      // A brand new event is a one-off, not a recurring nag — missing it
+      // means a family never finds out the session exists at all.
+      sendTeamEmail({
+        teamIds: [team.id],
+        subject: `New ${eventType === 'game' ? 'game' : eventType === 'training' ? 'training' : 'event'} — ${savedTitle}`,
+        body: `${savedTitle} was just added to ${team.name}'s schedule — ${fmtDate(date)}${hasTime ? ' at ' + fmtTime(startTime) : ''}${locationName.trim() ? ' · ' + locationName.trim() : ''}.`,
+        fromName: profile?.full_name ?? 'Coach',
+        teamName: team.name,
+        clubName,
+        logoUrl,
+        primaryColor,
       });
     }
 

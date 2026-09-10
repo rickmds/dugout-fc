@@ -38,6 +38,7 @@ import CreatePollModal from '../../../../components/home/CreatePollModal';
 import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../../../../lib/weather';
 import { fetchDriveTime } from '../../../../lib/drivetime';
 import { sendProfilesPush, sendTeamPush } from '../../../../lib/push';
+import { sendTeamEmail } from '../../../../lib/emailTeam';
 import GalleryCard from '../../../../components/home/GalleryCard';
 import * as WebBrowser from 'expo-web-browser';
 import { formatCurrency } from '../../../../lib/formatCurrency';
@@ -1033,6 +1034,18 @@ export default function HomeScreen() {
       excludeProfileId: profile.id,
       data: { type: 'callout', team_id: team.id },
     });
+    // Only urgent callouts get an email backup — routine ones are covered by
+    // push alone, per the "think like a parent" pass over notification gaps.
+    if (calloutUrgency === 'urgent') {
+      sendTeamEmail({
+        teamIds: [team.id],
+        subject: `🚨 Urgent: ${calloutTitle.trim()}`,
+        body: calloutBody.trim() || 'Tap to respond',
+        fromName: profile.full_name ?? 'Coach',
+        teamName: team.name,
+        clubName, logoUrl, primaryColor,
+      });
+    }
     setCalloutTitle('');
     setCalloutBody('');
     setCalloutUrgency('normal');
