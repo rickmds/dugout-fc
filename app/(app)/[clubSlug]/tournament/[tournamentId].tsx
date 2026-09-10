@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
@@ -45,7 +46,7 @@ type Game = {
 type Tournament = {
   id: string; name: string; location: string | null; lat: number | null; lng: number | null; team_id: string;
   start_date: string | null; end_date: string | null; entry_rsvp_lock_at: string | null;
-  cancelled_at: string | null; cancellation_reason: string | null;
+  cancelled_at: string | null; cancellation_reason: string | null; logo_url: string | null;
 };
 
 type RosterPlayer = { id: string; full_name: string; jersey_number: number | null };
@@ -97,9 +98,9 @@ export default function TournamentDetailScreen() {
 
   const load = useCallback(async () => {
     if (!tournamentId) return;
-    const { data: tRow } = await supabase
+    const { data: tRow } = await (supabase as any)
       .from('tournaments')
-      .select('id, name, location, lat, lng, team_id, start_date, end_date, entry_rsvp_lock_at, cancelled_at, cancellation_reason')
+      .select('id, name, location, lat, lng, team_id, start_date, end_date, entry_rsvp_lock_at, cancelled_at, cancellation_reason, logo_url')
       .eq('id', tournamentId)
       .single();
     if (!tRow) { setLoading(false); setRefreshing(false); return; }
@@ -382,7 +383,11 @@ export default function TournamentDetailScreen() {
       >
         <View style={styles.hero}>
           <View style={styles.badgeRow}>
-            <View style={styles.icon}><Text style={{ fontSize: 22 }}>🏆</Text></View>
+            <View style={styles.icon}>
+              {tournament?.logo_url
+                ? <Image source={{ uri: tournament.logo_url }} style={styles.iconImage} contentFit="cover" />
+                : <Text style={{ fontSize: 22 }}>🏆</Text>}
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{tournament?.name ?? 'Tournament'}</Text>
               <Text style={styles.loc}>{dateRange}{tournament?.location ? ` · ${tournament.location}` : ''}</Text>
@@ -677,8 +682,9 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   icon: {
     width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(234,179,8,0.14)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.3)',
+    backgroundColor: 'rgba(234,179,8,0.14)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.3)', overflow: 'hidden',
   },
+  iconImage: { width: 48, height: 48 },
   name: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text },
   loc: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 3 },
 

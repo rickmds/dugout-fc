@@ -63,7 +63,7 @@ type Event = {
   guestStatus?: 'confirmed' | 'pending';
 };
 
-type Tournament = { id: string; name: string; location: string | null; start_date: string | null; end_date: string | null; cancelled_at: string | null };
+type Tournament = { id: string; name: string; location: string | null; start_date: string | null; end_date: string | null; cancelled_at: string | null; logo_url: string | null };
 
 type TournamentMarker = {
   tournament: Tournament;
@@ -275,7 +275,7 @@ export default function ScheduleScreen() {
         ? (supabase as any).rpc('get_my_guarded_players').select('id, team_id, full_name').in('team_id', teamIds).order('full_name')
         : Promise.resolve({ data: [] }),
       supabase.from('players').select('id', { count: 'exact', head: true }).eq('team_id', team.id),
-      supabase.from('tournaments').select('id, name, location, start_date, end_date, cancelled_at').in('team_id', teamIds),
+      (supabase as any).from('tournaments').select('id, name, location, start_date, end_date, cancelled_at, logo_url').in('team_id', teamIds),
     ]);
 
     const evs = (eventsRes.data as unknown as Event[]) ?? [];
@@ -749,7 +749,9 @@ export default function ScheduleScreen() {
       <View key={tournament.id} style={styles.tournamentBigCard}>
         <TouchableOpacity style={styles.tournamentBigHeader} onPress={openTournament} activeOpacity={0.8}>
           <View style={styles.tournamentBigIcon}>
-            <Text style={{ fontSize: 26 }}>🏆</Text>
+            {tournament.logo_url
+              ? <Image source={{ uri: tournament.logo_url }} style={styles.tournamentBigIconImage} contentFit="cover" />
+              : <Text style={{ fontSize: 26 }}>🏆</Text>}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.tournamentEyebrow}>TOURNAMENT</Text>
@@ -1550,8 +1552,9 @@ const styles = StyleSheet.create({
   tournamentBigHeader: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   tournamentBigIcon: {
     width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(234,179,8,0.16)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.35)',
+    backgroundColor: 'rgba(234,179,8,0.16)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.35)', overflow: 'hidden',
   },
+  tournamentBigIconImage: { width: 60, height: 60 },
   tournamentEyebrow: { fontSize: 10, fontWeight: '800', color: '#EAB308', letterSpacing: 1.2, marginBottom: 2 },
   tournamentBigName: { fontSize: 19, fontWeight: '800', color: PULSE_COLORS.ui.text },
   tournamentBigMeta: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },

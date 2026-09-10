@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -70,6 +71,8 @@ export default function CreateTournamentScreen() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!tournamentId);
   const [scanning, setScanning] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const isEdit = !!tournamentId;
   const canSave = name.trim().length > 0 && !saving;
@@ -77,9 +80,9 @@ export default function CreateTournamentScreen() {
   useEffect(() => {
     if (!tournamentId) return;
     (async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('tournaments')
-        .select('name, location, start_date, end_date, entry_rsvp_lock_at')
+        .select('name, location, start_date, end_date, entry_rsvp_lock_at, logo_url')
         .eq('id', tournamentId)
         .single();
       if (error || !data) {
@@ -93,6 +96,7 @@ export default function CreateTournamentScreen() {
       if (data.start_date) setStartDate(new Date(data.start_date + 'T00:00:00'));
       if (data.end_date) setEndDate(new Date(data.end_date + 'T00:00:00'));
       if (data.entry_rsvp_lock_at) setRsvpDeadline(new Date(data.entry_rsvp_lock_at));
+      setLogoUrl(data.logo_url ?? null);
       setLoading(false);
     })();
   }, [tournamentId]);
@@ -144,6 +148,29 @@ export default function CreateTournamentScreen() {
     await scanDocument(asset.base64, ext === 'png' ? 'image/png' : 'image/jpeg');
   }
 
+  async function pickLogo() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo access in Settings.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: true, aspect: [1, 1] });
+    if (result.canceled || !result.assets?.[0]) return;
+    setUploadingLogo(true);
+    try {
+      const response = await fetch(result.assets[0].uri);
+      const arrayBuffer = await response.arrayBuffer();
+      const path = `${team?.id ?? 'unknown'}/${Date.now()}.jpg`;
+      const { error } = await supabase.storage
+        .from('tournament-logos')
+        .upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
+      if (error) { Alert.alert('Upload failed', error.message); return; }
+      const { data: { publicUrl } } = supabase.storage.from('tournament-logos').getPublicUrl(path);
+      setLogoUrl(publicUrl);
+    } catch (e) {
+      Alert.alert('Upload failed', String(e));
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   async function handleSave() {
     if (!canSave) return;
     setSaving(true);
@@ -165,9 +192,9 @@ export default function CreateTournamentScreen() {
     };
 
     if (isEdit) {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tournaments')
-        .update({ name: name.trim(), location, ...dateFields })
+        .update({ name: name.trim(), location, logo_url: logoUrl, ...dateFields })
         .eq('id', tournamentId);
       setSaving(false);
       if (error) {
@@ -179,9 +206,9 @@ export default function CreateTournamentScreen() {
     }
 
     if (!team || !profile) { setSaving(false); return; }
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('tournaments')
-      .insert({ team_id: team.id, name: name.trim(), location, created_by: profile.id, ...dateFields })
+      .insert({ team_id: team.id, name: name.trim(), location, logo_url: logoUrl, created_by: profile.id, ...dateFields })
       .select('id')
       .single();
     setSaving(false);
@@ -244,6 +271,29 @@ export default function CreateTournamentScreen() {
               <Text style={styles.scanBtnText}>{scanning ? 'Reading document…' : 'Scan a flyer or schedule'}</Text>
             </TouchableOpacity>
           )}
+
+          <Text style={styles.sectionHeader}>LOGO <Text style={styles.hint}>optional</Text></Text>
+          <View style={styles.logoRow}>
+            <TouchableOpacity style={styles.logoTap} onPress={pickLogo} disabled={uploadingLogo} activeOpacity={0.8}>
+              {uploadingLogo ? (
+                <ActivityIndicator color={primaryColor} />
+              ) : logoUrl ? (
+                <Image source={{ uri: logoUrl }} style={styles.logoImage} contentFit="cover" />
+              ) : (
+                <Ionicons name="image-outline" size={24} color={PULSE_COLORS.ui.muted} />
+              )}
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <TouchableOpacity onPress={pickLogo} disabled={uploadingLogo}>
+                <Text style={[styles.logoActionText, { color: primaryColor }]}>{logoUrl ? 'Change logo' : 'Add a logo'}</Text>
+              </TouchableOpacity>
+              {logoUrl && (
+                <TouchableOpacity onPress={() => setLogoUrl(null)}>
+                  <Text style={styles.logoRemoveText}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
 
           <Text style={styles.sectionHeader}>NAME</Text>
           <View style={styles.card}>
@@ -398,6 +448,14 @@ const styles = StyleSheet.create({
     borderRadius: 16, marginBottom: 20, overflow: 'hidden',
   },
   titleInput: { fontSize: 16, fontWeight: '600', color: PULSE_COLORS.ui.text, paddingHorizontal: 16, paddingVertical: 14 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
+  logoTap: {
+    width: 56, height: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, overflow: 'hidden',
+  },
+  logoImage: { width: 56, height: 56 },
+  logoActionText: { fontSize: 14, fontWeight: '700' },
+  logoRemoveText: { fontSize: 12.5, fontWeight: '600', color: PULSE_COLORS.status.error, marginTop: 4 },
   locationNameRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   inlineInput: { flex: 1, color: PULSE_COLORS.ui.text, fontSize: 14 },
   locationSub: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, marginTop: 10, lineHeight: 16 },
