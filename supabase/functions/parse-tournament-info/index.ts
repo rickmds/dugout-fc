@@ -64,7 +64,10 @@ Required structure:
   "uncertain": false,
   "warnings": [],
   "logo_image_index": null,
-  "logo_bbox": null
+  "logo_col_start": null,
+  "logo_col_end": null,
+  "logo_row_start": null,
+  "logo_row_end": null
 }
 
 Field rules:
@@ -74,10 +77,11 @@ Field rules:
 - start_date / end_date: YYYY-MM-DD. If only one date is shown, set both to that same date. null for either if no date is present at all (e.g. a "you're invited to apply" announcement with no scheduled dates yet — don't guess).  If a year is absent, assume the next upcoming occurrence of that month/day.
 - uncertain: true if the tournament name or dates are ambiguous or you have low confidence.
 - warnings: array of strings for anything worth flagging (empty array if none).
-- logo_image_index / logo_bbox: only if one of the numbered "Image N" inputs above clearly shows a standalone tournament/event logo, crest, or badge graphic (not a sponsor logo, not a full-page flyer background, not a generic soccer ball clipart). logo_image_index is that image's number (0-based, matching the "Image N:" labels — there is no valid index for a PDF/document input, only for numbered images).
-  Work out logo_bbox carefully, step by step, before answering: first silently estimate the logo's top and bottom edges as a fraction of the image's total HEIGHT, then its left and right edges as a fraction of the image's total WIDTH — picture the image split into 10 equal horizontal and 10 equal vertical bands (tenths) and place each edge to the nearest band. Convert those four edges into {"x":left,"y":top,"width":right-left,"height":bottom-top}, each 0.0-1.0.
-  Err generously — it is far better to include a bit of surrounding whitespace/background than to cut off any part of the logo, so pad your estimated edges outward by roughly one extra tenth on every side before giving your final answer.
-  Leave both null if no clear standalone logo is visible anywhere, or if you're not confident in the box.`,
+- logo_image_index / logo_col_start / logo_col_end / logo_row_start / logo_row_end: only if one of the numbered "Image N" inputs above clearly shows a standalone tournament/event logo, crest, or badge graphic (not a sponsor logo, not surrounding page/app chrome like a nav bar or menu icon, not a generic soccer ball clipart). If the same logo appears more than once at different sizes (e.g. a large hero image and a small thumbnail copy of the same badge elsewhere on the page), always pick the LARGEST, clearest instance — never the small one.
+  logo_image_index is that image's number (0-based, matching the "Image N:" labels — there is no valid index for a PDF/document input, only for numbered images).
+  The box must bound ONLY the logo artwork itself (the shield/crest/badge shape, its text and icons) — never any surrounding white card, photo frame, rounded border, or padding it happens to sit inside. If the logo is displayed inside a bordered card with visible empty space around it, ignore that card entirely and locate just the graphic within it.
+  To locate it, imagine that image divided into a grid of exactly 6 equal columns (numbered 1-6, left to right) and 10 equal rows (numbered 1-10, top to bottom). Give the column/row numbers of the grid cells the logo GRAPHIC's edges fall into: logo_col_start (leftmost column it touches), logo_col_end (rightmost column it touches), logo_row_start (topmost row it touches), logo_row_end (bottommost row it touches) — all integers 1-6 for columns, 1-10 for rows, with start <= end.
+  Leave all five fields null if no clear standalone logo is visible anywhere, or if you're not confident in the grid cells.`,
   });
 
   const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -114,7 +118,43 @@ Field rules:
     }
   }
 
-  return new Response(JSON.stringify(parsed), {
+  // Convert the model's grid-cell answer into the actual bbox fraction
+  // ourselves, deterministically — asking the model to also do that
+  // arithmetic (as an earlier version of this prompt did) was itself a
+  // source of error on top of the cell estimate. Grid stays in lockstep
+  // with the "6 columns x 10 rows" the prompt above describes.
+  const GRID_COLS = 6, GRID_ROWS = 10;
+  const colStart = Number(parsed.logo_col_start);
+  const colEnd = Number(parsed.logo_col_end);
+  const rowStart = Number(parsed.logo_row_start);
+  const rowEnd = Number(parsed.logo_row_end);
+  const cellsValid =
+    Number.isInteger(colStart) && Number.isInteger(colEnd) && Number.isInteger(rowStart) && Number.isInteger(rowEnd) &&
+    colStart >= 1 && colStart <= GRID_COLS && colEnd >= colStart && colEnd <= GRID_COLS &&
+    rowStart >= 1 && rowStart <= GRID_ROWS && rowEnd >= rowStart && rowEnd <= GRID_ROWS;
+
+  const result: Record<string, unknown> = {
+    name: parsed.name ?? null,
+    location: parsed.location ?? null,
+    address: parsed.address ?? null,
+    start_date: parsed.start_date ?? null,
+    end_date: parsed.end_date ?? null,
+    uncertain: parsed.uncertain ?? false,
+    warnings: parsed.warnings ?? [],
+    logo_image_index: null,
+    logo_bbox: null,
+  };
+  if (cellsValid && Number.isInteger(Number(parsed.logo_image_index)) && Number(parsed.logo_image_index) >= 0) {
+    result.logo_image_index = Number(parsed.logo_image_index);
+    result.logo_bbox = {
+      x: (colStart - 1) / GRID_COLS,
+      y: (rowStart - 1) / GRID_ROWS,
+      width: (colEnd - colStart + 1) / GRID_COLS,
+      height: (rowEnd - rowStart + 1) / GRID_ROWS,
+    };
+  }
+
+  return new Response(JSON.stringify(result), {
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
 });
