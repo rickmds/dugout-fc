@@ -34,6 +34,7 @@ import ImageEditor from '../../../../components/ui/ImageEditor';
 
 type PlayerDetail = {
   id: string;
+  team_id: string;
   full_name: string;
   jersey_number: number | null;
   position: string | null;
@@ -276,7 +277,7 @@ export default function PlayerProfileScreen() {
     // that may not be in the live DB yet — handled gracefully via cast
     const { data, error } = await (supabase as any)
       .from('players')
-      .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, profiles!players_profile_id_fkey(avatar_url)')
+      .select('id, team_id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, profiles!players_profile_id_fkey(avatar_url)')
       .eq('id', playerId)
       .single();
 
@@ -284,7 +285,7 @@ export default function PlayerProfileScreen() {
       // Fall back to base columns if new columns don't exist in live DB yet
       const { data: fallback } = await supabase
         .from('players')
-        .select('id, full_name, jersey_number, position, profile_id, profiles!players_profile_id_fkey(avatar_url)')
+        .select('id, team_id, full_name, jersey_number, position, profile_id, profiles!players_profile_id_fkey(avatar_url)')
         .eq('id', playerId)
         .single();
 
@@ -692,8 +693,14 @@ export default function PlayerProfileScreen() {
     } else {
       // Create new invite
       if (!guardianEmail.trim()) { setSavingInvite(false); return; }
+      // player.team_id, not the global active-team switcher's team.id — this
+      // screen is reachable for a player on a DIFFERENT team than whichever
+      // one happens to be active (e.g. from a guardian's cross-team "My
+      // Players" list), and the invite's team_id must always match the
+      // actual player being invited to, or accept_invite() grants team
+      // access to the wrong team entirely.
       const { data: inviteData, error } = await (supabase as any).from('invites').insert({
-        team_id: team.id,
+        team_id: player.team_id,
         club_id: profile.club_id,
         player_id: player.id,
         email: guardianEmail.trim().toLowerCase(),
