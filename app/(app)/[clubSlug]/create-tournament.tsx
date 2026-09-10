@@ -152,7 +152,16 @@ export default function CreateTournamentScreen() {
     try {
       const { data, error } = await supabase.functions.invoke('parse-tournament-info', { body: { files } });
       if (error || !data) {
-        Alert.alert("Couldn't read that file", 'Check your connection and try again, or enter the details manually.');
+        let detail = error?.message ?? 'Unknown error';
+        // FunctionsHttpError carries the actual Response on .context — its
+        // body has the real failure reason (e.g. payload too large), which
+        // .message alone doesn't include.
+        const ctx = (error as any)?.context;
+        if (ctx?.text) {
+          try { detail = await ctx.text(); } catch { /* keep .message */ }
+        }
+        console.error('[create-tournament] scan error:', detail);
+        Alert.alert("Couldn't read that file", detail.length < 150 ? detail : 'Check your connection and try again, or enter the details manually.');
         return;
       }
       if (data.name) setName(data.name);
@@ -172,13 +181,50 @@ export default function CreateTournamentScreen() {
     }
   }
 
+  // Claude's API hard-rejects any single image whose base64 form exceeds
+  // 10 MB — a real phone photo at quality 0.9 clears that easily (a 12MP+
+  // shot can be 8-12 MB just as a JPEG, before the ~33% base64 overhead).
+  // Downscale to a long-edge cap well under that ceiling before sending —
+  // 1600px is still plenty sharp for reading flyer text. The ORIGINAL
+  // full-resolution asset is kept separately for the logo crop step, so
+  // this compression never limits the final logo's quality.
+  const MAX_SCAN_DIM = 1600;
+  async function toSafeScanBase64(asset: ImagePicker.ImagePickerAsset): Promise<string | null> {
+    try {
+      const w = asset.width ?? 0;
+      const h = asset.height ?? 0;
+      const longEdge = Math.max(w, h);
+      const actions = longEdge > MAX_SCAN_DIM
+        ? [{ resize: w >= h ? { width: MAX_SCAN_DIM } : { height: MAX_SCAN_DIM } }]
+        : [];
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri, actions, { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      return manipulated.base64 ?? null;
+    } catch (err) {
+      console.warn('[create-tournament] toSafeScanBase64 failed', err);
+      return null;
+    }
+  }
+
   async function scanFile() {
     const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
     if (result.canceled || !result.assets?.[0]) return;
     const file = result.assets[0];
     if ((file.size ?? 0) > 20 * 1024 * 1024) { Alert.alert('File too large', 'Maximum 20 MB.'); return; }
+    const isImage = (file.mimeType ?? '').startsWith('image/');
+    if (isImage) {
+      // Same 10 MB-per-image ceiling applies here — resize down first
+      // rather than sending the raw file straight through.
+      const manipulated = await ImageManipulator.manipulateAsync(
+        file.uri, [{ resize: { width: MAX_SCAN_DIM } }], { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      if (!manipulated.base64) { Alert.alert('Error', "Couldn't read that file — try picking it again."); return; }
+      await scanDocument([{ file_base64: manipulated.base64, file_type: 'image/jpeg' }]);
+      return;
+    }
     const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-    await scanDocument([{ file_base64: base64, file_type: file.mimeType ?? 'image/jpeg' }]);
+    await scanDocument([{ file_base64: base64, file_type: file.mimeType ?? 'application/pdf' }]);
   }
 
   async function scanImages() {
@@ -190,11 +236,18 @@ export default function CreateTournamentScreen() {
     if (result.canceled || !result.assets?.length) return;
     const validAssets = result.assets.filter((a) => !!a.base64);
     if (!validAssets.length) { Alert.alert('Error', "Couldn't read those photos — try picking them again or use different ones."); return; }
-    const files = validAssets.map((a) => {
-      const ext = a.uri.split('.').pop()?.toLowerCase();
-      return { file_base64: a.base64!, file_type: ext === 'png' ? 'image/png' : 'image/jpeg' };
-    });
-    await scanDocument(files, validAssets);
+
+    const safeBase64s = await Promise.all(validAssets.map(toSafeScanBase64));
+    const files: { file_base64: string; file_type: string }[] = [];
+    const cropAssets: ImagePicker.ImagePickerAsset[] = [];
+    for (let i = 0; i < validAssets.length; i++) {
+      const b64 = safeBase64s[i];
+      if (!b64) continue; // skip any single image that failed to downscale rather than failing the whole batch
+      files.push({ file_base64: b64, file_type: 'image/jpeg' });
+      cropAssets.push(validAssets[i]);
+    }
+    if (!files.length) { Alert.alert('Error', "Couldn't read those photos — try picking them again or use different ones."); return; }
+    await scanDocument(files, cropAssets);
   }
 
   async function pickLogo() {
