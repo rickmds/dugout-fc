@@ -190,8 +190,8 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
   }
 
   // ── Render body as proper paragraphs ────────────────────────────────────────
-  const pStyle = 'margin:0 0 18px;font-size:15px;color:#d1d5db;line-height:1.75;';
-  const sigStyle = 'margin:0;font-size:14px;color:#9ca3af;line-height:1.6;font-style:italic;';
+  const pStyle = 'margin:0 0 18px;font-size:15px;color:#374151;line-height:1.75;';
+  const sigStyle = 'margin:0;font-size:14px;color:#6b7280;line-height:1.6;font-style:italic;';
 
   // Split off trailing "— Name" signature line if present
   const sigMatch = cleanBody.match(/\n\n—\s+.+$/s);
@@ -218,9 +218,9 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
           Set up your account &rarr;
         </a>
         ${inviteToken
-          ? `<p style="margin:18px 0 0;font-size:12px;color:#6b7280;line-height:1.6;">
+          ? `<p style="margin:18px 0 0;font-size:12px;color:#9ca3af;line-height:1.6;">
                Or open the app and enter invite code<br>
-               <strong style="color:#9ca3af;font-family:'Courier New',Courier,monospace;letter-spacing:2px;font-size:13px;">${escapeHtml(inviteToken)}</strong>
+               <strong style="color:#4b5563;font-family:'Courier New',Courier,monospace;letter-spacing:2px;font-size:13px;">${escapeHtml(inviteToken)}</strong>
              </p>`
           : ''}
       </div>` : '';
@@ -236,14 +236,14 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
     ? `<div style="text-align:center;padding:36px 28px 28px;">
         <img src="${club_logo_url}" width="60" height="60" alt="${escapeHtml(displayClub)}"
           style="display:inline-block;border-radius:14px;" />
-        <p style="margin:12px 0 0;font-size:19px;font-weight:800;color:#f9fafb;letter-spacing:-0.4px;">${escapeHtml(displayClub)}</p>
+        <p style="margin:12px 0 0;font-size:19px;font-weight:800;color:#111827;letter-spacing:-0.4px;">${escapeHtml(displayClub)}</p>
       </div>`
     : `<div style="text-align:center;padding:36px 28px 28px;">
         <div style="display:inline-block;width:60px;height:60px;line-height:60px;text-align:center;
                     border-radius:14px;background:${accent};vertical-align:middle;">
           <span style="font-size:22px;font-weight:900;color:${btnTextCol};">${escapeHtml(initials)}</span>
         </div>
-        <p style="margin:12px 0 0;font-size:19px;font-weight:800;color:#f9fafb;letter-spacing:-0.4px;">${escapeHtml(displayClub)}</p>
+        <p style="margin:12px 0 0;font-size:19px;font-weight:800;color:#111827;letter-spacing:-0.4px;">${escapeHtml(displayClub)}</p>
       </div>`;
 
   return `<!DOCTYPE html>
@@ -251,10 +251,12 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
   <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;">
+<body style="margin:0;padding:0;background:#f1f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f2f5;">
     <tr>
       <td align="center" style="padding:48px 20px 64px;">
         <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
@@ -264,22 +266,22 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
 
           <!-- Card -->
           <tr>
-            <td style="background:#111111;border:1px solid #222222;border-radius:20px;
-                       overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+            <td style="background:#ffffff;border:1px solid #e7e9ee;border-radius:20px;
+                       overflow:hidden;box-shadow:0 12px 32px rgba(17,24,39,0.08);">
 
               <!-- Accent bar -->
-              <div style="height:3px;background:${accent};"></div>
+              <div style="height:4px;background:${accent};"></div>
 
               <!-- Team label + subject -->
-              <div style="padding:28px 28px 20px;">
-                <p style="margin:0 0 8px;font-size:11px;color:#6b7280;text-transform:uppercase;
-                           letter-spacing:1.5px;font-weight:700;">${escapeHtml(team_name)}</p>
-                <h1 style="margin:0;font-size:22px;font-weight:800;color:#f9fafb;
+              <div style="padding:30px 28px 20px;">
+                <p style="margin:0 0 8px;font-size:11px;color:${accent};text-transform:uppercase;
+                           letter-spacing:1.5px;font-weight:800;">${escapeHtml(team_name)}</p>
+                <h1 style="margin:0;font-size:22px;font-weight:800;color:#111827;
                             line-height:1.3;letter-spacing:-0.4px;">${escapeHtml(subject)}</h1>
               </div>
 
               <!-- Divider -->
-              <div style="height:1px;background:#1e1e1e;margin:0 28px;"></div>
+              <div style="height:1px;background:#eef0f3;margin:0 28px;"></div>
 
               <!-- Body -->
               <div style="padding:24px 28px ${inviteLink ? '4px' : '0'};">
@@ -291,12 +293,12 @@ function buildHtml({ body, from_name, team_name, subject, club_logo_url, club_na
               ${ctaHtml}
 
               <!-- Footer -->
-              <div style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
-                <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">
-                  Sent by <strong style="color:#9ca3af;">${escapeHtml(from_name)}</strong> via
+              <div style="border-top:1px solid #eef0f3;padding:18px 28px;background:#fafbfc;">
+                <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.6;">
+                  Sent by <strong style="color:#6b7280;">${escapeHtml(from_name)}</strong> via
                   <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a>
                   &nbsp;&middot;&nbsp;
-                  <span style="color:#374151;">&copy; ${year} Pulse FC</span>
+                  <span style="color:#c1c5cc;">&copy; ${year} Pulse FC</span>
                 </p>
               </div>
 

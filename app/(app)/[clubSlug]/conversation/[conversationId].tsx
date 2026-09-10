@@ -100,7 +100,7 @@ export default function ConversationScreen() {
   const [editText, setEditText]       = useState('');
   const [reactions, setReactions]     = useState<Record<string, ReactionSummary[]>>({});
   const [reactionSheetMsg, setReactionSheetMsg] = useState<Message | null>(null);
-  const [reactorSheet, setReactorSheet] = useState<{ emoji: string; profileIds: string[] } | null>(null);
+  const [reactorSheet, setReactorSheet] = useState<{ emoji: string; profileIds: string[] }[] | null>(null);
   const [reactorNames, setReactorNames] = useState<Record<string, string>>({});
   const [loadingReactors, setLoadingReactors] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ uri: string } | null>(null);
@@ -352,9 +352,9 @@ export default function ConversationScreen() {
     return () => { supabase.removeChannel(channel); };
   }
 
-  async function openReactorSheet(emoji: string, profileIds: string[]) {
-    setReactorSheet({ emoji, profileIds });
-    const missing = profileIds.filter((id) => !(id in reactorNames));
+  async function openReactorSheet(groups: { emoji: string; profileIds: string[] }[]) {
+    setReactorSheet(groups);
+    const missing = [...new Set(groups.flatMap((g) => g.profileIds))].filter((id) => !(id in reactorNames));
     if (!missing.length) return;
     setLoadingReactors(true);
     const { data } = await supabase.from('profiles').select('id, full_name').in('id', missing);
@@ -525,9 +525,17 @@ export default function ConversationScreen() {
   async function saveEdit() {
     if (!editingId || !editText.trim()) { setEditingId(null); return; }
     const newBody = editText.trim();
+    const hadReactions = !!reactions[editingId]?.length;
     setMessages((prev) => prev.map((m) => m.id === editingId ? { ...m, body: newBody, edited: true } : m));
+    // Reactions were given to the OLD content — leaving them on a fully
+    // rewritten message would misrepresent what people actually reacted to.
+    if (hadReactions) setReactions((prev) => ({ ...prev, [editingId]: [] }));
     setEditingId(null);
-    const { error } = await supabase.from('messages').update({ body: newBody, edited: true } as any).eq('id', editingId);
+    const [{ error }, reactionDel] = await Promise.all([
+      supabase.from('messages').update({ body: newBody, edited: true } as any).eq('id', editingId),
+      hadReactions ? supabase.from('message_reactions').delete().eq('message_id', editingId) : Promise.resolve(null),
+    ]);
+    if (reactionDel?.error) console.error('[Conversation] clear reactions on edit error:', reactionDel.error);
     if (error) {
       Alert.alert('Could not edit', error.message);
       fetchMessages();
@@ -655,7 +663,7 @@ export default function ConversationScreen() {
                           key={r.emoji}
                           style={[st.reactionPill, r.mine && { borderColor: primaryColor, backgroundColor: rgba(0.12) }]}
                           onPress={() => toggleReaction(item.id, r.emoji)}
-                          onLongPress={() => openReactorSheet(r.emoji, r.profileIds)}
+                          onLongPress={() => openReactorSheet([{ emoji: r.emoji, profileIds: r.profileIds }])}
                           activeOpacity={0.7}
                         >
                           <Text style={st.reactionPillEmoji}>{r.emoji}</Text>
@@ -741,6 +749,19 @@ export default function ConversationScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+                {reactionSheetMsg && !!reactions[reactionSheetMsg.id]?.length && (
+                  <TouchableOpacity
+                    style={st.reactionSheetAction}
+                    onPress={() => {
+                      const groups = (reactions[reactionSheetMsg.id] ?? []).map((r) => ({ emoji: r.emoji, profileIds: r.profileIds }));
+                      setReactionSheetMsg(null);
+                      openReactorSheet(groups);
+                    }}
+                  >
+                    <Ionicons name="people-outline" size={16} color={PULSE_COLORS.ui.text} />
+                    <Text style={st.reactionSheetActionText}>View reactions</Text>
+                  </TouchableOpacity>
+                )}
                 {reactionSheetMsg && reactionSheetMsg.sender_id === profile?.id && (
                   <TouchableOpacity
                     style={st.reactionSheetAction}
@@ -782,16 +803,20 @@ export default function ConversationScreen() {
             <TouchableWithoutFeedback>
               <View style={st.reactionSheet}>
                 <View style={st.sheetHandle} />
-                <Text style={st.reactorSheetTitle}>{reactorSheet?.emoji} Reacted by</Text>
                 {loadingReactors ? (
                   <ActivityIndicator style={{ marginVertical: 16 }} color={primaryColor} />
                 ) : (
-                  reactorSheet?.profileIds.map((id) => (
-                    <View key={id} style={st.reactorRow}>
-                      <View style={[st.reactorAvatar, { backgroundColor: rgba(0.15) }]}>
-                        <Text style={[st.reactorAvatarText, { color: primaryColor }]}>{initials(reactorNames[id] ?? null)}</Text>
-                      </View>
-                      <Text style={st.reactorName}>{reactorNames[id] ?? 'Someone'}</Text>
+                  reactorSheet?.map((group) => (
+                    <View key={group.emoji} style={st.reactorGroup}>
+                      <Text style={st.reactorSheetTitle}>{group.emoji} Reacted by</Text>
+                      {group.profileIds.map((id) => (
+                        <View key={id} style={st.reactorRow}>
+                          <View style={[st.reactorAvatar, { backgroundColor: rgba(0.15) }]}>
+                            <Text style={[st.reactorAvatarText, { color: primaryColor }]}>{initials(reactorNames[id] ?? null)}</Text>
+                          </View>
+                          <Text style={st.reactorName}>{reactorNames[id] ?? 'Someone'}</Text>
+                        </View>
+                      ))}
                     </View>
                   ))
                 )}
@@ -966,6 +991,7 @@ const st = StyleSheet.create({
   reactionSheetActionText: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
   reactionSheetCancel: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
   reactionSheetCancelText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  reactorGroup: { marginBottom: 8 },
   reactorSheetTitle: { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 12, textAlign: 'center' },
   reactorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   reactorAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
