@@ -411,11 +411,12 @@ export default function ConversationScreen() {
             .upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
           if (storageErr) throw storageErr;
           uploadedImageUrl = supabase.storage.from('chat-images').getPublicUrl(path).data.publicUrl;
-        } catch {
+        } catch (err: any) {
+          console.error('[Conversation] photo upload error:', err);
           setMessages((prev) => prev.filter((m) => m.id !== tempId));
           setText(body);
           setPendingImage({ uri: localImageUri });
-          Alert.alert('Could not send photo', 'Check your connection and try again.');
+          Alert.alert('Could not send photo', err?.message || 'Check your connection and try again.');
           return;
         }
       }
