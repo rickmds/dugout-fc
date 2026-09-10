@@ -24,6 +24,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import { PULSE_COLORS } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
+import ImageEditor from '../../../components/ui/ImageEditor';
 import SmartLocationInput from '../../../components/ui/SmartLocationInput';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
 import { zonedTimeToUtc } from '../../../lib/timezone';
@@ -102,49 +103,40 @@ export default function CreateTournamentScreen() {
     })();
   }, [tournamentId]);
 
-  // Crops the AI-located logo out of the original picked photo (full
-  // resolution, not the compressed base64 sent for parsing) and uploads it
-  // — best-effort, never blocks or errors out the rest of the scan if it
-  // fails, since the coach can always add/change a logo manually below.
-  async function cropAndUploadLogo(asset: ImagePicker.ImagePickerAsset, bbox: { x: number; y: number; width: number; height: number }) {
+  // AI logo detection is a starting point, not a final answer — opens the
+  // same pinch/pan crop editor used for manual logo picks, pre-positioned
+  // over the AI's suggested region on the ORIGINAL full-resolution photo
+  // (not the compressed copy sent for parsing) so the coach can nudge/zoom
+  // it right rather than accept a possibly-off crop or redo from scratch.
+  const [aiCropReview, setAiCropReview] = useState<{ uri: string; rect: { x: number; y: number; width: number; height: number } } | null>(null);
+
+  function reviewAiLogo(asset: ImagePicker.ImagePickerAsset, bbox: { x: number; y: number; width: number; height: number }) {
+    // A little padding beyond the AI's own box gives the starting view some
+    // breathing room to confirm the whole logo is in frame before fine-tuning.
+    const PAD = 0.15;
+    const padX = bbox.width * PAD;
+    const padY = bbox.height * PAD;
+    const x0 = Math.max(0, bbox.x - padX);
+    const y0 = Math.max(0, bbox.y - padY);
+    const x1 = Math.min(1, bbox.x + bbox.width + padX);
+    const y1 = Math.min(1, bbox.y + bbox.height + padY);
+    setAiCropReview({ uri: asset.uri, rect: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
+  }
+
+  async function uploadLogoFromLocalUri(uri: string, suffix: string) {
+    setUploadingLogo(true);
     try {
-      const w = asset.width ?? 0;
-      const h = asset.height ?? 0;
-      if (!w || !h) return;
-      // AI-estimated boxes run imprecise — pad generously beyond what the
-      // model already returns rather than crop tight, since a bit of extra
-      // background around the logo looks far better than clipping it.
-      const PAD = 0.15;
-      const padX = bbox.width * PAD;
-      const padY = bbox.height * PAD;
-      const x0 = Math.max(0, bbox.x - padX);
-      const y0 = Math.max(0, bbox.y - padY);
-      const x1 = Math.min(1, bbox.x + bbox.width + padX);
-      const y1 = Math.min(1, bbox.y + bbox.height + padY);
-
-      const originX = Math.max(0, Math.min(w - 1, Math.round(x0 * w)));
-      const originY = Math.max(0, Math.min(h - 1, Math.round(y0 * h)));
-      const cropWidth = Math.max(1, Math.min(w - originX, Math.round((x1 - x0) * w)));
-      const cropHeight = Math.max(1, Math.min(h - originY, Math.round((y1 - y0) * h)));
-
-      const manipulated = await ImageManipulator.manipulateAsync(
-        asset.uri,
-        [{ crop: { originX, originY, width: cropWidth, height: cropHeight } }],
-        { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-      );
-
-      setUploadingLogo(true);
-      const response = await fetch(manipulated.uri);
+      const response = await fetch(uri);
       const arrayBuffer = await response.arrayBuffer();
-      const path = `${team?.id ?? 'unknown'}/${Date.now()}-ai.jpg`;
+      const path = `${team?.id ?? 'unknown'}/${Date.now()}-${suffix}.png`;
       const { error } = await supabase.storage
         .from('tournament-logos')
-        .upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
-      if (error) return;
+        .upload(path, arrayBuffer, { contentType: 'image/png', upsert: false });
+      if (error) { Alert.alert('Upload failed', error.message); return; }
       const { data: { publicUrl } } = supabase.storage.from('tournament-logos').getPublicUrl(path);
       setLogoUrl(publicUrl);
-    } catch (err) {
-      console.warn('[create-tournament] cropAndUploadLogo failed', err);
+    } catch (e) {
+      Alert.alert('Upload failed', String(e));
     } finally {
       setUploadingLogo(false);
     }
@@ -182,7 +174,7 @@ export default function CreateTournamentScreen() {
       if (data.end_date) setEndDate(new Date(data.end_date + 'T00:00:00'));
 
       if (typeof data.logo_image_index === 'number' && data.logo_bbox && imageAssets[data.logo_image_index]) {
-        cropAndUploadLogo(imageAssets[data.logo_image_index], data.logo_bbox);
+        reviewAiLogo(imageAssets[data.logo_image_index], data.logo_bbox);
       }
     } catch (err) {
       console.warn('[create-tournament] scanDocument failed', err);
@@ -544,6 +536,18 @@ export default function CreateTournamentScreen() {
         title="RSVP deadline"
         onConfirm={setRsvpDeadline}
         onClose={() => setShowDeadlinePicker(false)}
+      />
+      <ImageEditor
+        visible={!!aiCropReview}
+        uri={aiCropReview?.uri ?? ''}
+        initialRect={aiCropReview?.rect}
+        title="Confirm Logo"
+        primaryColor={primaryColor}
+        onCancel={() => setAiCropReview(null)}
+        onSave={(uri) => {
+          setAiCropReview(null);
+          uploadLogoFromLocalUri(uri, 'ai');
+        }}
       />
     </View>
   );
