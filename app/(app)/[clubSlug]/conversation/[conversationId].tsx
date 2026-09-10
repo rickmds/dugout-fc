@@ -157,19 +157,34 @@ export default function ConversationScreen() {
           .filter(id => id !== profile?.id);
         setDmParticipantIds(others);
 
-        // Coach viewing a 1:1 DM — append which player this parent guardians
-        // so the header is unambiguous, matching the DM list's chat.tsx.
+        // conversations.title is written once, at creation time, as "the
+        // name of whoever the CREATOR selected" — correct for the creator,
+        // but wrong for the other party, who'd see their own name reflected
+        // back instead of the creator's. For a true 1:1 (not a group DM),
+        // resolve the actual other participant's name live instead of
+        // trusting that stored value.
         const teamId = (conv as any).team_id as string | null;
-        if (isCoach && others.length === 1 && teamId) {
-          const { data: guardianRows } = await supabase
-            .from('player_guardians')
-            .select('players!inner(full_name, team_id)')
-            .eq('profile_id', others[0])
-            .eq('players.team_id', teamId);
-          const names = ((guardianRows ?? []) as any[])
-            .map(g => g.players?.full_name)
-            .filter(Boolean);
-          if (names.length) setTitle(prev => `${prev} · ${names.join(', ')}`);
+        if (others.length === 1) {
+          const { data: otherProfile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', others[0])
+            .single();
+          if (otherProfile?.full_name) setTitle(otherProfile.full_name);
+
+          // Coach viewing a 1:1 DM — also append which player this parent
+          // guardians so the header is unambiguous, matching chat.tsx's list.
+          if (isCoach && teamId) {
+            const { data: guardianRows } = await supabase
+              .from('player_guardians')
+              .select('players!inner(full_name, team_id)')
+              .eq('profile_id', others[0])
+              .eq('players.team_id', teamId);
+            const names = ((guardianRows ?? []) as any[])
+              .map(g => g.players?.full_name)
+              .filter(Boolean);
+            if (names.length) setTitle(prev => `${prev} · ${names.join(', ')}`);
+          }
         }
       }
     }

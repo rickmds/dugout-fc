@@ -353,13 +353,24 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
       }
     }
 
-    // Coaches see plenty of parents with similar or shared names — append
-    // which player's guardian each 1:1 DM is with so it's unambiguous at a
-    // glance, without opening the thread. Group DMs keep their existing
-    // joined-name title (no single "other" to resolve a player for).
+    // conversations.title is written once, at creation time, as "the name of
+    // whoever the CREATOR selected" — correct for the creator, but wrong for
+    // the other party, who sees their own name reflected back at them
+    // instead of the creator's. Resolve every 1:1 DM's displayed name live
+    // from the actual other participant instead of trusting that stored
+    // value. Group DMs (more than one "other") keep the stored joined-name
+    // snapshot — there's no single "other" to resolve.
+    const realNameByConvId = new Map<string, string>();
+    // Coaches additionally see plenty of parents with similar or shared
+    // names — append which player's guardian each 1:1 DM is with so it's
+    // unambiguous at a glance, without opening the thread.
     const playerSuffixByConvId = new Map<string, string>();
+    // True group DMs (2+ "other" participants) — tracked explicitly rather
+    // than inferred from a comma in the title, since a resolved player-name
+    // suffix can itself contain one (a parent with 2+ kids on the team).
+    const groupConvIds = new Set<string>();
     const isCoachHere = team.myRole === 'org_admin' || team.myRole === 'coach';
-    if (isCoachHere && directConvs.length > 0) {
+    if (directConvs.length > 0) {
       const { data: partRows } = await supabase
         .from('conversation_participants')
         .select('conversation_id, profile_id')
@@ -370,28 +381,41 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
         if (!othersByConv.has(p.conversation_id)) othersByConv.set(p.conversation_id, []);
         othersByConv.get(p.conversation_id)!.push(p.profile_id);
       }
+      for (const [convId, others] of othersByConv) {
+        if (others.length > 1) groupConvIds.add(convId);
+      }
       const soloOtherIds = [...new Set(
         [...othersByConv.values()].filter((ids) => ids.length === 1).map((ids) => ids[0])
       )];
 
       if (soloOtherIds.length > 0) {
-        const { data: players } = await supabase.from('players').select('id, full_name').eq('team_id', team.id);
-        const playerIds = (players ?? []).map((p: any) => p.id);
-        const { data: guardianRows } = playerIds.length
-          ? await supabase.from('player_guardians').select('player_id, profile_id').in('player_id', playerIds).in('profile_id', soloOtherIds)
-          : { data: [] as { player_id: string; profile_id: string }[] };
-        const playerNameById = new Map((players ?? []).map((p: any) => [p.id, p.full_name ?? 'Unknown']));
-        const namesByProfile = new Map<string, string[]>();
-        for (const g of (guardianRows ?? []) as { player_id: string; profile_id: string }[]) {
-          const name = playerNameById.get(g.player_id);
-          if (!name) continue;
-          if (!namesByProfile.has(g.profile_id)) namesByProfile.set(g.profile_id, []);
-          namesByProfile.get(g.profile_id)!.push(name);
-        }
+        const { data: otherProfiles } = await supabase.from('profiles').select('id, full_name').in('id', soloOtherIds);
+        const nameByProfileId = new Map((otherProfiles ?? []).map((p: any) => [p.id, p.full_name as string | null]));
         for (const [convId, others] of othersByConv) {
           if (others.length !== 1) continue;
-          const names = namesByProfile.get(others[0]);
-          if (names?.length) playerSuffixByConvId.set(convId, names.join(', '));
+          const name = nameByProfileId.get(others[0]);
+          if (name) realNameByConvId.set(convId, name);
+        }
+
+        if (isCoachHere) {
+          const { data: players } = await supabase.from('players').select('id, full_name').eq('team_id', team.id);
+          const playerIds = (players ?? []).map((p: any) => p.id);
+          const { data: guardianRows } = playerIds.length
+            ? await supabase.from('player_guardians').select('player_id, profile_id').in('player_id', playerIds).in('profile_id', soloOtherIds)
+            : { data: [] as { player_id: string; profile_id: string }[] };
+          const playerNameById = new Map((players ?? []).map((p: any) => [p.id, p.full_name ?? 'Unknown']));
+          const namesByProfile = new Map<string, string[]>();
+          for (const g of (guardianRows ?? []) as { player_id: string; profile_id: string }[]) {
+            const name = playerNameById.get(g.player_id);
+            if (!name) continue;
+            if (!namesByProfile.has(g.profile_id)) namesByProfile.set(g.profile_id, []);
+            namesByProfile.get(g.profile_id)!.push(name);
+          }
+          for (const [convId, others] of othersByConv) {
+            if (others.length !== 1) continue;
+            const names = namesByProfile.get(others[0]);
+            if (names?.length) playerSuffixByConvId.set(convId, names.join(', '));
+          }
         }
       }
     }
@@ -414,18 +438,20 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
     }
 
     const sortedDirect = directConvs
-      .map((c: any) => ({
-        id: c.id,
-        title: playerSuffixByConvId.has(c.id)
-          ? `${c.title ?? 'Conversation'} · ${playerSuffixByConvId.get(c.id)}`
-          : (c.title ?? 'Conversation'),
-        type: c.type,
-        last_body: lastMsgMap[c.id]?.body ?? null,
-        last_at: lastMsgMap[c.id]?.created_at ?? null,
-        last_sender_id: lastMsgMap[c.id]?.sender_id ?? null,
-        isTeam: false,
-        isGroup: (c.title ?? '').includes(','),
-      }))
+      .map((c: any) => {
+        const baseTitle = realNameByConvId.get(c.id) ?? (c.title ?? 'Conversation');
+        const suffix = playerSuffixByConvId.get(c.id);
+        return {
+          id: c.id,
+          title: suffix ? `${baseTitle} · ${suffix}` : baseTitle,
+          type: c.type,
+          last_body: lastMsgMap[c.id]?.body ?? null,
+          last_at: lastMsgMap[c.id]?.created_at ?? null,
+          last_sender_id: lastMsgMap[c.id]?.sender_id ?? null,
+          isTeam: false,
+          isGroup: groupConvIds.has(c.id),
+        };
+      })
       .sort((a, b) => {
         const ta = a.last_at ?? '0';
         const tb = b.last_at ?? '0';
