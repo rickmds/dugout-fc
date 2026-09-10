@@ -383,9 +383,9 @@ export default function TournamentDetailScreen() {
       >
         <View style={styles.hero}>
           <View style={styles.badgeRow}>
-            <View style={styles.icon}>
+            <View style={[styles.icon, !!tournament?.logo_url && styles.iconNoFrame]}>
               {tournament?.logo_url
-                ? <Image source={{ uri: tournament.logo_url }} style={styles.iconImage} contentFit="cover" />
+                ? <Image source={{ uri: tournament.logo_url }} style={styles.iconImage} contentFit="contain" />
                 : <Text style={{ fontSize: 22 }}>🏆</Text>}
             </View>
             <View style={{ flex: 1 }}>
@@ -684,6 +684,10 @@ const styles = StyleSheet.create({
     width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(234,179,8,0.14)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.3)', overflow: 'hidden',
   },
+  // A real uploaded logo shouldn't sit inside the trophy-emoji's colored
+  // frame — if the logo itself has a transparent background it should just
+  // read as the logo, not a logo-inside-a-swatch.
+  iconNoFrame: { backgroundColor: 'transparent', borderWidth: 0 },
   iconImage: { width: 48, height: 48 },
   name: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text },
   loc: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 3 },

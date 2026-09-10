@@ -748,9 +748,9 @@ export default function ScheduleScreen() {
     return (
       <View key={tournament.id} style={styles.tournamentBigCard}>
         <TouchableOpacity style={styles.tournamentBigHeader} onPress={openTournament} activeOpacity={0.8}>
-          <View style={styles.tournamentBigIcon}>
+          <View style={[styles.tournamentBigIcon, !!tournament.logo_url && styles.tournamentBigIconNoFrame]}>
             {tournament.logo_url
-              ? <Image source={{ uri: tournament.logo_url }} style={styles.tournamentBigIconImage} contentFit="cover" />
+              ? <Image source={{ uri: tournament.logo_url }} style={styles.tournamentBigIconImage} contentFit="contain" />
               : <Text style={{ fontSize: 26 }}>🏆</Text>}
           </View>
           <View style={{ flex: 1 }}>
@@ -1554,6 +1554,10 @@ const styles = StyleSheet.create({
     width: 60, height: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(234,179,8,0.16)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.35)', overflow: 'hidden',
   },
+  // A real uploaded logo shouldn't sit inside the trophy-emoji's colored
+  // frame — if the logo itself has a transparent background it should just
+  // read as the logo, not a logo-inside-a-swatch.
+  tournamentBigIconNoFrame: { backgroundColor: 'transparent', borderWidth: 0 },
   tournamentBigIconImage: { width: 60, height: 60 },
   tournamentEyebrow: { fontSize: 10, fontWeight: '800', color: '#EAB308', letterSpacing: 1.2, marginBottom: 2 },
   tournamentBigName: { fontSize: 19, fontWeight: '800', color: PULSE_COLORS.ui.text },
