@@ -16,6 +16,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../lib/supabase';
 import { useTeam } from '../../../hooks/useTeam';
@@ -101,16 +102,55 @@ export default function CreateTournamentScreen() {
     })();
   }, [tournamentId]);
 
+  // Crops the AI-located logo out of the original picked photo (full
+  // resolution, not the compressed base64 sent for parsing) and uploads it
+  // — best-effort, never blocks or errors out the rest of the scan if it
+  // fails, since the coach can always add/change a logo manually below.
+  async function cropAndUploadLogo(asset: ImagePicker.ImagePickerAsset, bbox: { x: number; y: number; width: number; height: number }) {
+    try {
+      const w = asset.width ?? 0;
+      const h = asset.height ?? 0;
+      if (!w || !h) return;
+      const originX = Math.max(0, Math.min(w - 1, Math.round(bbox.x * w)));
+      const originY = Math.max(0, Math.min(h - 1, Math.round(bbox.y * h)));
+      const cropWidth = Math.max(1, Math.min(w - originX, Math.round(bbox.width * w)));
+      const cropHeight = Math.max(1, Math.min(h - originY, Math.round(bbox.height * h)));
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ crop: { originX, originY, width: cropWidth, height: cropHeight } }],
+        { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      setUploadingLogo(true);
+      const response = await fetch(manipulated.uri);
+      const arrayBuffer = await response.arrayBuffer();
+      const path = `${team?.id ?? 'unknown'}/${Date.now()}-ai.jpg`;
+      const { error } = await supabase.storage
+        .from('tournament-logos')
+        .upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
+      if (error) return;
+      const { data: { publicUrl } } = supabase.storage.from('tournament-logos').getPublicUrl(path);
+      setLogoUrl(publicUrl);
+    } catch (err) {
+      console.warn('[create-tournament] cropAndUploadLogo failed', err);
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
   // Only extracts the tournament's own name/venue/dates — never games. A
   // tournament announcement and the actual bracket/schedule are often two
   // different documents released at different times (especially for a
   // knockout, where there's no game schedule at all yet at creation time),
   // so importing games stays the existing separate step on the detail
-  // screen once the tournament exists.
-  async function scanDocument(file_base64: string, file_type: string) {
+  // screen once the tournament exists. `imageAssets` (same order as the
+  // image-type entries in `files`) is only needed so a detected logo can be
+  // cropped from the real picked photo — empty for a single PDF/file scan.
+  async function scanDocument(files: { file_base64: string; file_type: string }[], imageAssets: ImagePicker.ImagePickerAsset[] = []) {
     setScanning(true);
     try {
-      const { data, error } = await supabase.functions.invoke('parse-tournament-info', { body: { file_base64, file_type } });
+      const { data, error } = await supabase.functions.invoke('parse-tournament-info', { body: { files } });
       if (error || !data) {
         Alert.alert("Couldn't read that file", 'Check your connection and try again, or enter the details manually.');
         return;
@@ -120,6 +160,10 @@ export default function CreateTournamentScreen() {
       if (data.address) setAddress(data.address);
       if (data.start_date) setStartDate(new Date(data.start_date + 'T00:00:00'));
       if (data.end_date) setEndDate(new Date(data.end_date + 'T00:00:00'));
+
+      if (typeof data.logo_image_index === 'number' && data.logo_bbox && imageAssets[data.logo_image_index]) {
+        cropAndUploadLogo(imageAssets[data.logo_image_index], data.logo_bbox);
+      }
     } catch (err) {
       console.warn('[create-tournament] scanDocument failed', err);
       Alert.alert("Couldn't read that file", 'Check your connection and try again, or enter the details manually.');
@@ -134,18 +178,23 @@ export default function CreateTournamentScreen() {
     const file = result.assets[0];
     if ((file.size ?? 0) > 20 * 1024 * 1024) { Alert.alert('File too large', 'Maximum 20 MB.'); return; }
     const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-    await scanDocument(base64, file.mimeType ?? 'image/jpeg');
+    await scanDocument([{ file_base64: base64, file_type: file.mimeType ?? 'image/jpeg' }]);
   }
 
-  async function scanImage() {
+  async function scanImages() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo access in Settings.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9, base64: true });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    if (!asset.base64) { Alert.alert('Error', "Couldn't read that photo — try picking it again or use a different one."); return; }
-    const ext = asset.uri.split('.').pop() ?? 'jpg';
-    await scanDocument(asset.base64, ext === 'png' ? 'image/png' : 'image/jpeg');
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'], quality: 0.9, base64: true, allowsMultipleSelection: true, selectionLimit: 6,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const validAssets = result.assets.filter((a) => !!a.base64);
+    if (!validAssets.length) { Alert.alert('Error', "Couldn't read those photos — try picking them again or use different ones."); return; }
+    const files = validAssets.map((a) => {
+      const ext = a.uri.split('.').pop()?.toLowerCase();
+      return { file_base64: a.base64!, file_type: ext === 'png' ? 'image/png' : 'image/jpeg' };
+    });
+    await scanDocument(files, validAssets);
   }
 
   async function pickLogo() {
@@ -255,9 +304,9 @@ export default function CreateTournamentScreen() {
               style={styles.scanBtn}
               onPress={() => Alert.alert(
                 'Scan a flyer or schedule',
-                'Pick a photo or a PDF/image file — Claude will read the name, venue, and dates.',
+                "Pick one or more photos, or a PDF/image file — Claude will read the name, venue, and dates, and grab the tournament's logo if it spots one.",
                 [
-                  { text: 'Choose Photo', onPress: scanImage },
+                  { text: 'Choose Photos', onPress: scanImages },
                   { text: 'Choose File', onPress: scanFile },
                   { text: 'Cancel', style: 'cancel' },
                 ]
