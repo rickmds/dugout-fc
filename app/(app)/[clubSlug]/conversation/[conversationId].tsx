@@ -604,7 +604,11 @@ export default function ConversationScreen() {
                         !!item.image_url && st.bubbleWithImage,
                       ]}>
                         {item.image_url && (
-                          <TouchableOpacity onPress={() => setViewerUri(item.image_url!)} activeOpacity={0.85}>
+                          <TouchableOpacity
+                            onPress={() => setViewerUri(item.image_url!)}
+                            onLongPress={() => onLongPress(item)}
+                            activeOpacity={0.85}
+                          >
                             <Image source={{ uri: item.image_url }} style={st.bubbleImage} contentFit="cover" />
                           </TouchableOpacity>
                         )}
