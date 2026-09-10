@@ -403,10 +403,12 @@ export default function ConversationScreen() {
         try {
           const path = `${conversationId}/${uid()}.jpg`;
           const response = await fetch(localImageUri);
-          const blob = await response.blob();
+          // arrayBuffer, not blob — Supabase JS's RN Blob/FormData handling
+          // doesn't reliably transmit binary content (see player/[playerId].tsx).
+          const arrayBuffer = await response.arrayBuffer();
           const { error: storageErr } = await supabase.storage
             .from('chat-images')
-            .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+            .upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
           if (storageErr) throw storageErr;
           uploadedImageUrl = supabase.storage.from('chat-images').getPublicUrl(path).data.publicUrl;
         } catch {

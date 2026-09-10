@@ -170,10 +170,12 @@ export default function GalleryScreen() {
       try {
         const path = `${team.id}/${uid()}.jpg`;
         const response = await fetch(asset.uri);
-        const blob = await response.blob();
+        // arrayBuffer, not blob — Supabase JS's RN Blob/FormData handling
+        // doesn't reliably transmit binary content (see player/[playerId].tsx).
+        const arrayBuffer = await response.arrayBuffer();
         const { error: storageErr } = await supabase.storage
           .from('photos')
-          .upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+          .upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
         if (storageErr) { failedAssets.push(asset); continue; }
 
         const { data: row } = await (supabase as any)
