@@ -59,6 +59,8 @@ export function useClub() {
     homeKitColor,
     awayKitColor,
     trainingKitColor,
+    /** '#000' or '#fff' — whichever reads better on top of primaryColor */
+    onPrimary: contrastOn(primaryColor),
     /** '#000' or '#fff' — whichever reads better on top of secondaryColor */
     onSecondary: contrastOn(secondaryColor),
     /** Returns rgba(r,g,b,alpha) using the club primary color */

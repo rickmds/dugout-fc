@@ -25,6 +25,7 @@ import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
+import PhotoViewerModal from '../../../../components/ui/PhotoViewerModal';
 import { sendTeamPush, sendProfilesPush } from '../../../../lib/push';
 
 type Message = {
@@ -80,7 +81,7 @@ function groupReactions(
 }
 
 export default function ConversationScreen() {
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, rgba, onPrimary } = useClub();
   const router = useRouter();
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const { profile } = useAuth();
@@ -650,7 +651,7 @@ export default function ConversationScreen() {
                           </TouchableOpacity>
                         )}
                         {!!item.body && (
-                          <Text style={[st.bubbleText, isMe && st.bubbleTextMe, !!item.image_url && st.bubbleTextWithImage]}>{item.body}</Text>
+                          <Text style={[st.bubbleText, isMe && { color: onPrimary }, !!item.image_url && st.bubbleTextWithImage]}>{item.body}</Text>
                         )}
                       </View>
                     </TouchableWithoutFeedback>
@@ -715,19 +716,12 @@ export default function ConversationScreen() {
           activeOpacity={sending ? 1 : 0.7}
         >
           {sending
-            ? <ActivityIndicator size="small" color="#000" />
-            : <Ionicons name="send" size={16} color={sending ? '#4b5563' : '#000'} />}
+            ? <ActivityIndicator size="small" color={onPrimary} />
+            : <Ionicons name="send" size={16} color={onPrimary} />}
         </TouchableOpacity>
       </View>
 
-      <Modal visible={!!viewerUri} transparent animationType="fade" onRequestClose={() => setViewerUri(null)}>
-        <TouchableOpacity style={st.viewerOverlay} activeOpacity={1} onPress={() => setViewerUri(null)}>
-          {viewerUri && <Image source={{ uri: viewerUri }} style={st.viewerImage} contentFit="contain" />}
-          <TouchableOpacity style={st.viewerClose} onPress={() => setViewerUri(null)}>
-            <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+      <PhotoViewerModal visible={!!viewerUri} uri={viewerUri} onClose={() => setViewerUri(null)} />
 
       <Modal visible={!!reactionSheetMsg} animationType="slide" transparent onRequestClose={() => setReactionSheetMsg(null)}>
         <TouchableWithoutFeedback onPress={() => setReactionSheetMsg(null)}>
@@ -888,7 +882,6 @@ const st = StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   bubbleText: { fontSize: 15, color: PULSE_COLORS.ui.text, lineHeight: 20 },
-  bubbleTextMe: { color: '#000' },
   bubbleWithImage: { padding: 4, overflow: 'hidden' },
   bubbleImage: { width: 220, height: 220, borderRadius: 14, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
   bubbleTextWithImage: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 2 },
@@ -953,16 +946,6 @@ const st = StyleSheet.create({
     backgroundColor: PULSE_COLORS.ui.surfaceAlt,
   },
   pendingImageRemove: { marginLeft: -12, marginTop: -8, backgroundColor: PULSE_COLORS.ui.background, borderRadius: 11 },
-
-  // Full-screen image viewer
-  viewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
-  viewerImage: { width: '100%', height: '80%' },
-  viewerClose: {
-    position: 'absolute', top: 56, right: 20,
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
 
   // Reaction sheet
   reactionSheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
