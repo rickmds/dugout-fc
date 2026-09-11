@@ -315,7 +315,7 @@ export default function TournamentDetailScreen() {
   }
 
   async function handleDeleteTournament(alsoDeleteGames: boolean) {
-    if (!tournamentId) return;
+    if (!tournamentId || !tournament) return;
     setDeleting(true);
     if (alsoDeleteGames) {
       const { error: gamesError } = await supabase.from('events').delete().eq('tournament_id', tournamentId);
@@ -331,6 +331,25 @@ export default function TournamentDetailScreen() {
       Alert.alert('Error', 'Could not delete the tournament. Please try again.');
       return;
     }
+
+    const deleteBody = `${tournament.name} has been deleted.`;
+    sendTeamPush({
+      teamId: tournament.team_id,
+      title: 'Tournament deleted',
+      body: deleteBody,
+      excludeProfileId: profile?.id,
+      data: { type: 'tournament_cancelled', team_id: tournament.team_id },
+    });
+    const deleteTeamName = allTeams.find((t) => t.id === tournament.team_id)?.name ?? team?.name ?? '';
+    sendTeamEmail({
+      teamIds: [tournament.team_id],
+      subject: 'Tournament deleted',
+      body: deleteBody,
+      fromName: profile?.full_name ?? 'Coach',
+      teamName: deleteTeamName,
+      clubName, logoUrl, primaryColor,
+    });
+
     router.back();
   }
 

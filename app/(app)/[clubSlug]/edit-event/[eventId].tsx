@@ -671,6 +671,34 @@ export default function EditEventScreen() {
       Alert.alert('Error', 'Could not delete event. Please try again.');
       return;
     }
+    if (eventTeamId) {
+      // Unlike Cancel, a hard delete leaves no event row behind — omit
+      // event_id from the push payload so a later tap doesn't try to open
+      // something that no longer exists.
+      const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
+      const deleteBody = `${title.trim() || 'An event'} has been deleted.`;
+      for (const teamId of notifyTeamIds) {
+        const teamLabel = teamNameFor(teamId);
+        sendTeamPush({
+          teamId,
+          title: teamLabel ? `Event deleted — ${teamLabel}` : 'Event deleted',
+          body: deleteBody,
+          excludeProfileId: profile?.id,
+          data: { type: 'event_cancelled' },
+        });
+      }
+      // One deduped call across every notified team — see handleCancelEvent.
+      sendTeamEmail({
+        teamIds: notifyTeamIds,
+        subject: 'Event deleted',
+        body: deleteBody,
+        fromName: profile?.full_name ?? 'Coach',
+        teamName: clubName ?? '',
+        clubName,
+        logoUrl,
+        primaryColor,
+      });
+    }
     router.back();
     router.back(); // pop both edit and detail
   }
