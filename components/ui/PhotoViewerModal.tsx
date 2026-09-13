@@ -229,7 +229,7 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
           {...pan.panHandlers}
         >
           {uri && (
-            <Animated.View style={[st.imageWrap, { transform: [{ scale }, { translateX: tx }, { translateY: ty }] }]}>
+            <Animated.View style={[st.imageWrap, { transform: [{ translateX: tx }, { translateY: ty }, { scale }] }]}>
               <Image source={{ uri }} style={st.image} contentFit="contain" />
             </Animated.View>
           )}
