@@ -777,6 +777,8 @@ export default function ConversationScreen() {
         uri={viewerMessage?.image_url ?? null}
         onClose={() => setViewerMessage(null)}
         onDismiss={handleViewerDismiss}
+        reactionEmojis={REACTION_EMOJIS}
+        onReact={(emoji) => { if (viewerMessage) toggleReaction(viewerMessage.id, emoji); }}
         onMorePress={openMessageMenuFromViewer}
       />
 

@@ -26,21 +26,28 @@ type Props = {
   onClose: () => void;
   /** iOS only — fires once this Modal has actually finished dismissing, so a
    * caller that wants to present another Modal right after (e.g. the
-   * reaction/delete sheet from "more") can wait for the real event instead
-   * of guessing a delay (iOS can't stack two Modals). */
+   * edit/delete sheet from "more options") can wait for the real event
+   * instead of guessing a delay (iOS can't stack two Modals). */
   onDismiss?: () => void;
-  /** Shows a "more" (•••) button in the header when provided — e.g. to open
-   * the same reaction/edit/delete menu available from a long-press in the
-   * chat list, without having to close the viewer and find the bubble again. */
+  /** Emoji set for the in-place quick-react row (e.g. the same
+   * REACTION_EMOJIS used elsewhere in chat) — reacting happens right over
+   * the photo, no need to leave it. Omit to hide reactions entirely. */
+  reactionEmojis?: string[];
+  onReact?: (emoji: string) => void;
+  /** "More options" row in the same in-place panel — for anything that
+   * genuinely needs to leave the photo (view who reacted, edit, delete).
+   * Called AFTER this viewer has closed, so it's free to open its own
+   * separate sheet (typically wired through onDismiss for that reason). */
   onMorePress?: () => void;
 };
 
 // Full-screen photo viewer with pinch-to-zoom, drag-to-pan-while-zoomed,
 // double-tap to toggle zoom, and a Save action — none of which the plain
 // contain-fit <Image> in a Modal (the previous viewer) supported.
-export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onMorePress }: Props) {
+export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, reactionEmojis, onReact, onMorePress }: Props) {
   const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const scale = useRef(new Animated.Value(1)).current;
   const tx    = useRef(new Animated.Value(0)).current;
@@ -72,6 +79,7 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
 
   function handleClose() {
     reset();
+    setMenuOpen(false);
     onClose();
   }
 
@@ -205,8 +213,8 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            {onMorePress && (
-              <TouchableOpacity style={st.headerBtn} onPress={onMorePress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            {(reactionEmojis?.length || onMorePress) && (
+              <TouchableOpacity style={st.headerBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
               </TouchableOpacity>
             )}
@@ -234,6 +242,48 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
             </Animated.View>
           )}
         </View>
+
+        {menuOpen && (
+          <>
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={1}
+              onPress={() => setMenuOpen(false)}
+            />
+            <View style={[st.menuPanel, { paddingBottom: insets.bottom + 16 }]}>
+              {!!reactionEmojis?.length && (
+                <View style={st.menuEmojiRow}>
+                  {reactionEmojis.map((emoji) => (
+                    <TouchableOpacity
+                      key={emoji}
+                      style={st.menuEmojiBtn}
+                      onPress={() => {
+                        setMenuOpen(false);
+                        onReact?.(emoji);
+                      }}
+                    >
+                      <Text style={st.menuEmojiText}>{emoji}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {onMorePress && (
+                <TouchableOpacity
+                  style={st.menuMoreBtn}
+                  onPress={() => {
+                    setMenuOpen(false);
+                    onMorePress();
+                  }}
+                >
+                  <Text style={st.menuMoreText}>More options</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={st.menuCancelBtn} onPress={() => setMenuOpen(false)}>
+                <Text style={st.menuCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </View>
     </Modal>
   );
@@ -261,4 +311,19 @@ const st = StyleSheet.create({
   // parent that has no resolved size of its own), so nothing ever rendered.
   imageWrap: { width: '100%', height: '80%' },
   image: { width: '100%', height: '100%' },
+  menuPanel: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: '#1c1c1e', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 20, paddingHorizontal: 16,
+  },
+  menuEmojiRow: {
+    flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
+    paddingBottom: 16, marginBottom: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.15)',
+  },
+  menuEmojiBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  menuEmojiText: { fontSize: 28 },
+  menuMoreBtn: { paddingVertical: 14, alignItems: 'center' },
+  menuMoreText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  menuCancelBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+  menuCancelText: { color: 'rgba(255,255,255,0.5)', fontSize: 15, fontWeight: '700' },
 });
