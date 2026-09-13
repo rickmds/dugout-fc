@@ -24,27 +24,17 @@ type Props = {
   visible: boolean;
   uri: string | null;
   onClose: () => void;
-  /** iOS only — fires once this Modal has actually finished dismissing, so a
-   * caller that wants to present another Modal right after (e.g. the
-   * edit/delete sheet from "more options") can wait for the real event
-   * instead of guessing a delay (iOS can't stack two Modals). */
-  onDismiss?: () => void;
   /** Emoji set for the in-place quick-react row (e.g. the same
    * REACTION_EMOJIS used elsewhere in chat) — reacting happens right over
    * the photo, no need to leave it. Omit to hide reactions entirely. */
   reactionEmojis?: string[];
   onReact?: (emoji: string) => void;
-  /** "More options" row in the same in-place panel — for anything that
-   * genuinely needs to leave the photo (view who reacted, edit, delete).
-   * Called AFTER this viewer has closed, so it's free to open its own
-   * separate sheet (typically wired through onDismiss for that reason). */
-  onMorePress?: () => void;
 };
 
 // Full-screen photo viewer with pinch-to-zoom, drag-to-pan-while-zoomed,
 // double-tap to toggle zoom, and a Save action — none of which the plain
 // contain-fit <Image> in a Modal (the previous viewer) supported.
-export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, reactionEmojis, onReact, onMorePress }: Props) {
+export default function PhotoViewerModal({ visible, uri, onClose, reactionEmojis, onReact }: Props) {
   const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -206,16 +196,17 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, rea
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose} onDismiss={onDismiss}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={[StyleSheet.absoluteFill, st.overlay]}>
         <View style={[st.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity style={st.headerBtn} onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            {(reactionEmojis?.length || onMorePress) && (
-              <TouchableOpacity style={st.headerBtn} onPress={() => setMenuOpen(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
+            {!!reactionEmojis?.length && (
+              <TouchableOpacity style={[st.headerBtn, st.saveBtn]} onPress={() => setMenuOpen(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="happy-outline" size={20} color="#fff" />
+                <Text style={st.saveBtnText}>React</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={[st.headerBtn, st.saveBtn]} onPress={handleSave} disabled={saving} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -267,17 +258,6 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, rea
                   ))}
                 </View>
               )}
-              {onMorePress && (
-                <TouchableOpacity
-                  style={st.menuMoreBtn}
-                  onPress={() => {
-                    setMenuOpen(false);
-                    onMorePress();
-                  }}
-                >
-                  <Text style={st.menuMoreText}>More options</Text>
-                </TouchableOpacity>
-              )}
               <TouchableOpacity style={st.menuCancelBtn} onPress={() => setMenuOpen(false)}>
                 <Text style={st.menuCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -322,8 +302,6 @@ const st = StyleSheet.create({
   },
   menuEmojiBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   menuEmojiText: { fontSize: 28 },
-  menuMoreBtn: { paddingVertical: 14, alignItems: 'center' },
-  menuMoreText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   menuCancelBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   menuCancelText: { color: 'rgba(255,255,255,0.5)', fontSize: 15, fontWeight: '700' },
 });

@@ -112,11 +112,6 @@ export default function ConversationScreen() {
   const [viewerMessage, setViewerMessage] = useState<Message | null>(null);
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
-  // Set right before dismissing the photo viewer on iOS — picked up by that
-  // Modal's onDismiss once it's ACTUALLY finished closing, rather than
-  // guessing with a timeout (iOS can't present a second Modal while the
-  // first is still mid-dismissal).
-  const pendingReactionMsgRef = useRef<Message | null>(null);
   // Set right before the initial batch loads, cleared the first time the
   // list actually reports a real layout — scrollToEnd() only works once
   // FlatList knows the content's true height, which a fixed setTimeout can
@@ -536,28 +531,6 @@ export default function ConversationScreen() {
     setReactionSheetMsg(msg);
   }
 
-  // "•••" from inside the full-screen photo viewer — same reaction/edit/
-  // delete sheet as a long-press on the bubble, without closing the viewer
-  // and finding the message again first.
-  function openMessageMenuFromViewer() {
-    if (!viewerMessage) return;
-    if (Platform.OS === 'ios') {
-      pendingReactionMsgRef.current = viewerMessage;
-      setViewerMessage(null); // onDismiss picks this up once actually closed
-    } else {
-      setViewerMessage(null);
-      setReactionSheetMsg(viewerMessage);
-    }
-  }
-
-  function handleViewerDismiss() {
-    const pending = pendingReactionMsgRef.current;
-    if (pending) {
-      pendingReactionMsgRef.current = null;
-      setReactionSheetMsg(pending);
-    }
-  }
-
   function confirmDelete(msg: Message) {
     Alert.alert('Delete message?', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
@@ -776,10 +749,8 @@ export default function ConversationScreen() {
         visible={!!viewerMessage}
         uri={viewerMessage?.image_url ?? null}
         onClose={() => setViewerMessage(null)}
-        onDismiss={handleViewerDismiss}
         reactionEmojis={REACTION_EMOJIS}
         onReact={(emoji) => { if (viewerMessage) toggleReaction(viewerMessage.id, emoji); }}
-        onMorePress={openMessageMenuFromViewer}
       />
 
       <Modal visible={!!reactionSheetMsg} animationType="slide" transparent onRequestClose={() => setReactionSheetMsg(null)}>
