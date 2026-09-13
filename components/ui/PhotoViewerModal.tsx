@@ -175,7 +175,7 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose} onDismiss={onDismiss}>
-      <View style={st.overlay}>
+      <View style={[StyleSheet.absoluteFill, st.overlay]}>
         <View style={[st.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity style={st.headerBtn} onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="close" size={24} color="#fff" />
@@ -201,7 +201,7 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
 
         <View style={st.imageArea} {...pan.panHandlers}>
           {uri && (
-            <Animated.View style={{ transform: [{ scale }, { translateX: tx }, { translateY: ty }] }}>
+            <Animated.View style={[st.imageWrap, { transform: [{ scale }, { translateX: tx }, { translateY: ty }] }]}>
               <Image source={{ uri }} style={st.image} contentFit="contain" />
             </Animated.View>
           )}
@@ -212,6 +212,9 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
 }
 
 const st = StyleSheet.create({
+  // Combined with StyleSheet.absoluteFill on the same View (not just
+  // flex:1) so this reliably fills the whole screen regardless of how the
+  // transparent Modal's own root sizes itself.
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)' },
   header: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2,
@@ -224,5 +227,10 @@ const st = StyleSheet.create({
   saveBtn: { width: 'auto', flexDirection: 'row', gap: 6, paddingHorizontal: 14 },
   saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   imageArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  image: { width: '100%', height: '80%' },
+  // The pinch/pan Animated.View needs its OWN explicit size — it used to
+  // just wrap a percentage-sized Image with no size of its own, which left
+  // both stuck at 0×0 (an image can't resolve a percentage against a
+  // parent that has no resolved size of its own), so nothing ever rendered.
+  imageWrap: { width: '100%', height: '80%' },
+  image: { width: '100%', height: '100%' },
 });
