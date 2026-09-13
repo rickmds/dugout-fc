@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   StyleSheet,
@@ -16,6 +17,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../../../lib/supabase';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
@@ -59,6 +61,38 @@ function timeLabel(iso: string): string {
 function initials(name: string | null): string {
   if (!name) return '?';
   return name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+type TextSegment = { text: string; type: 'text' | 'url' | 'phone' };
+
+// A coach sharing a field-map link or a phone number is common enough in
+// team chat that leaving both as inert plain text (no way to open or call
+// them without retyping) was a real gap — matches standard messaging-app
+// auto-link behavior, not a full arbitrary-address detector (an unstructured
+// street address has no reliable regex; the realistic case here is coaches
+// already sharing a Maps LINK, which this does catch).
+const LINKIFY_REGEX = /(https?:\/\/\S+)|(www\.\S+)|(\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4})/g;
+
+function linkifyText(text: string): TextSegment[] {
+  const segments: TextSegment[] = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(LINKIFY_REGEX)) {
+    const idx = match.index ?? 0;
+    if (idx > lastIndex) segments.push({ text: text.slice(lastIndex, idx), type: 'text' });
+    segments.push({ text: match[0], type: match[3] ? 'phone' : 'url' });
+    lastIndex = idx + match[0].length;
+  }
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex), type: 'text' });
+  return segments;
+}
+
+function openLinkSegment(segment: TextSegment) {
+  if (segment.type === 'phone') {
+    Linking.openURL(`tel:${segment.text.replace(/[^\d+]/g, '')}`).catch(() => {});
+  } else {
+    const url = segment.text.startsWith('www.') ? `https://${segment.text}` : segment.text;
+    Linking.openURL(url).catch(() => {});
+  }
 }
 
 function groupReactions(
@@ -675,7 +709,15 @@ export default function ConversationScreen() {
                           </TouchableOpacity>
                         )}
                         {!!item.body && (
-                          <Text style={[st.bubbleText, isMe && { color: onPrimary }, !!item.image_url && st.bubbleTextWithImage]}>{item.body}</Text>
+                          <Text style={[st.bubbleText, isMe && { color: onPrimary }, !!item.image_url && st.bubbleTextWithImage]}>
+                            {linkifyText(item.body).map((seg, i) => seg.type === 'text' ? (
+                              <Text key={i}>{seg.text}</Text>
+                            ) : (
+                              <Text key={i} style={st.linkText} onPress={() => openLinkSegment(seg)} suppressHighlighting>
+                                {seg.text}
+                              </Text>
+                            ))}
+                          </Text>
                         )}
                       </View>
                     </TouchableWithoutFeedback>
@@ -784,6 +826,19 @@ export default function ConversationScreen() {
                   >
                     <Ionicons name="people-outline" size={16} color={PULSE_COLORS.ui.text} />
                     <Text style={st.reactionSheetActionText}>View reactions</Text>
+                  </TouchableOpacity>
+                )}
+                {!!reactionSheetMsg?.body && (
+                  <TouchableOpacity
+                    style={st.reactionSheetAction}
+                    onPress={async () => {
+                      const body = reactionSheetMsg.body ?? '';
+                      setReactionSheetMsg(null);
+                      await Clipboard.setStringAsync(body);
+                    }}
+                  >
+                    <Ionicons name="copy-outline" size={16} color={PULSE_COLORS.ui.text} />
+                    <Text style={st.reactionSheetActionText}>Copy text</Text>
                   </TouchableOpacity>
                 )}
                 {reactionSheetMsg && reactionSheetMsg.sender_id === profile?.id && (
@@ -912,6 +967,7 @@ const st = StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   bubbleText: { fontSize: 15, color: PULSE_COLORS.ui.text, lineHeight: 20 },
+  linkText: { textDecorationLine: 'underline', fontWeight: '600' },
   bubbleWithImage: { padding: 4, overflow: 'hidden' },
   bubbleImage: { width: 220, height: 220, borderRadius: 14, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
   bubbleTextWithImage: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 2 },
