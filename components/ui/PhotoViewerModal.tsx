@@ -7,6 +7,7 @@ import {
   PanResponder,
   Platform,
   StyleSheet,
+  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -23,12 +24,21 @@ type Props = {
   visible: boolean;
   uri: string | null;
   onClose: () => void;
+  /** iOS only — fires once this Modal has actually finished dismissing, so a
+   * caller that wants to present another Modal right after (e.g. the
+   * reaction/delete sheet from "more") can wait for the real event instead
+   * of guessing a delay (iOS can't stack two Modals). */
+  onDismiss?: () => void;
+  /** Shows a "more" (•••) button in the header when provided — e.g. to open
+   * the same reaction/edit/delete menu available from a long-press in the
+   * chat list, without having to close the viewer and find the bubble again. */
+  onMorePress?: () => void;
 };
 
 // Full-screen photo viewer with pinch-to-zoom, drag-to-pan-while-zoomed,
 // double-tap to toggle zoom, and a Save action — none of which the plain
 // contain-fit <Image> in a Modal (the previous viewer) supported.
-export default function PhotoViewerModal({ visible, uri, onClose }: Props) {
+export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onMorePress }: Props) {
   const insets = useSafeAreaInsets();
   const [saving, setSaving] = useState(false);
 
@@ -164,17 +174,29 @@ export default function PhotoViewerModal({ visible, uri, onClose }: Props) {
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose} onDismiss={onDismiss}>
       <View style={st.overlay}>
         <View style={[st.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity style={st.headerBtn} onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={st.headerBtn} onPress={handleSave} disabled={saving} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            {saving
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Ionicons name={Platform.OS === 'ios' ? 'share-outline' : 'download-outline'} size={22} color="#fff" />}
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            {onMorePress && (
+              <TouchableOpacity style={st.headerBtn} onPress={onMorePress} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[st.headerBtn, st.saveBtn]} onPress={handleSave} disabled={saving} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : (
+                  <>
+                    <Ionicons name={Platform.OS === 'ios' ? 'share-outline' : 'download-outline'} size={18} color="#fff" />
+                    <Text style={st.saveBtnText}>Save</Text>
+                  </>
+                )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={st.imageArea} {...pan.panHandlers}>
@@ -199,6 +221,8 @@ const st = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
+  saveBtn: { width: 'auto', flexDirection: 'row', gap: 6, paddingHorizontal: 14 },
+  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   imageArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   image: { width: '100%', height: '80%' },
 });
