@@ -19,7 +19,7 @@ import { useClub } from '../../../hooks/useClub';
 import { useTeam } from '../../../hooks/useTeam';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import { formatCurrency } from '../../../lib/formatCurrency';
-import { resolveNotificationTeamId } from '../../../lib/resolveNotificationTeamId';
+import { routeNotificationTap } from '../../../lib/notificationRouting';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -261,104 +261,21 @@ export default function NotificationsScreen() {
       setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, read: true } : x));
       await supabase.from('notifications').update({ read: true }).eq('id', n.id);
     }
-    const d = n.data;
-
-    // Switch the active team to match the notification before navigating —
-    // otherwise the destination screen renders with whatever team was
-    // active beforehand, which on a multi-team account can silently show
-    // the wrong roster/chat/schedule even though the URL is correct.
-    const targetTeamId = await resolveNotificationTeamId(d);
-    const targetTeam = targetTeamId ? allTeams.find((t) => t.id === targetTeamId) : undefined;
-    // Prefer the resolved team's own club slug over the notification
-    // payload's club_slug (which some types don't carry) and never fall
-    // back to the CURRENT route's clubSlug — for a cross-club notification
-    // that's guaranteed to point at the wrong club.
-    const slug = targetTeam?.club?.slug ?? (d?.club_slug as string) ?? clubSlug;
-    if (targetTeamId && targetTeamId !== team?.id && allTeams.some((t) => t.id === targetTeamId)) {
-      // Not awaited on purpose — see app/_layout.tsx's identical notification
-      // handler for why: awaiting here yields a tick where ClubSlugGuard on
-      // the still-mounted current screen sees a stale route/team mismatch
-      // and reverts the switch before we ever navigate below.
-      selectTeam(targetTeamId);
-    }
-
-    switch (n.type) {
-      case 'new_event':
-      case 'event_updated':
-      case 'schedule_change':
-      case 'rsvp_reminder':
-      case 'event_day_reminder':
-      case 'game_day':
-      case 'attendance_absent':
-      case 'video_added':
-        d?.event_id
-          ? router.push(`/(app)/${slug}/event/${d.event_id}` as any)
-          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-        break;
-      case 'event_cancelled':
-      case 'field_closure':
-        router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-        break;
-      case 'tournament_rsvp_reminder':
-      case 'tournament_advance':
-      case 'tournament_eliminated':
-      case 'tournament_game_day':
-      case 'tournament_cancelled':
-        d?.tournament_id
-          ? router.push(`/(app)/${slug}/tournament/${d.tournament_id}` as any)
-          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-        break;
-      case 'new_announcement':
-        router.push({ pathname: `/(app)/${slug}/(tabs)/chat` as any, params: { tab: 'announcements' } }); break;
-      case 'new_dm':
-      case 'new_message':
-        d?.conversation_id
-          ? router.push(`/(app)/${slug}/conversation/${d.conversation_id}` as any)
-          : router.push(`/(app)/${slug}/(tabs)/chat` as any);
-        break;
-      case 'guest_request':
-        d?.request_id
-          ? router.push(`/(app)/${slug}/guest-request/${d.request_id}` as any)
-          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-        break;
-      case 'guest_invite':
-      case 'guest_coach_invite':
-      case 'guest_accepted':
-      case 'guest_response':
-      case 'guest_removed':
-      case 'guest_cancelled':
-        d?.event_id
-          ? router.push(`/(app)/${slug}/event/${d.event_id}` as any)
-          : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-        break;
-      case 'invite_accepted':
-        (team?.myRole === 'org_admin' || team?.myRole === 'coach')
-          ? router.push(`/(app)/${slug}/admin` as any)
-          : router.push(`/(app)/${slug}/(tabs)/roster` as any);
-        break;
-      case 'guest_reminder':
-      case 'evaluation_published':
-      case 'waiver_reminder':
-        router.push(`/(app)/${slug}/admin` as any);
-        break;
-      case 'fee_assigned':
-        break;
-      // These all carry player_fee_id — open the same pay flow Home's
-      // payNow() uses so a parent who gets a "payment failed" push can
-      // actually fix it from the notification instead of having to find
-      // the outstanding-fees card on Home themselves.
-      case 'fee_reminder':
-      case 'payment_confirmed':
-      case 'payment_failed':
-      case 'payment_received':
-        if (d?.player_fee_id) handleFeePaymentTap(d.player_fee_id as string);
-        break;
-      case 'fee_payment_claimed':
-        if (d?.player_fee_id) handleFeeClaimTap(d.player_fee_id as string);
-        break;
-      default:
-        break;
-    }
+    // These two carry player_fee_id — open the same pay flow Home's
+    // payNow() uses so a parent who gets a "payment failed" push can
+    // actually fix it from the notification instead of having to find
+    // the outstanding-fees card on Home themselves.
+    await routeNotificationTap({
+      type: n.type,
+      data: n.data,
+      router,
+      team,
+      allTeams,
+      selectTeam,
+      fallbackSlug: clubSlug,
+      onFeePaymentTap: handleFeePaymentTap,
+      onFeeClaimTap: handleFeeClaimTap,
+    });
   }
 
   async function handleFeePaymentTap(playerFeeId: string) {

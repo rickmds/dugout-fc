@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Dimensions, StyleSheet, View } from 'react-native';
+import { Alert, Animated, AppState, Dimensions, StyleSheet, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
+import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { TeamProvider, useActiveTeam } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
-import { resolveNotificationTeamId } from '../lib/resolveNotificationTeamId';
+import { routeNotificationTap } from '../lib/notificationRouting';
+import { formatCurrency } from '../lib/formatCurrency';
 import { supabase } from '../lib/supabase';
 import { uniqueChannelName } from '../lib/realtime';
 import WebPushPrompt from '../components/ui/WebPushPrompt';
@@ -16,6 +18,8 @@ import UpdateRequiredModal from '../components/ui/UpdateRequiredModal';
 import ClubSuspendedModal from '../components/ui/ClubSuspendedModal';
 import ViewAsBanner from '../components/ui/ViewAsBanner';
 import { checkVersionGate } from '../lib/versionGate';
+
+const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -81,92 +85,105 @@ function AppShell() {
     return () => { supabase.removeChannel(sub); };
   }, [profile?.id]);
 
-  useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(async (response) => {
-      const data = response.notification.request.content.data as Record<string, unknown>;
-      const slug = data?.club_slug as string | undefined;
-      if (!slug) return;
-
-      // Switch the active team to match the notification before navigating
-      // — otherwise the destination screen renders with whatever team was
-      // active beforehand, which on a multi-team account can silently show
-      // the wrong roster/chat/schedule even though the URL is correct.
-      const targetTeamId = await resolveNotificationTeamId(data);
-      if (targetTeamId && targetTeamId !== team?.id && allTeams.some((t) => t.id === targetTeamId)) {
-        // Not awaited on purpose — this yields control back to React between
-        // the team switch and the navigation below, giving ClubSlugGuard on
-        // the still-mounted previous screen a chance to see a route/team
-        // mismatch and "correct" it back before we ever navigate, which then
-        // flips forward again once we do. Firing it (its own setState is
-        // synchronous; only the AsyncStorage write trails behind) keeps both
-        // changes landing in the same tick.
-        selectTeam(targetTeamId);
-      }
-
-      switch (data?.type) {
-        // ── Event notifications ──────────────────────────────────────────────
-        case 'new_event':
-        case 'event_updated':
-        case 'schedule_change':
-        case 'rsvp_reminder':
-        case 'event_day_reminder':
-        case 'game_day':
-          if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
-          else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-          break;
-        case 'event_cancelled':
-        case 'field_closure':
-          router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-          break;
-        case 'reflection_prompt':
-          if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
-          else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-          break;
-        case 'player_shoutout':
-          if (data.player_id) router.push({ pathname: `/(app)/${slug}/player/shoutouts` as any, params: { playerId: data.player_id as string } });
-          else router.push(`/(app)/${slug}/(tabs)` as any);
-          break;
-        // ── Chat notifications ───────────────────────────────────────────────
-        case 'new_announcement':
-          router.push({ pathname: `/(app)/${slug}/(tabs)/chat` as any, params: { tab: 'announcements' } });
-          break;
-        case 'new_dm':
-          if (data.conversation_id) router.push(`/(app)/${slug}/conversation/${data.conversation_id}` as any);
-          else router.push(`/(app)/${slug}/(tabs)/chat` as any);
-          break;
-        // ── Guest notifications ──────────────────────────────────────────────
-        case 'guest_request':
-          if (data.request_id) router.push(`/(app)/${slug}/guest-request/${data.request_id}` as any);
-          else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-          break;
-        case 'guest_invite':
-        case 'guest_coach_invite':
-        case 'guest_accepted':
-        case 'guest_response':
-          if (data.event_id) router.push(`/(app)/${slug}/event/${data.event_id}` as any);
-          else router.push(`/(app)/${slug}/(tabs)/schedule` as any);
-          break;
-        // ── Admin notifications ──────────────────────────────────────────────
-        case 'invite_accepted':
-        case 'guest_reminder':
-        case 'evaluation_published':
-        case 'waiver_reminder':
-          router.push(`/(app)/${slug}/admin` as any);
-          break;
-        // ── Fee notifications (no dedicated mobile screen — show notification centre) ──
-        case 'fee_assigned':
-        case 'fee_reminder':
-        case 'payment_confirmed':
-        case 'fee_payment_claimed':
-          router.push(`/(app)/${slug}/notifications` as any);
-          break;
-        // ── Fallback ─────────────────────────────────────────────────────────
-        default:
-          router.push(`/(app)/${slug}/notifications` as any);
-      }
+  // Opens the same pay flow Home's payNow() uses — a parent who taps a
+  // "payment failed" push from the lock screen should land in the actual
+  // pay flow, not just a generic notification list. Mirrors
+  // notifications.tsx's identical handler (that screen still needs its own
+  // copy for its local list/read-state); this is the shared routing logic's
+  // only case that needs more than a router.push, which is why it's a
+  // caller-supplied callback rather than something routeNotificationTap
+  // does itself.
+  async function handleFeePaymentTap(playerFeeId: string) {
+    const { data: fee, error } = await supabase.from('player_fees').select('payment_token').eq('id', playerFeeId).single();
+    if (error || !fee?.payment_token) {
+      Alert.alert("Couldn't open payment", 'Check the Home tab for your outstanding fees.');
+      return;
+    }
+    await WebBrowser.openBrowserAsync(`${APP_BASE}/pay/${fee.payment_token}`, {
+      controlsColor: activeClub?.primary_color ?? undefined,
+      dismissButtonStyle: 'close',
     });
+  }
+
+  async function handleFeeClaimTap(playerFeeId: string) {
+    const { data: fee } = await supabase
+      .from('player_fees')
+      .select('id, description, claim_status, claim_amount, claim_method, claim_note')
+      .eq('id', playerFeeId)
+      .single();
+    if (!fee || fee.claim_status !== 'pending') {
+      Alert.alert('Already resolved', 'This payment claim has already been handled.');
+      return;
+    }
+    const amountText = fee.claim_amount ? formatCurrency(Number(fee.claim_amount), (activeClub as any)?.currency ?? 'USD') : 'an unspecified amount';
+    const methodText = fee.claim_method ? ` via ${fee.claim_method}` : '';
+    const noteText = fee.claim_note ? `\n\n"${fee.claim_note}"` : '';
+    Alert.alert(
+      'Confirm payment?',
+      `${fee.description} — ${amountText}${methodText}${noteText}`,
+      [
+        { text: 'Decline', style: 'destructive', onPress: () => resolveClaim(playerFeeId, 'decline') },
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: () => resolveClaim(playerFeeId, 'confirm') },
+      ],
+    );
+  }
+
+  async function resolveClaim(playerFeeId: string, action: 'confirm' | 'decline') {
+    const { error } = action === 'confirm'
+      ? await supabase.rpc('confirm_fee_payment', { p_fee_id: playerFeeId })
+      : await supabase.rpc('decline_fee_claim', { p_fee_id: playerFeeId });
+    if (error) {
+      Alert.alert('Error', error.message ?? 'Could not process — please try again.');
+      return;
+    }
+    Alert.alert(
+      action === 'confirm' ? 'Payment confirmed' : 'Claim declined',
+      action === 'confirm' ? 'The fee has been marked paid.' : 'The parent will need to follow up.',
+    );
+  }
+
+  function handleNotificationResponse(response: Notifications.NotificationResponse) {
+    const data = response.notification.request.content.data as Record<string, unknown>;
+    routeNotificationTap({
+      type: data?.type as string | undefined,
+      data,
+      router,
+      team,
+      allTeams,
+      selectTeam,
+      fallbackSlug: activeClub?.slug ?? '',
+      onFeePaymentTap: handleFeePaymentTap,
+      onFeeClaimTap: handleFeeClaimTap,
+    });
+  }
+
+  const handleNotificationResponseRef = useRef(handleNotificationResponse);
+  useEffect(() => { handleNotificationResponseRef.current = handleNotificationResponse; });
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(
+      (response) => handleNotificationResponseRef.current(response)
+    );
     return () => sub.remove();
-  }, [team?.id, allTeams, selectTeam]);
+  }, []);
+
+  // Cold start: the app was fully closed and got launched BY tapping a
+  // notification. addNotificationResponseReceivedListener firing for that
+  // same launch is implicit, undocumented behavior on Expo/RN's part, not
+  // something guaranteed across every OS version/device — this is the
+  // explicit, documented way to ask "did a notification response launch
+  // this session," so a cold-start tap can't silently land on Home instead
+  // of the intended destination.
+  const coldStartHandledRef = useRef(false);
+  useEffect(() => {
+    if (coldStartHandledRef.current) return;
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (coldStartHandledRef.current || !response) return;
+      coldStartHandledRef.current = true;
+      handleNotificationResponseRef.current(response);
+    });
+  }, []);
 
   return (
     <>
