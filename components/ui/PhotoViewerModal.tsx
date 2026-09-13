@@ -55,6 +55,7 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
   const initialScale = useRef(1);
   const isPinching   = useRef(false);
   const lastTapAt    = useRef(0);
+  const areaSize     = useRef({ width: 0, height: 0 });
 
   function reset() {
     currentScale.current = 1;
@@ -99,8 +100,31 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
             if (currentScale.current > 1) {
               reset();
             } else {
-              currentScale.current = 2;
-              Animated.spring(scale, { toValue: 2, useNativeDriver: true }).start();
+              // Zoom toward wherever was actually double-tapped, not just the
+              // image's own center — invert the current transform to find
+              // which point of the (unscaled) image is under the tap, then
+              // solve for the pan that puts that same point back at center
+              // once at the new scale.
+              const newScale = 2;
+              const { width, height } = areaSize.current;
+              const tapX = evt.nativeEvent.locationX;
+              const tapY = evt.nativeEvent.locationY;
+              const ox = (tapX - width / 2 - currentTX.current) / currentScale.current;
+              const oy = (tapY - height / 2 - currentTY.current) / currentScale.current;
+              const newTx = -ox * newScale;
+              const newTy = -oy * newScale;
+
+              currentScale.current = newScale;
+              currentTX.current = newTx;
+              currentTY.current = newTy;
+              lastTX.current = newTx;
+              lastTY.current = newTy;
+
+              Animated.parallel([
+                Animated.spring(scale, { toValue: newScale, useNativeDriver: true }),
+                Animated.spring(tx, { toValue: newTx, useNativeDriver: true }),
+                Animated.spring(ty, { toValue: newTy, useNativeDriver: true }),
+              ]).start();
             }
           } else {
             lastTapAt.current = now;
@@ -199,7 +223,11 @@ export default function PhotoViewerModal({ visible, uri, onClose, onDismiss, onM
           </View>
         </View>
 
-        <View style={st.imageArea} {...pan.panHandlers}>
+        <View
+          style={st.imageArea}
+          onLayout={(e) => { areaSize.current = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height }; }}
+          {...pan.panHandlers}
+        >
           {uri && (
             <Animated.View style={[st.imageWrap, { transform: [{ scale }, { translateX: tx }, { translateY: ty }] }]}>
               <Image source={{ uri }} style={st.image} contentFit="contain" />
