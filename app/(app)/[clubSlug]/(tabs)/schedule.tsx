@@ -790,6 +790,7 @@ export default function ScheduleScreen() {
                     <Text style={styles.tournamentGameMeta} numberOfLines={1}>
                       {new Date(g.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                       {g.event_time ? ` · ${formatTime(g.event_time)}` : ''}
+                      {g.location ? ` · ${g.location}` : ''}
                     </Text>
                   </View>
                   {g.cancelled_at ? (
