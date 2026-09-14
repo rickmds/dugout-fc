@@ -121,7 +121,10 @@ type OutstandingFee = {
   player_name: string;
 };
 
-type AttendanceEntry = { id: string; type: string; date: string; status: string | null; title: string | null };
+// source distinguishes an explicit coach-marked record from an RSVP-derived
+// stand-in — kept so the history list can still be honest with parents about
+// which is which, since an RSVP is "said they'd come," not "actually came."
+type AttendanceEntry = { id: string; type: string; date: string; status: string | null; title: string | null; source: 'attendance' | 'rsvp' };
 
 // Per-guarded-player season stats — a guardian can have more than one
 // player on the same team (e.g. twins), so this is keyed by player id
@@ -772,15 +775,27 @@ export default function HomeScreen() {
         const pastEvts = (pastEvtsData ?? []) as { id: string; type: string; event_date: string; title: string | null }[];
         const pastIds = pastEvts.map((e) => e.id);
         if (pastIds.length > 0) {
-          const { data: attRows } = await supabase
-            .from('event_attendance')
-            .select('event_id, player_id, status')
-            .in('player_id', playerIds)
-            .in('event_id', pastIds);
+          // Coaches marking real attendance is manual and opt-in per event —
+          // a coach who marks it once early in the season and never again
+          // leaves the streak stuck forever, since an unmarked event was
+          // previously excluded from history entirely rather than counted.
+          // Fall back to the player's own RSVP for any event with no explicit
+          // attendance record, so the streak keeps moving even when nobody's
+          // taking attendance — less precise (an RSVP is "said they'd come,"
+          // not confirmed they showed), but far better than staying frozen.
+          const [{ data: attRows }, { data: rsvpRows }] = await Promise.all([
+            supabase.from('event_attendance').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
+            supabase.from('event_rsvps').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
+          ]);
           const attRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
           for (const row of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
             if (!attRowsByPlayer.has(row.player_id)) attRowsByPlayer.set(row.player_id, []);
             attRowsByPlayer.get(row.player_id)!.push(row);
+          }
+          const rsvpRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
+          for (const row of (rsvpRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+            if (!rsvpRowsByPlayer.has(row.player_id)) rsvpRowsByPlayer.set(row.player_id, []);
+            rsvpRowsByPlayer.get(row.player_id)!.push(row);
           }
           // WHOOP-style streak: one grace period allowed, but grace must be re-earned
           // with 3 consecutive clean sessions before it can be used again.
@@ -820,9 +835,17 @@ export default function HomeScreen() {
           const statsByPlayer: Record<string, PlayerSeasonStats> = {};
           for (const p of guardedPlayers) {
             const attMap = new Map((attRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
+            const rsvpMap = new Map((rsvpRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
             const history: AttendanceEntry[] = pastEvts
-              .filter((e) => attMap.has(e.id))
-              .map((e) => ({ id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null }));
+              .filter((e) => attMap.has(e.id) || rsvpMap.has(e.id))
+              .map((e) => {
+                if (attMap.has(e.id)) {
+                  return { id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null, source: 'attendance' as const };
+                }
+                const rsvp = rsvpMap.get(e.id);
+                const status = rsvp === 'attending' ? 'present' : rsvp === 'not_attending' ? 'absent' : null;
+                return { id: e.id, type: e.type, date: e.event_date, status, title: e.title ?? null, source: 'rsvp' as const };
+              });
             const trainingHistory = history.filter((e) => e.type !== 'game');
             const gameHistory     = history.filter((e) => e.type === 'game');
             const cResult = whoopStreak(history);
@@ -2634,7 +2657,12 @@ export default function HomeScreen() {
                           ]}>{isGame ? 'GAME' : 'TRAINING'}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.attSheetRowDate}>{dateStr}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.attSheetRowDate}>{dateStr}</Text>
+                            {entry.source === 'rsvp' && (
+                              <Text style={styles.attSheetRowRsvpTag}>RSVP</Text>
+                            )}
+                          </View>
                           {isGame && entry.title ? (
                             <Text style={styles.attSheetRowTitle} numberOfLines={1}>{entry.title}</Text>
                           ) : null}
@@ -3198,6 +3226,10 @@ const styles = StyleSheet.create({
   },
   attSheetTypeBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   attSheetRowDate: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  attSheetRowRsvpTag: {
+    fontSize: 9, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4,
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+  },
   attSheetRowTitle: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500', marginTop: 1 },
   attSheetStatusDot: {
     width: 22, height: 22, borderRadius: 11,
