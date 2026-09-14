@@ -73,6 +73,7 @@ export async function routeNotificationTap(opts: {
         : router.push(`/(app)/${slug}/(tabs)` as any);
       break;
     // ── Tournament notifications ───────────────────────────────────────────
+    case 'tournament_created':
     case 'tournament_rsvp_reminder':
     case 'tournament_advance':
     case 'tournament_eliminated':

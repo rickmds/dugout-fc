@@ -27,6 +27,8 @@ import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
 import SmartLocationInput from '../../../components/ui/SmartLocationInput';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
 import { zonedTimeToUtc } from '../../../lib/timezone';
+import { sendTeamPush } from '../../../lib/push';
+import { sendTeamEmail } from '../../../lib/emailTeam';
 
 function toDbDate(d: Date): string {
   const y = d.getFullYear();
@@ -54,7 +56,7 @@ function addDays(d: Date, n: number): Date {
 // *before* the bracket is even published, which is what the optional entry
 // RSVP (only offered once a start date is set) is for.
 export default function CreateTournamentScreen() {
-  const { primaryColor, secondaryColor, onSecondary, timezone } = useClub();
+  const { primaryColor, secondaryColor, onSecondary, timezone, clubName, logoUrl: clubLogoUrl } = useClub();
   const router = useRouter();
   const { clubSlug, tournamentId } = useLocalSearchParams<{ clubSlug: string; tournamentId?: string }>();
   const { team } = useTeam();
@@ -274,6 +276,24 @@ export default function CreateTournamentScreen() {
       Alert.alert('Failed to create', "Couldn't create this tournament — try again.");
       return;
     }
+
+    const announceBody = `${name.trim()}${dateFields.start_date ? ` — ${fmtDate(new Date(dateFields.start_date + 'T00:00:00'))}` : ''}${location ? ` · ${location}` : ''}`;
+    sendTeamPush({
+      teamId: team.id,
+      title: 'New tournament added',
+      body: announceBody,
+      excludeProfileId: profile.id,
+      data: { type: 'tournament_created', tournament_id: data.id, team_id: team.id },
+    });
+    sendTeamEmail({
+      teamIds: [team.id],
+      subject: 'New tournament added',
+      body: announceBody,
+      fromName: profile.full_name ?? 'Coach',
+      teamName: team.name,
+      clubName, logoUrl: clubLogoUrl, primaryColor,
+    });
+
     // Land straight on the detail screen, ready to add the first game.
     router.replace(`/(app)/${clubSlug}/tournament/${data.id}` as any);
   }
