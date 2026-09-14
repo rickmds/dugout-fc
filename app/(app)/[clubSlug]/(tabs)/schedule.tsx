@@ -800,9 +800,15 @@ export default function ScheduleScreen() {
                       {result.label} {result.ourScore}–{result.oppScore}
                     </Text>
                   ) : isUpcoming(g) ? (
-                    <Text style={[styles.tournamentGameBadge, { color: primaryColor }]}>
-                      {formatGameCountdown(g.event_date)}
-                    </Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={[styles.tournamentGameBadge, { color: primaryColor }]}>
+                        {formatGameCountdown(g.event_date)}
+                      </Text>
+                      <View style={styles.tournamentGameRsvpRow}>
+                        <Ionicons name="checkmark-circle" size={11} color={PULSE_COLORS.rsvp.attending} />
+                        <Text style={styles.tournamentGameRsvpText}>{rsvpCounts[g.id]?.attending ?? 0}</Text>
+                      </View>
+                    </View>
                   ) : null}
                 </TouchableOpacity>
               );
@@ -1573,6 +1579,8 @@ const styles = StyleSheet.create({
   tournamentGameTitle: { fontSize: 13.5, fontWeight: '700', color: PULSE_COLORS.ui.text },
   tournamentGameMeta: { fontSize: 11.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
   tournamentGameBadge: { fontSize: 11.5, fontWeight: '800' },
+  tournamentGameRsvpRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  tournamentGameRsvpText: { fontSize: 10.5, fontWeight: '700', color: PULSE_COLORS.rsvp.attending },
   tournamentMoreRow: { paddingTop: 8, alignItems: 'center' },
   tournamentMoreText: { fontSize: 12.5, fontWeight: '700' },
   tournamentNoGames: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 14, fontStyle: 'italic' },
