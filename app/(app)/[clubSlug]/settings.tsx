@@ -664,7 +664,14 @@ export default function SettingsScreen() {
       Alert.alert('Could not switch', result.error);
       return;
     }
-    await refreshProfile();
+    // No refreshProfile() here — useAuth's own onAuthStateChange listener
+    // already refetches profile/club for the new (impersonated) session the
+    // moment startViewAs()'s verifyOtp() swaps it in. Calling refreshProfile
+    // here was a stale closure bound to the ADMIN's own user.id from this
+    // component's last render before the swap, so it re-fetched and
+    // clobbered the impersonated profile with the admin's own a moment
+    // later — the exact cause of "View as Parent" silently showing the
+    // admin's own data instead.
     router.replace(`/(app)/${slug}/(tabs)` as any);
   }
 
