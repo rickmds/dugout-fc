@@ -23,7 +23,6 @@ import { supabase } from '../../../../lib/supabase';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { uniqueChannelName } from '../../../../lib/realtime';
 import { useAuth } from '../../../../hooks/useAuth';
-import { useTeam } from '../../../../hooks/useTeam';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
@@ -119,7 +118,6 @@ export default function ConversationScreen() {
   const router = useRouter();
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const { profile } = useAuth();
-  const { team, allTeams, selectTeam } = useTeam();
 
   const [title, setTitle]           = useState<string>('Direct Message');
   const [convType, setConvType]     = useState<string | null>(null);
@@ -171,25 +169,6 @@ export default function ConversationScreen() {
   useEffect(() => {
     if (editingId) setTimeout(() => editRef.current?.focus(), 50);
   }, [editingId]);
-
-  // A team_group conversation's header/branding is driven by whichever team
-  // is GLOBALLY active (useClub() reads useTeam()'s team, not this screen's
-  // own convTeamId) — completely independent of which conversation this
-  // screen actually posts to (conversationId, fixed by navigation). If the
-  // global active team is ever the wrong one while this screen is open —
-  // landed here via a stale list tap right after switching teams, a
-  // notification, a deep link, or simply switched teams elsewhere while
-  // this screen stayed mounted underneath — the header would silently show
-  // one team while every message still goes to a different one, with
-  // nothing on screen to catch it. Keep them in sync for as long as this
-  // screen is mounted, not just once at load, the same way
-  // tournament/[tournamentId].tsx already does for tournaments.
-  useEffect(() => {
-    if (convType !== 'team_group' || !convTeamId) return;
-    if (team?.id !== convTeamId && allTeams.some((t) => t.id === convTeamId)) {
-      selectTeam(convTeamId);
-    }
-  }, [convType, convTeamId, team?.id, allTeams, selectTeam]);
 
   async function bootstrap() {
     if (!conversationId || !profile) return;
