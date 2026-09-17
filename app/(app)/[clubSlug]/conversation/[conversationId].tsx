@@ -173,11 +173,20 @@ export default function ConversationScreen() {
   async function bootstrap() {
     if (!conversationId || !profile) return;
 
-    const { data: conv } = await supabase
-      .from('conversations')
-      .select('title, team_id, type, teams(name)')
-      .eq('id', conversationId)
-      .single();
+    // These three don't actually depend on each other's result — they were
+    // previously awaited one after another (conv lookup, then the upsert,
+    // then messages), turning three independent round trips into pure
+    // sequential latency before anything appeared on screen. Only the
+    // direct-DM "other participant" lookups below genuinely need `conv`
+    // first; messages and the participant upsert never did.
+    const [{ data: conv }] = await Promise.all([
+      supabase.from('conversations').select('title, team_id, type, teams(name)').eq('id', conversationId).single(),
+      supabase.from('conversation_participants').upsert(
+        { conversation_id: conversationId, profile_id: profile.id },
+        { onConflict: 'conversation_id,profile_id', ignoreDuplicates: true },
+      ).then(({ error }) => { if (error) console.error('[Conversation] participant upsert error:', error.message); }),
+      fetchMessages(),
+    ]);
     if (conv) {
       const ct = (conv as any).type as string | undefined;
       setConvTeamName((conv as any).teams?.name ?? null);
@@ -227,14 +236,7 @@ export default function ConversationScreen() {
       }
     }
 
-    const { error: partErr } = await supabase.from('conversation_participants').upsert(
-      { conversation_id: conversationId, profile_id: profile.id },
-      { onConflict: 'conversation_id,profile_id', ignoreDuplicates: true },
-    );
-    if (partErr) console.error('[Conversation] participant upsert error:', partErr.message);
-
     markConversationRead();
-    await fetchMessages();
     setLoading(false);
     return subscribe();
   }
@@ -282,6 +284,13 @@ export default function ConversationScreen() {
     awaitingInitialLayoutRef.current = true;
     setMessages(mapped);
     fetchReactions(mapped.map((m) => m.id));
+    // Stay "awaiting" for a settle window rather than clearing on the FIRST
+    // onContentSizeChange fire — content size can keep growing for a bit as
+    // images finish loading/laying out (each one shifts the total height),
+    // so every fire in this window re-issues scrollToEnd, self-correcting
+    // toward the true bottom instead of committing to whichever fire happened
+    // to be first.
+    setTimeout(() => { awaitingInitialLayoutRef.current = false; }, 600);
   }
 
   async function fetchReactions(messageIds: string[]) {
@@ -600,18 +609,19 @@ export default function ConversationScreen() {
           data={messages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={st.list}
-          initialNumToRender={20}
+          // Matches PAGE (80) — with a smaller initialNumToRender, the FIRST
+          // onContentSizeChange fired against only a partially-rendered list
+          // (the OLDEST ~20 of the 80 loaded messages, since ascending order
+          // means the first N rendered are the least recent), so the very
+          // first scrollToEnd landed at what only LOOKED like the bottom at
+          // that moment — not the true end once the rest kept mounting in via
+          // windowSize. Rendering everything up front removes that gap.
+          initialNumToRender={PAGE}
           maxToRenderPerBatch={10}
           windowSize={7}
           onContentSizeChange={() => {
             if (!awaitingInitialLayoutRef.current) return;
-            awaitingInitialLayoutRef.current = false;
             listRef.current?.scrollToEnd({ animated: false });
-            // Android can report content size before the list has fully
-            // settled (removeClippedSubviews made this worse, so it's been
-            // removed above) — a second pass after layout truly finishes
-            // catches the cases where the first scrollToEnd lands short.
-            setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 150);
           }}
           ListHeaderComponent={hasMore ? (
             <TouchableOpacity
