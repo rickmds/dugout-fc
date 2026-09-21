@@ -435,6 +435,12 @@ export default function HomeScreen() {
   const tapCount = useRef(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFetchRef = useRef<number>(0);
+  // Cold mount fires both the useFocusEffect below (initial focus) and the
+  // team-change useEffect in the same tick — without this guard that meant
+  // the whole critical-path query batch went out twice at once on every
+  // first load (and again on every mid-session team switch), doubling the
+  // network cost of the slowest, most latency-sensitive part of the screen.
+  const fetchInFlightRef = useRef(false);
   // Once we've shown real content, later refetches (regaining focus after
   // popping a screen, switching teams) shouldn't blank the screen back to
   // the skeleton — that's the flash. Only the very first load should.
@@ -542,6 +548,9 @@ export default function HomeScreen() {
     // Skip re-fetch if data is fresh (30s cache) — bypassed by pull-to-refresh
     const now = Date.now();
     if (lastFetchRef.current && now - lastFetchRef.current < 30_000) return;
+
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
 
     setLoading(true);
     const today = todayLocalStr();
@@ -1028,6 +1037,7 @@ export default function HomeScreen() {
       if (!hasLoadedOnceRef.current) setLoadError(true);
     } finally {
       setLoading(false);
+      fetchInFlightRef.current = false;
     }
   }
 

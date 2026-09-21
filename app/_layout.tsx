@@ -5,7 +5,6 @@ import { Stack, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { TeamProvider, useActiveTeam } from '../hooks/TeamContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -258,46 +257,21 @@ export default function RootLayout() {
   );
 }
 
-const SPLASH_SEEN_KEY = 'has_seen_splash_v1';
-
 function RootLayoutInner() {
   // Reading loading here (inside AuthProvider) rather than in RootLayout
   // itself, which sits above the provider and can't call useAuth() at all.
   const { loading } = useAuth();
   const [splashDone, setSplashDone] = useState(false);
-  // null = still checking AsyncStorage (rare, near-instant); true = first
-  // launch ever, play the full branded video; false = returning user, skip
-  // the ~5s video entirely and just wait on auth (near-instant from cache)
-  // rather than paying that fixed cost on every single app open.
-  const [showVideo, setShowVideo] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    AsyncStorage.getItem(SPLASH_SEEN_KEY).then((val) => setShowVideo(!val));
-  }, []);
-
-  useEffect(() => {
-    if (showVideo === false && !loading) setSplashDone(true);
-  }, [showVideo, loading]);
-
+  // RootLayoutInner only mounts once per cold start — backgrounding and
+  // foregrounding the app keeps the JS engine (and this component) alive,
+  // so playing the video unconditionally on every mount means every hard
+  // launch, not a one-time first-install treatment.
   return (
     <>
       <AppShell />
       {!splashDone && (
-        showVideo === true ? (
-          <SplashVideo
-            ready={!loading}
-            onFinished={() => {
-              AsyncStorage.setItem(SPLASH_SEEN_KEY, '1');
-              setSplashDone(true);
-            }}
-          />
-        ) : (
-          // Covers the brief AsyncStorage check (showVideo === null) and the
-          // returning-user wait-for-auth window (showVideo === false) with
-          // the same flat color the video opens on, so there's no visible
-          // seam between this and the video on someone's very first launch.
-          <View style={[StyleSheet.absoluteFill, styles.overlay]} pointerEvents="none" />
-        )
+        <SplashVideo ready={!loading} onFinished={() => setSplashDone(true)} />
       )}
     </>
   );

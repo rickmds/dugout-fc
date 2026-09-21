@@ -162,6 +162,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
+      // supabase-js fires INITIAL_SESSION synchronously on subscribe, with
+      // the same session the getSessionWithRetry() chain above is already
+      // resolving — without this guard, every cold start fired two full
+      // fetchProfileAndClubWithRetry() round trips for the same user at
+      // once, doubling the network cost of the slowest part of app launch.
+      if (event === 'INITIAL_SESSION') return;
+
       if (event === 'SIGNED_OUT') {
         clearCache();
         setState({ session: null, user: null, profile: null, club: null, loading: false });

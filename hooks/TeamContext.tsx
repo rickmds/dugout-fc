@@ -130,9 +130,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       // rather than a new tier since "implicit full access to every team
       // in this club" is exactly what that tier already means everywhere
       // else in the app that reads myRole.
-      const homeRes = await supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at');
+      const [homeRes, extraAdminTeams] = await Promise.all([
+        supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at'),
+        fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id)),
+      ]);
       const homeTeams = ((homeRes.data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin' } as Team));
-      const extraAdminTeams = await fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id));
       const byId = new Map<string, Team>();
       // Home-club rows win over an explicit member row for the same team —
       // org_admin's implicit club-wide access shouldn't be shadowed by a
