@@ -144,12 +144,32 @@ export default function ConversationScreen() {
   const [viewerMessage, setViewerMessage] = useState<Message | null>(null);
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
-  // Set right before the initial batch loads, cleared the first time the
-  // list actually reports a real layout — scrollToEnd() only works once
-  // FlatList knows the content's true height, which a fixed setTimeout can
-  // only ever guess at (wrong on a slow device or a long history). Left
-  // false afterward so loading earlier messages or a new message arriving
-  // doesn't re-trigger this — only the initial open should force-scroll.
+
+  // FlatList.scrollToEnd() does NOT use the list's real, measured content
+  // height — it computes an offset from an internal APPROXIMATION of each
+  // cell's layout (RN's own source literally calls this "janky without
+  // getItemLayout"), which chat bubbles can't provide since their height is
+  // genuinely variable (wrapped text, optional 220x220 images, reactions).
+  // With up to 80 bubbles rendered and most not yet individually measured,
+  // that estimate can land far short of the true bottom — which is exactly
+  // "scrolled to the top" if the estimate is small enough. scrollToOffset
+  // instead issues a raw scrollTo() on the native scroll view, which clamps
+  // an over-large offset to whatever it has ACTUALLY measured — reliable
+  // regardless of per-cell estimation.
+  function scrollToRealEnd(animated: boolean) {
+    listRef.current?.scrollToOffset({ offset: 5_000_000, animated });
+  }
+  // Set in bootstrap() right before the FlatList actually mounts (it isn't
+  // rendered at all while `loading` is true). Cleared either by the user
+  // actually touching the list (onScrollBeginDrag) or, as a safety net, a
+  // generous fallback timer — scrollToRealEnd only works once FlatList's
+  // native scroll view knows the content's true height, which can take a
+  // real, variable amount of time to settle (rendering up to 80 bubbles
+  // with avatars/images on a real device, images loading in and shifting
+  // heights), not a fixed guess.
+  // Left false afterward so loading earlier messages or a new message
+  // arriving doesn't re-trigger this — only the initial open should
+  // force-scroll.
   const awaitingInitialLayoutRef = useRef(false);
 
   const isCoach = COACH_ROLES.has(profile?.role ?? '');
@@ -164,6 +184,14 @@ export default function ConversationScreen() {
     });
     return () => { cancelled = true; cleanup?.(); };
   }, [conversationId, profile?.id]);
+
+  // Direct, guaranteed first scroll attempt right as the FlatList mounts —
+  // doesn't depend on onContentSizeChange firing in time, which is the
+  // event-driven correction for content that keeps growing afterward (late-
+  // loading images) but isn't a reliable signal for the VERY first paint.
+  useEffect(() => {
+    if (!loading) scrollToRealEnd(false);
+  }, [loading]);
 
   // Focus edit input when entering edit mode
   useEffect(() => {
@@ -237,7 +265,20 @@ export default function ConversationScreen() {
     }
 
     markConversationRead();
+    // Set here — right as the FlatList is about to actually mount (it isn't
+    // rendered at all while `loading` is true) — and cleared by real user
+    // scrolling (onScrollBeginDrag) rather than a fixed timer. Rendering up
+    // to 80 message bubbles at once (initialNumToRender, avatars/reactions/
+    // images included) can genuinely take longer than a short fixed window
+    // on a real device, especially the first cold layout pass — a timer
+    // that expires before onContentSizeChange's first real fire silently
+    // drops the initial scroll-to-bottom with no way to recover. A generous
+    // fallback timer still clears it so a runaway content-size loop (e.g. a
+    // broken image endlessly re-laying-out) can't fight a still-untouched
+    // screen forever.
+    awaitingInitialLayoutRef.current = true;
     setLoading(false);
+    setTimeout(() => { awaitingInitialLayoutRef.current = false; }, 8000);
     return subscribe();
   }
 
@@ -281,16 +322,8 @@ export default function ConversationScreen() {
       sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
       edited: m.edited ?? false, image_url: m.image_url ?? null,
     }));
-    awaitingInitialLayoutRef.current = true;
     setMessages(mapped);
     fetchReactions(mapped.map((m) => m.id));
-    // Stay "awaiting" for a settle window rather than clearing on the FIRST
-    // onContentSizeChange fire — content size can keep growing for a bit as
-    // images finish loading/laying out (each one shifts the total height),
-    // so every fire in this window re-issues scrollToEnd, self-correcting
-    // toward the true bottom instead of committing to whichever fire happened
-    // to be first.
-    setTimeout(() => { awaitingInitialLayoutRef.current = false; }, 600);
   }
 
   async function fetchReactions(messageIds: string[]) {
@@ -344,7 +377,7 @@ export default function ConversationScreen() {
             if (!data) return;
             setMessages((prev) => prev.map((m) => m.id === raw.id ? { ...m, sender_name: (data as any).full_name } : m));
           });
-        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+        setTimeout(() => scrollToRealEnd(true), 50);
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'messages',
@@ -471,7 +504,7 @@ export default function ConversationScreen() {
       image_url: localImageUri,
     };
     setMessages((prev) => [...prev, optimistic]);
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+    setTimeout(() => scrollToRealEnd(true), 50);
 
     try {
       let uploadedImageUrl: string | null = null;
@@ -621,8 +654,9 @@ export default function ConversationScreen() {
           windowSize={7}
           onContentSizeChange={() => {
             if (!awaitingInitialLayoutRef.current) return;
-            listRef.current?.scrollToEnd({ animated: false });
+            scrollToRealEnd(false);
           }}
+          onScrollBeginDrag={() => { awaitingInitialLayoutRef.current = false; }}
           ListHeaderComponent={hasMore ? (
             <TouchableOpacity
               onPress={loadEarlier}
