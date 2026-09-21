@@ -385,6 +385,7 @@ export default function EventDetailScreen() {
   const [activeMainTab, setActiveMainTab] = useState<'details' | 'availability' | 'attendance'>(section === 'attendance' ? 'attendance' : 'details');
   const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late'>>(new Map());
   const [savingAttendance, setSavingAttendance] = useState<string | null>(null);
+  const [savingBulkAttendance, setSavingBulkAttendance] = useState(false);
   const [activeRsvpTab, setActiveRsvpTab] = useState<'attending' | 'not_attending' | 'none'>('attending');
   const [matchStats, setMatchStats] = useState<MatchStatRow[] | null>(null);
   const [matchTrackerOpen, setMatchTrackerOpen] = useState(false);
@@ -1199,6 +1200,46 @@ export default function EventDetailScreen() {
       }
     }
     setSavingAttendance(null);
+  }
+
+  // Marking a full roster present one tap at a time meant one network round
+  // trip PER PLAYER, each one blocking that row's buttons until it resolved
+  // — for a normal session where nearly everyone shows up, that's the whole
+  // roster processed one at a time for a foregone conclusion. The actual
+  // coach workflow is "mark the few who didn't show, then everyone else is
+  // present" — so this handles the "everyone else" half as a single bulk
+  // upsert (one request, one round trip) instead of N sequential ones.
+  async function markRemainingPresent() {
+    if (!eventId) return;
+    const unmarked = players.filter((p) => !attendanceMap.has(p.id));
+    if (!unmarked.length) return;
+
+    Alert.alert(
+      'Mark remaining as present?',
+      `${unmarked.length} player${unmarked.length === 1 ? '' : 's'} not yet marked will be set to Present.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark Present', onPress: async () => {
+            setSavingBulkAttendance(true);
+            const { error } = await supabase.from('event_attendance').upsert(
+              unmarked.map((p) => ({ event_id: eventId, player_id: p.id, status: 'present' as const, marked_by: profile?.id })),
+              { onConflict: 'event_id,player_id' }
+            );
+            setSavingBulkAttendance(false);
+            if (error) {
+              Alert.alert('Error', 'Could not update attendance. Please try again.');
+              return;
+            }
+            setAttendanceMap((prev) => {
+              const next = new Map(prev);
+              for (const p of unmarked) next.set(p.id, 'present');
+              return next;
+            });
+          },
+        },
+      ]
+    );
   }
 
   async function handleNudge() {
@@ -2233,7 +2274,7 @@ export default function EventDetailScreen() {
         <ScrollView contentContainerStyle={styles.availScroll} showsVerticalScrollIndicator={false}>
           <View style={styles.attendanceHeader}>
             <Text style={styles.attendanceHint}>
-              Mark who actually showed up. Tap a status to set, tap again to clear.
+              Tap Late or Absent for anyone who wasn't there, then mark everyone else present at once below. Tap a status again to clear it.
             </Text>
             <View style={styles.attendanceLegend}>
               {[['#22c55e', 'Present'], ['#F59E0B', 'Late'], ['#ef4444', 'Absent']].map(([color, label]) => (
@@ -2243,6 +2284,25 @@ export default function EventDetailScreen() {
                 </View>
               ))}
             </View>
+            {players.length > 0 && attendanceMap.size < players.length && (
+              <TouchableOpacity
+                style={[styles.attMarkRestBtn, { borderColor: 'rgba(34,197,94,0.35)', backgroundColor: 'rgba(34,197,94,0.08)' }]}
+                onPress={markRemainingPresent}
+                disabled={savingBulkAttendance}
+                activeOpacity={0.7}
+              >
+                {savingBulkAttendance ? (
+                  <ActivityIndicator size="small" color="#22c55e" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-done" size={16} color="#22c55e" />
+                    <Text style={styles.attMarkRestText}>
+                      Mark remaining {players.length - attendanceMap.size} as Present
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
           {players.length === 0 ? (
             <View style={styles.emptyAvailability}>
@@ -3474,6 +3534,11 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600' },
+  attMarkRestBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1,
+  },
+  attMarkRestText: { fontSize: 13, fontWeight: '700', color: '#22c55e' },
   attendanceBtns: { flexDirection: 'row', gap: 6 },
   attBtn: {
     width: 30, height: 30, borderRadius: 8,
