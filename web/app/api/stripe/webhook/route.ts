@@ -35,7 +35,14 @@ export async function POST(req: NextRequest) {
 
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object;
-    const { player_fee_id, pay_amount, club_slug, club_id, donation_amount, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected } = pi.metadata ?? {};
+    const { player_fee_id, registration_installment_id, pay_amount, club_slug, club_id, donation_amount, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected } = pi.metadata ?? {};
+    if (registration_installment_id) {
+      await handleRegistrationPaymentComplete({
+        registration_installment_id,
+        amount: pi.amount_received / 100,
+        payment_intent_id: pi.id,
+      });
+    }
     if (player_fee_id) {
       const { credited } = await handlePaymentComplete({
         player_fee_id, pay_amount: pay_amount ? parseFloat(pay_amount) : pi.amount_received / 100, club_slug, reference: pi.id, payment_intent_id: pi.id,
@@ -608,6 +615,137 @@ export async function handlePaymentComplete({ player_fee_id, pay_amount: amountP
       from:    `${clubName} <support@pulse-fc.app>`,
       to:      invite.email,
       subject: `Receipt: ${fee.description} — ${fmtAmount} received`,
+      html,
+    });
+  }
+
+  return { credited: true };
+}
+
+// Credits a registration installment — the pre-roster equivalent of
+// handlePaymentComplete above. Simpler than the fee-payments path since
+// each installment is a single discrete payment (not an accumulating
+// balance across multiple partial payments), so idempotency is just the
+// paid_at compare-and-swap on the row itself: only the delivery that
+// actually flips it from null wins, a redelivered webhook event is a no-op.
+export async function handleRegistrationPaymentComplete({ registration_installment_id, amount, payment_intent_id }: {
+  registration_installment_id: string; amount: number; payment_intent_id: string;
+}): Promise<{ credited: boolean }> {
+  const supabase = supabaseAdmin();
+
+  const { data: claimed, error: updateErr } = await supabase
+    .from('registration_installments')
+    .update({ paid_at: new Date().toISOString(), payment_method: 'stripe', reference: payment_intent_id })
+    .eq('id', registration_installment_id)
+    .is('paid_at', null)
+    .select('id, submission_id')
+    .single();
+  if (updateErr || !claimed) return { credited: false }; // already paid (redelivery) or not found
+
+  const { data: submission } = await supabase
+    .from('registration_submissions')
+    .select('id, form_id, data, amount_due, amount_paid')
+    .eq('id', claimed.submission_id)
+    .single();
+  if (!submission) return { credited: true };
+
+  const newPaid = (submission.amount_paid ?? 0) + amount;
+  const newStatus = submission.amount_due != null && newPaid >= submission.amount_due - 0.01 ? 'paid' : 'partial';
+  await supabase.from('registration_submissions').update({ amount_paid: newPaid, payment_status: newStatus }).eq('id', submission.id);
+
+  const { data: form } = await supabase
+    .from('registration_forms')
+    .select('id, title, club_id, clubs(id, name, slug, logo_url, primary_color)')
+    .eq('id', submission.form_id)
+    .single();
+  const club = (form?.clubs ?? null) as { id: string; name: string; slug: string | null; logo_url: string | null; primary_color: string | null } | null;
+  const clubName = club?.name ?? 'Your club';
+  const accent   = resolveAccent(club?.primary_color);
+  const fmtAmount = `$${amount.toFixed(2)}`;
+
+  // Same "which field looks like an email" heuristic the public form
+  // itself already uses to send its confirmation email — see
+  // web/app/register/[token]/page.tsx.
+  const dataEntries = Object.entries((submission.data ?? {}) as Record<string, string>);
+  const parentEmail = dataEntries.find(([k]) => k.toLowerCase().includes('email'))?.[1];
+
+  // ── Notify club staff ──────────────────────────────────────────────────
+  if (club?.id) {
+    const { data: adminRows } = await supabase
+      .from('profiles').select('id').eq('club_id', club.id).in('role', ['org_admin', 'app_admin']);
+    const staffIds = (adminRows ?? []).map(r => r.id as string);
+    if (staffIds.length) {
+      await supabase.from('notifications').insert(
+        staffIds.map(profile_id => ({
+          profile_id,
+          type:  'registration_payment_received',
+          title: '💳 Registration payment received',
+          body:  `${form?.title ?? 'Registration'} · ${fmtAmount}`,
+          data:  { submission_id: submission.id, type: 'registration_payment_received', club_slug: club.slug ?? '' },
+        }))
+      );
+      const { data: staffTokenRows } = await supabase
+        .from('push_tokens').select('token, profile_id').in('profile_id', staffIds);
+      if (staffTokenRows?.length) {
+        await sendExpoPush(staffTokenRows.map(t => ({
+          to: t.token, title: '💳 Registration payment received',
+          body: `${form?.title ?? 'Registration'} · ${fmtAmount}`,
+          sound: 'default',
+          data: { type: 'registration_payment_received', submission_id: submission.id, club_slug: club.slug ?? '' },
+        })));
+      }
+    }
+  }
+
+  // ── Branded receipt email to the family ──────────────────────────────
+  if (parentEmail) {
+    const year     = new Date().getFullYear();
+    const logoUrl  = club?.logo_url ?? null;
+    const initials = clubName.split(' ').slice(0, 2).map((w: string) => (w[0] ?? '').toUpperCase()).join('');
+    const btnText  = contrastText(accent);
+    const logoHtml = logoUrl
+      ? `<img src="${esc(logoUrl)}" width="56" height="56" alt="${esc(clubName)}" style="display:inline-block;border-radius:12px;" />`
+      : `<div style="display:inline-block;width:56px;height:56px;line-height:56px;text-align:center;border-radius:12px;background:${accent};vertical-align:middle;"><span style="font-size:20px;font-weight:900;color:${btnText};">${esc(initials)}</span></div>`;
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Payment receipt</title></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;"><tr><td align="center" style="padding:48px 20px 64px;">
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+<tr><td style="text-align:center;padding-bottom:28px;">${logoHtml}<p style="margin:10px 0 0;font-size:17px;font-weight:800;color:#f9fafb;">${esc(clubName)}</p></td></tr>
+<tr><td style="background:#111111;border:1px solid #222222;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+<div style="height:3px;background:#22C55E;"></div>
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="padding:32px 28px 20px;">
+  <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;">Payment Receipt</p>
+  <h1 style="margin:0;font-size:22px;font-weight:800;color:#f9fafb;line-height:1.3;">✅ Payment confirmed</h1>
+</td></tr>
+<tr><td style="padding:0 28px;"><div style="height:1px;background:#1e1e1e;"></div></td></tr>
+<tr><td style="padding:24px 28px 20px;">
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;overflow:hidden;">
+    <div style="height:2px;background:#22C55E;"></div>
+    <table cellpadding="0" cellspacing="0" width="100%" style="padding:18px 20px;">
+      <tr><td><p style="margin:0 0 4px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">Registration</p>
+        <p style="margin:0 0 16px;font-size:15px;font-weight:600;color:#f9fafb;">${esc(form?.title ?? 'Registration')}</p></td></tr>
+      <tr><td>
+        <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">Amount paid</p>
+        <p style="margin:0;font-size:24px;font-weight:900;color:#22C55E;letter-spacing:-0.5px;">${esc(fmtAmount)}</p>
+      </td></tr>
+      ${newStatus === 'partial' && submission.amount_due != null ? `<tr><td style="padding-top:14px;"><p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">Remaining balance</p><p style="margin:0;font-size:14px;color:#f59e0b;font-weight:700;">$${(submission.amount_due - newPaid).toFixed(2)}</p></td></tr>` : ''}
+    </table>
+  </div>
+</td></tr>
+<tr><td style="padding:0 28px 24px;"><p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">Keep this email as your receipt. If you have any questions, contact your club administrator.</p></td></tr>
+<tr><td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
+  <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">${esc(clubName)} uses <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a> for club management. &middot; &copy; ${year} ${esc(clubName)}</p>
+</td></tr>
+</table></td></tr>
+</table></td></tr></table>
+</body></html>`;
+
+    await resend.emails.send({
+      from:    `${clubName} <support@pulse-fc.app>`,
+      to:      parentEmail,
+      subject: `Receipt: ${form?.title ?? 'Registration'} — ${fmtAmount} received`,
       html,
     });
   }

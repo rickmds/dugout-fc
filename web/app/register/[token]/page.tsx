@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 type FieldType =
@@ -58,6 +58,7 @@ function uid() { return crypto.randomUUID(); }
 
 export default function RegisterPage() {
   const { token } = useParams<{ token: string }>();
+  const router = useRouter();
 
   const [form, setForm]           = useState<Form | null>(null);
   const [loading, setLoading]     = useState(true);
@@ -260,6 +261,29 @@ export default function RegisterPage() {
               confirmation_message: form.confirmation_message,
             }),
           }).catch((err) => console.error('registration-confirm email failed:', err));
+        }
+      }
+
+      // 4. If this registration has a fee, set up the real payment schedule
+      // and send the family straight into paying whatever's due today (the
+      // deposit, or the full amount) — instead of just promising a link by
+      // email. A free registration, or one where nothing's due yet, falls
+      // through to the plain success screen below.
+      if (hasFee) {
+        try {
+          const instRes = await fetch('/api/registration/create-installments', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ submission_id: subResult.id }),
+          });
+          const instData = await instRes.json();
+          if (instRes.ok && instData.due_now?.token) {
+            router.push(`/pay-registration/${instData.due_now.token}`);
+            return;
+          }
+        } catch (err) {
+          console.error('create-installments failed:', err);
+          // Fall through to the normal success screen — the registration
+          // itself already succeeded; payment can still be arranged manually.
         }
       }
 
@@ -496,7 +520,7 @@ export default function RegisterPage() {
                           </div>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '15px', fontWeight: '700', color: paymentChoice === 'full' ? '#0F172A' : '#374151', marginBottom: '3px' }}>Pay in full — {sym}{activePrice.toFixed(2)}</div>
-                            <div style={{ fontSize: '13px', color: '#64748B' }}>One payment. Payment link will be sent to you after registration.</div>
+                            <div style={{ fontSize: '13px', color: '#64748B' }}>You&apos;ll pay this now, right after submitting.</div>
                           </div>
                         </button>
                       )}
@@ -510,13 +534,13 @@ export default function RegisterPage() {
                             <div style={{ fontSize: '15px', fontWeight: '700', color: paymentChoice === 'plan' ? '#0F172A' : '#374151', marginBottom: '3px' }}>
                               Payment plan{dep > 0 ? ` — ${sym}${dep.toFixed(2)} now, then ${n}× ${sym}${instAmount.toFixed(2)} ${freq}` : ` — ${n}× ${sym}${instAmount.toFixed(2)} ${freq}`}
                             </div>
-                            <div style={{ fontSize: '13px', color: '#64748B' }}>Spread payments over time. Total: {sym}{activePrice.toFixed(2)}. Links sent after registration.</div>
+                            <div style={{ fontSize: '13px', color: '#64748B' }}>Spread payments over time. Total: {sym}{activePrice.toFixed(2)}. {dep > 0 ? `The ${sym}${dep.toFixed(2)} deposit` : `The first payment`} is due now — you&apos;ll get a link for each remaining {freq} payment as it comes due.</div>
                           </div>
                         </button>
                       )}
                     </div>
                     <div style={{ marginTop: '12px', background: '#FEF9C3', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 13px', fontSize: '12px', color: '#92400E' }}>
-                      💡 No payment is taken now. You&apos;ll receive a secure payment link by email after submitting.
+                      💳 You&apos;ll be taken to a secure payment page right after submitting to pay what&apos;s due today.
                     </div>
                   </>
                 )}

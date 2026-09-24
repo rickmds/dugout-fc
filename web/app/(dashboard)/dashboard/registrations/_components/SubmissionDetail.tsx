@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, ChevronDown, CheckCircle, XCircle, Clock,
-  AlertTriangle, UserPlus,
+  AlertTriangle, UserPlus, Copy, CreditCard,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -66,6 +66,27 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
   const [offlineDate, setOfflineDate]           = useState('');
   const [offlineRef, setOfflineRef]             = useState('');
   const [offlineSaving, setOfflineSaving]       = useState(false);
+  const [installments, setInstallments]         = useState<{ id: string; amount: number; due_date: string; paid_at: string | null; payment_token: string }[]>([]);
+  const [copiedId, setCopiedId]                 = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('registration_installments')
+        .select('id, amount, due_date, paid_at, payment_token')
+        .eq('submission_id', sub.id)
+        .order('due_date', { ascending: true });
+      setInstallments(data ?? []);
+    })();
+  }, [sub.id]);
+
+  function copyPayLink(inst: { id: string; payment_token: string }) {
+    const url = `${window.location.origin}/pay-registration/${inst.payment_token}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(inst.id);
+      setTimeout(() => setCopiedId(null), 1800);
+    });
+  }
 
   // Financial aid
   const [aidAmount, setAidAmount]               = useState('');
@@ -507,6 +528,44 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                   </div>
                 ))}
               </div>
+
+              {/* Online payment schedule — real Stripe links, distinct from the
+                  manual "Record offline payment" fallback below */}
+              {installments.length > 0 && (
+                <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                    <CreditCard size={15} color="#64748B" />
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>Online payment schedule</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {installments.map(inst => {
+                      const isPaid = !!inst.paid_at;
+                      return (
+                        <div key={inst.id} style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                          padding: '10px 14px', borderRadius: '9px',
+                          background: isPaid ? '#F0FDF4' : '#FAFAFA', border: `1px solid ${isPaid ? '#BBF7D0' : '#E2E8F0'}`,
+                        }}>
+                          <div>
+                            <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#0F172A' }}>{fmtMoney(inst.amount, currency)}</div>
+                            <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>{isPaid ? `Paid ${fmtDate(inst.paid_at!)}` : `Due ${fmtDate(inst.due_date)}`}</div>
+                          </div>
+                          {isPaid ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#16A34A' }}>
+                              <CheckCircle size={13} /> Paid
+                            </span>
+                          ) : (
+                            <button onClick={() => copyPayLink(inst)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '11.5px', fontWeight: 700, color: '#374151' }}>
+                              <Copy size={12} /> {copiedId === inst.id ? 'Copied!' : 'Copy link'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Payment status quick override */}
               <div style={{
