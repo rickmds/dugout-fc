@@ -9,7 +9,7 @@ import { formatCurrency } from '@/lib/formatCurrency';
 type InstallmentData = {
   amount: number; due_date: string; paid: boolean; currency: string;
   form_title: string; club_name: string; club_logo_url: string | null; club_color: string | null;
-  total_due: number | null; total_paid: number;
+  total_due: number | null; total_paid: number; has_future_installments: boolean;
 };
 
 function resolveAccent(hex: string | null | undefined): string {
@@ -87,6 +87,23 @@ function PayRegistrationContent() {
   const [publishableKey, setPublishableKey] = useState<string | null>(null);
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
+  const [autopayConsent, setAutopayConsent] = useState(false);
+  const [settingUpPayment, setSettingUpPayment] = useState(false);
+
+  async function proceedToPayment(consent: boolean) {
+    setSettingUpPayment(true);
+    const piRes = await fetch('/api/registration/create-payment-intent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payment_token: token, autopay_consent: consent }),
+    });
+    const pi = await piRes.json();
+    if (pi.configured === false) { setNotConfigured(true); setSettingUpPayment(false); return; }
+    if (!piRes.ok) { setError(pi.error ?? 'Could not set up payment.'); setSettingUpPayment(false); return; }
+    setClientSecret(pi.client_secret);
+    setPublishableKey(pi.publishable_key);
+    setStripePromise(loadStripe(pi.publishable_key));
+    setSettingUpPayment(false);
+  }
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; sets state from a real network call, not derivable at render time
@@ -96,20 +113,15 @@ function PayRegistrationContent() {
       const d = await res.json();
       if (!res.ok) { setError(d.error ?? 'Could not load this payment.'); setLoading(false); return; }
       setData(d);
-      if (d.paid) { setLoading(false); return; }
-
-      const piRes = await fetch('/api/registration/create-payment-intent', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_token: token }),
-      });
-      const pi = await piRes.json();
-      if (pi.configured === false) { setNotConfigured(true); setLoading(false); return; }
-      if (!piRes.ok) { setError(pi.error ?? 'Could not set up payment.'); setLoading(false); return; }
-      setClientSecret(pi.client_secret);
-      setPublishableKey(pi.publishable_key);
-      setStripePromise(loadStripe(pi.publishable_key));
       setLoading(false);
+      if (d.paid) return;
+      // A one-time or final payment has nothing left to offer autopay for —
+      // skip straight to the card form. Otherwise wait for the consent
+      // choice below before creating the PaymentIntent, since whether the
+      // card gets saved has to be decided before Stripe creates it.
+      if (!d.has_future_installments) await proceedToPayment(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- proceedToPayment is a stable function defined in this same component; only `token` is a real reactive input here
   }, [token]);
 
   const accent = resolveAccent(data?.club_color);
@@ -172,6 +184,28 @@ function PayRegistrationContent() {
         Thanks! Your payment for <strong style={{ color: '#e5e7eb' }}>{data?.form_title}</strong> has been received. A receipt is on its way to your email.
       </div>
     </div>
+  );
+
+  // A plan with more payments left, and the card hasn't been set up yet —
+  // ask about autopay before creating the PaymentIntent (Stripe needs to
+  // know up front whether to save the card).
+  if (data?.has_future_installments && !clientSecret) return shell(
+    <>
+      <div style={{ fontSize: '10px', fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '10px' }}>Registration payment</div>
+      <div style={{ fontSize: '18px', fontWeight: '800', color: '#f9fafb', lineHeight: '1.3', marginBottom: '4px' }}>{data?.form_title}</div>
+      <div style={{ fontSize: '26px', fontWeight: '900', color: accent, margin: '10px 0 18px' }}>{data ? formatCurrency(data.amount, data.currency) : ''}</div>
+      <div style={{ height: '1px', background: '#1e1e1e', margin: '0 0 20px' }} />
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', marginBottom: '20px' }}>
+        <input type="checkbox" checked={autopayConsent} onChange={e => setAutopayConsent(e.target.checked)} style={{ marginTop: '3px', accentColor: accent }} />
+        <span style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.55' }}>
+          Automatically charge this card for my remaining scheduled payments as they come due. You&apos;ll get a receipt each time — you can always pay a specific installment manually instead by ignoring this.
+        </span>
+      </label>
+      <button onClick={() => proceedToPayment(autopayConsent)} disabled={settingUpPayment}
+        style={{ width: '100%', padding: '15px', borderRadius: '12px', border: 'none', background: settingUpPayment ? `${accent}cc` : accent, color: btnColor, fontSize: '15px', fontWeight: '800', cursor: settingUpPayment ? 'not-allowed' : 'pointer', boxShadow: settingUpPayment ? 'none' : `0 4px 16px ${accent}44` }}>
+        {settingUpPayment ? 'Setting up…' : 'Continue to payment'}
+      </button>
+    </>
   );
 
   return shell(

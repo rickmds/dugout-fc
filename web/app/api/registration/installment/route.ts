@@ -35,6 +35,13 @@ export async function GET(req: NextRequest) {
     .eq('id', form.club_id)
     .single();
 
+  const { count: futureCount } = await supabase
+    .from('registration_installments')
+    .select('id', { count: 'exact', head: true })
+    .eq('submission_id', submission.id)
+    .neq('id', inst.id)
+    .is('paid_at', null);
+
   return NextResponse.json({
     amount: inst.amount,
     due_date: inst.due_date,
@@ -46,5 +53,6 @@ export async function GET(req: NextRequest) {
     club_color: club?.primary_color ?? null,
     total_due: submission.amount_due,
     total_paid: submission.amount_paid,
+    has_future_installments: (futureCount ?? 0) > 0,
   });
 }

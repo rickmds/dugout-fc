@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
         registration_installment_id,
         amount: pi.amount_received / 100,
         payment_intent_id: pi.id,
+        payment_method_id: typeof pi.payment_method === 'string' ? pi.payment_method : null,
       });
     }
     if (player_fee_id) {
@@ -628,14 +629,14 @@ export async function handlePaymentComplete({ player_fee_id, pay_amount: amountP
 // balance across multiple partial payments), so idempotency is just the
 // paid_at compare-and-swap on the row itself: only the delivery that
 // actually flips it from null wins, a redelivered webhook event is a no-op.
-export async function handleRegistrationPaymentComplete({ registration_installment_id, amount, payment_intent_id }: {
-  registration_installment_id: string; amount: number; payment_intent_id: string;
+export async function handleRegistrationPaymentComplete({ registration_installment_id, amount, payment_intent_id, payment_method_id }: {
+  registration_installment_id: string; amount: number; payment_intent_id: string; payment_method_id?: string | null;
 }): Promise<{ credited: boolean }> {
   const supabase = supabaseAdmin();
 
   const { data: claimed, error: updateErr } = await supabase
     .from('registration_installments')
-    .update({ paid_at: new Date().toISOString(), payment_method: 'stripe', reference: payment_intent_id })
+    .update({ paid_at: new Date().toISOString(), payment_method: 'stripe', reference: payment_intent_id, last_charge_error: null })
     .eq('id', registration_installment_id)
     .is('paid_at', null)
     .select('id, submission_id')
@@ -644,14 +645,21 @@ export async function handleRegistrationPaymentComplete({ registration_installme
 
   const { data: submission } = await supabase
     .from('registration_submissions')
-    .select('id, form_id, data, amount_due, amount_paid')
+    .select('id, form_id, data, amount_due, amount_paid, stripe_payment_method_id')
     .eq('id', claimed.submission_id)
     .single();
   if (!submission) return { credited: true };
 
   const newPaid = (submission.amount_paid ?? 0) + amount;
   const newStatus = submission.amount_due != null && newPaid >= submission.amount_due - 0.01 ? 'paid' : 'partial';
-  await supabase.from('registration_submissions').update({ amount_paid: newPaid, payment_status: newStatus }).eq('id', submission.id);
+  const patch: Record<string, unknown> = { amount_paid: newPaid, payment_status: newStatus };
+  // The card just used (whether entered fresh or an existing saved one)
+  // becomes what the auto-charge cron uses for this family's remaining
+  // installments — captured here rather than at PaymentIntent-creation
+  // time since that's before Stripe has actually attached a payment
+  // method to anything.
+  if (payment_method_id && !submission.stripe_payment_method_id) patch.stripe_payment_method_id = payment_method_id;
+  await supabase.from('registration_submissions').update(patch).eq('id', submission.id);
 
   const { data: form } = await supabase
     .from('registration_forms')

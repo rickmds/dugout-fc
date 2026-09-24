@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   const res = await fetch(`https://api.stripe.com/v1/payment_intents/${payment_intent_id}`, {
     headers: { Authorization: `Bearer ${stripeKey}` },
   });
-  let pi: { id?: string; status?: string; amount_received?: number; metadata?: Record<string, string> } | null;
+  let pi: { id?: string; status?: string; amount_received?: number; payment_method?: string; metadata?: Record<string, string> } | null;
   try { pi = await res.json(); } catch { pi = null; }
 
   if (!res.ok || !pi?.id) return NextResponse.json({ error: 'Could not verify payment with Stripe.' }, { status: 502 });
@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     registration_installment_id,
     amount: (pi.amount_received ?? 0) / 100,
     payment_intent_id: pi.id,
+    payment_method_id: pi.payment_method ?? null,
   });
 
   return NextResponse.json({ ok: true, status: 'succeeded' });

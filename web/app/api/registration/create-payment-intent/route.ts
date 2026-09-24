@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { calculateFee } from '@/lib/feeCalculator';
+import { buildRegistrationChargeBody } from '@/lib/registrationCharge';
 
 // Card-only v1 for registration payments — no ACH rail, no surcharge
 // disclosure step, no partial-amount override. Keeps the first version of
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ configured: false, error: 'Payments not configured for this club yet.' }, { status: 200 });
   }
 
-  const { payment_token } = await req.json();
+  const { payment_token, autopay_consent } = await req.json();
   if (!payment_token) return NextResponse.json({ error: 'payment_token required' }, { status: 400 });
 
   const supabase = supabaseAdmin();
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
   const { data: submission } = await supabase
     .from('registration_submissions')
-    .select('id, form_id')
+    .select('id, form_id, stripe_customer_id')
     .eq('id', inst.submission_id)
     .single();
   if (!submission) return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
@@ -46,30 +46,51 @@ export async function POST(req: NextRequest) {
     .eq('id', form.club_id)
     .single();
 
-  const connectAccountId = club?.stripe_connect_onboarded ? (club?.stripe_connect_account_id ?? null) : null;
-  if (!connectAccountId) {
+  const charge = buildRegistrationChargeBody({
+    amount: inst.amount, currency: form.currency ?? 'USD', club,
+    installmentId: inst.id, paymentToken: payment_token, submissionId: submission.id,
+  });
+  if ('error' in charge) {
     return NextResponse.json({ configured: false, error: 'Online payments are not set up for this club yet.' }, { status: 200 });
   }
+  const { body: piBody, chargeAmount } = charge;
+  piBody.set('payment_method_types[0]', 'card');
 
-  const currency  = (form.currency ?? 'USD').toLowerCase();
-  const breakdown = calculateFee(inst.amount, 'card');
-  const feeChargedMinor = Math.round(breakdown.feeCharged * 100);
-  const baseMinor        = Math.round(inst.amount * 100);
-  const chargeAmount     = club?.stripe_fee_handling === 'pass_on' ? baseMinor + feeChargedMinor : baseMinor;
-  const applicationFeeAmount = feeChargedMinor;
+  // Only save the card (and only when the family opts in) if there's
+  // actually a future installment to charge it against later — a one-time
+  // full payment never creates a saved card or a Stripe Customer.
+  const { count: futureCount } = await supabase
+    .from('registration_installments')
+    .select('id', { count: 'exact', head: true })
+    .eq('submission_id', submission.id)
+    .neq('id', inst.id)
+    .is('paid_at', null);
+  const wantsAutopay = !!autopay_consent && (futureCount ?? 0) > 0;
 
-  const piBody = new URLSearchParams({
-    amount: String(chargeAmount),
-    currency,
-    'payment_method_types[0]': 'card',
-    'metadata[registration_installment_id]': inst.id,
-    'metadata[payment_token]': payment_token,
-    'metadata[submission_id]': submission.id,
-    'metadata[club_id]': club?.id ?? '',
-    'metadata[club_slug]': club?.slug ?? '',
-    'transfer_data[destination]': connectAccountId,
-  });
-  if (applicationFeeAmount > 0) piBody.set('application_fee_amount', String(applicationFeeAmount));
+  if (wantsAutopay) {
+    let customerId = submission.stripe_customer_id;
+    if (!customerId) {
+      const customerRes = await fetch('https://api.stripe.com/v1/customers', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${stripeKey}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ 'metadata[submission_id]': submission.id }),
+      });
+      let customer: { id?: string } | null;
+      try { customer = await customerRes.json(); } catch { customer = null; }
+      if (customerRes.ok && customer?.id) {
+        customerId = customer.id;
+        await supabase.from('registration_submissions').update({ stripe_customer_id: customerId, autopay_consent: true }).eq('id', submission.id);
+      } else {
+        console.error('registration Stripe customer creation failed:', customerRes.status, customer);
+      }
+    } else {
+      await supabase.from('registration_submissions').update({ autopay_consent: true }).eq('id', submission.id);
+    }
+    if (customerId) {
+      piBody.set('customer', customerId);
+      piBody.set('setup_future_usage', 'off_session');
+    }
+  }
 
   const idempotencyKey = `pi_reg_${payment_token}_${chargeAmount}`;
 
