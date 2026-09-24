@@ -271,6 +271,7 @@ function TryoutFormContent() {
   const [clubId, setClubId]       = useState<string | null>(null);
   const [clubName, setClubName]   = useState('');
   const [clubColor, setClubColor] = useState('#22C55E');
+  const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(null);
   const [config, setConfig]       = useState<FormConfig | null>(null);
   const [loading, setLoading]     = useState(true);
   const [notFound, setNotFound]   = useState(false);
@@ -295,10 +296,11 @@ function TryoutFormContent() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
     if (!clubSlug) { setNotFound(true); setLoading(false); return; }
     (async () => {
-      const { data: club } = await supabase.from('clubs').select('id,name,primary_color').eq('slug', clubSlug).single();
+      const { data: club } = await supabase.from('clubs').select('id,name,primary_color,logo_url').eq('slug', clubSlug).single();
       if (!club) { setNotFound(true); setLoading(false); return; }
       setClubId(club.id); setClubName(club.name);
       setClubColor(club.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E');
+      setClubLogoUrl(club.logo_url ?? null);
       const { data: fc } = await supabase.from('tryout_form_config').select('config_json').eq('club_id', club.id).single();
       setConfig(fc?.config_json ?? null);
       setLoading(false);
@@ -428,12 +430,19 @@ function TryoutFormContent() {
 
       {/* Header */}
       <div style={{ background: clubColor, padding: '0 24px' }}>
-        <div style={{ maxWidth: '660px', margin: '0 auto', padding: '40px 0 36px' }}>
-          <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.18)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', fontWeight: '700', color: 'rgba(255,255,255,0.9)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
-            {f?.seasonLabel ?? ''} Tryouts
+        <div style={{ maxWidth: '660px', margin: '0 auto', padding: '40px 0 36px', display: 'flex', alignItems: 'center', gap: '18px' }}>
+          {clubLogoUrl && (
+            <div style={{ flexShrink: 0, width: '64px', height: '64px', borderRadius: '50%', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              <img src={clubLogoUrl} alt={`${clubName} logo`} style={{ width: '84%', height: '84%', objectFit: 'contain' }} />
+            </div>
+          )}
+          <div>
+            <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.18)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', fontWeight: '700', color: 'rgba(255,255,255,0.9)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
+              {f?.seasonLabel ?? ''} Tryouts
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '900', color: '#fff', lineHeight: '1.2', marginBottom: '8px' }}>{resolvedTitle}</div>
+            {f?.formSubtitle && <div style={{ fontSize: '15px', color: 'rgba(255,255,255,0.8)', fontWeight: '500' }}>{fill(f.formSubtitle, clubName)}</div>}
           </div>
-          <div style={{ fontSize: '28px', fontWeight: '900', color: '#fff', lineHeight: '1.2', marginBottom: '8px' }}>{resolvedTitle}</div>
-          {f?.formSubtitle && <div style={{ fontSize: '15px', color: 'rgba(255,255,255,0.8)', fontWeight: '500' }}>{fill(f.formSubtitle, clubName)}</div>}
         </div>
       </div>
 
@@ -446,7 +455,7 @@ function TryoutFormContent() {
           )}
 
           {(f?.locationText || f?.sessionScheduleText) && (
-            <div style={{ display: 'grid', gridTemplateColumns: f?.locationText && f?.sessionScheduleText ? '1fr 1fr' : '1fr', gap: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: f?.locationText && f?.sessionScheduleText ? '1fr 1fr' : '1fr', alignItems: 'start', gap: '14px' }}>
               {f?.locationText && (
                 <div style={{ background: '#fff', borderRadius: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
                   <div style={{ background: '#FEF2F2', borderBottom: '1px solid #FECACA', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
