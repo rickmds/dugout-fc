@@ -432,9 +432,10 @@ function TryoutFormContent() {
       <div style={{ background: clubColor, padding: '0 24px' }}>
         <div style={{ maxWidth: '660px', margin: '0 auto', padding: '40px 0 36px', display: 'flex', alignItems: 'center', gap: '18px' }}>
           {clubLogoUrl && (
-            <div style={{ flexShrink: 0, width: '64px', height: '64px', borderRadius: '50%', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              <img src={clubLogoUrl} alt={`${clubName} logo`} style={{ width: '84%', height: '84%', objectFit: 'contain' }} />
-            </div>
+            <img
+              src={clubLogoUrl} alt={`${clubName} logo`}
+              style={{ flexShrink: 0, height: '60px', width: '60px', objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))' }}
+            />
           )}
           <div>
             <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.18)', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', fontWeight: '700', color: 'rgba(255,255,255,0.9)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '14px' }}>
@@ -454,21 +455,12 @@ function TryoutFormContent() {
             <InfoCard icon="👋" title="Welcome" body={fill(f.welcomeText, clubName)} color={clubColor} />
           )}
 
-          {(f?.locationText || f?.sessionScheduleText) && (
-            <div style={{ display: 'grid', gridTemplateColumns: f?.locationText && f?.sessionScheduleText ? '1fr 1fr' : '1fr', alignItems: 'start', gap: '14px' }}>
-              {f?.locationText && (
-                <div style={{ background: '#fff', borderRadius: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
-                  <div style={{ background: '#FEF2F2', borderBottom: '1px solid #FECACA', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '16px' }}>📍</span>
-                    <span style={{ fontWeight: '700', fontSize: '13px', color: '#111827' }}>Location</span>
-                  </div>
-                  <div style={{ padding: '14px 16px', fontSize: '14px', color: '#374151', lineHeight: '1.6', fontWeight: '500' }}>{f.locationText}</div>
-                </div>
-              )}
-              {f?.sessionScheduleText && (
-                <InfoCard icon="🗓" title="Session Schedule" body={fill(f.sessionScheduleText, clubName)} color="#6366F1" />
-              )}
-            </div>
+          {f?.locationText && (
+            <InfoCard icon="📍" title="Location" body={f.locationText} color="#EF4444" />
+          )}
+
+          {f?.sessionScheduleText && (
+            <InfoCard icon="🗓" title="Session Schedule" body={fill(f.sessionScheduleText, clubName)} color="#6366F1" />
           )}
 
           {f?.offerTimelineText && (
