@@ -286,6 +286,8 @@ export default function TryoutOfferSettingsPage() {
   const [feeAgeGroups, setFeeAgeGroups] = useState<string[]>([]);
   const [feeBands, setFeeBands] = useState<FeePlanBand[]>([]);
   const [deletedFeeBandIds, setDeletedFeeBandIds] = useState<string[]>([]);
+  const [collapsedFeeBandIds, setCollapsedFeeBandIds] = useState<Set<string>>(new Set());
+  const [savingFeeBandId, setSavingFeeBandId] = useState<string | null>(null);
   const [letterBands, setLetterBands] = useState<LetterBand[]>([]);
   const [deletedLetterBandIds, setDeletedLetterBandIds] = useState<string[]>([]);
   const [activeLetterBandId, setActiveLetterBandId] = useState('');
@@ -337,6 +339,9 @@ export default function TryoutOfferSettingsPage() {
       sortBands(loadedFeeBands);
       setFeeBands(loadedFeeBands);
       setDeletedFeeBandIds([]);
+      // Bands that already have real content came in already-configured —
+      // start them collapsed to a summary so the page isn't a wall of cards.
+      setCollapsedFeeBandIds(new Set(loadedFeeBands.filter(b => b.season_fee.trim() !== '' || b.installments.length > 0).map(b => b.id)));
 
       const loadedLetterBands: LetterBand[] = (letterRows ?? []).map(r => ({
         id: r.id, isDefault: (r.age_groups ?? []).length === 0, ageGroups: r.age_groups ?? [],
@@ -391,6 +396,7 @@ export default function TryoutOfferSettingsPage() {
       }));
     if (feeUpserts.length) await supabase.from('tryout_fee_plans').upsert(feeUpserts, { onConflict: 'id' });
     if (feeToDelete.length) await supabase.from('tryout_fee_plans').delete().in('id', feeToDelete);
+    await Promise.all(feeKeep.filter(b => !b.isDefault && b.ageGroups.length > 0).map(b => ensureLetterBandForAgeGroups(b.ageGroups)));
 
     const letterKeep: LetterBand[] = [];
     const letterToDelete = [...deletedLetterBandIds];
@@ -476,6 +482,7 @@ export default function TryoutOfferSettingsPage() {
   function deleteFeeBand(id: string) {
     setFeeBands(prev => prev.filter(b => b.id !== id));
     setDeletedFeeBandIds(prev => [...prev, id]);
+    setCollapsedFeeBandIds(prev => { const n = new Set(prev); n.delete(id); return n; });
   }
   function toggleFeeAgeGroup(bandId: string, ag: string) {
     setFeeBands(prev => prev.map(b => {
@@ -484,12 +491,90 @@ export default function TryoutOfferSettingsPage() {
       return b.ageGroups.includes(ag) ? { ...b, ageGroups: b.ageGroups.filter(x => x !== ag) } : b;
     }));
   }
+  function expandFeeBand(id: string) {
+    setCollapsedFeeBandIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+  }
+
+  // When a price group is saved for specific age groups that don't
+  // already have their own custom letter (i.e. they're still falling
+  // back to Default), auto-create a letter for those exact age groups by
+  // copying the Default letter — since the Default already references
+  // {{season_fee}}/{{installment_plan}}, the copy picks up this band's
+  // cost automatically and keeps doing so if the price ever changes.
+  // Never touches age groups that already have a letter someone wrote.
+  async function ensureLetterBandForAgeGroups(ageGroups: string[]) {
+    if (!club || ageGroups.length === 0) return;
+    const alreadyOwned = ageGroups.some(ag => !!letterOwnerMap[ag]);
+    if (alreadyOwned) return;
+    const def = letterBands.find(b => b.isDefault);
+    if (!def || (!def.body_html.trim() && !def.subject.trim() && !def.from_name.trim())) return;
+    const newBand: LetterBand = {
+      id: crypto.randomUUID(), isDefault: false, ageGroups: [...ageGroups],
+      subject: def.subject, from_name: def.from_name, body_html: def.body_html,
+    };
+    setLetterBands(prev => [...prev, newBand]);
+    await supabase.from('tryout_offer_letter_templates').upsert({
+      id: newBand.id, club_id: club.id, age_groups: newBand.ageGroups,
+      subject: newBand.subject.trim() || null, from_name: newBand.from_name.trim() || null, body_html: newBand.body_html.trim() || null,
+    }, { onConflict: 'id' });
+  }
+
+  // Saves just this one price group immediately (instead of waiting for
+  // the page-level Save), then collapses it to a summary row.
+  async function saveFeeBand(band: FeePlanBand) {
+    if (!club) return;
+    setSavingFeeBandId(band.id);
+    try {
+      if (!band.isDefault && band.ageGroups.length === 0) {
+        await supabase.from('tryout_fee_plans').delete().eq('id', band.id);
+        setFeeBands(prev => prev.filter(b => b.id !== band.id));
+        return;
+      }
+      await supabase.from('tryout_fee_plans').upsert({
+        id: band.id, club_id: club.id, age_groups: band.ageGroups,
+        season_fee: band.season_fee.trim() === '' ? null : Number(band.season_fee.replace(/[^0-9.]/g, '')),
+        installments: band.installments
+          .filter(i => i.label.trim() !== '' || i.amount.trim() !== '')
+          .map(i => ({ label: i.label.trim(), amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_type: i.due_type, due_date: i.due_type === 'date' ? (i.due_date || null) : null })),
+      }, { onConflict: 'id' });
+      setDeletedFeeBandIds(prev => prev.filter(id => id !== band.id));
+      setCollapsedFeeBandIds(prev => new Set(prev).add(band.id));
+      if (!band.isDefault) await ensureLetterBandForAgeGroups(band.ageGroups);
+    } finally {
+      setSavingFeeBandId(null);
+    }
+  }
 
   function renderFeePlanCard(band: FeePlanBand, ownerMap: Record<string, string>) {
     const currSym = CURRENCY_SYMBOLS[club?.currency ?? 'USD'] ?? '$';
     const totalInstallments = band.installments.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     const seasonFeeNum = Number(band.season_fee) || 0;
     const mismatch = band.installments.length > 0 && band.season_fee.trim() !== '' && Math.abs(totalInstallments - seasonFeeNum) > 0.01;
+
+    if (collapsedFeeBandIds.has(band.id)) {
+      return (
+        <div key={band.id} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '13px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '13.5px', fontWeight: '800', color: '#0F172A' }}>{band.isDefault ? 'Default' : band.ageGroups.join(', ')}</span>
+            <span style={{ fontSize: '12.5px', color: '#64748B' }}>
+              {seasonFeeNum > 0 ? `${currSym}${seasonFeeNum.toLocaleString()}` : 'No fee set'}
+              {band.installments.length > 0 ? ` · ${band.installments.length} payment${band.installments.length === 1 ? '' : 's'}` : ''}
+            </span>
+          </div>
+          <button onClick={() => expandFeeBand(band.id)}
+            style={{ flexShrink: 0, padding: '6px 14px', borderRadius: '7px', background: '#F1F5F9', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: '#374151' }}>
+            Edit
+          </button>
+          {!band.isDefault && (
+            <button onClick={() => deleteFeeBand(band.id)} title="Delete this price group"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <Trash2 size={15} />
+            </button>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div key={band.id} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px', marginBottom: '14px' }}>
@@ -554,11 +639,22 @@ export default function TryoutOfferSettingsPage() {
             style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', background: '#F1F5F9', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: '#374151' }}>
             <Plus size={12} /> Add installment
           </button>
-          {mismatch && (
-            <span style={{ fontSize: '11.5px', color: '#D97706', fontWeight: '600' }}>
-              ⚠ Installments total {currSym}{totalInstallments.toLocaleString()} — season fee is {currSym}{seasonFeeNum.toLocaleString()}
-            </span>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {mismatch && (
+              <span style={{ fontSize: '11.5px', color: '#D97706', fontWeight: '600' }}>
+                ⚠ Installments total {currSym}{totalInstallments.toLocaleString()} — season fee is {currSym}{seasonFeeNum.toLocaleString()}
+              </span>
+            )}
+            <button onClick={() => saveFeeBand(band)} disabled={savingFeeBandId === band.id || (!band.isDefault && band.ageGroups.length === 0)}
+              style={{
+                padding: '7px 16px', borderRadius: '7px', border: 'none', fontSize: '12.5px', fontWeight: '700', color: '#fff',
+                background: (!band.isDefault && band.ageGroups.length === 0) ? '#94A3B8' : primary,
+                cursor: (!band.isDefault && band.ageGroups.length === 0) ? 'default' : 'pointer',
+                opacity: savingFeeBandId === band.id ? 0.7 : 1,
+              }}>
+              {savingFeeBandId === band.id ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
     );
