@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { mergeTokens } from '@/lib/mergeTokens';
 import { requireRole } from '@/lib/apiAuth';
 import { resolveFeePlan, renderInstallmentPlanHtml, formatCurrency, plansToMap } from '@/lib/tryoutFeePlan';
+import { resolveOfferLetter, lettersToMap } from '@/lib/tryoutOfferLetter';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -23,12 +24,13 @@ export async function POST(req: NextRequest) {
 
   const sb = supabaseAdmin();
 
-  const [{ data: player }, { data: assignment }, { data: settings }, { data: club }, { data: feePlanRows }] = await Promise.all([
+  const [{ data: player }, { data: assignment }, { data: settings }, { data: club }, { data: feePlanRows }, { data: letterRows }] = await Promise.all([
     sb.from('tryout_players').select('*').eq('id', player_id).single(),
     sb.from('tryout_assignments').select('*').eq('player_id', player_id).eq('club_id', club_id).single(),
     sb.from('tryout_offer_settings').select('*').eq('club_id', club_id).single(),
     sb.from('clubs').select('name, currency').eq('id', club_id).single(),
     sb.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club_id),
+    sb.from('tryout_offer_letter_templates').select('age_group, subject, from_name, body_html').eq('club_id', club_id),
   ]);
 
   if (!player)     return NextResponse.json({ error: 'Player not found' }, { status: 404 });
@@ -99,8 +101,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const isU8 = (player.final_age_group ?? '') === 'U8';
-  const bodyTemplate = (isU8 && settings.email_body_html_u8) ? settings.email_body_html_u8 : settings.email_body_html;
+  const letter = resolveOfferLetter(
+    player.final_age_group ?? null,
+    lettersToMap(letterRows ?? []),
+    settings.email_subject ?? 'Your Roster Offer',
+    settings.from_name ?? club?.name ?? 'Pulse FC',
+  );
 
   const token       = assignment.offer_token as string;
   const acceptLink  = `${APP_URL}/offer-response?token=${token}&action=accept`;
@@ -110,7 +116,7 @@ export async function POST(req: NextRequest) {
     ? new Date(settings.offer_deadline).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '';
 
-  const body = mergeTokens(bodyTemplate ?? '', {
+  const body = mergeTokens(letter.bodyHtml, {
     coach_name:         coachName,
     training_schedule:  trainingScheduleHtml,
     player_first_name: player.first_name    ?? '',
@@ -132,7 +138,7 @@ export async function POST(req: NextRequest) {
     decline_link:      declineLink,
   });
 
-  const from = `${settings.from_name ?? club?.name ?? 'Pulse FC'} <support@pulse-fc.app>`;
+  const from = `${letter.fromName} <support@pulse-fc.app>`;
 
   // Unlike its bulk sibling (send-bulk-offers), this single-offer route had
   // no try/catch around the send — an unhandled Resend failure surfaced as
@@ -142,7 +148,7 @@ export async function POST(req: NextRequest) {
     await resend.emails.send({
       from,
       to: player.email_primary,
-      subject: settings.email_subject ?? 'Your Roster Offer',
+      subject: letter.subject,
       html: body,
     });
   } catch (e) {

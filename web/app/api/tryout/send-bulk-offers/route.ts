@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { mergeTokens } from '@/lib/mergeTokens';
 import { requireRole } from '@/lib/apiAuth';
 import { resolveFeePlan, renderInstallmentPlanHtml, formatCurrency, plansToMap } from '@/lib/tryoutFeePlan';
+import { resolveOfferLetter, lettersToMap } from '@/lib/tryoutOfferLetter';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -33,13 +34,15 @@ export async function POST(req: NextRequest) {
 
   if (!assignments?.length) return NextResponse.json({ sent: 0 });
 
-  const [{ data: settings }, { data: club }, { data: feePlanRows }, { data: team }] = await Promise.all([
+  const [{ data: settings }, { data: club }, { data: feePlanRows }, { data: team }, { data: letterRows }] = await Promise.all([
     sb.from('tryout_offer_settings').select('*').eq('club_id', club_id).single(),
     sb.from('clubs').select('name, currency').eq('id', club_id).single(),
     sb.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club_id),
     sb.from('tryout_teams').select('age_group, season_fee, deposit_amount').eq('club_id', club_id).eq('name', team_name).single(),
+    sb.from('tryout_offer_letter_templates').select('age_group, subject, from_name, body_html').eq('club_id', club_id),
   ]);
   if (!settings) return NextResponse.json({ error: 'Offer settings not configured' }, { status: 400 });
+  const lettersByAgeGroup = lettersToMap(letterRows ?? []);
 
   // Same for every recipient in this batch — resolve once, not per player.
   const currency = club?.currency ?? 'USD';
@@ -92,13 +95,17 @@ export async function POST(req: NextRequest) {
     const player = (a as { tryout_players: Record<string, string> }).tryout_players;
     if (!player?.email_primary) continue;
 
-    const isU8 = (player.final_age_group ?? '') === 'U8';
-    const bodyTemplate = (isU8 && settings.email_body_html_u8) ? settings.email_body_html_u8 : settings.email_body_html;
+    const letter = resolveOfferLetter(
+      player.final_age_group ?? null,
+      lettersByAgeGroup,
+      settings.email_subject ?? 'Your Roster Offer',
+      settings.from_name ?? club?.name ?? 'Pulse FC',
+    );
     const token = (a as { offer_token: string }).offer_token;
     const acceptLink = `${APP_URL}/offer-response?token=${token}&action=accept`;
     const declineLink = `${APP_URL}/offer-response?token=${token}&action=decline`;
 
-    const body = mergeTokens(bodyTemplate ?? '', {
+    const body = mergeTokens(letter.bodyHtml, {
       coach_name:        coachName,
       training_schedule: trainingScheduleHtml,
       player_first_name: player.first_name ?? '',
@@ -122,9 +129,9 @@ export async function POST(req: NextRequest) {
 
     try {
       await resend.emails.send({
-        from: `${settings.from_name ?? club?.name ?? 'Pulse FC'} <support@pulse-fc.app>`,
+        from: `${letter.fromName} <support@pulse-fc.app>`,
         to: player.email_primary,
-        subject: settings.email_subject ?? 'Your Roster Offer',
+        subject: letter.subject,
         html: body,
       });
       await sb.from('tryout_assignments').update({ offer_status: 'Sent', offer_sent_at: now }).eq('id', a.id);

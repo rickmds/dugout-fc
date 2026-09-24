@@ -5,14 +5,12 @@ import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { Save, Info, Eye, X, Plus, Trash2 } from 'lucide-react';
 import { CURRENCY_SYMBOLS, renderInstallmentPlanHtml, normalizeDueType, type Installment as FeeInstallment, type DueType } from '@/lib/tryoutFeePlan';
+import { AGE_GROUPS } from '@/lib/ageGroup';
 
 type OfferSettings = {
   id?: string;
-  email_subject: string;
   from_name: string;
   offer_deadline: string;
-  email_body_html: string;
-  email_body_html_u8: string;
   payment_link: string;
   club_website_url: string;
   uniform_shop_url: string;
@@ -30,13 +28,18 @@ type EmailTemplate = {
 // '' as the age group key means "Default (all other ages)".
 type FeePlanForm = { season_fee: string; installments: { label: string; amount: string; due_type: DueType; due_date: string }[] };
 
+// Controlled-input form state for one age group's offer letter. '' means
+// the Default letter — every other age group's fields (subject/from
+// name/body) independently fall back to the Default's value when blank.
+type LetterForm = { subject: string; from_name: string; body_html: string };
+
 const BLANK: OfferSettings = {
-  email_subject: 'Your Roster Offer — {{team_name}}',
   from_name: '', offer_deadline: '',
-  email_body_html: '', email_body_html_u8: '',
   payment_link: '',
   club_website_url: '', uniform_shop_url: '',
 };
+
+const BLANK_LETTER: LetterForm = { subject: '', from_name: '', body_html: '' };
 
 
 const MERGE_TOKENS = [
@@ -246,26 +249,30 @@ export default function TryoutOfferSettingsPage() {
   const [settings, setSettings] = useState<OfferSettings>(BLANK);
   const [templates, setTemplates] = useState<Record<string, EmailTemplate>>({});
   const [feeAgeGroups, setFeeAgeGroups] = useState<string[]>([]);
+  const [teamCountByAgeGroup, setTeamCountByAgeGroup] = useState<Record<string, number>>({});
   const [feePlans, setFeePlans] = useState<Record<string, FeePlanForm>>({});
+  const [letterTemplates, setLetterTemplates] = useState<Record<string, LetterForm>>({});
+  const [activeLetterAg, setActiveLetterAg] = useState('');
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
-  const [activeSection, setActiveSection] = useState<'settings'|'cost'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens'>('settings');
+  const [activeSection, setActiveSection] = useState<'settings'|'cost'|'offer'|'waitlist'|'decline'|'reminder'|'tokens'>('settings');
   const [preview, setPreview]     = useState<string | null>(null);
   const [emailModes, setEmailModes] = useState<Record<string, 'simple'|'html'>>({});
 
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
-  function snapshotOf(s: OfferSettings, t: Record<string, EmailTemplate>, f: Record<string, FeePlanForm>) {
-    return JSON.stringify({ s, t, f });
+  function snapshotOf(s: OfferSettings, t: Record<string, EmailTemplate>, f: Record<string, FeePlanForm>, l: Record<string, LetterForm>) {
+    return JSON.stringify({ s, t, f, l });
   }
 
   useEffect(() => {
     if (!club) return;
     (async () => {
-      const [{ data: os }, { data: tmpl }, { data: teamRows }, { data: planRows }] = await Promise.all([
+      const [{ data: os }, { data: tmpl }, { data: teamRows }, { data: planRows }, { data: letterRows }] = await Promise.all([
         supabase.from('tryout_offer_settings').select('*').eq('club_id', club.id).single(),
         supabase.from('tryout_email_templates').select('*').eq('club_id', club.id),
         supabase.from('tryout_teams').select('age_group').eq('club_id', club.id),
         supabase.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club.id),
+        supabase.from('tryout_offer_letter_templates').select('age_group, subject, from_name, body_html').eq('club_id', club.id),
       ]);
       const loadedSettings = os ? { ...BLANK, ...os } : BLANK;
       setSettings(loadedSettings);
@@ -273,9 +280,10 @@ export default function TryoutOfferSettingsPage() {
       for (const t of (tmpl ?? [])) map[t.template_key] = t;
       setTemplates(map);
 
-      const ags = Array.from(new Set((teamRows ?? []).map(t => t.age_group).filter(Boolean))) as string[];
-      ags.sort((a, b) => (parseInt(a.replace(/\D/g, '')) || 0) - (parseInt(b.replace(/\D/g, '')) || 0));
-      setFeeAgeGroups(ags);
+      const counts: Record<string, number> = {};
+      for (const t of (teamRows ?? [])) { if (t.age_group) counts[t.age_group] = (counts[t.age_group] ?? 0) + 1; }
+      setTeamCountByAgeGroup(counts);
+      setFeeAgeGroups(Object.keys(counts));
       const planMap: Record<string, FeePlanForm> = {};
       for (const r of (planRows ?? []) as { age_group: string; season_fee: number | string | null; installments: FeeInstallment[] }[]) {
         planMap[r.age_group] = {
@@ -284,11 +292,19 @@ export default function TryoutOfferSettingsPage() {
         };
       }
       setFeePlans(planMap);
-      setSavedSnapshot(snapshotOf(loadedSettings, map, planMap));
+
+      const letterMap: Record<string, LetterForm> = {};
+      for (const r of (letterRows ?? []) as { age_group: string; subject: string | null; from_name: string | null; body_html: string | null }[]) {
+        letterMap[r.age_group] = { subject: r.subject ?? '', from_name: r.from_name ?? '', body_html: r.body_html ?? '' };
+      }
+      if (!letterMap['']) letterMap[''] = { subject: 'Your Roster Offer — {{team_name}}', from_name: '', body_html: '' };
+      setLetterTemplates(letterMap);
+
+      setSavedSnapshot(snapshotOf(loadedSettings, map, planMap, letterMap));
     })();
   }, [club]);
 
-  const isDirty = savedSnapshot !== null && savedSnapshot !== snapshotOf(settings, templates, feePlans);
+  const isDirty = savedSnapshot !== null && savedSnapshot !== snapshotOf(settings, templates, feePlans, letterTemplates);
 
   useEffect(() => {
     function handler(e: BeforeUnloadEvent) {
@@ -319,7 +335,19 @@ export default function TryoutOfferSettingsPage() {
           .map(i => ({ label: i.label.trim(), amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_type: i.due_type, due_date: i.due_type === 'date' ? (i.due_date || null) : null })),
       }));
     if (planUpserts.length) await supabase.from('tryout_fee_plans').upsert(planUpserts, { onConflict: 'club_id,age_group' });
-    setSavedSnapshot(snapshotOf(settings, templates, feePlans));
+
+    const letterUpserts = Object.entries(letterTemplates)
+      .filter(([ag, l]) => ag === '' || l.subject.trim() !== '' || l.from_name.trim() !== '' || l.body_html.trim() !== '')
+      .map(([ag, l]) => ({
+        club_id: club.id,
+        age_group: ag,
+        subject: l.subject.trim() || null,
+        from_name: l.from_name.trim() || null,
+        body_html: l.body_html.trim() || null,
+      }));
+    if (letterUpserts.length) await supabase.from('tryout_offer_letter_templates').upsert(letterUpserts, { onConflict: 'club_id,age_group' });
+
+    setSavedSnapshot(snapshotOf(settings, templates, feePlans, letterTemplates));
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -330,6 +358,15 @@ export default function TryoutOfferSettingsPage() {
       const ex = prev[key] ?? { subject: '', from_name: '', body_html: '', template_key: key as EmailTemplate['template_key'] };
       return { ...prev, [key]: { ...ex, ...patch } };
     });
+  }
+
+  function letterFor(ag: string): LetterForm { return letterTemplates[ag] ?? BLANK_LETTER; }
+  function setLetterField(ag: string, patch: Partial<LetterForm>) {
+    setLetterTemplates(prev => ({ ...prev, [ag]: { ...letterFor(ag), ...patch } }));
+  }
+  function copyDefaultLetterInto(ag: string) {
+    const def = letterFor('');
+    setLetterField(ag, { subject: def.subject, from_name: def.from_name, body_html: def.body_html });
   }
 
   function planFor(ag: string): FeePlanForm { return feePlans[ag] ?? { season_fee: '', installments: [] }; }
@@ -356,7 +393,14 @@ export default function TryoutOfferSettingsPage() {
     return (
       <div key={ag} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <div style={{ fontSize: '14px', fontWeight: '800', color: '#0F172A' }}>{label}</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <div style={{ fontSize: '14px', fontWeight: '800', color: '#0F172A' }}>{label}</div>
+            {ag !== '' && (
+              <span style={{ fontSize: '11px', fontWeight: '600', color: teamCountByAgeGroup[ag] ? '#64748B' : '#CBD5E1' }}>
+                {teamCountByAgeGroup[ag] ? `${teamCountByAgeGroup[ag]} team${teamCountByAgeGroup[ag] === 1 ? '' : 's'}` : 'no team yet'}
+              </span>
+            )}
+          </div>
           <div style={{ position: 'relative', width: '140px' }}>
             <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
             <input value={plan.season_fee} onChange={e => setPlanFee(ag, e.target.value)} placeholder="Season fee" type="number"
@@ -539,7 +583,7 @@ export default function TryoutOfferSettingsPage() {
 
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
-  type SectionId = 'settings'|'cost'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens';
+  type SectionId = 'settings'|'cost'|'offer'|'waitlist'|'decline'|'reminder'|'tokens';
 
   // Surfaces the gaps that would actually break or blank-out a real email,
   // not just "hasn't been touched yet".
@@ -548,18 +592,17 @@ export default function TryoutOfferSettingsPage() {
   const NEEDS_ATTENTION: Partial<Record<SectionId, string>> = {
     settings: !settings.from_name.trim() ? 'No "From name" set — emails will show your club name instead' : undefined,
     cost: (!defaultFeeSet && missingFeeAgeGroups.length > 0) ? `${missingFeeAgeGroups.join(', ')} has no fee set and there's no default fee` : undefined,
-    offer: !settings.email_body_html.trim() ? 'Email body is empty — offers would send blank' : undefined,
+    offer: !letterFor('').body_html.trim() ? 'Default letter body is empty — offers would send blank' : undefined,
   };
 
   const SECTIONS: { id: SectionId; num: number; label: string; desc: string }[] = [
     { id: 'settings',  num: 1, label: 'Global settings',     desc: 'From name, deadline, links' },
     { id: 'cost',      num: 2, label: 'Cost & installments', desc: 'Fee per age group + payment plan' },
-    { id: 'offer',     num: 3, label: 'Offer letter (U9+)',  desc: 'Main roster offer email' },
-    { id: 'offer-u8',  num: 4, label: 'Offer letter (U8)',   desc: 'Academy — leave blank to use above' },
-    { id: 'waitlist',  num: 5, label: 'Waitlist email',      desc: 'Player on the waitlist' },
-    { id: 'decline',   num: 6, label: 'Decline email',       desc: 'Player not selected' },
-    { id: 'reminder',  num: 7, label: 'Reminder email',      desc: 'Follow-up before deadline' },
-    { id: 'tokens',    num: 8, label: 'Merge tokens',        desc: `${MERGE_TOKENS.length} available variables` },
+    { id: 'offer',     num: 3, label: 'Offer letter',        desc: 'Default + per-age-group overrides' },
+    { id: 'waitlist',  num: 4, label: 'Waitlist email',      desc: 'Player on the waitlist' },
+    { id: 'decline',   num: 5, label: 'Decline email',       desc: 'Player not selected' },
+    { id: 'reminder',  num: 6, label: 'Reminder email',      desc: 'Follow-up before deadline' },
+    { id: 'tokens',    num: 7, label: 'Merge tokens',        desc: `${MERGE_TOKENS.length} available variables` },
   ];
 
   function hint(when: string) {
@@ -677,59 +720,80 @@ export default function TryoutOfferSettingsPage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {renderFeePlanCard('', 'Default (all other age groups)')}
-                {feeAgeGroups.map(ag => renderFeePlanCard(ag, ag))}
-                {feeAgeGroups.length === 0 && (
-                  <div style={{ fontSize: '12.5px', color: '#94A3B8', padding: '4px 2px' }}>No teams with an age group yet — add teams in Team Setup and their age groups will appear here.</div>
-                )}
+                {AGE_GROUPS.map(ag => renderFeePlanCard(ag, ag))}
               </div>
             </div>
           )}
 
-          {activeSection === 'offer' && (
-            <div style={{ maxWidth: '680px' }}>
-              {hint('Sent to families when their child is offered a spot on a competitive team (U9 and above). Includes the Accept / Decline buttons.')}
-              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                  <div>
-                    {lbl('Subject line')}
-                    <input value={settings.email_subject} onChange={e => set({ email_subject: e.target.value })} style={inp} />
-                  </div>
-                  <div>
-                    {lbl('From name')}
-                    <input value={settings.from_name} onChange={e => set({ from_name: e.target.value })} placeholder="Maroons SC" style={inp} />
-                  </div>
+          {activeSection === 'offer' && (() => {
+            const current = letterFor(activeLetterAg);
+            const def = letterFor('');
+            const isDefault = activeLetterAg === '';
+            const resolvedBody = current.body_html.trim() || def.body_html;
+            const resolvedSubject = current.subject.trim() || def.subject || 'Your Roster Offer — {{team_name}}';
+            return (
+              <div style={{ maxWidth: '680px' }}>
+                {hint('Sent to families when their child is offered a spot on a team. Includes the Accept / Decline buttons.')}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
+                  {['', ...AGE_GROUPS].map(ag => {
+                    const active = activeLetterAg === ag;
+                    const hasOverride = ag !== '' && !!letterTemplates[ag] && (letterTemplates[ag].subject.trim() || letterTemplates[ag].from_name.trim() || letterTemplates[ag].body_html.trim());
+                    return (
+                      <button key={ag || 'default'} onClick={() => setActiveLetterAg(ag)}
+                        style={{
+                          padding: '6px 13px', borderRadius: '20px', fontSize: '12.5px', fontWeight: active || hasOverride ? '700' : '500', cursor: 'pointer',
+                          border: `1.5px solid ${active ? primary : hasOverride ? `${primary}70` : '#E2E8F0'}`,
+                          background: active ? primary : hasOverride ? `${primary}12` : '#fff',
+                          color: active ? '#fff' : hasOverride ? primary : '#64748B',
+                        }}>
+                        {ag === '' ? 'Default' : ag}{teamCountByAgeGroup[ag] ? ` · ${teamCountByAgeGroup[ag]}` : ''}
+                      </button>
+                    );
+                  })}
                 </div>
-                <EmailBodyEditor
-                  editorKey="offer"
-                  value={settings.email_body_html}
-                  onChange={v => set({ email_body_html: v })}
-                  onPreview={() => setPreview(buildPreviewHtml(settings.email_body_html, 'Roster Offer', true))}
-                  previewLabel="Roster Offer"
-                  showCta={true}
-                  placeholder={`<p>Dear {{parent_name}},</p>\n<p>We are pleased to offer <strong>{{player_first_name}}</strong> a roster spot on <strong>{{team_name}}</strong> for the {{season_label}} season.</p>`}
-                  emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
-                />
+                <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {!isDefault && (
+                    <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 14px', fontSize: '12.5px', color: '#64748B', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <span>Editing <strong>{activeLetterAg}</strong> only. Any field left blank here uses the Default letter&apos;s value instead.</span>
+                      {def.body_html.trim() && (
+                        <button onClick={() => copyDefaultLetterInto(activeLetterAg)}
+                          style={{ flexShrink: 0, padding: '5px 12px', borderRadius: '6px', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700', color: '#374151' }}>
+                          Copy Default letter here
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                    <div>
+                      {lbl('Subject line')}
+                      <input value={current.subject} onChange={e => setLetterField(activeLetterAg, { subject: e.target.value })}
+                        placeholder={isDefault ? 'Your Roster Offer — {{team_name}}' : (def.subject || 'Same as Default')} style={inp} />
+                    </div>
+                    <div>
+                      {lbl('From name')}
+                      <input value={current.from_name} onChange={e => setLetterField(activeLetterAg, { from_name: e.target.value })}
+                        placeholder={isDefault ? (settings.from_name || 'Maroons SC') : (def.from_name || settings.from_name || 'Same as Default')} style={inp} />
+                    </div>
+                  </div>
+                  <EmailBodyEditor
+                    editorKey={`offer-${activeLetterAg || 'default'}`}
+                    value={current.body_html}
+                    onChange={v => setLetterField(activeLetterAg, { body_html: v })}
+                    onPreview={() => setPreview(buildPreviewHtml(resolvedBody, 'Roster Offer', true))}
+                    previewLabel="Roster Offer"
+                    showCta={true}
+                    placeholder={isDefault
+                      ? `<p>Dear {{parent_name}},</p>\n<p>We are pleased to offer <strong>{{player_first_name}}</strong> a roster spot on <strong>{{team_name}}</strong> for the {{season_label}} season.</p>`
+                      : 'Leave blank to use the Default letter for this age group.'}
+                    emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
+                  />
+                  {!isDefault && !current.body_html.trim() && (
+                    <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Preview shows the inherited Default letter — nothing is overridden for {activeLetterAg} yet. Resolved subject right now: <strong>{resolvedSubject}</strong></div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-
-          {activeSection === 'offer-u8' && (
-            <div style={{ maxWidth: '680px' }}>
-              {hint('Sent to U8 Academy families when their child is offered a spot. Leave the body blank and the U9+ offer template will be used instead.')}
-              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
-                <EmailBodyEditor
-                  editorKey="offer-u8"
-                  value={settings.email_body_html_u8}
-                  onChange={v => set({ email_body_html_u8: v })}
-                  onPreview={() => setPreview(buildPreviewHtml(settings.email_body_html_u8 || settings.email_body_html, 'Roster Offer', true))}
-                  previewLabel="U8 Offer"
-                  showCta={true}
-                  placeholder="Leave blank to use the U9+ offer email above."
-                  emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
-                />
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {activeSection === 'waitlist' && (
             <div style={{ maxWidth: '680px' }}>
