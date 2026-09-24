@@ -434,7 +434,7 @@ function TryoutFormContent() {
           {clubLogoUrl && (
             <img
               src={clubLogoUrl} alt={`${clubName} logo`}
-              style={{ flexShrink: 0, height: '60px', width: '60px', objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))' }}
+              style={{ flexShrink: 0, height: '92px', width: '92px', objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.25))' }}
             />
           )}
           <div>
