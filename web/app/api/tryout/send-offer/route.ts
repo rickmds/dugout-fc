@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { mergeTokens } from '@/lib/mergeTokens';
 import { requireRole } from '@/lib/apiAuth';
+import { resolveFeePlan, renderInstallmentPlanHtml, formatCurrency, plansToMap } from '@/lib/tryoutFeePlan';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -22,11 +23,12 @@ export async function POST(req: NextRequest) {
 
   const sb = supabaseAdmin();
 
-  const [{ data: player }, { data: assignment }, { data: settings }, { data: club }] = await Promise.all([
+  const [{ data: player }, { data: assignment }, { data: settings }, { data: club }, { data: feePlanRows }] = await Promise.all([
     sb.from('tryout_players').select('*').eq('id', player_id).single(),
     sb.from('tryout_assignments').select('*').eq('player_id', player_id).eq('club_id', club_id).single(),
     sb.from('tryout_offer_settings').select('*').eq('club_id', club_id).single(),
-    sb.from('clubs').select('name').eq('id', club_id).single(),
+    sb.from('clubs').select('name, currency').eq('id', club_id).single(),
+    sb.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club_id),
   ]);
 
   if (!player)     return NextResponse.json({ error: 'Player not found' }, { status: 404 });
@@ -34,22 +36,28 @@ export async function POST(req: NextRequest) {
   if (!settings)   return NextResponse.json({ error: 'Offer settings not configured' }, { status: 400 });
   if (!player.email_primary) return NextResponse.json({ error: 'Player has no email' }, { status: 400 });
 
-  // Fetch team-specific fees (fallback to global offer settings)
+  // Fetch team-specific fee override (fallback to the age-group fee plan,
+  // then the club-wide default plan)
   const teamName = assignment.team as string | null;
-  let teamSeasonFee: string | null = null;
-  let teamDepositAmount: string | null = null;
+  let teamAgeGroup: string | null = null;
+  let teamSeasonFeeOverride: string | null = null;
+  let teamDepositOverride: string | null = null;
   if (teamName) {
     const { data: team } = await sb.from('tryout_teams')
-      .select('season_fee, deposit_amount')
+      .select('age_group, season_fee, deposit_amount')
       .eq('club_id', club_id)
       .eq('name', teamName)
       .single();
-    teamSeasonFee    = team?.season_fee    ?? null;
-    teamDepositAmount = team?.deposit_amount ?? null;
+    teamAgeGroup          = team?.age_group      ?? null;
+    teamSeasonFeeOverride = team?.season_fee     ?? null;
+    teamDepositOverride   = team?.deposit_amount ?? null;
   }
 
-  const resolvedSeasonFee    = teamSeasonFee    ?? settings.season_fee    ?? '';
-  const resolvedDepositAmount = teamDepositAmount ?? settings.deposit_amount ?? '';
+  const currency = club?.currency ?? 'USD';
+  const feePlan = resolveFeePlan(teamAgeGroup, teamSeasonFeeOverride, teamDepositOverride, plansToMap(feePlanRows ?? []));
+  const resolvedSeasonFee     = formatCurrency(feePlan.seasonFee, currency);
+  const resolvedDepositAmount = feePlan.installments[0]?.amount != null ? formatCurrency(feePlan.installments[0].amount, currency) : '';
+  const installmentPlanHtml   = renderInstallmentPlanHtml(feePlan, currency);
 
   // Head coach for this team
   let coachName = '';
@@ -115,6 +123,7 @@ export async function POST(req: NextRequest) {
     offer_deadline:    offerDeadlineFmt,
     season_fee:        resolvedSeasonFee,
     deposit_amount:    resolvedDepositAmount,
+    installment_plan:  installmentPlanHtml,
     payment_due_date:  settings.payment_due_date ?? '',
     payment_link:      settings.payment_link     ?? '',
     uniform_link:      settings.uniform_shop_url ?? '',

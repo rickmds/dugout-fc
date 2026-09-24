@@ -13,6 +13,7 @@ type ResponseData = {
   club_logo?: string;
   club_color?: string;
   current_status?: string;
+  registration_status?: string;
   error?: string;
 };
 
@@ -182,15 +183,23 @@ function OfferResponseContent() {
 
   if (data?.already_responded || (['Accepted', 'Declined'].includes(data?.current_status ?? ''))) {
     const wasAccepted = data?.action === 'accept' || data?.current_status === 'Accepted';
+    const needsRegistration = wasAccepted && data?.registration_status !== 'Submitted';
     return shell(
       <>
         <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: wasAccepted ? `${accent}22` : 'rgba(75,85,99,0.2)', border: `1px solid ${wasAccepted ? `${accent}44` : '#374151'}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', marginBottom: '16px' }}>
           {wasAccepted ? '✓' : '✕'}
         </div>
         <div style={{ fontSize: '19px', fontWeight: '800', color: '#f9fafb', marginBottom: '8px' }}>Already responded</div>
-        <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.6' }}>
+        <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.6', marginBottom: needsRegistration ? '22px' : 0 }}>
           You&apos;ve already {wasAccepted ? 'accepted' : 'declined'} this offer{data?.team_name ? ` for ${data.team_name}` : ''}.
+          {needsRegistration ? ' Your registration is still incomplete.' : ''}
         </div>
+        {needsRegistration && (
+          <a href={`/register-offer?token=${token}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: accent, color: btnColor, borderRadius: '12px', padding: '13px 28px', fontWeight: '700', fontSize: '15px', textDecoration: 'none', boxShadow: `0 4px 16px ${accent}44` }}>
+            Complete Your Registration →
+          </a>
+        )}
       </>
     );
   }
@@ -204,12 +213,18 @@ function OfferResponseContent() {
         Welcome to {data.team_name}!
       </div>
       <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.65', marginBottom: '24px', maxWidth: '320px', margin: '0 auto 24px' }}>
-        {data.player_name ? `${data.player_name}'s` : 'Your'} spot has been confirmed on <strong style={{ color: '#e5e7eb' }}>{data.team_name}</strong>. Download the Pulse FC app to connect with your team.
+        {data.player_name ? `${data.player_name}'s` : 'Your'} spot has been confirmed on <strong style={{ color: '#e5e7eb' }}>{data.team_name}</strong>. One last step — complete your registration below.
       </div>
-      <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659" target="_blank" rel="noreferrer"
+      <a href={`/register-offer?token=${token}`}
         style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: accent, color: btnColor, borderRadius: '12px', padding: '13px 28px', fontWeight: '700', fontSize: '15px', textDecoration: 'none', boxShadow: `0 4px 16px ${accent}44` }}>
-        Download Pulse FC →
+        Complete Your Registration →
       </a>
+      <div style={{ marginTop: '18px' }}>
+        <a href="https://apps.apple.com/us/app/pulse-fc/id6797330659" target="_blank" rel="noreferrer"
+          style={{ fontSize: '12.5px', color: '#6b7280', textDecoration: 'none', fontWeight: '600' }}>
+          Download the Pulse FC app →
+        </a>
+      </div>
     </>
   );
 

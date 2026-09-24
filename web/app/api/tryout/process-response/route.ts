@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     club_name: club?.name,
     club_logo: club?.logo_url,
     current_status: (a as { offer_status: string }).offer_status,
+    registration_status: (a as { registration_status: string }).registration_status,
   });
 }
 
@@ -64,5 +65,6 @@ export async function POST(req: NextRequest) {
     club_name: club?.name,
     club_logo: club?.logo_url,
     club_color: club?.primary_color,
+    registration_status: (a as { registration_status: string }).registration_status ?? 'NotStarted',
   });
 }

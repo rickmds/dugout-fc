@@ -8,7 +8,7 @@ import { seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
 import { Lock, Send, ChevronDown, ChevronUp, Users } from 'lucide-react';
 
 type Player = { id: string; first_name: string; last_name: string; date_of_birth: string | null; grade: string | null; gender: string | null; final_age_group: string | null; positions: string[] | null; email_primary: string | null };
-type Assignment = { player_id: string; team: string | null; status: string; offer_status: string };
+type Assignment = { player_id: string; team: string | null; status: string; offer_status: string; registration_status: string };
 type TryoutTeam = { id: string; name: string; color: string; age_group: string | null; gender: string | null; format: string | null; roster_locked: boolean; head_coach_id: string | null };
 type CoachMap = Record<string, string>;
 
@@ -30,7 +30,7 @@ export default function TryoutRostersPage() {
     if (!club) return;
     const [{ data: ps }, { data: asgn }, { data: ts }, { data: cs }] = await Promise.all([
       supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,grade,gender,final_age_group,positions,email_primary').eq('club_id', club.id),
-      supabase.from('tryout_assignments').select('player_id,team,status,offer_status').eq('club_id', club.id),
+      supabase.from('tryout_assignments').select('player_id,team,status,offer_status,registration_status').eq('club_id', club.id),
       supabase.from('tryout_teams').select('*').eq('club_id', club.id).eq('is_active', true).order('sort_order').order('name'),
       supabase.from('tryout_coaches').select('id,full_name').eq('club_id', club.id),
     ]);
@@ -332,6 +332,16 @@ export default function TryoutRostersPage() {
                                       {os !== 'NotSent' && (
                                         <span style={{ fontSize: '11px', fontWeight: '700', borderRadius: '20px', padding: '3px 10px', whiteSpace: 'nowrap', ...badgeStyle }}>
                                           {os === 'Accepted' ? '✓ Accepted' : os === 'Declined' ? '✕ Declined' : '● Pending'}
+                                        </span>
+                                      )}
+                                      {os === 'Accepted' && (
+                                        <span style={{
+                                          fontSize: '10.5px', fontWeight: '700', borderRadius: '20px', padding: '3px 9px', whiteSpace: 'nowrap', marginLeft: '6px',
+                                          ...(assigns.get(p.id)?.registration_status === 'Submitted'
+                                            ? { background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }
+                                            : { background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }),
+                                        }}>
+                                          {assigns.get(p.id)?.registration_status === 'Submitted' ? '✓ Registered' : 'Registration pending'}
                                         </span>
                                       )}
                                       {os === 'NotSent' && !team.roster_locked && (

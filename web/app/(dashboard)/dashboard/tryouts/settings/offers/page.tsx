@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Save, Info, Eye, X } from 'lucide-react';
+import { Save, Info, Eye, X, Plus, Trash2 } from 'lucide-react';
+import { CURRENCY_SYMBOLS, renderInstallmentPlanHtml, type Installment as FeeInstallment } from '@/lib/tryoutFeePlan';
 
 type OfferSettings = {
   id?: string;
@@ -25,6 +26,10 @@ type EmailTemplate = {
   body_html: string;
 };
 
+// Controlled-input form state for one age group's cost + payment plan.
+// '' as the age group key means "Default (all other ages)".
+type FeePlanForm = { season_fee: string; installments: { label: string; amount: string; due_date: string }[] };
+
 const BLANK: OfferSettings = {
   email_subject: 'Your Roster Offer — {{team_name}}',
   from_name: '', offer_deadline: '',
@@ -43,8 +48,9 @@ const MERGE_TOKENS = [
   { token: '{{club_name}}',         desc: 'Club name' },
   { token: '{{season_label}}',      desc: 'Season (e.g. 2026-27)' },
   { token: '{{offer_deadline}}',    desc: 'Deadline to respond' },
-  { token: '{{season_fee}}',        desc: 'Fee — set per team in Team Setup' },
-  { token: '{{deposit_amount}}',    desc: 'Deposit — set per team in Team Setup' },
+  { token: '{{season_fee}}',        desc: 'Total season fee — set in Cost & Installments' },
+  { token: '{{deposit_amount}}',    desc: 'First installment amount — set in Cost & Installments' },
+  { token: '{{installment_plan}}',  desc: 'Full payment plan table — set in Cost & Installments' },
   { token: '{{payment_link}}',      desc: 'Link to pay' },
   { token: '{{uniform_link}}',      desc: 'Uniform shop link' },
   { token: '{{club_website}}',      desc: 'Club website' },
@@ -82,11 +88,10 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 
 <h2>Program Cost</h2>
 <div style="background:#fafafa;border-radius:8px;margin:8px 0;padding:4px 16px;">
-  <div style="display:block;padding:12px 0;border-bottom:1px solid #eee;"><span style="display:inline-block;width:150px;color:#6b7280;font-size:13px;">Total Registration Fee</span><span style="font-weight:700;">{{season_fee}}</span></div>
-  <div style="display:block;padding:12px 0;border-bottom:1px solid #eee;"><span style="display:inline-block;width:150px;color:#111827;font-size:13px;font-weight:600;">Installment 1</span><span style="display:inline-block;width:90px;font-weight:700;">{{deposit_amount}}</span><span style="color:#6b7280;font-size:13px;">Due upon acceptance of roster spot</span></div>
-  <div style="display:block;padding:12px 0;border-bottom:1px solid #eee;"><span style="display:inline-block;width:150px;color:#111827;font-size:13px;font-weight:600;">Installment 2</span><span style="display:inline-block;width:90px;font-weight:700;">TBD</span><span style="color:#6b7280;font-size:13px;">Date TBD</span></div>
-  <div style="display:block;padding:12px 0;"><span style="display:inline-block;width:150px;color:#111827;font-size:13px;font-weight:600;">Installment 3</span><span style="display:inline-block;width:90px;font-weight:700;">TBD</span><span style="color:#6b7280;font-size:13px;">Date TBD</span></div>
+  <div style="display:block;padding:12px 0;"><span style="display:inline-block;width:150px;color:#6b7280;font-size:13px;">Total Registration Fee</span><span style="font-weight:700;">{{season_fee}}</span></div>
 </div>
+<p style="font-size:13px;color:#6b7280;margin:0 0 4px;">Payment plan:</p>
+{{installment_plan}}
 <ul style="font-size:13px;color:#4b5563;">
   <li>All payments must be made via the payment link below (no personal checks or Venmo)</li>
   <li>Players cannot participate until their balance is cleared</li>
@@ -240,23 +245,39 @@ export default function TryoutOfferSettingsPage() {
   const { club } = useDashboard();
   const [settings, setSettings] = useState<OfferSettings>(BLANK);
   const [templates, setTemplates] = useState<Record<string, EmailTemplate>>({});
+  const [feeAgeGroups, setFeeAgeGroups] = useState<string[]>([]);
+  const [feePlans, setFeePlans] = useState<Record<string, FeePlanForm>>({});
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
-  const [activeSection, setActiveSection] = useState<'settings'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens'>('settings');
+  const [activeSection, setActiveSection] = useState<'settings'|'cost'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens'>('settings');
   const [preview, setPreview]     = useState<string | null>(null);
   const [emailModes, setEmailModes] = useState<Record<string, 'simple'|'html'>>({});
 
   useEffect(() => {
     if (!club) return;
     (async () => {
-      const [{ data: os }, { data: tmpl }] = await Promise.all([
+      const [{ data: os }, { data: tmpl }, { data: teamRows }, { data: planRows }] = await Promise.all([
         supabase.from('tryout_offer_settings').select('*').eq('club_id', club.id).single(),
         supabase.from('tryout_email_templates').select('*').eq('club_id', club.id),
+        supabase.from('tryout_teams').select('age_group').eq('club_id', club.id),
+        supabase.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club.id),
       ]);
       if (os) setSettings({ ...BLANK, ...os });
       const map: Record<string, EmailTemplate> = {};
       for (const t of (tmpl ?? [])) map[t.template_key] = t;
       setTemplates(map);
+
+      const ags = Array.from(new Set((teamRows ?? []).map(t => t.age_group).filter(Boolean))) as string[];
+      ags.sort((a, b) => (parseInt(a.replace(/\D/g, '')) || 0) - (parseInt(b.replace(/\D/g, '')) || 0));
+      setFeeAgeGroups(ags);
+      const planMap: Record<string, FeePlanForm> = {};
+      for (const r of (planRows ?? []) as { age_group: string; season_fee: number | string | null; installments: FeeInstallment[] }[]) {
+        planMap[r.age_group] = {
+          season_fee: r.season_fee != null ? String(r.season_fee) : '',
+          installments: (r.installments ?? []).map(i => ({ label: i.label ?? '', amount: i.amount != null ? String(i.amount) : '', due_date: i.due_date ?? '' })),
+        };
+      }
+      setFeePlans(planMap);
     })();
   }, [club]);
 
@@ -268,6 +289,17 @@ export default function TryoutOfferSettingsPage() {
       const t = templates[key];
       if (t) await supabase.from('tryout_email_templates').upsert({ ...t, club_id: club.id, template_key: key }, { onConflict: 'club_id,template_key' });
     }
+    const planUpserts = Object.entries(feePlans)
+      .filter(([, p]) => p.season_fee.trim() !== '' || p.installments.some(i => i.label.trim() !== '' || i.amount.trim() !== ''))
+      .map(([ag, p]) => ({
+        club_id: club.id,
+        age_group: ag,
+        season_fee: p.season_fee.trim() === '' ? null : Number(p.season_fee.replace(/[^0-9.]/g, '')),
+        installments: p.installments
+          .filter(i => i.label.trim() !== '' || i.amount.trim() !== '')
+          .map(i => ({ label: i.label.trim(), amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_date: i.due_date || null })),
+      }));
+    if (planUpserts.length) await supabase.from('tryout_fee_plans').upsert(planUpserts, { onConflict: 'club_id,age_group' });
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -278,6 +310,72 @@ export default function TryoutOfferSettingsPage() {
       const ex = prev[key] ?? { subject: '', from_name: '', body_html: '', template_key: key as EmailTemplate['template_key'] };
       return { ...prev, [key]: { ...ex, ...patch } };
     });
+  }
+
+  function planFor(ag: string): FeePlanForm { return feePlans[ag] ?? { season_fee: '', installments: [] }; }
+  function setPlanFee(ag: string, fee: string) {
+    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), season_fee: fee } }));
+  }
+  function addInstallment(ag: string) {
+    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: [...planFor(ag).installments, { label: '', amount: '', due_date: '' }] } }));
+  }
+  function updateInstallment(ag: string, idx: number, patch: Partial<{ label: string; amount: string; due_date: string }>) {
+    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: planFor(ag).installments.map((inst, i) => i === idx ? { ...inst, ...patch } : inst) } }));
+  }
+  function removeInstallment(ag: string, idx: number) {
+    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: planFor(ag).installments.filter((_, i) => i !== idx) } }));
+  }
+
+  function renderFeePlanCard(ag: string, label: string) {
+    const plan = planFor(ag);
+    const currSym = CURRENCY_SYMBOLS[club?.currency ?? 'USD'] ?? '$';
+    const totalInstallments = plan.installments.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const seasonFeeNum = Number(plan.season_fee) || 0;
+    const mismatch = plan.installments.length > 0 && plan.season_fee.trim() !== '' && Math.abs(totalInstallments - seasonFeeNum) > 0.01;
+    return (
+      <div key={ag} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div style={{ fontSize: '14px', fontWeight: '800', color: '#0F172A' }}>{label}</div>
+          <div style={{ position: 'relative', width: '140px' }}>
+            <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
+            <input value={plan.season_fee} onChange={e => setPlanFee(ag, e.target.value)} placeholder="Season fee" type="number"
+              style={{ width: '100%', padding: '8px 10px 8px 26px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+        {plan.installments.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+            {plan.installments.map((inst, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 140px 28px', gap: '8px', alignItems: 'center' }}>
+                <input value={inst.label} onChange={e => updateInstallment(ag, i, { label: e.target.value })} placeholder={`Installment ${i + 1}`}
+                  style={{ padding: '7px 10px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }} />
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', fontSize: '12.5px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
+                  <input value={inst.amount} onChange={e => updateInstallment(ag, i, { amount: e.target.value })} type="number" placeholder="0"
+                    style={{ width: '100%', padding: '7px 8px 7px 22px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <input value={inst.due_date} onChange={e => updateInstallment(ag, i, { due_date: e.target.value })} type="date"
+                  style={{ padding: '7px 8px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }} />
+                <button onClick={() => removeInstallment(ag, i)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <button onClick={() => addInstallment(ag)}
+            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', background: '#F1F5F9', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: '#374151' }}>
+            <Plus size={12} /> Add installment
+          </button>
+          {mismatch && (
+            <span style={{ fontSize: '11.5px', color: '#D97706', fontWeight: '600' }}>
+              ⚠ Installments total {currSym}{totalInstallments.toLocaleString()} — season fee is {currSym}{seasonFeeNum.toLocaleString()}
+            </span>
+          )}
+        </div>
+      </div>
+    );
   }
 
   function buildPreviewHtml(bodyHtml: string, heroLabel = 'Roster Offer', showCta = true): string {
@@ -297,11 +395,17 @@ export default function TryoutOfferSettingsPage() {
       ? new Date(settings.offer_deadline).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
       : 'June 30 at 12:00 PM';
 
+    const sampleInstallments = [
+      { label: 'Deposit',      amount: 765, due_date: null },
+      { label: 'Installment 2', amount: 765, due_date: '2027-08-01' },
+      { label: 'Installment 3', amount: 765, due_date: '2027-11-01' },
+    ];
     const sample: Record<string, string> = {
       player_first_name: 'Alex', player_full_name: 'Alex Johnson', parent_name: 'Sarah Johnson',
       team_name: 'Milan B', age_group: 'U12', club_name: clubName, coach_name: 'Coach Smith',
       season_label: '2026/27', offer_deadline: deadline,
-      season_fee: '2,295', deposit_amount: '765',
+      season_fee: '$2,295', deposit_amount: '$765',
+      installment_plan: renderInstallmentPlanHtml({ seasonFee: 2295, installments: sampleInstallments }, club?.currency ?? 'USD'),
       payment_link: '#', uniform_link: '#', club_website: '#',
       accept_link: '#accept', decline_link: '#decline',
       training_schedule: '<ul style="margin:0;padding-left:18px;"><li><strong>Mon</strong> 5:00pm–6:30pm — Superdome Sports, Field A</li><li><strong>Wed</strong> 5:00pm–6:30pm — Superdome Sports, Field B</li></ul>',
@@ -402,16 +506,17 @@ export default function TryoutOfferSettingsPage() {
 
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
-  type SectionId = 'settings'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens';
+  type SectionId = 'settings'|'cost'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens';
 
   const SECTIONS: { id: SectionId; num: number; label: string; desc: string }[] = [
     { id: 'settings',  num: 1, label: 'Global settings',     desc: 'From name, deadline, links' },
-    { id: 'offer',     num: 2, label: 'Offer letter (U9+)',  desc: 'Main roster offer email' },
-    { id: 'offer-u8',  num: 3, label: 'Offer letter (U8)',   desc: 'Academy — leave blank to use above' },
-    { id: 'waitlist',  num: 4, label: 'Waitlist email',      desc: 'Player on the waitlist' },
-    { id: 'decline',   num: 5, label: 'Decline email',       desc: 'Player not selected' },
-    { id: 'reminder',  num: 6, label: 'Reminder email',      desc: 'Follow-up before deadline' },
-    { id: 'tokens',    num: 7, label: 'Merge tokens',        desc: `${MERGE_TOKENS.length} available variables` },
+    { id: 'cost',      num: 2, label: 'Cost & installments', desc: 'Fee per age group + payment plan' },
+    { id: 'offer',     num: 3, label: 'Offer letter (U9+)',  desc: 'Main roster offer email' },
+    { id: 'offer-u8',  num: 4, label: 'Offer letter (U8)',   desc: 'Academy — leave blank to use above' },
+    { id: 'waitlist',  num: 5, label: 'Waitlist email',      desc: 'Player on the waitlist' },
+    { id: 'decline',   num: 6, label: 'Decline email',       desc: 'Player not selected' },
+    { id: 'reminder',  num: 7, label: 'Reminder email',      desc: 'Follow-up before deadline' },
+    { id: 'tokens',    num: 8, label: 'Merge tokens',        desc: `${MERGE_TOKENS.length} available variables` },
   ];
 
   function hint(when: string) {
@@ -506,6 +611,22 @@ export default function TryoutOfferSettingsPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'cost' && (
+            <div style={{ maxWidth: '720px' }}>
+              <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12.5px', color: '#1D4ED8', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <Info size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                <span>Set a season fee and payment plan per age group — e.g. U8 can cost less than U12. An age group with nothing set here falls back to the default plan below. A specific team can still override its own fee individually in <strong>Team Setup</strong> if needed.</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {renderFeePlanCard('', 'Default (all other age groups)')}
+                {feeAgeGroups.map(ag => renderFeePlanCard(ag, ag))}
+                {feeAgeGroups.length === 0 && (
+                  <div style={{ fontSize: '12.5px', color: '#94A3B8', padding: '4px 2px' }}>No teams with an age group yet — add teams in Team Setup and their age groups will appear here.</div>
+                )}
               </div>
             </div>
           )}
