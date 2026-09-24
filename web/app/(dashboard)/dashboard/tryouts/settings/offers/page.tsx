@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { Save, Info, Eye, X, Plus, Trash2 } from 'lucide-react';
-import { CURRENCY_SYMBOLS, renderInstallmentPlanHtml, normalizeDueType, type Installment as FeeInstallment, type DueType } from '@/lib/tryoutFeePlan';
+import { CURRENCY_SYMBOLS, renderInstallmentPlanHtml, normalizeDueType, formatCurrency, type Installment as FeeInstallment, type DueType } from '@/lib/tryoutFeePlan';
 import { AGE_GROUPS } from '@/lib/ageGroup';
 
 type OfferSettings = {
@@ -294,6 +294,13 @@ export default function TryoutOfferSettingsPage() {
   const [saved, setSaved]         = useState(false);
   const [activeSection, setActiveSection] = useState<'settings'|'cost'|'offer'|'waitlist'|'decline'|'reminder'|'tokens'>('settings');
   const [preview, setPreview]     = useState<string | null>(null);
+  const [previewEditable, setPreviewEditable] = useState(false);
+  const [previewMeta, setPreviewMeta] = useState<{ heroLabel: string; showCta: boolean; cost?: { seasonFee: number | null; installments: FeeInstallment[] } } | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<
+    | { kind: 'letter'; bandId: string }
+    | { kind: 'template'; key: 'waitlist' | 'decline' | 'reminder' }
+    | null
+  >(null);
   const [emailModes, setEmailModes] = useState<Record<string, 'simple'|'html'>>({});
 
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
@@ -369,6 +376,25 @@ export default function TryoutOfferSettingsPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
+
+  // Syncs edits made directly in the editable preview back into the real
+  // template. Token chips are unwrapped back to plain {{token}} text (not
+  // resolved values) before writing, since nothing was ever substituted
+  // into the editable view in the first place.
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      if (!e.data || e.data.type !== 'pfc-preview-edit' || !previewTarget) return;
+      const doc = new DOMParser().parseFromString(`<div>${e.data.html}</div>`, 'text/html');
+      doc.querySelectorAll('[data-token-chip]').forEach(el => {
+        el.replaceWith(doc.createTextNode(el.textContent ?? ''));
+      });
+      const cleaned = doc.body.firstElementChild?.innerHTML ?? e.data.html;
+      if (previewTarget.kind === 'letter') updateLetterBand(previewTarget.bandId, { body_html: cleaned });
+      else setTmpl(previewTarget.key, { body_html: cleaned });
+    }
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [previewTarget]);
 
   async function handleSave() {
     if (!club) return;
@@ -665,11 +691,58 @@ export default function TryoutOfferSettingsPage() {
     return b.isDefault ? 'Default' : (b.ageGroups.join(', ') || 'New price group');
   }
 
-  function buildPreviewHtml(bodyHtml: string, heroLabel = 'Roster Offer', showCta = true): string {
+  // Resolves the real configured price group for a given age group (or
+  // the Default group when null) so the preview shows actual numbers
+  // instead of demo ones.
+  function resolvedCostForAgeGroup(ageGroup: string | null): { seasonFee: number | null; installments: FeeInstallment[] } {
+    const bandId = ageGroup ? feeOwnerMap[ageGroup] : undefined;
+    const band = bandId ? feeBands.find(b => b.id === bandId) : feeBands.find(b => b.isDefault);
+    if (!band) return { seasonFee: null, installments: [] };
+    return {
+      seasonFee: band.season_fee.trim() === '' ? null : Number(band.season_fee.replace(/[^0-9.]/g, '')),
+      installments: band.installments
+        .filter(i => i.label.trim() !== '' || i.amount.trim() !== '')
+        .map(i => ({ label: i.label, amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_type: i.due_type, due_date: i.due_type === 'date' ? (i.due_date || null) : null })),
+    };
+  }
+
+  function getPreviewRawBody(): string {
+    if (!previewTarget) return '';
+    if (previewTarget.kind === 'letter') return letterBandFor(previewTarget.bandId).body_html;
+    return templates[previewTarget.key]?.body_html ?? '';
+  }
+
+  function openPreview(target: NonNullable<typeof previewTarget>, meta: { heroLabel: string; showCta: boolean; cost?: { seasonFee: number | null; installments: FeeInstallment[] } }) {
+    setPreviewTarget(target);
+    setPreviewMeta(meta);
+    setPreviewEditable(false);
+    const rawBody = target.kind === 'letter' ? letterBandFor(target.bandId).body_html : (templates[target.key]?.body_html ?? '');
+    setPreview(buildPreviewHtml(rawBody, meta.heroLabel, meta.showCta, meta.cost, false));
+  }
+
+  function togglePreviewMode(editable: boolean) {
+    if (!previewMeta) return;
+    setPreviewEditable(editable);
+    setPreview(buildPreviewHtml(getPreviewRawBody(), previewMeta.heroLabel, previewMeta.showCta, previewMeta.cost, editable));
+  }
+
+  function closePreview() {
+    setPreview(null);
+    setPreviewTarget(null);
+    setPreviewMeta(null);
+    setPreviewEditable(false);
+  }
+
+  function buildPreviewHtml(
+    bodyHtml: string, heroLabel = 'Roster Offer', showCta = true,
+    cost?: { seasonFee: number | null; installments: FeeInstallment[] },
+    editable = false,
+  ): string {
     const primary   = club?.primary_color  ?? '#7f1d1d';
     const secondary = club?.secondary_color ?? '#c99a3f';
     const logoUrl   = club?.logo_url ?? '';
     const clubName  = club?.name ?? 'Your Club';
+    const currency  = club?.currency ?? 'USD';
 
     const hex = primary.replace('#', '').padEnd(6, '0');
     const r = parseInt(hex.slice(0, 2), 16);
@@ -682,24 +755,38 @@ export default function TryoutOfferSettingsPage() {
       ? new Date(settings.offer_deadline).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
       : 'June 30 at 12:00 PM';
 
-    const sampleInstallments: FeeInstallment[] = [
-      { label: 'Deposit',       amount: 765, due_type: 'acceptance', due_date: null },
-      { label: 'Installment 2', amount: 765, due_type: 'date',       due_date: '2027-08-01' },
-      { label: 'Installment 3', amount: 765, due_type: 'date',       due_date: '2027-11-01' },
-    ];
+    // Cost/installments come from the price group that's actually
+    // configured for this letter's age group(s) — not made-up numbers —
+    // so the preview matches what a real family would be shown.
+    const resolvedCost = cost ?? { seasonFee: null, installments: [] };
     const sample: Record<string, string> = {
       player_first_name: 'Alex', player_full_name: 'Alex Johnson', parent_name: 'Sarah Johnson',
       team_name: 'Milan B', age_group: 'U12', club_name: clubName, coach_name: 'Coach Smith',
       season_label: '2026/27', offer_deadline: deadline,
-      season_fee: '$2,295', deposit_amount: '$765',
-      installment_plan: renderInstallmentPlanHtml({ seasonFee: 2295, installments: sampleInstallments }, club?.currency ?? 'USD'),
+      season_fee: formatCurrency(resolvedCost.seasonFee, currency) || '[Cost not yet set for this age group]',
+      deposit_amount: resolvedCost.installments[0]?.amount != null ? formatCurrency(resolvedCost.installments[0].amount, currency) : '',
+      installment_plan: renderInstallmentPlanHtml(resolvedCost, currency)
+        || '<p style="color:#9ca3af;font-style:italic;font-size:13px;">(No payment plan set for this age group yet — set one in Cost &amp; Installments.)</p>',
       payment_link: '#', uniform_link: '#', club_website: '#',
       accept_link: '#accept', decline_link: '#decline',
       training_schedule: '<ul style="margin:0;padding-left:18px;"><li><strong>Mon</strong> 5:00pm–6:30pm — Superdome Sports, Field A</li><li><strong>Wed</strong> 5:00pm–6:30pm — Superdome Sports, Field B</li></ul>',
     };
 
-    let body = bodyHtml || '<p style="color:#6b7280;font-style:italic;">(No email body written yet.)</p>';
-    for (const [k, v] of Object.entries(sample)) body = body.split(`{{${k}}}`).join(v);
+    let body: string;
+    if (editable) {
+      // Tokens stay visible as non-editable "chips" instead of being
+      // substituted — editing resolved sample text (like a real cost
+      // number) and saving it back would bake fake data into the real
+      // template, so nothing here is ever substituted while editable.
+      const raw = bodyHtml || '';
+      body = raw.replace(/\{\{(\w+)\}\}/g, (_m, name: string) =>
+        `<span contenteditable="false" data-token-chip="1" style="display:inline-block;background:#DBEAFE;color:#1D4ED8;padding:0 6px;border-radius:4px;font-weight:700;font-size:0.92em;white-space:nowrap;">{{${name}}}</span>`
+      );
+      if (!body.trim()) body = '<p style="color:#9ca3af;">Start typing your letter here…</p>';
+    } else {
+      body = bodyHtml || '<p style="color:#6b7280;font-style:italic;">(No email body written yet.)</p>';
+      for (const [k, v] of Object.entries(sample)) body = body.split(`{{${k}}}`).join(v);
+    }
 
     const logoHtml = logoUrl
       ? `<img src="${logoUrl}" width="92" alt="${clubName}" style="display:block;margin:0 auto;border:0;width:92px;height:auto;">`
@@ -730,6 +817,8 @@ export default function TryoutOfferSettingsPage() {
   .letter ol li::marker{color:${primary};font-weight:700}
   .letter strong{color:#111827}
   .letter a{color:${primary}}
+  .letter[contenteditable="true"]{cursor:text;outline:none;background:#FFFEF7;box-shadow:inset 0 0 0 2px #FDE68A;border-radius:6px;}
+  .letter[contenteditable="true"]:focus{box-shadow:inset 0 0 0 2px #F59E0B;}
 </style>
 </head>
 <body style="margin:0;padding:0;background:#eceef3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#283142;">
@@ -771,7 +860,7 @@ export default function TryoutOfferSettingsPage() {
       </td>
     </tr></table>
   </td></tr>
-  <tr><td class="letter" style="padding:46px 50px 18px;font-size:15.5px;line-height:1.78;color:#283142;background:#fff;">${body}</td></tr>
+  <tr><td class="letter" ${editable ? 'contenteditable="true" id="pfc-edit-region"' : ''} style="padding:46px 50px 18px;font-size:15.5px;line-height:1.78;color:#283142;background:#fff;">${body}</td></tr>
   ${ctaBlock}
   <tr><td style="padding:12px 50px 46px;background:#fff;">
     <div style="border-top:1px solid #f1f1f4;padding-top:30px;">
@@ -788,6 +877,15 @@ export default function TryoutOfferSettingsPage() {
 </table>
 <div style="margin-top:18px;font-size:11px;color:#9ca3af;">&#169; 2026 ${clubName} &middot; All rights reserved</div>
 </td></tr></table>
+${editable ? `<script>
+(function(){
+  var el = document.getElementById('pfc-edit-region');
+  if (!el) return;
+  el.addEventListener('input', function(){
+    window.parent.postMessage({ type: 'pfc-preview-edit', html: el.innerHTML }, '*');
+  });
+})();
+</script>` : ''}
 </body></html>`;
   }
 
@@ -953,7 +1051,6 @@ export default function TryoutOfferSettingsPage() {
             const current = letterBandFor(activeLetterBandId);
             const def = letterBands.find(b => b.isDefault)!;
             const isDefault = current.isDefault;
-            const resolvedBody = current.body_html.trim() || def.body_html;
             const resolvedSubject = current.subject.trim() || def.subject || 'Your Roster Offer — {{team_name}}';
             return (
               <div style={{ maxWidth: '680px' }}>
@@ -1024,7 +1121,7 @@ export default function TryoutOfferSettingsPage() {
                     editorKey={`offer-${current.id}`}
                     value={current.body_html}
                     onChange={v => updateLetterBand(current.id, { body_html: v })}
-                    onPreview={() => setPreview(buildPreviewHtml(resolvedBody, 'Roster Offer', true))}
+                    onPreview={() => openPreview({ kind: 'letter', bandId: current.id }, { heroLabel: 'Roster Offer', showCta: true, cost: resolvedCostForAgeGroup(isDefault ? null : (current.ageGroups[0] ?? null)) })}
                     previewLabel="Roster Offer"
                     showCta={true}
                     placeholder={isDefault
@@ -1052,7 +1149,7 @@ export default function TryoutOfferSettingsPage() {
                   editorKey="waitlist"
                   value={templates['waitlist']?.body_html ?? ''}
                   onChange={v => setTmpl('waitlist', { body_html: v })}
-                  onPreview={() => setPreview(buildPreviewHtml(templates['waitlist']?.body_html ?? '', 'Waitlist', false))}
+                  onPreview={() => openPreview({ kind: 'template', key: 'waitlist' }, { heroLabel: 'Waitlist', showCta: false })}
                   previewLabel="Waitlist"
                   showCta={false}
                   emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
@@ -1073,7 +1170,7 @@ export default function TryoutOfferSettingsPage() {
                   editorKey="decline"
                   value={templates['decline']?.body_html ?? ''}
                   onChange={v => setTmpl('decline', { body_html: v })}
-                  onPreview={() => setPreview(buildPreviewHtml(templates['decline']?.body_html ?? '', 'Decline', false))}
+                  onPreview={() => openPreview({ kind: 'template', key: 'decline' }, { heroLabel: 'Decline', showCta: false })}
                   previewLabel="Decline"
                   showCta={false}
                   emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
@@ -1094,7 +1191,7 @@ export default function TryoutOfferSettingsPage() {
                   editorKey="reminder"
                   value={templates['reminder']?.body_html ?? ''}
                   onChange={v => setTmpl('reminder', { body_html: v })}
-                  onPreview={() => setPreview(buildPreviewHtml(templates['reminder']?.body_html ?? '', 'Reminder', true))}
+                  onPreview={() => openPreview({ kind: 'template', key: 'reminder' }, { heroLabel: 'Reminder', showCta: true })}
                   previewLabel="Reminder"
                   showCta={true}
                   emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
@@ -1128,16 +1225,34 @@ export default function TryoutOfferSettingsPage() {
 
       {/* Email preview modal */}
       {preview && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPreview(null)}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={closePreview}>
           <div style={{ background: '#fff', borderRadius: '8px', width: '720px', maxWidth: '94vw', height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,0.45)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
               <div>
-                <div style={{ fontWeight: '700', fontSize: '14px', color: '#0F172A' }}>Email Preview</div>
-                <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '1px' }}>Sample data — real emails use live player and team details</div>
+                <div style={{ fontWeight: '700', fontSize: '14px', color: '#0F172A' }}>{previewEditable ? 'Edit in Preview' : 'Email Preview'}</div>
+                <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '1px' }}>
+                  {previewEditable ? 'Type directly in the letter — merge tokens stay as blue chips and are preserved automatically' : 'Sample data, with your real configured cost — real emails use live player and team details'}
+                </div>
               </div>
-              <button onClick={() => setPreview(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px' }}><X size={18} color="#64748B" /></button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '6px', padding: '2px', gap: '1px' }}>
+                  <button onClick={() => togglePreviewMode(false)}
+                    style={{ padding: '5px 12px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
+                      background: !previewEditable ? '#fff' : 'transparent', color: !previewEditable ? '#0F172A' : '#64748B',
+                      boxShadow: !previewEditable ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+                    Preview
+                  </button>
+                  <button onClick={() => togglePreviewMode(true)}
+                    style={{ padding: '5px 12px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700',
+                      background: previewEditable ? '#fff' : 'transparent', color: previewEditable ? '#0F172A' : '#64748B',
+                      boxShadow: previewEditable ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+                    ✏ Edit
+                  </button>
+                </div>
+                <button onClick={closePreview} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '6px' }}><X size={18} color="#64748B" /></button>
+              </div>
             </div>
-            <iframe srcDoc={preview} style={{ flex: 1, border: 'none', width: '100%' }} title="Email Preview" sandbox="allow-same-origin" />
+            <iframe srcDoc={preview} style={{ flex: 1, border: 'none', width: '100%' }} title="Email Preview" sandbox={previewEditable ? 'allow-same-origin allow-scripts' : 'allow-same-origin'} />
           </div>
         </div>
       )}
