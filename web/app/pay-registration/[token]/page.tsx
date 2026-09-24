@@ -26,15 +26,18 @@ function contrastText(hex: string): string {
   return (r * 299 + g * 587 + b * 114) / 1000 > 145 ? '#000' : '#fff';
 }
 
-function CheckoutForm({ accent, onSuccess }: { accent: string; onSuccess: () => void }) {
+function CheckoutForm({ accent, amount, currency, clubName, onSuccess }: {
+  accent: string; amount: number; currency: string; clubName: string; onSuccess: () => void;
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authConsent, setAuthConsent] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!stripe || !elements) return;
+    if (!stripe || !elements || !authConsent) return;
     setProcessing(true);
     setError(null);
 
@@ -63,13 +66,19 @@ function CheckoutForm({ accent, onSuccess }: { accent: string; onSuccess: () => 
   return (
     <form onSubmit={handleSubmit}>
       <PaymentElement />
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', margin: '18px 0 0' }}>
+        <input type="checkbox" checked={authConsent} onChange={e => setAuthConsent(e.target.checked)} style={{ marginTop: '3px', accentColor: accent }} />
+        <span style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.5' }}>
+          I authorize {clubName} to charge <strong style={{ color: '#e5e7eb' }}>{formatCurrency(amount, currency)}</strong> to this card.
+        </span>
+      </label>
       {error && (
         <div style={{ marginTop: '14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', color: '#fca5a5' }}>
           {error}
         </div>
       )}
-      <button type="submit" disabled={!stripe || processing}
-        style={{ width: '100%', marginTop: '18px', padding: '15px', borderRadius: '12px', border: 'none', background: processing ? `${accent}cc` : accent, color: contrastText(accent), fontSize: '15px', fontWeight: '800', cursor: processing ? 'not-allowed' : 'pointer', boxShadow: processing ? 'none' : `0 4px 16px ${accent}44` }}>
+      <button type="submit" disabled={!stripe || processing || !authConsent}
+        style={{ width: '100%', marginTop: '18px', padding: '15px', borderRadius: '12px', border: 'none', background: (processing || !authConsent) ? `${accent}88` : accent, color: contrastText(accent), fontSize: '15px', fontWeight: '800', cursor: (processing || !authConsent) ? 'not-allowed' : 'pointer', boxShadow: (processing || !authConsent) ? 'none' : `0 4px 16px ${accent}44` }}>
         {processing ? 'Processing…' : 'Pay now'}
       </button>
     </form>
@@ -219,7 +228,7 @@ function PayRegistrationContent() {
           theme: 'night', variables: { colorPrimary: accent, colorBackground: '#1C1C1E', colorText: '#F9FAFB', colorDanger: '#EF4444', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif', borderRadius: '10px', colorTextPlaceholder: '#6B7280' },
           rules: { '.Input': { border: '1px solid #374151', boxShadow: 'none', padding: '12px 14px' }, '.Input:focus': { border: `1px solid ${accent}`, boxShadow: `0 0 0 2px ${accent}30` }, '.Label': { color: '#9CA3AF', fontSize: '12px', fontWeight: '600' } },
         }, loader: 'auto' }}>
-          <CheckoutForm accent={accent} onSuccess={() => setSuccess(true)} />
+          <CheckoutForm accent={accent} amount={data?.amount ?? 0} currency={data?.currency ?? 'USD'} clubName={data?.club_name ?? 'this club'} onSuccess={() => setSuccess(true)} />
         </Elements>
       ) : (
         <div style={{ textAlign: 'center', fontSize: '13px', color: '#6b7280' }}>Setting up payment…</div>
