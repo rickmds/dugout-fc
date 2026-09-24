@@ -37,9 +37,9 @@ export async function POST(req: NextRequest) {
   const [{ data: settings }, { data: club }, { data: feePlanRows }, { data: team }, { data: letterRows }] = await Promise.all([
     sb.from('tryout_offer_settings').select('*').eq('club_id', club_id).single(),
     sb.from('clubs').select('name, currency').eq('id', club_id).single(),
-    sb.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club_id),
+    sb.from('tryout_fee_plans').select('age_groups, season_fee, installments').eq('club_id', club_id),
     sb.from('tryout_teams').select('age_group, season_fee, deposit_amount').eq('club_id', club_id).eq('name', team_name).single(),
-    sb.from('tryout_offer_letter_templates').select('age_group, subject, from_name, body_html').eq('club_id', club_id),
+    sb.from('tryout_offer_letter_templates').select('age_groups, subject, from_name, body_html').eq('club_id', club_id),
   ]);
   if (!settings) return NextResponse.json({ error: 'Offer settings not configured' }, { status: 400 });
   const lettersByAgeGroup = lettersToMap(letterRows ?? []);

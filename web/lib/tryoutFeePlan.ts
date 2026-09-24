@@ -7,7 +7,7 @@ export function normalizeDueType(inst: { due_type?: DueType; due_date: string | 
   if (inst.due_type) return inst.due_type;
   return inst.due_date ? 'date' : 'tbd';
 }
-export type FeePlanRow = { age_group: string; season_fee: number | null; installments: Installment[] };
+export type FeePlanRow = { season_fee: number | null; installments: Installment[] };
 export type ResolvedFeePlan = { seasonFee: number | null; installments: Installment[] };
 
 export const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', GBP: '£', EUR: '€', CAD: 'CA$', AUD: 'A$' };
@@ -65,10 +65,15 @@ export function renderInstallmentPlanHtml(plan: ResolvedFeePlan, currency = 'USD
   return `<div style="background:#fafafa;border-radius:8px;margin:8px 0;padding:4px 16px;">${rows}</div>`;
 }
 
-export function plansToMap(rows: { age_group: string; season_fee: number | string | null; installments: Installment[] }[]): Record<string, FeePlanRow> {
+// Fans a band's members out into individual lookup keys, so a single row
+// covering ['U9','U10','U11'] resolves for any one of those age groups —
+// resolveFeePlan() itself needs no change to support merged age groups.
+export function plansToMap(rows: { age_groups: string[]; season_fee: number | string | null; installments: Installment[] }[]): Record<string, FeePlanRow> {
   const map: Record<string, FeePlanRow> = {};
   for (const r of rows) {
-    map[r.age_group] = { age_group: r.age_group, season_fee: r.season_fee == null ? null : Number(r.season_fee), installments: r.installments ?? [] };
+    const row: FeePlanRow = { season_fee: r.season_fee == null ? null : Number(r.season_fee), installments: r.installments ?? [] };
+    if (!r.age_groups || r.age_groups.length === 0) { map[''] = row; continue; }
+    for (const ag of r.age_groups) map[ag] = row;
   }
   return map;
 }

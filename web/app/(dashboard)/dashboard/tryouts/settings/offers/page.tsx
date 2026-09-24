@@ -24,14 +24,21 @@ type EmailTemplate = {
   body_html: string;
 };
 
-// Controlled-input form state for one age group's cost + payment plan.
-// '' as the age group key means "Default (all other ages)".
-type FeePlanForm = { season_fee: string; installments: { label: string; amount: string; due_type: DueType; due_date: string }[] };
-
-// Controlled-input form state for one age group's offer letter. '' means
-// the Default letter — every other age group's fields (subject/from
-// name/body) independently fall back to the Default's value when blank.
-type LetterForm = { subject: string; from_name: string; body_html: string };
+// A "band" is one row that can cover any set of age groups (or none, for
+// the Default row) — merging U9/U10/U11 into one band means setting the
+// fee/letter once instead of once per age group. isDefault identifies the
+// one row that acts as the fallback for any age group no band claims;
+// it's tracked explicitly rather than inferred from an empty ageGroups
+// array, since a non-default band can transiently have zero members too
+// (e.g. right after its last age group is reassigned elsewhere).
+type FeePlanBand = {
+  id: string; isDefault: boolean; ageGroups: string[]; season_fee: string;
+  installments: { label: string; amount: string; due_type: DueType; due_date: string }[];
+};
+type LetterBand = {
+  id: string; isDefault: boolean; ageGroups: string[];
+  subject: string; from_name: string; body_html: string;
+};
 
 const BLANK: OfferSettings = {
   from_name: '', offer_deadline: '',
@@ -39,7 +46,35 @@ const BLANK: OfferSettings = {
   club_website_url: '', uniform_shop_url: '',
 };
 
-const BLANK_LETTER: LetterForm = { subject: '', from_name: '', body_html: '' };
+// Toggling a chip claims that age group for `currentId`, stealing it from
+// whichever other band held it — an age group always belongs to at most
+// one band, so there's never a conflict to resolve by hand.
+function AgeGroupChips({ ageGroups, ownerMap, bandOwnerLabel, currentId, primary, onToggle }: {
+  ageGroups: string[]; ownerMap: Record<string, string>; bandOwnerLabel: (bandId: string) => string;
+  currentId: string; primary: string; onToggle: (ag: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+      {ageGroups.map(ag => {
+        const ownerId = ownerMap[ag];
+        const mine = ownerId === currentId;
+        const ownedByOther = !!ownerId && !mine;
+        return (
+          <button key={ag} type="button" onClick={() => onToggle(ag)}
+            title={ownedByOther ? `Currently in "${bandOwnerLabel(ownerId)}" — click to move it here` : undefined}
+            style={{
+              padding: '4px 11px', borderRadius: '14px', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer',
+              border: `1.5px solid ${mine ? primary : '#E2E8F0'}`,
+              background: mine ? primary : '#fff',
+              color: mine ? '#fff' : ownedByOther ? '#CBD5E1' : '#64748B',
+            }}>
+            {ag}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 
 const MERGE_TOKENS = [
@@ -249,10 +284,11 @@ export default function TryoutOfferSettingsPage() {
   const [settings, setSettings] = useState<OfferSettings>(BLANK);
   const [templates, setTemplates] = useState<Record<string, EmailTemplate>>({});
   const [feeAgeGroups, setFeeAgeGroups] = useState<string[]>([]);
-  const [teamCountByAgeGroup, setTeamCountByAgeGroup] = useState<Record<string, number>>({});
-  const [feePlans, setFeePlans] = useState<Record<string, FeePlanForm>>({});
-  const [letterTemplates, setLetterTemplates] = useState<Record<string, LetterForm>>({});
-  const [activeLetterAg, setActiveLetterAg] = useState('');
+  const [feeBands, setFeeBands] = useState<FeePlanBand[]>([]);
+  const [deletedFeeBandIds, setDeletedFeeBandIds] = useState<string[]>([]);
+  const [letterBands, setLetterBands] = useState<LetterBand[]>([]);
+  const [deletedLetterBandIds, setDeletedLetterBandIds] = useState<string[]>([]);
+  const [activeLetterBandId, setActiveLetterBandId] = useState('');
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
   const [activeSection, setActiveSection] = useState<'settings'|'cost'|'offer'|'waitlist'|'decline'|'reminder'|'tokens'>('settings');
@@ -260,7 +296,7 @@ export default function TryoutOfferSettingsPage() {
   const [emailModes, setEmailModes] = useState<Record<string, 'simple'|'html'>>({});
 
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
-  function snapshotOf(s: OfferSettings, t: Record<string, EmailTemplate>, f: Record<string, FeePlanForm>, l: Record<string, LetterForm>) {
+  function snapshotOf(s: OfferSettings, t: Record<string, EmailTemplate>, f: FeePlanBand[], l: LetterBand[]) {
     return JSON.stringify({ s, t, f, l });
   }
 
@@ -271,8 +307,8 @@ export default function TryoutOfferSettingsPage() {
         supabase.from('tryout_offer_settings').select('*').eq('club_id', club.id).single(),
         supabase.from('tryout_email_templates').select('*').eq('club_id', club.id),
         supabase.from('tryout_teams').select('age_group').eq('club_id', club.id),
-        supabase.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club.id),
-        supabase.from('tryout_offer_letter_templates').select('age_group, subject, from_name, body_html').eq('club_id', club.id),
+        supabase.from('tryout_fee_plans').select('id, age_groups, season_fee, installments').eq('club_id', club.id),
+        supabase.from('tryout_offer_letter_templates').select('id, age_groups, subject, from_name, body_html').eq('club_id', club.id),
       ]);
       const loadedSettings = os ? { ...BLANK, ...os } : BLANK;
       setSettings(loadedSettings);
@@ -282,29 +318,43 @@ export default function TryoutOfferSettingsPage() {
 
       const counts: Record<string, number> = {};
       for (const t of (teamRows ?? [])) { if (t.age_group) counts[t.age_group] = (counts[t.age_group] ?? 0) + 1; }
-      setTeamCountByAgeGroup(counts);
       setFeeAgeGroups(Object.keys(counts));
-      const planMap: Record<string, FeePlanForm> = {};
-      for (const r of (planRows ?? []) as { age_group: string; season_fee: number | string | null; installments: FeeInstallment[] }[]) {
-        planMap[r.age_group] = {
-          season_fee: r.season_fee != null ? String(r.season_fee) : '',
-          installments: (r.installments ?? []).map(i => ({ label: i.label ?? '', amount: i.amount != null ? String(i.amount) : '', due_type: normalizeDueType(i), due_date: i.due_date ?? '' })),
-        };
-      }
-      setFeePlans(planMap);
 
-      const letterMap: Record<string, LetterForm> = {};
-      for (const r of (letterRows ?? []) as { age_group: string; subject: string | null; from_name: string | null; body_html: string | null }[]) {
-        letterMap[r.age_group] = { subject: r.subject ?? '', from_name: r.from_name ?? '', body_html: r.body_html ?? '' };
-      }
-      if (!letterMap['']) letterMap[''] = { subject: 'Your Roster Offer — {{team_name}}', from_name: '', body_html: '' };
-      setLetterTemplates(letterMap);
+      const sortBands = <T extends { isDefault: boolean; ageGroups: string[] }>(bands: T[]) => bands.sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return (parseInt((a.ageGroups[0] ?? '').replace(/\D/g, '')) || 99) - (parseInt((b.ageGroups[0] ?? '').replace(/\D/g, '')) || 99);
+      });
 
-      setSavedSnapshot(snapshotOf(loadedSettings, map, planMap, letterMap));
+      const loadedFeeBands: FeePlanBand[] = (planRows ?? []).map(r => ({
+        id: r.id, isDefault: (r.age_groups ?? []).length === 0, ageGroups: r.age_groups ?? [],
+        season_fee: r.season_fee != null ? String(r.season_fee) : '',
+        installments: ((r.installments ?? []) as FeeInstallment[]).map(i => ({ label: i.label ?? '', amount: i.amount != null ? String(i.amount) : '', due_type: normalizeDueType(i), due_date: i.due_date ?? '' })),
+      }));
+      if (!loadedFeeBands.some(b => b.isDefault)) {
+        loadedFeeBands.push({ id: crypto.randomUUID(), isDefault: true, ageGroups: [], season_fee: '', installments: [] });
+      }
+      sortBands(loadedFeeBands);
+      setFeeBands(loadedFeeBands);
+      setDeletedFeeBandIds([]);
+
+      const loadedLetterBands: LetterBand[] = (letterRows ?? []).map(r => ({
+        id: r.id, isDefault: (r.age_groups ?? []).length === 0, ageGroups: r.age_groups ?? [],
+        subject: r.subject ?? '', from_name: r.from_name ?? '', body_html: r.body_html ?? '',
+      }));
+      if (!loadedLetterBands.some(b => b.isDefault)) {
+        loadedLetterBands.push({ id: crypto.randomUUID(), isDefault: true, ageGroups: [], subject: 'Your Roster Offer — {{team_name}}', from_name: '', body_html: '' });
+      }
+      sortBands(loadedLetterBands);
+      setLetterBands(loadedLetterBands);
+      setDeletedLetterBandIds([]);
+      setActiveLetterBandId(loadedLetterBands.find(b => b.isDefault)!.id);
+
+      setSavedSnapshot(snapshotOf(loadedSettings, map, loadedFeeBands, loadedLetterBands));
     })();
   }, [club]);
 
-  const isDirty = savedSnapshot !== null && savedSnapshot !== snapshotOf(settings, templates, feePlans, letterTemplates);
+  const isDirty = savedSnapshot !== null && savedSnapshot !== snapshotOf(settings, templates, feeBands, letterBands);
 
   useEffect(() => {
     function handler(e: BeforeUnloadEvent) {
@@ -324,30 +374,43 @@ export default function TryoutOfferSettingsPage() {
       const t = templates[key];
       if (t) await supabase.from('tryout_email_templates').upsert({ ...t, club_id: club.id, template_key: key }, { onConflict: 'club_id,template_key' });
     }
-    const planUpserts = Object.entries(feePlans)
-      .filter(([, p]) => p.season_fee.trim() !== '' || p.installments.some(i => i.label.trim() !== '' || i.amount.trim() !== ''))
-      .map(([ag, p]) => ({
-        club_id: club.id,
-        age_group: ag,
-        season_fee: p.season_fee.trim() === '' ? null : Number(p.season_fee.replace(/[^0-9.]/g, '')),
-        installments: p.installments
+
+    // A non-default band that lost all its age groups (reassigned
+    // elsewhere, or explicitly deleted) no longer means anything — drop it.
+    const feeKeep: FeePlanBand[] = [];
+    const feeToDelete = [...deletedFeeBandIds];
+    for (const b of feeBands) { if (!b.isDefault && b.ageGroups.length === 0) feeToDelete.push(b.id); else feeKeep.push(b); }
+    const feeUpserts = feeKeep
+      .filter(b => b.isDefault || b.season_fee.trim() !== '' || b.installments.some(i => i.label.trim() !== '' || i.amount.trim() !== ''))
+      .map(b => ({
+        id: b.id, club_id: club.id, age_groups: b.ageGroups,
+        season_fee: b.season_fee.trim() === '' ? null : Number(b.season_fee.replace(/[^0-9.]/g, '')),
+        installments: b.installments
           .filter(i => i.label.trim() !== '' || i.amount.trim() !== '')
           .map(i => ({ label: i.label.trim(), amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_type: i.due_type, due_date: i.due_type === 'date' ? (i.due_date || null) : null })),
       }));
-    if (planUpserts.length) await supabase.from('tryout_fee_plans').upsert(planUpserts, { onConflict: 'club_id,age_group' });
+    if (feeUpserts.length) await supabase.from('tryout_fee_plans').upsert(feeUpserts, { onConflict: 'id' });
+    if (feeToDelete.length) await supabase.from('tryout_fee_plans').delete().in('id', feeToDelete);
 
-    const letterUpserts = Object.entries(letterTemplates)
-      .filter(([ag, l]) => ag === '' || l.subject.trim() !== '' || l.from_name.trim() !== '' || l.body_html.trim() !== '')
-      .map(([ag, l]) => ({
-        club_id: club.id,
-        age_group: ag,
-        subject: l.subject.trim() || null,
-        from_name: l.from_name.trim() || null,
-        body_html: l.body_html.trim() || null,
+    const letterKeep: LetterBand[] = [];
+    const letterToDelete = [...deletedLetterBandIds];
+    for (const b of letterBands) { if (!b.isDefault && b.ageGroups.length === 0) letterToDelete.push(b.id); else letterKeep.push(b); }
+    const letterUpserts = letterKeep
+      .filter(b => b.isDefault || b.subject.trim() !== '' || b.from_name.trim() !== '' || b.body_html.trim() !== '')
+      .map(b => ({
+        id: b.id, club_id: club.id, age_groups: b.ageGroups,
+        subject: b.subject.trim() || null, from_name: b.from_name.trim() || null, body_html: b.body_html.trim() || null,
       }));
-    if (letterUpserts.length) await supabase.from('tryout_offer_letter_templates').upsert(letterUpserts, { onConflict: 'club_id,age_group' });
+    if (letterUpserts.length) await supabase.from('tryout_offer_letter_templates').upsert(letterUpserts, { onConflict: 'id' });
+    if (letterToDelete.length) await supabase.from('tryout_offer_letter_templates').delete().in('id', letterToDelete);
 
-    setSavedSnapshot(snapshotOf(settings, templates, feePlans, letterTemplates));
+    setFeeBands(feeKeep);
+    setDeletedFeeBandIds([]);
+    setLetterBands(letterKeep);
+    setDeletedLetterBandIds([]);
+    if (!letterKeep.some(b => b.id === activeLetterBandId)) setActiveLetterBandId(letterKeep.find(b => b.isDefault)!.id);
+
+    setSavedSnapshot(snapshotOf(settings, templates, feeKeep, letterKeep));
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -360,79 +423,125 @@ export default function TryoutOfferSettingsPage() {
     });
   }
 
-  function letterFor(ag: string): LetterForm { return letterTemplates[ag] ?? BLANK_LETTER; }
-  function setLetterField(ag: string, patch: Partial<LetterForm>) {
-    setLetterTemplates(prev => ({ ...prev, [ag]: { ...letterFor(ag), ...patch } }));
+  function letterBandFor(id: string): LetterBand { return letterBands.find(b => b.id === id) ?? letterBands.find(b => b.isDefault)!; }
+  function updateLetterBand(id: string, patch: Partial<LetterBand>) {
+    setLetterBands(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
   }
-  function copyDefaultLetterInto(ag: string) {
-    const def = letterFor('');
-    setLetterField(ag, { subject: def.subject, from_name: def.from_name, body_html: def.body_html });
+  function copyDefaultLetterInto(id: string) {
+    const def = letterBands.find(b => b.isDefault)!;
+    updateLetterBand(id, { subject: def.subject, from_name: def.from_name, body_html: def.body_html });
+  }
+  function addLetterBand() {
+    const id = crypto.randomUUID();
+    setLetterBands(prev => [...prev, { id, isDefault: false, ageGroups: [], subject: '', from_name: '', body_html: '' }]);
+    setActiveLetterBandId(id);
+  }
+  function deleteLetterBand(id: string) {
+    setLetterBands(prev => prev.filter(b => b.id !== id));
+    setDeletedLetterBandIds(prev => [...prev, id]);
+    setActiveLetterBandId(letterBands.find(b => b.isDefault)!.id);
+  }
+  function toggleLetterAgeGroup(bandId: string, ag: string) {
+    setLetterBands(prev => prev.map(b => {
+      if (b.isDefault) return b;
+      if (b.id === bandId) return b.ageGroups.includes(ag) ? { ...b, ageGroups: b.ageGroups.filter(x => x !== ag) } : { ...b, ageGroups: [...b.ageGroups, ag] };
+      return b.ageGroups.includes(ag) ? { ...b, ageGroups: b.ageGroups.filter(x => x !== ag) } : b;
+    }));
+  }
+  function letterBandLabel(band: LetterBand): string {
+    if (band.isDefault) return 'Default';
+    return band.ageGroups.length ? band.ageGroups.join(', ') : 'New letter';
   }
 
-  function planFor(ag: string): FeePlanForm { return feePlans[ag] ?? { season_fee: '', installments: [] }; }
-  function setPlanFee(ag: string, fee: string) {
-    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), season_fee: fee } }));
+  function feeBandFor(id: string): FeePlanBand { return feeBands.find(b => b.id === id) ?? feeBands.find(b => b.isDefault)!; }
+  function updateFeeBand(id: string, patch: Partial<FeePlanBand>) {
+    setFeeBands(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
   }
-  function addInstallment(ag: string) {
-    const isFirst = planFor(ag).installments.length === 0;
-    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: [...planFor(ag).installments, { label: isFirst ? 'Deposit' : '', amount: '', due_type: isFirst ? 'acceptance' : 'date', due_date: '' }] } }));
+  function addInstallment(id: string) {
+    const band = feeBandFor(id);
+    const isFirst = band.installments.length === 0;
+    updateFeeBand(id, { installments: [...band.installments, { label: isFirst ? 'Deposit' : '', amount: '', due_type: isFirst ? 'acceptance' : 'date', due_date: '' }] });
   }
-  function updateInstallment(ag: string, idx: number, patch: Partial<{ label: string; amount: string; due_type: DueType; due_date: string }>) {
-    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: planFor(ag).installments.map((inst, i) => i === idx ? { ...inst, ...patch } : inst) } }));
+  function updateInstallment(id: string, idx: number, patch: Partial<{ label: string; amount: string; due_type: DueType; due_date: string }>) {
+    const band = feeBandFor(id);
+    updateFeeBand(id, { installments: band.installments.map((inst, i) => i === idx ? { ...inst, ...patch } : inst) });
   }
-  function removeInstallment(ag: string, idx: number) {
-    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: planFor(ag).installments.filter((_, i) => i !== idx) } }));
+  function removeInstallment(id: string, idx: number) {
+    const band = feeBandFor(id);
+    updateFeeBand(id, { installments: band.installments.filter((_, i) => i !== idx) });
+  }
+  function addFeeBand() {
+    setFeeBands(prev => [...prev, { id: crypto.randomUUID(), isDefault: false, ageGroups: [], season_fee: '', installments: [] }]);
+  }
+  function deleteFeeBand(id: string) {
+    setFeeBands(prev => prev.filter(b => b.id !== id));
+    setDeletedFeeBandIds(prev => [...prev, id]);
+  }
+  function toggleFeeAgeGroup(bandId: string, ag: string) {
+    setFeeBands(prev => prev.map(b => {
+      if (b.isDefault) return b;
+      if (b.id === bandId) return b.ageGroups.includes(ag) ? { ...b, ageGroups: b.ageGroups.filter(x => x !== ag) } : { ...b, ageGroups: [...b.ageGroups, ag] };
+      return b.ageGroups.includes(ag) ? { ...b, ageGroups: b.ageGroups.filter(x => x !== ag) } : b;
+    }));
   }
 
-  function renderFeePlanCard(ag: string, label: string) {
-    const plan = planFor(ag);
+  function renderFeePlanCard(band: FeePlanBand, ownerMap: Record<string, string>) {
     const currSym = CURRENCY_SYMBOLS[club?.currency ?? 'USD'] ?? '$';
-    const totalInstallments = plan.installments.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const seasonFeeNum = Number(plan.season_fee) || 0;
-    const mismatch = plan.installments.length > 0 && plan.season_fee.trim() !== '' && Math.abs(totalInstallments - seasonFeeNum) > 0.01;
+    const totalInstallments = band.installments.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const seasonFeeNum = Number(band.season_fee) || 0;
+    const mismatch = band.installments.length > 0 && band.season_fee.trim() !== '' && Math.abs(totalInstallments - seasonFeeNum) > 0.01;
     return (
-      <div key={ag} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <div style={{ fontSize: '14px', fontWeight: '800', color: '#0F172A' }}>{label}</div>
-            {ag !== '' && (
-              <span style={{ fontSize: '11px', fontWeight: '600', color: teamCountByAgeGroup[ag] ? '#64748B' : '#CBD5E1' }}>
-                {teamCountByAgeGroup[ag] ? `${teamCountByAgeGroup[ag]} team${teamCountByAgeGroup[ag] === 1 ? '' : 's'}` : 'no team yet'}
-              </span>
+      <div key={band.id} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px 24px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px', marginBottom: '14px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: '800', color: '#0F172A', marginBottom: band.isDefault ? 0 : '8px' }}>
+              {band.isDefault ? 'Default (all other age groups)' : (band.ageGroups.length ? null : 'No age groups yet — pick some below')}
+            </div>
+            {!band.isDefault && (
+              <AgeGroupChips ageGroups={AGE_GROUPS} ownerMap={ownerMap} bandOwnerLabel={id => feeBandLabelById(id)} currentId={band.id} primary={primary}
+                onToggle={ag => toggleFeeAgeGroup(band.id, ag)} />
             )}
           </div>
-          <div style={{ position: 'relative', width: '140px' }}>
-            <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
-            <input value={plan.season_fee} onChange={e => setPlanFee(ag, e.target.value)} placeholder="Season fee" type="number"
-              style={{ width: '100%', padding: '8px 10px 8px 26px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <div style={{ position: 'relative', width: '140px' }}>
+              <span style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
+              <input value={band.season_fee} onChange={e => updateFeeBand(band.id, { season_fee: e.target.value })} placeholder="Season fee" type="number"
+                style={{ width: '100%', padding: '8px 10px 8px 26px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            {!band.isDefault && (
+              <button onClick={() => deleteFeeBand(band.id)} title="Delete this price group"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8', display: 'flex', alignItems: 'center' }}>
+                <Trash2 size={15} />
+              </button>
+            )}
           </div>
         </div>
-        {plan.installments.length > 0 && (
+        {band.installments.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
-            {plan.installments.map((inst, i) => (
+            {band.installments.map((inst, i) => (
               <div key={i} style={{ background: '#FAFBFC', border: '1px solid #F1F5F9', borderRadius: '8px', padding: '10px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 28px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-                  <input value={inst.label} onChange={e => updateInstallment(ag, i, { label: e.target.value })} placeholder={`Installment ${i + 1}`}
+                  <input value={inst.label} onChange={e => updateInstallment(band.id, i, { label: e.target.value })} placeholder={`Installment ${i + 1}`}
                     style={{ padding: '7px 10px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
                   <div style={{ position: 'relative' }}>
                     <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', fontSize: '12.5px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
-                    <input value={inst.amount} onChange={e => updateInstallment(ag, i, { amount: e.target.value })} type="number" placeholder="0"
+                    <input value={inst.amount} onChange={e => updateInstallment(band.id, i, { amount: e.target.value })} type="number" placeholder="0"
                       style={{ width: '100%', padding: '7px 8px 7px 22px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
                   </div>
-                  <button onClick={() => removeInstallment(ag, i)}
+                  <button onClick={() => removeInstallment(band.id, i)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Trash2 size={14} />
                   </button>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <select value={inst.due_type} onChange={e => updateInstallment(ag, i, { due_type: e.target.value as DueType })}
+                  <select value={inst.due_type} onChange={e => updateInstallment(band.id, i, { due_type: e.target.value as DueType })}
                     style={{ padding: '6px 8px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#0F172A', outline: 'none', background: '#fff', cursor: 'pointer' }}>
                     <option value="acceptance">Due upon acceptance</option>
                     <option value="date">Specific date</option>
                     <option value="tbd">Date TBD</option>
                   </select>
                   {inst.due_type === 'date' && (
-                    <input value={inst.due_date} onChange={e => updateInstallment(ag, i, { due_date: e.target.value })} type="date"
+                    <input value={inst.due_date} onChange={e => updateInstallment(band.id, i, { due_date: e.target.value })} type="date"
                       style={{ padding: '6px 8px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#0F172A', outline: 'none', background: '#fff' }} />
                   )}
                 </div>
@@ -441,7 +550,7 @@ export default function TryoutOfferSettingsPage() {
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={() => addInstallment(ag)}
+          <button onClick={() => addInstallment(band.id)}
             style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', background: '#F1F5F9', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700', color: '#374151' }}>
             <Plus size={12} /> Add installment
           </button>
@@ -453,6 +562,12 @@ export default function TryoutOfferSettingsPage() {
         </div>
       </div>
     );
+  }
+
+  function feeBandLabelById(id: string): string {
+    const b = feeBands.find(x => x.id === id);
+    if (!b) return '';
+    return b.isDefault ? 'Default' : (b.ageGroups.join(', ') || 'New price group');
   }
 
   function buildPreviewHtml(bodyHtml: string, heroLabel = 'Roster Offer', showCta = true): string {
@@ -587,12 +702,22 @@ export default function TryoutOfferSettingsPage() {
 
   // Surfaces the gaps that would actually break or blank-out a real email,
   // not just "hasn't been touched yet".
-  const defaultFeeSet = !!feePlans['']?.season_fee?.trim();
-  const missingFeeAgeGroups = feeAgeGroups.filter(ag => !feePlans[ag]?.season_fee?.trim());
+  const feeOwnerMap: Record<string, string> = {};
+  for (const b of feeBands) if (!b.isDefault) for (const ag of b.ageGroups) feeOwnerMap[ag] = b.id;
+  const defaultFeeBand = feeBands.find(b => b.isDefault);
+  const missingFeeAgeGroups = feeAgeGroups.filter(ag => {
+    const owner = feeOwnerMap[ag] ? feeBands.find(x => x.id === feeOwnerMap[ag]) : defaultFeeBand;
+    return !owner?.season_fee?.trim();
+  });
+
+  const letterOwnerMap: Record<string, string> = {};
+  for (const b of letterBands) if (!b.isDefault) for (const ag of b.ageGroups) letterOwnerMap[ag] = b.id;
+  const defaultLetterBand = letterBands.find(b => b.isDefault);
+
   const NEEDS_ATTENTION: Partial<Record<SectionId, string>> = {
     settings: !settings.from_name.trim() ? 'No "From name" set — emails will show your club name instead' : undefined,
-    cost: (!defaultFeeSet && missingFeeAgeGroups.length > 0) ? `${missingFeeAgeGroups.join(', ')} has no fee set and there's no default fee` : undefined,
-    offer: !letterFor('').body_html.trim() ? 'Default letter body is empty — offers would send blank' : undefined,
+    cost: missingFeeAgeGroups.length > 0 ? `${missingFeeAgeGroups.join(', ')} has no fee set and there's no default fee` : undefined,
+    offer: !defaultLetterBand?.body_html.trim() ? 'Default letter body is empty — offers would send blank' : undefined,
   };
 
   const SECTIONS: { id: SectionId; num: number; label: string; desc: string }[] = [
@@ -716,69 +841,94 @@ export default function TryoutOfferSettingsPage() {
             <div style={{ maxWidth: '720px' }}>
               <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12.5px', color: '#1D4ED8', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                 <Info size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
-                <span>Set a season fee and payment plan per age group — e.g. U8 can cost less than U12. An age group with nothing set here falls back to the default plan below. A specific team can still override its own fee individually in <strong>Team Setup</strong> if needed.</span>
+                <span>Set a season fee and payment plan per age group. <strong>Merge age groups that share a price</strong> by clicking their chips onto the same group below — e.g. put U9, U10 and U11 in one group and set it once. Any age group not claimed by a group falls back to Default. A specific team can still override its own fee individually in <strong>Team Setup</strong> if needed.</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {renderFeePlanCard('', 'Default (all other age groups)')}
-                {AGE_GROUPS.map(ag => renderFeePlanCard(ag, ag))}
+                {feeBands.filter(b => b.isDefault).map(b => renderFeePlanCard(b, feeOwnerMap))}
+                {feeBands.filter(b => !b.isDefault).map(b => renderFeePlanCard(b, feeOwnerMap))}
+                <button onClick={addFeeBand}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', borderRadius: '8px', border: '1.5px dashed #CBD5E1', background: 'transparent', cursor: 'pointer', fontSize: '13px', fontWeight: '700', color: '#64748B' }}>
+                  <Plus size={14} /> New price group
+                </button>
               </div>
             </div>
           )}
 
           {activeSection === 'offer' && (() => {
-            const current = letterFor(activeLetterAg);
-            const def = letterFor('');
-            const isDefault = activeLetterAg === '';
+            const current = letterBandFor(activeLetterBandId);
+            const def = letterBands.find(b => b.isDefault)!;
+            const isDefault = current.isDefault;
             const resolvedBody = current.body_html.trim() || def.body_html;
             const resolvedSubject = current.subject.trim() || def.subject || 'Your Roster Offer — {{team_name}}';
             return (
               <div style={{ maxWidth: '680px' }}>
                 {hint('Sent to families when their child is offered a spot on a team. Includes the Accept / Decline buttons.')}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
-                  {['', ...AGE_GROUPS].map(ag => {
-                    const active = activeLetterAg === ag;
-                    const hasOverride = ag !== '' && !!letterTemplates[ag] && (letterTemplates[ag].subject.trim() || letterTemplates[ag].from_name.trim() || letterTemplates[ag].body_html.trim());
+                <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '12.5px', color: '#1D4ED8', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <Info size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                  <span><strong>Merge age groups that share a letter</strong> by assigning them to the same group below instead of writing it more than once.</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px', alignItems: 'center' }}>
+                  {letterBands.map(band => {
+                    const active = activeLetterBandId === band.id;
+                    const hasOverride = !band.isDefault && (band.subject.trim() || band.from_name.trim() || band.body_html.trim());
                     return (
-                      <button key={ag || 'default'} onClick={() => setActiveLetterAg(ag)}
+                      <button key={band.id} onClick={() => setActiveLetterBandId(band.id)}
                         style={{
                           padding: '6px 13px', borderRadius: '20px', fontSize: '12.5px', fontWeight: active || hasOverride ? '700' : '500', cursor: 'pointer',
                           border: `1.5px solid ${active ? primary : hasOverride ? `${primary}70` : '#E2E8F0'}`,
                           background: active ? primary : hasOverride ? `${primary}12` : '#fff',
                           color: active ? '#fff' : hasOverride ? primary : '#64748B',
                         }}>
-                        {ag === '' ? 'Default' : ag}{teamCountByAgeGroup[ag] ? ` · ${teamCountByAgeGroup[ag]}` : ''}
+                        {letterBandLabel(band)}
                       </button>
                     );
                   })}
+                  <button onClick={addLetterBand}
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 13px', borderRadius: '20px', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', border: '1.5px dashed #CBD5E1', background: 'transparent', color: '#64748B' }}>
+                    <Plus size={12} /> New letter
+                  </button>
                 </div>
                 <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {!isDefault && (
-                    <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 14px', fontSize: '12.5px', color: '#64748B', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                      <span>Editing <strong>{activeLetterAg}</strong> only. Any field left blank here uses the Default letter&apos;s value instead.</span>
-                      {def.body_html.trim() && (
-                        <button onClick={() => copyDefaultLetterInto(activeLetterAg)}
-                          style={{ flexShrink: 0, padding: '5px 12px', borderRadius: '6px', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700', color: '#374151' }}>
-                          Copy Default letter here
-                        </button>
-                      )}
-                    </div>
+                    <>
+                      <div>
+                        {lbl('Applies to these age groups')}
+                        <AgeGroupChips ageGroups={AGE_GROUPS} ownerMap={letterOwnerMap} bandOwnerLabel={id => { const b = letterBands.find(x => x.id === id); return b ? letterBandLabel(b) : ''; }}
+                          currentId={current.id} primary={primary} onToggle={ag => toggleLetterAgeGroup(current.id, ag)} />
+                      </div>
+                      <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '10px 14px', fontSize: '12.5px', color: '#64748B', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                        <span>Any field left blank here uses the Default letter&apos;s value instead.</span>
+                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                          {def.body_html.trim() && (
+                            <button onClick={() => copyDefaultLetterInto(current.id)}
+                              style={{ padding: '5px 12px', borderRadius: '6px', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700', color: '#374151' }}>
+                              Copy Default letter here
+                            </button>
+                          )}
+                          <button onClick={() => deleteLetterBand(current.id)}
+                            style={{ padding: '5px 12px', borderRadius: '6px', background: '#fff', border: '1px solid #FECACA', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700', color: '#DC2626' }}>
+                            Delete this letter
+                          </button>
+                        </div>
+                      </div>
+                    </>
                   )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                     <div>
                       {lbl('Subject line')}
-                      <input value={current.subject} onChange={e => setLetterField(activeLetterAg, { subject: e.target.value })}
+                      <input value={current.subject} onChange={e => updateLetterBand(current.id, { subject: e.target.value })}
                         placeholder={isDefault ? 'Your Roster Offer — {{team_name}}' : (def.subject || 'Same as Default')} style={inp} />
                     </div>
                     <div>
                       {lbl('From name')}
-                      <input value={current.from_name} onChange={e => setLetterField(activeLetterAg, { from_name: e.target.value })}
+                      <input value={current.from_name} onChange={e => updateLetterBand(current.id, { from_name: e.target.value })}
                         placeholder={isDefault ? (settings.from_name || 'Maroons SC') : (def.from_name || settings.from_name || 'Same as Default')} style={inp} />
                     </div>
                   </div>
                   <EmailBodyEditor
-                    editorKey={`offer-${activeLetterAg || 'default'}`}
+                    editorKey={`offer-${current.id}`}
                     value={current.body_html}
-                    onChange={v => setLetterField(activeLetterAg, { body_html: v })}
+                    onChange={v => updateLetterBand(current.id, { body_html: v })}
                     onPreview={() => setPreview(buildPreviewHtml(resolvedBody, 'Roster Offer', true))}
                     previewLabel="Roster Offer"
                     showCta={true}
@@ -788,7 +938,7 @@ export default function TryoutOfferSettingsPage() {
                     emailModes={emailModes} setEmailModes={setEmailModes} primary={primary} onViewTokens={() => setActiveSection('tokens')}
                   />
                   {!isDefault && !current.body_html.trim() && (
-                    <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Preview shows the inherited Default letter — nothing is overridden for {activeLetterAg} yet. Resolved subject right now: <strong>{resolvedSubject}</strong></div>
+                    <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Preview shows the inherited Default letter — nothing is overridden here yet. Resolved subject right now: <strong>{resolvedSubject}</strong></div>
                   )}
                 </div>
               </div>
