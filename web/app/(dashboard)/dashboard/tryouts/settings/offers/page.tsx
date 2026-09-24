@@ -120,7 +120,7 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 <h2>Team Expectations</h2>
 <ul>
   <li>{{club_name}} is your player's primary team during fall and spring seasons</li>
-  <li>Consistent 85% attendance at practices and games is required</li>
+  <li><span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add your attendance policy, e.g. "90% attendance required"]</span></li>
   <li>Attendance will be tracked in the Pulse FC app — please mark your availability for all games and training sessions so coaches can plan accordingly.</li>
 </ul>
 
@@ -137,25 +137,24 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 </ul>
 
 <h2>Uniforms</h2>
-<p>Update this section with your club's uniform policy. <a href="{{uniform_link}}">Order uniforms here</a>.</p>
+<p><span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add your uniform ordering process]</span> <a href="{{uniform_link}}">Order uniforms here</a>.</p>
 
 <h2>Season Overview</h2>
 <ul>
-  <li><strong>Fall:</strong> September – November</li>
-  <li><strong>Winter Training:</strong> January – March</li>
-  <li><strong>Spring:</strong> April – June</li>
+  <li><strong>Fall:</strong> <span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add your fall season dates]</span></li>
+  <li><strong>Winter Training:</strong> <span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add your winter training dates, if applicable]</span></li>
+  <li><strong>Spring:</strong> <span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add your spring season dates]</span></li>
 </ul>
 <p><strong>Tournaments:</strong></p>
 <ul>
-  <li>Fall: Columbus Day Weekend (Sat/Sun)</li>
-  <li>Spring: Coach will communicate details</li>
+  <li><span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add any tournaments this team plans to attend]</span></li>
 </ul>
 
 <h2>Refund Policy</h2>
-<p style="font-size:13px;color:#4b5563;">All registration fees are non-refundable, unless a player sustains a serious injury supported by a physician's note. Once a position on the team has been accepted, tuition is considered fully earned and fees will not be refunded. If a refund is awarded, a 10% processing and administrative fee will apply. All approved refunds are at the sole discretion of {{club_name}}.</p>
+<p style="font-size:13px;color:#4b5563;"><span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add your club's refund/cancellation policy]</span></p>
 
 <h2>Dual Carding</h2>
-<p style="font-size:13px;color:#4b5563;">Dual carding is allowed, but {{club_name}} must remain the primary club. Players who prioritize another club will be moved to a more appropriate team.</p>
+<p style="font-size:13px;color:#4b5563;"><span style="background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:4px;font-weight:700;">[Add your club's dual-carding / multi-club policy, if applicable]</span></p>
 
 <h2>Next Steps</h2>
 <ol>
