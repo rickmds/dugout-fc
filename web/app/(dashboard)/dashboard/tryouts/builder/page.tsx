@@ -274,6 +274,33 @@ export default function TeamBuilderPage() {
     } finally { setSendId(null); }
   }
 
+  async function sendWaitlistEmail(pid: string) {
+    if (!club) return;
+    setSendId(pid);
+    try {
+      const res = await fetch('/api/tryout/send-waitlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: pid, club_id: club.id }) });
+      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' }; next.set(pid, { ...ex, status: 'Waitlist' }); return next; });
+    } finally { setSendId(null); }
+  }
+
+  async function sendDeclineEmail(pid: string) {
+    if (!club) return;
+    setSendId(pid);
+    try {
+      const res = await fetch('/api/tryout/send-decline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: pid, club_id: club.id }) });
+      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' }; next.set(pid, { ...ex, status: 'Rejected' }); return next; });
+    } finally { setSendId(null); }
+  }
+
+  async function sendReminderEmail(pid: string) {
+    if (!club) return;
+    setSendId(pid);
+    try {
+      const res = await fetch('/api/tryout/send-reminder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: pid, club_id: club.id }) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); if (d.error) alert(d.error); }
+    } finally { setSendId(null); }
+  }
+
   async function toggleMaybe(pid: string) {
     if (!club) return;
     const p = players.find(pl => pl.id === pid);
@@ -793,6 +820,29 @@ export default function TeamBuilderPage() {
                                           {cardFields.has('offer_status') && a?.status === 'Waitlist' && !isAccepted && !isDeclinedOffer && (
                                             <span style={{ fontSize: '10.5px', fontWeight: '700', background: '#F1F5F9', color: '#64748B', borderRadius: '5px', padding: '1px 7px' }}>Waitlist</span>
                                           )}
+                                          {cardFields.has('offer_status') && a?.status === 'Rejected' && (
+                                            <span style={{ fontSize: '10.5px', fontWeight: '700', background: '#F1F5F9', color: '#64748B', borderRadius: '5px', padding: '1px 7px' }}>Notified — Not Selected</span>
+                                          )}
+                                          {cardFields.has('offer_status') && col.id === 'pool' && a?.status !== 'Waitlist' && (
+                                            <button
+                                              onMouseDown={e => e.stopPropagation()}
+                                              onClick={e => { e.stopPropagation(); sendWaitlistEmail(pid); }}
+                                              disabled={sendingId === pid}
+                                              title="Email the family that this player is on the waitlist"
+                                              style={{ fontSize: '10px', fontWeight: '700', background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '5px', padding: '1px 7px', cursor: 'pointer' }}>
+                                              {sendingId === pid ? '…' : '🕓 Waitlist'}
+                                            </button>
+                                          )}
+                                          {cardFields.has('offer_status') && col.id === 'cut' && a?.status !== 'Rejected' && (
+                                            <button
+                                              onMouseDown={e => e.stopPropagation()}
+                                              onClick={e => { e.stopPropagation(); sendDeclineEmail(pid); }}
+                                              disabled={sendingId === pid}
+                                              title="Email the family that this player was not selected"
+                                              style={{ fontSize: '10px', fontWeight: '700', background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '5px', padding: '1px 7px', cursor: 'pointer' }}>
+                                              {sendingId === pid ? '…' : <><Mail size={9} style={{ display: 'inline', marginRight: '2px', verticalAlign: '-1px' }} />Notify</>}
+                                            </button>
+                                          )}
                                           {cardFields.has('offer_status') && isTeam && !isAccepted && !isDeclinedOffer && (
                                             <button
                                               onMouseDown={e => e.stopPropagation()}
@@ -806,6 +856,16 @@ export default function TeamBuilderPage() {
                                               {a?.offer_status === 'Sent'
                                                 ? <>↺ {sendingId === pid ? '…' : 'Resend'}</>
                                                 : <><Send size={8} />{sendingId === pid ? '…' : 'Send Offer'}</>}
+                                            </button>
+                                          )}
+                                          {cardFields.has('offer_status') && isTeam && a?.offer_status === 'Sent' && (
+                                            <button
+                                              onMouseDown={e => e.stopPropagation()}
+                                              onClick={e => { e.stopPropagation(); sendReminderEmail(pid); }}
+                                              disabled={sendingId === pid}
+                                              title="Send a reminder that their offer is awaiting a response"
+                                              style={{ fontSize: '10px', fontWeight: '700', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', borderRadius: '5px', padding: '1px 7px', cursor: 'pointer' }}>
+                                              {sendingId === pid ? '…' : '🔔 Remind'}
                                             </button>
                                           )}
                                           {cardFields.has('offer_status') && isTeam && !isAccepted && !isDeclinedOffer && (

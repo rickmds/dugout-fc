@@ -8,8 +8,11 @@ const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
+// Notifies a family their player was not offered a roster spot. Distinct
+// from tryout_assignments.offer_status='Declined' (the family declining an
+// offer the club DID extend) — this uses the otherwise-unused status
+// 'Rejected' to mean "the club did not select this player."
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['org_admin', 'app_admin']);
   if (!auth.ok) return auth.response;
@@ -24,25 +27,13 @@ export async function POST(req: NextRequest) {
   const { data: a } = await sb.from('tryout_assignments').select('*, tryout_players(*)').eq('player_id', player_id).eq('club_id', club_id).single();
   if (!a) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  if (a.offer_status !== 'Sent') {
-    return NextResponse.json({ error: 'Offer is not currently awaiting a response' }, { status: 400 });
-  }
-
-  // 24-hour cooldown
-  const lastSent = (a as { reminder_sent_at: string | null }).reminder_sent_at;
-  if (lastSent && (Date.now() - new Date(lastSent).getTime()) < 86_400_000) {
-    return NextResponse.json({ error: 'Reminder already sent within the last 24 hours' }, { status: 429 });
-  }
-
   const player = (a as { tryout_players: Record<string, string> }).tryout_players;
   if (!player?.email_primary) return NextResponse.json({ error: 'Player has no email' }, { status: 400 });
 
-  const { data: tmpl } = await sb.from('tryout_email_templates').select('*').eq('club_id', club_id).eq('template_key', 'reminder').single();
-  const { data: settings } = await sb.from('tryout_offer_settings').select('*').eq('club_id', club_id).single();
+  const { data: tmpl } = await sb.from('tryout_email_templates').select('*').eq('club_id', club_id).eq('template_key', 'decline').single();
   const { data: club } = await sb.from('clubs').select('name').eq('id', club_id).single();
 
-  const token = (a as { offer_token: string }).offer_token;
-  const body = mergeTokens(tmpl?.body_html ?? '<p>This is a reminder that your roster offer is awaiting your response. {{accept_link}} | {{decline_link}}</p>', {
+  const body = mergeTokens(tmpl?.body_html ?? '<p>Thank you for trying out. Unfortunately, we are not able to offer a roster spot at this time.</p>', {
     player_first_name: player.first_name ?? '',
     player_full_name: player.full_name ?? '',
     parent_name: player.parent_name ?? '',
@@ -50,27 +41,22 @@ export async function POST(req: NextRequest) {
     age_group: player.final_age_group ?? '',
     club_name: club?.name ?? '',
     season_label: player.season_label ?? '',
-    offer_deadline: settings?.offer_deadline ? new Date(settings.offer_deadline).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
-    accept_link: `${APP_URL}/offer-response?token=${token}&action=accept`,
-    decline_link: `${APP_URL}/offer-response?token=${token}&action=decline`,
+    offer_deadline: '', accept_link: '', decline_link: '',
   });
 
   try {
     await resend.emails.send({
       from: `${tmpl?.from_name ?? club?.name ?? 'Pulse FC'} <support@pulse-fc.app>`,
       to: player.email_primary,
-      subject: tmpl?.subject ?? 'Reminder: Your Roster Offer',
+      subject: tmpl?.subject ?? 'Tryout Update',
       html: body,
     });
   } catch (e) {
-    console.error('send-reminder: resend failed', e);
-    return NextResponse.json({ error: 'Could not send the reminder email. Please try again.' }, { status: 502 });
+    console.error('send-decline: resend failed', e);
+    return NextResponse.json({ error: 'Could not send the email. Please try again.' }, { status: 502 });
   }
 
-  await sb.from('tryout_assignments').update({
-    reminder_sent_at: new Date().toISOString(),
-    reminder_count: ((a as { reminder_count: number }).reminder_count ?? 0) + 1,
-  }).eq('player_id', player_id).eq('club_id', club_id);
+  await sb.from('tryout_assignments').update({ status: 'Rejected' }).eq('player_id', player_id).eq('club_id', club_id);
 
   return NextResponse.json({ ok: true });
 }

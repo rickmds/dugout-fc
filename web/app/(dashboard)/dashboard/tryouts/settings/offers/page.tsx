@@ -253,6 +253,11 @@ export default function TryoutOfferSettingsPage() {
   const [preview, setPreview]     = useState<string | null>(null);
   const [emailModes, setEmailModes] = useState<Record<string, 'simple'|'html'>>({});
 
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  function snapshotOf(s: OfferSettings, t: Record<string, EmailTemplate>, f: Record<string, FeePlanForm>) {
+    return JSON.stringify({ s, t, f });
+  }
+
   useEffect(() => {
     if (!club) return;
     (async () => {
@@ -262,7 +267,8 @@ export default function TryoutOfferSettingsPage() {
         supabase.from('tryout_teams').select('age_group').eq('club_id', club.id),
         supabase.from('tryout_fee_plans').select('age_group, season_fee, installments').eq('club_id', club.id),
       ]);
-      if (os) setSettings({ ...BLANK, ...os });
+      const loadedSettings = os ? { ...BLANK, ...os } : BLANK;
+      setSettings(loadedSettings);
       const map: Record<string, EmailTemplate> = {};
       for (const t of (tmpl ?? [])) map[t.template_key] = t;
       setTemplates(map);
@@ -278,8 +284,21 @@ export default function TryoutOfferSettingsPage() {
         };
       }
       setFeePlans(planMap);
+      setSavedSnapshot(snapshotOf(loadedSettings, map, planMap));
     })();
   }, [club]);
+
+  const isDirty = savedSnapshot !== null && savedSnapshot !== snapshotOf(settings, templates, feePlans);
+
+  useEffect(() => {
+    function handler(e: BeforeUnloadEvent) {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    }
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   async function handleSave() {
     if (!club) return;
@@ -300,6 +319,7 @@ export default function TryoutOfferSettingsPage() {
           .map(i => ({ label: i.label.trim(), amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_type: i.due_type, due_date: i.due_type === 'date' ? (i.due_date || null) : null })),
       }));
     if (planUpserts.length) await supabase.from('tryout_fee_plans').upsert(planUpserts, { onConflict: 'club_id,age_group' });
+    setSavedSnapshot(snapshotOf(settings, templates, feePlans));
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   }
@@ -521,6 +541,16 @@ export default function TryoutOfferSettingsPage() {
 
   type SectionId = 'settings'|'cost'|'offer'|'offer-u8'|'waitlist'|'decline'|'reminder'|'tokens';
 
+  // Surfaces the gaps that would actually break or blank-out a real email,
+  // not just "hasn't been touched yet".
+  const defaultFeeSet = !!feePlans['']?.season_fee?.trim();
+  const missingFeeAgeGroups = feeAgeGroups.filter(ag => !feePlans[ag]?.season_fee?.trim());
+  const NEEDS_ATTENTION: Partial<Record<SectionId, string>> = {
+    settings: !settings.from_name.trim() ? 'No "From name" set — emails will show your club name instead' : undefined,
+    cost: (!defaultFeeSet && missingFeeAgeGroups.length > 0) ? `${missingFeeAgeGroups.join(', ')} has no fee set and there's no default fee` : undefined,
+    offer: !settings.email_body_html.trim() ? 'Email body is empty — offers would send blank' : undefined,
+  };
+
   const SECTIONS: { id: SectionId; num: number; label: string; desc: string }[] = [
     { id: 'settings',  num: 1, label: 'Global settings',     desc: 'From name, deadline, links' },
     { id: 'cost',      num: 2, label: 'Cost & installments', desc: 'Fee per age group + payment plan' },
@@ -549,10 +579,17 @@ export default function TryoutOfferSettingsPage() {
           <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '2px' }}>Tryout Setup</div>
           <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Offer Templates</h1>
         </div>
-        <button onClick={handleSave} disabled={saving}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
-          <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save changes'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {isDirty && !saving && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '600', color: '#D97706' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#D97706' }} /> Unsaved changes
+            </span>
+          )}
+          <button onClick={handleSave} disabled={saving}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
+            <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
       </div>
 
       {/* Body: left nav + right panel */}
@@ -563,20 +600,24 @@ export default function TryoutOfferSettingsPage() {
           <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '10px' }}>Setup flow</div>
           {SECTIONS.map(s => {
             const active = activeSection === s.id;
+            const warning = NEEDS_ATTENTION[s.id];
             return (
-              <button key={s.id} onClick={() => setActiveSection(s.id)}
+              <button key={s.id} onClick={() => setActiveSection(s.id)} title={warning}
                 style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%', padding: '10px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', marginBottom: '2px',
                   background: active ? `${primary}12` : 'transparent',
                   borderLeft: active ? `2px solid ${primary}` : '2px solid transparent',
                 }}>
-                <div style={{ width: '22px', height: '22px', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800',
+                <div style={{ width: '22px', height: '22px', borderRadius: '6px', flexShrink: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800',
                   background: active ? primary : '#F1F5F9',
                   color: active ? '#fff' : '#64748B' }}>
                   {s.num}
+                  {warning && (
+                    <span style={{ position: 'absolute', top: '-3px', right: '-3px', width: '9px', height: '9px', borderRadius: '50%', background: '#D97706', border: '1.5px solid #fff' }} />
+                  )}
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#0D1117' : '#374151', lineHeight: '1.3' }}>{s.label}</div>
-                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>{s.desc}</div>
+                  <div style={{ fontSize: '11px', color: warning ? '#D97706' : '#94A3B8', fontWeight: warning ? '600' : '400', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>{warning ?? s.desc}</div>
                 </div>
               </button>
             );
