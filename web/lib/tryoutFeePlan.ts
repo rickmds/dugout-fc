@@ -1,4 +1,12 @@
-export type Installment = { label: string; amount: number | null; due_date: string | null };
+export type DueType = 'acceptance' | 'date' | 'tbd';
+export type Installment = { label: string; amount: number | null; due_type: DueType; due_date: string | null };
+
+// Older saved installments predate due_type — infer it from whatever
+// due_date they had so existing plans keep rendering sensibly.
+export function normalizeDueType(inst: { due_type?: DueType; due_date: string | null }): DueType {
+  if (inst.due_type) return inst.due_type;
+  return inst.due_date ? 'date' : 'tbd';
+}
 export type FeePlanRow = { age_group: string; season_fee: number | null; installments: Installment[] };
 export type ResolvedFeePlan = { seasonFee: number | null; installments: Installment[] };
 
@@ -37,7 +45,7 @@ export function resolveFeePlan(
 
   if (overrideFee != null) {
     const overrideDeposit = parseMoney(teamDepositOverride);
-    return { seasonFee, installments: overrideDeposit != null ? [{ label: 'Deposit', amount: overrideDeposit, due_date: null }] : [] };
+    return { seasonFee, installments: overrideDeposit != null ? [{ label: 'Deposit', amount: overrideDeposit, due_type: 'acceptance', due_date: null }] : [] };
   }
   return { seasonFee, installments: plan?.installments ?? [] };
 }
@@ -45,9 +53,12 @@ export function resolveFeePlan(
 export function renderInstallmentPlanHtml(plan: ResolvedFeePlan, currency = 'USD'): string {
   if (!plan.installments.length) return '';
   const rows = plan.installments.map((inst, i) => {
-    const dueTxt = inst.due_date
-      ? new Date(inst.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-      : 'Date TBD';
+    const dueType = normalizeDueType(inst);
+    const dueTxt = dueType === 'acceptance'
+      ? 'Due upon acceptance of roster spot'
+      : dueType === 'date' && inst.due_date
+        ? new Date(inst.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : 'Date TBD';
     const isLast = i === plan.installments.length - 1;
     return `<div style="display:block;padding:12px 0;${isLast ? '' : 'border-bottom:1px solid #eee;'}"><span style="display:inline-block;width:150px;color:#111827;font-size:13px;font-weight:600;">${inst.label}</span><span style="display:inline-block;width:90px;font-weight:700;">${inst.amount != null ? formatCurrency(inst.amount, currency) : 'TBD'}</span><span style="color:#6b7280;font-size:13px;">${dueTxt}</span></div>`;
   }).join('');

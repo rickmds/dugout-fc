@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { Save, Info, Eye, X, Plus, Trash2 } from 'lucide-react';
-import { CURRENCY_SYMBOLS, renderInstallmentPlanHtml, type Installment as FeeInstallment } from '@/lib/tryoutFeePlan';
+import { CURRENCY_SYMBOLS, renderInstallmentPlanHtml, normalizeDueType, type Installment as FeeInstallment, type DueType } from '@/lib/tryoutFeePlan';
 
 type OfferSettings = {
   id?: string;
@@ -28,7 +28,7 @@ type EmailTemplate = {
 
 // Controlled-input form state for one age group's cost + payment plan.
 // '' as the age group key means "Default (all other ages)".
-type FeePlanForm = { season_fee: string; installments: { label: string; amount: string; due_date: string }[] };
+type FeePlanForm = { season_fee: string; installments: { label: string; amount: string; due_type: DueType; due_date: string }[] };
 
 const BLANK: OfferSettings = {
   email_subject: 'Your Roster Offer — {{team_name}}',
@@ -274,7 +274,7 @@ export default function TryoutOfferSettingsPage() {
       for (const r of (planRows ?? []) as { age_group: string; season_fee: number | string | null; installments: FeeInstallment[] }[]) {
         planMap[r.age_group] = {
           season_fee: r.season_fee != null ? String(r.season_fee) : '',
-          installments: (r.installments ?? []).map(i => ({ label: i.label ?? '', amount: i.amount != null ? String(i.amount) : '', due_date: i.due_date ?? '' })),
+          installments: (r.installments ?? []).map(i => ({ label: i.label ?? '', amount: i.amount != null ? String(i.amount) : '', due_type: normalizeDueType(i), due_date: i.due_date ?? '' })),
         };
       }
       setFeePlans(planMap);
@@ -297,7 +297,7 @@ export default function TryoutOfferSettingsPage() {
         season_fee: p.season_fee.trim() === '' ? null : Number(p.season_fee.replace(/[^0-9.]/g, '')),
         installments: p.installments
           .filter(i => i.label.trim() !== '' || i.amount.trim() !== '')
-          .map(i => ({ label: i.label.trim(), amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_date: i.due_date || null })),
+          .map(i => ({ label: i.label.trim(), amount: i.amount.trim() === '' ? null : Number(i.amount.replace(/[^0-9.]/g, '')), due_type: i.due_type, due_date: i.due_type === 'date' ? (i.due_date || null) : null })),
       }));
     if (planUpserts.length) await supabase.from('tryout_fee_plans').upsert(planUpserts, { onConflict: 'club_id,age_group' });
     setSaving(false); setSaved(true);
@@ -317,9 +317,10 @@ export default function TryoutOfferSettingsPage() {
     setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), season_fee: fee } }));
   }
   function addInstallment(ag: string) {
-    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: [...planFor(ag).installments, { label: '', amount: '', due_date: '' }] } }));
+    const isFirst = planFor(ag).installments.length === 0;
+    setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: [...planFor(ag).installments, { label: isFirst ? 'Deposit' : '', amount: '', due_type: isFirst ? 'acceptance' : 'date', due_date: '' }] } }));
   }
-  function updateInstallment(ag: string, idx: number, patch: Partial<{ label: string; amount: string; due_date: string }>) {
+  function updateInstallment(ag: string, idx: number, patch: Partial<{ label: string; amount: string; due_type: DueType; due_date: string }>) {
     setFeePlans(prev => ({ ...prev, [ag]: { ...planFor(ag), installments: planFor(ag).installments.map((inst, i) => i === idx ? { ...inst, ...patch } : inst) } }));
   }
   function removeInstallment(ag: string, idx: number) {
@@ -343,22 +344,34 @@ export default function TryoutOfferSettingsPage() {
           </div>
         </div>
         {plan.installments.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
             {plan.installments.map((inst, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 110px 140px 28px', gap: '8px', alignItems: 'center' }}>
-                <input value={inst.label} onChange={e => updateInstallment(ag, i, { label: e.target.value })} placeholder={`Installment ${i + 1}`}
-                  style={{ padding: '7px 10px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }} />
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', fontSize: '12.5px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
-                  <input value={inst.amount} onChange={e => updateInstallment(ag, i, { amount: e.target.value })} type="number" placeholder="0"
-                    style={{ width: '100%', padding: '7px 8px 7px 22px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }} />
+              <div key={i} style={{ background: '#FAFBFC', border: '1px solid #F1F5F9', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 28px', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                  <input value={inst.label} onChange={e => updateInstallment(ag, i, { label: e.target.value })} placeholder={`Installment ${i + 1}`}
+                    style={{ padding: '7px 10px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', fontSize: '12.5px', color: '#94A3B8', pointerEvents: 'none' }}>{currSym}</span>
+                    <input value={inst.amount} onChange={e => updateInstallment(ag, i, { amount: e.target.value })} type="number" placeholder="0"
+                      style={{ width: '100%', padding: '7px 8px 7px 22px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', background: '#fff' }} />
+                  </div>
+                  <button onClick={() => removeInstallment(ag, i)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <input value={inst.due_date} onChange={e => updateInstallment(ag, i, { due_date: e.target.value })} type="date"
-                  style={{ padding: '7px 8px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }} />
-                <button onClick={() => removeInstallment(ag, i)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Trash2 size={14} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <select value={inst.due_type} onChange={e => updateInstallment(ag, i, { due_type: e.target.value as DueType })}
+                    style={{ padding: '6px 8px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#0F172A', outline: 'none', background: '#fff', cursor: 'pointer' }}>
+                    <option value="acceptance">Due upon acceptance</option>
+                    <option value="date">Specific date</option>
+                    <option value="tbd">Date TBD</option>
+                  </select>
+                  {inst.due_type === 'date' && (
+                    <input value={inst.due_date} onChange={e => updateInstallment(ag, i, { due_date: e.target.value })} type="date"
+                      style={{ padding: '6px 8px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#0F172A', outline: 'none', background: '#fff' }} />
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -395,10 +408,10 @@ export default function TryoutOfferSettingsPage() {
       ? new Date(settings.offer_deadline).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
       : 'June 30 at 12:00 PM';
 
-    const sampleInstallments = [
-      { label: 'Deposit',      amount: 765, due_date: null },
-      { label: 'Installment 2', amount: 765, due_date: '2027-08-01' },
-      { label: 'Installment 3', amount: 765, due_date: '2027-11-01' },
+    const sampleInstallments: FeeInstallment[] = [
+      { label: 'Deposit',       amount: 765, due_type: 'acceptance', due_date: null },
+      { label: 'Installment 2', amount: 765, due_type: 'date',       due_date: '2027-08-01' },
+      { label: 'Installment 3', amount: 765, due_type: 'date',       due_date: '2027-11-01' },
     ];
     const sample: Record<string, string> = {
       player_first_name: 'Alex', player_full_name: 'Alex Johnson', parent_name: 'Sarah Johnson',
