@@ -22,6 +22,7 @@ interface ClubResult {
   name: string;
   slug: string;
   logo_url: string | null;
+  primary_color: string | null;
 }
 
 export default function FindTeamScreen() {
@@ -54,7 +55,7 @@ export default function FindTeamScreen() {
     setClubLoading(true);
     const { data: club } = await supabase
       .from('clubs')
-      .select('id, name, slug, logo_url')
+      .select('id, name, slug, logo_url, primary_color')
       .eq('slug', clubSlug.trim().toLowerCase())
       .single();
 
@@ -62,7 +63,7 @@ export default function FindTeamScreen() {
     // back to a name search before giving up.
     const resolvedClub = club ?? (await supabase
       .from('clubs')
-      .select('id, name, slug, logo_url')
+      .select('id, name, slug, logo_url, primary_color')
       .ilike('name', `%${clubSlug.trim()}%`)
       .limit(1)
       .maybeSingle()
@@ -122,7 +123,7 @@ export default function FindTeamScreen() {
             label="Club slug"
             value={clubSlug}
             onChangeText={setClubSlug}
-            placeholder="e.g. mds-academy"
+            placeholder="e.g. oakwood-fc"
           />
           <PrimaryButton title="Search" onPress={handleFindClub} loading={clubLoading} variant="outline" />
 
@@ -144,6 +145,7 @@ export default function FindTeamScreen() {
                     onPress={handleJoinTeam}
                     loading={joinLoading}
                     style={styles.joinButton}
+                    color={foundClub.primary_color && foundClub.primary_color !== '#000000' ? foundClub.primary_color : undefined}
                   />
                 </>
               )}
