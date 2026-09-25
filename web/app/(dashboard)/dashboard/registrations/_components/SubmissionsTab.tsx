@@ -66,7 +66,7 @@ const SELECT_STYLE: React.CSSProperties = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SubmissionsTab() {
-  const { club, teams } = useDashboard();
+  const { club, teams, profile } = useDashboard();
 
   const primary =
     club?.primary_color && club.primary_color !== '#000000'
@@ -92,6 +92,7 @@ export default function SubmissionsTab() {
   const [activeSub, setActiveSub]   = useState<ActiveSub | null>(null);
   const [showDuplicateBanner, setShowDuplicateBanner] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [showRosterModal, setShowRosterModal] = useState(false);
 
   // ── Derived maps ────────────────────────────────────────────────────────────
 
@@ -112,6 +113,20 @@ export default function SubmissionsTab() {
   const getTeamName = (sub: Submission, form: RegForm): string => {
     if (sub.tryout_assignment_id) return tryoutTeamMap.get(sub.tryout_assignment_id) ?? '—';
     return form.team_id ? (teamMap.get(form.team_id) ?? '—') : '—';
+  };
+
+  // The real teams.id to roster this submission onto — prefers the linked
+  // tryout assignment's team (matched by name; tryout_teams and teams are
+  // separate catalogs with no FK bridge between them), falling back to the
+  // form's own configured team. Null means nothing can tell us which team,
+  // and the bulk roster tool skips that row rather than guessing.
+  const resolveTeamId = (sub: Submission, form: RegForm): string | null => {
+    if (sub.tryout_assignment_id) {
+      const name = tryoutTeamMap.get(sub.tryout_assignment_id);
+      const match = name ? teams.find(t => t.name.trim().toLowerCase() === name.trim().toLowerCase()) : undefined;
+      if (match) return match.id;
+    }
+    return form.team_id ?? null;
   };
 
   const formHasPrice = (form: RegForm): boolean =>
@@ -521,6 +536,21 @@ export default function SubmissionsTab() {
           </span>
 
           <button
+            onClick={() => setShowRosterModal(true)}
+            disabled={bulkLoading}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              fontSize: '12px', fontWeight: 600, padding: '5px 13px',
+              borderRadius: '8px', border: 'none',
+              background: primary, color: '#fff',
+              cursor: bulkLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+              opacity: bulkLoading ? 0.6 : 1,
+            }}
+          >
+            <Users size={12} /> Add to roster
+          </button>
+
+          <button
             onClick={handleExportCSV}
             disabled={bulkLoading}
             style={{
@@ -748,6 +778,143 @@ export default function SubmissionsTab() {
           }}
         />
       )}
+
+      {/* ── Bulk "Add to roster" modal ──────────────────────────────────────── */}
+      {showRosterModal && (
+        <BulkRosterModal
+          rows={submissions
+            .filter(s => selectedIds.has(s.id))
+            .map(s => {
+              const form = formMap.get(s.form_id);
+              return {
+                sub: s,
+                teamId: form ? resolveTeamId(s, form) : null,
+                teamName: form ? getTeamName(s, form) : '—',
+                email: parentEmail(s.data),
+              };
+            })}
+          clubId={club?.id ?? ''}
+          profileId={profile?.id ?? null}
+          onClose={() => setShowRosterModal(false)}
+          onDone={() => { setShowRosterModal(false); setSelectedIds(new Set()); loadData(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+type RosterRow = { sub: Submission; teamId: string | null; teamName: string; email: string };
+
+// Bulk version of SubmissionDetail's "Add to team roster" — same two
+// insert-a-player-then-invite-the-parent shape, just looped over every
+// selected submission that isn't already on a roster and has a resolvable
+// team. Runs sequentially (not Promise.all) so a season's worth of real
+// invite emails go out predictably, not in an uncontrolled burst.
+function BulkRosterModal({ rows, clubId, profileId, onClose, onDone }: {
+  rows: RosterRow[]; clubId: string; profileId: string | null;
+  onClose: () => void; onDone: () => void;
+}) {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [results, setResults] = useState<{ added: number; invited: number } | null>(null);
+
+  const alreadyOnRoster = rows.filter(r => r.sub.roster_player_id);
+  const pending = rows.filter(r => !r.sub.roster_player_id);
+  const withTeam = pending.filter(r => r.teamId);
+  const withoutTeam = pending.filter(r => !r.teamId);
+
+  async function run() {
+    setRunning(true);
+    let added = 0, invited = 0;
+    for (const row of withTeam) {
+      const name = playerName(row.sub.data);
+      const { data: playerRow, error } = await supabase
+        .from('players')
+        .insert({ team_id: row.teamId, full_name: name, profile_id: null })
+        .select('id').single();
+      if (error || !playerRow) continue;
+      added++;
+      setProgress(added);
+
+      if (row.email) {
+        const { data: inviteRow } = await supabase.from('invites').insert({
+          team_id: row.teamId, club_id: clubId, player_id: (playerRow as { id: string }).id,
+          email: row.email, created_by: profileId,
+        }).select('id').single();
+        if (inviteRow) {
+          const { data: { session } } = await supabase.auth.getSession();
+          await fetch('/api/send-invite', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+            },
+            body: JSON.stringify({ invite_id: (inviteRow as { id: string }).id, player_name: name }),
+          }).catch(() => {});
+          invited++;
+        }
+      }
+
+      await supabase.from('registration_submissions').update({
+        roster_added_at: new Date().toISOString(), roster_player_id: (playerRow as { id: string }).id,
+      }).eq('id', row.sub.id);
+    }
+    setResults({ added, invited });
+    setRunning(false);
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }} onClick={running ? undefined : onClose}>
+      <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '520px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontWeight: 800, fontSize: '16px', color: '#0F172A', marginBottom: '4px' }}>Add to roster</div>
+
+        {results ? (
+          <>
+            <p style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6, margin: '12px 0 20px' }}>
+              Added <strong>{results.added}</strong> player{results.added === 1 ? '' : 's'} to their team{results.invited > 0 ? `, and sent ${results.invited} parent invite${results.invited === 1 ? '' : 's'}` : ''}.
+              {' '}{withoutTeam.length > 0 && `${withoutTeam.length} had no team on file and were skipped — add those individually from their submission's Roster tab.`}
+            </p>
+            <button onClick={onDone} style={{ padding: '10px 18px', borderRadius: '9px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', alignSelf: 'flex-end' }}>Done</button>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: '13px', color: '#64748B', margin: '4px 0 14px' }}>
+              {withTeam.length} will be added to their team{withTeam.filter(r => r.email).length > 0 ? ` and invited by email` : ''}.
+              {withoutTeam.length > 0 && ` ${withoutTeam.length} have no team on file and will be skipped.`}
+              {alreadyOnRoster.length > 0 && ` ${alreadyOnRoster.length} already on a roster will be left alone.`}
+            </p>
+
+            <div style={{ overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: '10px', marginBottom: '18px' }}>
+              {rows.map(row => {
+                const onRoster = !!row.sub.roster_player_id;
+                return (
+                  <div key={row.sub.id} style={{ padding: '9px 14px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{playerName(row.sub.data)}</div>
+                      <div style={{ fontSize: '11px', color: '#94A3B8' }}>{row.email || 'No parent email found'}</div>
+                    </div>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 700, padding: '3px 9px', borderRadius: '20px', whiteSpace: 'nowrap',
+                      color: onRoster ? '#64748B' : row.teamId ? '#16A34A' : '#DC2626',
+                      background: onRoster ? '#F1F5F9' : row.teamId ? '#DCFCE7' : '#FEE2E2',
+                    }}>
+                      {onRoster ? 'Already added' : row.teamId ? row.teamName : 'No team found'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={onClose} disabled={running} style={{ padding: '10px 18px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: 600, cursor: running ? 'default' : 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={run} disabled={running || withTeam.length === 0}
+                style={{ padding: '10px 18px', borderRadius: '9px', border: 'none', background: withTeam.length === 0 ? '#86EFAC' : '#22C55E', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: running || withTeam.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {running ? `Adding… (${progress}/${withTeam.length})` : `Add ${withTeam.length} player${withTeam.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import {
   PAY_STATUS_STYLES,
   fmtMoney, fmtDate, formFields, playerName,
   labelSt, inputSt, backBtnSt,
-  normalizeRequiredDocs, requiredDocDataKey,
+  normalizeRequiredDocs, requiredDocDataKey, parentEmail,
 } from './shared';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ const PAY_STATUSES: PaymentStatus[] = ['paid', 'partial', 'unpaid', 'refunded'];
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Props) {
-  const { club, teams } = useDashboard();
+  const { club, teams, profile } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000'
     ? club.primary_color : '#22C55E';
 
@@ -169,6 +169,17 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
   );
   const [rosterAdding, setRosterAdding]         = useState(false);
   const [rosterError, setRosterError]           = useState<string | null>(null);
+
+  // tryout_assignments.team is a free-text name (Team Builder has its own
+  // tryout_teams catalog, unrelated to the real teams table) — best-effort
+  // match by name so the roster-add dropdown starts on the right team
+  // instead of blank/the form's generic default.
+  useEffect(() => {
+    if (!tryoutTeam) return;
+    const match = teams.find(t => t.name.trim().toLowerCase() === tryoutTeam.trim().toLowerCase());
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- derived-state sync from a prop (tryoutTeam/teams becoming available), not derivable at render time
+    if (match) setRosterTeamId(match.id);
+  }, [tryoutTeam, teams]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -361,8 +372,38 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
       const playerId = (playerRow as { id: string }).id;
       const now      = new Date().toISOString();
 
+      // Creating the player row alone leaves the parent with no way to
+      // ever see their child in the app — players.profile_id only ever
+      // gets populated when an invite is accepted (see
+      // web/app/api/accept-invite/route.ts). Same two-step invite this
+      // dashboard's own Roster page uses (handleAddPlayer,
+      // web/app/(dashboard)/dashboard/roster/page.tsx).
+      const email = parentEmail(sub.data);
+      let invited = false;
+      if (email) {
+        const { data: inviteRow } = await supabase.from('invites').insert({
+          team_id: rosterTeamId, club_id: club?.id, player_id: playerId,
+          email, created_by: profile?.id,
+        }).select('id').single();
+        if (inviteRow) {
+          const { data: { session } } = await supabase.auth.getSession();
+          await fetch('/api/send-invite', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+            },
+            body: JSON.stringify({
+              invite_id: (inviteRow as { id: string }).id,
+              player_name: rosterName.trim(),
+            }),
+          }).catch(() => {});
+          invited = true;
+        }
+      }
+
       await patch({ roster_added_at: now, roster_player_id: playerId });
-      showToast('Added to roster');
+      showToast(invited ? 'Added to roster — invite sent to parent' : 'Added to roster (no parent email found — invite them from the Roster tab)');
     } catch (e) {
       setRosterError((e as Error).message);
     } finally {
@@ -938,7 +979,7 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                     Add to team roster
                   </div>
                   <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748B' }}>
-                    This will create a player entry in the selected team.
+                    This adds a player entry to the selected team and, if an email address was found on this registration, sends the parent an invite to join it in the app.
                   </p>
 
                   {rosterError && (
