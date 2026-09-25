@@ -1075,8 +1075,8 @@ const DEFAULT_OFFER_BODY = `<p>Dear {{parent_name}},</p>
 <h2>Next Steps</h2>
 <ol>
   <li><strong>Accept your offer below</strong> by {{offer_deadline}}</li>
-  <li>Download the Pulse FC app — connect with your team, RSVP to events, and stay up to date</li>
   <li>Watch for your welcome email from your coach with further details</li>
+  <li>Download the Pulse FC app — connect with your team, RSVP to events, and stay up to date</li>
 </ol>
 <p>If you can't accept or need more time, please let us know right away — your decision affects other placements.</p>
 <p>We're excited to welcome <strong>{{player_first_name}}</strong> to the {{club_name}} family!</p>`;
