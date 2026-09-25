@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -27,6 +28,17 @@ import type { PositionSlot } from '../../../../../../constants/formations';
 
 type EventInfo = { id: string; title: string; event_date: string; team_id: string };
 type TeamInfo  = { id: string; age_group: string | null };
+
+// Response shape from the plan-subs edge function — a pre-game substitution
+// schedule (which minute each sub comes on, matched by position, for equal
+// playing time), distinct from the live in-match "target minutes" hint on
+// the match tracker's bench. See supabase/functions/plan-subs/index.ts.
+type SubPlanResult = {
+  summary: string;
+  target_minutes: number;
+  subs: Array<{ minute: number; player_off: string; player_on: string; note: string }>;
+  playing_time: Array<{ name: string; minutes: number }>;
+};
 type Player    = { id: string; full_name: string; jersey_number: number | null; position: string | null; isGuest?: boolean; isInjured?: boolean };
 type BottomTab = 'formation' | 'players';
 type DragState = { fromIdx: number; pageX: number; pageY: number } | null;
@@ -287,6 +299,11 @@ export default function LineupScreen() {
   const [activeTab,       setActiveTab]       = useState<BottomTab>('formation');
   const [drag,            setDrag]            = useState<DragState>(null);
   const [aiSuggesting,    setAiSuggesting]    = useState(false);
+  const [subPlanOpen,     setSubPlanOpen]     = useState(false);
+  const [subPlanLoading,  setSubPlanLoading]  = useState(false);
+  const [subPlanResult,   setSubPlanResult]   = useState<SubPlanResult | null>(null);
+  const [subPlanMinutes,  setSubPlanMinutes]  = useState('60');
+  const [subPlanHalves,   setSubPlanHalves]   = useState('2');
 
   const lineup = useLineup(team?.age_group);
 
@@ -608,6 +625,47 @@ export default function LineupScreen() {
     }
   }
 
+  async function handleGenerateSubPlan() {
+    const starters = Object.values(assignments)
+      .map((id) => players.find((p) => p.id === id))
+      .filter((p): p is Player => !!p);
+    const onPitchIds = new Set(Object.values(assignments));
+    const subs = players.filter((p) => !onPitchIds.has(p.id));
+
+    const gameLength = parseInt(subPlanMinutes, 10);
+    const halves     = parseInt(subPlanHalves, 10);
+    if (starters.length === 0 || subs.length === 0) {
+      Alert.alert('Nothing to plan', 'Assign a starting lineup and leave at least one player on the bench first.');
+      return;
+    }
+    if (!gameLength || gameLength <= 0 || !halves || halves <= 0) {
+      Alert.alert('Invalid game length', 'Enter a game length and number of halves greater than zero.');
+      return;
+    }
+
+    setSubPlanLoading(true);
+    setSubPlanResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('plan-subs', {
+        body: {
+          starters: starters.map((p) => ({ full_name: p.full_name, position: p.position })),
+          subs: subs.map((p) => ({ full_name: p.full_name, position: p.position })),
+          game_length: gameLength,
+          halves,
+        },
+      });
+      if (error || !data?.subs) {
+        Alert.alert('Could not generate plan', error?.message ?? 'Try again in a moment.');
+        return;
+      }
+      setSubPlanResult(data as SubPlanResult);
+    } catch (e) {
+      Alert.alert('Error', String(e));
+    } finally {
+      setSubPlanLoading(false);
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -657,6 +715,14 @@ export default function LineupScreen() {
               {aiSuggesting
                 ? <ActivityIndicator size="small" color="#fff" />
                 : <><Ionicons name="sparkles-outline" size={14} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>AI</Text></>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { setSubPlanResult(null); setSubPlanOpen(true); }}
+              disabled={aiSuggesting || saving}
+              style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', backgroundColor: 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <Ionicons name="swap-horizontal-outline" size={14} color="#fff" />
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Subs</Text>
             </TouchableOpacity>
             <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.2)' }}>
               <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>{assignedCount}/{totalSlots}</Text>
@@ -800,6 +866,126 @@ export default function LineupScreen() {
       {drag && (
         <DragGhost pageX={drag.pageX} pageY={drag.pageY} ghostPlayer={ghostPlayer} primaryColor={primaryColor} />
       )}
+
+      <SubPlanModal
+        visible={subPlanOpen}
+        onClose={() => setSubPlanOpen(false)}
+        loading={subPlanLoading}
+        result={subPlanResult}
+        gameMinutes={subPlanMinutes}
+        onGameMinutesChange={setSubPlanMinutes}
+        halves={subPlanHalves}
+        onHalvesChange={setSubPlanHalves}
+        onGenerate={handleGenerateSubPlan}
+        primaryColor={primaryColor}
+        rgba={rgba}
+      />
+    </View>
+  );
+}
+
+// A pre-game reference card, not a live automation — the coach reads this
+// off before kickoff (or screenshots it) and still makes the actual subs by
+// hand during the match. Deliberately separate from the match tracker's own
+// live drag-to-sub bench, which has no concept of a pre-planned schedule.
+function SubPlanModal({
+  visible, onClose, loading, result,
+  gameMinutes, onGameMinutesChange, halves, onHalvesChange,
+  onGenerate, primaryColor, rgba,
+}: {
+  visible: boolean; onClose: () => void; loading: boolean; result: SubPlanResult | null;
+  gameMinutes: string; onGameMinutesChange: (v: string) => void;
+  halves: string; onHalvesChange: (v: string) => void;
+  onGenerate: () => void;
+  primaryColor: string; rgba: (a: number) => string;
+}) {
+  const c = PULSE_COLORS.ui;
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: c.surface, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '80%', paddingBottom: 28 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: c.border }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: c.text }}>AI Sub Plan</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={c.muted} /></TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
+            <Text style={{ fontSize: 12.5, color: c.textSecondary, lineHeight: 18 }}>
+              Generates a pre-game substitution schedule for equal playing time — position-matched, spaced out, built from your current starting lineup and bench. A reference for you to work from; it doesn&apos;t sub anyone automatically.
+            </Text>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted, marginBottom: 4 }}>GAME LENGTH (MIN)</Text>
+                <TextInput
+                  value={gameMinutes}
+                  onChangeText={onGameMinutesChange}
+                  keyboardType="number-pad"
+                  style={{ borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 10, fontSize: 14, color: c.text, backgroundColor: c.surfaceAlt }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: c.muted, marginBottom: 4 }}>HALVES</Text>
+                <TextInput
+                  value={halves}
+                  onChangeText={onHalvesChange}
+                  keyboardType="number-pad"
+                  style={{ borderWidth: 1, borderColor: c.border, borderRadius: 8, padding: 10, fontSize: 14, color: c.text, backgroundColor: c.surfaceAlt }}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={onGenerate}
+              disabled={loading}
+              style={{ backgroundColor: primaryColor, borderRadius: 10, padding: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, opacity: loading ? 0.7 : 1 }}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <><Ionicons name="sparkles-outline" size={15} color="#fff" /><Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>{result ? 'Regenerate' : 'Generate plan'}</Text></>}
+            </TouchableOpacity>
+
+            {result && (
+              <View style={{ gap: 12 }}>
+                <View style={{ backgroundColor: rgba(0.08), borderRadius: 10, padding: 12 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: c.text }}>{result.summary}</Text>
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: c.muted, letterSpacing: 1, marginBottom: 8 }}>SUBSTITUTIONS</Text>
+                  {result.subs.sort((a, b) => a.minute - b.minute).map((s, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: i < result.subs.length - 1 ? 1 : 0, borderBottomColor: c.border }}>
+                      <View style={{ width: 44, height: 28, borderRadius: 14, backgroundColor: c.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: c.text }}>{s.minute}&apos;</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: c.text }}>
+                          <Text style={{ color: '#EF4444' }}>{s.player_off}</Text> → <Text style={{ color: '#22C55E' }}>{s.player_on}</Text>
+                        </Text>
+                        {!!s.note && <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>{s.note}</Text>}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: c.muted, letterSpacing: 1, marginBottom: 8 }}>PLAYING TIME</Text>
+                  {result.playing_time.map((p, i) => (
+                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 }}>
+                      <Text style={{ fontSize: 13, color: c.text }}>{p.name}</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: c.textSecondary }}>{p.minutes}&apos;</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
     </View>
   );
 }

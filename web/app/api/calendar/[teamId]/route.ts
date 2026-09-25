@@ -90,6 +90,7 @@ export async function GET(
     .from('events')
     .select('id, title, type, event_date, event_time, duration_minutes, location, address')
     .eq('team_id', teamId)
+    .is('cancelled_at', null)
     .order('event_date')
     .order('event_time');
 
