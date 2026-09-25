@@ -22,6 +22,26 @@ type FieldDef = {
 
 type PriceTier = { label: string; price: number };
 
+type RequiredDoc = { name: string; template_url: string | null; template_filename: string | null };
+
+// required_docs predates this shape — older forms saved it as a plain
+// string[]. Normalize either shape to RequiredDoc[].
+function normalizeRequiredDocs(raw: unknown): RequiredDoc[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((d) =>
+      typeof d === 'string'
+        ? { name: d, template_url: null, template_filename: null }
+        : { name: (d as RequiredDoc)?.name ?? '', template_url: (d as RequiredDoc)?.template_url ?? null, template_filename: (d as RequiredDoc)?.template_filename ?? null }
+    )
+    .filter((d) => d.name.trim());
+}
+
+// A stable, collision-avoiding key for the shared files/errors/uploadProgress
+// maps — required docs live outside form.fields, so this keeps them from
+// ever colliding with a custom field that happens to share a name.
+function docKey(name: string): string { return `doc:${name}`; }
+
 type Form = {
   id: string;
   title: string;
@@ -39,8 +59,10 @@ type Form = {
   plan_installments: number;
   plan_frequency: 'monthly' | 'weekly';
   plan_deposit: number | null;
+  plan_day_of_month: number | null;
   price_mode: 'flat' | 'field' | 'tiers' | null;
   price_tiers: unknown;
+  required_docs: unknown;
   clubs: {
     name: string;
     logo_url: string | null;
@@ -55,6 +77,17 @@ type Form = {
 // they submit — RLS blocks overwriting an existing object there, so a
 // squatted path would just permanently fail their real upload instead.
 function uid() { return crypto.randomUUID(); }
+
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
 
 export default function RegisterPage() {
   const { token } = useParams<{ token: string }>();
@@ -81,7 +114,7 @@ export default function RegisterPage() {
     async function load() {
       const { data, error } = await supabase
         .from('registration_forms')
-        .select('id,title,description,fields,deadline,max_spots,status,confirmation_message,send_confirmation_email,token,price,currency,payment_options,plan_installments,plan_frequency,plan_deposit,price_mode,price_tiers,clubs(name,logo_url,primary_color)')
+        .select('id,title,description,fields,deadline,max_spots,status,confirmation_message,send_confirmation_email,token,price,currency,payment_options,plan_installments,plan_frequency,plan_deposit,plan_day_of_month,price_mode,price_tiers,required_docs,clubs(name,logo_url,primary_color)')
         .eq('token', token)
         .single();
 
@@ -133,6 +166,9 @@ export default function RegisterPage() {
 
   function validate(): Record<string, string> {
     const errs: Record<string, string> = {};
+    for (const doc of normalizeRequiredDocs(form?.required_docs)) {
+      if (!files[docKey(doc.name)]) errs[docKey(doc.name)] = 'Please upload this document';
+    }
     for (const f of form?.fields ?? []) {
       if (f.type === 'section') continue;
       if (f.required) {
@@ -424,6 +460,34 @@ export default function RegisterPage() {
             />
           ))}
 
+          {/* ── Required documents ── */}
+          {normalizeRequiredDocs(form.required_docs).length > 0 && (
+            <div style={{ margin: '28px 0 16px', paddingBottom: '10px', borderBottom: '2px solid #F1F5F9' }}>
+              <h3 style={{ fontSize: '12px', fontWeight: '800', color: '#0F172A', margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Required documents</h3>
+            </div>
+          )}
+          {normalizeRequiredDocs(form.required_docs).map((doc) => (
+            <div key={doc.name}>
+              {doc.template_url && (
+                <a href={doc.template_url} target="_blank" rel="noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: '600', color: primary, textDecoration: 'none', marginBottom: '8px' }}>
+                  📥 Download template{doc.template_filename ? `: ${doc.template_filename}` : ''} — fill it in, then upload it below
+                </a>
+              )}
+              <FormField
+                field={{ type: 'file', label: doc.name, required: true, accept: '.pdf,.doc,.docx,image/*' }}
+                value=""
+                fileValue={files[docKey(doc.name)] ?? null}
+                error={errors[docKey(doc.name)]}
+                uploading={uploadProgress[docKey(doc.name)] ?? false}
+                primary={primary}
+                onValue={() => {}}
+                onMultiValue={() => {}}
+                onFile={(file) => setFile(docKey(doc.name), file)}
+              />
+            </div>
+          ))}
+
           {/* ── Payment section ── */}
           {(() => {
             const pMode = form.price_mode ?? 'flat';
@@ -431,6 +495,9 @@ export default function RegisterPage() {
             const dep   = form.plan_deposit ?? 0;
             const n     = form.plan_installments ?? 3;
             const freq  = form.plan_frequency ?? 'monthly';
+            const freqLabel = form.plan_frequency === 'monthly' && form.plan_day_of_month
+              ? `on the ${ordinal(form.plan_day_of_month)} of each month`
+              : freq;
             const hasError = !!errors['__payment'];
 
             // Resolve the active price for display + plan calc
@@ -541,9 +608,9 @@ export default function RegisterPage() {
                           </div>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: '15px', fontWeight: '700', color: paymentChoice === 'plan' ? '#0F172A' : '#374151', marginBottom: '3px' }}>
-                              Payment plan{dep > 0 ? ` — ${sym}${dep.toFixed(2)} now, then ${n}× ${sym}${instAmount.toFixed(2)} ${freq}` : ` — ${n}× ${sym}${instAmount.toFixed(2)} ${freq}`}
+                              Payment plan{dep > 0 ? ` — ${sym}${dep.toFixed(2)} now, then ${n}× ${sym}${instAmount.toFixed(2)} ${freqLabel}` : ` — ${n}× ${sym}${instAmount.toFixed(2)} ${freqLabel}`}
                             </div>
-                            <div style={{ fontSize: '13px', color: '#64748B' }}>Spread payments over time. Total: {sym}{activePrice.toFixed(2)}. {dep > 0 ? `The ${sym}${dep.toFixed(2)} deposit` : `The first payment`} is due now — you&apos;ll get a link for each remaining {freq} payment as it comes due.</div>
+                            <div style={{ fontSize: '13px', color: '#64748B' }}>Spread payments over time. Total: {sym}{activePrice.toFixed(2)}. {dep > 0 ? `The ${sym}${dep.toFixed(2)} deposit` : `The first payment`} is due now — you&apos;ll get a link for each remaining payment {freqLabel} as it comes due.</div>
                           </div>
                         </button>
                       )}

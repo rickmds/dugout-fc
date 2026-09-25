@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, X, Plus, RefreshCw, Sparkles, FileText, Trash2, Settings2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { WAIVER_TEMPLATES, labelSt, inputSt, backBtnSt, uid } from './shared';
-import type { RegForm, FieldDef, FieldType, PriceMode, PaymentOptions } from './shared';
+import { WAIVER_TEMPLATES, labelSt, inputSt, backBtnSt, uid, normalizeRequiredDocs, ordinal } from './shared';
+import type { RegForm, FieldDef, FieldType, PriceMode, PaymentOptions, RequiredDoc } from './shared';
 
 // ── Field type metadata (coach-friendly language) ─────────────────────────────
 
@@ -166,7 +166,8 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
   const [sendEmail, setSendEmail] = useState(editingForm?.send_confirmation_email ?? true);
   const [fields, setFields]       = useState<FieldDef[]>(editingForm ? (Array.isArray(editingForm.fields) ? editingForm.fields as FieldDef[] : []) : []);
   const [financialAid, setFinancialAid] = useState(editingForm?.financial_aid_enabled ?? false);
-  const [requiredDocs, setRequiredDocs] = useState<string[]>(Array.isArray(editingForm?.required_docs) ? (editingForm.required_docs as string[]) : []);
+  const [requiredDocs, setRequiredDocs] = useState<RequiredDoc[]>(normalizeRequiredDocs(editingForm?.required_docs));
+  const [uploadingTemplateIdx, setUploadingTemplateIdx] = useState<number | null>(null);
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState('');
 
@@ -179,6 +180,7 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
   const [planInst, setPlanInst]   = useState(editingForm?.plan_installments?.toString() ?? '3');
   const [planFreq, setPlanFreq]   = useState<'monthly'|'weekly'>(editingForm?.plan_frequency ?? 'monthly');
   const [planDeposit, setPlanDeposit] = useState(editingForm?.plan_deposit?.toString() ?? '');
+  const [planDayOfMonth, setPlanDayOfMonth] = useState(editingForm?.plan_day_of_month?.toString() ?? '');
 
   // Saved waivers
   const [savedWaivers, setSavedWaivers] = useState<{ id: string; title: string; body: string }[]>([]);
@@ -218,6 +220,24 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
   }
 
   function resetWaiver() { setWvTemplate(null); setWvNotes(''); setWvBody(''); setWvTitle(''); setWvMode('preview'); setWvGenError(''); }
+
+  // Templates are non-sensitive (a blank form, not a family's completed
+  // document) so they live in the public registration-templates bucket,
+  // distinct from registration-docs which holds what parents upload back.
+  async function uploadTemplate(index: number, file: File) {
+    if (!club) return;
+    setUploadingTemplateIdx(index);
+    const ext = file.name.split('.').pop();
+    const path = `${club.id}/${editingForm?.id ?? 'draft'}-${index}-${uid()}.${ext}`;
+    const { data: uploaded, error: upErr } = await supabase.storage
+      .from('registration-templates')
+      .upload(path, file, { upsert: true });
+    if (!upErr && uploaded) {
+      const { data: urlData } = supabase.storage.from('registration-templates').getPublicUrl(uploaded.path);
+      setRequiredDocs((prev) => prev.map((d, j) => j === index ? { ...d, template_url: urlData.publicUrl, template_filename: file.name } : d));
+    }
+    setUploadingTemplateIdx(null);
+  }
 
   async function handleWvGenerate() {
     if (!wvTemplate || !club) return;
@@ -266,13 +286,14 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
       send_confirmation_email: sendEmail,
       season_label: seasonLabel.trim() || null,
       financial_aid_enabled: financialAid,
-      required_docs: requiredDocs.filter((d) => d.trim()),
+      required_docs: requiredDocs.filter((d) => d.name.trim()),
       price: isPaid && priceMode === 'flat' && price ? parseFloat(price) : null,
       currency,
       payment_options: isPaid ? payOpts : 'full',
       plan_installments: parseInt(planInst) || 3,
       plan_frequency: planFreq,
       plan_deposit: isPaid && planDeposit ? parseFloat(planDeposit) : null,
+      plan_day_of_month: isPaid && planFreq === 'monthly' && planDayOfMonth ? parseInt(planDayOfMonth) : null,
       price_mode: isPaid ? priceMode : null,
       created_by: profile?.id,
     };
@@ -583,7 +604,7 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
               {payOpts !== 'full' && (
                 <div style={{ background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E2E8F0', padding: '14px' }}>
                   <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748B', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Payment plan settings</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: planFreq === 'monthly' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '10px' }}>
                     <div>
                       <label style={labelSt}>Number of payments</label>
                       <input type="number" min="2" max="24" value={planInst} onChange={(e) => setPlanInst(e.target.value)} style={inputSt} />
@@ -597,6 +618,18 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
                         <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                       </div>
                     </div>
+                    {planFreq === 'monthly' && (
+                      <div>
+                        <label style={labelSt}>Due day of month</label>
+                        <div style={{ position: 'relative' }}>
+                          <select value={planDayOfMonth} onChange={(e) => setPlanDayOfMonth(e.target.value)} style={{ ...inputSt, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}>
+                            <option value="">Rolling (30 days apart)</option>
+                            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{ordinal(d)}</option>)}
+                          </select>
+                          <ChevronDown size={12} color="#64748B" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <label style={labelSt}>Initial deposit</label>
                       <div style={{ position: 'relative' }}>
@@ -605,6 +638,11 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
                       </div>
                     </div>
                   </div>
+                  {planFreq === 'monthly' && planDayOfMonth && (
+                    <p style={{ fontSize: '12px', color: '#94A3B8', margin: '10px 0 0' }}>
+                      The deposit is due at registration; each installment after that is due on the {ordinal(parseInt(planDayOfMonth))} of the following months.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -619,16 +657,38 @@ export default function FormBuilder({ editingForm, onDone, onCancel }: {
 
         {/* Required docs */}
         <SettingsCard title="Required documents" emoji="📎">
-          <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 12px', lineHeight: '1.5' }}>Add documents parents must upload or submit before their registration is complete. Track them in Submissions.</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+          <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 12px', lineHeight: '1.5' }}>Add documents parents must upload before their registration is complete. Optionally attach a blank template for them to download, fill in, and re-upload — otherwise they just upload something they already have.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
             {requiredDocs.map((doc, i) => (
-              <div key={i} style={{ display: 'flex', gap: '8px' }}>
-                <input value={doc} onChange={(e) => { const n = [...requiredDocs]; n[i] = e.target.value; setRequiredDocs(n); }} placeholder="e.g. Birth certificate" style={{ ...inputSt, flex: 1 }} />
-                <button onClick={() => setRequiredDocs((p) => p.filter((_, j) => j !== i))} style={{ padding: '8px 10px', background: '#FEF2F2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#DC2626', display: 'flex' }}><X size={14} /></button>
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    value={doc.name}
+                    onChange={(e) => setRequiredDocs((p) => p.map((d, j) => j === i ? { ...d, name: e.target.value } : d))}
+                    placeholder="e.g. Birth certificate" style={{ ...inputSt, flex: 1, background: '#fff' }}
+                  />
+                  <button onClick={() => setRequiredDocs((p) => p.filter((_, j) => j !== i))} style={{ padding: '8px 10px', background: '#FEF2F2', border: 'none', borderRadius: '8px', cursor: 'pointer', color: '#DC2626', display: 'flex' }}><X size={14} /></button>
+                </div>
+                {doc.template_url ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '7px' }}>
+                    <FileText size={13} color="#64748B" />
+                    <a href={doc.template_url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#374151', fontWeight: '600', flex: 1, textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {doc.template_filename ?? 'Template attached'}
+                    </a>
+                    <button onClick={() => setRequiredDocs((p) => p.map((d, j) => j === i ? { ...d, template_url: null, template_filename: null } : d))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', display: 'flex' }}><X size={12} /></button>
+                  </div>
+                ) : (
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: '#fff', border: '1px dashed #CBD5E1', borderRadius: '7px', fontSize: '12px', fontWeight: '600', color: '#64748B', cursor: uploadingTemplateIdx === i ? 'default' : 'pointer', width: 'fit-content' }}>
+                    <input type="file" accept=".pdf,.doc,.docx,image/*" style={{ display: 'none' }} disabled={uploadingTemplateIdx === i}
+                      onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadTemplate(i, file); e.target.value = ''; }} />
+                    {uploadingTemplateIdx === i ? 'Uploading…' : <><Plus size={11} /> Attach a template for them to fill in (optional)</>}
+                  </label>
+                )}
               </div>
             ))}
           </div>
-          <button onClick={() => setRequiredDocs((p) => [...p, ''])} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '8px', fontSize: '12px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => setRequiredDocs((p) => [...p, { name: '', template_url: null, template_filename: null }])} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '8px', fontSize: '12px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
             <Plus size={12} /> Add document
           </button>
         </SettingsCard>

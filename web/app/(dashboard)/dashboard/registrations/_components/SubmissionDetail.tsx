@@ -12,6 +12,7 @@ import {
   SUB_STATUS_STYLES, PAY_STATUS_STYLES,
   fmtMoney, fmtDate, formFields, playerName,
   labelSt, inputSt, backBtnSt,
+  normalizeRequiredDocs, requiredDocDataKey,
 } from './shared';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -511,6 +512,30 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Required documents ─────────────────────────────────────── */}
+          {normalizeRequiredDocs(form.required_docs).length > 0 && (
+            <div style={{ marginBottom: '20px' }}>
+              <div style={labelSt}>Required documents</div>
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden', marginTop: '6px' }}>
+                {normalizeRequiredDocs(form.required_docs).map((doc, idx, arr) => {
+                  const url = currentSub.data[requiredDocDataKey(doc.name)];
+                  return (
+                    <div key={doc.name} style={{ padding: '14px 20px', borderBottom: idx < arr.length - 1 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <span style={{ fontSize: '14px', color: '#0F172A', fontWeight: 600 }}>{doc.name}</span>
+                      {url ? (
+                        <a href={url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12.5px', fontWeight: 700, color: '#16A34A', textDecoration: 'none' }}>
+                          <CheckCircle size={13} /> View upload
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: '12.5px', color: '#94A3B8', fontWeight: 600 }}>Not uploaded</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

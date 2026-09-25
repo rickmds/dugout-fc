@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
   const { data: form } = await supabase
     .from('registration_forms')
-    .select('id, plan_deposit, plan_installments, plan_frequency')
+    .select('id, plan_deposit, plan_installments, plan_frequency, plan_day_of_month')
     .eq('id', submission.form_id)
     .single();
   if (!form) return NextResponse.json({ error: 'Form not found' }, { status: 404 });
@@ -51,14 +51,25 @@ export async function POST(req: NextRequest) {
     if (deposit > 0) rows.push({ amount: deposit, due_date: dateStr(today) });
 
     const stepDays = form.plan_frequency === 'weekly' ? 7 : 30;
+    // A fixed day-of-month pins every installment to a real calendar date
+    // (the 1st, the 15th, ...) instead of a rolling N-day interval from
+    // whenever the family happened to register — capped at 28 in the
+    // column's own check constraint, so new Date(y, m, day) never overflows
+    // into the wrong month regardless of month length.
+    const dayOfMonth = form.plan_frequency === 'monthly' ? form.plan_day_of_month : null;
     let allocated = 0;
     for (let i = 0; i < n; i++) {
       const isLast = i === n - 1;
-      // First installment is due today when there's no deposit — "some
-      // due at registration" doesn't require a named deposit, just that
-      // something is payable immediately.
-      const dueDate = new Date(today);
-      if (deposit > 0 || i > 0) dueDate.setDate(dueDate.getDate() + stepDays * (deposit > 0 ? i + 1 : i));
+      let dueDate: Date;
+      if (dayOfMonth) {
+        dueDate = new Date(today.getFullYear(), today.getMonth() + i + 1, dayOfMonth);
+      } else {
+        // First installment is due today when there's no deposit — "some
+        // due at registration" doesn't require a named deposit, just that
+        // something is payable immediately.
+        dueDate = new Date(today);
+        if (deposit > 0 || i > 0) dueDate.setDate(dueDate.getDate() + stepDays * (deposit > 0 ? i + 1 : i));
+      }
       // Last installment absorbs any rounding remainder so the schedule
       // always sums exactly to the total.
       const amount = isLast ? Math.round((remaining - allocated) * 100) / 100 : perInstallment;

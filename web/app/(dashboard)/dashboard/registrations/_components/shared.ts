@@ -35,6 +35,39 @@ export type FieldDef = {
 
 export type PriceTier = { label: string; price: number };
 
+export function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+// A required document a parent must upload on the public form. template_url
+// is optional — set when the club needs to hand the parent a blank form to
+// fill in and re-upload (e.g. a medical form), rather than just asking for
+// something they already have (e.g. a birth certificate).
+export type RequiredDoc = { name: string; template_url: string | null; template_filename: string | null };
+
+// Must match docKey() in web/app/register/[token]/page.tsx exactly — that's
+// the key a required doc's uploaded file URL lands at in
+// registration_submissions.data.
+export function requiredDocDataKey(name: string): string { return `doc:${name}`; }
+
+// required_docs predates this shape — older forms saved it as a plain
+// string[]. Normalize either shape to RequiredDoc[] everywhere it's read.
+export function normalizeRequiredDocs(raw: unknown): RequiredDoc[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((d) =>
+    typeof d === 'string'
+      ? { name: d, template_url: null, template_filename: null }
+      : { name: (d as RequiredDoc)?.name ?? '', template_url: (d as RequiredDoc)?.template_url ?? null, template_filename: (d as RequiredDoc)?.template_filename ?? null }
+  );
+}
+
 export type RegForm = {
   id: string;
   club_id: string;
@@ -54,6 +87,7 @@ export type RegForm = {
   plan_installments: number;
   plan_frequency: 'monthly' | 'weekly';
   plan_deposit: number | null;
+  plan_day_of_month: number | null;
   price_mode: PriceMode | null;
   price_tiers: unknown;
   open_at: string | null;
