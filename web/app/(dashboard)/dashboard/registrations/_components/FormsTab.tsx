@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Plus, Copy, Link, ExternalLink, Trash2, Pencil, Archive, ArchiveRestore,
   Calendar, Users, Clock, CheckCircle, AlertCircle, ChevronDown, ChevronUp, MoreHorizontal,
-  RefreshCw, Mail, Lock, Unlock, Star, Tag, X, RotateCcw,
+  RefreshCw, Mail, Lock, Unlock, Star, Tag, X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { STATUS_STYLES, PAY_STATUS_STYLES, fmtMoney, fmtDate, labelSt, inputSt, playerName } from './shared';
-import type { RegForm, PromoCode, DiscountType, PaymentStatus } from './shared';
+import { STATUS_STYLES, PAYMENT_BUCKET_STYLES, derivePaymentBucket, fmtMoney, fmtDate, labelSt, inputSt, playerName } from './shared';
+import type { RegForm, PromoCode, DiscountType, InstallmentBucketInfo } from './shared';
 import FormBuilder from './FormBuilder';
 import SeasonRolloverWizard from './SeasonRolloverWizard';
 
@@ -18,17 +18,13 @@ type SubmissionRow = {
   id: string;
   data: Record<string, string>;
   status: string;
-  payment_status: PaymentStatus;
   amount_due: number | null;
   amount_paid: number;
-  refunded_amount: number;
-  refund_notes: string | null;
   submitted_at: string;
   promo_code_used: string | null;
   discount_applied: number;
   financial_aid_amount: number | null;
 };
-type RefundMode = 'full' | 'partial' | 'percent';
 
 export default function FormsTab() {
   const { profile, club, teams } = useDashboard();
@@ -60,13 +56,12 @@ export default function FormsTab() {
   const [expandedId,       setExpandedId]       = useState<string | null>(null);
   const [formSubs,         setFormSubs]         = useState<Record<string, SubmissionRow[]>>({});
   const [formSubsLoading,  setFormSubsLoading]  = useState<string | null>(null);
-
-  // ── Refund modal ──────────────────────────────────────────────────────────────
-  const [showRefund,   setShowRefund]   = useState<{ sub: SubmissionRow; form: RegForm } | null>(null);
-  const [refundMode,   setRefundMode]   = useState<RefundMode>('full');
-  const [refundInput,  setRefundInput]  = useState('');
-  const [refundReason, setRefundReason] = useState('');
-  const [refundSaving, setRefundSaving] = useState(false);
+  // Keyed by submission_id, populated alongside formSubs — the real source
+  // of truth for payment state and refunds (see derivePaymentBucket in
+  // shared.ts). registration_submissions.refunded_amount/refund_notes are
+  // dead columns nothing writes to any more; a per-submission refund total
+  // only ever exists on its registration_installments rows.
+  const [installmentsBySub, setInstallmentsBySub] = useState<Record<string, InstallmentBucketInfo[]>>({});
 
   async function toggleExpand(formId: string) {
     if (expandedId === formId) { setExpandedId(null); return; }
@@ -75,62 +70,35 @@ export default function FormsTab() {
     setFormSubsLoading(formId);
     const { data } = await supabase
       .from('registration_submissions')
-      .select('id,data,status,payment_status,amount_due,amount_paid,refunded_amount,refund_notes,submitted_at,promo_code_used,discount_applied,financial_aid_amount')
+      .select('id,data,status,amount_due,amount_paid,submitted_at,promo_code_used,discount_applied,financial_aid_amount')
       .eq('form_id', formId)
       .order('submitted_at', { ascending: false });
-    setFormSubs(prev => ({ ...prev, [formId]: (data ?? []) as SubmissionRow[] }));
-    setFormSubsLoading(null);
-  }
+    const subs = (data ?? []) as SubmissionRow[];
+    setFormSubs(prev => ({ ...prev, [formId]: subs }));
 
-  function openRefund(sub: SubmissionRow, form: RegForm) {
-    setShowRefund({ sub, form });
-    setRefundMode('full');
-    setRefundInput('');
-    setRefundReason('');
-  }
-
-  function calcRefundAmount(sub: SubmissionRow): number {
-    const maxRefundable = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
-    if (refundMode === 'full') return maxRefundable;
-    if (refundMode === 'partial') return Math.min(parseFloat(refundInput) || 0, maxRefundable);
-    if (refundMode === 'percent') return Math.round((parseFloat(refundInput) || 0) / 100 * maxRefundable * 100) / 100;
-    return 0;
-  }
-
-  async function processRefund() {
-    if (!showRefund) return;
-    const { sub, form } = showRefund;
-    const amount = calcRefundAmount(sub);
-    if (amount <= 0) return;
-    setRefundSaving(true);
-    try {
-      const newRefunded = (sub.refunded_amount ?? 0) + amount;
-      const netPaid     = (sub.amount_paid ?? 0) - newRefunded;
-      const newStatus: PaymentStatus = netPaid <= 0 ? 'refunded' : sub.payment_status;
-      const { error } = await supabase.from('registration_submissions')
-        .update({ refunded_amount: newRefunded, refund_notes: refundReason || null, payment_status: newStatus })
-        .eq('id', sub.id);
-      if (error) { alert(`Refund failed: ${error.message}`); return; }
-      setFormSubs(prev => ({
-        ...prev,
-        [form.id]: (prev[form.id] ?? []).map(s =>
-          s.id === sub.id ? { ...s, refunded_amount: newRefunded, refund_notes: refundReason || null, payment_status: newStatus } : s
-        ),
-      }));
-      setShowRefund(null);
-    } finally {
-      setRefundSaving(false);
+    const subIds = subs.map(s => s.id);
+    if (subIds.length) {
+      const { data: insts } = await supabase
+        .from('registration_installments')
+        .select('submission_id, paid_at, due_date, last_charge_error, charge_attempts, refunded_amount')
+        .in('submission_id', subIds);
+      const map: Record<string, InstallmentBucketInfo[]> = {};
+      for (const inst of (insts ?? []) as InstallmentBucketInfo[]) {
+        (map[inst.submission_id] ??= []).push(inst);
+      }
+      setInstallmentsBySub(prev => ({ ...prev, ...map }));
     }
+    setFormSubsLoading(null);
   }
 
   function formStats(subs: SubmissionRow[]) {
     const active    = subs.filter(s => s.status !== 'declined');
     const income    = subs.reduce((t, s) => t + (s.amount_paid ?? 0), 0);
-    const refunded  = subs.reduce((t, s) => t + (s.refunded_amount ?? 0), 0);
-    const outstanding = subs.reduce((t, s) => {
-      if (s.payment_status === 'refunded' || s.payment_status === 'paid') return t;
-      return t + Math.max((s.amount_due ?? 0) - (s.amount_paid ?? 0), 0);
-    }, 0);
+    const refunded  = subs.reduce((t, s) => t + (installmentsBySub[s.id] ?? []).reduce((a, i) => a + (i.refunded_amount ?? 0), 0), 0);
+    // Matches OverviewTab's own revenueOutstanding calc — a straight
+    // amount_due-minus-amount_paid, no payment_status branching needed
+    // since a refund already reduces amount_paid at the source.
+    const outstanding = subs.reduce((t, s) => t + Math.max((s.amount_due ?? 0) - (s.amount_paid ?? 0), 0), 0);
     return { registered: active.length, income, refunded, outstanding };
   }
 
@@ -448,56 +416,55 @@ export default function FormsTab() {
                           </div>
                         ) : (
                           <div style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 95px 78px 78px 78px 84px', padding: '7px 16px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', gap: '8px', alignItems: 'center' }}>
-                              {[['Player', 'left'], ['Payment', 'left'], ['Invoice', 'right'], ['Net paid', 'right'], ['Refunded', 'right'], ['', 'right']] as [string, string][]}
-                              {[['Player', 'left'], ['Payment', 'left'], ['Invoice', 'right'], ['Net paid', 'right'], ['Refunded', 'right'], ['', 'right']].map(([h, align]) => (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 105px 78px 78px 78px', padding: '7px 16px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', gap: '8px', alignItems: 'center' }}>
+                              {[['Player', 'left'], ['Payment', 'left'], ['Invoice', 'right'], ['Net paid', 'right'], ['Refunded', 'right']].map(([h, align]) => (
                                 <span key={h} style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: align as 'left' | 'right' }}>{h}</span>
                               ))}
                             </div>
                             {subs.map((sub, i) => {
-                              const ps        = PAY_STATUS_STYLES[sub.payment_status] ?? PAY_STATUS_STYLES.unpaid;
+                              const subInstallments = installmentsBySub[sub.id] ?? [];
+                              const bucket    = derivePaymentBucket(sub, subInstallments);
+                              const ps        = bucket ? PAYMENT_BUCKET_STYLES[bucket] : null;
                               const name      = playerName(sub.data);
-                              const net       = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
-                              const refAmt    = sub.refunded_amount ?? 0;
-                              const canRefund = sub.payment_status !== 'refunded' && (sub.amount_paid ?? 0) > refAmt;
+                              const refAmt    = subInstallments.reduce((a, i2) => a + (i2.refunded_amount ?? 0), 0);
+                              const net       = (sub.amount_paid ?? 0);
                               return (
-                                <div key={sub.id} className="reg-sub-row" style={{ display: 'grid', gridTemplateColumns: '1fr 95px 78px 78px 78px 84px', padding: '9px 16px', borderTop: i > 0 ? '1px solid #F8FAFC' : 'none', alignItems: 'center', gap: '8px' }}>
+                                <div key={sub.id} className="reg-sub-row" style={{ display: 'grid', gridTemplateColumns: '1fr 105px 78px 78px 78px', padding: '9px 16px', borderTop: i > 0 ? '1px solid #F8FAFC' : 'none', alignItems: 'center', gap: '8px' }}>
                                   <div style={{ minWidth: 0 }}>
                                     <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
                                     <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px', fontVariantNumeric: 'tabular-nums' }}>{fmtDate(sub.submitted_at)}</div>
                                   </div>
                                   <div>
-                                    <span style={{ fontSize: '10.5px', fontWeight: '700', color: ps.color, background: ps.bg, borderRadius: '4px', padding: '2px 7px', whiteSpace: 'nowrap' }}>{ps.label}</span>
+                                    {ps && (
+                                      <span style={{ fontSize: '10.5px', fontWeight: '700', color: ps.color, background: ps.bg, borderRadius: '4px', padding: '2px 7px', whiteSpace: 'nowrap' }}>{ps.label}</span>
+                                    )}
                                   </div>
                                   <div style={{ fontSize: '12.5px', fontWeight: '600', color: '#64748B', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sub.amount_due != null ? `${sym}${sub.amount_due.toFixed(2)}` : '—'}</div>
                                   <div style={{ fontSize: '12.5px', fontWeight: '700', color: net > 0 ? '#15803D' : '#94A3B8', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{net > 0 ? `${sym}${net.toFixed(2)}` : '—'}</div>
                                   <div style={{ fontSize: '12px', fontWeight: '600', color: refAmt > 0 ? '#DC2626' : '#E2E8F0', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                                     {refAmt > 0 ? `-${sym}${refAmt.toFixed(2)}` : '—'}
                                   </div>
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                    {canRefund ? (
-                                      <button onClick={() => openRefund(sub, form)}
-                                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                                        <RotateCcw size={10} /> Refund
-                                      </button>
-                                    ) : sub.payment_status === 'refunded' ? (
-                                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', background: '#F1F5F9', borderRadius: '4px', padding: '3px 7px' }}>Done</span>
-                                    ) : null}
-                                  </div>
                                 </div>
                               );
                             })}
                             {/* Footer summary */}
                             {subs.length > 0 && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 95px 78px 78px 78px 84px', padding: '8px 16px', background: '#F8FAFC', borderTop: '1px solid #E2E8F0', gap: '8px', alignItems: 'center' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 105px 78px 78px 78px', padding: '8px 16px', background: '#F8FAFC', borderTop: '1px solid #E2E8F0', gap: '8px', alignItems: 'center' }}>
                                 <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B' }}>{subs.length} submission{subs.length !== 1 ? 's' : ''}</span>
                                 <span />
                                 <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#374151', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sym}{subs.reduce((t, s) => t + (s.amount_due ?? 0), 0).toFixed(2)}</span>
-                                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#15803D', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sym}{subs.reduce((t, s) => t + Math.max((s.amount_paid ?? 0) - (s.refunded_amount ?? 0), 0), 0).toFixed(2)}</span>
-                                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#DC2626', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{subs.some(s => (s.refunded_amount ?? 0) > 0) ? `-${sym}${subs.reduce((t, s) => t + (s.refunded_amount ?? 0), 0).toFixed(2)}` : '—'}</span>
-                                <span />
+                                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#15803D', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{sym}{subs.reduce((t, s) => t + (s.amount_paid ?? 0), 0).toFixed(2)}</span>
+                                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#DC2626', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                  {(() => {
+                                    const totalRefunded = subs.reduce((t, s) => t + (installmentsBySub[s.id] ?? []).reduce((a, i) => a + (i.refunded_amount ?? 0), 0), 0);
+                                    return totalRefunded > 0 ? `-${sym}${totalRefunded.toFixed(2)}` : '—';
+                                  })()}
+                                </span>
                               </div>
                             )}
+                            <div style={{ padding: '9px 16px', borderTop: '1px solid #F1F5F9', fontSize: '11.5px', color: '#94A3B8' }}>
+                              To issue a refund, open the submission from the Submissions tab.
+                            </div>
                           </div>
                         )}
                       </div>
@@ -510,110 +477,13 @@ export default function FormsTab() {
         </div>
       )}
 
-      {/* ── Refund modal ── */}
-      {showRefund && (() => {
-        const { sub, form } = showRefund;
-        const maxRefundable = (sub.amount_paid ?? 0) - (sub.refunded_amount ?? 0);
-        const refundAmount  = calcRefundAmount(sub);
-        const sym2 = (form.currency === 'GBP' ? '£' : form.currency === 'EUR' ? '€' : '$');
-        const valid = refundAmount > 0 && refundAmount <= maxRefundable;
-        return (
-          <Modal onClose={() => setShowRefund(null)}>
-            <div style={{ padding: '24px' }}>
-              {/* Header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <RotateCcw size={18} color="#DC2626" />
-                </div>
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', margin: 0 }}>Issue Refund</h3>
-                  <p style={{ fontSize: '12px', color: '#64748B', margin: '2px 0 0' }}>{playerName(sub.data)} · {form.title}</p>
-                </div>
-              </div>
-
-              {/* Payment summary */}
-              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px 16px', marginBottom: '20px', display: 'flex', gap: '20px' }}>
-                <div>
-                  <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Total paid</div>
-                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#0F172A' }}>{sym2}{(sub.amount_paid ?? 0).toFixed(2)}</div>
-                </div>
-                {(sub.refunded_amount ?? 0) > 0 && (
-                  <div>
-                    <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Already refunded</div>
-                    <div style={{ fontSize: '18px', fontWeight: '800', color: '#DC2626' }}>{sym2}{sub.refunded_amount.toFixed(2)}</div>
-                  </div>
-                )}
-                <div>
-                  <div style={{ fontSize: '10.5px', fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>Refundable</div>
-                  <div style={{ fontSize: '18px', fontWeight: '800', color: '#15803D' }}>{sym2}{maxRefundable.toFixed(2)}</div>
-                </div>
-              </div>
-
-              {/* Refund type tabs */}
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ ...labelSt, marginBottom: '8px' }}>Refund type</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-                  {([
-                    { mode: 'full' as RefundMode,    label: 'Full refund',    sub: `${sym2}${maxRefundable.toFixed(2)}` },
-                    { mode: 'partial' as RefundMode, label: 'Fixed amount',   sub: 'Enter $ amount' },
-                    { mode: 'percent' as RefundMode, label: 'Percentage',     sub: 'Enter % of paid' },
-                  ]).map(({ mode, label, sub: subLabel }) => (
-                    <button key={mode} onClick={() => { setRefundMode(mode); setRefundInput(''); }}
-                      style={{ padding: '10px 8px', borderRadius: '8px', border: `1.5px solid ${refundMode === mode ? '#DC2626' : '#E2E8F0'}`, background: refundMode === mode ? '#FEF2F2' : '#fff', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' }}>
-                      <div style={{ fontSize: '12.5px', fontWeight: '700', color: refundMode === mode ? '#DC2626' : '#374151' }}>{label}</div>
-                      <div style={{ fontSize: '11px', color: refundMode === mode ? '#EF4444' : '#94A3B8', marginTop: '2px' }}>{subLabel}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Amount input */}
-              {refundMode !== 'full' && (
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={labelSt}>{refundMode === 'partial' ? `Amount (max ${sym2}${maxRefundable.toFixed(2)})` : 'Percentage (%)'}</label>
-                  <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: '#64748B', fontWeight: '600' }}>
-                      {refundMode === 'partial' ? sym2 : '%'}
-                    </span>
-                    <input type="number" min="0" max={refundMode === 'partial' ? maxRefundable : 100} step="0.01"
-                      value={refundInput} onChange={e => setRefundInput(e.target.value)} placeholder={refundMode === 'partial' ? '0.00' : '0'}
-                      style={{ ...inputSt, paddingLeft: '30px' }} autoFocus />
-                  </div>
-                  {refundMode === 'percent' && parseFloat(refundInput) > 0 && (
-                    <div style={{ fontSize: '12px', color: '#DC2626', fontWeight: '600', marginTop: '4px' }}>
-                      = {sym2}{(parseFloat(refundInput) / 100 * maxRefundable).toFixed(2)} refunded
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Reason */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={labelSt}>Reason (optional)</label>
-                <input value={refundReason} onChange={e => setRefundReason(e.target.value)}
-                  placeholder="e.g. Withdrawal, duplicate payment, overpayment…"
-                  style={inputSt} />
-              </div>
-
-              {/* Refund preview */}
-              {valid && (
-                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#DC2626' }}>Refund amount</span>
-                  <span style={{ fontSize: '18px', fontWeight: '800', color: '#DC2626' }}>{sym2}{refundAmount.toFixed(2)}</span>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => setShowRefund(null)} style={{ padding: '11px 16px', background: '#F1F5F9', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-                <button onClick={processRefund} disabled={refundSaving || !valid}
-                  style={{ flex: 1, padding: '11px', background: refundSaving || !valid ? '#CBD5E1' : '#DC2626', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: refundSaving || !valid ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                  <RotateCcw size={13} /> {refundSaving ? 'Processing…' : `Refund ${valid ? `${sym2}${refundAmount.toFixed(2)}` : ''}`}
-                </button>
-              </div>
-            </div>
-          </Modal>
-        );
-      })()}
+      {/* Refunds are issued from the Submissions tab (SubmissionDetail.tsx's
+          per-installment flow, which actually reverses the Stripe charge
+          and keeps the installment schedule in sync) — this tab used to
+          have its own separate refund tool that only ever wrote
+          registration_submissions.refunded_amount/payment_status, with no
+          Stripe call and no installment update, so using it would "refund"
+          a family on paper without the money ever moving. Removed. */}
 
       {/* ── Delete confirm ── */}
       {delConfirm && (
