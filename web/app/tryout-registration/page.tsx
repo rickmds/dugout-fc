@@ -4,6 +4,8 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
+function uid() { return crypto.randomUUID(); }
+
 type Question = {
   id: string; type: string; label: string; helpText: string;
   required: boolean; options: string[]; fieldKey: string; builtIn: boolean;
@@ -351,7 +353,14 @@ function TryoutFormContent() {
     else if (maroonsRaw.toLowerCase().includes('previously') || maroonsRaw.toLowerCase().includes('return')) maroonsStatus = 'returning';
     else if (maroonsRaw.toLowerCase().includes('never') || maroonsRaw.toLowerCase().includes('new player')) maroonsStatus = 'new';
 
-    const { data: player } = await supabase.from('tryout_players').insert({
+    // Generated client-side and inserted explicitly, rather than reading
+    // the id back via .select() — RLS requires a SELECT policy to satisfy
+    // an INSERT's RETURNING clause, and this table deliberately has none
+    // for an anonymous submitter (write-only, matches the pattern already
+    // used for registration_submissions in web/app/register/[token]/page.tsx).
+    const playerId = uid();
+    const { error: playerErr } = await supabase.from('tryout_players').insert({
+      id: playerId,
       club_id: clubId,
       first_name: firstName.trim(), last_name: lastName.trim(),
       gender: gender || null,
@@ -369,11 +378,11 @@ function TryoutFormContent() {
       source: 'registration',
       maroons_status: maroonsStatus,
       custom_responses: customResponses,
-    }).select('id').single();
+    });
 
-    if (player?.id) {
+    if (!playerErr) {
       await supabase.from('tryout_assignments').insert({
-        club_id: clubId, player_id: (player as { id: string }).id,
+        club_id: clubId, player_id: playerId,
         team: 'Unassigned', status: 'Unassigned', offer_status: 'NotSent',
       });
     }
