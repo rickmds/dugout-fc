@@ -497,7 +497,7 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                 ) : (
                   fields.filter(f => f.type !== 'section').map((field, idx, arr) => (
                     <div
-                      key={field.id}
+                      key={field.label}
                       style={{
                         padding: '14px 20px',
                         borderBottom: idx < arr.length - 1 ? '1px solid #F1F5F9' : 'none',
@@ -505,9 +505,11 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                     >
                       <div style={labelSt}>{field.label}</div>
                       <div style={{ fontSize: '14px', color: '#0F172A', wordBreak: 'break-word' }}>
-                        {currentSub.data[field.id]
-                          ? currentSub.data[field.id]
-                          : <span style={{ color: '#CBD5E1' }}>—</span>}
+                        {!currentSub.data[field.label]
+                          ? <span style={{ color: '#CBD5E1' }}>—</span>
+                          : field.type === 'file'
+                            ? <ViewUploadedFileLink url={currentSub.data[field.label]} />
+                            : currentSub.data[field.label]}
                       </div>
                     </div>
                   ))
@@ -527,9 +529,7 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                     <div key={doc.name} style={{ padding: '14px 20px', borderBottom: idx < arr.length - 1 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                       <span style={{ fontSize: '14px', color: '#0F172A', fontWeight: 600 }}>{doc.name}</span>
                       {url ? (
-                        <a href={url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12.5px', fontWeight: 700, color: '#16A34A', textDecoration: 'none' }}>
-                          <CheckCircle size={13} /> View upload
-                        </a>
+                        <ViewUploadedFileLink url={url} />
                       ) : (
                         <span style={{ fontSize: '12.5px', color: '#94A3B8', fontWeight: 600 }}>Not uploaded</span>
                       )}
@@ -1046,5 +1046,41 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
         </div>
       )}
     </>
+  );
+}
+
+// registration-docs is a private bucket (family-uploaded documents —
+// birth certificates, medical forms, etc — deliberately not publicly
+// fetchable, see migration 20260816000003). getPublicUrl() was still used
+// at upload time (it's the only URL-shaped identifier we have to store),
+// but that URL 404s for anyone without a signed URL — this mints one
+// on demand, scoped by RLS to the viewing staff member's own club.
+const PRIVATE_DOC_BUCKET = 'registration-docs';
+
+function ViewUploadedFileLink({ url }: { url: string }) {
+  const [loading, setLoading] = useState(false);
+
+  async function handleClick() {
+    const marker = `/storage/v1/object/public/${PRIVATE_DOC_BUCKET}/`;
+    const idx = url.indexOf(marker);
+    if (idx === -1) { window.open(url, '_blank', 'noopener,noreferrer'); return; }
+    const path = decodeURIComponent(url.slice(idx + marker.length));
+
+    setLoading(true);
+    const { data, error } = await supabase.storage.from(PRIVATE_DOC_BUCKET).createSignedUrl(path, 300);
+    setLoading(false);
+
+    if (error || !data?.signedUrl) {
+      window.alert(`Could not open this file: ${error?.message ?? 'unknown error'}`);
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  return (
+    <button onClick={handleClick} disabled={loading}
+      style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12.5px', fontWeight: 700, color: loading ? '#94A3B8' : '#16A34A', background: 'none', border: 'none', padding: 0, cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+      <CheckCircle size={13} /> {loading ? 'Opening…' : 'View file'}
+    </button>
   );
 }
