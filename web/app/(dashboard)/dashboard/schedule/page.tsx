@@ -80,6 +80,9 @@ type FormState = {
   require_rsvp: boolean;
   rsvp_lock_hours: number;
   push_notify: boolean;
+  recurrence: 'none' | 'daily' | 'weekly';
+  recurWeekDays: number[];
+  recurEndDate: string;
 };
 
 const TYPE_LABELS: Record<string, string> = { game: 'Game', training: 'Training', other: 'Other' };
@@ -195,7 +198,33 @@ const emptyForm = (teamId: string): FormState => ({
   uniform: null, notes: '', coach_notes: '',
   require_rsvp: true, rsvp_lock_hours: 24,
   push_notify: true,
+  recurrence: 'none', recurWeekDays: [], recurEndDate: '',
 });
+
+// Ported from app/(app)/[clubSlug]/create-event.tsx's generateRecurringDates
+// — daily/weekly only (no monthly) on purpose: this is the common case for
+// a season's worth of training, and web never had recurrence at all before,
+// so a simpler subset that actually ships beats a slow full port.
+function generateRecurringDates(startIso: string, recurrence: 'daily' | 'weekly', weekDays: number[], endIso: string): string[] {
+  const start = new Date(startIso + 'T00:00:00');
+  const limit = new Date(endIso + 'T00:00:00');
+  const dates: string[] = [];
+  const cursor = new Date(start);
+  cursor.setDate(cursor.getDate() + 1); // start date is already the first occurrence
+  if (recurrence === 'daily') {
+    while (cursor <= limit && dates.length < 365) {
+      dates.push(cursor.toISOString().split('T')[0]);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  } else {
+    const days = weekDays.length > 0 ? weekDays : [start.getDay()];
+    while (cursor <= limit && dates.length < 365) {
+      if (days.includes(cursor.getDay())) dates.push(cursor.toISOString().split('T')[0]);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+  return dates;
+}
 
 export default function SchedulePage() {
   const { profile, club, teams, selectedTeamId } = useDashboard();
@@ -458,6 +487,7 @@ export default function SchedulePage() {
       require_rsvp: ev.require_rsvp ?? true,
       rsvp_lock_hours: computeLockHours(ev.rsvp_lock_at, ev.event_date, ev.event_time, club?.timezone ?? 'America/New_York'),
       push_notify: true,
+      recurrence: 'none', recurWeekDays: [], recurEndDate: '',
     });
     editOriginalRef.current = {
       date: ev.event_date, time: ev.event_time ?? null,
@@ -620,7 +650,7 @@ export default function SchedulePage() {
     const savedTitle = form.type === 'game'
       ? `${form.homeAway === 'home' ? 'vs' : '@'} ${form.title.trim()}`
       : form.title.trim();
-    function computeLockAt(): string | null {
+    function computeLockAt(forDate: string = eventDate): string | null {
       if (!form.require_rsvp || !eventTime) return null;
       const t = eventTime.substring(0, 5);
       try {
@@ -628,7 +658,7 @@ export default function SchedulePage() {
         // an org_admin creating an event from a different timezone than
         // their club saves a deadline that's off by however many hours
         // separate the two.
-        const dt = zonedTimeToUtc(eventDate, `${t}:00`, club?.timezone ?? 'America/New_York');
+        const dt = zonedTimeToUtc(forDate, `${t}:00`, club?.timezone ?? 'America/New_York');
         dt.setHours(dt.getHours() - form.rsvp_lock_hours);
         return dt.toISOString();
       } catch (err) {
@@ -721,16 +751,34 @@ export default function SchedulePage() {
         // event_group_id, so an org_admin editing one later can update
         // every team's copy of this occurrence at once.
         const groupId = createTeamIds.length > 1 ? crypto.randomUUID() : null;
+        const recurring = form.recurrence !== 'none' && !!form.recurEndDate;
+        const recurDates = recurring ? generateRecurringDates(eventDate, form.recurrence as 'daily' | 'weekly', form.recurWeekDays, form.recurEndDate) : [];
+        const allDates = [eventDate, ...recurDates];
+        const recurrenceId = recurring && allDates.length > 1 ? crypto.randomUUID() : null;
+
         const failed: string[] = [];
         const succeededTeamIds: string[] = [];
-        for (const teamId of createTeamIds) {
-          const { data, error } = await supabase.from('events').insert({ ...basePayload, team_id: teamId, event_group_id: groupId }).select('id').single<{ id: string }>();
-          if (error) { failed.push(teams.find((t) => t.id === teamId)?.name ?? teamId); continue; }
-          shouldClose = true;
-          const eventId = data?.id ?? null;
-          succeededTeamIds.push(teamId);
+        let firstEventId: string | null = null;
+        for (const d of allDates) {
+          for (const teamId of createTeamIds) {
+            const { data, error } = await supabase.from('events').insert({
+              ...basePayload, event_date: d, rsvp_lock_at: computeLockAt(d),
+              team_id: teamId, event_group_id: groupId, recurrence_id: recurrenceId,
+            }).select('id').single<{ id: string }>();
+            if (error) { failed.push(`${teams.find((t) => t.id === teamId)?.name ?? teamId} (${d})`); continue; }
+            shouldClose = true;
+            if (!firstEventId) firstEventId = data?.id ?? null;
+            if (d === eventDate && !succeededTeamIds.includes(teamId)) succeededTeamIds.push(teamId);
+          }
+        }
+        if (failed.length) alert(`Could not create event for: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? `, and ${failed.length - 5} more` : ''}`);
 
-          if (form.push_notify && eventId) {
+        // Only the first occurrence generates a notification — a family
+        // doesn't need a separate push for every date in a recurring series,
+        // just to know the series now exists.
+        if (form.push_notify && succeededTeamIds.length) {
+          const seriesNote = allDates.length > 1 ? ` (recurring, ${allDates.length} dates)` : '';
+          for (const teamId of succeededTeamIds) {
             const teamName = teams.find((t) => t.id === teamId)?.name ?? 'your team';
             try {
               await sendEventPush({
@@ -738,22 +786,19 @@ export default function SchedulePage() {
                 exclude_profile_id: profile?.id,
                 type: 'new_event',
                 title: `New ${TYPE_LABELS[form.type]} — ${teamName}`,
-                body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}`,
-                data: { event_id: eventId },
+                body: `${savedTitle} · ${label}${eventTime ? ' · ' + fmtTime(eventTime) : ''}${seriesNote}`,
+                data: { event_id: firstEventId },
               });
             } catch { /* non-critical */ }
           }
-        }
-        if (failed.length) alert(`Could not create event for: ${failed.join(', ')}`);
 
-        // One deduped call across every team the event was created for, not
-        // once per team — otherwise a family with kids on two of the
-        // selected teams gets the same "new event" email twice.
-        if (form.push_notify && succeededTeamIds.length) {
+          // One deduped call across every team the event was created for, not
+          // once per team — otherwise a family with kids on two of the
+          // selected teams gets the same "new event" email twice.
           sendTeamEmail({
             teamIds: succeededTeamIds,
             subject: `New ${TYPE_LABELS[form.type]} — ${savedTitle}`,
-            body: `${savedTitle} was just added to the schedule — ${label}${eventTime ? ' at ' + fmtTime(eventTime) : ''}${form.location.trim() ? ' · ' + form.location.trim() : ''}.`,
+            body: `${savedTitle} was just added to the schedule — ${label}${eventTime ? ' at ' + fmtTime(eventTime) : ''}${form.location.trim() ? ' · ' + form.location.trim() : ''}${seriesNote}.`,
             fromName: profile?.full_name ?? club?.name ?? 'Coach',
             teamName: club?.name ?? '',
             clubName: club?.name ?? null,
@@ -1581,6 +1626,49 @@ export default function SchedulePage() {
                       </div>
                     </div>
                   </div>
+
+                  {!editId && (
+                    <div>
+                      <label style={labelStyle}>Repeats</label>
+                      <div style={{ display: 'flex', gap: '6px', marginBottom: form.recurrence !== 'none' ? '10px' : 0 }}>
+                        {([['none', 'Does not repeat'], ['daily', 'Daily'], ['weekly', 'Weekly']] as const).map(([val, lbl]) => (
+                          <button key={val} onClick={() => setForm((f) => ({ ...f, recurrence: val }))}
+                            style={{ padding: '6px 12px', borderRadius: '8px', border: form.recurrence === val ? '2px solid #22C55E' : '1.5px solid #E2E8F0', background: form.recurrence === val ? '#F0FDF4' : '#fff', color: form.recurrence === val ? '#16A34A' : '#64748B', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                      {form.recurrence !== 'none' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px' }}>
+                          {form.recurrence === 'weekly' && (
+                            <div>
+                              <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '6px' }}>Repeat on</div>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                {DAY_NAMES.map((d, i) => {
+                                  const active = form.recurWeekDays.includes(i);
+                                  return (
+                                    <button key={d} onClick={() => setForm((f) => ({ ...f, recurWeekDays: active ? f.recurWeekDays.filter((x) => x !== i) : [...f.recurWeekDays, i] }))}
+                                      style={{ width: '34px', height: '34px', borderRadius: '50%', border: active ? '2px solid #22C55E' : '1.5px solid #E2E8F0', background: active ? '#22C55E' : '#fff', color: active ? '#fff' : '#64748B', fontSize: '11px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                      {d[0]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '5px' }}>Leave blank to repeat on the same day each week as the date above.</div>
+                            </div>
+                          )}
+                          <div>
+                            <label style={{ ...labelStyle, marginBottom: '4px' }}>Until</label>
+                            <input type="date" value={form.recurEndDate} min={form.event_date} onChange={(e) => setForm((f) => ({ ...f, recurEndDate: e.target.value }))} style={inputStyle} />
+                            {!form.recurEndDate && (
+                              <div style={{ fontSize: '11px', color: '#D97706', marginTop: '5px' }}>Pick an end date — the series won&apos;t be created without one.</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={labelStyle}>Duration</label>
@@ -1728,7 +1816,8 @@ export default function SchedulePage() {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
                 {(() => {
-                  const disabled = saving || !form.title.trim() || (editId ? !form.team_id : createTeamIds.length === 0);
+                  const disabled = saving || !form.title.trim() || (editId ? !form.team_id : createTeamIds.length === 0)
+                    || (!editId && form.recurrence !== 'none' && !form.recurEndDate);
                   return (
                     <button onClick={handleSave} disabled={disabled} style={{ flex: 2, padding: '11px', background: disabled ? '#86EFAC' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
                       {saving ? 'Saving…' : editId ? 'Save changes' : createTeamIds.length > 1 ? `Create ${createTeamIds.length} Events` : 'Create Event'}
