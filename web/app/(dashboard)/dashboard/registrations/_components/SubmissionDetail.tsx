@@ -218,6 +218,44 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
 
   // ── Offline payment ──────────────────────────────────────────────────────────
 
+  // Marking a submission "paid" (here or via the quick-status override below)
+  // only ever touched registration_submissions — the registration_installments
+  // rows behind the "Online payment schedule" card stayed marked unpaid
+  // forever, so the daily reminder cron kept nagging (and, for anyone on
+  // autopay, kept trying to auto-charge) a family who'd already paid in
+  // cash. This claims installments paid in due-date order up to the amount
+  // actually recorded, same idempotent paid_at-IS-NULL gate the real
+  // payment webhook uses.
+  async function markInstallmentsPaid(upToAmount: number, method: string, reference: string | null) {
+    let remaining = upToAmount;
+    for (const inst of installments) {
+      if (inst.paid_at) continue;
+      if (remaining < inst.amount - 0.005) break;
+      const { error } = await supabase
+        .from('registration_installments')
+        .update({ paid_at: new Date().toISOString(), payment_method: method, reference })
+        .eq('id', inst.id)
+        .is('paid_at', null);
+      if (error) throw error;
+      remaining -= inst.amount;
+    }
+    await loadInstallments();
+  }
+
+  // Symmetric to markInstallmentsPaid — an admin correcting the status back
+  // to unpaid/refunded should reopen the installments too, or they stay
+  // stuck showing "Paid" with no way to collect the money again.
+  async function reopenInstallments() {
+    const paidIds = installments.filter(i => i.paid_at).map(i => i.id);
+    if (!paidIds.length) return;
+    const { error } = await supabase
+      .from('registration_installments')
+      .update({ paid_at: null, payment_method: null, reference: null })
+      .in('id', paidIds);
+    if (error) throw error;
+    await loadInstallments();
+  }
+
   const handleOfflineSave = async () => {
     const amt = parseFloat(offlineAmount);
     if (isNaN(amt) || amt <= 0) return;
@@ -233,6 +271,7 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
         offline_payment_ref:    offlineRef || null,
         offline_payment_date:   offlineDate || null,
       });
+      await markInstallmentsPaid(amt, offlineMethod, offlineRef || null);
       setOfflineAmount('');
       setOfflineRef('');
       setOfflineDate('');
@@ -294,6 +333,16 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
         ? { amount_paid: currentSub.amount_due ?? currentSub.amount_paid }
         : {};
       await patch({ payment_status: status, ...extra });
+      // Same reconciliation as recording an offline payment — an admin
+      // manually marking this "Paid" means every remaining installment is
+      // covered, not just the submission-level label. "Unpaid"/"Refunded"
+      // go the other way and reopen whatever's currently marked paid.
+      if (status === 'paid') {
+        const remainingTotal = installments.filter(i => !i.paid_at).reduce((s, i) => s + i.amount, 0);
+        if (remainingTotal > 0) await markInstallmentsPaid(remainingTotal, 'other', null);
+      } else if (status === 'unpaid' || status === 'refunded') {
+        await reopenInstallments();
+      }
     } catch (e) {
       showToast((e as Error).message);
     }
