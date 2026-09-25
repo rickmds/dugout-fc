@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -62,10 +63,21 @@ export async function POST(req: NextRequest) {
   }
 
   const sb = supabaseAdmin();
+
+  const withinLimit = await checkRateLimit(sb, `tryout-registration:${token}`, { max: 20, windowSeconds: 600 });
+  if (!withinLimit) return NextResponse.json({ error: 'Too many attempts. Please try again in a few minutes.' }, { status: 429 });
+
   const a = await loadByToken(sb, token);
   if (!a) return NextResponse.json({ error: 'Invalid or expired link' }, { status: 404 });
   if (a.offer_status !== 'Accepted') {
     return NextResponse.json({ error: 'This offer has not been accepted yet.' }, { status: 400 });
+  }
+  // The same token stays live indefinitely (it's also the payment/offer
+  // link) — without this, resubmitting silently overwrote emergency
+  // contact info, medical notes, and the signed name with whatever a
+  // second POST sent, with zero audit trail.
+  if (a.registration_status === 'Submitted') {
+    return NextResponse.json({ error: 'This registration has already been submitted.' }, { status: 409 });
   }
 
   await sb.from('tryout_players').update({

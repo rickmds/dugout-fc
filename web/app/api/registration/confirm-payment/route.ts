@@ -8,7 +8,7 @@ import { handleRegistrationPaymentComplete } from '../../stripe/webhook/route';
 // path the webhook uses, so it's safe to run from both places.
 export async function POST(req: NextRequest) {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
-  if (!stripeKey) return NextResponse.json({ error: 'Payments not configured' }, { status: 500 });
+  if (!stripeKey) return NextResponse.json({ configured: false, error: 'Payments not configured' }, { status: 200 });
 
   const { payment_intent_id } = await req.json();
   if (!payment_intent_id) return NextResponse.json({ error: 'payment_intent_id required' }, { status: 400 });

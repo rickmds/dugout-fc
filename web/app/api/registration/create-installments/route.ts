@@ -5,25 +5,15 @@ import { supabaseAdmin } from '@/lib/supabase';
 // schedule server-side from the form's stored pricing config and the
 // submission's already-persisted payment_choice/amount_due (submit_registration
 // is the trust boundary for those two — this route re-derives everything
-// else, never trusting a client-supplied schedule). Idempotent: if
-// installments already exist for this submission (a retried call), it just
-// returns the one due now instead of creating duplicates.
+// else, never trusting a client-supplied schedule). Idempotent: the actual
+// check-then-insert happens inside create_registration_installments_if_absent,
+// which takes a per-submission advisory lock so two concurrent calls (a
+// double-click, a retried fetch) can't both insert a full duplicate schedule.
 export async function POST(req: NextRequest) {
   const { submission_id } = await req.json();
   if (!submission_id) return NextResponse.json({ error: 'submission_id required' }, { status: 400 });
 
   const supabase = supabaseAdmin();
-
-  const { data: existing } = await supabase
-    .from('registration_installments')
-    .select('id, payment_token, amount, due_date, paid_at')
-    .eq('submission_id', submission_id)
-    .order('due_date', { ascending: true });
-
-  if (existing && existing.length > 0) {
-    const dueNow = existing.find(i => !i.paid_at) ?? null;
-    return NextResponse.json({ due_now: dueNow ? { token: dueNow.payment_token, amount: dueNow.amount } : null });
-  }
 
   const { data: submission } = await supabase
     .from('registration_submissions')
@@ -47,18 +37,18 @@ export async function POST(req: NextRequest) {
   const today = new Date();
   const dateStr = (d: Date) => d.toISOString().slice(0, 10);
 
-  type Row = { submission_id: string; amount: number; due_date: string };
+  type Row = { amount: number; due_date: string };
   const rows: Row[] = [];
 
   if (submission.payment_choice === 'full') {
-    rows.push({ submission_id, amount: total, due_date: dateStr(today) });
+    rows.push({ amount: total, due_date: dateStr(today) });
   } else {
     const deposit = form.plan_deposit && form.plan_deposit > 0 ? Math.min(form.plan_deposit, total) : 0;
     const n = Math.max(1, form.plan_installments ?? 3);
     const remaining = Math.max(0, total - deposit);
     const perInstallment = Math.round((remaining / n) * 100) / 100;
 
-    if (deposit > 0) rows.push({ submission_id, amount: deposit, due_date: dateStr(today) });
+    if (deposit > 0) rows.push({ amount: deposit, due_date: dateStr(today) });
 
     const stepDays = form.plan_frequency === 'weekly' ? 7 : 30;
     let allocated = 0;
@@ -73,14 +63,12 @@ export async function POST(req: NextRequest) {
       // always sums exactly to the total.
       const amount = isLast ? Math.round((remaining - allocated) * 100) / 100 : perInstallment;
       allocated += amount;
-      if (amount > 0) rows.push({ submission_id, amount, due_date: dateStr(dueDate) });
+      if (amount > 0) rows.push({ amount, due_date: dateStr(dueDate) });
     }
   }
 
   const { data: inserted, error: insertErr } = await supabase
-    .from('registration_installments')
-    .insert(rows)
-    .select('payment_token, amount, due_date')
+    .rpc('create_registration_installments_if_absent', { p_submission_id: submission_id, p_rows: rows })
     .order('due_date', { ascending: true });
 
   if (insertErr || !inserted?.length) {
@@ -88,6 +76,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Could not set up payment schedule' }, { status: 500 });
   }
 
-  const dueNow = inserted[0];
-  return NextResponse.json({ due_now: { token: dueNow.payment_token, amount: dueNow.amount } });
+  const dueNow = inserted.find((i: { paid_at: string | null }) => !i.paid_at) ?? null;
+  return NextResponse.json({ due_now: dueNow ? { token: dueNow.payment_token, amount: dueNow.amount } : null });
 }

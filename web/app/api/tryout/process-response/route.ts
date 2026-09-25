@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 const supabaseAdmin = () =>
   createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest) {
   if (!token || !action) return NextResponse.json({ error: 'token and action required' }, { status: 400 });
 
   const sb = supabaseAdmin();
+
+  const withinLimit = await checkRateLimit(sb, `tryout-process-response:${token}`, { max: 20, windowSeconds: 600 });
+  if (!withinLimit) return NextResponse.json({ error: 'Too many attempts. Please try again in a few minutes.' }, { status: 429 });
+
   const { data: a } = await sb
     .from('tryout_assignments')
     .select('*, tryout_players(*)')

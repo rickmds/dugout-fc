@@ -66,17 +66,26 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
   const [offlineDate, setOfflineDate]           = useState('');
   const [offlineRef, setOfflineRef]             = useState('');
   const [offlineSaving, setOfflineSaving]       = useState(false);
-  const [installments, setInstallments]         = useState<{ id: string; amount: number; due_date: string; paid_at: string | null; payment_token: string }[]>([]);
+  const [installments, setInstallments]         = useState<{ id: string; amount: number; due_date: string; paid_at: string | null; payment_token: string; charge_attempts: number; last_charge_error: string | null }[]>([]);
   const [copiedId, setCopiedId]                 = useState<string | null>(null);
+  const [autopayOn, setAutopayOn]               = useState(false);
+  const [stoppingAutopay, setStoppingAutopay]   = useState(false);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase
         .from('registration_installments')
-        .select('id, amount, due_date, paid_at, payment_token')
+        .select('id, amount, due_date, paid_at, payment_token, charge_attempts, last_charge_error')
         .eq('submission_id', sub.id)
         .order('due_date', { ascending: true });
       setInstallments(data ?? []);
+
+      const { data: submissionRow } = await supabase
+        .from('registration_submissions')
+        .select('autopay_consent')
+        .eq('id', sub.id)
+        .single();
+      setAutopayOn(!!submissionRow?.autopay_consent);
     })();
   }, [sub.id]);
 
@@ -86,6 +95,25 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
       setCopiedId(inst.id);
       setTimeout(() => setCopiedId(null), 1800);
     });
+  }
+
+  async function stopAutopay() {
+    setStoppingAutopay(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/registration/stop-autopay', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submission_id: sub.id }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Could not stop autopay.');
+      setAutopayOn(false);
+      showToast('Automatic payments stopped');
+    } catch (e) {
+      showToast((e as Error).message);
+    } finally {
+      setStoppingAutopay(false);
+    }
   }
 
   // Financial aid
@@ -533,9 +561,20 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                   manual "Record offline payment" fallback below */}
               {installments.length > 0 && (
                 <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '20px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-                    <CreditCard size={15} color="#64748B" />
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>Online payment schedule</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CreditCard size={15} color="#64748B" />
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>Online payment schedule</div>
+                    </div>
+                    {autopayOn && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#16A34A' }}>Autopay on</span>
+                        <button onClick={stopAutopay} disabled={stoppingAutopay}
+                          style={{ padding: '5px 10px', borderRadius: '7px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}>
+                          {stoppingAutopay ? 'Stopping…' : 'Stop autopay'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {installments.map(inst => {
@@ -549,6 +588,12 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                           <div>
                             <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#0F172A' }}>{fmtMoney(inst.amount, currency)}</div>
                             <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>{isPaid ? `Paid ${fmtDate(inst.paid_at!)}` : `Due ${fmtDate(inst.due_date)}`}</div>
+                            {!isPaid && inst.charge_attempts > 0 && (
+                              <div style={{ fontSize: '11px', color: '#DC2626', marginTop: '2px' }}>
+                                {inst.charge_attempts} failed auto-charge attempt{inst.charge_attempts === 1 ? '' : 's'}
+                                {inst.last_charge_error ? ` — ${inst.last_charge_error}` : ''}
+                              </div>
+                            )}
                           </div>
                           {isPaid ? (
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#16A34A' }}>

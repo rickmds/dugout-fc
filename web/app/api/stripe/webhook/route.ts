@@ -5,6 +5,7 @@ import { resolveAccent, contrastText, esc } from '@/lib/emailHelpers';
 import { applyRefund, splitRefundAmount } from '@/lib/refunds';
 import { sendExpoPush } from '@/lib/expoPush';
 import { resolveProfileEmails } from '@/lib/resolveProfileEmails';
+import { findInstallmentByPaymentIntent, applyInstallmentRefund, flagInstallmentDisputed, updateInstallmentDisputeStatus } from '@/lib/installmentRefunds';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -149,7 +150,21 @@ async function handleChargeRefunded(charge: StripeCharge) {
     .eq('stripe_payment_intent_id', charge.payment_intent)
     .single();
   if (!paymentRow) {
-    console.error('charge.refunded: no matching fee_payments row — refund not recorded', { payment_intent: charge.payment_intent });
+    // Not a roster fee_payments charge — charge.refunded fires for every
+    // refund on the account, so check the registration/tryout installment
+    // tables before giving up on it.
+    const installmentMatch = await findInstallmentByPaymentIntent(charge.payment_intent);
+    if (!installmentMatch) {
+      console.error('charge.refunded: no matching payment record — refund not recorded', { payment_intent: charge.payment_intent });
+      return;
+    }
+    for (const refund of charge.refunds?.data ?? []) {
+      await applyInstallmentRefund(installmentMatch, {
+        amount: round2Cents(refund.amount / 100),
+        stripeRefundId: refund.id,
+        reason: refund.reason ?? null,
+      });
+    }
     return;
   }
 
@@ -200,7 +215,12 @@ async function handleDisputeCreated(dispute: StripeDispute) {
     .eq('stripe_payment_intent_id', dispute.payment_intent)
     .single();
   if (!paymentRow) {
-    console.error('charge.dispute.created: no matching fee_payments row', { payment_intent: dispute.payment_intent });
+    const installmentMatch = await findInstallmentByPaymentIntent(dispute.payment_intent);
+    if (installmentMatch) {
+      await flagInstallmentDisputed(installmentMatch, { status: dispute.status, amount: dispute.amount });
+    } else {
+      console.error('charge.dispute.created: no matching payment record', { payment_intent: dispute.payment_intent });
+    }
     return;
   }
   if (paymentRow.disputed_at) return; // already flagged (redelivered event)
@@ -262,7 +282,20 @@ async function handleDisputeClosed(dispute: StripeDispute) {
     .select('id, amount, refunded_amount')
     .eq('stripe_payment_intent_id', dispute.payment_intent)
     .single();
-  if (!paymentRow) return;
+  if (!paymentRow) {
+    const installmentMatch = await findInstallmentByPaymentIntent(dispute.payment_intent);
+    if (!installmentMatch) return;
+    await updateInstallmentDisputeStatus(installmentMatch, dispute.status);
+    if (dispute.status !== 'lost') return;
+    const stillOwed = round2Cents(installmentMatch.amount - installmentMatch.refunded_amount);
+    if (stillOwed <= 0) return;
+    await applyInstallmentRefund(installmentMatch, {
+      amount: stillOwed,
+      stripeRefundId: `dispute_${dispute.id}`,
+      reason: 'dispute_lost',
+    });
+    return;
+  }
 
   await supabase.from('fee_payments').update({ dispute_status: dispute.status }).eq('id', paymentRow.id);
 

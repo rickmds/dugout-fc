@@ -5,7 +5,7 @@ import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { FlipBoard } from '@/components/FlipBoard';
 import { seasonOptions } from '@/lib/ageGroup';
-import { Plus, Trash2, X, DollarSign, Download } from 'lucide-react';
+import { Plus, Trash2, X, DollarSign, Download, CreditCard, Copy, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { formatCurrencyRounded } from '@/lib/formatCurrency';
 import { symbolForCurrency } from '@/lib/countries';
@@ -14,6 +14,11 @@ type Player = { id: string };
 type Assignment = { player_id: string; offer_status: string };
 type TryoutTeam = { id: string; name: string; color: string };
 type Expense = { id: string; category: string; description: string | null; amount: number; notes: string | null };
+type InstallmentRow = {
+  id: string; assignment_id: string; label: string; amount: number; due_date: string | null;
+  paid_at: string | null; payment_token: string; charge_attempts: number; last_charge_error: string | null;
+  tryout_assignments: { id: string; team: string | null; autopay_consent: boolean; tryout_players: { full_name: string } | null } | null;
+};
 
 const EXPENSE_CATEGORIES = [
   'Uniforms', 'Equipment', 'Field Rental', 'Referee Fees', 'Coaching Fees',
@@ -48,20 +53,51 @@ export default function TryoutFinancesPage() {
   const [delExpId, setDelExpId] = useState<string | null>(null);
   const [regFee, setRegFee] = useState(REG_FEE_DEFAULT);
   const [seasonFee, setSeasonFee] = useState(SEASONAL_FEE_DEFAULT);
+  const [installments, setInstallments] = useState<InstallmentRow[]>([]);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [stoppingAutopayId, setStoppingAutopayId] = useState<string | null>(null);
 
   async function load() {
     if (!club) return;
-    const [{ data: ps }, { data: asgn }, { data: ts }, { data: exps }] = await Promise.all([
+    const [{ data: ps }, { data: asgn }, { data: ts }, { data: exps }, { data: insts }] = await Promise.all([
       supabase.from('tryout_players').select('id').eq('club_id', club.id),
       supabase.from('tryout_assignments').select('player_id,offer_status').eq('club_id', club.id),
       supabase.from('tryout_teams').select('id,name,color').eq('club_id', club.id).eq('is_active', true),
       supabase.from('tryout_expenses').select('*').eq('club_id', club.id).eq('season_label', season).order('category'),
+      supabase.from('tryout_installments')
+        .select('id, assignment_id, label, amount, due_date, paid_at, payment_token, charge_attempts, last_charge_error, tryout_assignments!inner(id, team, autopay_consent, club_id, tryout_players(full_name))')
+        .eq('tryout_assignments.club_id', club.id)
+        .order('due_date', { ascending: true }),
     ]);
     setPlayers((ps ?? []) as Player[]);
     setAssigns((asgn ?? []) as Assignment[]);
     setTeams((ts ?? []) as TryoutTeam[]);
     setExpenses((exps ?? []) as Expense[]);
+    setInstallments((insts ?? []) as unknown as InstallmentRow[]);
     setLoading(false);
+  }
+
+  function copyPayLink(inst: InstallmentRow) {
+    const url = `${window.location.origin}/pay-tryout/${inst.payment_token}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(inst.id);
+      setTimeout(() => setCopiedId(null), 1800);
+    });
+  }
+
+  async function stopAutopay(assignmentId: string) {
+    setStoppingAutopayId(assignmentId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/tryout/stop-autopay', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignment_id: assignmentId }),
+      });
+      if (res.ok) load();
+    } finally {
+      setStoppingAutopayId(null);
+    }
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club, season]);
@@ -172,6 +208,64 @@ export default function TryoutFinancesPage() {
             </div>
           )}
         </div>
+
+        {/* Real payment status — actual tryout_installments rows, distinct
+            from the estimated Reg Fee / Seasonal Tuition config above */}
+        {installments.length > 0 && (
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', marginBottom: '22px' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CreditCard size={15} color="#64748B" />
+              <span style={{ fontWeight: '700', fontSize: '13.5px', color: '#0F172A' }}>Payment Status</span>
+              <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>
+                ({installments.filter(i => !i.paid_at).length} outstanding of {installments.length})
+              </span>
+            </div>
+            <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
+              {installments.map(inst => {
+                const isPaid = !!inst.paid_at;
+                const playerName = inst.tryout_assignments?.tryout_players?.full_name ?? 'Player';
+                const team = inst.tryout_assignments?.team ?? 'Unassigned';
+                return (
+                  <div key={inst.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+                    padding: '10px 18px', borderBottom: '1px solid #F1F5F9',
+                    background: isPaid ? '#F0FDF4' : '#fff',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{playerName} <span style={{ fontWeight: 500, color: '#94A3B8' }}>· {team}</span></div>
+                      <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>
+                        {inst.label} · {fmt(inst.amount)} · {isPaid ? `Paid ${new Date(inst.paid_at!).toLocaleDateString()}` : `Due ${inst.due_date ? new Date(inst.due_date).toLocaleDateString() : 'TBD'}`}
+                      </div>
+                      {!isPaid && inst.charge_attempts > 0 && (
+                        <div style={{ fontSize: '11px', color: '#DC2626', marginTop: '2px' }}>
+                          {inst.charge_attempts} failed auto-charge attempt{inst.charge_attempts === 1 ? '' : 's'}{inst.last_charge_error ? ` — ${inst.last_charge_error}` : ''}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      {inst.tryout_assignments?.autopay_consent && (
+                        <button onClick={() => stopAutopay(inst.tryout_assignments!.id)} disabled={stoppingAutopayId === inst.tryout_assignments?.id}
+                          style={{ padding: '5px 10px', borderRadius: '7px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                          {stoppingAutopayId === inst.tryout_assignments?.id ? 'Stopping…' : 'Stop autopay'}
+                        </button>
+                      )}
+                      {isPaid ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#16A34A' }}>
+                          <CheckCircle size={13} /> Paid
+                        </span>
+                      ) : (
+                        <button onClick={() => copyPayLink(inst)}
+                          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '11.5px', fontWeight: 700, color: '#374151' }}>
+                          <Copy size={12} /> {copiedId === inst.id ? 'Copied!' : 'Copy link'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Expenses table */}
         <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>

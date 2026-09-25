@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { buildTryoutChargeBody } from '@/lib/registrationCharge';
+import { claimInstallmentForCharge, releaseInstallmentChargeLock } from '@/lib/installmentChargeLock';
 
 // Card-only v1, same scope decisions as /api/registration/create-payment-intent.
 export async function POST(req: NextRequest) {
@@ -24,10 +25,16 @@ export async function POST(req: NextRequest) {
 
   const { data: assignment } = await supabase
     .from('tryout_assignments')
-    .select('id, club_id, stripe_customer_id')
+    .select('id, club_id, stripe_customer_id, offer_status')
     .eq('id', inst.assignment_id)
     .single();
   if (!assignment) return NextResponse.json({ error: 'Registration not found' }, { status: 404 });
+  // The offer may have been reversed (staff override) after this payment
+  // link was generated — an already-accepted-looking link shouldn't still
+  // be able to collect money for a spot the player no longer holds.
+  if (assignment.offer_status !== 'Accepted') {
+    return NextResponse.json({ error: 'This offer is no longer active.' }, { status: 400 });
+  }
 
   const { data: club } = await supabase
     .from('clubs')
@@ -78,6 +85,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Claim the installment for the duration of the Stripe round trip — closes
+  // the race where the daily auto-charge cron fires for this same
+  // installment at the same moment a family is paying it manually.
+  const claimed = await claimInstallmentForCharge(supabase, 'tryout_installments', inst.id);
+  if (!claimed) {
+    return NextResponse.json({ error: 'A payment attempt for this installment is already in progress. Please try again in a moment.' }, { status: 409 });
+  }
+
   const idempotencyKey = `pi_tryout_${payment_token}_${chargeAmount}`;
 
   const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
@@ -87,6 +102,7 @@ export async function POST(req: NextRequest) {
   });
   let pi: { id?: string; client_secret?: string; error?: { message?: string } } | null;
   try { pi = await piRes.json(); } catch { pi = null; }
+  await releaseInstallmentChargeLock(supabase, 'tryout_installments', inst.id);
 
   if (!piRes.ok || !pi?.client_secret) {
     console.error('tryout PaymentIntent error:', piRes.status, pi);

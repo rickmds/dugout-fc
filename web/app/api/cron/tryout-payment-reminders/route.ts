@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { formatCurrency } from '@/lib/formatCurrency';
 import { buildTryoutChargeBody } from '@/lib/registrationCharge';
 import { handleTryoutPaymentComplete } from '../../stripe/webhook/route';
+import { claimInstallmentForCharge, releaseInstallmentChargeLock } from '@/lib/installmentChargeLock';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const REMINDER_COOLDOWN_DAYS = 3;
@@ -42,10 +43,14 @@ export async function GET(req: NextRequest) {
     try {
       const { data: assignment } = await supabase
         .from('tryout_assignments')
-        .select('id, club_id, team, player_id, autopay_consent, stripe_customer_id, stripe_payment_method_id')
+        .select('id, club_id, team, player_id, offer_status, autopay_consent, stripe_customer_id, stripe_payment_method_id')
         .eq('id', inst.assignment_id)
         .single();
       if (!assignment) { failed++; continue; }
+      // Staff may have reversed the offer since this installment was
+      // scheduled — don't keep charging (or even emailing) for a roster
+      // spot the player no longer holds.
+      if (assignment.offer_status !== 'Accepted') { continue; }
 
       const { data: player } = await supabase
         .from('tryout_players').select('full_name, email_primary').eq('id', assignment.player_id).single();
@@ -63,6 +68,12 @@ export async function GET(req: NextRequest) {
       // ── Try an off-session auto-charge first ───────────────────────────
       const canAutoCharge = !!stripeKey && assignment.autopay_consent && assignment.stripe_customer_id && assignment.stripe_payment_method_id;
       if (canAutoCharge) {
+        // A family paying this exact installment manually right now holds
+        // this lock — skip the auto-charge attempt this cycle rather than
+        // risk a second, concurrent Stripe charge for the same installment.
+        const claimed = await claimInstallmentForCharge(supabase, 'tryout_installments', inst.id);
+        if (!claimed) { continue; }
+
         const charge = buildTryoutChargeBody({
           amount: inst.amount, currency: club?.currency ?? 'USD', club,
           installmentId: inst.id, paymentToken: inst.payment_token, assignmentId: assignment.id,
@@ -81,6 +92,7 @@ export async function GET(req: NextRequest) {
           });
           let pi: { id?: string; status?: string; payment_method?: string; amount_received?: number; error?: { message?: string } } | null;
           try { pi = await piRes.json(); } catch { pi = null; }
+          await releaseInstallmentChargeLock(supabase, 'tryout_installments', inst.id);
 
           if (piRes.ok && pi?.status === 'succeeded') {
             await handleTryoutPaymentComplete({
@@ -97,6 +109,8 @@ export async function GET(req: NextRequest) {
             charge_attempts: (inst.charge_attempts ?? 0) + 1,
             last_charge_error: pi?.error?.message ?? `Stripe error ${piRes.status}`,
           }).eq('id', inst.id);
+        } else {
+          await releaseInstallmentChargeLock(supabase, 'tryout_installments', inst.id);
         }
       }
 

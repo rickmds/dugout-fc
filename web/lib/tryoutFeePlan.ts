@@ -16,7 +16,12 @@ export const CURRENCY_SYMBOLS: Record<string, string> = { USD: '$', GBP: '£', E
 // strip formatting before treating them as numbers.
 export function parseMoney(s: string | null | undefined): number | null {
   if (!s) return null;
-  const n = Number(String(s).replace(/[^0-9.-]/g, ''));
+  const stripped = String(s).replace(/[^0-9.-]/g, '');
+  // Number('') is 0, not NaN — without this check a blank/non-numeric
+  // override (nothing left after stripping) silently resolved to a real,
+  // permanently-unpayable $0 fee instead of "not overridden."
+  if (stripped === '') return null;
+  const n = Number(stripped);
   return Number.isFinite(n) ? n : null;
 }
 

@@ -206,11 +206,18 @@ export default function RegisterPage() {
         }
       }
 
-      // Resolve amount_due from pricing mode
+      // Resolve amount_due from pricing mode — this is only used for the
+      // hasFee/paymentChoice branching below; the actual amount charged is
+      // resolved server-side inside submit_registration from the form's own
+      // pricing config, never trusted from the client.
       const pMode = form!.price_mode ?? 'flat';
       let finalAmountDue: number | null = form!.price;
       if (pMode === 'tiers') {
         finalAmountDue = selectedTier?.price ?? null;
+        // The server can't know which tier was picked from a price alone
+        // (two tiers could share a price) — send the selected tier's label
+        // so submit_registration can look up its price itself.
+        if (selectedTier) finalValues['__selected_tier'] = selectedTier.label;
       } else if (pMode === 'field') {
         const pt = form!.price_tiers as { field: string; rules: Record<string, number> } | null;
         finalAmountDue = pt ? (pt.rules[finalValues[pt.field] ?? ''] ?? null) : null;
@@ -268,8 +275,10 @@ export default function RegisterPage() {
       // and send the family straight into paying whatever's due today (the
       // deposit, or the full amount) — instead of just promising a link by
       // email. A free registration, or one where nothing's due yet, falls
-      // through to the plain success screen below.
-      if (hasFee) {
+      // through to the plain success screen below. Skipped entirely for a
+      // waitlisted submission — nothing should be charged for a spot that
+      // isn't confirmed yet.
+      if (hasFee && subResult.status !== 'waitlisted') {
         try {
           const instRes = await fetch('/api/registration/create-installments', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },

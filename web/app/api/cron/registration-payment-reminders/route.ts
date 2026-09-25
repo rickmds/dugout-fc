@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { formatCurrency } from '@/lib/formatCurrency';
 import { buildRegistrationChargeBody } from '@/lib/registrationCharge';
 import { handleRegistrationPaymentComplete } from '../../stripe/webhook/route';
+import { claimInstallmentForCharge, releaseInstallmentChargeLock } from '@/lib/installmentChargeLock';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const REMINDER_COOLDOWN_DAYS = 3;
@@ -70,6 +71,12 @@ export async function GET(req: NextRequest) {
       // ── Try an off-session auto-charge first ───────────────────────────
       const canAutoCharge = !!stripeKey && submission.autopay_consent && submission.stripe_customer_id && submission.stripe_payment_method_id;
       if (canAutoCharge) {
+        // A family paying this exact installment manually right now holds
+        // this lock — skip the auto-charge attempt this cycle rather than
+        // risk a second, concurrent Stripe charge for the same installment.
+        const claimed = await claimInstallmentForCharge(supabase, 'registration_installments', inst.id);
+        if (!claimed) { continue; }
+
         const charge = buildRegistrationChargeBody({
           amount: inst.amount, currency: form.currency ?? 'USD', club,
           installmentId: inst.id, paymentToken: inst.payment_token, submissionId: submission.id,
@@ -88,6 +95,7 @@ export async function GET(req: NextRequest) {
           });
           let pi: { id?: string; status?: string; payment_method?: string; amount_received?: number; error?: { message?: string } } | null;
           try { pi = await piRes.json(); } catch { pi = null; }
+          await releaseInstallmentChargeLock(supabase, 'registration_installments', inst.id);
 
           if (piRes.ok && pi?.status === 'succeeded') {
             await handleRegistrationPaymentComplete({
@@ -106,6 +114,8 @@ export async function GET(req: NextRequest) {
             charge_attempts: (inst.charge_attempts ?? 0) + 1,
             last_charge_error: pi?.error?.message ?? `Stripe error ${piRes.status}`,
           }).eq('id', inst.id);
+        } else {
+          await releaseInstallmentChargeLock(supabase, 'registration_installments', inst.id);
         }
       }
 

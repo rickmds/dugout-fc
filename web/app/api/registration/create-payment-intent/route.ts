@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { buildRegistrationChargeBody } from '@/lib/registrationCharge';
+import { claimInstallmentForCharge, releaseInstallmentChargeLock } from '@/lib/installmentChargeLock';
 
 // Card-only v1 for registration payments — no ACH rail, no surcharge
 // disclosure step, no partial-amount override. Keeps the first version of
@@ -92,6 +93,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Claim the installment for the duration of the Stripe round trip — closes
+  // the race where the daily auto-charge cron fires for this same
+  // installment at the same moment a family is paying it manually.
+  const claimed = await claimInstallmentForCharge(supabase, 'registration_installments', inst.id);
+  if (!claimed) {
+    return NextResponse.json({ error: 'A payment attempt for this installment is already in progress. Please try again in a moment.' }, { status: 409 });
+  }
+
   const idempotencyKey = `pi_reg_${payment_token}_${chargeAmount}`;
 
   const piRes = await fetch('https://api.stripe.com/v1/payment_intents', {
@@ -101,6 +110,7 @@ export async function POST(req: NextRequest) {
   });
   let pi: { id?: string; client_secret?: string; error?: { message?: string } } | null;
   try { pi = await piRes.json(); } catch { pi = null; }
+  await releaseInstallmentChargeLock(supabase, 'registration_installments', inst.id);
 
   if (!piRes.ok || !pi?.client_secret) {
     console.error('registration PaymentIntent error:', piRes.status, pi);

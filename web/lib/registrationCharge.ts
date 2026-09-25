@@ -30,7 +30,7 @@ export function buildRegistrationChargeBody(opts: {
     amount: String(chargeAmount),
     currency: currency.toLowerCase(),
     'metadata[registration_installment_id]': installmentId,
-    'metadata[payment_token]': paymentToken,
+    'metadata[registration_payment_token]': paymentToken,
     'metadata[submission_id]': submissionId,
     'metadata[club_id]': club?.id ?? '',
     'metadata[club_slug]': club?.slug ?? '',
@@ -43,9 +43,12 @@ export function buildRegistrationChargeBody(opts: {
 
 // Same pricing/Connect-routing logic, metadata keys distinguished so the
 // Stripe webhook can tell a tryout installment apart from a registration
-// one on payment_intent.succeeded. Deliberately not sharing the metadata
-// key names with buildRegistrationChargeBody above — the webhook branches
-// on which key is present, so this and that one must never collide.
+// one on payment_intent.succeeded. The webhook actually branches on
+// registration_installment_id vs. tryout_installment_id being present, not
+// on the payment_token key itself — but every key here is still kept
+// distinct from buildRegistrationChargeBody above (registration_payment_token
+// vs. tryout_payment_token) so nothing here relies on the two ever having to
+// stay in sync.
 export function buildTryoutChargeBody(opts: {
   amount: number; currency: string; club: RegChargeClub | null;
   installmentId: string; paymentToken: string; assignmentId: string;
@@ -64,7 +67,7 @@ export function buildTryoutChargeBody(opts: {
     amount: String(chargeAmount),
     currency: currency.toLowerCase(),
     'metadata[tryout_installment_id]': installmentId,
-    'metadata[payment_token]': paymentToken,
+    'metadata[tryout_payment_token]': paymentToken,
     'metadata[assignment_id]': assignmentId,
     'metadata[club_id]': club?.id ?? '',
     'metadata[club_slug]': club?.slug ?? '',
