@@ -8,12 +8,19 @@ import PlayerPanel, { type PlayerForPanel } from '@/components/dashboard/PlayerP
 import Link from 'next/link';
 
 type Player = PlayerForPanel & { team_name: string; age_group: string | null };
+type GuardianInfo = { name: string | null; email: string | null; phone: string | null };
 
 export default function PlayersPage() {
   const { profile, club, teams } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
   const [players,    setPlayers]    = useState<Player[]>([]);
+  // Keyed by player_id — every guardian (parent/guardian name, email, phone)
+  // on file for that player, from the invites table (the same source
+  // PlayerPanel reads/edits guardians from — a player can have more than
+  // one). Searched alongside the player's own name below so a coach can
+  // find a kid by typing a parent's name or email instead.
+  const [guardiansByPlayer, setGuardiansByPlayer] = useState<Map<string, GuardianInfo[]>>(new Map());
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');
   const [teamFilter, setTeamFilter] = useState('');
@@ -31,9 +38,27 @@ export default function PlayersPage() {
       .in('team_id', teams.map(t => t.id))
       .order('full_name');
 
-    setPlayers((data ?? []).map(p => ({
+    const loadedPlayers = (data ?? []).map(p => ({
       ...p, team_name: (p.teams as unknown as { name: string; age_group: string | null } | null)?.name ?? '—', age_group: (p.teams as unknown as { name: string; age_group: string | null } | null)?.age_group ?? null,
-    })));
+    }));
+    setPlayers(loadedPlayers);
+
+    const playerIds = loadedPlayers.map(p => p.id);
+    if (playerIds.length) {
+      const { data: invites } = await supabase
+        .from('invites')
+        .select('player_id,guardian_name,email,phone')
+        .in('player_id', playerIds);
+      const map = new Map<string, GuardianInfo[]>();
+      for (const inv of invites ?? []) {
+        const list = map.get(inv.player_id) ?? [];
+        list.push({ name: inv.guardian_name, email: inv.email, phone: inv.phone });
+        map.set(inv.player_id, list);
+      }
+      setGuardiansByPlayer(map);
+    } else {
+      setGuardiansByPlayer(new Map());
+    }
     setLoading(false);
   }, [club, teams]);
 
@@ -41,7 +66,16 @@ export default function PlayersPage() {
   useEffect(() => { load(); }, [load]);
 
   const filtered = players.filter(p => {
-    if (search     && !p.full_name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const nameMatch = p.full_name.toLowerCase().includes(q);
+      const guardianMatch = (guardiansByPlayer.get(p.id) ?? []).some(g =>
+        (g.name ?? '').toLowerCase().includes(q) ||
+        (g.email ?? '').toLowerCase().includes(q) ||
+        (g.phone ?? '').toLowerCase().includes(q)
+      );
+      if (!nameMatch && !guardianMatch) return false;
+    }
     if (teamFilter && p.team_id  !== teamFilter) return false;
     if (ageFilter  && p.age_group !== ageFilter) return false;
     return true;
@@ -82,7 +116,7 @@ export default function PlayersPage() {
           <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', pointerEvents: 'none' }} />
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search players…"
+            placeholder="Search by player, parent name, or email…"
             style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
           />
           {search && (
@@ -184,7 +218,23 @@ export default function PlayersPage() {
                           ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : p.full_name[0]}
                       </div>
-                      <span style={{ fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</span>
+                      <div>
+                        <div style={{ fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{p.full_name}</div>
+                        {search && !p.full_name.toLowerCase().includes(search.toLowerCase()) && (() => {
+                          const q = search.toLowerCase();
+                          const match = (guardiansByPlayer.get(p.id) ?? []).find(g =>
+                            (g.name ?? '').toLowerCase().includes(q) ||
+                            (g.email ?? '').toLowerCase().includes(q) ||
+                            (g.phone ?? '').toLowerCase().includes(q)
+                          );
+                          if (!match) return null;
+                          return (
+                            <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px' }}>
+                              Matched guardian: {[match.name, match.email].filter(Boolean).join(' · ')}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </td>
                   <td style={{ padding: '11px 16px', fontSize: '13px', color: '#64748B', fontWeight: '600' }}>{p.jersey_number ?? '—'}</td>
