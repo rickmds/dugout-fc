@@ -18,7 +18,8 @@ export type PlayerForPanel = {
 type Invite = {
   id: string; token: string; email: string;
   guardian_name: string | null; phone: string | null;
-  relationship: string | null; accepted_at: string | null; created_at: string;
+  relationship: string | null; accepted_at: string | null; accepted_by: string | null;
+  created_at: string;
 };
 
 interface PlayerPanelProps {
@@ -104,7 +105,7 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
     setEditingInviteId(null); setShowAddGuardian(false);
 
     setInviteLoading(true);
-    supabase.from('invites').select('id,token,email,guardian_name,phone,relationship,accepted_at,created_at').eq('player_id', player.id).order('created_at')
+    supabase.from('invites').select('id,token,email,guardian_name,phone,relationship,accepted_at,accepted_by,created_at').eq('player_id', player.id).order('created_at')
       .then(({ data }) => { setInvites((data ?? []) as Invite[]); setInviteLoading(false); });
 
     setRsvpLoading(true);
@@ -162,7 +163,7 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
     setSendingInvite(true); setInviteError('');
     const { data: newRow, error: dbErr } = await supabase.from('invites')
       .insert({ team_id: player.team_id, club_id: clubId, player_id: player.id, email: inviteEmail.trim(), created_by: profileId })
-      .select('id,token,email,guardian_name,phone,relationship,accepted_at,created_at').single();
+      .select('id,token,email,guardian_name,phone,relationship,accepted_at,accepted_by,created_at').single();
     if (dbErr) { setInviteError('Could not save invite: ' + dbErr.message); setSendingInvite(false); return; }
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch('/api/send-invite', {
@@ -208,10 +209,47 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
     setInviteSent(true); setTimeout(() => setInviteSent(false), 3000);
   }
 
-  async function deleteInvite(id: string) {
-    setDeletingInviteId(id);
-    await supabase.from('invites').delete().eq('id', id);
-    setInvites(prev => prev.filter(i => i.id !== id)); setDeletingInviteId(null);
+  // Mirrors web/app/(dashboard)/dashboard/roster/page.tsx's deleteInviteRecord
+  // (and the mobile equivalent, confirmRevokeAccess): for a guardian who has
+  // already joined the app, a plain invites delete only removes the
+  // historical invite row — it doesn't touch player_guardians/team_members,
+  // so they'd keep full roster/chat/schedule access. Only a not-yet-accepted
+  // invite is safe to just delete outright.
+  async function deleteInvite(inv: Invite) {
+    const isAccepted = !!inv.accepted_at;
+    const confirmMsg = isAccepted
+      ? `Remove ${inv.guardian_name || inv.email} as a guardian? They will lose access to this player's info, RSVPs, and chat.`
+      : `Cancel the pending invite to ${inv.guardian_name || inv.email}?`;
+    if (!confirm(confirmMsg)) return;
+
+    setDeletingInviteId(inv.id);
+
+    if (isAccepted) {
+      if (!inv.accepted_by) {
+        alert('Could not remove this guardian — missing account info. Please contact support.');
+        setDeletingInviteId(null);
+        return;
+      }
+      const { data, error } = await supabase.rpc('revoke_guardian_access', {
+        p_player_id: player.id,
+        p_profile_id: inv.accepted_by,
+      });
+      const result = data as { success?: boolean; error?: string } | null;
+      if (error || result?.error) {
+        alert(result?.error ?? 'Could not remove guardian. Please try again.');
+        setDeletingInviteId(null);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from('invites').delete().eq('id', inv.id);
+      if (error) {
+        alert('Could not cancel invite: ' + error.message);
+        setDeletingInviteId(null);
+        return;
+      }
+    }
+
+    setInvites(prev => prev.filter(i => i.id !== inv.id)); setDeletingInviteId(null);
   }
 
   async function deletePlayer() {
@@ -438,7 +476,7 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
                                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                               </button>
-                              <button onClick={() => deleteInvite(inv.id)} disabled={deletingInviteId === inv.id}
+                              <button onClick={() => deleteInvite(inv)} disabled={deletingInviteId === inv.id}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', borderRadius: '6px', display: 'flex' }}
                                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#FEF2F2'}
                                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}>
