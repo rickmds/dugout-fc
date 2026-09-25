@@ -64,7 +64,6 @@ const TRYOUTS_NAV: NavEntry[] = [
   { href: '/dashboard/tryouts/schedule',         icon: CalendarDays,  label: 'Practice Schedule',  adminOnly: true },
   { href: '/dashboard/tryouts/finances',         icon: DollarSign,    label: 'Finances',           adminOnly: true },
   { section: 'Settings', adminOnly: true },
-  { href: '/dashboard/tryouts/fields',             icon: MapPin,        label: 'Fields & Zones',     adminOnly: true },
   { href: '/dashboard/tryouts/settings/teams',   icon: Settings,      label: 'Teams & Tiers',      adminOnly: true },
   { href: '/dashboard/tryouts/settings/form',    icon: FileText,      label: 'Registration Form',  adminOnly: true },
   { href: '/dashboard/tryouts/settings/offers',  icon: Mail,          label: 'Offer Templates',    adminOnly: true },

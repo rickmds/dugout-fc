@@ -17,7 +17,12 @@ type TryoutField = {
   half_a_name: string | null; half_b_name: string | null;
   has_lights: boolean; surface_type: string | null; field_notes: string | null;
   address: string | null; lat: number | null; lng: number | null;
+  field_size: string | null; dimensions: string | null; facilities: string[];
+  facility_contact_name: string | null; facility_contact_phone: string | null;
 };
+
+const FIELD_SIZES = ['Full 11v11', '9v9', '7v7', '5v5', 'Futsal'] as const;
+const FACILITIES_LIST = ['Changing Rooms', 'Restrooms', 'Covered Seating', 'Parking On-site', 'Concessions'] as const;
 type FieldClosure = {
   id: string; club_id: string; field_name: string; sub_zones: string[];
   closed_from: string; closed_until: string | null; duration_label: string;
@@ -1056,6 +1061,11 @@ function FieldModal({ field, fields, club, primary, onClose, onSaved }: {
     has_lights:           field?.has_lights??false,
     surface_type:         field?.surface_type??'',
     field_notes:          field?.field_notes??'',
+    field_size:           field?.field_size??'',
+    dimensions:           field?.dimensions??'',
+    facilities:           field?.facilities??[] as string[],
+    facility_contact_name:  field?.facility_contact_name??'',
+    facility_contact_phone: field?.facility_contact_phone??'',
   });
   const [saving, setSaving] = useState(false);
 
@@ -1075,6 +1085,11 @@ function FieldModal({ field, fields, club, primary, onClose, onSaved }: {
       has_lights:   form.has_lights,
       surface_type: form.surface_type || null,
       field_notes:  form.field_notes.trim() || null,
+      field_size: form.field_size || null,
+      dimensions: form.dimensions.trim() || null,
+      facilities: form.facilities,
+      facility_contact_name: form.facility_contact_name.trim() || null,
+      facility_contact_phone: form.facility_contact_phone.trim() || null,
     };
     if (field) {
       await supabase.from('tryout_fields').update(payload).eq('id',field.id);
@@ -1191,6 +1206,48 @@ function FieldModal({ field, fields, club, primary, onClose, onSaved }: {
             <div>
               {lbl('Field notes')}
               <textarea value={form.field_notes} onChange={e=>setForm(f=>({...f,field_notes:e.target.value}))} placeholder="Parking, access codes, special instructions…" rows={2} style={{...inp,resize:'vertical',lineHeight:1.5}}/>
+            </div>
+          </div>
+
+          {/* Facility details */}
+          <div style={{borderTop:'1px solid #F1F5F9',paddingTop:'14px',display:'flex',flexDirection:'column',gap:'14px'}}>
+            <div style={{fontSize:'10px',fontWeight:'800',color:'#94A3B8',textTransform:'uppercase',letterSpacing:'1.5px'}}>Facility Details</div>
+
+            <div>
+              {lbl('Field size')}
+              <div style={{display:'flex',flexWrap:'wrap',gap:'8px'}}>
+                {FIELD_SIZES.map(s => {
+                  const active = form.field_size === s;
+                  return (
+                    <button key={s} onClick={()=>setForm(f=>({...f,field_size: active ? '' : s}))}
+                      style={{padding:'6px 14px',borderRadius:'20px',border:`2px solid ${active?primary:'#E2E8F0'}`,background:active?`${primary}12`:'#fff',fontSize:'12.5px',fontWeight:active?'700':'500',color:active?primary:'#64748B',cursor:'pointer',fontFamily:'inherit'}}>
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>{lbl('Dimensions (optional)')}<input value={form.dimensions} onChange={e=>setForm(f=>({...f,dimensions:e.target.value}))} placeholder="e.g. 115 × 75 yds" style={inp}/></div>
+
+            <div>
+              {lbl('Facilities')}
+              <div style={{display:'flex',flexWrap:'wrap',gap:'8px'}}>
+                {FACILITIES_LIST.map(key => {
+                  const active = form.facilities.includes(key);
+                  return (
+                    <button key={key} onClick={()=>setForm(f=>({...f,facilities: active ? f.facilities.filter(x=>x!==key) : [...f.facilities,key]}))}
+                      style={{padding:'6px 12px',borderRadius:'8px',border:`2px solid ${active?primary:'#E2E8F0'}`,background:active?`${primary}12`:'#fff',fontSize:'12.5px',fontWeight:active?'700':'500',color:active?primary:'#64748B',cursor:'pointer',fontFamily:'inherit'}}>
+                      {key}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:'10px'}}>
+              <div style={{flex:1}}>{lbl('Facility contact name')}<input value={form.facility_contact_name} onChange={e=>setForm(f=>({...f,facility_contact_name:e.target.value}))} placeholder="John Smith" style={inp}/></div>
+              <div style={{flex:1}}>{lbl('Facility contact phone')}<input value={form.facility_contact_phone} onChange={e=>setForm(f=>({...f,facility_contact_phone:e.target.value}))} placeholder="(555) 000-0000" style={inp}/></div>
             </div>
           </div>
         </div>
