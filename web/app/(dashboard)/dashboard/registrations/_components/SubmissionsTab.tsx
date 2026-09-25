@@ -172,9 +172,16 @@ export default function SubmissionsTab() {
 
   // ── Load data ───────────────────────────────────────────────────────────────
 
-  const loadData = useCallback(async () => {
+  // showLoading=false is for a background refresh after a mutation inside
+  // the open SubmissionDetail panel (status change, payment override, a
+  // refund, ...) — the full-page loading skeleton below unmounts
+  // everything it wraps, including that panel, so a save that ever set
+  // loading=true was silently kicking the admin back to the Details tab
+  // (React remounts SubmissionDetail from scratch, back to its initial
+  // useState('details')) on every single edit.
+  const loadData = useCallback(async (showLoading = true) => {
     if (!club) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const { data: formsData, error: formsErr } = await supabase
@@ -210,7 +217,7 @@ export default function SubmissionsTab() {
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load submissions');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [club, detectDuplicates]);
 
@@ -862,10 +869,10 @@ export default function SubmissionsTab() {
         <SubmissionDetail
           sub={activeSub.sub}
           form={activeSub.form}
-          onUpdated={loadData}
+          onUpdated={() => loadData(false)}
           onClose={() => {
             setActiveSub(null);
-            loadData();
+            loadData(false);
           }}
         />
       )}
