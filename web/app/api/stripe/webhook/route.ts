@@ -35,10 +35,18 @@ export async function POST(req: NextRequest) {
 
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object;
-    const { player_fee_id, registration_installment_id, pay_amount, club_slug, club_id, donation_amount, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected } = pi.metadata ?? {};
+    const { player_fee_id, registration_installment_id, tryout_installment_id, pay_amount, club_slug, club_id, donation_amount, payment_rail, fee_charged, platform_cost, surcharge_passed_to_payer, platform_fee_collected } = pi.metadata ?? {};
     if (registration_installment_id) {
       await handleRegistrationPaymentComplete({
         registration_installment_id,
+        amount: pi.amount_received / 100,
+        payment_intent_id: pi.id,
+        payment_method_id: typeof pi.payment_method === 'string' ? pi.payment_method : null,
+      });
+    }
+    if (tryout_installment_id) {
+      await handleTryoutPaymentComplete({
+        tryout_installment_id,
         amount: pi.amount_received / 100,
         payment_intent_id: pi.id,
         payment_method_id: typeof pi.payment_method === 'string' ? pi.payment_method : null,
@@ -754,6 +762,131 @@ export async function handleRegistrationPaymentComplete({ registration_installme
       from:    `${clubName} <support@pulse-fc.app>`,
       to:      parentEmail,
       subject: `Receipt: ${form?.title ?? 'Registration'} — ${fmtAmount} received`,
+      html,
+    });
+  }
+
+  return { credited: true };
+}
+
+// Credits a tryout roster-offer installment — same idempotent paid_at
+// compare-and-swap as handleRegistrationPaymentComplete. Simpler on the
+// lookup side since tryout_players has a real email_primary column,
+// unlike registration_submissions' free-form data jsonb.
+export async function handleTryoutPaymentComplete({ tryout_installment_id, amount, payment_intent_id, payment_method_id }: {
+  tryout_installment_id: string; amount: number; payment_intent_id: string; payment_method_id?: string | null;
+}): Promise<{ credited: boolean }> {
+  const supabase = supabaseAdmin();
+
+  const { data: claimed, error: updateErr } = await supabase
+    .from('tryout_installments')
+    .update({ paid_at: new Date().toISOString(), payment_method: 'stripe', reference: payment_intent_id, last_charge_error: null })
+    .eq('id', tryout_installment_id)
+    .is('paid_at', null)
+    .select('id, assignment_id, label')
+    .single();
+  if (updateErr || !claimed) return { credited: false }; // already paid (redelivery) or not found
+
+  const { data: assignment } = await supabase
+    .from('tryout_assignments')
+    .select('id, club_id, team, player_id, stripe_payment_method_id')
+    .eq('id', claimed.assignment_id)
+    .single();
+  if (!assignment) return { credited: true };
+
+  if (payment_method_id && !assignment.stripe_payment_method_id) {
+    await supabase.from('tryout_assignments').update({ stripe_payment_method_id: payment_method_id }).eq('id', assignment.id);
+  }
+
+  const { data: player } = await supabase
+    .from('tryout_players')
+    .select('full_name, email_primary')
+    .eq('id', assignment.player_id)
+    .single();
+
+  const { data: club } = await supabase
+    .from('clubs').select('id, name, slug, logo_url, primary_color').eq('id', assignment.club_id).single();
+
+  const clubName  = club?.name ?? 'Your club';
+  const accent    = resolveAccent(club?.primary_color);
+  const fmtAmount = `$${amount.toFixed(2)}`;
+
+  // ── Notify club staff ──────────────────────────────────────────────────
+  if (club?.id) {
+    const { data: adminRows } = await supabase
+      .from('profiles').select('id').eq('club_id', club.id).in('role', ['org_admin', 'app_admin']);
+    const staffIds = (adminRows ?? []).map(r => r.id as string);
+    if (staffIds.length) {
+      await supabase.from('notifications').insert(
+        staffIds.map(profile_id => ({
+          profile_id,
+          type:  'tryout_payment_received',
+          title: '💳 Tryout payment received',
+          body:  `${player?.full_name ?? 'Player'} · ${claimed.label} · ${fmtAmount}`,
+          data:  { assignment_id: assignment.id, type: 'tryout_payment_received', club_slug: club.slug ?? '' },
+        }))
+      );
+      const { data: staffTokenRows } = await supabase
+        .from('push_tokens').select('token, profile_id').in('profile_id', staffIds);
+      if (staffTokenRows?.length) {
+        await sendExpoPush(staffTokenRows.map(t => ({
+          to: t.token, title: '💳 Tryout payment received',
+          body: `${player?.full_name ?? 'Player'} · ${claimed.label} · ${fmtAmount}`,
+          sound: 'default',
+          data: { type: 'tryout_payment_received', assignment_id: assignment.id, club_slug: club.slug ?? '' },
+        })));
+      }
+    }
+  }
+
+  // ── Branded receipt email to the family ──────────────────────────────
+  if (player?.email_primary) {
+    const year     = new Date().getFullYear();
+    const logoUrl  = club?.logo_url ?? null;
+    const initials = clubName.split(' ').slice(0, 2).map((w: string) => (w[0] ?? '').toUpperCase()).join('');
+    const btnText  = contrastText(accent);
+    const logoHtml = logoUrl
+      ? `<img src="${esc(logoUrl)}" width="56" height="56" alt="${esc(clubName)}" style="display:inline-block;border-radius:12px;" />`
+      : `<div style="display:inline-block;width:56px;height:56px;line-height:56px;text-align:center;border-radius:12px;background:${accent};vertical-align:middle;"><span style="font-size:20px;font-weight:900;color:${btnText};">${esc(initials)}</span></div>`;
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Payment receipt</title></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;"><tr><td align="center" style="padding:48px 20px 64px;">
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+<tr><td style="text-align:center;padding-bottom:28px;">${logoHtml}<p style="margin:10px 0 0;font-size:17px;font-weight:800;color:#f9fafb;">${esc(clubName)}</p></td></tr>
+<tr><td style="background:#111111;border:1px solid #222222;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+<div style="height:3px;background:#22C55E;"></div>
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="padding:32px 28px 20px;">
+  <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;">Payment Receipt</p>
+  <h1 style="margin:0;font-size:22px;font-weight:800;color:#f9fafb;line-height:1.3;">✅ Payment confirmed</h1>
+</td></tr>
+<tr><td style="padding:0 28px;"><div style="height:1px;background:#1e1e1e;"></div></td></tr>
+<tr><td style="padding:24px 28px 20px;">
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:14px;overflow:hidden;">
+    <div style="height:2px;background:#22C55E;"></div>
+    <table cellpadding="0" cellspacing="0" width="100%" style="padding:18px 20px;">
+      <tr><td><p style="margin:0 0 4px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">${esc(claimed.label)}</p>
+        <p style="margin:0 0 16px;font-size:15px;font-weight:600;color:#f9fafb;">${esc(assignment.team ?? 'Roster')}</p></td></tr>
+      <tr><td>
+        <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.2px;">Amount paid</p>
+        <p style="margin:0;font-size:24px;font-weight:900;color:#22C55E;letter-spacing:-0.5px;">${esc(fmtAmount)}</p>
+      </td></tr>
+    </table>
+  </div>
+</td></tr>
+<tr><td style="padding:0 28px 24px;"><p style="margin:0;font-size:14px;color:#9ca3af;line-height:1.7;">Keep this email as your receipt. If you have any questions, contact your club administrator.</p></td></tr>
+<tr><td style="border-top:1px solid #1a1a1a;padding:18px 28px;background:#0d0d0d;">
+  <p style="margin:0;font-size:12px;color:#4b5563;line-height:1.6;">${esc(clubName)} uses <a href="https://pulse-fc.app" style="color:${accent};text-decoration:none;font-weight:600;">Pulse FC</a> for club management. &middot; &copy; ${year} ${esc(clubName)}</p>
+</td></tr>
+</table></td></tr>
+</table></td></tr></table>
+</body></html>`;
+
+    await resend.emails.send({
+      from:    `${clubName} <support@pulse-fc.app>`,
+      to:      player.email_primary,
+      subject: `Receipt: ${claimed.label} — ${fmtAmount} received`,
       html,
     });
   }

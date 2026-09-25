@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 type RegData = {
   error?: string;
@@ -52,6 +52,7 @@ const inp: React.CSSProperties = {
 function RegisterOfferContent() {
   const params = useSearchParams();
   const token = params.get('token');
+  const router = useRouter();
 
   const [data, setData] = useState<RegData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +117,26 @@ function RegisterOfferContent() {
       });
       const d = await r.json();
       if (!r.ok) { setSubmitError(d.error ?? 'Could not submit your registration. Please try again.'); return; }
+
+      // If the club has a cost/installment plan configured for this
+      // player's age group, send them straight into paying what's due now
+      // instead of ending at a bare "you're all set" screen.
+      try {
+        const instRes = await fetch('/api/tryout/create-installments', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        const instData = await instRes.json();
+        if (instRes.ok && instData.due_now?.token) {
+          router.push(`/pay-tryout/${instData.due_now.token}`);
+          return;
+        }
+      } catch (err) {
+        console.error('tryout create-installments failed:', err);
+        // Registration itself already succeeded — fall through to the
+        // normal success screen; payment can still be arranged manually.
+      }
+
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
