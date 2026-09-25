@@ -1,0 +1,13 @@
+-- Adding p_tryout_offer_token to submit_registration in
+-- 20260925000006_registration_tryout_link.sql did not cleanly replace the
+-- existing 4-parameter function the way CREATE OR REPLACE FUNCTION usually
+-- does for a trailing-default-parameter change — it left BOTH the old
+-- 4-arg and new 5-arg signatures in pg_proc as distinct overloads.
+-- PostgREST then can't disambiguate a call that only supplies the
+-- original 4 named params ("Could not choose the best candidate
+-- function..."), confirmed live. The one real caller
+-- (web/app/register/[token]/page.tsx) already always sends all 5 params,
+-- so this was never hit in production, but leaving two overloads around
+-- is a live footgun for the next caller that doesn't know to do that —
+-- drop the stale 4-arg one so there's exactly one submit_registration.
+drop function if exists public.submit_registration(uuid, jsonb, text, numeric);
