@@ -5,6 +5,7 @@ import { formatCurrency } from '@/lib/formatCurrency';
 import { buildRegistrationChargeBody } from '@/lib/registrationCharge';
 import { handleRegistrationPaymentComplete } from '../../stripe/webhook/route';
 import { claimInstallmentForCharge, releaseInstallmentChargeLock } from '@/lib/installmentChargeLock';
+import { notifyClubStaff } from '@/lib/notifyClubStaff';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const REMINDER_COOLDOWN_DAYS = 3;
@@ -110,10 +111,22 @@ export async function GET(req: NextRequest) {
 
           // Declined, requires live authentication, or any other Stripe
           // error — record it and fall through to the email fallback below.
+          const failReason = pi?.error?.message ?? `Stripe error ${piRes.status}`;
           await supabase.from('registration_installments').update({
             charge_attempts: (inst.charge_attempts ?? 0) + 1,
-            last_charge_error: pi?.error?.message ?? `Stripe error ${piRes.status}`,
+            last_charge_error: failReason,
           }).eq('id', inst.id);
+
+          // Staff previously had no way to know this happened short of
+          // opening the submission themselves — the family got an email,
+          // but the club never did.
+          await notifyClubStaff(supabase, club, {
+            type: 'installment_charge_failed',
+            title: '⚠️ Auto-charge failed',
+            body: `${amountFmt} for ${form.title} didn't go through — ${failReason}`,
+            emailSubject: `⚠️ Payment issue — ${clubName}`,
+            emailBody: `An automatic payment of ${amountFmt} for ${form.title} failed: ${failReason}. The family has been emailed a link to pay manually — you may want to follow up directly.`,
+          });
         } else {
           await releaseInstallmentChargeLock(supabase, 'registration_installments', inst.id);
         }

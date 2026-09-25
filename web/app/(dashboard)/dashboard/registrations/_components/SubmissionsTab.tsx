@@ -8,8 +8,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import {
-  RegForm, Submission, PaymentStatus, FieldDef,
-  PAY_STATUS_STYLES,
+  RegForm, Submission, PaymentBucket, FieldDef, InstallmentBucketInfo,
+  PAYMENT_BUCKET_STYLES, derivePaymentBucket,
   fmtMoney, fmtDate, formFields, playerName, parentEmail,
 } from './shared';
 import SubmissionDetail from './SubmissionDetail';
@@ -18,7 +18,7 @@ import SubmissionDetail from './SubmissionDetail';
 
 interface FilterState {
   formId: string;
-  payment: PaymentStatus | '';
+  payment: PaymentBucket | '';
   search: string;
   flagsOnly: boolean;
 }
@@ -30,12 +30,12 @@ interface ActiveSub {
 
 // ── Select option constants ───────────────────────────────────────────────────
 
-const PAYMENT_OPTIONS: Array<{ value: PaymentStatus | ''; label: string }> = [
+const PAYMENT_OPTIONS: Array<{ value: PaymentBucket | ''; label: string }> = [
   { value: '', label: 'All payments' },
-  { value: 'unpaid', label: 'Unpaid' },
   { value: 'paid', label: 'Paid' },
-  { value: 'partial', label: 'Partial' },
-  { value: 'refunded', label: 'Refunded' },
+  { value: 'plan', label: 'On Installments' },
+  { value: 'missed', label: 'Payment Failed' },
+  { value: 'not_paid', label: 'Not Paid' },
 ];
 
 // ── Shared inline style helpers ───────────────────────────────────────────────
@@ -81,6 +81,11 @@ export default function SubmissionsTab() {
   // own (often club-wide, single) linked team. See
   // 20260925000006_registration_tryout_link.sql.
   const [tryoutTeamMap, setTryoutTeamMap] = useState<Map<string, string>>(new Map());
+  // Keyed by submission_id — the installment rows behind each submission's
+  // payment schedule, just enough of each (paid_at/due_date/charge info) to
+  // derive its payment bucket for the whole list at once. See
+  // derivePaymentBucket() in shared.ts.
+  const [installmentsBySub, setInstallmentsBySub] = useState<Map<string, InstallmentBucketInfo[]>>(new Map());
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
 
@@ -235,6 +240,28 @@ export default function SubmissionsTab() {
         setTryoutTeamMap(new Map());
       }
 
+      // Only submissions on a priced form ever have installments — no point
+      // asking for the rest. Inlined rather than closing over the
+      // component-level formHasPrice() so this callback doesn't need it in
+      // its dependency array.
+      const pricedFormIds = new Set(loadedForms.filter(f => f.price !== null && f.price !== undefined && f.price > 0).map(f => f.id));
+      const pricedSubIds  = loadedSubs.filter(s => pricedFormIds.has(s.form_id)).map(s => s.id);
+      if (pricedSubIds.length) {
+        const { data: insts } = await supabase
+          .from('registration_installments')
+          .select('submission_id, paid_at, due_date, last_charge_error, charge_attempts, refunded_amount')
+          .in('submission_id', pricedSubIds);
+        const map = new Map<string, InstallmentBucketInfo[]>();
+        for (const inst of (insts ?? []) as InstallmentBucketInfo[]) {
+          const list = map.get(inst.submission_id) ?? [];
+          list.push(inst);
+          map.set(inst.submission_id, list);
+        }
+        setInstallmentsBySub(map);
+      } else {
+        setInstallmentsBySub(new Map());
+      }
+
       await detectDuplicates(loadedForms, loadedSubs);
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load submissions');
@@ -250,8 +277,11 @@ export default function SubmissionsTab() {
 
   const filteredSubs = useMemo(() => {
     return submissions.filter(sub => {
-      if (filter.formId  && sub.form_id        !== filter.formId)  return false;
-      if (filter.payment && sub.payment_status !== filter.payment) return false;
+      if (filter.formId && sub.form_id !== filter.formId) return false;
+      if (filter.payment) {
+        const bucket = derivePaymentBucket(sub, installmentsBySub.get(sub.id) ?? []);
+        if (bucket !== filter.payment) return false;
+      }
       if (filter.flagsOnly && !sub.is_duplicate_flagged && !sub.financial_aid_requested) return false;
       if (filter.search) {
         const q     = filter.search.toLowerCase();
@@ -261,7 +291,7 @@ export default function SubmissionsTab() {
       }
       return true;
     });
-  }, [submissions, filter]);
+  }, [submissions, filter, installmentsBySub]);
 
   // ── Selection ───────────────────────────────────────────────────────────────
 
@@ -355,12 +385,13 @@ export default function SubmissionsTab() {
       const defs     = defsByFormId.get(sub.form_id) ?? [];
       const teamName = form ? getTeamName(sub, form) : '';
 
+      const bucket = derivePaymentBucket(sub, installmentsBySub.get(sub.id) ?? []);
       const base = [
         playerName(sub.data),
         parentEmail(sub.data),
         form?.title ?? '',
         teamName,
-        sub.payment_status ?? '',
+        bucket ? PAYMENT_BUCKET_STYLES[bucket].label : '',
         form ? fmtMoney(sub.amount_due, form.currency) : (sub.amount_due?.toString() ?? ''),
         form ? fmtMoney(sub.amount_paid, form.currency) : sub.amount_paid.toString(),
         fmtDate(sub.submitted_at),
@@ -475,7 +506,7 @@ export default function SubmissionsTab() {
         {/* Payment filter */}
         <select
           value={filter.payment}
-          onChange={e => setFilter(f => ({ ...f, payment: e.target.value as PaymentStatus | '' }))}
+          onChange={e => setFilter(f => ({ ...f, payment: e.target.value as PaymentBucket | '' }))}
           style={SELECT_STYLE}
         >
           {PAYMENT_OPTIONS.map(o => (
@@ -647,11 +678,10 @@ export default function SubmissionsTab() {
                   const isSelected = selectedIds.has(sub.id);
                   const isDuplicate = sub.is_duplicate_flagged;
                   const isAid      = sub.financial_aid_requested;
-                  // payment_status is null whenever no payment has ever been
-                  // relevant yet (waitlisted, declined before payment, a free
-                  // registration) — not just on forms with no price, so this
-                  // can't assume a match the way subStyle can.
-                  const payStyle   = sub.payment_status ? PAY_STATUS_STYLES[sub.payment_status] : null;
+                  const subInstallments = installmentsBySub.get(sub.id) ?? [];
+                  const bucket     = derivePaymentBucket(sub, subInstallments);
+                  const payStyle   = bucket ? PAYMENT_BUCKET_STYLES[bucket] : null;
+                  const totalRefunded = subInstallments.reduce((sum, i) => sum + (i.refunded_amount ?? 0), 0);
 
                   let rowBg = idx % 2 === 0 ? '#fff' : '#F8FAFC';
                   if (isSelected) rowBg = `${primary}0c`;
@@ -713,15 +743,25 @@ export default function SubmissionsTab() {
                         <td style={{ padding: '11px 16px' }}>
                           {form && formHasPrice(form) && payStyle ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <span style={{
-                                display: 'inline-block',
-                                fontSize: '11px', fontWeight: 700,
-                                padding: '3px 10px', borderRadius: '20px',
-                                color: payStyle.color, background: payStyle.bg,
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {payStyle.label}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  fontSize: '11px', fontWeight: 700,
+                                  padding: '3px 10px', borderRadius: '20px',
+                                  color: payStyle.color, background: payStyle.bg,
+                                  whiteSpace: 'nowrap',
+                                }}>
+                                  {payStyle.label}
+                                </span>
+                                {totalRefunded > 0 && (
+                                  <span title={`${fmtMoney(totalRefunded, form.currency)} refunded`} style={{
+                                    fontSize: '10px', fontWeight: 700, color: '#D97706',
+                                    whiteSpace: 'nowrap',
+                                  }}>
+                                    ↩ refunded
+                                  </span>
+                                )}
+                              </div>
                               {(sub.amount_paid > 0 || sub.amount_due !== null) && (
                                 <span style={{ fontSize: '11px', color: '#94A3B8' }}>
                                   {fmtMoney(sub.amount_paid, form.currency)} / {fmtMoney(sub.amount_due, form.currency)}

@@ -4,6 +4,13 @@ export type FormStatus      = 'draft' | 'open' | 'closed';
 export type SubStatus       = 'pending' | 'approved' | 'waitlisted' | 'declined';
 export type PaymentStatus   = 'unpaid' | 'paid' | 'partial' | 'refunded';
 export type PaymentOptions  = 'full' | 'plan' | 'both';
+// What a DOC actually needs to know about a registration's payment at a
+// glance — collapsed from the old 4-value payment_status column (which
+// repeatedly drifted from reality: offline payments, refunds, and admin
+// overrides each had their own partial write path) down to 4 states that
+// are instead derived live from amount_paid/amount_due and the installment
+// schedule's due dates. See derivePaymentBucket() below.
+export type PaymentBucket   = 'paid' | 'plan' | 'missed' | 'not_paid';
 export type PriceMode       = 'flat' | 'field' | 'tiers';
 export type OfflineMethod   = 'cash' | 'bank_transfer' | 'cheque' | 'other';
 export type DiscountType    = 'percent' | 'flat';
@@ -201,6 +208,13 @@ export const PAY_STATUS_STYLES: Record<string, { color: string; bg: string; labe
   refunded: { color: '#64748B', bg: '#F1F5F9', label: 'Refunded' },
 };
 
+export const PAYMENT_BUCKET_STYLES: Record<PaymentBucket, { color: string; bg: string; label: string }> = {
+  paid:     { color: '#16A34A', bg: '#DCFCE7', label: 'Paid' },
+  plan:     { color: '#2563EB', bg: '#EFF6FF', label: 'On Installments' },
+  missed:   { color: '#DC2626', bg: '#FEE2E2', label: 'Payment Failed' },
+  not_paid: { color: '#64748B', bg: '#F1F5F9', label: 'Not Paid' },
+};
+
 export const FIELD_COLORS: Record<FieldType, { color: string; bg: string }> = {
   section:     { color: '#7C3AED', bg: '#F5F3FF' },
   text:        { color: '#2563EB', bg: '#EFF6FF' },
@@ -307,6 +321,73 @@ export function playerName(data: Record<string, string>): string {
 export function parentEmail(data: Record<string, string>): string {
   const vals = Object.values(data).find(v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v ?? ''));
   return vals ?? '—';
+}
+
+// Minimal shape callers need to derive a submission's payment bucket across
+// a whole list — not the full Installment type, since bucketing never needs
+// payment_token/notes/etc.
+export type InstallmentBucketInfo = {
+  submission_id: string;
+  paid_at: string | null;
+  due_date: string | null;
+  last_charge_error: string | null;
+  charge_attempts: number;
+  refunded_amount?: number;
+  amount?: number;
+};
+
+// The single source of truth for "what should a DOC see" for a submission's
+// payment — always derived live from amount_paid/amount_due and the
+// installment schedule, never read back off the stored payment_status
+// column. That column drifted from reality repeatedly this project (offline
+// payments, refunds, and admin overrides each had their own partial write
+// path) because it's redundant state that has to be kept in sync by hand;
+// these 4 numbers never can be out of sync with themselves.
+//
+//   paid      — fully paid off
+//   plan      — actively paying in installments, nothing currently overdue
+//   missed    — has paid at least once, but a later installment is now
+//               overdue and unpaid (a failed auto-charge, or just missed)
+//   not_paid  — nothing has ever been collected (includes "just submitted,
+//               hasn't gotten to the payment page yet" and a fully-refunded
+//               registration — both are, from the club's perspective right
+//               now, money not in hand)
+//
+// Returns null for a free registration (amount_due <= 0) — there's no
+// payment concept to show at all.
+export function derivePaymentBucket(
+  sub: Pick<Submission, 'amount_paid' | 'amount_due'>,
+  installments: InstallmentBucketInfo[],
+): PaymentBucket | null {
+  const due = sub.amount_due ?? 0;
+  if (due <= 0) return null;
+  const paid = sub.amount_paid ?? 0;
+  if (paid >= due - 0.01) return 'paid';
+  if (paid <= 0) return 'not_paid';
+  const today = new Date().toISOString().slice(0, 10);
+  const hasOverdueUnpaid = installments.some(i => !i.paid_at && i.due_date && i.due_date < today);
+  return hasOverdueUnpaid ? 'missed' : 'plan';
+}
+
+// The specific overdue installment (and a human reason) behind a 'missed'
+// bucket — what a DOC actually wants to see "when they go in": the real
+// Stripe decline message when one was recorded, otherwise a plain
+// explanation that nothing's been attempted yet.
+export function paymentIssueDetail(installments: InstallmentBucketInfo[]): {
+  installment: InstallmentBucketInfo; reason: string;
+} | null {
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = installments
+    .filter(i => !i.paid_at && i.due_date && i.due_date < today)
+    .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''));
+  if (!overdue.length) return null;
+  const first = overdue[0];
+  const reason = first.last_charge_error
+    ? first.last_charge_error
+    : first.charge_attempts > 0
+      ? 'A card charge was attempted but did not go through.'
+      : 'No payment has been received by the due date.';
+  return { installment: first, reason };
 }
 
 // ── Shared style constants ────────────────────────────────────────────────────

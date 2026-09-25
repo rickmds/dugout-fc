@@ -6,6 +6,7 @@ import { applyRefund, splitRefundAmount } from '@/lib/refunds';
 import { sendExpoPush } from '@/lib/expoPush';
 import { resolveProfileEmails } from '@/lib/resolveProfileEmails';
 import { findInstallmentByPaymentIntent, applyInstallmentRefund, flagInstallmentDisputed, updateInstallmentDisputeStatus } from '@/lib/installmentRefunds';
+import { notifyClubStaff } from '@/lib/notifyClubStaff';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -80,10 +81,23 @@ export async function POST(req: NextRequest) {
 
   if (event.type === 'payment_intent.payment_failed') {
     const pi = event.data.object;
-    const { player_fee_id, club_slug } = pi.metadata ?? {};
+    const { player_fee_id, club_slug, registration_installment_id, tryout_installment_id, club_id } = pi.metadata ?? {};
+    const declineReason = pi.last_payment_error?.message ?? 'Your card was declined.';
     if (player_fee_id) {
-      const declineReason = pi.last_payment_error?.message ?? 'Your card was declined.';
       await handlePaymentFailed({ player_fee_id, club_slug, declineReason });
+    }
+    // An on-session registration/tryout charge failing (a family's card
+    // declines while they're actively on the payment page) previously hit
+    // this branch and was silently dropped — nothing recorded why, unlike
+    // the off-session auto-charge cron, which has always written this same
+    // charge_attempts/last_charge_error pair. That left "payment failed,
+    // with reason" only reliable for cron-driven failures, not on-session
+    // ones, even though both are the same underlying event.
+    if (registration_installment_id) {
+      await handleInstallmentChargeFailed({ table: 'registration_installments', installmentId: registration_installment_id, clubId: club_id, declineReason });
+    }
+    if (tryout_installment_id) {
+      await handleInstallmentChargeFailed({ table: 'tryout_installments', installmentId: tryout_installment_id, clubId: club_id, declineReason });
     }
   }
 
@@ -662,6 +676,42 @@ export async function handlePaymentComplete({ player_fee_id, pay_amount: amountP
   }
 
   return { credited: true };
+}
+
+// Records a failed charge attempt against a registration/tryout
+// installment — same charge_attempts/last_charge_error columns the
+// off-session auto-charge cron has always written on failure (see
+// /api/cron/registration-payment-reminders), now also written for an
+// on-session failure so the "Payment Failed" bucket's reason is populated
+// regardless of which path the failed charge came through. Also alerts club
+// admins the same way a refund/dispute does — a failed charge is otherwise
+// invisible to staff until they happen to open the submission.
+async function handleInstallmentChargeFailed({ table, installmentId, clubId, declineReason }: {
+  table: 'registration_installments' | 'tryout_installments';
+  installmentId: string;
+  clubId?: string;
+  declineReason: string;
+}) {
+  const supabase = supabaseAdmin();
+
+  const { data: inst } = await supabase.from(table).select('id, charge_attempts, paid_at').eq('id', installmentId).single();
+  if (!inst || inst.paid_at) return; // not found, or already paid by the time this arrived — nothing to flag
+
+  await supabase.from(table).update({
+    charge_attempts: (inst.charge_attempts ?? 0) + 1,
+    last_charge_error: declineReason,
+  }).eq('id', installmentId);
+
+  if (!clubId) return;
+  const { data: club } = await supabase.from('clubs').select('id, name, primary_color').eq('id', clubId).single();
+  const kind = table === 'registration_installments' ? 'registration' : 'tryout';
+  await notifyClubStaff(supabase, club, {
+    type: 'installment_charge_failed',
+    title: '⚠️ Card payment failed',
+    body: `A ${kind} payment attempt didn't go through — ${declineReason}`,
+    emailSubject: `⚠️ Payment issue — ${club?.name ?? 'Your club'}`,
+    emailBody: `A family's card payment attempt for a ${kind} failed: ${declineReason}. Check the dashboard for details — the family has not been charged.`,
+  });
 }
 
 // Credits a registration installment — the pre-roster equivalent of

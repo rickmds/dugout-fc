@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { FileText, Users, CreditCard, TrendingUp, AlertCircle, CheckCircle, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { fmtMoney, fmtDate } from './shared';
-import type { RegForm, Submission } from './shared';
+import { fmtMoney, fmtDate, derivePaymentBucket } from './shared';
+import type { RegForm, Submission, InstallmentBucketInfo } from './shared';
 
 interface OverviewStats {
   openForms: number;
@@ -14,6 +14,7 @@ interface OverviewStats {
   revenueOutstanding: number;
   financialAidRequests: number;
   duplicateFlags: number;
+  paymentIssues: number;
   recentSubmissions: (Submission & { form_title: string; form_currency: string })[];
   formSummaries: { form: RegForm; total: number; waitlisted: number }[];
 }
@@ -52,6 +53,24 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
     const financialAidRequests        = subs.filter((s) => s.financial_aid_requested && s.financial_aid_approved === null).length;
     const duplicateFlags              = subs.filter((s) => s.is_duplicate_flagged).length;
 
+    // Only a priced form's submissions can ever have installments — same
+    // scoping as the Submissions tab's own batched fetch.
+    const pricedFormIds = new Set(forms.filter((f) => f.price !== null && f.price !== undefined && f.price > 0).map((f) => f.id));
+    const pricedSubIds  = subs.filter((s) => pricedFormIds.has(s.form_id)).map((s) => s.id);
+    const installmentsBySub = new Map<string, InstallmentBucketInfo[]>();
+    if (pricedSubIds.length) {
+      const { data: insts } = await supabase
+        .from('registration_installments')
+        .select('submission_id, paid_at, due_date, last_charge_error, charge_attempts')
+        .in('submission_id', pricedSubIds);
+      for (const inst of (insts ?? []) as InstallmentBucketInfo[]) {
+        const list = installmentsBySub.get(inst.submission_id) ?? [];
+        list.push(inst);
+        installmentsBySub.set(inst.submission_id, list);
+      }
+    }
+    const paymentIssues = subs.filter((s) => derivePaymentBucket(s, installmentsBySub.get(s.id) ?? []) === 'missed').length;
+
     const recentSubmissions = subs
       .sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())
       .slice(0, 6)
@@ -71,7 +90,7 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
 
     setStats({
       openForms, totalSubmissionsThisSeason: subs.length,
-      revenueCollected, revenueOutstanding, financialAidRequests, duplicateFlags,
+      revenueCollected, revenueOutstanding, financialAidRequests, duplicateFlags, paymentIssues,
       recentSubmissions, formSummaries,
     });
     setLoading(false);
@@ -99,8 +118,17 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
       </div>
 
       {/* ── Alert banners ── */}
-      {(stats.financialAidRequests > 0 || stats.duplicateFlags > 0) && (
+      {(stats.paymentIssues > 0 || stats.financialAidRequests > 0 || stats.duplicateFlags > 0) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
+          {stats.paymentIssues > 0 && (
+            <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <AlertCircle size={16} color="#DC2626" />
+              <span style={{ fontSize: '13px', color: '#991B1B', fontWeight: '600' }}>
+                {stats.paymentIssues} registration{stats.paymentIssues !== 1 ? 's' : ''} with a missed or failed payment
+              </span>
+              <button onClick={() => onNavigate('submissions')} style={{ marginLeft: 'auto', padding: '5px 12px', background: '#DC2626', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Review</button>
+            </div>
+          )}
           {stats.financialAidRequests > 0 && (
             <div style={{ background: '#EDE9FE', border: '1px solid #C4B5FD', borderRadius: '10px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <AlertCircle size={16} color="#7C3AED" />

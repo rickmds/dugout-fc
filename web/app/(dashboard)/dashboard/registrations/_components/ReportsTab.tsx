@@ -7,8 +7,9 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import {
-  RegForm, Submission, FieldDef,
+  RegForm, Submission, FieldDef, InstallmentBucketInfo,
   fmtMoney, fmtDate, formFields, playerName, parentEmail,
+  PAYMENT_BUCKET_STYLES, derivePaymentBucket,
   labelSt, inputSt,
 } from './shared';
 
@@ -247,11 +248,27 @@ export default function ReportsTab() {
 
       if (customFields.has('payment_info')) {
         headers.push('Amount due', 'Amount paid', 'Balance', 'Payment status');
+        const subIds = subs.map(s => s.id);
+        const installmentsBySub = new Map<string, InstallmentBucketInfo[]>();
+        if (subIds.length) {
+          const { data: insts } = await supabase
+            .from('registration_installments')
+            .select('submission_id, paid_at, due_date, last_charge_error, charge_attempts')
+            .in('submission_id', subIds);
+          for (const inst of (insts ?? []) as InstallmentBucketInfo[]) {
+            const list = installmentsBySub.get(inst.submission_id) ?? [];
+            list.push(inst);
+            installmentsBySub.set(inst.submission_id, list);
+          }
+        }
         extractors.push(
           s => fmtMoney(s.amount_due, form.currency),
           s => fmtMoney(s.amount_paid, form.currency),
           s => fmtMoney((s.amount_due ?? 0) - s.amount_paid, form.currency),
-          s => s.payment_status ?? '',
+          s => {
+            const bucket = derivePaymentBucket(s, installmentsBySub.get(s.id) ?? []);
+            return bucket ? PAYMENT_BUCKET_STYLES[bucket].label : '';
+          },
         );
       }
 

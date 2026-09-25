@@ -8,8 +8,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import {
-  RegForm, Submission, PaymentStatus, OfflineMethod,
-  PAY_STATUS_STYLES,
+  RegForm, Submission, PaymentStatus, OfflineMethod, InstallmentBucketInfo,
+  PAYMENT_BUCKET_STYLES, derivePaymentBucket, paymentIssueDetail,
   fmtMoney, fmtDate, formFields, playerName,
   labelSt, inputSt, backBtnSt,
   normalizeRequiredDocs, requiredDocDataKey, parentEmail,
@@ -42,7 +42,15 @@ const OFFLINE_METHODS: Array<{ value: OfflineMethod; label: string }> = [
   { value: 'other',         label: 'Other' },
 ];
 
-const PAY_STATUSES: PaymentStatus[] = ['paid', 'partial', 'unpaid', 'refunded'];
+// The manual override only ever needs to push a submission to one of the two
+// ends of the payment lifecycle — everything in between ("on installments",
+// "payment failed") is derived automatically from the real installment
+// schedule (see derivePaymentBucket in shared.ts) and isn't something an
+// admin should be able to just declare.
+const OVERRIDE_ACTIONS: Array<{ status: PaymentStatus; label: string }> = [
+  { status: 'paid',   label: 'Mark as fully paid' },
+  { status: 'unpaid', label: 'Reset to not paid' },
+];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -417,6 +425,13 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
   const balance      = (currentSub.amount_due ?? 0) - currentSub.amount_paid;
   const currency     = form.currency;
 
+  // installments here are all for this one submission already (loadInstallments
+  // scopes the query), so submission_id is only needed to satisfy
+  // InstallmentBucketInfo's shape.
+  const bucketInstallments: InstallmentBucketInfo[] = installments.map(i => ({ ...i, submission_id: sub.id }));
+  const paymentBucket = derivePaymentBucket(currentSub, bucketInstallments);
+  const paymentIssue  = paymentBucket === 'missed' ? paymentIssueDetail(bucketInstallments) : null;
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -462,6 +477,20 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
               {form.title} · Submitted {fmtDate(currentSub.submitted_at)}
             </p>
           </div>
+
+          {/* Payment bucket — the same 4-state summary shown in the list */}
+          {paymentBucket && (
+            <span style={{
+              display: 'inline-block',
+              fontSize: '11px', fontWeight: 700,
+              padding: '5px 12px', borderRadius: '20px',
+              color: PAYMENT_BUCKET_STYLES[paymentBucket].color,
+              background: PAYMENT_BUCKET_STYLES[paymentBucket].bg,
+              whiteSpace: 'nowrap',
+            }}>
+              {PAYMENT_BUCKET_STYLES[paymentBucket].label}
+            </span>
+          )}
 
           {/* Team — from the Tryout module's Team Builder, when this
               submission is linked to an accepted tryout offer */}
@@ -511,6 +540,24 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
           {/* ── Details ─────────────────────────────────────────────────── */}
           {activeTab === 'details' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+
+              {paymentBucket === 'missed' && paymentIssue && (
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '10px',
+                  background: '#FEF2F2', border: '1px solid #FECACA',
+                  borderRadius: '10px', padding: '12px 16px',
+                }}>
+                  <AlertTriangle size={15} color="#DC2626" style={{ flexShrink: 0, marginTop: '1px' }} />
+                  <div>
+                    <div style={{ fontSize: '13px', color: '#991B1B', fontWeight: 700 }}>
+                      Payment issue{paymentIssue.installment.amount != null ? ` — ${fmtMoney(paymentIssue.installment.amount, currency)} due ${fmtDate(paymentIssue.installment.due_date)}` : ''}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: '#B91C1C', marginTop: '2px' }}>
+                      {paymentIssue.reason}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {currentSub.financial_aid_requested && (
                 <div style={{
@@ -724,28 +771,25 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                 background: '#fff', border: '1px solid #E2E8F0',
                 borderRadius: '12px', padding: '16px 20px',
               }}>
-                <div style={labelSt}>Quick payment status override</div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                  {PAY_STATUSES.map(ps => {
-                    const st       = PAY_STATUS_STYLES[ps];
-                    const isActive = currentSub.payment_status === ps;
-                    return (
-                      <button
-                        key={ps}
-                        onClick={() => handlePayStatusOverride(ps)}
-                        style={{
-                          padding: '6px 14px', borderRadius: '8px',
-                          border: isActive ? `2px solid ${st.color}` : '1.5px solid #E2E8F0',
-                          background: isActive ? st.bg : '#F8FAFC',
-                          color: isActive ? st.color : '#64748B',
-                          fontSize: '12px', fontWeight: 700,
-                          cursor: 'pointer', fontFamily: 'inherit',
-                        }}
-                      >
-                        {st.label}
-                      </button>
-                    );
-                  })}
+                <div style={labelSt}>Manual override</div>
+                <p style={{ margin: '4px 0 10px', fontSize: '12px', color: '#94A3B8' }}>
+                  For a payment collected outside the app that the installment schedule can&apos;t see, or to reverse one. This updates the installment schedule too — use &quot;Record offline payment&quot; below instead if only part of the balance came in.
+                </p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {OVERRIDE_ACTIONS.map(a => (
+                    <button
+                      key={a.status}
+                      onClick={() => handlePayStatusOverride(a.status)}
+                      style={{
+                        padding: '6px 14px', borderRadius: '8px',
+                        border: '1.5px solid #E2E8F0', background: '#F8FAFC',
+                        color: '#374151', fontSize: '12px', fontWeight: 700,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 

@@ -5,6 +5,7 @@ import { formatCurrency } from '@/lib/formatCurrency';
 import { buildTryoutChargeBody } from '@/lib/registrationCharge';
 import { handleTryoutPaymentComplete } from '../../stripe/webhook/route';
 import { claimInstallmentForCharge, releaseInstallmentChargeLock } from '@/lib/installmentChargeLock';
+import { notifyClubStaff } from '@/lib/notifyClubStaff';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const REMINDER_COOLDOWN_DAYS = 3;
@@ -105,10 +106,19 @@ export async function GET(req: NextRequest) {
             continue;
           }
 
+          const failReason = pi?.error?.message ?? `Stripe error ${piRes.status}`;
           await supabase.from('tryout_installments').update({
             charge_attempts: (inst.charge_attempts ?? 0) + 1,
-            last_charge_error: pi?.error?.message ?? `Stripe error ${piRes.status}`,
+            last_charge_error: failReason,
           }).eq('id', inst.id);
+
+          await notifyClubStaff(supabase, club, {
+            type: 'installment_charge_failed',
+            title: '⚠️ Auto-charge failed',
+            body: `${amountFmt} for ${inst.label} didn't go through — ${failReason}`,
+            emailSubject: `⚠️ Payment issue — ${clubName}`,
+            emailBody: `An automatic payment of ${amountFmt} for ${inst.label} (${assignment.team ?? 'Roster'}) failed: ${failReason}. The family has been emailed a link to pay manually — you may want to follow up directly.`,
+          });
         } else {
           await releaseInstallmentChargeLock(supabase, 'tryout_installments', inst.id);
         }
