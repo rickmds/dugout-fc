@@ -31,7 +31,10 @@ type TeamStats = {
 };
 
 type TeamForm  = { name: string; age_group: string; gender: string; season: string };
-type RolloverModal = { team: TeamStats; newSeason: string; copyRoster: boolean; saving: boolean };
+type RolloverModal = {
+  team: TeamStats; newSeason: string; newName: string; newAgeGroup: string; newGender: string;
+  copyRoster: boolean; copyStaff: boolean; saving: boolean;
+};
 
 const AGE_GROUPS = ['U6','U7','U8','U9','U10','U11','U12','U13','U14','U15','U16','U17','U18','U19','Senior'];
 const GENDERS    = [
@@ -179,6 +182,13 @@ export default function TeamsPage() {
   }
 
   // ── Season rollover ─────────────────────────────────────────────────────────
+  // Creates a new team row for the new season and, when copying the roster,
+  // brings every player's full record along — not just name/position. The
+  // original version only copied those two fields, which silently orphaned
+  // parent access (players.profile_id, player_guardians), emergency
+  // contacts, and medical notes on every rollover — a real duty-of-care
+  // regression, not just missing convenience. Guardians and safety info
+  // don't reset just because the roster moved to a new season/age group.
   async function doRollover() {
     if (!rollover || !club) return;
     setRollover((r) => r ? { ...r, saving: true } : null);
@@ -187,8 +197,9 @@ export default function TeamsPage() {
         .from('teams')
         .insert({
           club_id: club.id,
-          name: rollover.team.name,
-          age_group: rollover.team.age_group,
+          name: rollover.newName.trim() || rollover.team.name,
+          age_group: rollover.newAgeGroup || null,
+          gender: rollover.newGender || null,
           season: rollover.newSeason.trim() || null,
         })
         .select('id')
@@ -200,16 +211,58 @@ export default function TeamsPage() {
         return;
       }
 
+      if (rollover.copyStaff) {
+        const { data: staff } = await supabase
+          .from('team_members')
+          .select('profile_id, role')
+          .eq('team_id', rollover.team.id)
+          .in('role', ['coach', 'org_admin']);
+        if (staff?.length) {
+          await supabase.from('team_members').insert(
+            staff.map((s) => ({ team_id: newTeam.id, profile_id: s.profile_id, role: s.role }))
+          );
+        }
+      }
+
       if (rollover.copyRoster) {
         const { data: players } = await supabase
           .from('players')
-          .select('full_name, jersey_number, position')
+          .select('id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id')
           .eq('team_id', rollover.team.id);
 
         if (players?.length) {
-          await supabase.from('players').insert(
-            players.map((p) => ({ ...p, team_id: newTeam.id }))
-          );
+          const { data: newPlayers, error: playersErr } = await supabase.from('players').insert(
+            players.map(({ id: _id, ...p }) => ({ ...p, team_id: newTeam.id }))
+          ).select('id');
+          if (playersErr || !newPlayers) throw playersErr ?? new Error('Could not copy roster');
+
+          // Postgres preserves row order for a single multi-row INSERT...RETURNING,
+          // so index-zipping the two arrays back together is safe here.
+          const oldIds = players.map((p) => p.id);
+          const newIds = newPlayers.map((p) => p.id as string);
+          const idMap = new Map(oldIds.map((oldId, i) => [oldId, newIds[i]]));
+
+          const [{ data: guardians }, { data: emergencyContacts }, { data: medicalNotes }] = await Promise.all([
+            supabase.from('player_guardians').select('player_id, profile_id').in('player_id', oldIds),
+            supabase.from('player_emergency_contacts').select('player_id, name, phone, relationship').in('player_id', oldIds),
+            supabase.from('player_medical_notes').select('player_id, notes').in('player_id', oldIds),
+          ]);
+
+          if (guardians?.length) {
+            await supabase.from('player_guardians').insert(
+              guardians.map((g) => ({ player_id: idMap.get(g.player_id), profile_id: g.profile_id }))
+            );
+          }
+          if (emergencyContacts?.length) {
+            await supabase.from('player_emergency_contacts').insert(
+              emergencyContacts.map((c) => ({ player_id: idMap.get(c.player_id), name: c.name, phone: c.phone, relationship: c.relationship }))
+            );
+          }
+          if (medicalNotes?.length) {
+            await supabase.from('player_medical_notes').insert(
+              medicalNotes.map((m) => ({ player_id: idMap.get(m.player_id), notes: m.notes }))
+            );
+          }
         }
       }
 
@@ -444,7 +497,7 @@ export default function TeamsPage() {
                 {/* Actions — stop propagation so row click doesn't fire */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '2px', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
                   <button
-                    onClick={() => setRollover({ team: t, newSeason: '', copyRoster: true, saving: false })}
+                    onClick={() => setRollover({ team: t, newSeason: '', newName: t.name, newAgeGroup: t.age_group ?? '', newGender: t.gender ?? '', copyRoster: true, copyStaff: true, saving: false })}
                     title="New season"
                     style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '5px 8px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '3px' }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = `${primary}10`; (e.currentTarget as HTMLElement).style.color = primary; (e.currentTarget as HTMLElement).style.borderColor = primary; }}
@@ -575,6 +628,26 @@ export default function TeamsPage() {
                   autoFocus
                 />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={labelSt}>Age group</label>
+                  <select value={rollover.newAgeGroup} onChange={(e) => setRollover((r) => r ? { ...r, newAgeGroup: e.target.value } : null)} style={{ ...inputSt, cursor: 'pointer' }}>
+                    <option value="">—</option>
+                    {AGE_GROUPS.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelSt}>Gender</label>
+                  <select value={rollover.newGender} onChange={(e) => setRollover((r) => r ? { ...r, newGender: e.target.value } : null)} style={{ ...inputSt, cursor: 'pointer' }}>
+                    <option value="">—</option>
+                    {GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={labelSt}>Team name</label>
+                <input value={rollover.newName} onChange={(e) => setRollover((r) => r ? { ...r, newName: e.target.value } : null)} style={inputSt} />
+              </div>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '14px 16px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
@@ -585,7 +658,21 @@ export default function TeamsPage() {
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Copy roster to new team</div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                    Copies player names and positions. Parent links and past events are left in the current season.
+                    Copies each player&apos;s full record — including parent access, guardians, emergency contacts, and medical notes. Nobody needs to be re-invited. Past events stay in the current season.
+                  </div>
+                </div>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '14px 16px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={rollover.copyStaff}
+                  onChange={(e) => setRollover((r) => r ? { ...r, copyStaff: e.target.checked } : null)}
+                  style={{ width: '16px', height: '16px', marginTop: '1px', accentColor: primary, flexShrink: 0 }}
+                />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Copy coaching staff</div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                    Keeps the same coach(es) assigned to the new team.
                   </div>
                 </div>
               </label>
