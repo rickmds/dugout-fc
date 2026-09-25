@@ -374,6 +374,47 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
   // to advance into. Rather than proceed and hit RLS failures, park the
   // user here with instructions instead of leaving them stuck downstream.
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendDone, setResendDone] = useState(false);
+
+  async function finishSignup(user: User) {
+    const { error: profErr } = await supabase.from('profiles').upsert({ id: user.id, full_name: name, role: 'org_admin' });
+    if (profErr) {
+      console.error('profiles upsert failed:', profErr);
+      setError('Something went wrong creating your account. Please try again.');
+      return;
+    }
+    onDone(user);
+  }
+
+  // The "check your email" screen used to be a real dead-end — clicking the
+  // confirmation link opened a new tab, leaving this one waiting forever
+  // with no way to know it had happened short of manually going back and
+  // logging in again. Polling picks up the moment a session actually
+  // exists and finishes signup automatically instead.
+  useEffect(() => {
+    if (!awaitingConfirmation) return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        clearInterval(interval);
+        finishSignup(data.session.user);
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- polls until awaitingConfirmation flips off; finishSignup/name are stable for the life of this screen
+  }, [awaitingConfirmation]);
+
+  async function handleResend() {
+    setResendLoading(true);
+    try {
+      await supabase.auth.resend({ type: 'signup', email });
+      setResendDone(true);
+      setTimeout(() => setResendDone(false), 4000);
+    } finally {
+      setResendLoading(false);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -387,13 +428,7 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
           setAwaitingConfirmation(true);
           return;
         }
-        const { error: profErr } = await supabase.from('profiles').upsert({ id: data.user.id, full_name: name, role: 'org_admin' });
-        if (profErr) {
-          console.error('profiles upsert failed:', profErr);
-          setError('Something went wrong creating your account. Please try again.');
-          return;
-        }
-        onDone(data.user);
+        await finishSignup(data.user);
       } else {
         const { data, error: err } = await supabase.auth.signInWithPassword({ email, password: pw });
         if (err || !data.user) { setError(friendlyAuthError(err?.message, 'Login failed. Please try again.')); return; }
@@ -419,10 +454,13 @@ function AuthStep({ onDone }: { onDone: (user: User) => void }) {
         </div>
         <Card>
           <p className="text-[#9ca3af] text-sm text-center">
-            We sent a confirmation link to <span className="text-white font-semibold">{email}</span>. Click it, then come back here and log in to continue setting up your club.
+            We sent a confirmation link to <span className="text-white font-semibold">{email}</span>. Click it — this page will pick it up automatically and carry on, no need to come back and log in yourself.
           </p>
-          <div className="mt-6">
-            <Btn onClick={() => { setAwaitingConfirmation(false); setMode('login'); setError(''); }}>Back to log in</Btn>
+          <div className="mt-6 flex flex-col gap-2">
+            <Btn onClick={handleResend} disabled={resendLoading} variant="ghost">
+              {resendLoading ? 'Sending…' : resendDone ? 'Sent — check your inbox' : 'Resend confirmation email'}
+            </Btn>
+            <Btn onClick={() => { setAwaitingConfirmation(false); setMode('login'); setError(''); }} variant="ghost">Back to log in</Btn>
           </div>
         </Card>
       </div>
