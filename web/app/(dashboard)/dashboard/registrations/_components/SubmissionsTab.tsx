@@ -667,10 +667,17 @@ export default function SubmissionsTab() {
                         cursor: form ? 'pointer' : 'default',
                       }}
                     >
-                      {/* Checkbox */}
+                      {/* Checkbox — the td only stops the click from also
+                          opening the row below; toggling itself belongs
+                          solely to the input's onChange. Both handlers
+                          calling toggleOne() double-fired on every click
+                          (input onChange, then the same click bubbling to
+                          this td's onClick), which toggled the Set on and
+                          back off again — looked like the checkbox just
+                          didn't respond. */}
                       <td
                         style={{ padding: '11px 16px' }}
-                        onClick={e => { e.stopPropagation(); toggleOne(sub.id); }}
+                        onClick={e => e.stopPropagation()}
                       >
                         <input
                           type="checkbox"
