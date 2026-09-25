@@ -891,8 +891,10 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
         {active === 'Notifications' && (
           <div style={sectionCard}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
-              <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>Notification Preferences</div>
-              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>What Pulse FC sends automatically</div>
+              <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>What Pulse FC sends automatically</div>
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                These are built into the platform and can&apos;t be turned off club-wide — there&apos;s no switch here to flip, this is just what to expect.
+              </div>
             </div>
             <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '0' }}>
               {[
@@ -907,12 +909,12 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                     <div style={{ fontSize: '13.5px', fontWeight: '600', color: '#0F172A' }}>{label}</div>
                     <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '1px' }}>{sub}</div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#22C55E', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: '6px', padding: '3px 8px' }}>ON</span>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8' }}>Always on</span>
                 </div>
               ))}
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', fontSize: '12px', color: '#94A3B8' }}>
-              Individual preferences (mute, frequency) are managed in the mobile app under Settings → Notifications.
+              A parent or coach controls their own mute/frequency preferences from the mobile app under Settings → Notifications — that&apos;s per-person, not something set here for the whole club.
             </div>
           </div>
         )}
