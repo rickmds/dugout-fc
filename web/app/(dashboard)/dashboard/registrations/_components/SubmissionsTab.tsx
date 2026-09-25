@@ -722,7 +722,11 @@ export default function SubmissionsTab() {
                   const isDuplicate = sub.is_duplicate_flagged;
                   const isAid      = sub.financial_aid_requested;
                   const subStyle   = SUB_STATUS_STYLES[sub.status];
-                  const payStyle   = PAY_STATUS_STYLES[sub.payment_status];
+                  // payment_status is null whenever no payment has ever been
+                  // relevant yet (waitlisted, declined before payment, a free
+                  // registration) — not just on forms with no price, so this
+                  // can't assume a match the way subStyle can.
+                  const payStyle   = sub.payment_status ? PAY_STATUS_STYLES[sub.payment_status] : null;
 
                   let rowBg = idx % 2 === 0 ? '#fff' : '#F8FAFC';
                   if (isSelected) rowBg = `${primary}0c`;
@@ -791,7 +795,7 @@ export default function SubmissionsTab() {
                       {/* Payment badge */}
                       {anyFormHasPrice && (
                         <td style={{ padding: '11px 16px' }}>
-                          {form && formHasPrice(form) ? (
+                          {form && formHasPrice(form) && payStyle ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                               <span style={{
                                 display: 'inline-block',
