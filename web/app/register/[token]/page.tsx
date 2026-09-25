@@ -281,8 +281,12 @@ export default function RegisterPage() {
 
       // 3. Send confirmation email if enabled — fire-and-forget, so a slow
       // or failed email can't block reaching the success screen for a
-      // registration that already went through.
-      if (form?.send_confirmation_email) {
+      // registration that already went through. Only for a FREE
+      // registration — a paid one isn't really "confirmed" until money
+      // actually changes hands, so that case sends this same email from
+      // handleRegistrationPaymentComplete (web/app/api/stripe/webhook/route.ts)
+      // once the first payment lands, not here.
+      if (form?.send_confirmation_email && !hasFee) {
         const parentEmail = Object.entries(finalValues).find(([k]) =>
           k.toLowerCase().includes('email')
         )?.[1];

@@ -691,6 +691,13 @@ export async function handleRegistrationPaymentComplete({ registration_installme
     .single();
   if (!submission) return { credited: true };
 
+  // The public form only sends its "you're registered" confirmation email
+  // immediately for a FREE registration — for a paid one, nothing is
+  // actually confirmed until money changes hands, so that email is held
+  // until the first payment lands here instead (see the matching gate in
+  // web/app/register/[token]/page.tsx).
+  const isFirstPayment = !submission.amount_paid || submission.amount_paid <= 0;
+
   const newPaid = (submission.amount_paid ?? 0) + amount;
   const newStatus = submission.amount_due != null && newPaid >= submission.amount_due - 0.01 ? 'paid' : 'partial';
   const patch: Record<string, unknown> = { amount_paid: newPaid, payment_status: newStatus };
@@ -704,7 +711,7 @@ export async function handleRegistrationPaymentComplete({ registration_installme
 
   const { data: form } = await supabase
     .from('registration_forms')
-    .select('id, title, club_id, clubs(id, name, slug, logo_url, primary_color)')
+    .select('id, title, club_id, send_confirmation_email, confirmation_message, clubs(id, name, slug, logo_url, primary_color)')
     .eq('id', submission.form_id)
     .single();
   const club = (form?.clubs ?? null) as { id: string; name: string; slug: string | null; logo_url: string | null; primary_color: string | null } | null;
@@ -717,6 +724,19 @@ export async function handleRegistrationPaymentComplete({ registration_installme
   // web/app/register/[token]/page.tsx.
   const dataEntries = Object.entries((submission.data ?? {}) as Record<string, string>);
   const parentEmail = dataEntries.find(([k]) => k.toLowerCase().includes('email'))?.[1];
+
+  if (isFirstPayment && form?.send_confirmation_email && parentEmail) {
+    const playerName = dataEntries.find(([k]) => k.toLowerCase().includes('name') || k.toLowerCase().includes('player'))?.[1] ?? '';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.pulse-fc.app';
+    fetch(`${baseUrl}/api/registration-confirm`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: parentEmail, player_name: playerName, form_title: form?.title,
+        club_name: club?.name, club_logo_url: club?.logo_url, primary_color: club?.primary_color,
+        confirmation_message: form?.confirmation_message,
+      }),
+    }).catch(e => console.error('registration-confirm email (post-payment) failed:', e));
+  }
 
   // ── Notify club staff ──────────────────────────────────────────────────
   if (club?.id) {

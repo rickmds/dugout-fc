@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, ChevronDown, CheckCircle, XCircle, Clock,
-  AlertTriangle, UserPlus, Copy, CreditCard,
+  AlertTriangle, UserPlus, Copy, CreditCard, Trash2, X, RotateCcw,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -67,19 +67,26 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
   const [offlineDate, setOfflineDate]           = useState('');
   const [offlineRef, setOfflineRef]             = useState('');
   const [offlineSaving, setOfflineSaving]       = useState(false);
-  const [installments, setInstallments]         = useState<{ id: string; amount: number; due_date: string; paid_at: string | null; payment_token: string; charge_attempts: number; last_charge_error: string | null }[]>([]);
+  const [installments, setInstallments]         = useState<{ id: string; amount: number; due_date: string; paid_at: string | null; payment_token: string; charge_attempts: number; last_charge_error: string | null; refunded_amount: number; payment_method: string | null }[]>([]);
   const [copiedId, setCopiedId]                 = useState<string | null>(null);
   const [autopayOn, setAutopayOn]               = useState(false);
   const [stoppingAutopay, setStoppingAutopay]   = useState(false);
+  const [refundTarget, setRefundTarget]         = useState<{ id: string; amount: number; refunded_amount: number } | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting]                 = useState(false);
+
+  async function loadInstallments() {
+    const { data } = await supabase
+      .from('registration_installments')
+      .select('id, amount, due_date, paid_at, payment_token, charge_attempts, last_charge_error, refunded_amount, payment_method')
+      .eq('submission_id', sub.id)
+      .order('due_date', { ascending: true });
+    setInstallments(data ?? []);
+  }
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('registration_installments')
-        .select('id, amount, due_date, paid_at, payment_token, charge_attempts, last_charge_error')
-        .eq('submission_id', sub.id)
-        .order('due_date', { ascending: true });
-      setInstallments(data ?? []);
+      await loadInstallments();
 
       const { data: submissionRow } = await supabase
         .from('registration_submissions')
@@ -88,6 +95,7 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
         .single();
       setAutopayOn(!!submissionRow?.autopay_consent);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch-on-mount effect; loadInstallments is a plain function redefined each render, sub.id is the real reactive input
   }, [sub.id]);
 
   function copyPayLink(inst: { id: string; payment_token: string }) {
@@ -114,6 +122,27 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
       showToast((e as Error).message);
     } finally {
       setStoppingAutopay(false);
+    }
+  }
+
+  // Deleting a submission with real money collected would hide a Stripe
+  // charge with no trace of who paid what — force a refund first rather
+  // than letting the row (and the payment history behind it) just vanish.
+  async function handleDeleteSubmission() {
+    if (currentSub.amount_paid > 0) {
+      showToast('Refund all payments on this submission before deleting it.');
+      setShowDeleteConfirm(false);
+      return;
+    }
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from('registration_submissions').delete().eq('id', currentSub.id);
+      if (error) throw error;
+      onUpdated();
+      onClose();
+    } catch (e) {
+      showToast((e as Error).message);
+      setDeleting(false);
     }
   }
 
@@ -416,6 +445,11 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
               </div>
             )}
           </div>
+
+          <button onClick={() => setShowDeleteConfirm(true)} title="Delete submission"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer' }}>
+            <Trash2 size={13} />
+          </button>
         </div>
 
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
@@ -604,6 +638,9 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {installments.map(inst => {
                       const isPaid = !!inst.paid_at;
+                      const refunded = inst.refunded_amount ?? 0;
+                      const fullyRefunded = isPaid && refunded >= inst.amount - 0.005;
+                      const partiallyRefunded = isPaid && refunded > 0 && !fullyRefunded;
                       return (
                         <div key={inst.id} style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
@@ -619,11 +656,26 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
                                 {inst.last_charge_error ? ` — ${inst.last_charge_error}` : ''}
                               </div>
                             )}
+                            {partiallyRefunded && (
+                              <div style={{ fontSize: '11px', color: '#D97706', marginTop: '2px', fontWeight: 600 }}>
+                                {fmtMoney(refunded, currency)} refunded
+                              </div>
+                            )}
                           </div>
-                          {isPaid ? (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#16A34A' }}>
-                              <CheckCircle size={13} /> Paid
+                          {fullyRefunded ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#D97706' }}>
+                              <RotateCcw size={13} /> Refunded
                             </span>
+                          ) : isPaid ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#16A34A' }}>
+                                <CheckCircle size={13} /> Paid
+                              </span>
+                              <button onClick={() => setRefundTarget({ id: inst.id, amount: inst.amount, refunded_amount: refunded })}
+                                style={{ padding: '5px 10px', borderRadius: '7px', border: '1px solid #FECACA', background: '#fff', color: '#DC2626', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                                Refund
+                              </button>
+                            </div>
                           ) : (
                             <button onClick={() => copyPayLink(inst)}
                               style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', background: '#fff', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: '11.5px', fontWeight: 700, color: '#374151' }}>
@@ -1033,6 +1085,36 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
         </div>
       </div>
 
+      {showDeleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }} onClick={() => setShowDeleteConfirm(false)}>
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 800, fontSize: '15px', color: '#0F172A', marginBottom: '8px' }}>Delete this submission?</div>
+            <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 18px', lineHeight: 1.5 }}>
+              {currentSub.amount_paid > 0
+                ? `This submission has ${fmtMoney(currentSub.amount_paid, currency)} paid. Refund every payment on it first — the delete button won't work until then.`
+                : 'This permanently removes the submission and its payment schedule. This can\'t be undone.'}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowDeleteConfirm(false)} style={{ padding: '9px 16px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              {currentSub.amount_paid <= 0 && (
+                <button onClick={handleDeleteSubmission} disabled={deleting} style={{ padding: '9px 16px', borderRadius: '9px', border: 'none', background: '#DC2626', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: deleting ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                  {deleting ? 'Deleting…' : 'Delete submission'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {refundTarget && (
+        <RegistrationRefundModal
+          target={refundTarget}
+          currency={currency}
+          onClose={() => setRefundTarget(null)}
+          onDone={async () => { setRefundTarget(null); await loadInstallments(); onUpdated(); showToast('Refund issued'); }}
+        />
+      )}
+
       {/* Toast */}
       {toast && (
         <div style={{
@@ -1082,5 +1164,87 @@ function ViewUploadedFileLink({ url }: { url: string }) {
       style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12.5px', fontWeight: 700, color: loading ? '#94A3B8' : '#16A34A', background: 'none', border: 'none', padding: 0, cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit' }}>
       <CheckCircle size={13} /> {loading ? 'Opening…' : 'View file'}
     </button>
+  );
+}
+
+function RegistrationRefundModal({ target, currency, onClose, onDone }: {
+  target: { id: string; amount: number; refunded_amount: number };
+  currency: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const refundable = Math.max(0, target.amount - target.refunded_amount);
+  const [mode, setMode] = useState<'full' | 'amount'>('full');
+  const [amount, setAmount] = useState(refundable.toFixed(2));
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    setSaving(true); setError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/registration/refund-installment', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installment_id: target.id, mode,
+          value: mode === 'amount' ? parseFloat(amount) : undefined,
+          reason: reason.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Could not process refund.');
+      onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div style={{ fontWeight: 800, fontSize: '15px', color: '#0F172A' }}>Refund payment</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', display: 'flex' }}><X size={16} /></button>
+        </div>
+
+        <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 16px' }}>
+          {fmtMoney(refundable, currency)} refundable of {fmtMoney(target.amount, currency)} paid.
+        </p>
+
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+          {(['full', 'amount'] as const).map(m => (
+            <button key={m} onClick={() => setMode(m)}
+              style={{ flex: 1, padding: '9px', borderRadius: '9px', border: `2px solid ${mode === m ? '#DC2626' : '#E2E8F0'}`, background: mode === m ? '#FEF2F2' : '#fff', color: mode === m ? '#DC2626' : '#374151', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {m === 'full' ? 'Full refund' : 'Partial amount'}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'amount' && (
+          <div style={{ marginBottom: '14px' }}>
+            <label style={labelSt}>Amount</label>
+            <input type="number" min="0" step="0.01" max={refundable} value={amount} onChange={e => setAmount(e.target.value)} style={inputSt} />
+          </div>
+        )}
+
+        <div style={{ marginBottom: '18px' }}>
+          <label style={labelSt}>Reason (optional)</label>
+          <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. duplicate registration" style={inputSt} />
+        </div>
+
+        {error && <p style={{ fontSize: '12.5px', color: '#DC2626', margin: '0 0 14px' }}>{error}</p>}
+
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '9px 16px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={submit} disabled={saving || refundable <= 0} style={{ padding: '9px 16px', borderRadius: '9px', border: 'none', background: '#DC2626', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            {saving ? 'Processing…' : 'Issue refund'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
