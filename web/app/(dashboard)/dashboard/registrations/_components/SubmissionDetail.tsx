@@ -2,14 +2,14 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import {
-  ArrowLeft, ChevronDown, CheckCircle, XCircle, Clock,
+  ArrowLeft, CheckCircle,
   AlertTriangle, UserPlus, Copy, CreditCard, Trash2, X, RotateCcw,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import {
-  RegForm, Submission, SubStatus, PaymentStatus, OfflineMethod,
-  SUB_STATUS_STYLES, PAY_STATUS_STYLES,
+  RegForm, Submission, PaymentStatus, OfflineMethod,
+  PAY_STATUS_STYLES,
   fmtMoney, fmtDate, formFields, playerName,
   labelSt, inputSt, backBtnSt,
   normalizeRequiredDocs, requiredDocDataKey,
@@ -35,8 +35,6 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'roster',  label: 'Roster' },
 ];
 
-const STATUS_OPTIONS: SubStatus[] = ['pending', 'approved', 'waitlisted', 'declined'];
-
 const OFFLINE_METHODS: Array<{ value: OfflineMethod; label: string }> = [
   { value: 'cash',          label: 'Cash' },
   { value: 'bank_transfer', label: 'Bank transfer' },
@@ -57,9 +55,11 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
 
   const [activeTab, setActiveTab]               = useState<Tab>('details');
   const [currentSub, setCurrentSub]             = useState<Submission>(sub);
-  const [showStatusDrop, setShowStatusDrop]     = useState(false);
-  const [statusSaving, setStatusSaving]         = useState(false);
   const [toast, setToast]                       = useState<string | null>(null);
+  // Real team from the Tryout module's Team Builder, via tryout_assignment_id
+  // — only set for a submission linked to an accepted tryout offer. See
+  // 20260925000006_registration_tryout_link.sql.
+  const [tryoutTeam, setTryoutTeam]             = useState<string | null>(null);
 
   // Payment tab
   const [offlineMethod, setOfflineMethod]       = useState<OfflineMethod>('cash');
@@ -94,6 +94,12 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
         .eq('id', sub.id)
         .single();
       setAutopayOn(!!submissionRow?.autopay_consent);
+
+      if (sub.tryout_assignment_id) {
+        const { data: assignment } = await supabase
+          .from('tryout_assignments').select('team').eq('id', sub.tryout_assignment_id).single();
+        setTryoutTeam(assignment?.team ?? null);
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch-on-mount effect; loadInstallments is a plain function redefined each render, sub.id is the real reactive input
   }, [sub.id]);
@@ -181,40 +187,6 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
     onUpdated();
   }, [currentSub.id, onUpdated]);
 
-  // ── Status change ────────────────────────────────────────────────────────────
-
-  const handleStatusChange = useCallback(async (newStatus: SubStatus) => {
-    setStatusSaving(true);
-    setShowStatusDrop(false);
-    try {
-      // Promoting someone off the waitlist needs the "a spot opened up"
-      // email and resequencing everyone else's waitlist_position — a plain
-      // status update here silently skips both, so route this one
-      // transition through the API instead of the generic patch().
-      if (currentSub.status === 'waitlisted' && newStatus === 'approved') {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch('/api/registrations/promote-waitlist', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ submission_id: currentSub.id }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? 'Could not promote from waitlist.');
-        setCurrentSub(prev => ({ ...prev, status: 'approved', waitlist_position: null }));
-        onUpdated();
-        return;
-      }
-      const update: Partial<Submission> = {
-        status: newStatus,
-        waitlist_position: newStatus === 'waitlisted' ? currentSub.waitlist_position : null,
-      };
-      await patch(update);
-    } catch (e) {
-      showToast((e as Error).message);
-    } finally {
-      setStatusSaving(false);
-    }
-  }, [currentSub.id, currentSub.status, currentSub.waitlist_position, patch, onUpdated]);
 
   // ── Offline payment ──────────────────────────────────────────────────────────
 
@@ -401,7 +373,6 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
   // ── Derived ──────────────────────────────────────────────────────────────────
 
   const fields       = formFields(form);
-  const statusStyle  = SUB_STATUS_STYLES[currentSub.status];
   const balance      = (currentSub.amount_due ?? 0) - currentSub.amount_paid;
   const currency     = form.currency;
 
@@ -451,49 +422,18 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
             </p>
           </div>
 
-          {/* Status badge + dropdown */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setShowStatusDrop(v => !v)}
-              disabled={statusSaving}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '5px',
-                fontSize: '12px', fontWeight: 700, padding: '5px 12px',
-                borderRadius: '20px', border: `1.5px solid ${statusStyle.color}`,
-                color: statusStyle.color, background: statusStyle.bg,
-                cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              {statusStyle.label}
-              <ChevronDown size={11} />
-            </button>
-            {showStatusDrop && (
-              <div style={{
-                position: 'absolute', right: 0, top: 'calc(100% + 6px)',
-                background: '#fff', border: '1px solid #E2E8F0',
-                borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
-                zIndex: 10, minWidth: '145px', overflow: 'hidden',
-              }}>
-                {STATUS_OPTIONS.map(s => {
-                  const st = SUB_STATUS_STYLES[s];
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => handleStatusChange(s)}
-                      style={{
-                        display: 'block', width: '100%', textAlign: 'left',
-                        padding: '9px 14px', border: 'none', background: 'none',
-                        fontSize: '13px', fontWeight: 600, color: st.color,
-                        cursor: 'pointer', fontFamily: 'inherit',
-                      }}
-                    >
-                      {st.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* Team — from the Tryout module's Team Builder, when this
+              submission is linked to an accepted tryout offer */}
+          {tryoutTeam && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              fontSize: '12px', fontWeight: 700, padding: '5px 12px',
+              borderRadius: '20px', border: `1.5px solid ${primary}`,
+              color: primary, background: `${primary}12`, whiteSpace: 'nowrap',
+            }}>
+              {tryoutTeam}
+            </span>
+          )}
 
           <button onClick={() => setShowDeleteConfirm(true)} title="Delete submission"
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer' }}>
@@ -1081,57 +1021,6 @@ export default function SubmissionDetail({ sub, form, onClose, onUpdated }: Prop
           )}
         </div>
 
-        {/* ── Bottom action bar ────────────────────────────────────────────── */}
-        <div style={{
-          background: '#fff', borderTop: '1px solid #E2E8F0',
-          padding: '14px 24px', display: 'flex', gap: '10px', flexShrink: 0,
-        }}>
-          <button
-            onClick={() => handleStatusChange('approved')}
-            disabled={statusSaving || currentSub.status === 'approved'}
-            style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: '7px', padding: '10px', borderRadius: '8px', border: 'none',
-              background: '#22C55E', color: '#fff', fontSize: '13px', fontWeight: 700,
-              cursor: statusSaving || currentSub.status === 'approved' ? 'not-allowed' : 'pointer',
-              opacity: currentSub.status === 'approved' ? 0.45 : 1,
-              fontFamily: 'inherit',
-            }}
-          >
-            <CheckCircle size={14} />
-            Approve
-          </button>
-          <button
-            onClick={() => handleStatusChange('waitlisted')}
-            disabled={statusSaving || currentSub.status === 'waitlisted'}
-            style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: '7px', padding: '10px', borderRadius: '8px', border: 'none',
-              background: '#7C3AED', color: '#fff', fontSize: '13px', fontWeight: 700,
-              cursor: statusSaving || currentSub.status === 'waitlisted' ? 'not-allowed' : 'pointer',
-              opacity: currentSub.status === 'waitlisted' ? 0.45 : 1,
-              fontFamily: 'inherit',
-            }}
-          >
-            <Clock size={14} />
-            Waitlist
-          </button>
-          <button
-            onClick={() => handleStatusChange('declined')}
-            disabled={statusSaving || currentSub.status === 'declined'}
-            style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              gap: '7px', padding: '10px', borderRadius: '8px', border: 'none',
-              background: '#EF4444', color: '#fff', fontSize: '13px', fontWeight: 700,
-              cursor: statusSaving || currentSub.status === 'declined' ? 'not-allowed' : 'pointer',
-              opacity: currentSub.status === 'declined' ? 0.45 : 1,
-              fontFamily: 'inherit',
-            }}
-          >
-            <XCircle size={14} />
-            Decline
-          </button>
-        </div>
       </div>
 
       {showDeleteConfirm && (

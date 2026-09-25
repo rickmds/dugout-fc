@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FileText, Users, CreditCard, Clock, TrendingUp, AlertCircle, CheckCircle, Plus } from 'lucide-react';
+import { FileText, Users, CreditCard, TrendingUp, AlertCircle, CheckCircle, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { fmtMoney, fmtDate } from './shared';
@@ -10,13 +10,12 @@ import type { RegForm, Submission } from './shared';
 interface OverviewStats {
   openForms: number;
   totalSubmissionsThisSeason: number;
-  pendingApprovals: number;
   revenueCollected: number;
   revenueOutstanding: number;
   financialAidRequests: number;
   duplicateFlags: number;
   recentSubmissions: (Submission & { form_title: string; form_currency: string })[];
-  formSummaries: { form: RegForm; pending: number; approved: number; waitlisted: number; declined: number }[];
+  formSummaries: { form: RegForm; total: number; waitlisted: number }[];
 }
 
 export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
@@ -48,7 +47,6 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
     const subs = (allSubs ?? []) as Submission[];
 
     const openForms                   = forms.filter((f) => f.status === 'open').length;
-    const pendingApprovals            = subs.filter((s) => s.status === 'pending').length;
     const revenueCollected            = subs.reduce((acc, s) => acc + (s.amount_paid ?? 0), 0);
     const revenueOutstanding          = subs.reduce((acc, s) => acc + Math.max(0, (s.amount_due ?? 0) - (s.amount_paid ?? 0)), 0);
     const financialAidRequests        = subs.filter((s) => s.financial_aid_requested && s.financial_aid_approved === null).length;
@@ -66,15 +64,13 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
       const fs = subs.filter((s) => s.form_id === form.id);
       return {
         form: form as RegForm,
-        pending:    fs.filter((s) => s.status === 'pending').length,
-        approved:   fs.filter((s) => s.status === 'approved').length,
+        total:      fs.length,
         waitlisted: fs.filter((s) => s.status === 'waitlisted').length,
-        declined:   fs.filter((s) => s.status === 'declined').length,
       };
     });
 
     setStats({
-      openForms, totalSubmissionsThisSeason: subs.length, pendingApprovals,
+      openForms, totalSubmissionsThisSeason: subs.length,
       revenueCollected, revenueOutstanding, financialAidRequests, duplicateFlags,
       recentSubmissions, formSummaries,
     });
@@ -103,17 +99,8 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
       </div>
 
       {/* ── Alert banners ── */}
-      {(stats.pendingApprovals > 0 || stats.financialAidRequests > 0 || stats.duplicateFlags > 0) && (
+      {(stats.financialAidRequests > 0 || stats.duplicateFlags > 0) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
-          {stats.pendingApprovals > 0 && (
-            <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: '10px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Clock size={16} color="#D97706" />
-              <span style={{ fontSize: '13px', color: '#92400E', fontWeight: '600' }}>
-                {stats.pendingApprovals} submission{stats.pendingApprovals !== 1 ? 's' : ''} waiting for approval
-              </span>
-              <button onClick={() => onNavigate('submissions')} style={{ marginLeft: 'auto', padding: '5px 12px', background: '#D97706', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>Review</button>
-            </div>
-          )}
           {stats.financialAidRequests > 0 && (
             <div style={{ background: '#EDE9FE', border: '1px solid #C4B5FD', borderRadius: '10px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <AlertCircle size={16} color="#7C3AED" />
@@ -136,11 +123,10 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
       )}
 
       {/* ── Stats cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '28px' }}>
         {[
           { label: 'Open forms',     value: stats.openForms,                    icon: <FileText size={18} />,    color: '#2563EB', bg: '#EFF6FF' },
           { label: 'Registrations',  value: stats.totalSubmissionsThisSeason,   icon: <Users size={18} />,       color: primary,   bg: '#F0FDF4' },
-          { label: 'Pending review', value: stats.pendingApprovals,             icon: <Clock size={18} />,       color: '#D97706', bg: '#FFFBEB' },
           { label: 'Collected',      value: fmtMoney(stats.revenueCollected, currency), icon: <CheckCircle size={18} />, color: '#16A34A', bg: '#DCFCE7' },
           { label: 'Outstanding',    value: fmtMoney(stats.revenueOutstanding, currency), icon: <CreditCard size={18} />, color: '#DC2626', bg: '#FEF2F2' },
         ].map((c) => (
@@ -167,9 +153,8 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
             <div style={{ padding: '40px', textAlign: 'center', color: '#94A3B8' }}>No forms yet</div>
           ) : (
             <div>
-              {stats.formSummaries.map(({ form, pending, approved, waitlisted, declined }) => {
-                const total = pending + approved + waitlisted + declined;
-                const pct   = form.max_spots ? Math.min(100, Math.round((approved / form.max_spots) * 100)) : null;
+              {stats.formSummaries.map(({ form, total, waitlisted }) => {
+                const pct = form.max_spots ? Math.min(100, Math.round((total / form.max_spots) * 100)) : null;
                 return (
                   <div key={form.id} style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
@@ -179,20 +164,18 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
                       </span>
                       <span style={{ fontSize: '12px', color: '#64748B', fontWeight: '500' }}>{total} total</span>
                     </div>
-                    {/* Status breakdown pills */}
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: pct !== null ? '8px' : 0 }}>
-                      {pending > 0    && <span style={{ fontSize: '11px', fontWeight: '600', color: '#D97706', background: '#FEF3C7', borderRadius: '4px', padding: '2px 7px' }}>{pending} pending</span>}
-                      {approved > 0   && <span style={{ fontSize: '11px', fontWeight: '600', color: '#16A34A', background: '#DCFCE7', borderRadius: '4px', padding: '2px 7px' }}>{approved} approved</span>}
-                      {waitlisted > 0 && <span style={{ fontSize: '11px', fontWeight: '600', color: '#7C3AED', background: '#EDE9FE', borderRadius: '4px', padding: '2px 7px' }}>{waitlisted} waitlisted</span>}
-                      {declined > 0   && <span style={{ fontSize: '11px', fontWeight: '600', color: '#DC2626', background: '#FEE2E2', borderRadius: '4px', padding: '2px 7px' }}>{declined} declined</span>}
-                    </div>
+                    {waitlisted > 0 && (
+                      <div style={{ marginBottom: pct !== null ? '8px' : 0 }}>
+                        <span style={{ fontSize: '11px', fontWeight: '600', color: '#7C3AED', background: '#EDE9FE', borderRadius: '4px', padding: '2px 7px' }}>{waitlisted} waitlisted</span>
+                      </div>
+                    )}
                     {/* Capacity bar */}
                     {pct !== null && (
                       <div>
                         <div style={{ height: '4px', background: '#F1F5F9', borderRadius: '2px', overflow: 'hidden' }}>
                           <div style={{ height: '100%', width: `${pct}%`, background: pct >= 90 ? '#DC2626' : pct >= 70 ? '#D97706' : primary, borderRadius: '2px', transition: 'width 0.3s' }} />
                         </div>
-                        <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '3px' }}>{approved} / {form.max_spots} spots filled ({pct}%)</div>
+                        <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '3px' }}>{total} / {form.max_spots} spots filled ({pct}%)</div>
                       </div>
                     )}
                   </div>
@@ -241,9 +224,11 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
                     <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.form_title}</div>
                     <div style={{ fontSize: '11px', color: '#94A3B8' }}>{fmtDate(s.submitted_at)}</div>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: '700', color: s.status === 'approved' ? '#16A34A' : s.status === 'pending' ? '#D97706' : s.status === 'waitlisted' ? '#7C3AED' : '#DC2626', background: s.status === 'approved' ? '#DCFCE7' : s.status === 'pending' ? '#FEF3C7' : s.status === 'waitlisted' ? '#EDE9FE' : '#FEE2E2', borderRadius: '20px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
-                    {s.status}
-                  </span>
+                  {s.status === 'waitlisted' && (
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#7C3AED', background: '#EDE9FE', borderRadius: '20px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                      Waitlisted
+                    </span>
+                  )}
                 </div>
               ))
             )}

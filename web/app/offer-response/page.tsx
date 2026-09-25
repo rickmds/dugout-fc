@@ -14,8 +14,19 @@ type ResponseData = {
   club_color?: string;
   current_status?: string;
   registration_status?: string;
+  registration_hub_token?: string | null;
   error?: string;
 };
+
+// When the club has a Registration Hub form configured as its
+// post-acceptance registration, send the family there (carrying their
+// tryout assignment along) instead of the older built-in /register-offer
+// form. See web/app/api/tryout/process-response/route.ts.
+function nextStepUrl(data: ResponseData | null, offerToken: string): string {
+  return data?.registration_hub_token
+    ? `/register/${data.registration_hub_token}?assignment=${offerToken}`
+    : `/register-offer?token=${offerToken}`;
+}
 
 function resolveAccent(hex: string | null | undefined): string {
   if (!hex) return '#22C55E';
@@ -195,7 +206,7 @@ function OfferResponseContent() {
           {needsRegistration ? ' Your registration is still incomplete.' : ''}
         </div>
         {needsRegistration && (
-          <a href={`/register-offer?token=${token}`}
+          <a href={nextStepUrl(data, token)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: accent, color: btnColor, borderRadius: '12px', padding: '13px 28px', fontWeight: '700', fontSize: '15px', textDecoration: 'none', boxShadow: `0 4px 16px ${accent}44` }}>
             Complete Your Registration →
           </a>
@@ -215,7 +226,7 @@ function OfferResponseContent() {
       <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.65', marginBottom: '24px', maxWidth: '320px', margin: '0 auto 24px' }}>
         {data.player_name ? `${data.player_name}'s` : 'Your'} spot has been confirmed on <strong style={{ color: '#e5e7eb' }}>{data.team_name}</strong>. One last step — complete your registration below.
       </div>
-      <a href={`/register-offer?token=${token}`}
+      <a href={nextStepUrl(data, token)}
         style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: accent, color: btnColor, borderRadius: '12px', padding: '13px 28px', fontWeight: '700', fontSize: '15px', textDecoration: 'none', boxShadow: `0 4px 16px ${accent}44` }}>
         Complete Your Registration →
       </a>

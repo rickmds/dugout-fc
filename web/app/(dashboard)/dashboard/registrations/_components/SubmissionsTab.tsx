@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Search, Download, Mail, CheckCircle, XCircle, Clock,
+  Search, Download, Mail,
   AlertTriangle, Flag, Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import {
-  RegForm, Submission, SubStatus, PaymentStatus, FieldDef,
-  SUB_STATUS_STYLES, PAY_STATUS_STYLES,
+  RegForm, Submission, PaymentStatus, FieldDef,
+  PAY_STATUS_STYLES,
   fmtMoney, fmtDate, formFields, playerName, parentEmail,
 } from './shared';
 import SubmissionDetail from './SubmissionDetail';
@@ -18,7 +18,6 @@ import SubmissionDetail from './SubmissionDetail';
 
 interface FilterState {
   formId: string;
-  status: SubStatus | '';
   payment: PaymentStatus | '';
   search: string;
   flagsOnly: boolean;
@@ -30,14 +29,6 @@ interface ActiveSub {
 }
 
 // ── Select option constants ───────────────────────────────────────────────────
-
-const STATUS_OPTIONS: Array<{ value: SubStatus | ''; label: string }> = [
-  { value: '', label: 'All statuses' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'waitlisted', label: 'Waitlisted' },
-  { value: 'declined', label: 'Declined' },
-];
 
 const PAYMENT_OPTIONS: Array<{ value: PaymentStatus | ''; label: string }> = [
   { value: '', label: 'All payments' },
@@ -85,12 +76,17 @@ export default function SubmissionsTab() {
   // ── Data state ──────────────────────────────────────────────────────────────
   const [forms, setForms]           = useState<RegForm[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  // Keyed by tryout_assignment_id — a submission linked to a tryout offer
+  // shows the REAL team from the Team Builder here instead of the form's
+  // own (often club-wide, single) linked team. See
+  // 20260925000006_registration_tryout_link.sql.
+  const [tryoutTeamMap, setTryoutTeamMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [filter, setFilter] = useState<FilterState>({
-    formId: '', status: '', payment: '', search: '', flagsOnly: false,
+    formId: '', payment: '', search: '', flagsOnly: false,
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeSub, setActiveSub]   = useState<ActiveSub | null>(null);
@@ -113,8 +109,10 @@ export default function SubmissionsTab() {
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  const getTeamName = (form: RegForm): string =>
-    form.team_id ? (teamMap.get(form.team_id) ?? '—') : '—';
+  const getTeamName = (sub: Submission, form: RegForm): string => {
+    if (sub.tryout_assignment_id) return tryoutTeamMap.get(sub.tryout_assignment_id) ?? '—';
+    return form.team_id ? (teamMap.get(form.team_id) ?? '—') : '—';
+  };
 
   const formHasPrice = (form: RegForm): boolean =>
     form.price !== null && form.price !== undefined && form.price > 0;
@@ -213,6 +211,15 @@ export default function SubmissionsTab() {
       const loadedSubs = (subsData ?? []) as Submission[];
       setSubmissions(loadedSubs);
 
+      const assignmentIds = [...new Set(loadedSubs.map(s => s.tryout_assignment_id).filter((id): id is string => !!id))];
+      if (assignmentIds.length) {
+        const { data: assignments } = await supabase
+          .from('tryout_assignments').select('id, team').in('id', assignmentIds);
+        setTryoutTeamMap(new Map((assignments ?? []).map(a => [a.id as string, (a.team as string | null) ?? '—'])));
+      } else {
+        setTryoutTeamMap(new Map());
+      }
+
       await detectDuplicates(loadedForms, loadedSubs);
     } catch (e) {
       setError((e as Error).message ?? 'Failed to load submissions');
@@ -229,7 +236,6 @@ export default function SubmissionsTab() {
   const filteredSubs = useMemo(() => {
     return submissions.filter(sub => {
       if (filter.formId  && sub.form_id        !== filter.formId)  return false;
-      if (filter.status  && sub.status         !== filter.status)  return false;
       if (filter.payment && sub.payment_status !== filter.payment) return false;
       if (filter.flagsOnly && !sub.is_duplicate_flagged && !sub.financial_aid_requested) return false;
       if (filter.search) {
@@ -264,74 +270,6 @@ export default function SubmissionsTab() {
   };
 
   // ── Bulk actions ────────────────────────────────────────────────────────────
-
-  const handleBulkStatus = async (newStatus: SubStatus) => {
-    if (selectedIds.size === 0) return;
-    setBulkLoading(true);
-    try {
-      if (newStatus === 'waitlisted') {
-        // Group by form to assign sequential waitlist positions
-        const byForm = new Map<string, string[]>();
-        for (const id of selectedIds) {
-          const sub = submissions.find(s => s.id === id);
-          if (!sub) continue;
-          if (!byForm.has(sub.form_id)) byForm.set(sub.form_id, []);
-          byForm.get(sub.form_id)!.push(id);
-        }
-
-        for (const [formId, ids] of byForm) {
-          const existing = submissions.filter(
-            s => s.form_id === formId && s.status === 'waitlisted' && !selectedIds.has(s.id),
-          );
-          const maxPos = existing.length > 0
-            ? Math.max(...existing.map(s => s.waitlist_position ?? 0))
-            : 0;
-
-          // One round trip for the whole batch instead of one UPDATE per
-          // row — positions are assigned sequentially in the DB itself.
-          await (supabase as any).rpc('bulk_set_waitlist_positions', { p_ids: ids, p_start_pos: maxPos + 1 });
-        }
-      } else if (newStatus === 'approved') {
-        // Promoting off the waitlist needs the "a spot opened up" email and
-        // resequencing everyone else's waitlist_position — route those
-        // specific ids through the API (which does both) instead of a
-        // plain status update; anything not currently waitlisted (e.g.
-        // approving a fresh submission) can still go straight through.
-        const toPromote = [...selectedIds].filter(id => submissions.find(s => s.id === id)?.status === 'waitlisted');
-        const rest = [...selectedIds].filter(id => !toPromote.includes(id));
-
-        if (toPromote.length > 0) {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData?.session?.access_token;
-          for (const submission_id of toPromote) {
-            await fetch('/api/registrations/promote-waitlist', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-              body: JSON.stringify({ submission_id }),
-            });
-          }
-        }
-        if (rest.length > 0) {
-          await supabase
-            .from('registration_submissions')
-            .update({ status: 'approved', waitlist_position: null })
-            .in('id', rest);
-        }
-      } else {
-        await supabase
-          .from('registration_submissions')
-          .update({ status: newStatus, waitlist_position: null })
-          .in('id', [...selectedIds]);
-      }
-
-      await loadData();
-      setSelectedIds(new Set());
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBulkLoading(false);
-    }
-  };
 
   const handleBulkEmail = async () => {
     if (selectedIds.size === 0) return;
@@ -384,37 +322,39 @@ export default function SubmissionsTab() {
       const defs = formFields(form);
       defsByFormId.set(form.id, defs);
       for (const def of defs) {
-        if (!allDefs.some(d => d.id === def.id)) allDefs.push(def);
+        // FieldDef.id is never persisted (FormBuilder strips it before
+        // saving) — label is the real, stable identity every field is
+        // actually keyed by, both here and in submission.data.
+        if (!allDefs.some(d => d.label === def.label)) allDefs.push(def);
       }
     }
 
     const baseHeaders = [
       'Player Name', 'Parent Email', 'Form', 'Team',
-      'Status', 'Payment Status', 'Amount Due', 'Amount Paid', 'Submitted',
+      'Payment Status', 'Amount Due', 'Amount Paid', 'Submitted',
     ];
     const headers = [...baseHeaders, ...allDefs.map(d => d.label)];
 
     const rows = selected.map(sub => {
       const form     = formMap.get(sub.form_id);
       const defs     = defsByFormId.get(sub.form_id) ?? [];
-      const teamName = form ? getTeamName(form) : '';
+      const teamName = form ? getTeamName(sub, form) : '';
 
       const base = [
         playerName(sub.data),
         parentEmail(sub.data),
         form?.title ?? '',
         teamName,
-        sub.status,
-        sub.payment_status,
+        sub.payment_status ?? '',
         form ? fmtMoney(sub.amount_due, form.currency) : (sub.amount_due?.toString() ?? ''),
         form ? fmtMoney(sub.amount_paid, form.currency) : sub.amount_paid.toString(),
         fmtDate(sub.submitted_at),
       ];
 
       const fieldVals = allDefs.map(def => {
-        const hasDef = defs.some(d => d.id === def.id);
+        const hasDef = defs.some(d => d.label === def.label);
         if (!hasDef) return '';
-        return sub.data[def.id] ?? '';
+        return sub.data[def.label] ?? '';
       });
 
       return [...base, ...fieldVals];
@@ -517,17 +457,6 @@ export default function SubmissionsTab() {
           ))}
         </select>
 
-        {/* Status filter */}
-        <select
-          value={filter.status}
-          onChange={e => setFilter(f => ({ ...f, status: e.target.value as SubStatus | '' }))}
-          style={SELECT_STYLE}
-        >
-          {STATUS_OPTIONS.map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-
         {/* Payment filter */}
         <select
           value={filter.payment}
@@ -592,45 +521,6 @@ export default function SubmissionsTab() {
           </span>
 
           <button
-            onClick={() => handleBulkStatus('approved')}
-            disabled={bulkLoading}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              fontSize: '12px', fontWeight: 600, padding: '5px 13px',
-              borderRadius: '8px', border: 'none', cursor: bulkLoading ? 'not-allowed' : 'pointer',
-              background: '#22C55E', color: '#fff', fontFamily: 'inherit', opacity: bulkLoading ? 0.6 : 1,
-            }}
-          >
-            <CheckCircle size={12} /> Approve
-          </button>
-
-          <button
-            onClick={() => handleBulkStatus('declined')}
-            disabled={bulkLoading}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              fontSize: '12px', fontWeight: 600, padding: '5px 13px',
-              borderRadius: '8px', border: 'none', cursor: bulkLoading ? 'not-allowed' : 'pointer',
-              background: '#EF4444', color: '#fff', fontFamily: 'inherit', opacity: bulkLoading ? 0.6 : 1,
-            }}
-          >
-            <XCircle size={12} /> Decline
-          </button>
-
-          <button
-            onClick={() => handleBulkStatus('waitlisted')}
-            disabled={bulkLoading}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              fontSize: '12px', fontWeight: 600, padding: '5px 13px',
-              borderRadius: '8px', border: 'none', cursor: bulkLoading ? 'not-allowed' : 'pointer',
-              background: '#F59E0B', color: '#fff', fontFamily: 'inherit', opacity: bulkLoading ? 0.6 : 1,
-            }}
-          >
-            <Clock size={12} /> Waitlist
-          </button>
-
-          <button
             onClick={handleExportCSV}
             disabled={bulkLoading}
             style={{
@@ -688,7 +578,7 @@ export default function SubmissionsTab() {
               No submissions found
             </p>
             <p style={{ fontSize: '13px', color: '#94A3B8', margin: 0 }}>
-              {filter.search || filter.formId || filter.status || filter.payment || filter.flagsOnly
+              {filter.search || filter.formId || filter.payment || filter.flagsOnly
                 ? 'Try adjusting your filters.'
                 : 'Submissions will appear here once families start registering.'}
             </p>
@@ -716,7 +606,6 @@ export default function SubmissionsTab() {
                   <th style={TH_STYLE}>Player</th>
                   <th style={TH_STYLE}>Form</th>
                   <th style={TH_STYLE}>Team</th>
-                  <th style={TH_STYLE}>Status</th>
                   {anyFormHasPrice && <th style={TH_STYLE}>Payment</th>}
                   <th style={TH_STYLE}>Submitted</th>
                   <th style={TH_STYLE}>Flags</th>
@@ -728,7 +617,6 @@ export default function SubmissionsTab() {
                   const isSelected = selectedIds.has(sub.id);
                   const isDuplicate = sub.is_duplicate_flagged;
                   const isAid      = sub.financial_aid_requested;
-                  const subStyle   = SUB_STATUS_STYLES[sub.status];
                   // payment_status is null whenever no payment has ever been
                   // relevant yet (waitlisted, declined before payment, a free
                   // registration) — not just on forms with no price, so this
@@ -780,23 +668,7 @@ export default function SubmissionsTab() {
 
                       {/* Team */}
                       <td style={{ padding: '11px 16px', fontSize: '13px', color: '#334155', whiteSpace: 'nowrap' }}>
-                        {form ? getTeamName(form) : '—'}
-                      </td>
-
-                      {/* Status badge */}
-                      <td style={{ padding: '11px 16px' }}>
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center',
-                          fontSize: '11px', fontWeight: 700,
-                          padding: '3px 10px', borderRadius: '20px',
-                          color: subStyle.color, background: subStyle.bg,
-                          whiteSpace: 'nowrap',
-                        }}>
-                          {subStyle.label}
-                          {sub.status === 'waitlisted' && sub.waitlist_position !== null
-                            ? ` #${sub.waitlist_position}`
-                            : ''}
-                        </span>
+                        {form ? getTeamName(sub, form) : '—'}
                       </td>
 
                       {/* Payment badge */}

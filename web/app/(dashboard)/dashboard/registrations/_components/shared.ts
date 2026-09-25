@@ -111,7 +111,7 @@ export type Submission = {
   data: Record<string, string>;
   status: SubStatus;
   payment_choice: 'full' | 'plan' | null;
-  payment_status: PaymentStatus;
+  payment_status: PaymentStatus | null;
   amount_due: number | null;
   amount_paid: number;
   notes: string | null;
@@ -131,6 +131,7 @@ export type Submission = {
   discount_applied: number;
   roster_added_at: string | null;
   roster_player_id: string | null;
+  tryout_assignment_id: string | null;
 };
 
 export type PromoCode = {

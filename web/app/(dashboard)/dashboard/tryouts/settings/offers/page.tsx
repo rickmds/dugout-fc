@@ -14,6 +14,10 @@ type OfferSettings = {
   payment_link: string;
   club_website_url: string;
   uniform_shop_url: string;
+  // Which Registration Hub form an accepted offer sends the family to next,
+  // instead of the built-in emergency-contact/medical/waiver form — empty
+  // string means "not configured, use the built-in form" (stored as null).
+  post_acceptance_form_id: string;
 };
 
 type EmailTemplate = {
@@ -44,6 +48,7 @@ const BLANK: OfferSettings = {
   from_name: '', offer_deadline: '',
   payment_link: '',
   club_website_url: '', uniform_shop_url: '',
+  post_acceptance_form_id: '',
 };
 
 // Toggling a chip claims that age group for `currentId`, stealing it from
@@ -281,6 +286,7 @@ function EmailBodyEditor({ editorKey, value, onChange, onPreview, previewLabel, 
 export default function TryoutOfferSettingsPage() {
   const { club } = useDashboard();
   const [settings, setSettings] = useState<OfferSettings>(BLANK);
+  const [regForms, setRegForms] = useState<{ id: string; title: string }[]>([]);
   const [templates, setTemplates] = useState<Record<string, EmailTemplate>>({});
   const [feeAgeGroups, setFeeAgeGroups] = useState<string[]>([]);
   const [feeBands, setFeeBands] = useState<FeePlanBand[]>([]);
@@ -311,14 +317,16 @@ export default function TryoutOfferSettingsPage() {
   useEffect(() => {
     if (!club) return;
     (async () => {
-      const [{ data: os }, { data: tmpl }, { data: teamRows }, { data: planRows }, { data: letterRows }] = await Promise.all([
+      const [{ data: os }, { data: tmpl }, { data: teamRows }, { data: planRows }, { data: letterRows }, { data: forms }] = await Promise.all([
         supabase.from('tryout_offer_settings').select('*').eq('club_id', club.id).single(),
         supabase.from('tryout_email_templates').select('*').eq('club_id', club.id),
         supabase.from('tryout_teams').select('age_group').eq('club_id', club.id),
         supabase.from('tryout_fee_plans').select('id, age_groups, season_fee, installments').eq('club_id', club.id),
         supabase.from('tryout_offer_letter_templates').select('id, age_groups, subject, from_name, body_html').eq('club_id', club.id),
+        supabase.from('registration_forms').select('id, title').eq('club_id', club.id).eq('archived', false).order('created_at', { ascending: false }),
       ]);
-      const loadedSettings = os ? { ...BLANK, ...os } : BLANK;
+      setRegForms(forms ?? []);
+      const loadedSettings = os ? { ...BLANK, ...os, post_acceptance_form_id: os.post_acceptance_form_id ?? '' } : BLANK;
       setSettings(loadedSettings);
       const map: Record<string, EmailTemplate> = {};
       for (const t of (tmpl ?? [])) map[t.template_key] = t;
@@ -399,7 +407,10 @@ export default function TryoutOfferSettingsPage() {
   async function handleSave() {
     if (!club) return;
     setSaving(true);
-    await supabase.from('tryout_offer_settings').upsert({ ...settings, club_id: club.id }, { onConflict: 'club_id' });
+    await supabase.from('tryout_offer_settings').upsert({
+      ...settings, club_id: club.id,
+      post_acceptance_form_id: settings.post_acceptance_form_id || null,
+    }, { onConflict: 'club_id' });
     for (const key of ['waitlist', 'decline', 'reminder'] as const) {
       const t = templates[key];
       if (t) await supabase.from('tryout_email_templates').upsert({ ...t, club_id: club.id, template_key: key }, { onConflict: 'club_id,template_key' });
@@ -1025,6 +1036,17 @@ ${editable ? `<script>
                       <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Token: <code style={{ background: '#F1F5F9', padding: '1px 4px', borderRadius: '3px' }}>{'{{club_website}}'}</code></div>
                     </div>
                   </div>
+                </div>
+                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '20px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#374151', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Post-acceptance registration</div>
+                  <div style={{ fontSize: '12px', color: '#94A3B8', marginBottom: '12px' }}>
+                    When a family accepts a roster offer, send them here instead of the built-in emergency-contact form — their team stays linked automatically, and you get real payment plans, document templates, and the rest of the Registration Hub.
+                  </div>
+                  {lbl('Registration Hub form')}
+                  <select value={settings.post_acceptance_form_id} onChange={e => set({ post_acceptance_form_id: e.target.value })} style={inp}>
+                    <option value="">Use the built-in form (no change)</option>
+                    {regForms.map(f => <option key={f.id} value={f.id}>{f.title}</option>)}
+                  </select>
                 </div>
               </div>
             </div>

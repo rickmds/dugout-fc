@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
 type FieldType =
@@ -92,6 +92,15 @@ function ordinal(n: number): string {
 export default function RegisterPage() {
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
+  // Carried through from offer-response when this form is a club's
+  // configured post-tryout-acceptance registration — see
+  // web/app/api/tryout/process-response/route.ts and web/app/offer-response/page.tsx.
+  // Validated as a real uuid shape here so a hand-edited/garbage query param
+  // fails soft (registration proceeds unlinked) instead of making the whole
+  // submit_registration call error out over an unrelated param.
+  const rawAssignmentToken = useSearchParams().get('assignment');
+  const assignmentOfferToken = rawAssignmentToken && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawAssignmentToken)
+    ? rawAssignmentToken : null;
 
   const [form, setForm]           = useState<Form | null>(null);
   const [loading, setLoading]     = useState(true);
@@ -271,6 +280,7 @@ export default function RegisterPage() {
         p_data: finalValues,
         p_payment_choice: hasFee ? paymentChoice : null,
         p_amount_due: finalAmountDue,
+        p_tryout_offer_token: assignmentOfferToken,
       }).single<{ id: string; status: string }>();
 
       if (subErr || !subResult) {

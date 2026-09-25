@@ -251,7 +251,7 @@ export default function ReportsTab() {
           s => fmtMoney(s.amount_due, form.currency),
           s => fmtMoney(s.amount_paid, form.currency),
           s => fmtMoney((s.amount_due ?? 0) - s.amount_paid, form.currency),
-          s => s.payment_status,
+          s => s.payment_status ?? '',
         );
       }
 
