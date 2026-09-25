@@ -89,6 +89,14 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
   const [rsvpStats,   setRsvpStats]   = useState({ attending: 0, not_attending: 0 });
   const [rsvpLoading, setRsvpLoading] = useState(true);
 
+  // Emergency & medical — read-only here by design: player_emergency_contacts
+  // and player_medical_notes are both guardian-write-only (RLS), so a parent
+  // manages this from the app; a coach/admin on the web dashboard previously
+  // had no way to even SEE it without opening the mobile app.
+  const [emergencyContacts, setEmergencyContacts] = useState<{ id: string; name: string; phone: string | null; relationship: string | null }[]>([]);
+  const [medicalNotes,      setMedicalNotes]       = useState<string | null>(null);
+  const [safetyLoading,     setSafetyLoading]      = useState(true);
+
   // Delete
   const [deleting, setDeleting] = useState(false);
 
@@ -128,6 +136,16 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
         else if (row.status === 'not_attending') s.not_attending++;
       }
       setRsvpStats(s); setRsvpLoading(false);
+    });
+
+    setSafetyLoading(true);
+    Promise.all([
+      supabase.from('player_emergency_contacts').select('id,name,phone,relationship').eq('player_id', player.id),
+      supabase.from('player_medical_notes').select('notes').eq('player_id', player.id).maybeSingle(),
+    ]).then(([{ data: contacts }, { data: medical }]) => {
+      setEmergencyContacts(contacts ?? []);
+      setMedicalNotes(medical?.notes ?? null);
+      setSafetyLoading(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- this should only reset local form state when switching to a different player, not on every field edit
   }, [player.id]);
@@ -378,6 +396,43 @@ export default function PlayerPanel({ player, teamName, clubName, clubId, primar
               </div>
             </div>
           </div>
+
+          {/* ── EMERGENCY & MEDICAL ── */}
+          {(safetyLoading || emergencyContacts.length > 0 || medicalNotes) && (
+            <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #FECACA', padding: '18px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px' }}>
+                <AlertCircle size={13} color="#DC2626" />
+                <div style={{ fontSize: '11px', fontWeight: '800', color: '#DC2626', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Emergency &amp; Medical</div>
+              </div>
+              {safetyLoading ? (
+                <div style={{ fontSize: '12.5px', color: '#94A3B8' }}>Loading…</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {emergencyContacts.length > 0 && (
+                    <div>
+                      <label style={labelStyle}>Emergency Contacts</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {emergencyContacts.map(c => (
+                          <div key={c.id} style={{ fontSize: '13px', color: '#0F172A' }}>
+                            <span style={{ fontWeight: '700' }}>{c.name}</span>
+                            {c.relationship && <span style={{ color: '#94A3B8' }}> · {c.relationship}</span>}
+                            {c.phone && <span style={{ color: '#64748B' }}> · {c.phone}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {medicalNotes && (
+                    <div>
+                      <label style={labelStyle}>Medical Notes</label>
+                      <div style={{ fontSize: '13px', color: '#0F172A', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{medicalNotes}</div>
+                    </div>
+                  )}
+                  <div style={{ fontSize: '11px', color: '#94A3B8' }}>Managed by the family in the app — view only here.</div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── ATTENDANCE ── */}
           <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '18px', marginBottom: '14px' }}>
