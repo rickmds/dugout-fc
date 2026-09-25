@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Users, Layers, CalendarDays, MapPin, Clock, Plus, Megaphone,
-  AlertTriangle, ArrowRight, ChevronRight, XCircle, DollarSign, Target,
+  AlertTriangle, ArrowRight, ChevronRight, XCircle, DollarSign,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -84,7 +84,6 @@ function StatTile({ value, label, sub, color, icon: Icon }: { value: number | st
 export default function SimpleDashboard({ onUpgrade }: { onUpgrade: () => void }) {
   const { profile, club, teams } = useDashboard();
   const primary       = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
-  const tryoutsActive = club?.tryouts_active ?? false;
   const firstName     = profile?.full_name?.split(' ')[0] ?? 'Coach';
   const currency      = club?.currency ?? 'USD';
   const today         = new Date().toISOString().split('T')[0];
@@ -228,15 +227,9 @@ export default function SimpleDashboard({ onUpgrade }: { onUpgrade: () => void }
           <Link href="/dashboard/schedule" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '8px', padding: '8px 13px', fontSize: '12.5px', fontWeight: '700', color: '#374151', textDecoration: 'none' }}>
             <CalendarDays size={13}/> Add Event
           </Link>
-          {tryoutsActive ? (
-            <Link href="/dashboard/tryouts/rosters" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '8px', padding: '8px 14px', fontSize: '12.5px', fontWeight: '700', color: '#fff', textDecoration: 'none' }}>
-              <Target size={13}/> Send Offer
-            </Link>
-          ) : (
-            <Link href="/dashboard/players" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '8px', padding: '8px 14px', fontSize: '12.5px', fontWeight: '700', color: '#fff', textDecoration: 'none' }}>
-              <Plus size={13}/> Add Player
-            </Link>
-          )}
+          <Link href="/dashboard/players" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '8px', padding: '8px 14px', fontSize: '12.5px', fontWeight: '700', color: '#fff', textDecoration: 'none' }}>
+            <Plus size={13}/> Add Player
+          </Link>
           <button onClick={onUpgrade} style={{ background: 'none', border: 'none', fontSize: '11px', color: '#CBD5E1', cursor: 'pointer', padding: '8px 4px', fontWeight: '600' }}>
             Pro view
           </button>

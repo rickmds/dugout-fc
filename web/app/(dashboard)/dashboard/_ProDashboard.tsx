@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Users, Layers, CalendarDays, Plus, Megaphone, AlertTriangle, ArrowRight,
   ChevronRight, XCircle, DollarSign, ShieldCheck, TrendingUp, TrendingDown,
-  Target, CheckCircle, UserCheck, Award, Calendar,
+  CheckCircle, UserCheck, Award, Calendar,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
@@ -452,15 +452,9 @@ export default function ProDashboard({ onSwitch }: { onSwitch: () => void }) {
           <Link href="/dashboard/schedule" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '8px', padding: '8px 13px', fontSize: '12.5px', fontWeight: '700', color: '#374151', textDecoration: 'none' }}>
             <CalendarDays size={13}/> Add Event
           </Link>
-          {tryoutsActive ? (
-            <Link href="/dashboard/tryouts/rosters" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '8px', padding: '8px 14px', fontSize: '12.5px', fontWeight: '700', color: '#fff', textDecoration: 'none' }}>
-              <Target size={13}/> Send Offer
-            </Link>
-          ) : (
-            <Link href="/dashboard/players" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '8px', padding: '8px 14px', fontSize: '12.5px', fontWeight: '700', color: '#fff', textDecoration: 'none' }}>
-              <Plus size={13}/> Add Player
-            </Link>
-          )}
+          <Link href="/dashboard/players" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: primary, borderRadius: '8px', padding: '8px 14px', fontSize: '12.5px', fontWeight: '700', color: '#fff', textDecoration: 'none' }}>
+            <Plus size={13}/> Add Player
+          </Link>
           <button onClick={onSwitch} style={{ background: 'none', border: 'none', fontSize: '11px', color: '#CBD5E1', cursor: 'pointer', padding: '8px 4px', fontWeight: '600' }}>
             Simple view
           </button>
