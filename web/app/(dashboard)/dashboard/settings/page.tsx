@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Save, Eye, EyeOff, Check, AlertCircle, Lock, User,
   Upload, Download, CreditCard, AlertTriangle,
@@ -248,6 +248,7 @@ function AccountTab({ primary, showToast }: { primary: string; showToast: (t: To
 
 function ClubTab({ primary, showToast, initialSection }: { primary: string; showToast: (t: Toast['type'], m: string) => void; initialSection?: string }) {
   const { club, profile: _profile, reload, canUse } = useDashboard();
+  const router = useRouter();
   const [active,    setActive]    = useState(initialSection ?? 'Club Profile');
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
@@ -255,6 +256,32 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   const [tryoutsActive, setTryoutsActive] = useState(club?.tryouts_active ?? false);
   const [savingTryouts, setSavingTryouts] = useState(false);
   const [connectingStripe, setConnectingStripe] = useState(false);
+  const [showDeleteClub,   setShowDeleteClub]   = useState(false);
+  const [deleteClubConfirm, setDeleteClubConfirm] = useState('');
+  const [deletingClub,     setDeletingClub]     = useState(false);
+  const [deleteClubError,  setDeleteClubError]  = useState('');
+
+  async function handleDeleteClub() {
+    if (!club) return;
+    setDeletingClub(true);
+    setDeleteClubError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/club/delete', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clubId: club.id, clubNameConfirm: deleteClubConfirm }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Could not delete club.');
+      // Profile no longer has a club — same destination a brand-new,
+      // clubless profile lands on (DashboardContext.load()).
+      router.push('/onboarding');
+    } catch (e) {
+      setDeleteClubError((e as Error).message);
+      setDeletingClub(false);
+    }
+  }
 
   const [profileForm, setProfileForm] = useState({
     name: '', slug: '', website: '', contact_email: '', tagline: '', country: 'US',
@@ -955,8 +982,44 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                   <div style={{ fontSize: '13.5px', fontWeight: '700', color: '#0F172A' }}>Delete this club</div>
                   <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Permanently removes all teams, players, events, and data. This cannot be undone.</div>
                 </div>
-                <button onClick={() => alert('Please contact support@pulse-fc.app to delete your club.')} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EF4444', background: '#fff', fontSize: '13px', fontWeight: '700', color: '#EF4444', cursor: 'pointer', flexShrink: 0 }}>
+                <button onClick={() => { setDeleteClubConfirm(''); setDeleteClubError(''); setShowDeleteClub(true); }} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EF4444', background: '#fff', fontSize: '13px', fontWeight: '700', color: '#EF4444', cursor: 'pointer', flexShrink: 0 }}>
                   Delete Club
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showDeleteClub && club && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }} onClick={() => !deletingClub && setShowDeleteClub(false)}>
+            <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                <AlertTriangle size={18} color="#EF4444" />
+                <div style={{ fontWeight: '800', fontSize: '15px', color: '#0F172A' }}>Delete {club.name}?</div>
+              </div>
+              <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 16px', lineHeight: 1.55 }}>
+                This permanently deletes every team, player, event, message, registration, and payment record for this club. There is no undo. Every coach, admin, and parent loses access immediately.
+              </p>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '6px' }}>
+                Type <strong style={{ color: '#0F172A' }}>{club.name}</strong> to confirm
+              </label>
+              <input
+                value={deleteClubConfirm}
+                onChange={e => setDeleteClubConfirm(e.target.value)}
+                placeholder={club.name}
+                style={{ width: '100%', padding: '10px 13px', borderRadius: '10px', border: '1.5px solid #E2E8F0', fontSize: '14px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', marginBottom: '14px' }}
+              />
+              {deleteClubError && (
+                <p style={{ fontSize: '12.5px', color: '#DC2626', margin: '0 0 14px' }}>{deleteClubError}</p>
+              )}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowDeleteClub(false)} disabled={deletingClub} style={{ padding: '9px 16px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', cursor: deletingClub ? 'default' : 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button
+                  onClick={handleDeleteClub}
+                  disabled={deletingClub || deleteClubConfirm !== club.name}
+                  style={{ padding: '9px 16px', borderRadius: '9px', border: 'none', background: deleteClubConfirm === club.name ? '#DC2626' : '#FCA5A5', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: deletingClub || deleteClubConfirm !== club.name ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                >
+                  {deletingClub ? 'Deleting…' : 'Delete club permanently'}
                 </button>
               </div>
             </div>
