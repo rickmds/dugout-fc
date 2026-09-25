@@ -501,7 +501,7 @@ export default function TryoutFormConfigPage() {
             <div style={{ maxWidth: '680px' }}>
               {hint('Displayed in a section of the form so families know where to show up.')}
               <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
-                {lbl('Venue name & address', 'e.g. Superdome Sports, 134 Hopper Ave, Waldwick, NJ 07463')}
+                {lbl('Venue name & address', 'e.g. Riverside Sports Complex, 123 Main St, Springfield, NJ 07081')}
                 <input value={config.locationText} onChange={e => setConfig(c => ({ ...c, locationText: e.target.value }))} style={inp} />
               </div>
             </div>
@@ -541,7 +541,7 @@ export default function TryoutFormConfigPage() {
             <div style={{ maxWidth: '680px' }}>
               {hint('Shown at the bottom of the info sections. List the right contact for each program (boys, girls, etc.).')}
               <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px' }}>
-                {lbl('Contact information', 'e.g. Boys Program: Rick Breheny – rick@club.com')}
+                {lbl('Contact information', 'e.g. Boys Program: Alex Johnson – alex@club.com')}
                 <textarea value={config.contactText} onChange={e => setConfig(c => ({ ...c, contactText: e.target.value }))} rows={4} style={ta} />
               </div>
             </div>

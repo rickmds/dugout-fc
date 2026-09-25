@@ -590,7 +590,7 @@ function ClubStep({ onDone, asAdditionalClub }: { onDone: (data: ClubResult) => 
 
           <div>
             <Label>Club name <span className="text-red-400">*</span></Label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="MDS Academy" required />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Oakwood FC" required />
           </div>
 
           <div>
@@ -598,7 +598,7 @@ function ClubStep({ onDone, asAdditionalClub }: { onDone: (data: ClubResult) => 
             <div className="flex items-center bg-[#111] border border-[#222] rounded-xl overflow-hidden focus-within:border-[#22c55e]">
               <span className="px-3 text-[#4b5563] text-sm whitespace-nowrap">pulse-fc.app/</span>
               <input value={slug} onChange={(e) => { setSlugEdited(true); setSlug(slugify(e.target.value)); }}
-                className="border-0 rounded-none bg-transparent flex-1 !border-0 focus:!border-0" placeholder="mds-academy" required />
+                className="border-0 rounded-none bg-transparent flex-1 !border-0 focus:!border-0" placeholder="oakwood-fc" required />
             </div>
           </div>
 

@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { notFound } from 'next/navigation';
 
 // Public page — no auth, no layout
-// URL: /maroons/fields
+// URL: /{clubSlug}/fields
 
 // This page has no `cookies()`/`headers()` usage, so Next's default Full
 // Route Cache would otherwise render it once per clubSlug and serve that

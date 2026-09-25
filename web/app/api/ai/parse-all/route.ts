@@ -596,7 +596,7 @@ Rules:
 - address: a single geocodable street address, ASSEMBLED even if the
   document splits it across multiple columns (e.g. separate Street
   Address / City / State / Zip columns, or Address / Town) — join them
-  into one string like "627 E Ridgewood Ave, Ridgewood, NJ 07450". Every
+  into one string like "123 Main St, Springfield, NJ 07081". Every
   document is different: look across all columns on the row for anything
   that looks like address components and combine what you find. Empty
   string only if no real street-level address exists anywhere on the row

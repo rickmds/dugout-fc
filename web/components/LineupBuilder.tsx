@@ -79,7 +79,7 @@ export default function LineupBuilder() {
           <span style={{ fontSize: 14, color: '#555' }}>‹</span>
           <div style={{ textAlign: 'center' }}>
             <p style={{ fontSize: 12, fontWeight: 800, color: '#fff', margin: 0 }}>Lineup Builder</p>
-            <p style={{ fontSize: 9, color: '#555', margin: 0, marginTop: 1 }}>@ Maroons SC</p>
+            <p style={{ fontSize: 9, color: '#555', margin: 0, marginTop: 1 }}>@ Riverside Park</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{

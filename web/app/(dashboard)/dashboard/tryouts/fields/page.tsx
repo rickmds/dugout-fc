@@ -299,7 +299,7 @@ export default function TryoutFieldsPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
                     <Label>Field name *</Label>
-                    <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Superdome Sports, Maple Field" style={inp} />
+                    <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Riverside Sports Complex, Field A" style={inp} />
                   </div>
                   <div>
                     <Label>Address</Label>

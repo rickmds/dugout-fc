@@ -24,7 +24,7 @@ export default function LivePreview() {
               2 days
             </span>
           </div>
-          <p className="text-white font-extrabold text-[17px] tracking-tight">vs Maroons SC</p>
+          <p className="text-white font-extrabold text-[17px] tracking-tight">vs Riverside Utd</p>
           <p className="text-[#555] text-[13px]">Sat · 10:00am · Riverside Park · Home kit</p>
         </div>
 

@@ -108,7 +108,7 @@ export default function TeamEditModal({
             style={[st.input, { borderColor: primaryColor }]}
             value={name}
             onChangeText={(v) => { setName(v); setError(''); }}
-            placeholder="e.g. MDS U14 Girls"
+            placeholder="e.g. Oakwood U14 Girls"
             placeholderTextColor={PULSE_COLORS.ui.muted}
             returnKeyType="next"
             autoFocus

@@ -105,7 +105,7 @@ const tabDefs = [
           <PhoneFrame>
             <div className="px-4 py-3" style={{ borderBottom: '1px solid #161616', background: '#0a0a0a' }}>
               <div className="flex items-center justify-between">
-                <p className="text-[#555] text-[9px] font-bold uppercase tracking-widest">MDS Academy · U14 Boys</p>
+                <p className="text-[#555] text-[9px] font-bold uppercase tracking-widest">Oakwood FC · U14 Boys</p>
                 <div className="w-5 h-5 rounded-full bg-[#22c55e] flex items-center justify-center text-black font-extrabold" style={{ fontSize: 7 }}>RC</div>
               </div>
             </div>
@@ -113,7 +113,7 @@ const tabDefs = [
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-[#666] text-[8px] font-bold uppercase tracking-widest mb-0.5">Sat 5 Jul · 10:00am</p>
-                  <p className="text-white font-extrabold text-[13px] leading-tight">vs Maroons SC</p>
+                  <p className="text-white font-extrabold text-[13px] leading-tight">vs Riverside Utd</p>
                   <p className="text-[#666] text-[9px] mt-0.5">Riverside Park · Home kit</p>
                 </div>
                 <span className="text-[8px] font-bold text-[#22c55e] flex-shrink-0" style={{ background: '#22c55e10', border: '1px solid #22c55e20', padding: '2px 7px', borderRadius: 99 }}>2 days</span>
@@ -179,7 +179,7 @@ const tabDefs = [
               <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#22c55e', fontSize: 12 }}>⚽</div>
               <div>
                 <p className="text-white text-[11px] font-bold mb-0.5">Are you coming Saturday?</p>
-                <p className="text-[#888] text-[10px]">vs Maroons SC · 10:00am · Riverside Park</p>
+                <p className="text-[#888] text-[10px]">vs Riverside Utd · 10:00am · Riverside Park</p>
               </div>
             </div>
           </div>

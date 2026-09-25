@@ -74,7 +74,7 @@ Field rules:
 - home_away: "home" if the team this schedule belongs to is the Home Team column, "away" if they are the Visitor Team. To identify which team the schedule is for: find the team name that recurs consistently across rows (appearing in Home Team for some rows and Visitor Team for others — it is the same club throughout). null if not applicable (training, other${isTournament ? ', or a neutral-site tournament game with no designated home team' : ''}).
 - type: "game" if there is a home team vs visitor team structure, "training" for practice/training/conditioning, "other" for everything else.
 - location: field or venue name only — no address.${isTournament ? ' For a tournament, this is often just a court/field number (e.g. "Field 3", "Court 12") rather than a named venue — use whatever the document gives.' : ''} null if not specified.
-- address: join any separate address component columns (Address, City, State, Zipcode) into one string like "230 Northern Pkwy, Ridgewood, NJ 07450". If already combined, use as-is. null if no address present.
+- address: join any separate address component columns (Address, City, State, Zipcode) into one string like "230 Main St, Springfield, NJ 07081". If already combined, use as-is. null if no address present.
 - surface: "turf" if Artificial/Turf/Synthetic/FieldTurf; "grass" if Grass/Natural. null if not specified.
 ${roundLabelRule}
 - uncertain: true if the date is ambiguous, row is unclear, or you lack confidence in any required field.

@@ -48,7 +48,7 @@ export default function AppMockup() {
           </div>
 
           {/* Good afternoon */}
-          <p className="px-4 flex-shrink-0" style={{ fontSize: 8, color: '#888', paddingTop: 4, paddingBottom: 0 }}>Good afternoon, MDS</p>
+          <p className="px-4 flex-shrink-0" style={{ fontSize: 8, color: '#888', paddingTop: 4, paddingBottom: 0 }}>Good afternoon, Coach</p>
 
           {/* Club header */}
           <div className="px-4 flex items-center justify-between flex-shrink-0" style={{ paddingTop: 8, paddingBottom: 10 }}>
@@ -61,7 +61,7 @@ export default function AppMockup() {
                 </svg>
               </div>
               <div>
-                <p style={{ color: '#fff', fontWeight: 800, fontSize: 13, lineHeight: 1, marginBottom: 3 }}>MDS Academy</p>
+                <p style={{ color: '#fff', fontWeight: 800, fontSize: 13, lineHeight: 1, marginBottom: 3 }}>Oakwood FC</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                   <span style={{ color: '#666', fontSize: 8 }}>U10 Boys Premier</span>
                   <svg width="6" height="5" viewBox="0 0 6 5" fill="none">
@@ -146,7 +146,7 @@ export default function AppMockup() {
                     <path d="M3 .5a2 2 0 0 0-2 2c0 1.5 2 4 2 4s2-2.5 2-4a2 2 0 0 0-2-2Z" stroke="#555" strokeWidth="0.7" fill="#55555518"/>
                     <circle cx="3" cy="2.5" r=".7" fill="#555"/>
                   </svg>
-                  <p style={{ color: '#555', fontSize: 7.5 }}>MDS Training Ground</p>
+                  <p style={{ color: '#555', fontSize: 7.5 }}>Riverside Sports Complex</p>
                 </div>
               </div>
               <svg width="5" height="9" viewBox="0 0 5 9" fill="none">

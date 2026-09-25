@@ -780,7 +780,7 @@ export default function TryoutOfferSettingsPage() {
         || '<p style="color:#9ca3af;font-style:italic;font-size:13px;">(No payment plan set for this age group yet — set one in Cost &amp; Installments.)</p>',
       payment_link: '#', uniform_link: '#', club_website: '#',
       accept_link: '#accept', decline_link: '#decline',
-      training_schedule: '<ul style="margin:0;padding-left:18px;"><li><strong>Mon</strong> 5:00pm–6:30pm — Superdome Sports, Field A</li><li><strong>Wed</strong> 5:00pm–6:30pm — Superdome Sports, Field B</li></ul>',
+      training_schedule: '<ul style="margin:0;padding-left:18px;"><li><strong>Mon</strong> 5:00pm–6:30pm — Riverside Sports Complex, Field A</li><li><strong>Wed</strong> 5:00pm–6:30pm — Riverside Sports Complex, Field B</li></ul>',
     };
 
     let body: string;
@@ -1008,7 +1008,7 @@ ${editable ? `<script>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div>
                     {lbl('From name')}
-                    <input value={settings.from_name} onChange={e => set({ from_name: e.target.value })} placeholder="Maroons SC" style={inp} />
+                    <input value={settings.from_name} onChange={e => set({ from_name: e.target.value })} placeholder="Your Club" style={inp} />
                     <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Shown as the sender on all offer emails</div>
                   </div>
                   <div>
@@ -1136,7 +1136,7 @@ ${editable ? `<script>
                     <div>
                       {lbl('From name')}
                       <input value={current.from_name} onChange={e => updateLetterBand(current.id, { from_name: e.target.value })}
-                        placeholder={isDefault ? (settings.from_name || 'Maroons SC') : (def.from_name || settings.from_name || 'Same as Default')} style={inp} />
+                        placeholder={isDefault ? (settings.from_name || 'Your Club') : (def.from_name || settings.from_name || 'Same as Default')} style={inp} />
                     </div>
                   </div>
                   <EmailBodyEditor
@@ -1165,7 +1165,7 @@ ${editable ? `<script>
               <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div>{lbl('Subject')}<input value={templates['waitlist']?.subject ?? ''} onChange={e => setTmpl('waitlist', { subject: e.target.value })} style={inp} /></div>
-                  <div>{lbl('From name')}<input value={templates['waitlist']?.from_name ?? ''} onChange={e => setTmpl('waitlist', { from_name: e.target.value })} placeholder={settings.from_name || 'Maroons SC'} style={inp} /></div>
+                  <div>{lbl('From name')}<input value={templates['waitlist']?.from_name ?? ''} onChange={e => setTmpl('waitlist', { from_name: e.target.value })} placeholder={settings.from_name || 'Your Club'} style={inp} /></div>
                 </div>
                 <EmailBodyEditor
                   editorKey="waitlist"
@@ -1186,7 +1186,7 @@ ${editable ? `<script>
               <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div>{lbl('Subject')}<input value={templates['decline']?.subject ?? ''} onChange={e => setTmpl('decline', { subject: e.target.value })} style={inp} /></div>
-                  <div>{lbl('From name')}<input value={templates['decline']?.from_name ?? ''} onChange={e => setTmpl('decline', { from_name: e.target.value })} placeholder={settings.from_name || 'Maroons SC'} style={inp} /></div>
+                  <div>{lbl('From name')}<input value={templates['decline']?.from_name ?? ''} onChange={e => setTmpl('decline', { from_name: e.target.value })} placeholder={settings.from_name || 'Your Club'} style={inp} /></div>
                 </div>
                 <EmailBodyEditor
                   editorKey="decline"
@@ -1207,7 +1207,7 @@ ${editable ? `<script>
               <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div>{lbl('Subject')}<input value={templates['reminder']?.subject ?? ''} onChange={e => setTmpl('reminder', { subject: e.target.value })} style={inp} /></div>
-                  <div>{lbl('From name')}<input value={templates['reminder']?.from_name ?? ''} onChange={e => setTmpl('reminder', { from_name: e.target.value })} placeholder={settings.from_name || 'Maroons SC'} style={inp} /></div>
+                  <div>{lbl('From name')}<input value={templates['reminder']?.from_name ?? ''} onChange={e => setTmpl('reminder', { from_name: e.target.value })} placeholder={settings.from_name || 'Your Club'} style={inp} /></div>
                 </div>
                 <EmailBodyEditor
                   editorKey="reminder"
