@@ -39,7 +39,7 @@ const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard/fees',          icon: DollarSign,    label: 'Fees',           adminOnly: true },
   { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations' },
   { href: '/dashboard/waivers',       icon: FileLock2,     label: 'Waivers' },
-  { href: '/dashboard/reports',       icon: BarChart2,     label: 'Reports' },
+  { href: '/dashboard/reports',       icon: BarChart2,     label: 'Attendance' },
   { href: '/dashboard/certifications', icon: ShieldCheck,  label: 'Certifications', adminOnly: true },
   { section: 'Develop' },
   { href: '/dashboard/evaluations',   icon: Award,         label: 'Evaluations' },

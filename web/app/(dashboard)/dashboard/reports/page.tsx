@@ -429,7 +429,7 @@ export default function ReportsPage() {
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
-          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Reports</h1>
+          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Attendance Reports</h1>
           <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94A3B8' }}>RSVP intent vs coach-marked actual attendance</p>
         </div>
         <button onClick={exportCSV} disabled={!playerStats.length}
