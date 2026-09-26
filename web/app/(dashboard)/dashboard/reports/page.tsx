@@ -39,6 +39,9 @@ type PlayerStat = {
 type TeamSummary = {
   id: string;
   name: string;
+  age_group: string | null;
+  gender: string | null;
+  coach_names: string[];
   total_events: number;
   total_games: number;
   avg_rsvp_pct: number;
@@ -46,6 +49,15 @@ type TeamSummary = {
   events_with_att: number;
   player_count: number;
 };
+
+// Same list/order as the Teams page — numeric age order (U8 before U10),
+// not alphabetical.
+const AGE_GROUPS = ['U6','U7','U8','U9','U10','U11','U12','U13','U14','U15','U16','U17','U18','U19','Senior'];
+const GENDERS = [
+  { value: 'boys', label: 'Boys' },
+  { value: 'girls', label: 'Girls' },
+  { value: 'mixed', label: 'Mixed' },
+];
 
 function pctColor(pct: number): string {
   if (pct >= 75) return '#16A34A';
@@ -74,6 +86,9 @@ export default function ReportsPage() {
   const [playerHistory, setPlayerHistory]   = useState<{ title: string; type: string; event_date: string; rsvp: 'attending' | 'not_attending' | 'pending'; actual: 'present' | 'absent' | 'late' | null }[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [collapsedTeams, setCollapsedTeams] = useState<Record<string, boolean>>({});
+  const [ageFilter, setAgeFilter] = useState<Set<string>>(new Set());
+  const [genderFilter, setGenderFilter] = useState<Set<string>>(new Set());
+  const [coachFilter, setCoachFilter] = useState<Set<string>>(new Set());
 
   const loadStats = useCallback(async () => {
     if (!teams.length) return;
@@ -111,14 +126,23 @@ export default function ReportsPage() {
     }
 
     // Which events have at least 1 attendance record? (per team)
-    const [playerRes, rsvpRes, attRes, lineupRes] = await Promise.all([
+    const [playerRes, rsvpRes, attRes, lineupRes, coachRes] = await Promise.all([
       supabase.from('players').select('id, full_name, jersey_number, position, team_id, photo_url').in('team_id', teamIdSet),
       supabase.from('event_rsvps').select('player_id, event_id, status').in('event_id', allEventIds).limit(20000),
       supabase.from('event_attendance').select('player_id, event_id, status').in('event_id', allEventIds).limit(20000),
       gameEventIds.length
         ? supabase.from('lineups').select('id, event_id').in('event_id', gameEventIds)
         : Promise.resolve({ data: [] }),
+      supabase.from('team_members').select('team_id, profiles(full_name)').in('team_id', teamIdSet).eq('role', 'coach'),
     ]);
+
+    const coachNamesByTeam: Record<string, string[]> = {};
+    for (const c of (coachRes.data ?? []) as unknown as { team_id: string; profiles: { full_name: string | null } | null }[]) {
+      const name = c.profiles?.full_name;
+      if (!name) continue;
+      if (!coachNamesByTeam[c.team_id]) coachNamesByTeam[c.team_id] = [];
+      if (!coachNamesByTeam[c.team_id].includes(name)) coachNamesByTeam[c.team_id].push(name);
+    }
 
     // Which event_ids have attendance marked → per team
     const markedEventsByTeam: Record<string, Set<string>> = {};
@@ -226,21 +250,34 @@ export default function ReportsPage() {
       };
     });
 
-    const summaries: TeamSummary[] = teamIdSet.map((tid) => {
-      const tp = stats.filter((p) => p.team_id === tid);
-      const eventsWithAtt = markedEventsByTeam[tid]?.size ?? 0;
-      const playersWithAtt = tp.filter((p) => p.actual_pct !== null);
-      return {
-        id: tid,
-        name: teamMap[tid] ?? '—',
-        total_events: eventCountByTeam[tid] ?? 0,
-        total_games:  gameCountByTeam[tid] ?? 0,
-        avg_rsvp_pct: tp.length ? Math.round(tp.reduce((s, p) => s + p.rsvp_pct, 0) / tp.length) : 0,
-        avg_actual_pct: playersWithAtt.length ? Math.round(playersWithAtt.reduce((s, p) => s + (p.actual_pct ?? 0), 0) / playersWithAtt.length) : null,
-        events_with_att: eventsWithAtt,
-        player_count: tp.length,
-      };
-    });
+    const teamInfoById = Object.fromEntries(teams.map((t) => [t.id, t]));
+    const summaries: TeamSummary[] = teamIdSet
+      .map((tid) => {
+        const tp = stats.filter((p) => p.team_id === tid);
+        const eventsWithAtt = markedEventsByTeam[tid]?.size ?? 0;
+        const playersWithAtt = tp.filter((p) => p.actual_pct !== null);
+        return {
+          id: tid,
+          name: teamMap[tid] ?? '—',
+          age_group: teamInfoById[tid]?.age_group ?? null,
+          gender: teamInfoById[tid]?.gender ?? null,
+          coach_names: coachNamesByTeam[tid] ?? [],
+          total_events: eventCountByTeam[tid] ?? 0,
+          total_games:  gameCountByTeam[tid] ?? 0,
+          avg_rsvp_pct: tp.length ? Math.round(tp.reduce((s, p) => s + p.rsvp_pct, 0) / tp.length) : 0,
+          avg_actual_pct: playersWithAtt.length ? Math.round(playersWithAtt.reduce((s, p) => s + (p.actual_pct ?? 0), 0) / playersWithAtt.length) : null,
+          events_with_att: eventsWithAtt,
+          player_count: tp.length,
+        };
+      })
+      // Age first (U8 before U10 — numeric, not alphabetical), youngest at
+      // the top, matching the Teams page's own default ordering.
+      .sort((a, b) => {
+        const aAge = AGE_GROUPS.indexOf(a.age_group ?? '');
+        const bAge = AGE_GROUPS.indexOf(b.age_group ?? '');
+        const ageDiff = (aAge === -1 ? AGE_GROUPS.length : aAge) - (bAge === -1 ? AGE_GROUPS.length : bAge);
+        return ageDiff !== 0 ? ageDiff : a.name.localeCompare(b.name);
+      });
 
     setPlayerStats(stats);
     setTeamSummaries(summaries);
@@ -294,7 +331,7 @@ export default function ReportsPage() {
   function exportCSV() {
     const rows = [
       ['Name','Team','Position','Jersey','Events','RSVP Going','RSVP Out','RSVP Pending','RSVP %','Events w/ Att','Present','Late','Absent','Actual %','Ghost Count','Surprise Count','Games','Games Attended','Games Started','Playing Time %'],
-      ...sortedPlayers.map((p) => [
+      ...filteredSortedPlayers.map((p) => [
         p.full_name, p.team_name, p.position ?? '', p.jersey_number ?? '',
         p.total_events, p.rsvp_going, p.rsvp_out, p.rsvp_pending, `${p.rsvp_pct}%`,
         p.events_with_att, p.actual_present, p.actual_late, p.actual_absent,
@@ -311,6 +348,19 @@ export default function ReportsPage() {
     a.click();
   }
 
+  const presentAgeGroups = AGE_GROUPS.filter((ag) => teamSummaries.some((t) => t.age_group === ag));
+  const presentGenders = GENDERS.filter((g) => teamSummaries.some((t) => t.gender === g.value));
+  const presentCoaches = [...new Set(teamSummaries.flatMap((t) => t.coach_names))].sort((a, b) => a.localeCompare(b));
+  const visibleTeamSummaries = teamSummaries.filter((t) => {
+    if (ageFilter.size > 0 && !ageFilter.has(t.age_group ?? '')) return false;
+    if (genderFilter.size > 0 && !genderFilter.has(t.gender ?? '')) return false;
+    if (coachFilter.size > 0 && !t.coach_names.some((c) => coachFilter.has(c))) return false;
+    return true;
+  });
+  const visibleTeamIds = new Set(visibleTeamSummaries.map((t) => t.id));
+  const hasTeamFilter = ageFilter.size > 0 || genderFilter.size > 0 || coachFilter.size > 0;
+  const filteredSortedPlayers = sortedPlayers.filter((p) => visibleTeamIds.has(p.team_id));
+
   const hasGames   = playerStats.some((p) => p.games_attended > 0);
 
   // Alert conditions
@@ -323,7 +373,7 @@ export default function ReportsPage() {
   if (teamsNoAtt.length) alerts.push({ level: 'amber', icon: <AlertTriangle size={13} />, text: `No attendance has been marked for ${teamsNoAtt.length} team${teamsNoAtt.length > 1 ? 's' : ''} — go to Schedule → past event → Attendance tab` });
 
   // Top discrepancy players for spotlight
-  const spotlightPlayers = [...sortedPlayers]
+  const spotlightPlayers = [...filteredSortedPlayers]
     .filter((p) => p.ghost_count > 0 || p.surprise_count > 0)
     .sort((a, b) => (b.ghost_count + b.surprise_count) - (a.ghost_count + a.surprise_count))
     .slice(0, 5);
@@ -491,10 +541,67 @@ export default function ReportsPage() {
               </div>
             )}
 
+            {/* ── Age/gender/coach quick filters ── */}
+            {presentAgeGroups.length > 1 && (
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {presentAgeGroups.map((ag) => {
+                  const active = ageFilter.has(ag);
+                  return (
+                    <button key={ag}
+                      onClick={() => setAgeFilter((prev) => { const next = new Set(prev); if (next.has(ag)) next.delete(ag); else next.add(ag); return next; })}
+                      style={{ padding: '5px 13px', borderRadius: '20px', border: `1.5px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}15` : '#fff', fontSize: '12px', fontWeight: '700', color: active ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {ag}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {presentGenders.length > 1 && (
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {presentGenders.map((g) => {
+                  const active = genderFilter.has(g.value);
+                  return (
+                    <button key={g.value}
+                      onClick={() => setGenderFilter((prev) => { const next = new Set(prev); if (next.has(g.value)) next.delete(g.value); else next.add(g.value); return next; })}
+                      style={{ padding: '5px 13px', borderRadius: '20px', border: `1.5px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}15` : '#fff', fontSize: '12px', fontWeight: '700', color: active ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {g.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {presentCoaches.length > 1 && (
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {presentCoaches.map((c) => {
+                  const active = coachFilter.has(c);
+                  return (
+                    <button key={c}
+                      onClick={() => setCoachFilter((prev) => { const next = new Set(prev); if (next.has(c)) next.delete(c); else next.add(c); return next; })}
+                      style={{ padding: '5px 13px', borderRadius: '20px', border: `1.5px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}15` : '#fff', fontSize: '12px', fontWeight: '700', color: active ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {hasTeamFilter && (
+              <div style={{ marginBottom: '10px' }}>
+                <button onClick={() => { setAgeFilter(new Set()); setGenderFilter(new Set()); setCoachFilter(new Set()); }}
+                  style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 4px' }}>
+                  Clear filters
+                </button>
+              </div>
+            )}
+
             {/* ── Team summary cards ── */}
-            {teamSummaries.length > 0 && (
+            {visibleTeamSummaries.length === 0 && hasTeamFilter ? (
+              <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E8ECF0', padding: '48px', textAlign: 'center', marginBottom: '20px' }}>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>No teams match</div>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>Try clearing the age/gender/coach filters.</div>
+              </div>
+            ) : visibleTeamSummaries.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                {teamSummaries.map((t) => {
+                {visibleTeamSummaries.map((t) => {
                   const displayPct = t.avg_actual_pct ?? t.avg_rsvp_pct;
                   const accColor   = pctColor(displayPct);
                   return (
@@ -609,7 +716,7 @@ export default function ReportsPage() {
               <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Users size={15} color="#64748B" />
                 <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>Player breakdown</span>
-                <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', background: '#F1F5F9', borderRadius: '20px', padding: '2px 9px' }}>{sortedPlayers.length}</span>
+                <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8', background: '#F1F5F9', borderRadius: '20px', padding: '2px 9px' }}>{filteredSortedPlayers.length}</span>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
                   <button onClick={() => setCollapsedTeams({})} style={{ padding: '5px 12px', fontSize: '11px', fontWeight: '700', color: primary, background: `${primary}12`, border: `1px solid ${primary}30`, borderRadius: '7px', cursor: 'pointer', fontFamily: 'inherit' }}>
                     Expand all
@@ -657,8 +764,8 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {teamSummaries.map((t) => {
-                      const teamPlayers = sortedPlayers.filter((p) => p.team_id === t.id);
+                    {visibleTeamSummaries.map((t) => {
+                      const teamPlayers = filteredSortedPlayers.filter((p) => p.team_id === t.id);
                       const isCollapsed = collapsedTeams[t.id] ?? false;
                       return (
                         <React.Fragment key={t.id}>
