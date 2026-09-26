@@ -602,7 +602,15 @@ export default function GamesPage() {
 
   // ── Grid data ────────────────────────────────────────────────────────────────
 
-  const sortedDates  = [...new Set(slots.map(s => s.slot_date))].sort();
+  // Dates come from anything actually happening — real slots or synced
+  // NCSA games — not just permits, so a club with zero permits but real
+  // NCSA games (or nothing synced at all yet) still gets grid rows to
+  // show open capacity against. Falls back to a plain two-week window
+  // from today when there's truly nothing else to anchor dates to.
+  const datesWithActivity = [...new Set([...slots.map(s => s.slot_date), ...ncsaGames.map(g => g.event_date)])].sort();
+  const sortedDates = datesWithActivity.length > 0 ? datesWithActivity : Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
+  });
   // Show all fields — fields that temporarily lose slots (e.g. after split change) still appear
   const columns: Column[] = fields.flatMap<Column>(f =>
     f.scheduler_split === 2
@@ -825,18 +833,20 @@ export default function GamesPage() {
             </div>
           )}
 
-          {slots.length === 0 ? (
+          {fields.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <div style={{ textAlign: 'center', maxWidth: '400px', padding: '40px' }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>📅</div>
-                <div style={{ fontSize: '18px', fontWeight: '800', color: '#0F172A', marginBottom: '8px' }}>
-                  {permits.length === 0 ? 'No permits imported yet' : 'Setting up schedule…'}
-                </div>
-                <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.6 }}>
-                  {permits.length === 0
-                    ? 'Import your field permits on the Fields page first.'
-                    : 'Filling time slots from your permits — this only takes a moment.'}
-                </div>
+                <div style={{ fontSize: '18px', fontWeight: '800', color: '#0F172A', marginBottom: '8px' }}>No fields yet</div>
+                <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.6 }}>Add a field on the Fields page first.</div>
+              </div>
+            </div>
+          ) : slots.length === 0 && permits.length > 0 ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ textAlign: 'center', maxWidth: '400px', padding: '40px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📅</div>
+                <div style={{ fontSize: '18px', fontWeight: '800', color: '#0F172A', marginBottom: '8px' }}>Setting up schedule…</div>
+                <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.6 }}>Filling time slots from your permits — this only takes a moment.</div>
               </div>
             </div>
           ) : (
