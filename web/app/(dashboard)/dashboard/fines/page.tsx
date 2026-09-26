@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { AlertTriangle, DollarSign, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, DollarSign, ShieldAlert, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -87,6 +87,15 @@ export default function FinesPage() {
   const [fines, setFines] = useState<Fine[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'unpaid'>('unpaid');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const load = useCallback(async () => {
     if (!club) return;
@@ -165,33 +174,42 @@ export default function FinesPage() {
             {shown.map(f => {
               const info = classifyFine(f.reason ?? '');
               const isUnpaid = f.status?.toLowerCase() === 'unpaid';
+              const isOpen = expanded.has(f.id);
               return (
                 <div key={f.id} style={{ background: '#fff', borderRadius: '10px', border: '1.5px solid #E2E8F0', overflow: 'hidden' }}>
-                  <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', borderBottom: '1px solid #F1F5F9' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: isUnpaid ? '#fff' : '#64748B', background: isUnpaid ? '#DC2626' : '#F1F5F9', borderRadius: '4px', padding: '2px 7px' }}>
+                  <button onClick={() => toggleExpanded(f.id)}
+                    style={{ width: '100%', textAlign: 'left', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', borderBottom: isOpen ? '1px solid #F1F5F9' : 'none' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '800', color: isUnpaid ? '#fff' : '#64748B', background: isUnpaid ? '#DC2626' : '#F1F5F9', borderRadius: '4px', padding: '2px 7px', flexShrink: 0 }}>
                       {f.status?.toUpperCase() ?? '?'}
                     </span>
                     <span style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>{f.reason}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: '17px', fontWeight: '900', color: '#B45309' }}>${f.amount?.toFixed(2) ?? '?'}</span>
-                  </div>
-                  <div style={{ padding: '12px 18px', display: 'flex', gap: '18px', flexWrap: 'wrap', fontSize: '12px', color: '#64748B', borderBottom: '1px solid #F1F5F9' }}>
-                    {f.team_raw_name && <span><strong style={{ color: '#0F172A' }}>Team:</strong> {f.team_raw_name}</span>}
-                    {f.fine_date && <span><strong style={{ color: '#0F172A' }}>Dated:</strong> {fmtDate(f.fine_date)}</span>}
-                    {f.submitted_by && <span><strong style={{ color: '#0F172A' }}>Submitted by:</strong> {f.submitted_by}</span>}
-                    {f.ncsa_game_id && <span><strong style={{ color: '#0F172A' }}>Game:</strong> {f.ncsa_game_id}</span>}
-                  </div>
-                  <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: primary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>{info.rule}</div>
-                      <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>{info.explanation}</div>
-                    </div>
-                    <div style={{ borderRadius: '8px', background: info.appealable ? '#F0FDF4' : '#F8FAFC', border: `1px solid ${info.appealable ? '#BBF7D0' : '#E2E8F0'}`, padding: '10px 14px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: info.appealable ? '#15803D' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>
-                        {info.appealable ? 'Worth appealing?' : 'Appeal likelihood'}
+                    <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '17px', fontWeight: '900', color: '#B45309' }}>${f.amount?.toFixed(2) ?? '?'}</span>
+                      <ChevronDown size={16} color="#94A3B8" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <>
+                      <div style={{ padding: '12px 18px', display: 'flex', gap: '18px', flexWrap: 'wrap', fontSize: '12px', color: '#64748B', borderBottom: '1px solid #F1F5F9' }}>
+                        {f.team_raw_name && <span><strong style={{ color: '#0F172A' }}>Team:</strong> {f.team_raw_name}</span>}
+                        {f.fine_date && <span><strong style={{ color: '#0F172A' }}>Dated:</strong> {fmtDate(f.fine_date)}</span>}
+                        {f.submitted_by && <span><strong style={{ color: '#0F172A' }}>Submitted by:</strong> {f.submitted_by}</span>}
+                        {f.ncsa_game_id && <span><strong style={{ color: '#0F172A' }}>Game:</strong> {f.ncsa_game_id}</span>}
                       </div>
-                      <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>{info.appeal}</div>
-                    </div>
-                  </div>
+                      <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div>
+                          <div style={{ fontSize: '10px', fontWeight: '800', color: primary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>{info.rule}</div>
+                          <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>{info.explanation}</div>
+                        </div>
+                        <div style={{ borderRadius: '8px', background: info.appealable ? '#F0FDF4' : '#F8FAFC', border: `1px solid ${info.appealable ? '#BBF7D0' : '#E2E8F0'}`, padding: '10px 14px' }}>
+                          <div style={{ fontSize: '10px', fontWeight: '800', color: info.appealable ? '#15803D' : '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>
+                            {info.appealable ? 'Worth appealing?' : 'Appeal likelihood'}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>{info.appeal}</div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}

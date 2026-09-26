@@ -28,6 +28,7 @@ type TeamStats = {
   next_event_date: string | null;
   next_event_title: string | null;
   warnings: ('no_coach' | 'no_players' | 'no_schedule')[];
+  has_ref_only_link: boolean;
 };
 
 type TeamForm  = { name: string; age_group: string; gender: string; season: string };
@@ -90,7 +91,7 @@ export default function TeamsPage() {
     const ids = teamRows.map((t) => t.id);
     const today = new Date().toISOString().split('T')[0];
 
-    const [playerRes, coachRes, eventRes] = await Promise.all([
+    const [playerRes, coachRes, eventRes, ncsaLinkRes] = await Promise.all([
       supabase.from('players').select('team_id').in('team_id', ids),
       supabase.from('team_members').select('team_id').in('team_id', ids).in('role', ['coach', 'org_admin']),
       supabase.from('events')
@@ -99,12 +100,16 @@ export default function TeamsPage() {
         .gte('event_date', today)
         .order('event_date')
         .limit(ids.length * 3),
+      club?.ncsa_partner
+        ? supabase.from('team_ncsa_links').select('team_id').in('team_id', ids).eq('competition', 'ref_only')
+        : Promise.resolve({ data: [] as { team_id: string }[] }),
     ]);
 
     // Count per team
     const playerCounts: Record<string, number> = {};
     const coachCounts:  Record<string, number> = {};
     const nextEvents:   Record<string, { date: string; title: string }> = {};
+    const refOnlyTeamIds = new Set((ncsaLinkRes.data ?? []).map((l) => l.team_id));
 
     for (const p of playerRes.data ?? []) playerCounts[p.team_id] = (playerCounts[p.team_id] ?? 0) + 1;
     for (const c of coachRes.data ?? [])  coachCounts[c.team_id]  = (coachCounts[c.team_id]  ?? 0) + 1;
@@ -120,7 +125,7 @@ export default function TeamsPage() {
       if (coaches === 0) warnings.push('no_coach');
       if (players === 0) warnings.push('no_players');
       if (!next) warnings.push('no_schedule');
-      return { ...t, gender: t.gender ?? null, player_count: players, coach_count: coaches, next_event_date: next?.date ?? null, next_event_title: next?.title ?? null, warnings };
+      return { ...t, gender: t.gender ?? null, player_count: players, coach_count: coaches, next_event_date: next?.date ?? null, next_event_title: next?.title ?? null, warnings, has_ref_only_link: refOnlyTeamIds.has(t.id) };
     });
 
     setTeams(withStats);
@@ -526,8 +531,14 @@ export default function TeamsPage() {
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '14px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
-                    {t.warnings.length > 0 && (
+                    {(t.warnings.length > 0 || t.has_ref_only_link) && (
                       <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
+                        {t.has_ref_only_link && (
+                          <span title="This team also has an NCSA entry that exists only for referee assignment — its games are included in the league schedule."
+                            style={{ fontSize: '10px', fontWeight: '700', color: '#3730A3', background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: '4px', padding: '1px 6px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                            <Shield size={9} /> NCSA ref-only game
+                          </span>
+                        )}
                         {t.warnings.map((w) => (
                           <span key={w} style={{ fontSize: '10px', fontWeight: '700', color: '#D97706', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '4px', padding: '1px 6px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
                             <AlertTriangle size={9} /> {w === 'no_coach' ? 'No coach' : w === 'no_players' ? 'No players' : 'No events'}

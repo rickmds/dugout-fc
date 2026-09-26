@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { ShieldAlert, AlertOctagon, Flag } from 'lucide-react';
+import { ShieldAlert, AlertOctagon, Flag, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -39,6 +39,15 @@ export default function DisciplinePage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'suspensions' | 'all'>('suspensions');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const load = useCallback(async () => {
     if (!club) return;
@@ -128,43 +137,51 @@ export default function DisciplinePage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {shown.map(r => {
               const ejection = isEjection(r.event);
+              const isOpen = expanded.has(r.id);
               return (
                 <div key={r.id} style={{ background: '#fff', borderRadius: '10px', border: `1.5px solid ${ejection && !r.served_at ? '#FCA5A5' : '#E2E8F0'}`, overflow: 'hidden' }}>
-                  <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', borderBottom: '1px solid #F1F5F9' }}>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: ejection ? '#fff' : '#92400E', background: ejection ? '#DC2626' : '#FEF3C7', borderRadius: '4px', padding: '2px 7px' }}>
+                  <div onClick={() => toggleExpanded(r.id)} role="button" tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpanded(r.id); } }}
+                    style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', borderBottom: isOpen ? '1px solid #F1F5F9' : 'none', cursor: 'pointer' }}>
+                    <span style={{ fontSize: '10px', fontWeight: '800', color: ejection ? '#fff' : '#92400E', background: ejection ? '#DC2626' : '#FEF3C7', borderRadius: '4px', padding: '2px 7px', flexShrink: 0 }}>
                       {r.event.toUpperCase()}
                     </span>
                     <span style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>{r.player_name}</span>
-                    <span style={{ marginLeft: 'auto' }}>
+                    <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
                       {ejection && (
                         r.served_at ? (
                           <span style={{ fontSize: '11px', fontWeight: '700', color: '#15803D' }}>Served {fmtDate(r.served_at.slice(0, 10))}</span>
                         ) : (
-                          <button onClick={() => markServed(r.id)} disabled={savingId === r.id}
+                          <button onClick={(e) => { e.stopPropagation(); markServed(r.id); }} disabled={savingId === r.id}
                             style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #DC2626', background: '#fff', color: '#DC2626', fontSize: '11.5px', fontWeight: '700', fontFamily: 'inherit', cursor: savingId === r.id ? 'default' : 'pointer', opacity: savingId === r.id ? 0.6 : 1 }}>
                             {savingId === r.id ? 'Saving…' : 'Mark suspension served'}
                           </button>
                         )
                       )}
+                      <ChevronDown size={16} color="#94A3B8" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
                     </span>
                   </div>
-                  <div style={{ padding: '12px 18px', display: 'flex', gap: '18px', flexWrap: 'wrap', fontSize: '12px', color: '#64748B', borderBottom: '1px solid #F1F5F9' }}>
-                    {r.team_raw_name && <span><strong style={{ color: '#0F172A' }}>Team:</strong> {r.team_raw_name}</span>}
-                    {r.game_date && <span><strong style={{ color: '#0F172A' }}>Game:</strong> {fmtDate(r.game_date)}</span>}
-                    {r.referee_name && <span><strong style={{ color: '#0F172A' }}>Referee:</strong> {r.referee_name}</span>}
-                    {r.ncsa_game_id && <span><strong style={{ color: '#0F172A' }}>Game ID:</strong> {r.ncsa_game_id}</span>}
-                  </div>
-                  <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>{r.misconduct}</div>
-                    {ejection && !r.served_at && (
-                      <div style={{ borderRadius: '8px', background: '#FEF2F2', border: '1px solid #FCA5A5', padding: '10px 14px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: '800', color: '#B91C1C', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Barred from all NCSA activity</div>
-                        <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>
-                          Per NCSA&apos;s Rules of Competition, a sent-off player is barred from all NCSA activity — including reffing — until the suspension is served. NCSA doesn&apos;t expose a games-served counter, so mark this served once confirmed.
-                        </div>
+                  {isOpen && (
+                    <>
+                      <div style={{ padding: '12px 18px', display: 'flex', gap: '18px', flexWrap: 'wrap', fontSize: '12px', color: '#64748B', borderBottom: '1px solid #F1F5F9' }}>
+                        {r.team_raw_name && <span><strong style={{ color: '#0F172A' }}>Team:</strong> {r.team_raw_name}</span>}
+                        {r.game_date && <span><strong style={{ color: '#0F172A' }}>Game:</strong> {fmtDate(r.game_date)}</span>}
+                        {r.referee_name && <span><strong style={{ color: '#0F172A' }}>Referee:</strong> {r.referee_name}</span>}
+                        {r.ncsa_game_id && <span><strong style={{ color: '#0F172A' }}>Game ID:</strong> {r.ncsa_game_id}</span>}
                       </div>
-                    )}
-                  </div>
+                      <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>{r.misconduct}</div>
+                        {ejection && !r.served_at && (
+                          <div style={{ borderRadius: '8px', background: '#FEF2F2', border: '1px solid #FCA5A5', padding: '10px 14px' }}>
+                            <div style={{ fontSize: '10px', fontWeight: '800', color: '#B91C1C', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Barred from all NCSA activity</div>
+                            <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>
+                              Per NCSA&apos;s Rules of Competition, a sent-off player is barred from all NCSA activity — including reffing — until the suspension is served. NCSA doesn&apos;t expose a games-served counter, so mark this served once confirmed.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}
