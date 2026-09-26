@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { ncsaLogin, ncsaFetch } from '../_shared/ncsaAuth.ts';
-import { parseFinesReport, parseConflictReport, parseGameListReport, type NcsaFine, type NcsaConflict, type NcsaGameRow } from '../_shared/ncsaReports.ts';
+import { parseFinesReport, parseConflictReport, parseGameListReport, parseFieldListReport, type NcsaFine, type NcsaConflict, type NcsaGameRow, type NcsaField } from '../_shared/ncsaReports.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,6 +18,7 @@ const REPORT_URLS = {
   gap: 'https://www.ncsanj.com/rptGameGapTime.cfm?pmid=51&smid=127',
   missingScore: 'https://www.ncsanj.com/rptGameMissingScore.cfm?pmid=51&smid=131',
   tbs: 'https://www.ncsanj.com/rptPendingTBSgames.cfm?pmid=51&smid=174',
+  fieldList: 'https://www.ncsanj.com/fieldList.cfm?club&pmid=40&smid=110',
 };
 
 type SB = ReturnType<typeof createClient>;
@@ -44,6 +45,49 @@ function toConflictRow(clubId: string, kind: 'overlap' | 'gap', c: NcsaConflict)
     game_b_id: c.b.gameId, game_b_date: c.b.date, game_b_time: c.b.time, game_b_home: c.b.home, game_b_visitor: c.b.visitor,
     minutes: c.minutes,
   };
+}
+
+function mapSurfaceType(surface: 'turf' | 'grass' | null): string | null {
+  if (surface === 'turf') return 'Artificial Turf';
+  if (surface === 'grass') return 'Natural Grass';
+  return null;
+}
+
+// Auto-populates the club's Fields directory from NCSA's own field
+// directory (fieldList.cfm) — the club's real fields only, by
+// construction. An earlier version of this inferred venues from every
+// synced game's location, which necessarily also picked up every AWAY
+// venue a linked team played at; this page never has that problem, since
+// it's the club's own field list, not a byproduct of game data. Only
+// ever creates/updates rows this sync owns (external_source='ncsa');
+// never touches field_group/is_full_field/rental_cost_per_hour/etc — the
+// admin's own scheduling config, set once and left alone. A row an admin
+// has dismissed (ncsa_dismissed) is left alone rather than resurrected.
+async function syncFields(supabase: SB, clubId: string, fields: NcsaField[]) {
+  const active = fields.filter((f) => f.active);
+  if (!active.length) return;
+
+  const { data: existingRows } = await supabase
+    .from('tryout_fields')
+    .select('id, external_id, ncsa_dismissed')
+    .eq('club_id', clubId)
+    .eq('external_source', 'ncsa');
+  const existingById = new Map(((existingRows ?? []) as any[]).map((r) => [r.external_id as string, r]));
+
+  for (const f of active) {
+    const existing = existingById.get(f.fieldId);
+    if (existing?.ncsa_dismissed) continue;
+
+    const payload = {
+      club_id: clubId, name: f.name, surface_type: mapSurfaceType(f.surface), has_lights: f.hasLights,
+      external_source: 'ncsa', external_id: f.fieldId, last_synced_at: new Date().toISOString(),
+    };
+    if (existing) {
+      await supabase.from('tryout_fields').update(payload).eq('id', existing.id);
+    } else {
+      await supabase.from('tryout_fields').insert(payload);
+    }
+  }
 }
 
 async function syncFines(supabase: SB, clubId: string, fines: NcsaFine[], teamByRawName: Map<string, string>) {
@@ -127,11 +171,12 @@ async function syncClub(supabase: SB, clubId: string): Promise<{ error?: string 
   const { data: links } = await supabase.from('team_ncsa_links').select('team_id, ncsa_raw_name, teams!inner(club_id)').eq('teams.club_id', clubId);
   const teamByRawName = new Map(((links ?? []) as any[]).map((l) => [l.ncsa_raw_name as string, l.team_id as string]));
 
-  const [finesHtml, overlapHtml, gapHtml, missingHtml, tbsHtml] = await Promise.all(
-    [REPORT_URLS.fines, REPORT_URLS.overlap, REPORT_URLS.gap, REPORT_URLS.missingScore, REPORT_URLS.tbs]
+  const [finesHtml, overlapHtml, gapHtml, missingHtml, tbsHtml, fieldListHtml] = await Promise.all(
+    [REPORT_URLS.fines, REPORT_URLS.overlap, REPORT_URLS.gap, REPORT_URLS.missingScore, REPORT_URLS.tbs, REPORT_URLS.fieldList]
       .map((url) => ncsaFetch(url, session).then((r) => r.text())),
   );
 
+  await syncFields(supabase, clubId, parseFieldListReport(fieldListHtml));
   await syncFines(supabase, clubId, parseFinesReport(finesHtml), teamByRawName);
   await syncConflicts(supabase, clubId, parseConflictReport(overlapHtml), parseConflictReport(gapHtml));
 

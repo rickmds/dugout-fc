@@ -129,3 +129,32 @@ export function parseGameListReport(html: string): NcsaGameRow[] {
   }
   return results;
 }
+
+export interface NcsaField {
+  fieldId: string; abbreviation: string; name: string; city: string;
+  hasLights: boolean; surface: 'turf' | 'grass' | null; active: boolean;
+}
+
+// fieldList.cfm?club — the club's own field directory (Administrative Area
+// -> "Edit Fields and Directions"). Unlike inferring venues from game data
+// (which necessarily also picks up every AWAY venue a linked team's games
+// are played at), this page is the club's real fields only, by
+// construction. 8 cells per row: ID (as a link), Abbreviation, Field Name
+// (as a link), City, an unused blank column, Lights, Turf, Active (in a
+// <span>) — extractCells strips the <A>/<span> wrappers along with
+// everything else.
+export function parseFieldListReport(html: string): NcsaField[] {
+  const results: NcsaField[] = [];
+  for (const rowHtml of allRows(html)) {
+    const cells = extractCells(rowHtml);
+    if (cells.length < 8 || !/^\d+$/.test(cells[0])) continue;
+    const turfRaw = cells[6].toLowerCase();
+    results.push({
+      fieldId: cells[0], abbreviation: cells[1], name: cells[2], city: cells[3],
+      hasLights: /yes/i.test(cells[5]),
+      surface: turfRaw.includes('artificial') ? 'turf' : turfRaw.includes('grass') ? 'grass' : null,
+      active: /active/i.test(cells[7]) && !/inactive/i.test(cells[7]),
+    });
+  }
+  return results;
+}

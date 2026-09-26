@@ -57,8 +57,6 @@ interface NcsaLink {
   ncsa_team_id: string;
   ncsa_raw_name: string;
   competition: string;
-  club_id: string | null;
-  ncsaPartner: boolean;
 }
 
 function toIsoDate(mmddyyyy: string): string {
@@ -164,72 +162,6 @@ async function fetchStandings(division: string): Promise<StandingsRow[]> {
     rows.push({ teamRawName, gp: +gp, w: +w, l: +l, d: +d, pts: +pts, gf: +gf, ga: +ga });
   }
   return rows;
-}
-
-function normalizeFieldKey(name: string, address: string | null): string {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return `${norm(name)}::${norm(address ?? '')}`;
-}
-
-function mapSurfaceType(fieldType: 'turf' | 'grass' | null): string | null {
-  if (fieldType === 'turf') return 'Artificial Turf';
-  if (fieldType === 'grass') return 'Natural Grass';
-  return null;
-}
-
-// Auto-populates the club's Fields directory from venues seen in this
-// team's synced games — gated to NCSA-partner clubs only (a club that's
-// simply linked a team for ref-assignment purposes shouldn't have its
-// Fields list silently populated). Only ever creates/updates rows this
-// sync owns (external_source='ncsa'); it never touches a club's own
-// hand-entered fields, and never touches field_group/is_full_field/
-// rental_cost_per_hour/etc on a row it owns either — those are the
-// admin's own scheduling config, set once by them and left alone here.
-// If an admin has dismissed a previously-synced field (ncsa_dismissed),
-// this leaves it alone rather than resurrecting it.
-async function syncFieldsForClub(
-  supabase: ReturnType<typeof createClient>,
-  clubId: string,
-  games: ParsedGame[],
-) {
-  const venues = new Map<string, { name: string; address: string | null; fieldType: 'turf' | 'grass' | null; fieldSize: string | null }>();
-  for (const g of games) {
-    // Games with no real venue assigned yet carry a placeholder in the
-    // field-name slot instead of being blank — confirmed against real
-    // production data across every one of these variants: "To Be
-    // Scheduled - Northen Counties Cup", "To Be Scheduled-Rain or Snow",
-    // "To Be Scheduled-Home/Visitor/League", "TBS Postponed", "TBS-Games
-    // Conduct Decision". None of these are venues and must never land in
-    // the club's real Fields directory.
-    if (!g.field || /^(to be scheduled|tbs)\b/i.test(g.field)) continue;
-    const key = normalizeFieldKey(g.field, g.address);
-    if (!venues.has(key)) venues.set(key, { name: g.field, address: g.address, fieldType: g.fieldType, fieldSize: g.fieldSize });
-  }
-  if (!venues.size) return;
-
-  const { data: existingRows } = await supabase
-    .from('tryout_fields')
-    .select('id, external_id, ncsa_dismissed')
-    .eq('club_id', clubId)
-    .eq('external_source', 'ncsa')
-    .in('external_id', [...venues.keys()]);
-  const existingByKey = new Map((existingRows ?? []).map((r: any) => [r.external_id as string, r]));
-
-  for (const [key, v] of venues) {
-    const existing = existingByKey.get(key) as any;
-    if (existing?.ncsa_dismissed) continue;
-
-    const payload = {
-      club_id: clubId, name: v.name, address: v.address,
-      surface_type: mapSurfaceType(v.fieldType), dimensions: v.fieldSize,
-      external_source: 'ncsa', external_id: key, last_synced_at: new Date().toISOString(),
-    };
-    if (existing) {
-      await supabase.from('tryout_fields').update(payload).eq('id', existing.id);
-    } else {
-      await supabase.from('tryout_fields').insert(payload);
-    }
-  }
 }
 
 async function syncStandingsForLink(supabase: ReturnType<typeof createClient>, link: NcsaLink) {
@@ -554,10 +486,6 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
       }
     }
 
-    if (link.club_id && link.ncsaPartner) {
-      await syncFieldsForClub(supabase, link.club_id, games);
-    }
-
     await supabase.from('team_ncsa_links').update({ last_synced_at: new Date().toISOString() }).eq('id', link.id);
     await supabase.from('league_sync_log').insert({
       team_ncsa_link_id: link.id, status: writeErrors.length ? 'error' : 'success',
@@ -646,24 +574,15 @@ Deno.serve(async (req) => {
   // the most-stale (and therefore first in line) tomorrow, instead of the
   // same teams being starved indefinitely.
   let query = supabase.from('team_ncsa_links')
-    .select('id, team_id, ncsa_team_id, ncsa_raw_name, competition, teams(club_id, clubs(ncsa_partner))')
+    .select('id, team_id, ncsa_team_id, ncsa_raw_name, competition')
     .eq('sync_games', true)
     .order('last_synced_at', { ascending: true, nullsFirst: true });
   if (body.team_id) query = query.eq('team_id', body.team_id);
-  const { data: rawLinks, error } = await query;
+  const { data: links, error } = await query;
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: CORS });
   }
-
-  // Flatten the nested team/club embed into the flat shape the rest of
-  // this function works with — club_id and ncsaPartner are only needed to
-  // gate the Fields auto-populate step (syncFieldsForClub), nothing else.
-  const links: NcsaLink[] = (rawLinks ?? []).map((l: any) => ({
-    id: l.id, team_id: l.team_id, ncsa_team_id: l.ncsa_team_id,
-    ncsa_raw_name: l.ncsa_raw_name, competition: l.competition,
-    club_id: l.teams?.club_id ?? null, ncsaPartner: !!l.teams?.clubs?.ncsa_partner,
-  }));
 
   // Each link involves live network round-trips to NCSA's site (a schedule
   // fetch, plus a standings fetch for league links) — almost entirely
@@ -681,7 +600,7 @@ Deno.serve(async (req) => {
   // for a given team only ever runs on one worker at a time, even though
   // different teams still run fully in parallel.
   const groups = new Map<string, NcsaLink[]>();
-  for (const link of links) {
+  for (const link of (links ?? []) as NcsaLink[]) {
     const g = groups.get(link.team_id);
     if (g) g.push(link); else groups.set(link.team_id, [link]);
   }
@@ -706,7 +625,7 @@ Deno.serve(async (req) => {
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, groupQueue.length) }, () => worker()));
 
-  return new Response(JSON.stringify({ synced: links.length }), {
+  return new Response(JSON.stringify({ synced: (links ?? []).length }), {
     status: 200,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
