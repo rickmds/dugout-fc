@@ -734,7 +734,7 @@ export default function GamesPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
             <div>
               <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Club</div>
-              <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Game Scheduler</h1>
+              <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Field Scheduler</h1>
             </div>
             {club?.ncsa_partner && (
               <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px', gap: '2px', flexWrap: 'wrap' }}>

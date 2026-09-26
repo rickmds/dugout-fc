@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 4b. Cancel already-scheduled games on the closed field(s) ──────────────────
-  // game_slots/pending_games (the Game Scheduler) were never touched by a
+  // game_slots/pending_games (the Field Scheduler) were never touched by a
   // field closure — a game already assigned to a now-closed field stayed
   // "assigned" indefinitely, with no cancellation and no one notified.
   const { data: affectedSlots2 } = await sb

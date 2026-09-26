@@ -41,7 +41,7 @@ const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard/fields',        icon: MapPin,        label: 'Fields' },
   { section: 'Schedule' },
   { href: '/dashboard/schedule',      icon: CalendarDays,  label: 'Schedule' },
-  { href: '/dashboard/games',         icon: Trophy,        label: 'Game Scheduler' },
+  { href: '/dashboard/games',         icon: Trophy,        label: 'Field Scheduler' },
   { href: '/dashboard/tournaments',   icon: Medal,         label: 'Tournaments' },
   { section: 'Communicate' },
   { href: '/dashboard/announcements', icon: Megaphone,     label: 'Announcements' },

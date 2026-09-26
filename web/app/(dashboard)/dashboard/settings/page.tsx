@@ -728,7 +728,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.6, maxWidth: '480px' }}>
                       {ncsaPartner
-                        ? 'Fields, the Game Scheduler, and Staff can pull directly from NCSA for any team you link. Turn this off if your club leaves NCSA.'
+                        ? 'Fields, the Field Scheduler, and Staff can pull directly from NCSA for any team you link. Turn this off if your club leaves NCSA.'
                         : 'Enable this once your club is confirmed as an NCSA partner to unlock auto-synced fields, schedule, coach roster, and fines/TBS tracking.'}
                     </div>
                   </div>

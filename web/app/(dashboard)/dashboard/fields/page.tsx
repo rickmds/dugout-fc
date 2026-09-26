@@ -183,7 +183,7 @@ export default function FieldsPage() {
   // is_active is the single, app-wide "hide this field" switch — every
   // other place a field can be picked (mobile event creation/editing,
   // schedule upload, the web schedule pages, the public fields page, the
-  // Game Scheduler grid) already filters on it, so flipping it here is
+  // Field Scheduler grid) already filters on it, so flipping it here is
   // enough to hide a field everywhere without deleting its history
   // (permits, closures, past events referencing it) the way Delete does.
   async function toggleFieldActive(field: TryoutField) {
@@ -732,7 +732,7 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
   const [step,           setStep]           = useState<'config'|'preview'>('config');
   const [blastCount,     setBlastCount]     = useState<{sessions:number;coaches:number;parents:number}|null>(null);
   // Events linked to the closed field(s) via field_id (see Add Field's
-  // address picker) — game_slots (Game Scheduler) and events (the actual
+  // address picker) — game_slots (Field Scheduler) and events (the actual
   // team calendar) are two separate systems, so both need checking to
   // find everything a closure actually affects.
   const [affectedEvents, setAffectedEvents] = useState<{ id: string; title: string; team_id: string; team_name: string }[]>([]);
@@ -808,7 +808,7 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
     setBlastCount({ sessions, coaches, parents });
 
     // Same window, but against the actual team calendar (events.field_id)
-    // rather than the Game Scheduler's slots.
+    // rather than the Field Scheduler's slots.
     const fieldIds = fields.filter(f => selectedFields.includes(f.name)).map(f => f.id);
     if (fieldIds.length > 0) {
       let evQuery = supabase
@@ -849,7 +849,7 @@ function CloseFieldModal({ target, fields, club, primary, onClose, onSaved }: {
     }).then(r=>r.json());
 
     // Cancel the actual calendar events at this field too — the closure
-    // API above only notifies Game Scheduler slots, it never touches events.
+    // API above only notifies Field Scheduler slots, it never touches events.
     if (!error && cancelEvents && affectedEvents.length > 0) {
       const cancellationReason = reason.trim() || 'Field closed';
       await supabase.from('events')
@@ -1182,7 +1182,7 @@ function FieldModal({ field, fields, club, primary, onClose, onSaved }: {
 
           {/* Scheduler settings */}
           <div style={{borderTop:'1px solid #F1F5F9',paddingTop:'14px',display:'flex',flexDirection:'column',gap:'14px'}}>
-            <div style={{fontSize:'10px',fontWeight:'800',color:'#94A3B8',textTransform:'uppercase',letterSpacing:'1.5px'}}>Game Scheduler</div>
+            <div style={{fontSize:'10px',fontWeight:'800',color:'#94A3B8',textTransform:'uppercase',letterSpacing:'1.5px'}}>Field Scheduler</div>
 
             {/* Format */}
             <div>
