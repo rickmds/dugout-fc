@@ -12,7 +12,13 @@ type GameSlot = {
   slot_date: string; start_time: string; end_time: string;
   home_team_id: string | null; away_team: string | null;
   age_group: string | null; game_format: string | null;
-  status: 'open' | 'assigned' | 'cancelled'; notes: string | null;
+  // 'ncsa' and 'virtual_open' are never real game_slots rows — they're
+  // synthesized at render time (see entriesFor) so the grid can show real
+  // NCSA bookings and likely-open capacity for fields without a permit.
+  // Both are read-only in the grid: an 'ncsa' entry's time is fixed by
+  // the league, and a 'virtual_open' entry has no row to save an
+  // assignment onto yet.
+  status: 'open' | 'assigned' | 'cancelled' | 'ncsa' | 'virtual_open'; notes: string | null;
   home_team?: { name: string; age_group: string | null } | null;
 };
 
@@ -619,6 +625,85 @@ export default function GamesPage() {
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
   }
 
+  // A permit is context, not a prerequisite — a field's actual open
+  // capacity shouldn't disappear from the grid just because nobody's
+  // entered a permit for it yet. For any stretch of a field/date cell not
+  // already covered by a real slot, a block-rule closure, or an NCSA home
+  // game, this fills in an assumed 8am-8pm daylight/evening window sliced
+  // by the field's own game format — clearly tagged 'virtual_open' so
+  // it's never confused with a real, permit-backed slot.
+  const DEFAULT_OPEN_START = 8 * 60;
+  const DEFAULT_OPEN_END = 20 * 60;
+  // NCSA doesn't give an end time for a game, only kickoff — 90 min
+  // covers the shortest real format (7v7) and is a same-or-under
+  // estimate for occupied time, matching this feature's general
+  // "advisory, never overclaims" posture (see estimateChangeFee above).
+  const NCSA_GAME_ASSUMED_MINS = 90;
+
+  function entriesFor(date: string, fn: string, field: FieldDef): GameSlot[] {
+    const real = slotsFor(date, fn);
+    if (field.is_active === false) return real; // never synthesize for a paused field
+
+    const occupied: { start: number; end: number }[] = real
+      .filter(s => s.status !== 'cancelled')
+      .map(s => ({ start: toMins(s.start_time), end: toMins(s.end_time) }));
+
+    // NCSA has no concept of our internal A/B split — a league game at
+    // this venue is treated as using the whole physical field, blocking
+    // both halves rather than risk showing a half as "open" when a real
+    // game is actually using that space.
+    const baseFieldName = fn.replace(/ \[[AB]\]$/, '').trim().toLowerCase();
+    const ncsaEntries: GameSlot[] = ncsaGames
+      .filter(g => g.home_away === 'home' && g.event_date === date && g.location?.trim().toLowerCase() === baseFieldName)
+      .map(g => {
+        const startMins = g.event_time ? toMins(g.event_time) : DEFAULT_OPEN_START;
+        const endMins = startMins + NCSA_GAME_ASSUMED_MINS;
+        occupied.push({ start: startMins, end: endMins });
+        return {
+          id: `ncsa-${g.id}`, club_id: '', field_name: fn, slot_date: date,
+          start_time: minsToTime(startMins), end_time: minsToTime(endMins),
+          home_team_id: null, away_team: g.title.replace(/^vs\s+/i, ''),
+          age_group: g.team_age_group, game_format: null, status: 'ncsa' as const, notes: null,
+          home_team: { name: g.team_name, age_group: g.team_age_group },
+        };
+      });
+
+    for (const b of blockRules) {
+      if (b.field_name === fn && b.rule_date === date) {
+        occupied.push({ start: toMins(b.unavailable_from), end: toMins(b.unavailable_until) });
+      }
+    }
+
+    // Merged into contiguous free windows rather than one entry per
+    // format-length chunk — a field with nothing booked would otherwise
+    // stack up to 8 near-identical "no permit" rows in a single cell and
+    // dwarf every neighboring column's real, sparser slot count.
+    const mins = minsForFormat(field.scheduler_format, 90);
+    const virtual: GameSlot[] = [];
+    let cursor = DEFAULT_OPEN_START;
+    for (const o of [...occupied].sort((a, b) => a.start - b.start)) {
+      if (o.start - cursor >= mins) {
+        virtual.push({
+          id: `virtual-${fn}-${date}-${cursor}`, club_id: '', field_name: fn, slot_date: date,
+          start_time: minsToTime(cursor), end_time: minsToTime(o.start),
+          home_team_id: null, away_team: null, age_group: null, game_format: field.scheduler_format,
+          status: 'virtual_open' as const, notes: null,
+        });
+      }
+      cursor = Math.max(cursor, o.end);
+    }
+    if (DEFAULT_OPEN_END - cursor >= mins) {
+      virtual.push({
+        id: `virtual-${fn}-${date}-${cursor}`, club_id: '', field_name: fn, slot_date: date,
+        start_time: minsToTime(cursor), end_time: minsToTime(DEFAULT_OPEN_END),
+        home_team_id: null, away_team: null, age_group: null, game_format: field.scheduler_format,
+        status: 'virtual_open' as const, notes: null,
+      });
+    }
+
+    return [...real, ...ncsaEntries, ...virtual].sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   const assigned    = slots.filter(s => s.status === 'assigned').length;
@@ -759,7 +844,7 @@ export default function GamesPage() {
               <div style={{ padding: '20px 24px 24px', minWidth: 'max-content' }}>
               <ScheduleGrid
                 sortedDates={sortedDates} columns={columns}
-                slotsFor={slotsFor} isBlocked={isBlocked}
+                slotsFor={entriesFor} isBlocked={isBlocked}
                 onSlotClick={handleSlotClick} onOpenFieldEdit={setFieldEditTarget} onReorderFields={reorderFields}
                 primary={primary} allSlots={slots}
               />
@@ -884,7 +969,7 @@ export default function GamesPage() {
 
 function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked: _isBlocked, onSlotClick, onOpenFieldEdit, onReorderFields, primary, allSlots }: {
   sortedDates: string[]; columns: Column[];
-  slotsFor: (date: string, fn: string) => GameSlot[];
+  slotsFor: (date: string, fn: string, field: FieldDef) => GameSlot[];
   isBlocked: (slot: GameSlot) => boolean;
   onSlotClick: (slot: GameSlot) => void;
   onOpenFieldEdit: (field: FieldDef) => void;
@@ -1020,39 +1105,48 @@ function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked: _isBlocked, o
 
           {/* Column cells */}
           {columns.map(col => {
-            const cellSlots = slotsFor(date, col.slotName);
+            const cellSlots = slotsFor(date, col.slotName, col.field);
             return (
               <div key={col.slotName} style={{ padding: '7px 8px', borderLeft: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: '3px', minHeight: '56px' }}>
                 {cellSlots.length === 0 ? (
                   <div style={{ color: '#E2E8F0', fontSize: '11px', paddingTop: '10px', textAlign: 'center' }}>—</div>
                 ) : cellSlots.map(slot => {
                   const isAssigned = slot.status === 'assigned';
+                  const isNcsa     = slot.status === 'ncsa';
+                  const isVirtual  = slot.status === 'virtual_open';
                   const isFull     = isFullFieldGame(slot);
-                  const bg     = isAssigned ? `${primary}15` : '#F8FAFC';
-                  const border  = isAssigned ? `1.5px solid ${primary}50` : '1px solid #E2E8F0';
+                  const bg     = isAssigned ? `${primary}15` : isNcsa ? '#EEF2FF' : isVirtual ? 'transparent' : '#F8FAFC';
+                  const border = isAssigned ? `1.5px solid ${primary}50` : isNcsa ? '1.5px solid #C7D2FE' : isVirtual ? '1px dashed #E2E8F0' : '1px solid #E2E8F0';
                   return (
                     <div key={slot.id}
-                      onClick={() => onSlotClick(slot)}
-                      style={{ padding: '5px 8px', borderRadius: '6px', background: bg, border, cursor: 'pointer' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '0.75'; }}
+                      onClick={() => { if (!isNcsa && !isVirtual) onSlotClick(slot); }}
+                      title={isNcsa ? 'From NCSA’s synced schedule — date/time is fixed by the league' : isVirtual ? 'No permit covers this window yet — assumed open based on the field’s usual hours' : undefined}
+                      style={{ padding: '5px 8px', borderRadius: '6px', background: bg, border, cursor: isNcsa || isVirtual ? 'default' : 'pointer' }}
+                      onMouseEnter={e => { if (!isNcsa && !isVirtual) (e.currentTarget as HTMLElement).style.opacity = '0.75'; }}
                       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                        <div style={{ fontSize: '10.5px', fontWeight: '700', color: isAssigned ? primary : '#64748B' }}>
-                          {fmtT(slot.start_time)}
+                        <div style={{ fontSize: '10.5px', fontWeight: '700', color: isAssigned ? primary : isNcsa ? '#4338CA' : '#94A3B8' }}>
+                          {isVirtual ? `${fmtT(slot.start_time)}–${fmtT(slot.end_time)}` : fmtT(slot.start_time)}
                         </div>
                         <div style={{ display: 'flex', gap: '3px', alignItems: 'center', flexShrink: 0 }}>
                           {isFull && (
                             <div style={{ fontSize: '8px', fontWeight: '800', color: '#fff', background: primary, borderRadius: '3px', padding: '1px 4px', letterSpacing: '0.5px' }}>FULL</div>
                           )}
-                          {slot.game_format && (
+                          {isNcsa && (
+                            <div style={{ fontSize: '8px', fontWeight: '800', color: '#4338CA', background: '#E0E7FF', borderRadius: '3px', padding: '1px 4px', letterSpacing: '0.3px' }}>NCSA</div>
+                          )}
+                          {isVirtual && (
+                            <div style={{ fontSize: '8px', fontWeight: '700', color: '#CBD5E1', letterSpacing: '0.3px' }}>NO PERMIT</div>
+                          )}
+                          {slot.game_format && !isNcsa && !isVirtual && (
                             <div style={{ fontSize: '9px', fontWeight: '700', color: isAssigned ? primary : '#94A3B8', background: isAssigned ? `${primary}20` : '#F1F5F9', borderRadius: '3px', padding: '1px 4px' }}>
                               {slot.game_format}
                             </div>
                           )}
                         </div>
                       </div>
-                      {isAssigned && (
+                      {(isAssigned || isNcsa) && (
                         <>
                           <div style={{ fontSize: '11px', fontWeight: '800', color: '#0F172A', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {slot.home_team?.name ?? '?'}
@@ -1063,6 +1157,9 @@ function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked: _isBlocked, o
                             </div>
                           )}
                         </>
+                      )}
+                      {isVirtual && (
+                        <div style={{ fontSize: '10px', color: '#CBD5E1', marginTop: '1px' }}>Open</div>
                       )}
                     </div>
                   );
