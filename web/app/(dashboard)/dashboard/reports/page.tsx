@@ -80,6 +80,10 @@ export default function ReportsPage() {
   const [loading, setLoading]           = useState(false);
   const [playerStats, setPlayerStats]   = useState<PlayerStat[]>([]);
   const [teamSummaries, setTeamSummaries] = useState<TeamSummary[]>([]);
+  // Set when a hard query cap below was actually hit — a real signal the
+  // numbers on this page are incomplete, not a rare edge case: a 40+ team
+  // club's full season can exceed these without anyone noticing otherwise.
+  const [truncated, setTruncated] = useState(false);
   const [sortBy, setSortBy]             = useState<'name' | 'rsvp_pct' | 'actual_pct' | 'ghost_count' | 'started'>('actual_pct');
   const [sortDir, setSortDir]           = useState<'asc' | 'desc'>('desc');
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerStat | null>(null);
@@ -109,6 +113,7 @@ export default function ReportsPage() {
     if (!events?.length) {
       setPlayerStats([]);
       setTeamSummaries([]);
+      setTruncated(false);
       setLoading(false);
       return;
     }
@@ -136,6 +141,8 @@ export default function ReportsPage() {
       supabase.from('team_members').select('team_id, profiles(full_name)').in('team_id', teamIdSet).eq('role', 'coach'),
     ]);
 
+    setTruncated(events.length >= 2000 || (rsvpRes.data?.length ?? 0) >= 20000 || (attRes.data?.length ?? 0) >= 20000);
+
     const coachNamesByTeam: Record<string, string[]> = {};
     for (const c of (coachRes.data ?? []) as unknown as { team_id: string; profiles: { full_name: string | null } | null }[]) {
       const name = c.profiles?.full_name;
@@ -145,9 +152,14 @@ export default function ReportsPage() {
     }
 
     // Which event_ids have attendance marked → per team
+    // eventById lookup avoids an O(events × attendance) scan — with a full
+    // season (thousands of events) and tens of thousands of attendance
+    // rows, a linear .find() per row inside this loop visibly freezes the
+    // tab; a Map makes each lookup O(1) regardless of either size.
+    const eventById = new Map(events.map((e) => [e.id, e]));
     const markedEventsByTeam: Record<string, Set<string>> = {};
     for (const a of attRes.data ?? []) {
-      const ev = events.find((e) => e.id === a.event_id);
+      const ev = eventById.get(a.event_id);
       if (!ev) continue;
       if (!markedEventsByTeam[ev.team_id]) markedEventsByTeam[ev.team_id] = new Set();
       markedEventsByTeam[ev.team_id].add(a.event_id);
@@ -195,11 +207,24 @@ export default function ReportsPage() {
         rsvpGoingEvents[r.player_id].add(r.event_id);
       }
     }
+    // Previously an O(events × ALL players × rsvps) scan — the inner
+    // `.some()` alone made this cubic, easily billions of comparisons for
+    // a real club's full season (a genuine tab-freezing/crashing bug, not
+    // just slow). playersByTeam avoids scanning every club player for
+    // every event (only that event's own team's players matter), and
+    // notAttendingSet turns the `.some()` into an O(1) lookup.
+    const playersByTeam = new Map<string, typeof playerRes.data extends (infer P)[] | null ? P[] : never>();
+    for (const p of playerRes.data ?? []) {
+      if (!playersByTeam.has(p.team_id)) playersByTeam.set(p.team_id, []);
+      playersByTeam.get(p.team_id)!.push(p);
+    }
+    const notAttendingSet = new Set(
+      (rsvpRes.data ?? []).filter((r) => r.status === 'not_attending').map((r) => `${r.player_id}|${r.event_id}`),
+    );
     const rsvpPendingEvents: Record<string, Set<string>> = {};
     for (const e of events) {
-      for (const p of playerRes.data ?? []) {
-        if (p.team_id !== e.team_id) continue;
-        if (!rsvpGoingEvents[p.id]?.has(e.id) && !(rsvpRes.data ?? []).some(r => r.player_id === p.id && r.event_id === e.id && r.status === 'not_attending')) {
+      for (const p of playersByTeam.get(e.team_id) ?? []) {
+        if (!rsvpGoingEvents[p.id]?.has(e.id) && !notAttendingSet.has(`${p.id}|${e.id}`)) {
           if (!rsvpPendingEvents[p.id]) rsvpPendingEvents[p.id] = new Set();
           rsvpPendingEvents[p.id].add(e.id);
         }
@@ -529,6 +554,14 @@ export default function ReportsPage() {
           </div>
         ) : (
           <>
+            {truncated && (
+              <div style={{ marginBottom: '12px', padding: '9px 14px', borderRadius: '9px', background: '#FEF2F2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', gap: '9px' }}>
+                <AlertTriangle size={13} color="#DC2626" />
+                <span style={{ fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
+                  This date range has more data than this report can show at once — numbers below may be incomplete. Narrow the date range to see the full picture.
+                </span>
+              </div>
+            )}
             {/* ── Alert bar ── */}
             {alerts.length > 0 && (
               <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
