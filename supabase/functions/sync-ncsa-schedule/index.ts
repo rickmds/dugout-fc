@@ -573,12 +573,32 @@ Deno.serve(async (req) => {
   // never got to). This ordering means a team that gets cut off today is
   // the most-stale (and therefore first in line) tomorrow, instead of the
   // same teams being starved indefinitely.
+  // A link only ever gets created through a club-gated UI (web's NCSA
+  // Settings toggle + mobile's ncsaPartner gate on league-link/ncsa-link),
+  // but this is the one place that actually writes schedule data and sends
+  // push notifications, so it independently re-checks clubs.ncsa_partner
+  // rather than trusting that every link in the table was created
+  // correctly — a link created before the flag existed, or through a UI
+  // bug, must not keep silently overwriting a non-partner club's schedule
+  // with a stranger club's games.
+  const { data: partnerTeamRows } = await supabase
+    .from('teams').select('id, clubs!inner(ncsa_partner)').eq('clubs.ncsa_partner', true);
+  const partnerTeamIds = new Set(((partnerTeamRows ?? []) as any[]).map((t) => t.id as string));
+
   let query = supabase.from('team_ncsa_links')
     .select('id, team_id, ncsa_team_id, ncsa_raw_name, competition')
     .eq('sync_games', true)
     .order('last_synced_at', { ascending: true, nullsFirst: true });
   if (body.team_id) query = query.eq('team_id', body.team_id);
-  const { data: links, error } = await query;
+  const { data: rawLinks, error } = await query;
+  const skippedNonPartner = (rawLinks ?? []).filter((l: any) => !partnerTeamIds.has(l.team_id));
+  const links = (rawLinks ?? []).filter((l: any) => partnerTeamIds.has(l.team_id));
+  if (skippedNonPartner.length) {
+    await supabase.from('league_sync_log').insert(skippedNonPartner.map((l: any) => ({
+      team_ncsa_link_id: l.id, status: 'error',
+      error_message: 'Skipped — team\'s club is not flagged as an NCSA partner (clubs.ncsa_partner is false).',
+    })));
+  }
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: CORS });

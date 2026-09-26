@@ -54,6 +54,8 @@ export function useClub() {
     currency: (club as any)?.currency ?? 'USD' as string,
     /** IANA zone, e.g. "America/New_York" — the club's own local time, not the viewing device's */
     timezone: (club as any)?.timezone ?? 'America/New_York' as string,
+    /** Gates every NCSA-specific surface (Link to League, fines, discipline, field sync) — must never show for a non-partner club (EDP, etc). Mirrors web's Sidebar/games-page gating. */
+    ncsaPartner: (club as any)?.ncsa_partner ?? false as boolean,
     primaryColor,
     secondaryColor,
     homeKitColor,

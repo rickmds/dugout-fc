@@ -52,7 +52,7 @@ export default function NcsaLinkScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { team } = useTeam();
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, rgba, ncsaPartner } = useClub();
   const { colors } = useTheme();
   const st = useMemo(() => getSt(colors), [colors]);
 
@@ -238,6 +238,22 @@ export default function NcsaLinkScreen() {
   }
 
   if (!team) return null;
+
+  // Reached only via a direct deep-link when ungated — league-link.tsx
+  // already hides the NCSA card entirely for a non-partner club, but this
+  // screen must independently refuse to search/link against NCSA's
+  // ~1000-team directory too, since a link created here would have
+  // sync-ncsa-schedule genuinely overwrite this team's real schedule.
+  if (!ncsaPartner) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <ClubHeader title="Link to NCSA" subtitle={team.name} onBack={() => router.back()} />
+        <View style={st.body}>
+          <Text style={st.hint}>This club isn't set up as an NCSA partner, so NCSA linking isn't available.</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

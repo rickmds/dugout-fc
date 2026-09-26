@@ -128,6 +128,25 @@ export default function ConversationScreen() {
   const [convTeamName, setConvTeamName] = useState<string | null>(null);
   const [dmParticipantIds, setDmParticipantIds] = useState<string[]>([]);
   const [messages, setMessages]       = useState<Message[]>([]);
+  // Sender display names, resolved once per conversation via a narrow RPC
+  // (get_conversation_participant_names) rather than an embedded profiles
+  // join — profiles RLS no longer grants full-row access just for sharing
+  // a conversation (that branch leaked phone/emergency-contact data), so
+  // the join would otherwise render every sender as "Unknown" again.
+  const senderNamesRef = useRef<Record<string, string>>({});
+  const senderNamesLoadedRef = useRef<Promise<void> | null>(null);
+  function ensureSenderNames(): Promise<void> {
+    if (!senderNamesLoadedRef.current) {
+      senderNamesLoadedRef.current = Promise.resolve(
+        supabase.rpc('get_conversation_participant_names', { p_conversation_id: conversationId as string }),
+      ).then(({ data }) => {
+        for (const row of (data ?? []) as { profile_id: string; full_name: string | null }[]) {
+          senderNamesRef.current[row.profile_id] = row.full_name ?? '';
+        }
+      });
+    }
+    return senderNamesLoadedRef.current;
+  }
   const [loading, setLoading]         = useState(true);
   const [hasMore, setHasMore]         = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -301,12 +320,15 @@ export default function ConversationScreen() {
   const PAGE = 80;
 
   async function fetchMessages() {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('id, body, created_at, sender_id, edited, image_url, profiles:sender_id(full_name)')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(PAGE + 1);
+    const [{ data, error }] = await Promise.all([
+      supabase
+        .from('messages')
+        .select('id, body, created_at, sender_id, edited, image_url')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: false })
+        .limit(PAGE + 1),
+      ensureSenderNames(),
+    ]);
 
     if (error) {
       console.error('[Conversation] fetchMessages error:', error.message);
@@ -319,7 +341,7 @@ export default function ConversationScreen() {
     const page = rows.slice(0, PAGE).reverse();
     const mapped: Message[] = page.map((m: any) => ({
       id: m.id, body: m.body, created_at: m.created_at,
-      sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
+      sender_id: m.sender_id, sender_name: senderNamesRef.current[m.sender_id] ?? null,
       edited: m.edited ?? false, image_url: m.image_url ?? null,
     }));
     setMessages(mapped);
@@ -339,13 +361,16 @@ export default function ConversationScreen() {
     if (!messages.length || loadingMore) return;
     setLoadingMore(true);
     const oldest = messages[0].created_at;
-    const { data, error } = await supabase
-      .from('messages')
-      .select('id, body, created_at, sender_id, edited, image_url, profiles:sender_id(full_name)')
-      .eq('conversation_id', conversationId)
-      .lt('created_at', oldest)
-      .order('created_at', { ascending: false })
-      .limit(PAGE + 1);
+    const [{ data, error }] = await Promise.all([
+      supabase
+        .from('messages')
+        .select('id, body, created_at, sender_id, edited, image_url')
+        .eq('conversation_id', conversationId)
+        .lt('created_at', oldest)
+        .order('created_at', { ascending: false })
+        .limit(PAGE + 1),
+      ensureSenderNames(),
+    ]);
     setLoadingMore(false);
     if (error) return;
     const rows = data ?? [];
@@ -353,7 +378,7 @@ export default function ConversationScreen() {
     const page = rows.slice(0, PAGE).reverse();
     const older: Message[] = page.map((m: any) => ({
       id: m.id, body: m.body, created_at: m.created_at,
-      sender_id: m.sender_id, sender_name: m.profiles?.full_name ?? null,
+      sender_id: m.sender_id, sender_name: senderNamesRef.current[m.sender_id] ?? null,
       edited: m.edited ?? false, image_url: m.image_url ?? null,
     }));
     setMessages((prev) => [...older, ...prev]);
@@ -368,15 +393,14 @@ export default function ConversationScreen() {
         filter: `conversation_id=eq.${conversationId}`,
       }, async (payload) => {
         const raw = payload.new as any;
+        // A sender not yet in the map (joined the conversation after this
+        // screen's own ensureSenderNames() ran) falls back to null/"Unknown"
+        // — same acceptable degradation the UI already shows elsewhere,
+        // rather than a second per-message profiles round trip.
         setMessages((prev) => {
           if (prev.some((m) => m.id === raw.id)) return prev;
-          return [...prev, { id: raw.id, body: raw.body, created_at: raw.created_at, sender_id: raw.sender_id, sender_name: null, edited: false, image_url: raw.image_url ?? null }];
+          return [...prev, { id: raw.id, body: raw.body, created_at: raw.created_at, sender_id: raw.sender_id, sender_name: senderNamesRef.current[raw.sender_id] ?? null, edited: false, image_url: raw.image_url ?? null }];
         });
-        supabase.from('profiles').select('full_name').eq('id', raw.sender_id).single()
-          .then(({ data }) => {
-            if (!data) return;
-            setMessages((prev) => prev.map((m) => m.id === raw.id ? { ...m, sender_name: (data as any).full_name } : m));
-          });
         setTimeout(() => scrollToRealEnd(true), 50);
       })
       .on('postgres_changes', {

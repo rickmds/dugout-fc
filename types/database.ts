@@ -6416,6 +6416,13 @@ export type Database = {
           team_name: string
         }[]
       }
+      get_conversation_participant_names: {
+        Args: { p_conversation_id: string }
+        Returns: {
+          full_name: string
+          profile_id: string
+        }[]
+      }
       get_my_guarded_players: {
         Args: never
         Returns: {

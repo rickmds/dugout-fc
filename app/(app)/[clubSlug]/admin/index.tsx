@@ -246,7 +246,7 @@ const atSt = StyleSheet.create({
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function AdminPanel() {
-  const { primaryColor, rgba, secondaryColor, onSecondary } = useClub();
+  const { primaryColor, rgba, secondaryColor, onSecondary, ncsaPartner } = useClub();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { profile } = useAuth();
@@ -614,7 +614,7 @@ export default function AdminPanel() {
               label="Gallery"
               desc="Browse and manage all team photos"
               onPress={() => router.push(`/(app)/${slug}/gallery` as any)}
-              showDivider={TEAM_PULSE_ENABLED}
+              showDivider
             />
             {TEAM_PULSE_ENABLED && (
               <AiToolCard
@@ -622,6 +622,15 @@ export default function AdminPanel() {
                 label="Team Pulse"
                 desc="How players are feeling after games, trending up or down"
                 onPress={() => router.push(`/(app)/${slug}/admin/reflections` as any)}
+                showDivider
+              />
+            )}
+            {ncsaPartner && (
+              <AiToolCard
+                icon="trophy-outline" color="#3B82F6" bg="rgba(59,130,246,0.12)"
+                label="Link to League"
+                desc="Auto-import games and reschedules from a partner league"
+                onPress={() => router.push(`/(app)/${slug}/admin/league-link` as any)}
               />
             )}
           </View>

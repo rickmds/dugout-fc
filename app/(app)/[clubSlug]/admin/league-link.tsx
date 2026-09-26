@@ -38,9 +38,13 @@ export default function LeagueLinkScreen() {
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const { team } = useTeam();
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, rgba, ncsaPartner } = useClub();
   const { colors } = useTheme();
   const st = useMemo(() => getSt(colors), [colors]);
+  // A direct deep-link here would otherwise bypass the admin panel's own
+  // "Link to League" gate — this list must independently reflect
+  // ncsa_partner too, same as web's Sidebar/games-page gating.
+  const availableLeagues = useMemo(() => LEAGUES.filter((l) => l.key !== 'ncsa' || ncsaPartner), [ncsaPartner]);
 
   const [linkedCounts, setLinkedCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -71,7 +75,7 @@ export default function LeagueLinkScreen() {
         {loading ? (
           <ActivityIndicator color={primaryColor} style={{ marginTop: 24 }} />
         ) : (
-          LEAGUES.map((league) => {
+          availableLeagues.map((league) => {
             const count = linkedCounts[league.key] ?? 0;
             return (
               <TouchableOpacity
