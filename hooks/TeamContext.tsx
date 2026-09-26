@@ -45,9 +45,15 @@ function normalizeClub(clubs: ClubRow | ClubRow[] | null | undefined): ClubRow |
 // Every team in each given club, tagged 'org_admin' — the club_admins
 // equivalent of the home-club "implicit full access, no team_members row
 // needed" fetch above, for any additional club(s) reached that way.
+// Unlike the primary home/member queries in fetchTeams below, a failure
+// here just means this profile's extra cross-club teams are missing for
+// one refresh cycle (self-corrects on the next successful fetch) rather
+// than bailing the whole team list out — lower stakes, since the primary
+// club's own teams are unaffected either way.
 async function fetchAdminClubTeams(clubIds: string[]): Promise<Team[]> {
   if (!clubIds.length) return [];
-  const { data } = await supabase.from('teams').select('*, clubs(*)').in('club_id', clubIds).order('created_at');
+  const { data, error } = await supabase.from('teams').select('*, clubs(*)').in('club_id', clubIds).order('created_at');
+  if (error) return [];
   return ((data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin' } as Team));
 }
 
@@ -108,6 +114,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       supabase.from('team_members').select('role, teams(*, clubs(*))').eq('profile_id', profile.id),
       AsyncStorage.getItem(storageKey(profile.id)),
     ]);
+    // A transient failure here (a network blip, or an access token that
+    // expired while the app was asleep and hasn't refreshed yet — see
+    // lib/supabase.ts's AppState-driven startAutoRefresh/stopAutoRefresh)
+    // used to be indistinguishable from "this profile genuinely has zero
+    // teams": .data on a failed query is null, which ?? [] silently turned
+    // into an empty list, wiping allTeams and re-resolving the selection
+    // against nothing — the visible "teams flipping" symptom on wake from
+    // sleep. Bail out and keep whatever's already in state instead,
+    // mirroring useAuth.tsx's identical guard for the exact same failure
+    // mode on profile/club.
+    if (adminClubsRes.error || memberRes.error) {
+      setLoading(false);
+      return;
+    }
     const adminClubIds = (adminClubsRes.data ?? []).map((r) => r.club_id as string);
     const memberTeams = ((memberRes.data ?? []) as any[])
       .filter((r) => r.teams)
@@ -134,6 +154,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at'),
         fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id)),
       ]);
+      if (homeRes.error) {
+        setLoading(false);
+        return;
+      }
       const homeTeams = ((homeRes.data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin' } as Team));
       const byId = new Map<string, Team>();
       // Home-club rows win over an explicit member row for the same team —
