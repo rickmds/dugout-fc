@@ -117,12 +117,22 @@ async function syncFines(supabase: SB, clubId: string, fines: NcsaFine[], teamBy
   }
 }
 
+// Division codes are [B|G] + 2-digit age + flight (e.g. "B08B4", "G09R") —
+// confirmed against every report this integration scrapes. U8 games
+// (age 08) don't use referees, so a "gap" bordering one carries no real
+// idle-ref fee risk, whichever side of the gap it's on.
+function isU8Division(division: string | null): boolean {
+  return !!division && /^[bg]08/i.test(division);
+}
+
 async function syncConflicts(supabase: SB, clubId: string, overlaps: NcsaConflict[], gaps: NcsaConflict[]) {
   await supabase.from('ncsa_schedule_conflicts').delete().eq('club_id', clubId);
   // NCSA's own Gap Time report defaults to "2 hours or more," but a gap
   // of exactly 2 hours isn't actually worth flagging — only real outliers
-  // beyond that.
-  const realGaps = gaps.filter((c) => c.minutes == null || c.minutes > 120);
+  // beyond that. U8 games are excluded outright — no referee, no gap fee
+  // risk, regardless of duration.
+  const realGaps = gaps.filter((c) =>
+    (c.minutes == null || c.minutes > 120) && !isU8Division(c.a.division) && !isU8Division(c.b.division));
   const rows = [...overlaps.map((c) => toConflictRow(clubId, 'overlap', c)), ...realGaps.map((c) => toConflictRow(clubId, 'gap', c))];
   if (rows.length) await supabase.from('ncsa_schedule_conflicts').insert(rows);
 }
