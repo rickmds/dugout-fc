@@ -2,6 +2,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Redirect, Stack } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
+import { useTeam } from '../../hooks/useTeam';
 
 // The in-app "Contact Support" screen only exists at a club-scoped route
 // (it needs a signed-in profile and a resolved club for branding), so it's
@@ -26,11 +27,19 @@ function NeedHelpLink() {
 
 export default function AuthLayout() {
   const { session, profile, club, loading } = useAuth();
+  const { allTeams, getActiveTeamId } = useTeam();
 
   // Only bounce a fully-onboarded user back into the app — e.g. if they
   // navigate back to /(auth)/profile-setup after already finishing it.
   if (!loading && session && club && profile?.onboarded_at) {
-    return <Redirect href={`/(app)/${club.slug}/(tabs)`} />;
+    // Same fix as app/index.tsx's cold-start redirect: land on whichever
+    // club the last-active TEAM actually belongs to, not always the
+    // profile's home club — otherwise ClubSlugGuard "corrects" the mismatch
+    // it sees by switching the active team selection to match this URL
+    // instead of the other way around.
+    const activeTeam = allTeams.find((t) => t.id === getActiveTeamId());
+    const slug = activeTeam?.club?.slug ?? club.slug;
+    return <Redirect href={`/(app)/${slug}/(tabs)`} />;
   }
 
   return (

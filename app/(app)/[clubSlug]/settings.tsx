@@ -110,7 +110,7 @@ function SettingsRow({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
-  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook } = useClub();
+  const { primaryColor, rgba, tagline: clubTagline, logoUrl, clubName: clubNameFromHook, slug: activeClubSlug } = useClub();
   const router = useRouter();
   const { profile, club, user, signOut, refreshProfile } = useAuth();
   const { team, allTeams, refetch: refetchTeams } = useActiveTeam();
@@ -765,13 +765,21 @@ export default function SettingsScreen() {
           ) : (
             myPlayers.map((p, i) => {
               const pi = p.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
-              const teamName = allTeams.find((t) => t.id === p.team_id)?.name ?? 'this team';
+              const playerTeam = allTeams.find((t) => t.id === p.team_id);
+              const teamName = playerTeam?.name ?? 'this team';
               return (
                 <View key={p.id}>
                   {i > 0 && <View style={st.divider} />}
                   <TouchableOpacity
                     style={st.playerRow}
-                    onPress={() => router.push(`/(app)/${club?.slug}/player/${p.id}` as any)}
+                    // This player's OWN team's club, not the profile's home
+                    // club — a parent/coach whose active team is at a
+                    // different club than home would otherwise navigate to
+                    // the wrong club's URL, which ClubSlugGuard then
+                    // "corrects" by switching the active TEAM SELECTION to
+                    // match instead — a real, persisted switch away from
+                    // whatever team was actually in use.
+                    onPress={() => router.push(`/(app)/${playerTeam?.club?.slug ?? club?.slug}/player/${p.id}` as any)}
                     activeOpacity={0.7}
                   >
                     {p.photo_url
@@ -1458,7 +1466,7 @@ export default function SettingsScreen() {
         <SettingsRow
           icon="mail-outline" iconColor="#fff" iconBg={primaryColor}
           label="Contact support"
-          onPress={() => router.push(`/(app)/${club?.slug}/support` as any)}
+          onPress={() => router.push(`/(app)/${activeClubSlug || club?.slug}/support` as any)}
         />
         <View style={st.divider} />
         <SettingsRow
