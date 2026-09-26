@@ -13,7 +13,6 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
-import { todayLocalStr } from '../../../../lib/localDate';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useTeam } from '../../../../hooks/useTeam';
@@ -60,10 +59,6 @@ function fmtTime(t: string | null): string {
 
 function fmtDate(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-function isUpcomingDate(dateStr: string): boolean {
-  return dateStr >= todayLocalStr();
 }
 
 export default function TournamentDetailScreen() {
@@ -604,7 +599,7 @@ export default function TournamentDetailScreen() {
         ) : (
           <View style={styles.gamesCard}>
             {games.map((g, i) => {
-              const result = !isUpcomingDate(g.event_date) ? getGameResult(g) : null;
+              const result = getGameResult(g);
               return (
                 <TouchableOpacity
                   key={g.id}
