@@ -128,7 +128,7 @@ export default function FieldsPage() {
   const load = useCallback(async () => {
     if (!club) return;
     const [{ data: fi }, { data: cl }, { data: ac }, { data: ru }] = await Promise.all([
-      supabase.from('tryout_fields').select('*').eq('club_id', club.id).order('sort_order').order('name'),
+      supabase.from('tryout_fields').select('*').eq('club_id', club.id).order('name'),
       supabase.from('field_closures').select('*').eq('club_id', club.id).order('created_at', { ascending: false }),
       supabase.from('field_closure_acknowledgements').select('closure_id, coach_email, coach_name, acknowledged_at'),
       supabase.from('field_availability_rules').select('*').eq('club_id', club.id).order('field_name').order('day_of_week'),
