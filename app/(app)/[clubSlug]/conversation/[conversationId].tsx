@@ -139,7 +139,16 @@ export default function ConversationScreen() {
     if (!senderNamesLoadedRef.current) {
       senderNamesLoadedRef.current = Promise.resolve(
         supabase.rpc('get_conversation_participant_names', { p_conversation_id: conversationId as string }),
-      ).then(({ data }) => {
+      ).then(({ data, error }) => {
+        if (error) {
+          // A Postgres exception from an RPC resolves here rather than
+          // rejecting — don't cache a blank result forever on a transient
+          // failure (e.g. a race with this viewer's own participant-row
+          // upsert for a direct conversation); let the next call retry.
+          console.error('[Conversation] get_conversation_participant_names error:', error.message);
+          senderNamesLoadedRef.current = null;
+          return;
+        }
         for (const row of (data ?? []) as { profile_id: string; full_name: string | null }[]) {
           senderNamesRef.current[row.profile_id] = row.full_name ?? '';
         }
