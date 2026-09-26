@@ -9,7 +9,7 @@ import {
   Layers, DollarSign, Target, LayoutGrid,
   FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ChevronDown, Plus, ShieldCheck, Trophy, Medal,
 } from 'lucide-react';
-import { useDashboard } from './DashboardContext';
+import { useDashboard, type Club } from './DashboardContext';
 import { contrastText, safeAccent } from '@/lib/colorContrast';
 
 type NavEntry = {
@@ -19,6 +19,12 @@ type NavEntry = {
   label?: string;
   exact?: boolean;
   adminOnly?: boolean;
+  // Unlike adminOnly above (declared but never actually read by the render
+  // loop below — leave it alone rather than retrofit it here), this is a
+  // real, working per-item visibility check. Used for NCSA-partner-only
+  // nav entries — a club that hasn't flagged itself as an NCSA partner
+  // must never see them at all, not just have them disabled.
+  show?: (club: Club | null) => boolean;
 };
 
 const CLUB_NAV: NavEntry[] = [
@@ -266,6 +272,7 @@ export default function Sidebar() {
             );
           }
           if (!item.href || !item.icon || !item.label) return null;
+          if (item.show && !item.show(club)) return null;
           return <NavItem key={item.href} href={item.href} icon={item.icon} label={item.label} exact={item.exact} />;
         })}
       </nav>

@@ -19,6 +19,7 @@ type TryoutField = {
   address: string | null; lat: number | null; lng: number | null;
   field_size: string | null; dimensions: string | null; facilities: string[];
   facility_contact_name: string | null; facility_contact_phone: string | null;
+  external_source: string | null; ncsa_dismissed: boolean;
 };
 
 const FIELD_SIZES = ['Full 11v11', '9v9', '7v7', '5v5', 'Futsal'] as const;
@@ -179,15 +180,28 @@ export default function FieldsPage() {
     load();
   }
 
-  async function deleteField(id: string, name: string) {
-    if (!window.confirm(`Delete "${name}"? This will also remove all its permits, closures, and open game slots. Assigned games will be cleared.`)) return;
+  async function deleteField(field: TryoutField) {
+    const { id, name } = field;
+    // An NCSA-sourced field must never come back the moment the next sync
+    // runs — the whole point of "delete" here is the club saying "NCSA
+    // still lists this, we don't use it." Dismissing (not hard-deleting)
+    // is what makes that stick: syncFieldsForClub in sync-ncsa-schedule
+    // skips any row with ncsa_dismissed=true instead of recreating it.
+    const isNcsaSourced = field.external_source === 'ncsa';
+    if (!window.confirm(isNcsaSourced
+      ? `Remove "${name}"? NCSA still lists this field, but it'll be hidden from your scheduler and won't come back on the next sync. This also removes its permits, closures, and open game slots.`
+      : `Delete "${name}"? This will also remove all its permits, closures, and open game slots. Assigned games will be cleared.`)) return;
     const variants = [name, `${name} [A]`, `${name} [B]`];
     await Promise.all([
       supabase.from('game_slots').delete().eq('club_id', club!.id).in('field_name', variants),
       supabase.from('field_availability_rules').delete().eq('club_id', club!.id).eq('field_name', name),
       supabase.from('field_closures').delete().eq('club_id', club!.id).eq('field_name', name),
     ]);
-    await supabase.from('tryout_fields').delete().eq('id', id);
+    if (isNcsaSourced) {
+      await supabase.from('tryout_fields').update({ ncsa_dismissed: true, is_active: false }).eq('id', id);
+    } else {
+      await supabase.from('tryout_fields').delete().eq('id', id);
+    }
     load();
   }
 
@@ -279,6 +293,9 @@ export default function FieldsPage() {
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
                           <span style={{ fontSize:'14px', fontWeight:'800', color:'#0F172A' }}>{f.name}</span>
+                          {f.external_source === 'ncsa' && (
+                            <span title="Auto-populated from NCSA" style={{ fontSize:'10px', fontWeight:'800', color:'#7C3AED', background:'#F5F3FF', borderRadius:'5px', padding:'1px 7px', letterSpacing:'0.3px' }}>NCSA</span>
+                          )}
                           {activeClosure ? (
                             <span style={{ fontSize:'11px', fontWeight:'700', color:'#EF4444', background:'#FEF2F2', borderRadius:'5px', padding:'1px 8px' }}>
                               CLOSED · {activeClosure.reason ?? activeClosure.duration_label}
@@ -318,7 +335,7 @@ export default function FieldsPage() {
                           </button>
                         )}
                         <IBtn title="Edit" onClick={()=>{setEditField(f);setShowFieldModal(true);}}><Pencil size={13}/></IBtn>
-                        <IBtn title="Delete" onClick={()=>deleteField(f.id, f.name)} danger><Trash2 size={13}/></IBtn>
+                        <IBtn title="Delete" onClick={()=>deleteField(f)} danger><Trash2 size={13}/></IBtn>
                       </div>
                     </div>
                   );

@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
 
   if (action === 'create_club') {
-    const { name, slug, primary_color, secondary_color, tagline, logo_base64, logo_mime, logo_name, as_additional_club } = body;
+    const { name, slug, primary_color, secondary_color, tagline, logo_base64, logo_mime, logo_name, as_additional_club, ncsa_club_name } = body;
 
     // Without this, a replayed request (a duplicate tab left open from a
     // previous onboarding session, a retried click) from an org_admin who
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { data, error } = await db.from('clubs')
-      .insert({ name, slug, primary_color, secondary_color, logo_url, tagline: tagline || null })
+      .insert({ name, slug, primary_color, secondary_color, logo_url, tagline: tagline || null, ncsa_club_name: ncsa_club_name || null, ncsa_partner: !!ncsa_club_name })
       .select().single();
     if (error) {
       // The pre-check above and this insert are two separate round-trips,

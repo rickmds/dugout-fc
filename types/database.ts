@@ -197,6 +197,44 @@ export type Database = {
           },
         ]
       }
+      club_ncsa_admin_credentials: {
+        Row: {
+          club_id: string
+          created_at: string | null
+          id: string
+          ncsa_password_secret_id: string
+          ncsa_username: string
+          updated_at: string | null
+          verified_at: string | null
+        }
+        Insert: {
+          club_id: string
+          created_at?: string | null
+          id?: string
+          ncsa_password_secret_id: string
+          ncsa_username: string
+          updated_at?: string | null
+          verified_at?: string | null
+        }
+        Update: {
+          club_id?: string
+          created_at?: string | null
+          id?: string
+          ncsa_password_secret_id?: string
+          ncsa_username?: string
+          updated_at?: string | null
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_ncsa_admin_credentials_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: true
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clubs: {
         Row: {
           allow_partial_payments: boolean | null
@@ -217,6 +255,9 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           name: string
+          ncsa_club_name: string | null
+          ncsa_clubid: number | null
+          ncsa_partner: boolean
           primary_color: string | null
           secondary_color: string | null
           slug: string
@@ -250,6 +291,9 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           name: string
+          ncsa_club_name?: string | null
+          ncsa_clubid?: number | null
+          ncsa_partner?: boolean
           primary_color?: string | null
           secondary_color?: string | null
           slug: string
@@ -283,6 +327,9 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           name?: string
+          ncsa_club_name?: string | null
+          ncsa_clubid?: number | null
+          ncsa_partner?: boolean
           primary_color?: string | null
           secondary_color?: string | null
           slug?: string
@@ -767,6 +814,8 @@ export type Database = {
           event_date: string
           event_group_id: string | null
           event_time: string | null
+          external_id: string | null
+          external_source: string | null
           field_id: string | null
           field_notes: string | null
           field_type: string | null
@@ -776,6 +825,7 @@ export type Database = {
           lng: number | null
           location: string | null
           notes: string | null
+          opponent_raw_name: string | null
           recurrence_id: string | null
           reflection_prompt_sent_at: string | null
           require_rsvp: boolean
@@ -787,6 +837,7 @@ export type Database = {
           score_home: number | null
           surface: string | null
           team_id: string
+          team_ncsa_link_id: string | null
           title: string
           tournament_id: string | null
           type: string | null
@@ -808,6 +859,8 @@ export type Database = {
           event_date: string
           event_group_id?: string | null
           event_time?: string | null
+          external_id?: string | null
+          external_source?: string | null
           field_id?: string | null
           field_notes?: string | null
           field_type?: string | null
@@ -817,6 +870,7 @@ export type Database = {
           lng?: number | null
           location?: string | null
           notes?: string | null
+          opponent_raw_name?: string | null
           recurrence_id?: string | null
           reflection_prompt_sent_at?: string | null
           require_rsvp?: boolean
@@ -828,6 +882,7 @@ export type Database = {
           score_home?: number | null
           surface?: string | null
           team_id: string
+          team_ncsa_link_id?: string | null
           title: string
           tournament_id?: string | null
           type?: string | null
@@ -849,6 +904,8 @@ export type Database = {
           event_date?: string
           event_group_id?: string | null
           event_time?: string | null
+          external_id?: string | null
+          external_source?: string | null
           field_id?: string | null
           field_notes?: string | null
           field_type?: string | null
@@ -858,6 +915,7 @@ export type Database = {
           lng?: number | null
           location?: string | null
           notes?: string | null
+          opponent_raw_name?: string | null
           recurrence_id?: string | null
           reflection_prompt_sent_at?: string | null
           require_rsvp?: boolean
@@ -869,6 +927,7 @@ export type Database = {
           score_home?: number | null
           surface?: string | null
           team_id?: string
+          team_ncsa_link_id?: string | null
           title?: string
           tournament_id?: string | null
           type?: string | null
@@ -895,6 +954,13 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_team_ncsa_link_id_fkey"
+            columns: ["team_ncsa_link_id"]
+            isOneToOne: false
+            referencedRelation: "team_ncsa_links"
             referencedColumns: ["id"]
           },
           {
@@ -1709,6 +1775,50 @@ export type Database = {
           },
         ]
       }
+      league_sync_log: {
+        Row: {
+          error_message: string | null
+          games_cancelled: number | null
+          games_created: number | null
+          games_found: number | null
+          games_updated: number | null
+          id: string
+          run_at: string | null
+          status: string
+          team_ncsa_link_id: string
+        }
+        Insert: {
+          error_message?: string | null
+          games_cancelled?: number | null
+          games_created?: number | null
+          games_found?: number | null
+          games_updated?: number | null
+          id?: string
+          run_at?: string | null
+          status: string
+          team_ncsa_link_id: string
+        }
+        Update: {
+          error_message?: string | null
+          games_cancelled?: number | null
+          games_created?: number | null
+          games_found?: number | null
+          games_updated?: number | null
+          id?: string
+          run_at?: string | null
+          status?: string
+          team_ncsa_link_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_sync_log_team_ncsa_link_id_fkey"
+            columns: ["team_ncsa_link_id"]
+            isOneToOne: false
+            referencedRelation: "team_ncsa_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lineup_positions: {
         Row: {
           id: string
@@ -1878,6 +1988,379 @@ export type Database = {
           {
             foreignKeyName: "messages_sender_id_fkey"
             columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ncsa_coach_credentials: {
+        Row: {
+          created_at: string | null
+          id: string
+          ncsa_password_secret_id: string
+          ncsa_username: string
+          profile_id: string
+          updated_at: string | null
+          verified_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          ncsa_password_secret_id: string
+          ncsa_username: string
+          profile_id: string
+          updated_at?: string | null
+          verified_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          ncsa_password_secret_id?: string
+          ncsa_username?: string
+          profile_id?: string
+          updated_at?: string | null
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ncsa_coach_credentials_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ncsa_fines: {
+        Row: {
+          amount: number | null
+          club_id: string
+          created_at: string
+          fine_date: string | null
+          id: string
+          ncsa_fine_id: string
+          ncsa_game_id: string | null
+          notified_at: string | null
+          reason: string | null
+          scraped_at: string
+          status: string | null
+          submitted_by: string | null
+          team_id: string | null
+          team_raw_name: string | null
+        }
+        Insert: {
+          amount?: number | null
+          club_id: string
+          created_at?: string
+          fine_date?: string | null
+          id?: string
+          ncsa_fine_id: string
+          ncsa_game_id?: string | null
+          notified_at?: string | null
+          reason?: string | null
+          scraped_at?: string
+          status?: string | null
+          submitted_by?: string | null
+          team_id?: string | null
+          team_raw_name?: string | null
+        }
+        Update: {
+          amount?: number | null
+          club_id?: string
+          created_at?: string
+          fine_date?: string | null
+          id?: string
+          ncsa_fine_id?: string
+          ncsa_game_id?: string | null
+          notified_at?: string | null
+          reason?: string | null
+          scraped_at?: string
+          status?: string | null
+          submitted_by?: string | null
+          team_id?: string | null
+          team_raw_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ncsa_fines_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ncsa_fines_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ncsa_game_issues: {
+        Row: {
+          club_id: string
+          detected_at: string
+          division: string | null
+          event_date: string | null
+          event_time: string | null
+          field: string | null
+          home_team: string | null
+          id: string
+          kind: string
+          ncsa_game_id: string
+          notified_at: string | null
+          resolved_at: string | null
+          tbs_type: string | null
+          team_id: string | null
+          visitor_team: string | null
+        }
+        Insert: {
+          club_id: string
+          detected_at?: string
+          division?: string | null
+          event_date?: string | null
+          event_time?: string | null
+          field?: string | null
+          home_team?: string | null
+          id?: string
+          kind: string
+          ncsa_game_id: string
+          notified_at?: string | null
+          resolved_at?: string | null
+          tbs_type?: string | null
+          team_id?: string | null
+          visitor_team?: string | null
+        }
+        Update: {
+          club_id?: string
+          detected_at?: string
+          division?: string | null
+          event_date?: string | null
+          event_time?: string | null
+          field?: string | null
+          home_team?: string | null
+          id?: string
+          kind?: string
+          ncsa_game_id?: string
+          notified_at?: string | null
+          resolved_at?: string | null
+          tbs_type?: string | null
+          team_id?: string | null
+          visitor_team?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ncsa_game_issues_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ncsa_game_issues_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ncsa_schedule_conflicts: {
+        Row: {
+          club_id: string
+          game_a_date: string | null
+          game_a_division: string | null
+          game_a_field: string | null
+          game_a_home: string | null
+          game_a_id: string
+          game_a_time: string | null
+          game_a_visitor: string | null
+          game_b_date: string | null
+          game_b_home: string | null
+          game_b_id: string
+          game_b_time: string | null
+          game_b_visitor: string | null
+          id: string
+          kind: string
+          minutes: number | null
+          scraped_at: string
+        }
+        Insert: {
+          club_id: string
+          game_a_date?: string | null
+          game_a_division?: string | null
+          game_a_field?: string | null
+          game_a_home?: string | null
+          game_a_id: string
+          game_a_time?: string | null
+          game_a_visitor?: string | null
+          game_b_date?: string | null
+          game_b_home?: string | null
+          game_b_id: string
+          game_b_time?: string | null
+          game_b_visitor?: string | null
+          id?: string
+          kind: string
+          minutes?: number | null
+          scraped_at?: string
+        }
+        Update: {
+          club_id?: string
+          game_a_date?: string | null
+          game_a_division?: string | null
+          game_a_field?: string | null
+          game_a_home?: string | null
+          game_a_id?: string
+          game_a_time?: string | null
+          game_a_visitor?: string | null
+          game_b_date?: string | null
+          game_b_home?: string | null
+          game_b_id?: string
+          game_b_time?: string | null
+          game_b_visitor?: string | null
+          id?: string
+          kind?: string
+          minutes?: number | null
+          scraped_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ncsa_schedule_conflicts_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ncsa_standings: {
+        Row: {
+          division: string
+          draws: number
+          games_played: number
+          goals_against: number
+          goals_for: number
+          id: string
+          is_self: boolean
+          losses: number
+          points: number
+          rank: number
+          team_id: string
+          team_ncsa_link_id: string
+          team_raw_name: string
+          updated_at: string | null
+          wins: number
+        }
+        Insert: {
+          division: string
+          draws: number
+          games_played: number
+          goals_against: number
+          goals_for: number
+          id?: string
+          is_self?: boolean
+          losses: number
+          points: number
+          rank: number
+          team_id: string
+          team_ncsa_link_id: string
+          team_raw_name: string
+          updated_at?: string | null
+          wins: number
+        }
+        Update: {
+          division?: string
+          draws?: number
+          games_played?: number
+          goals_against?: number
+          goals_for?: number
+          id?: string
+          is_self?: boolean
+          losses?: number
+          points?: number
+          rank?: number
+          team_id?: string
+          team_ncsa_link_id?: string
+          team_raw_name?: string
+          updated_at?: string | null
+          wins?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ncsa_standings_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ncsa_standings_team_ncsa_link_id_fkey"
+            columns: ["team_ncsa_link_id"]
+            isOneToOne: false
+            referencedRelation: "team_ncsa_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ncsa_synced_coaches: {
+        Row: {
+          cell: string | null
+          club_id: string
+          created_at: string
+          email: string | null
+          first_name: string | null
+          home_phone: string | null
+          id: string
+          last_name: string | null
+          last_synced_at: string
+          matched_profile_id: string | null
+          ncsa_coach_id: string
+          ncsa_team_raw_name: string
+          role: string
+        }
+        Insert: {
+          cell?: string | null
+          club_id: string
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          home_phone?: string | null
+          id?: string
+          last_name?: string | null
+          last_synced_at?: string
+          matched_profile_id?: string | null
+          ncsa_coach_id: string
+          ncsa_team_raw_name: string
+          role: string
+        }
+        Update: {
+          cell?: string | null
+          club_id?: string
+          created_at?: string
+          email?: string | null
+          first_name?: string | null
+          home_phone?: string | null
+          id?: string
+          last_name?: string | null
+          last_synced_at?: string
+          matched_profile_id?: string | null
+          ncsa_coach_id?: string
+          ncsa_team_raw_name?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ncsa_synced_coaches_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ncsa_synced_coaches_matched_profile_id_fkey"
+            columns: ["matched_profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -2700,6 +3183,7 @@ export type Database = {
           role: string | null
           share_contact_with_team: boolean
           stripe_customer_id: string | null
+          theme_preference: string
         }
         Insert: {
           address?: string | null
@@ -2720,6 +3204,7 @@ export type Database = {
           role?: string | null
           share_contact_with_team?: boolean
           stripe_customer_id?: string | null
+          theme_preference?: string
         }
         Update: {
           address?: string | null
@@ -2740,6 +3225,7 @@ export type Database = {
           role?: string | null
           share_contact_with_team?: boolean
           stripe_customer_id?: string | null
+          theme_preference?: string
         }
         Relationships: [
           {
@@ -2845,6 +3331,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      rate_limit_hits: {
+        Row: {
+          bucket: string
+          created_at: string
+          id: number
+        }
+        Insert: {
+          bucket: string
+          created_at?: string
+          id?: number
+        }
+        Update: {
+          bucket?: string
+          created_at?: string
+          id?: number
+        }
+        Relationships: []
       }
       registration_document_uploads: {
         Row: {
@@ -2952,6 +3456,7 @@ export type Database = {
           max_spots: number | null
           open_at: string | null
           payment_options: string | null
+          plan_day_of_month: number | null
           plan_deposit: number | null
           plan_frequency: string | null
           plan_installments: number | null
@@ -2987,6 +3492,7 @@ export type Database = {
           max_spots?: number | null
           open_at?: string | null
           payment_options?: string | null
+          plan_day_of_month?: number | null
           plan_deposit?: number | null
           plan_frequency?: string | null
           plan_installments?: number | null
@@ -3022,6 +3528,7 @@ export type Database = {
           max_spots?: number | null
           open_at?: string | null
           payment_options?: string | null
+          plan_day_of_month?: number | null
           plan_deposit?: number | null
           plan_frequency?: string | null
           plan_installments?: number | null
@@ -3065,35 +3572,65 @@ export type Database = {
       registration_installments: {
         Row: {
           amount: number
+          charge_attempts: number
+          charge_lock_at: string | null
           created_at: string | null
+          dispute_status: string | null
+          disputed_at: string | null
           due_date: string | null
           id: string
+          last_charge_error: string | null
+          last_refund_id: string | null
           notes: string | null
           paid_at: string | null
           payment_method: string | null
+          payment_token: string | null
           reference: string | null
+          refund_pending: boolean
+          refunded_amount: number
+          reminder_sent_at: string | null
           submission_id: string
         }
         Insert: {
           amount: number
+          charge_attempts?: number
+          charge_lock_at?: string | null
           created_at?: string | null
+          dispute_status?: string | null
+          disputed_at?: string | null
           due_date?: string | null
           id?: string
+          last_charge_error?: string | null
+          last_refund_id?: string | null
           notes?: string | null
           paid_at?: string | null
           payment_method?: string | null
+          payment_token?: string | null
           reference?: string | null
+          refund_pending?: boolean
+          refunded_amount?: number
+          reminder_sent_at?: string | null
           submission_id: string
         }
         Update: {
           amount?: number
+          charge_attempts?: number
+          charge_lock_at?: string | null
           created_at?: string | null
+          dispute_status?: string | null
+          disputed_at?: string | null
           due_date?: string | null
           id?: string
+          last_charge_error?: string | null
+          last_refund_id?: string | null
           notes?: string | null
           paid_at?: string | null
           payment_method?: string | null
+          payment_token?: string | null
           reference?: string | null
+          refund_pending?: boolean
+          refunded_amount?: number
+          reminder_sent_at?: string | null
           submission_id?: string
         }
         Relationships: [
@@ -3215,6 +3752,7 @@ export type Database = {
         Row: {
           amount_due: number | null
           amount_paid: number | null
+          autopay_consent: boolean
           data: Json
           discount_applied: number | null
           duplicate_of: string | null
@@ -3241,12 +3779,16 @@ export type Database = {
           roster_added_at: string | null
           roster_player_id: string | null
           status: string | null
+          stripe_customer_id: string | null
+          stripe_payment_method_id: string | null
           submitted_at: string | null
+          tryout_assignment_id: string | null
           waitlist_position: number | null
         }
         Insert: {
           amount_due?: number | null
           amount_paid?: number | null
+          autopay_consent?: boolean
           data?: Json
           discount_applied?: number | null
           duplicate_of?: string | null
@@ -3273,12 +3815,16 @@ export type Database = {
           roster_added_at?: string | null
           roster_player_id?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
           submitted_at?: string | null
+          tryout_assignment_id?: string | null
           waitlist_position?: number | null
         }
         Update: {
           amount_due?: number | null
           amount_paid?: number | null
+          autopay_consent?: boolean
           data?: Json
           discount_applied?: number | null
           duplicate_of?: string | null
@@ -3305,7 +3851,10 @@ export type Database = {
           roster_added_at?: string | null
           roster_player_id?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
           submitted_at?: string | null
+          tryout_assignment_id?: string | null
           waitlist_position?: number | null
         }
         Relationships: [
@@ -3335,6 +3884,13 @@ export type Database = {
             columns: ["roster_player_id"]
             isOneToOne: false
             referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_submissions_tryout_assignment_id_fkey"
+            columns: ["tryout_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "tryout_assignments"
             referencedColumns: ["id"]
           },
         ]
@@ -3713,6 +4269,47 @@ export type Database = {
           },
         ]
       }
+      team_ncsa_links: {
+        Row: {
+          competition: string
+          created_at: string | null
+          id: string
+          last_synced_at: string | null
+          ncsa_raw_name: string
+          ncsa_team_id: string
+          sync_games: boolean
+          team_id: string
+        }
+        Insert: {
+          competition: string
+          created_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          ncsa_raw_name: string
+          ncsa_team_id: string
+          sync_games?: boolean
+          team_id: string
+        }
+        Update: {
+          competition?: string
+          created_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          ncsa_raw_name?: string
+          ncsa_team_id?: string
+          sync_games?: boolean
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_ncsa_links_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_photo_likes: {
         Row: {
           created_at: string | null
@@ -4043,6 +4640,7 @@ export type Database = {
           lat: number | null
           lng: number | null
           location: string | null
+          logo_url: string | null
           name: string
           start_date: string | null
           team_id: string
@@ -4060,6 +4658,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           location?: string | null
+          logo_url?: string | null
           name: string
           start_date?: string | null
           team_id: string
@@ -4077,6 +4676,7 @@ export type Database = {
           lat?: number | null
           lng?: number | null
           location?: string | null
+          logo_url?: string | null
           name?: string
           start_date?: string | null
           team_id?: string
@@ -4101,6 +4701,8 @@ export type Database = {
       }
       tryout_assignments: {
         Row: {
+          agreement_signed_name: string | null
+          autopay_consent: boolean
           club_id: string
           created_at: string | null
           declined_note: string | null
@@ -4111,12 +4713,18 @@ export type Database = {
           offer_status: string | null
           offer_token: string | null
           player_id: string
+          registration_status: string
+          registration_submitted_at: string | null
           reminder_count: number | null
           reminder_sent_at: string | null
           status: string | null
+          stripe_customer_id: string | null
+          stripe_payment_method_id: string | null
           team: string | null
         }
         Insert: {
+          agreement_signed_name?: string | null
+          autopay_consent?: boolean
           club_id: string
           created_at?: string | null
           declined_note?: string | null
@@ -4127,12 +4735,18 @@ export type Database = {
           offer_status?: string | null
           offer_token?: string | null
           player_id: string
+          registration_status?: string
+          registration_submitted_at?: string | null
           reminder_count?: number | null
           reminder_sent_at?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
           team?: string | null
         }
         Update: {
+          agreement_signed_name?: string | null
+          autopay_consent?: boolean
           club_id?: string
           created_at?: string | null
           declined_note?: string | null
@@ -4143,9 +4757,13 @@ export type Database = {
           offer_status?: string | null
           offer_token?: string | null
           player_id?: string
+          registration_status?: string
+          registration_submitted_at?: string | null
           reminder_count?: number | null
           reminder_sent_at?: string | null
           status?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
           team?: string | null
         }
         Relationships: [
@@ -4355,12 +4973,52 @@ export type Database = {
           },
         ]
       }
+      tryout_fee_plans: {
+        Row: {
+          age_groups: string[]
+          club_id: string
+          created_at: string | null
+          id: string
+          installments: Json
+          season_fee: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          age_groups?: string[]
+          club_id: string
+          created_at?: string | null
+          id?: string
+          installments?: Json
+          season_fee?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          age_groups?: string[]
+          club_id?: string
+          created_at?: string | null
+          id?: string
+          installments?: Json
+          season_fee?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_fee_plans_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tryout_fields: {
         Row: {
           address: string | null
           club_id: string
           created_at: string | null
           dimensions: string | null
+          external_id: string | null
+          external_source: string | null
           facilities: string[] | null
           facility_contact_name: string | null
           facility_contact_phone: string | null
@@ -4374,9 +5032,11 @@ export type Database = {
           is_active: boolean | null
           is_closed: boolean | null
           is_full_field: boolean
+          last_synced_at: string | null
           lat: number | null
           lng: number | null
           name: string
+          ncsa_dismissed: boolean
           rental_cost_per_hour: number | null
           scheduler_format: string
           scheduler_split: number
@@ -4390,6 +5050,8 @@ export type Database = {
           club_id: string
           created_at?: string | null
           dimensions?: string | null
+          external_id?: string | null
+          external_source?: string | null
           facilities?: string[] | null
           facility_contact_name?: string | null
           facility_contact_phone?: string | null
@@ -4403,9 +5065,11 @@ export type Database = {
           is_active?: boolean | null
           is_closed?: boolean | null
           is_full_field?: boolean
+          last_synced_at?: string | null
           lat?: number | null
           lng?: number | null
           name: string
+          ncsa_dismissed?: boolean
           rental_cost_per_hour?: number | null
           scheduler_format?: string
           scheduler_split?: number
@@ -4419,6 +5083,8 @@ export type Database = {
           club_id?: string
           created_at?: string | null
           dimensions?: string | null
+          external_id?: string | null
+          external_source?: string | null
           facilities?: string[] | null
           facility_contact_name?: string | null
           facility_contact_phone?: string | null
@@ -4432,9 +5098,11 @@ export type Database = {
           is_active?: boolean | null
           is_closed?: boolean | null
           is_full_field?: boolean
+          last_synced_at?: string | null
           lat?: number | null
           lng?: number | null
           name?: string
+          ncsa_dismissed?: boolean
           rental_cost_per_hour?: number | null
           scheduler_format?: string
           scheduler_split?: number
@@ -4569,6 +5237,118 @@ export type Database = {
           },
         ]
       }
+      tryout_installments: {
+        Row: {
+          amount: number
+          assignment_id: string
+          charge_attempts: number
+          charge_lock_at: string | null
+          created_at: string | null
+          dispute_status: string | null
+          disputed_at: string | null
+          due_date: string | null
+          id: string
+          label: string
+          last_charge_error: string | null
+          last_refund_id: string | null
+          paid_at: string | null
+          payment_method: string | null
+          payment_token: string | null
+          reference: string | null
+          refunded_amount: number
+          reminder_sent_at: string | null
+        }
+        Insert: {
+          amount: number
+          assignment_id: string
+          charge_attempts?: number
+          charge_lock_at?: string | null
+          created_at?: string | null
+          dispute_status?: string | null
+          disputed_at?: string | null
+          due_date?: string | null
+          id?: string
+          label: string
+          last_charge_error?: string | null
+          last_refund_id?: string | null
+          paid_at?: string | null
+          payment_method?: string | null
+          payment_token?: string | null
+          reference?: string | null
+          refunded_amount?: number
+          reminder_sent_at?: string | null
+        }
+        Update: {
+          amount?: number
+          assignment_id?: string
+          charge_attempts?: number
+          charge_lock_at?: string | null
+          created_at?: string | null
+          dispute_status?: string | null
+          disputed_at?: string | null
+          due_date?: string | null
+          id?: string
+          label?: string
+          last_charge_error?: string | null
+          last_refund_id?: string | null
+          paid_at?: string | null
+          payment_method?: string | null
+          payment_token?: string | null
+          reference?: string | null
+          refunded_amount?: number
+          reminder_sent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_installments_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "tryout_assignments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tryout_offer_letter_templates: {
+        Row: {
+          age_groups: string[]
+          body_html: string | null
+          club_id: string
+          created_at: string | null
+          from_name: string | null
+          id: string
+          subject: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          age_groups?: string[]
+          body_html?: string | null
+          club_id: string
+          created_at?: string | null
+          from_name?: string | null
+          id?: string
+          subject?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          age_groups?: string[]
+          body_html?: string | null
+          club_id?: string
+          created_at?: string | null
+          from_name?: string | null
+          id?: string
+          subject?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_offer_letter_templates_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tryout_offer_settings: {
         Row: {
           club_id: string
@@ -4583,6 +5363,7 @@ export type Database = {
           offer_deadline: string | null
           payment_due_date: string | null
           payment_link: string | null
+          post_acceptance_form_id: string | null
           season_fee: string | null
           teamsnap_registration_url: string | null
           uniform_shop_url: string | null
@@ -4601,6 +5382,7 @@ export type Database = {
           offer_deadline?: string | null
           payment_due_date?: string | null
           payment_link?: string | null
+          post_acceptance_form_id?: string | null
           season_fee?: string | null
           teamsnap_registration_url?: string | null
           uniform_shop_url?: string | null
@@ -4619,6 +5401,7 @@ export type Database = {
           offer_deadline?: string | null
           payment_due_date?: string | null
           payment_link?: string | null
+          post_acceptance_form_id?: string | null
           season_fee?: string | null
           teamsnap_registration_url?: string | null
           uniform_shop_url?: string | null
@@ -4630,6 +5413,13 @@ export type Database = {
             columns: ["club_id"]
             isOneToOne: true
             referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_offer_settings_post_acceptance_form_id_fkey"
+            columns: ["post_acceptance_form_id"]
+            isOneToOne: false
+            referencedRelation: "registration_forms"
             referencedColumns: ["id"]
           },
         ]
@@ -5463,6 +6253,24 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      create_registration_installments_if_absent: {
+        Args: { p_rows: Json; p_submission_id: string }
+        Returns: {
+          amount: number
+          due_date: string
+          paid_at: string
+          payment_token: string
+        }[]
+      }
+      create_tryout_installments_if_absent: {
+        Args: { p_assignment_id: string; p_rows: Json }
+        Returns: {
+          amount: number
+          due_date: string
+          paid_at: string
+          payment_token: string
+        }[]
+      }
       current_user_club_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
       decline_fee_claim: {
@@ -5612,6 +6420,36 @@ export type Database = {
       is_player_guardian: { Args: { p_player_id: string }; Returns: boolean }
       is_team_coach: { Args: { p_team_id: string }; Returns: boolean }
       is_team_member: { Args: { p_team_id: string }; Returns: boolean }
+      ncsa_delete_club_credential: {
+        Args: { p_club_id: string }
+        Returns: undefined
+      }
+      ncsa_delete_credential: {
+        Args: { p_profile_id: string }
+        Returns: undefined
+      }
+      ncsa_get_club_credential: {
+        Args: { p_club_id: string }
+        Returns: {
+          ncsa_password: string
+          ncsa_username: string
+        }[]
+      }
+      ncsa_get_credential: {
+        Args: { p_profile_id: string }
+        Returns: {
+          ncsa_password: string
+          ncsa_username: string
+        }[]
+      }
+      ncsa_save_club_credential: {
+        Args: { p_club_id: string; p_password: string; p_username: string }
+        Returns: undefined
+      }
+      ncsa_save_credential: {
+        Args: { p_password: string; p_profile_id: string; p_username: string }
+        Returns: undefined
+      }
       owns_registration_form: { Args: { p_form_id: string }; Returns: boolean }
       revoke_guardian_access: {
         Args: { p_player_id: string; p_profile_id: string }
@@ -5624,6 +6462,7 @@ export type Database = {
           p_data: Json
           p_form_id: string
           p_payment_choice: string
+          p_tryout_offer_token?: string
         }
         Returns: {
           id: string
@@ -5632,6 +6471,10 @@ export type Database = {
       }
       tournament_rsvp_not_locked: {
         Args: { p_tournament_id: string }
+        Returns: boolean
+      }
+      tryout_player_in_club: {
+        Args: { p_club_id: string; p_player_id: string }
         Returns: boolean
       }
     }

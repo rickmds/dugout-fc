@@ -43,6 +43,7 @@ export type Club = {
   late_fee_grace_days: number | null;
   hardship_fund_enabled: boolean | null;
   suspended_at: string | null;
+  ncsa_partner: boolean;
 };
 
 export type Team = {
@@ -75,7 +76,7 @@ type DashboardCtx = {
   canUse: (feature: keyof PlanLimits) => boolean;
 };
 
-const CLUB_SELECT = 'id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at';
+const CLUB_SELECT = 'id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at, ncsa_partner';
 
 function viewingClubStorageKey(profileId: string) {
   return `pulse_dashboard_viewing_club_${profileId}`;

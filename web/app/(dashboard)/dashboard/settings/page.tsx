@@ -15,7 +15,7 @@ import { calculateFee } from '@/lib/feeCalculator';
 
 type Toast = { type: 'success' | 'error'; msg: string };
 
-const CLUB_SECTIONS = ['Club Profile', 'Branding', 'Tryout Season', 'Payments', 'Notifications', 'Data Exports', 'Subscription', 'Danger Zone'];
+const CLUB_SECTIONS = ['Club Profile', 'Branding', 'Tryout Season', 'NCSA Partner', 'Payments', 'Notifications', 'Data Exports', 'Subscription', 'Danger Zone'];
 
 // Surcharging card fees to parents runs into card-network registration
 // requirements (Visa/Mastercard need ~30 days' notice) and state-level
@@ -255,6 +255,14 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   const [uploading, setUploading] = useState(false);
   const [tryoutsActive, setTryoutsActive] = useState(club?.tryouts_active ?? false);
   const [savingTryouts, setSavingTryouts] = useState(false);
+  const [ncsaPartner, setNcsaPartner] = useState(club?.ncsa_partner ?? false);
+  const [savingNcsaPartner, setSavingNcsaPartner] = useState(false);
+  const [ncsaAdminUsername, setNcsaAdminUsername] = useState<string | null>(null);
+  const [ncsaAdminLoaded, setNcsaAdminLoaded] = useState(false);
+  const [ncsaCredForm, setNcsaCredForm] = useState({ username: '', password: '' });
+  const [ncsaCredShowPw, setNcsaCredShowPw] = useState(false);
+  const [ncsaCredSaving, setNcsaCredSaving] = useState(false);
+  const [ncsaCredError, setNcsaCredError] = useState('');
   const [connectingStripe, setConnectingStripe] = useState(false);
   const [showDeleteClub,   setShowDeleteClub]   = useState(false);
   const [deleteClubConfirm, setDeleteClubConfirm] = useState('');
@@ -313,6 +321,7 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
     });
     setLogoPreview(club.logo_url);
     setTryoutsActive(club?.tryouts_active ?? false);
+    setNcsaPartner(club?.ncsa_partner ?? false);
     setPaymentForm({
       stripe_fee_handling:   club.stripe_fee_handling   ?? 'absorb',
       allow_partial_payments: club.allow_partial_payments ?? false,
@@ -402,6 +411,73 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
       reload();
       showToast('success', `Tryout season ${next ? 'enabled' : 'disabled'}`);
     } finally { setSavingTryouts(false); }
+  }
+
+  async function toggleNcsaPartner() {
+    if (!club) return;
+    setSavingNcsaPartner(true);
+    const next = !ncsaPartner;
+    try {
+      const { error } = await supabase.from('clubs').update({ ncsa_partner: next }).eq('id', club.id);
+      if (error) { showToast('error', error.message); return; }
+      setNcsaPartner(next);
+      reload();
+      showToast('success', `NCSA partner ${next ? 'enabled' : 'disabled'}`);
+    } finally { setSavingNcsaPartner(false); }
+  }
+
+  // Loaded on-demand (not on every Settings visit) — only relevant once
+  // the NCSA Partner tab is actually open.
+  async function loadNcsaAdminCredential() {
+    if (!club || ncsaAdminLoaded) return;
+    const { data } = await supabase.from('club_ncsa_admin_credentials').select('ncsa_username').eq('club_id', club.id).maybeSingle();
+    setNcsaAdminUsername((data as { ncsa_username: string } | null)?.ncsa_username ?? null);
+    setNcsaAdminLoaded(true);
+  }
+
+  // Only fetch the connected-admin-account state once the NCSA Partner tab
+  // is actually opened, not on every Settings page visit.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
+    if (active === 'NCSA Partner') loadNcsaAdminCredential();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadNcsaAdminCredential guards itself with ncsaAdminLoaded; only re-run when the tab is opened
+  }, [active]);
+
+  async function connectNcsaAdmin() {
+    if (!club || !ncsaCredForm.username || !ncsaCredForm.password) return;
+    setNcsaCredSaving(true);
+    setNcsaCredError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('ncsa-connect-club-account', {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+        body: { club_id: club.id, ncsa_username: ncsaCredForm.username, ncsa_password: ncsaCredForm.password },
+      });
+      if (error || data?.error) {
+        setNcsaCredError(data?.error === 'invalid_credentials' ? 'NCSA rejected that username/password.' : (data?.error ?? error?.message ?? 'Could not connect.'));
+        return;
+      }
+      setNcsaAdminUsername(data.username);
+      setNcsaCredForm({ username: '', password: '' });
+      showToast('success', 'NCSA admin account connected');
+    } catch {
+      setNcsaCredError('Could not connect. Please try again.');
+    } finally { setNcsaCredSaving(false); }
+  }
+
+  async function disconnectNcsaAdmin() {
+    if (!club) return;
+    setNcsaCredSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error } = await supabase.functions.invoke('ncsa-connect-club-account', {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+        body: { club_id: club.id, action: 'disconnect' },
+      });
+      if (error) { showToast('error', error.message); return; }
+      setNcsaAdminUsername(null);
+      showToast('success', 'NCSA admin account disconnected');
+    } finally { setNcsaCredSaving(false); }
   }
 
   async function exportCSV(type: string) {
@@ -630,6 +706,90 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {active === 'NCSA Partner' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={sectionCard}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
+                <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>NCSA Partner</div>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Only turn this on if your club actually plays in NCSA (Northern NJ) — clubs in other leagues (EDP, etc) should leave it off</div>
+              </div>
+              <div style={{ padding: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '24px' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>
+                      {ncsaPartner ? 'NCSA partner features are ON' : 'NCSA partner features are OFF'}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.6, maxWidth: '480px' }}>
+                      {ncsaPartner
+                        ? 'Fields, the Game Scheduler, and Staff can pull directly from NCSA for any team you link. Turn this off if your club leaves NCSA.'
+                        : 'Enable this once your club is confirmed as an NCSA partner to unlock auto-synced fields, schedule, coach roster, and fines/TBS tracking.'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={toggleNcsaPartner}
+                    disabled={savingNcsaPartner}
+                    style={{ flexShrink: 0, width: '52px', height: '28px', borderRadius: '14px', border: 'none', cursor: 'pointer', background: ncsaPartner ? '#F59E0B' : '#E2E8F0', position: 'relative', transition: 'background 0.2s' }}
+                  >
+                    <div style={{ position: 'absolute', top: '3px', width: '22px', height: '22px', borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', transition: 'left 0.2s', left: ncsaPartner ? '27px' : '3px' }} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {ncsaPartner && (
+              <div style={sectionCard}>
+                <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>NCSA Admin Account</div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Connect your club&apos;s own NCSA login (not a coach&apos;s) so the app can pull your coach roster and fines from the Administrative Area</div>
+                </div>
+                <div style={{ padding: '24px' }}>
+                  {ncsaAdminUsername ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '13px', color: '#0F172A' }}>
+                        Connected as <span style={{ fontWeight: '700' }}>{ncsaAdminUsername}</span>
+                      </div>
+                      <button
+                        onClick={disconnectNcsaAdmin}
+                        disabled={ncsaCredSaving}
+                        style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', borderRadius: '6px', padding: '7px 14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '360px' }}>
+                      <input
+                        type="text" placeholder="NCSA username" value={ncsaCredForm.username}
+                        onChange={e => setNcsaCredForm(f => ({ ...f, username: e.target.value }))}
+                        style={{ padding: '9px 12px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', fontFamily: 'inherit' }}
+                      />
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={ncsaCredShowPw ? 'text' : 'password'} placeholder="NCSA password" value={ncsaCredForm.password}
+                          onChange={e => setNcsaCredForm(f => ({ ...f, password: e.target.value }))}
+                          style={{ padding: '9px 36px 9px 12px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', fontFamily: 'inherit', width: '100%' }}
+                        />
+                        <button type="button" onClick={() => setNcsaCredShowPw(v => !v)}
+                          style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex' }}>
+                          {ncsaCredShowPw ? <EyeOff size={14} color="#94A3B8" /> : <Eye size={14} color="#94A3B8" />}
+                        </button>
+                      </div>
+                      {ncsaCredError && <div style={{ fontSize: '12px', color: '#DC2626' }}>{ncsaCredError}</div>}
+                      <button
+                        onClick={connectNcsaAdmin}
+                        disabled={ncsaCredSaving || !ncsaCredForm.username || !ncsaCredForm.password}
+                        style={{ background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '9px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', opacity: ncsaCredSaving ? 0.6 : 1 }}
+                      >
+                        {ncsaCredSaving ? 'Connecting…' : 'Connect'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

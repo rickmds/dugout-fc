@@ -165,5 +165,41 @@ export async function GET(req: NextRequest) {
     createdAt: inv.created_at,
   }));
 
-  return NextResponse.json({ staff: [...activeRows, ...pendingRows] });
+  // Coaches NCSA lists for this club (ncsa-sync-club-coaches, using the
+  // club's own admin login — reaches every coach, not just ones who've
+  // connected a personal NCSA account) that don't match an existing
+  // Pulse FC account by email. Never auto-invited — surfaced so an admin
+  // can one-click invite, same "don't guess, let a human confirm"
+  // discipline as the rest of this NCSA integration. Already-matched
+  // coaches don't need a separate row here; they're already covered by
+  // the active-staff sources above.
+  const { data: ncsaCoachRows } = await db
+    .from('ncsa_synced_coaches')
+    .select('id, ncsa_coach_id, ncsa_team_raw_name, role, first_name, last_name, email, cell, last_synced_at')
+    .eq('club_id', club_id)
+    .is('matched_profile_id', null);
+
+  const ncsaByCoachId = new Map<string, { ncsaCoachId: string; fullName: string; email: string | null; cell: string | null; role: string; teamRawNames: string[]; lastSyncedAt: string }>();
+  for (const r of ncsaCoachRows ?? []) {
+    const existing = ncsaByCoachId.get(r.ncsa_coach_id);
+    if (existing) {
+      existing.teamRawNames.push(r.ncsa_team_raw_name);
+      continue;
+    }
+    ncsaByCoachId.set(r.ncsa_coach_id, {
+      ncsaCoachId: r.ncsa_coach_id,
+      fullName: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || 'Unknown',
+      email: r.email, cell: r.cell, role: r.role,
+      teamRawNames: [r.ncsa_team_raw_name],
+      lastSyncedAt: r.last_synced_at,
+    });
+  }
+  // Kept out of the main `staff` array on purpose — that list's rows all
+  // flow through one edit/promote/demote modal built around exactly two
+  // kinds (active/pending); an NCSA-sourced row has neither a profile nor
+  // an invite yet; it's not editable the same way, only invitable. The
+  // Staff page renders these as their own separate section instead.
+  const ncsaUnlinked = [...ncsaByCoachId.values()];
+
+  return NextResponse.json({ staff: [...activeRows, ...pendingRows], ncsaUnlinked });
 }

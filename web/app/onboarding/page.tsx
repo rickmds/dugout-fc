@@ -527,6 +527,35 @@ function ClubStep({ onDone, asAdditionalClub }: { onDone: (data: ClubResult) => 
   const [loading, setLoading]     = useState(false);
   const eyedropperSupported = typeof window !== 'undefined' && 'EyeDropper' in window;
 
+  // Partner league — purely a discovery convenience (see the migration
+  // comment on clubs.ncsa_club_name): confirms "we are this club within
+  // NCSA" once, up front, so the per-team linking screen can default to
+  // this club's teams instead of searching NCSA's full ~1000-team list.
+  // Scoped honestly to "Northern NJ" rather than a bare "NCSA" label — this
+  // integration only covers that one league's site, not a nationwide NCSA.
+  const [partnerLeague, setPartnerLeague] = useState<'' | 'ncsa'>('');
+  const [ncsaClubName, setNcsaClubName]   = useState<string | null>(null);
+  const [ncsaClubQuery, setNcsaClubQuery] = useState('');
+  const [ncsaClubOptions, setNcsaClubOptions] = useState<string[] | null>(null);
+  const [ncsaLoading, setNcsaLoading]     = useState(false);
+
+  async function loadNcsaClubs() {
+    if (ncsaClubOptions) return;
+    setNcsaLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error: fnError } = await supabase.functions.invoke('ncsa-team-lookup', {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+    });
+    setNcsaLoading(false);
+    if (fnError || !data?.teams) return;
+    const names = Array.from(new Set((data.teams as { club: string }[]).map((t) => t.club))).sort();
+    setNcsaClubOptions(names);
+  }
+
+  const ncsaClubMatches = ncsaClubOptions && ncsaClubQuery.trim().length >= 1
+    ? ncsaClubOptions.filter((c) => c.toLowerCase().includes(ncsaClubQuery.trim().toLowerCase())).slice(0, 8)
+    : [];
+
   // eslint-disable-next-line react-hooks/set-state-in-effect -- keeps the editable slug field in sync with the club name until the admin types into it directly (slugEdited flips that off)
   useEffect(() => { if (!slugEdited) setSlug(slugify(name)); }, [name, slugEdited]);
 
@@ -578,7 +607,7 @@ function ClubStep({ onDone, asAdditionalClub }: { onDone: (data: ClubResult) => 
           'Content-Type': 'application/json',
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ action: 'create_club', name: name.trim(), slug: slug.trim(), primary_color: primary, user_id: session?.user?.id, logo_base64: logoBase64, logo_mime: logoMime, logo_name: logoName, as_additional_club: !!asAdditionalClub }),
+        body: JSON.stringify({ action: 'create_club', name: name.trim(), slug: slug.trim(), primary_color: primary, user_id: session?.user?.id, logo_base64: logoBase64, logo_mime: logoMime, logo_name: logoName, as_additional_club: !!asAdditionalClub, ncsa_club_name: partnerLeague === 'ncsa' ? ncsaClubName : null }),
       });
       const json = await res.json();
       if (!res.ok) { setError(friendlyApiError(res.status, json.error, 'Failed to create club. Please try again.')); setLoading(false); return; }
@@ -676,6 +705,59 @@ function ClubStep({ onDone, asAdditionalClub }: { onDone: (data: ClubResult) => 
             </div>
             {eyedropperSupported && (
               <p className="text-[#555] text-xs mt-2">Tip: use the eyedropper to pick a colour straight from your uploaded logo.</p>
+            )}
+          </div>
+
+          <div>
+            <Label>Partner league <span className="text-[#555] font-normal normal-case tracking-normal">(optional)</span></Label>
+            <select
+              value={partnerLeague}
+              onChange={(e) => {
+                const v = e.target.value as '' | 'ncsa';
+                setPartnerLeague(v);
+                setNcsaClubName(null);
+                setNcsaClubQuery('');
+                if (v === 'ncsa') loadNcsaClubs();
+              }}
+            >
+              <option value="">None</option>
+              <option value="ncsa">NCSA (Northern NJ)</option>
+            </select>
+            {partnerLeague === 'ncsa' && (
+              <div className="mt-3 p-3 rounded-xl bg-[#0d0d0d] border border-[#1a1a1a]">
+                {ncsaClubName ? (
+                  <div className="flex items-center justify-between">
+                    <p className="text-white text-sm font-medium">✓ Matched to <span style={{ color: primary }}>{ncsaClubName}</span> on NCSA</p>
+                    <button type="button" onClick={() => { setNcsaClubName(null); setNcsaClubQuery(''); }}
+                      className="text-[#9ca3af] text-xs underline hover:text-white">Change</button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[#9ca3af] text-xs mb-2">
+                      Which club are you on NCSA? Games and results for teams you link later will sync automatically.
+                    </p>
+                    <input
+                      value={ncsaClubQuery}
+                      onChange={(e) => setNcsaClubQuery(e.target.value)}
+                      placeholder={ncsaLoading ? 'Loading NCSA clubs…' : 'Start typing your club name'}
+                      disabled={ncsaLoading}
+                    />
+                    {ncsaClubMatches.length > 0 && (
+                      <div className="mt-2 flex flex-col gap-1">
+                        {ncsaClubMatches.map((c) => (
+                          <button key={c} type="button" onClick={() => { setNcsaClubName(c); setNcsaClubQuery(''); }}
+                            className="text-left px-3 py-2 rounded-lg bg-[#111] hover:bg-[#1a1a1a] text-white text-sm transition-colors">
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {!ncsaLoading && ncsaClubOptions && ncsaClubQuery.trim().length >= 1 && ncsaClubMatches.length === 0 && (
+                      <p className="text-[#555] text-xs mt-2">No NCSA club matches "{ncsaClubQuery}" — you can skip this and link teams manually later.</p>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </div>
 

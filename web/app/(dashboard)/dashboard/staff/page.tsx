@@ -29,6 +29,15 @@ type StaffMember = {
 
 type EmailEditTarget = { kind: 'active' | 'pending'; id: string; current: string | null };
 
+// A coach NCSA lists for this club (via the club's own admin login) with
+// no matching Pulse FC account yet. Kept separate from StaffMember — it
+// has neither a profile nor an invite, so it doesn't fit that shape and
+// isn't editable the same way, only invitable.
+type NcsaUnlinkedCoach = {
+  ncsaCoachId: string; fullName: string; email: string | null; cell: string | null;
+  role: string; teamRawNames: string[]; lastSyncedAt: string;
+};
+
 type EditModal = {
   staff: StaffMember;
   name: string;
@@ -48,6 +57,7 @@ export default function StaffPage() {
 
   const [staff, setStaff]     = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ncsaUnlinked, setNcsaUnlinked] = useState<NcsaUnlinkedCoach[]>([]);
 
   // Invite modal
   const [showInvite, setShowInvite]     = useState(false);
@@ -89,8 +99,9 @@ export default function StaffPage() {
       kind: 'active' | 'pending'; id?: string; inviteId?: string; full_name?: string | null; role?: string | null;
       avatar_url?: string | null; email?: string | null; createdAt?: string | null; lastSignInAt?: string | null;
       invitedAt?: string | null; assigned_teams?: string[]; teamIds?: string[]; via?: StaffVia;
-    }> };
+    }>; ncsaUnlinked?: NcsaUnlinkedCoach[] };
     if (!res.ok || !data.staff) { setLoading(false); return; }
+    setNcsaUnlinked(data.ncsaUnlinked ?? []);
 
     setStaff(data.staff.map((s) => ({
       kind: s.kind,
@@ -381,6 +392,34 @@ export default function StaffPage() {
 
       {/* Content area */}
       <div style={{ padding: '24px 32px' }}>
+
+      {club?.ncsa_partner && ncsaUnlinked.length > 0 && (
+        <div style={{ marginBottom: '16px', background: '#F5F3FF', border: '1.5px solid #DDD6FE', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid #DDD6FE' }}>
+            <div style={{ fontSize: '13px', fontWeight: '800', color: '#5B21B6' }}>
+              {ncsaUnlinked.length} coach{ncsaUnlinked.length === 1 ? '' : 'es'} found on NCSA, not yet on Pulse FC
+            </div>
+            <div style={{ fontSize: '11.5px', color: '#5B21B6', opacity: 0.75, marginTop: '1px' }}>
+              Pulled from NCSA&apos;s own team/coach directory — invite them to give dashboard access.
+            </div>
+          </div>
+          <div>
+            {ncsaUnlinked.map((c) => (
+              <div key={c.ncsaCoachId} style={{ padding: '10px 18px', borderTop: '1px solid #EDE9FE', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{c.fullName}</span>
+                <span style={{ fontSize: '11.5px', color: '#64748B' }}>{c.role} · {c.teamRawNames.join(', ')}</span>
+                {c.email && <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{c.email}</span>}
+                <button
+                  onClick={() => { setInviteName(c.fullName); setInviteEmail(c.email ?? ''); setInviteRole('coach'); setInviteTeams([]); setShowInvite(true); }}
+                  style={{ marginLeft: 'auto', fontSize: '12px', fontWeight: '700', color: '#fff', background: '#7C3AED', border: 'none', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                >
+                  Invite
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#94A3B8' }}>Loading…</div>

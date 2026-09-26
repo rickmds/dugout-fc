@@ -32,6 +32,39 @@ type PendingGame = {
   status: 'unscheduled' | 'scheduled'; created_at: string;
 };
 
+// A club's synced NCSA game, read-only here — the schedule itself is set
+// by the league (sync-ncsa-schedule owns writing these), this page only
+// ever reads them to show the club's full league schedule and flag field
+// gaps/overlaps. Never turned into a game_slots row: away games don't
+// need a club field assignment, and home games' date/time are already
+// fixed by NCSA, not something this page assigns.
+type NcsaGame = {
+  id: string; team_id: string; event_date: string; event_time: string | null;
+  location: string | null; home_away: 'home' | 'away' | null;
+  opponent_raw_name: string | null; title: string;
+  team_name: string; team_age_group: string | null;
+};
+
+// The rest of this section — conflicts, issues, fines — is scraped from
+// NCSA's own club-admin reports (rptGameOverlap.cfm etc), not computed by
+// this app. NCSA's own numbers are more authoritative than anything
+// client-side could derive: they see every club's bookings at a shared
+// complex, not just this one's.
+type NcsaConflict = {
+  id: string; kind: 'overlap' | 'gap'; minutes: number | null;
+  game_a_id: string; game_a_date: string | null; game_a_time: string | null; game_a_field: string | null; game_a_division: string | null; game_a_home: string | null; game_a_visitor: string | null;
+  game_b_id: string; game_b_date: string | null; game_b_time: string | null; game_b_home: string | null; game_b_visitor: string | null;
+};
+type NcsaIssue = {
+  id: string; kind: 'missing_score' | 'tbs'; ncsa_game_id: string;
+  event_date: string | null; event_time: string | null; division: string | null;
+  home_team: string | null; visitor_team: string | null; tbs_type: string | null; team_id: string | null;
+};
+type NcsaFineRow = {
+  id: string; ncsa_fine_id: string; team_raw_name: string | null; reason: string | null;
+  fine_date: string | null; amount: number | null; status: string | null;
+};
+
 // ── Format presets ────────────────────────────────────────────────────────────
 
 const FORMAT_PRESETS = [
@@ -95,6 +128,13 @@ export default function GamesPage() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [panelOpen,       setPanelOpen]       = useState(true);
 
+  // League schedule (NCSA partner clubs only)
+  const [ncsaGames,     setNcsaGames]     = useState<NcsaGame[]>([]);
+  const [ncsaConflicts, setNcsaConflicts] = useState<NcsaConflict[]>([]);
+  const [ncsaIssues,    setNcsaIssues]    = useState<NcsaIssue[]>([]);
+  const [ncsaFines,     setNcsaFines]     = useState<NcsaFineRow[]>([]);
+  const [view,          setView]          = useState<'grid' | 'league'>('grid');
+
   const defaultMins = FORMAT_PRESETS.find(f => f.value === defaultFmt)?.mins ?? 90;
 
   // Undo / redo
@@ -113,13 +153,38 @@ export default function GamesPage() {
 
   const load = useCallback(async () => {
     if (!club) return;
-    const [{ data: sl }, { data: tm }, { data: fi }, { data: pe }, { data: bl }, { data: pg }] = await Promise.all([
+    const [{ data: sl }, { data: tm }, { data: fi }, { data: pe }, { data: bl }, { data: pg }, { data: ng }, { data: nc }, { data: ni }, { data: nf }] = await Promise.all([
       supabase.from('game_slots').select('*, home_team:teams(name, age_group)').eq('club_id', club.id).order('slot_date').order('start_time'),
       supabase.from('teams').select('id, name, age_group').eq('club_id', club.id).order('name'),
       supabase.from('tryout_fields').select('id, name, sort_order, field_group, is_full_field, sub_zones, scheduler_split, scheduler_format, is_active, half_a_name, half_b_name, has_lights, surface_type, field_notes').eq('club_id', club.id).order('sort_order').order('name'),
       supabase.from('field_availability_rules').select('id, field_name, rule_date, unavailable_from, unavailable_until').eq('club_id', club.id).eq('rule_type', 'permit').not('rule_date', 'is', null),
       supabase.from('field_availability_rules').select('id, field_name, rule_date, unavailable_from, unavailable_until').eq('club_id', club.id).eq('rule_type', 'block').not('rule_date', 'is', null),
       supabase.from('pending_games').select('*').eq('club_id', club.id).order('game_date').order('created_at'),
+      // Read-only — sync-ncsa-schedule/sync-ncsa-reports own writing all of
+      // the NCSA-sourced queries below. Only fetched at all for NCSA
+      // partner clubs; everyone else gets the exact same grid this page
+      // has always shown.
+      club.ncsa_partner
+        ? supabase.from('events')
+            .select('id, team_id, event_date, event_time, location, home_away, opponent_raw_name, title, teams!inner(name, age_group, club_id)')
+            .eq('teams.club_id', club.id)
+            .eq('external_source', 'ncsa')
+            .is('cancelled_at', null)
+            .gte('event_date', new Date().toISOString().slice(0, 10))
+            .order('event_date').order('event_time')
+        : Promise.resolve({ data: [] as unknown[] }),
+      // Straight from NCSA's own Overlapping Games / Gap Time reports —
+      // see sync-ncsa-reports. More authoritative than anything computed
+      // client-side (NCSA sees every club's bookings at a shared complex).
+      club.ncsa_partner
+        ? supabase.from('ncsa_schedule_conflicts').select('*').eq('club_id', club.id).order('game_a_date')
+        : Promise.resolve({ data: [] as unknown[] }),
+      club.ncsa_partner
+        ? supabase.from('ncsa_game_issues').select('*').eq('club_id', club.id).is('resolved_at', null).order('event_date')
+        : Promise.resolve({ data: [] as unknown[] }),
+      club.ncsa_partner
+        ? supabase.from('ncsa_fines').select('*').eq('club_id', club.id).order('fine_date', { ascending: false })
+        : Promise.resolve({ data: [] as unknown[] }),
     ]);
     setSlots((sl ?? []) as GameSlot[]);
     setTeams((tm ?? []) as Team[]);
@@ -127,6 +192,20 @@ export default function GamesPage() {
     setPermits((pe ?? []) as Permit[]);
     setBlockRules((bl ?? []) as Permit[]);
     setPendingGames((pg ?? []) as PendingGame[]);
+    setNcsaConflicts((nc ?? []) as NcsaConflict[]);
+    setNcsaIssues((ni ?? []) as NcsaIssue[]);
+    setNcsaFines((nf ?? []) as NcsaFineRow[]);
+    type RawNcsaGame = {
+      id: string; team_id: string; event_date: string; event_time: string | null;
+      location: string | null; home_away: 'home' | 'away' | null;
+      opponent_raw_name: string | null; title: string;
+      teams: { name: string; age_group: string | null } | null;
+    };
+    setNcsaGames(((ng ?? []) as unknown as RawNcsaGame[]).map(g => ({
+      id: g.id, team_id: g.team_id, event_date: g.event_date, event_time: g.event_time,
+      location: g.location, home_away: g.home_away, opponent_raw_name: g.opponent_raw_name, title: g.title,
+      team_name: g.teams?.name ?? '', team_age_group: g.teams?.age_group ?? null,
+    })));
     setLoading(false);
     return { slots: sl ?? [], permits: pe ?? [] };
   }, [club]);
@@ -532,50 +611,71 @@ export default function GamesPage() {
       {/* Header */}
       <div style={{ padding: '14px 24px', background: '#fff', borderBottom: `3px solid ${primary}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Club</div>
-            <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Game Scheduler</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+            <div>
+              <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px' }}>Club</div>
+              <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Game Scheduler</h1>
+            </div>
+            {club?.ncsa_partner && (
+              <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px', gap: '2px' }}>
+                {(['grid', 'league'] as const).map(v => (
+                  <button key={v} onClick={() => setView(v)}
+                    style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12.5px', fontWeight: '700', fontFamily: 'inherit', background: view === v ? '#fff' : 'transparent', color: view === v ? primary : '#64748B', boxShadow: view === v ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+                    {v === 'grid' ? 'Field Grid' : 'League Schedule'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {slots.length > 0 && (
+            {view === 'grid' && slots.length > 0 && (
               <div style={{ fontSize: '12px', color: '#64748B', marginRight: '4px' }}>
                 <strong style={{ color: primary }}>{assigned}</strong> assigned · <strong style={{ color: '#94A3B8' }}>{open}</strong> open
               </div>
             )}
-            {undoLen > 0 && (
+            {view === 'grid' && undoLen > 0 && (
               <button onClick={undo} title="Undo (⌘Z)" style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 12px', borderRadius: '8px', background: '#F1F5F9', color: '#374151', border: '1px solid #E2E8F0', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
                 <Undo2 size={13}/> Undo
               </button>
             )}
-            {redoLen > 0 && (
+            {view === 'grid' && redoLen > 0 && (
               <button onClick={redo} title="Redo (⌘⇧Z)" style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 12px', borderRadius: '8px', background: '#F1F5F9', color: '#374151', border: '1px solid #E2E8F0', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
                 <Redo2 size={13}/> Redo
               </button>
             )}
-            {assigned > 0 && (
+            {view === 'grid' && assigned > 0 && (
               <button onClick={exportCSV} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', background: '#F1F5F9', color: '#374151', border: '1px solid #E2E8F0', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
                 <Download size={13}/> Export CSV
               </button>
             )}
-            {unscheduled > 0 && (
+            {view === 'grid' && unscheduled > 0 && (
               <button onClick={() => setPanelOpen(p => !p)}
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', background: panelOpen ? `${primary}15` : '#FEF3C7', color: panelOpen ? primary : '#92400E', border: `1px solid ${panelOpen ? `${primary}40` : '#FDE68A'}`, fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
                 ⚽ {unscheduled} unscheduled
               </button>
             )}
+            {view === 'grid' && (
             <button onClick={() => setImportModalOpen(true)}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', background: '#F1F5F9', color: '#374151', border: '1px solid #E2E8F0', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
               <Upload size={13}/> Import Schedule
             </button>
+            )}
+            {view === 'grid' && (
             <button onClick={() => setShowRefresh(true)} disabled={filling}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', background: filling ? '#F1F5F9' : primary, color: filling ? '#94A3B8' : '#fff', border: 'none', fontSize: '13px', fontWeight: '700', cursor: filling ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
               <RefreshCw size={13} style={{ animation: filling ? 'spin 1s linear infinite' : 'none' }}/>
               {filling ? 'Filling…' : 'Refresh from permits'}
             </button>
+            )}
           </div>
         </div>
       </div>
 
+      {/* League Schedule view (NCSA partner clubs only) */}
+      {view === 'league' && club?.ncsa_partner ? (
+        <LeagueSchedulePanel games={ncsaGames} conflicts={ncsaConflicts} issues={ncsaIssues} fines={ncsaFines} primary={primary} />
+      ) : (
+      <>
       {/* Body — flex row: optional pending panel on left, grid area on right */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'row' }}>
 
@@ -642,6 +742,8 @@ export default function GamesPage() {
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* Import schedule modal */}
       {importModalOpen && club && (
@@ -944,6 +1046,180 @@ function ScheduleGrid({ sortedDates, columns, slotsFor, isBlocked: _isBlocked, o
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── League Schedule (NCSA partner clubs) ─────────────────────────────────────
+// Read-only view of every linked team's synced NCSA games, plus field-gap/
+// overlap flagging and an informational NCSA change-fee estimate. Never
+// writes to game_slots — NCSA already fixes date/time for these games, so
+// there's nothing here to "assign," only to see and cross-check against
+// the club's own field usage.
+
+// Rule 5.3.7a's exact escalating fee schedule for a late change, in cents-
+// free dollar amounts. Weekend games step at fixed weekday/11am cutoffs
+// counting forward from the Monday of that game's own week; weekday games
+// step by how many days out the change is made, counting back from game
+// day. This is informational only (NCSA — not this app — actually
+// assesses the fee), and only ever a same-or-under estimate: it can't
+// know whether a gap was there by original design or created by a change,
+// so it's phrased as "may trigger," never a bill.
+function estimateChangeFee(eventDate: string, now: Date): number {
+  const game = new Date(eventDate + 'T12:00:00');
+  const day  = game.getDay(); // 0=Sun..6=Sat
+  const isWeekend = day === 0 || day === 6;
+
+  if (isWeekend) {
+    const mondayOffset = day === 0 ? 6 : 5; // days back to that week's Monday
+    const monday = new Date(game); monday.setDate(monday.getDate() - mondayOffset);
+    const at11 = (d: Date) => { const x = new Date(d); x.setHours(11, 0, 0, 0); return x; };
+    if (now < at11(monday)) return 0;
+    const tue = new Date(monday); tue.setDate(tue.getDate() + 1);
+    if (now < at11(tue)) return 35;
+    const wed = new Date(monday); wed.setDate(wed.getDate() + 2);
+    if (now < at11(wed)) return 60;
+    const thu = new Date(monday); thu.setDate(thu.getDate() + 3);
+    if (now < at11(thu)) return 85;
+    return 125;
+  }
+
+  const daysUntil = Math.floor((game.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86400000);
+  if (daysUntil >= 5 || daysUntil < 0) return 0;
+  if (daysUntil === 4) return 35;
+  if (daysUntil === 3) return 60;
+  if (daysUntil === 2) return 85;
+  return 125; // day prior or game day
+}
+
+function fmtDate(d: string) {
+  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+function fmtMins(m: number) {
+  const h = Math.floor(m / 60), r = m % 60;
+  return h > 0 ? `${h}h${r ? ` ${r}m` : ''}` : `${r}m`;
+}
+function fmtGameTime(date: string | null, time: string | null) {
+  if (!date) return 'TBD';
+  return time ? `${fmtDate(date)} · ${fmtT(time)}` : `${fmtDate(date)} · time TBD`;
+}
+
+const SectionCard = ({ title, subtitle, accent, children }: { title: string; subtitle: string; accent: string; children: React.ReactNode }) => (
+  <div style={{ marginBottom: '20px', borderRadius: '12px', border: `1.5px solid ${accent}40`, background: `${accent}08`, overflow: 'hidden' }}>
+    <div style={{ padding: '14px 18px', borderBottom: `1px solid ${accent}30` }}>
+      <div style={{ fontSize: '13px', fontWeight: '800', color: accent }}>{title}</div>
+      <div style={{ fontSize: '11.5px', color: accent, opacity: 0.8, marginTop: '2px' }}>{subtitle}</div>
+    </div>
+    <div style={{ display: 'flex', flexDirection: 'column' }}>{children}</div>
+  </div>
+);
+
+// League Schedule view — everything here is scraped from NCSA (either the
+// anonymous per-team schedule for `games`, or NCSA's own club-admin
+// reports for conflicts/issues/fines via sync-ncsa-reports), never
+// computed client-side. Never writes to game_slots — NCSA already fixes
+// date/time for these games, so there's nothing here to "assign," only
+// to see and cross-check against the club's own field usage.
+function LeagueSchedulePanel({ games, conflicts, issues, fines, primary }: {
+  games: NcsaGame[]; conflicts: NcsaConflict[]; issues: NcsaIssue[]; fines: NcsaFineRow[]; primary: string;
+}) {
+  const now = new Date();
+  const dates = [...new Set(games.map(g => g.event_date))].sort();
+  const missingScores = issues.filter(i => i.kind === 'missing_score');
+  const tbsGames = issues.filter(i => i.kind === 'tbs');
+  const unpaidFines = fines.filter(f => f.status?.toLowerCase() === 'unpaid');
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px 24px' }}>
+      {conflicts.length > 0 && (
+        <SectionCard accent="#C2410C" title={`⚠ ${conflicts.length} field ${conflicts.length === 1 ? 'issue' : 'issues'} — from NCSA's own reports`}
+          subtitle="Overlapping bookings, or idle gaps between games at the same complex — NCSA can fine the club for referee gaps caused by a schedule change (Rule 5.3.6).">
+          {conflicts.map((c, i) => (
+            <div key={c.id} style={{ padding: '10px 18px', borderTop: i > 0 ? '1px solid #FED7AA' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '10px', fontWeight: '800', color: '#fff', background: c.kind === 'overlap' ? '#DC2626' : '#F59E0B', borderRadius: '4px', padding: '2px 6px', letterSpacing: '0.3px', flexShrink: 0 }}>
+                {c.kind === 'overlap' ? 'OVERLAP' : c.minutes != null ? `${fmtMins(c.minutes)} GAP` : 'GAP'}
+              </span>
+              <span style={{ fontSize: '12.5px', color: '#7C2D12' }}>
+                <strong>{c.game_a_field ?? c.game_a_division}</strong> · {c.game_a_date && fmtDate(c.game_a_date)} · {c.game_a_home} ({c.game_a_time ? fmtT(c.game_a_time) : '?'}) {c.kind === 'overlap' ? 'overlaps' : 'then'} {c.game_b_home} ({c.game_b_time ? fmtT(c.game_b_time) : '?'})
+              </span>
+            </div>
+          ))}
+        </SectionCard>
+      )}
+
+      {missingScores.length > 0 && (
+        <SectionCard accent="#B91C1C" title={`${missingScores.length} game${missingScores.length === 1 ? '' : 's'} with a missing score`}
+          subtitle="Score not entered more than 4 hours after kickoff — NCSA can fine $25 per Rule 6.12.">
+          {missingScores.map((i, idx) => (
+            <div key={i.id} style={{ padding: '9px 18px', borderTop: idx > 0 ? '1px solid #FECACA' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12.5px', color: '#7F1D1D' }}>{i.home_team} vs {i.visitor_team} <span style={{ color: '#B91C1C90' }}>· {i.division}</span></span>
+              <span style={{ fontSize: '11.5px', color: '#B91C1C90', marginLeft: 'auto' }}>{fmtGameTime(i.event_date, i.event_time)}</span>
+            </div>
+          ))}
+        </SectionCard>
+      )}
+
+      {tbsGames.length > 0 && (
+        <SectionCard accent="#7C3AED" title={`${tbsGames.length} TBS game${tbsGames.length === 1 ? '' : 's'} not yet scheduled`}
+          subtitle="Rule 5.3.5 allows 1 TBS game per team in Fall, 2 in Spring — extra TBS games cost $25 each.">
+          {tbsGames.map((i, idx) => (
+            <div key={i.id} style={{ padding: '9px 18px', borderTop: idx > 0 ? '1px solid #DDD6FE' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12.5px', color: '#4C1D95' }}>{i.home_team} vs {i.visitor_team} <span style={{ color: '#4C1D9590' }}>· {i.division}</span></span>
+              <span style={{ fontSize: '10.5px', fontWeight: '700', color: '#7C3AED', background: '#EDE9FE', borderRadius: '4px', padding: '1px 6px' }}>{i.tbs_type}</span>
+              <span style={{ fontSize: '11.5px', color: '#4C1D9590', marginLeft: 'auto' }}>{i.event_date ? fmtDate(i.event_date) : ''}</span>
+            </div>
+          ))}
+        </SectionCard>
+      )}
+
+      {unpaidFines.length > 0 && (
+        <SectionCard accent="#B45309" title={`${unpaidFines.length} unpaid NCSA fine${unpaidFines.length === 1 ? '' : 's'} — $${unpaidFines.reduce((s, f) => s + (f.amount ?? 0), 0).toFixed(2)} total`}
+          subtitle="From NCSA's Administrative Area — View/Appeal Fines.">
+          {unpaidFines.map((f, idx) => (
+            <div key={f.id} style={{ padding: '9px 18px', borderTop: idx > 0 ? '1px solid #FDE68A' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12.5px', color: '#78350F' }}>{f.reason} {f.team_raw_name && <span style={{ color: '#78350F90' }}>· {f.team_raw_name}</span>}</span>
+              <span style={{ fontSize: '12px', fontWeight: '800', color: '#B45309', marginLeft: 'auto' }}>${f.amount?.toFixed(2) ?? '?'}</span>
+              {f.fine_date && <span style={{ fontSize: '11px', color: '#78350F90' }}>{fmtDate(f.fine_date)}</span>}
+            </div>
+          ))}
+        </SectionCard>
+      )}
+
+      {dates.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8' }}>
+          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🗓️</div>
+          <div style={{ fontSize: '14px', fontWeight: '700' }}>No upcoming NCSA games synced yet</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {dates.map(date => (
+            <div key={date} style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
+              <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', fontSize: '12.5px', fontWeight: '800', color: '#0F172A' }}>
+                {fmtDate(date)}
+              </div>
+              {games.filter(g => g.event_date === date).map(g => {
+                const fee = estimateChangeFee(g.event_date, now);
+                return (
+                  <div key={g.id} style={{ padding: '10px 16px', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', fontWeight: '800', color: g.home_away === 'home' ? primary : '#64748B', background: g.home_away === 'home' ? `${primary}15` : '#F1F5F9', borderRadius: '4px', padding: '2px 7px', width: '42px', textAlign: 'center', flexShrink: 0 }}>
+                      {g.home_away === 'home' ? 'HOME' : 'AWAY'}
+                    </span>
+                    <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#0F172A', minWidth: '90px' }}>{g.team_name}</span>
+                    <span style={{ fontSize: '12.5px', color: '#64748B' }}>{g.title}</span>
+                    <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{g.event_time ? fmtT(g.event_time) : 'Time TBD'}</span>
+                    {g.location && <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>· {g.location}</span>}
+                    {fee > 0 && (
+                      <span title="Rule 5.3.6 / 5.3.7a — advisory only, NCSA assesses the actual fee" style={{ marginLeft: 'auto', fontSize: '10.5px', fontWeight: '800', color: '#B45309', background: '#FEF3C7', borderRadius: '4px', padding: '2px 7px', flexShrink: 0 }}>
+                        Change now: ~${fee}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
