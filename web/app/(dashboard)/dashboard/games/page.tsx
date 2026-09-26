@@ -611,8 +611,13 @@ export default function GamesPage() {
   const sortedDates = datesWithActivity.length > 0 ? datesWithActivity : Array.from({ length: 14 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i); return d.toISOString().slice(0, 10);
   });
-  // Show all fields — fields that temporarily lose slots (e.g. after split change) still appear
-  const columns: Column[] = fields.flatMap<Column>(f =>
+  // Hidden fields (is_active=false, toggled from the Fields tab) are
+  // excluded outright, not just dimmed — is_active is the one app-wide
+  // "hide everywhere" switch every other consumer (mobile event
+  // creation/editing, schedule upload, the public fields page) already
+  // filters on, so the grid needs to match, not show a paused-looking
+  // column for a field the club said it doesn't use.
+  const columns: Column[] = fields.filter(f => f.is_active !== false).flatMap<Column>(f =>
     f.scheduler_split === 2
       ? [{ field: f, sub: 'A' as const, slotName: `${f.name} [A]` }, { field: f, sub: 'B' as const, slotName: `${f.name} [B]` }]
       : [{ field: f, sub: null, slotName: f.name }]
@@ -1870,11 +1875,11 @@ function FieldEditModal({ field, primary, onClose, onSave, onDelete }: {
               </button>
             </div>
             <div>
-              {lbl('Status')}
-              <button onClick={() => setActive(a => !a)}
+              {lbl('Visibility')}
+              <button onClick={() => setActive(a => !a)} title="Hidden fields are removed from the whole app, web and mobile — same switch as the Fields tab"
                 style={{ width: '100%', padding: '11px 14px', borderRadius: '9px', border: active ? '2px solid #22C55E' : '2px solid #E2E8F0', background: active ? '#F0FDF4' : '#fff', color: active ? '#16A34A' : '#94A3B8', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: active ? '#22C55E' : '#CBD5E1', display: 'inline-block', flexShrink: 0 }}/>
-                {active ? 'Active' : 'Paused'}
+                {active ? 'Visible' : 'Hidden'}
               </button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapPin, Plus, X, Trash2, Pencil, AlertOctagon, CheckCircle, CloudRain, Sun, Cloud, Zap, Snowflake, Wind, Sparkles, ChevronDown, ChevronUp, Upload, Check } from 'lucide-react';
+import { MapPin, Plus, X, Trash2, Pencil, AlertOctagon, CheckCircle, CloudRain, Sun, Cloud, Zap, Snowflake, Wind, Sparkles, ChevronDown, ChevronUp, Upload, Check, Eye, EyeOff } from 'lucide-react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import LocationAutocomplete from '@/components/dashboard/LocationAutocomplete';
@@ -180,6 +180,17 @@ export default function FieldsPage() {
     load();
   }
 
+  // is_active is the single, app-wide "hide this field" switch — every
+  // other place a field can be picked (mobile event creation/editing,
+  // schedule upload, the web schedule pages, the public fields page, the
+  // Game Scheduler grid) already filters on it, so flipping it here is
+  // enough to hide a field everywhere without deleting its history
+  // (permits, closures, past events referencing it) the way Delete does.
+  async function toggleFieldActive(field: TryoutField) {
+    await supabase.from('tryout_fields').update({ is_active: !field.is_active }).eq('id', field.id);
+    load();
+  }
+
   async function deleteField(field: TryoutField) {
     const { id, name } = field;
     // An NCSA-sourced field must never come back the moment the next sync
@@ -285,14 +296,18 @@ export default function FieldsPage() {
               <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
                 {fields.map(f => {
                   const activeClosure = activeClosures.find(c=>c.field_name===f.name);
+                  const hidden = !f.is_active;
                   return (
-                    <div key={f.id} style={{ background:'#fff', borderRadius:'12px', border:`1.5px solid ${activeClosure?'#FCA5A5':'#E2E8F0'}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:'14px', boxShadow:'0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div key={f.id} style={{ background:'#fff', borderRadius:'12px', border:`1.5px solid ${activeClosure?'#FCA5A5':'#E2E8F0'}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:'14px', boxShadow:'0 1px 3px rgba(0,0,0,0.05)', opacity: hidden ? 0.55 : 1 }}>
                       <div style={{ width:'40px', height:'40px', borderRadius:'8px', background:activeClosure?'#FEF2F2':'#F0FDF4', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                         <MapPin size={18} color={activeClosure?'#EF4444':'#16A34A'}/>
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
                           <span style={{ fontSize:'14px', fontWeight:'800', color:'#0F172A' }}>{f.name}</span>
+                          {hidden && (
+                            <span title="Hidden — not shown anywhere in the app, web or mobile" style={{ fontSize:'10px', fontWeight:'800', color:'#64748B', background:'#F1F5F9', borderRadius:'5px', padding:'1px 7px', letterSpacing:'0.3px' }}>HIDDEN</span>
+                          )}
                           {f.external_source === 'ncsa' && (
                             <span title="Auto-populated from NCSA" style={{ fontSize:'10px', fontWeight:'800', color:'#7C3AED', background:'#F5F3FF', borderRadius:'5px', padding:'1px 7px', letterSpacing:'0.3px' }}>NCSA</span>
                           )}
@@ -334,6 +349,9 @@ export default function FieldsPage() {
                             <AlertOctagon size={12} style={{display:'inline',marginRight:'4px',verticalAlign:'middle'}}/>Close
                           </button>
                         )}
+                        <IBtn title={hidden ? 'Show — make visible everywhere again' : 'Hide — remove from the whole app without deleting it'} onClick={()=>toggleFieldActive(f)}>
+                          {hidden ? <Eye size={13}/> : <EyeOff size={13}/>}
+                        </IBtn>
                         <IBtn title="Edit" onClick={()=>{setEditField(f);setShowFieldModal(true);}}><Pencil size={13}/></IBtn>
                         <IBtn title="Delete" onClick={()=>deleteField(f)} danger><Trash2 size={13}/></IBtn>
                       </div>
