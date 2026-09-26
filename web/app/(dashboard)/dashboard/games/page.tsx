@@ -1202,12 +1202,22 @@ function IssueListPanel({ issues, kind }: { issues: NcsaIssue[]; kind: 'missing_
 // nothing here to "assign," only to see.
 function LeagueSchedulePanel({ games, primary }: { games: NcsaGame[]; primary: string }) {
   const now = new Date();
-  const dates = [...new Set(games.map(g => g.event_date))].sort();
+  const [homeAwayFilter, setHomeAwayFilter] = useState<'all' | 'home' | 'away'>('all');
+  const filteredGames = homeAwayFilter === 'all' ? games : games.filter(g => g.home_away === homeAwayFilter);
+  const dates = [...new Set(filteredGames.map(g => g.event_date))].sort();
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px 24px' }}>
+      <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px', gap: '2px', width: 'fit-content', marginBottom: '16px' }}>
+        {(['all', 'home', 'away'] as const).map(f => (
+          <button key={f} onClick={() => setHomeAwayFilter(f)}
+            style={{ padding: '6px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12.5px', fontWeight: '700', fontFamily: 'inherit', textTransform: 'capitalize', background: homeAwayFilter === f ? '#fff' : 'transparent', color: homeAwayFilter === f ? primary : '#64748B', boxShadow: homeAwayFilter === f ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+            {f}
+          </button>
+        ))}
+      </div>
       {dates.length === 0 ? (
-        <EmptyState icon="🗓️" text="No upcoming NCSA games synced yet" />
+        <EmptyState icon="🗓️" text={homeAwayFilter === 'all' ? 'No upcoming NCSA games synced yet' : `No upcoming ${homeAwayFilter} games`} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {dates.map(date => (
@@ -1215,7 +1225,7 @@ function LeagueSchedulePanel({ games, primary }: { games: NcsaGame[]; primary: s
               <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', fontSize: '12.5px', fontWeight: '800', color: '#0F172A' }}>
                 {fmtDate(date)}
               </div>
-              {games.filter(g => g.event_date === date).map(g => {
+              {filteredGames.filter(g => g.event_date === date).map(g => {
                 const fee = estimateChangeFee(g.event_date, now);
                 return (
                   <div key={g.id} style={{ padding: '10px 16px', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
