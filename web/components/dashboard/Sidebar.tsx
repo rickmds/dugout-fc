@@ -49,7 +49,7 @@ const CLUB_NAV: NavEntry[] = [
   { section: 'Manage' },
   { href: '/dashboard/fees',          icon: DollarSign,    label: 'Fees',           adminOnly: true },
   {
-    href: '/dashboard/settings?tab=club&section=NCSA%20Partner', icon: AlertTriangle, label: 'NCSA Fines',
+    href: '/dashboard/fines', icon: AlertTriangle, label: 'NCSA Fines',
     show: (club) => !!club?.ncsa_partner, badgeKey: 'ncsaFines',
   },
   { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations' },
