@@ -6408,6 +6408,12 @@ export type Database = {
           token: string
         }[]
       }
+      get_club_admin_ids: {
+        Args: { p_club_id: string }
+        Returns: {
+          profile_id: string
+        }[]
+      }
       get_club_parents: {
         Args: { p_club_id: string }
         Returns: {
@@ -6418,6 +6424,13 @@ export type Database = {
       }
       get_conversation_participant_names: {
         Args: { p_conversation_id: string }
+        Returns: {
+          full_name: string
+          profile_id: string
+        }[]
+      }
+      get_my_conversation_participant_names: {
+        Args: never
         Returns: {
           full_name: string
           profile_id: string
@@ -6448,6 +6461,15 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      get_player_guardian_info: {
+        Args: { p_player_id: string }
+        Returns: {
+          address: string
+          avatar_url: string
+          full_name: string
+          profile_id: string
+        }[]
+      }
       get_team_coaches: {
         Args: { p_team_id: string }
         Returns: {
@@ -6465,6 +6487,13 @@ export type Database = {
           is_coach_viewer: boolean
           player_id: string
           player_name: string
+        }[]
+      }
+      get_team_member_names: {
+        Args: { p_team_id: string }
+        Returns: {
+          full_name: string
+          profile_id: string
         }[]
       }
       get_team_reflection_trends: {

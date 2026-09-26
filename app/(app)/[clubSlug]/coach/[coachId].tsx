@@ -117,28 +117,36 @@ export default function CoachProfileScreen() {
       // screen originally did, never matched, so every coach profile
       // showed "Coach not found." Scoped to team.id too since a profile
       // can coach more than one team.
-      const { data, error } = await supabase
-        .from('team_members')
-        .select('id, role, created_at, profiles!team_members_profile_id_fkey(id, full_name, avatar_url, phone)')
-        .eq('profile_id', coachId)
-        .eq('team_id', team!.id)
-        .single();
+      //
+      // A direct embedded profiles join 403s for a parent reading a
+      // coach's row (RLS blocks reading someone else's full profile,
+      // including phone) — get_team_coaches resolves name/avatar/phone
+      // instead; team_members still supplies role/joined-date/its own id.
+      const [{ data, error }, { data: coachRows }] = await Promise.all([
+        supabase
+          .from('team_members')
+          .select('id, role, created_at')
+          .eq('profile_id', coachId)
+          .eq('team_id', team!.id)
+          .single(),
+        supabase.rpc('get_team_coaches', { p_team_id: team!.id }),
+      ]);
 
       if (error || !data) {
         setLoading(false);
         return;
       }
 
-      const p = (data.profiles as any) ?? {};
+      const p = (coachRows ?? []).find((c) => c.profile_id === coachId);
       setCoach({
         source: 'member',
-        name: p.full_name ?? 'Coach',
+        name: p?.full_name ?? 'Coach',
         email: null,
-        phone: p.phone ?? null,
-        avatarUrl: p.avatar_url ?? null,
+        phone: p?.phone ?? null,
+        avatarUrl: p?.avatar_url ?? null,
         role: data.role === 'coach' ? 'Coach' : (data.role ?? 'Coach'),
         teamId: null,
-        profileId: p.id ?? null,
+        profileId: p?.profile_id ?? null,
         teamMemberId: data.id,
         joinedAt: data.created_at,
         inviteId: null,

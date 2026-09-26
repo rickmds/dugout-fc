@@ -389,8 +389,13 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
       )];
 
       if (soloOtherIds.length > 0) {
-        const { data: otherProfiles } = await supabase.from('profiles').select('id, full_name').in('id', soloOtherIds);
-        const nameByProfileId = new Map((otherProfiles ?? []).map((p: any) => [p.id, p.full_name as string | null]));
+        // A direct profiles query is blocked by RLS for anyone not sharing
+        // a team/club with the caller — get_my_conversation_participant_names
+        // covers exactly this screen's scope (everyone the caller shares
+        // any conversation with) without exposing phone/emergency-contact
+        // data the way the old broad profiles grant did.
+        const { data: otherProfiles } = await supabase.rpc('get_my_conversation_participant_names');
+        const nameByProfileId = new Map((otherProfiles ?? []).map((p) => [p.profile_id, p.full_name as string | null]));
         for (const [convId, others] of othersByConv) {
           if (others.length !== 1) continue;
           const name = nameByProfileId.get(others[0]);
@@ -521,18 +526,24 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
   async function openNewChat() {
     if (!team || !profile) return;
 
-    const [tmRes, playersRes] = await Promise.all([
+    // A direct embedded profiles join is blocked by RLS for a parent
+    // reading another parent's row — get_team_member_names covers every
+    // role on this team (coaches AND parents) in one name-only call,
+    // without exposing phone/emergency-contact data.
+    const [tmRes, namesRes, playersRes] = await Promise.all([
       supabase
         .from('team_members')
-        .select('profile_id, role, profiles:profile_id(full_name)')
+        .select('profile_id, role')
         .eq('team_id', team.id)
         .neq('profile_id', profile.id),
+      supabase.rpc('get_team_member_names', { p_team_id: team.id }),
       supabase.from('players').select('id, full_name').eq('team_id', team.id).order('full_name'),
     ]);
 
+    const nameByProfileId = new Map((namesRes.data ?? []).map((p) => [p.profile_id, p.full_name as string | null]));
     const members: TeamMember[] = (tmRes.data ?? []).map((m: any) => ({
       profile_id: m.profile_id,
-      full_name: m.profiles?.full_name ?? null,
+      full_name: nameByProfileId.get(m.profile_id) ?? null,
       role: m.role,
     }));
     setTeamMembers(members);
@@ -993,16 +1004,23 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
   async function fetchAnnouncements() {
     if (!team) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('announcements')
-      .select('id, title, body, pinned, created_at, created_by, profiles:created_by(full_name)')
-      .eq('team_id', team.id)
-      .order('pinned', { ascending: false })
-      .order('created_at', { ascending: false });
+    // A parent reading an announcement posted by a coach can't embed-join
+    // profiles directly (RLS blocks reading someone else's full row) —
+    // get_team_member_names covers every role on this team in one call.
+    const [{ data }, { data: namesData }] = await Promise.all([
+      supabase
+        .from('announcements')
+        .select('id, title, body, pinned, created_at, created_by')
+        .eq('team_id', team.id)
+        .order('pinned', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase.rpc('get_team_member_names', { p_team_id: team.id }),
+    ]);
+    const nameByProfileId = new Map((namesData ?? []).map((p) => [p.profile_id, p.full_name as string | null]));
     const rows = (data ?? []).map((a: any) => ({
       id: a.id, title: a.title, body: a.body, pinned: a.pinned,
       created_at: a.created_at, created_by: a.created_by,
-      creator_name: a.profiles?.full_name ?? null,
+      creator_name: a.created_by ? (nameByProfileId.get(a.created_by) ?? null) : null,
     }));
     setAnnouncements(rows);
     setLoading(false);

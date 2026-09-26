@@ -28,12 +28,26 @@ export default function PlayerShoutoutsScreen() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data } = await supabase
-        .from('player_shoutouts')
-        .select('id,tag,note,created_at,events(title,event_date),profiles!player_shoutouts_coach_id_fkey(full_name)')
-        .eq('player_id', playerId)
-        .order('created_at', { ascending: false });
-      setRows((data as any) ?? []);
+      // A direct embedded profiles join 403s for a parent reading the
+      // shouting coach's row (RLS) — get_team_coaches resolves it instead,
+      // the same fix already applied to the roster screen's coach lookup.
+      const [{ data: playerRow }, { data }] = await Promise.all([
+        supabase.from('players').select('team_id').eq('id', playerId).single(),
+        supabase
+          .from('player_shoutouts')
+          .select('id,tag,note,created_at,coach_id,events(title,event_date)')
+          .eq('player_id', playerId)
+          .order('created_at', { ascending: false }),
+      ]);
+      const { data: coachRows } = playerRow?.team_id
+        ? await supabase.rpc('get_team_coaches', { p_team_id: playerRow.team_id })
+        : { data: null };
+      const nameByCoachId = new Map((coachRows ?? []).map((c) => [c.profile_id, c.full_name as string | null]));
+      const rows: ShoutoutRow[] = ((data ?? []) as any[]).map((r) => ({
+        ...r,
+        profiles: r.coach_id ? { full_name: nameByCoachId.get(r.coach_id) ?? null } : null,
+      }));
+      setRows(rows);
       setLoading(false);
     }
     // Same stuck-badge bug as messages/announcements/events — this screen

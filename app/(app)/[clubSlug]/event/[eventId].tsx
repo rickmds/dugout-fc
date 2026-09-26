@@ -999,15 +999,19 @@ export default function EventDetailScreen() {
     // Notify coaches and org admins on the event's team
     if (team && event) {
       const clubId = team.club_id;
+      // A direct profiles query 403s for a parent caller (RLS) —
+      // get_club_admin_ids returns just ids, safe for any authenticated
+      // caller since club-admin identity isn't sensitive the way contact
+      // details are.
       const [{ data: coachRows }, { data: adminRows }] = await Promise.all([
         supabase.from('team_members').select('profile_id').eq('team_id', team.id).eq('role', 'coach'),
         clubId
-          ? supabase.from('profiles').select('id').eq('club_id', clubId).in('role', ['org_admin', 'app_admin'])
-          : Promise.resolve({ data: [] as { id: string }[] }),
+          ? supabase.rpc('get_club_admin_ids', { p_club_id: clubId })
+          : Promise.resolve({ data: [] as { profile_id: string }[] }),
       ]);
       const recipientIds = [
         ...((coachRows ?? []) as { profile_id: string }[]).map(r => r.profile_id),
-        ...((adminRows ?? []) as { id: string }[]).map(r => r.id),
+        ...((adminRows ?? []) as { profile_id: string }[]).map(r => r.profile_id),
       ].filter((id, i, arr) => id !== profile?.id && arr.indexOf(id) === i);
       if (recipientIds.length > 0) {
         const guestName = g?.full_name ?? 'A guest';

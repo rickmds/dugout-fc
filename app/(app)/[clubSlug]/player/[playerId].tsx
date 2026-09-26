@@ -428,14 +428,13 @@ export default function PlayerProfileScreen() {
     if (!player || !team) return;
     setGuardiansLoading(true);
 
-    const [profileRes, inviteRes, accessRes, emergencyRes] = await Promise.all([
-      player.profile_id
-        ? supabase
-            .from('profiles')
-            .select('id, full_name, avatar_url, address')
-            .eq('id', player.profile_id)
-            .single()
-        : Promise.resolve({ data: null, error: null }),
+    // player.profile_id's own row and player_guardians' embedded profiles
+    // both 403 under current RLS for a plain guardian viewer (reading
+    // someone else's full profile row) — get_player_guardian_info covers
+    // both in one call, gated to this player's own guardians/coaches
+    // rather than trusting the client-side canSeeDetails check alone.
+    const [guardianInfoRes, inviteRes, accessRes, emergencyRes] = await Promise.all([
+      supabase.rpc('get_player_guardian_info', { p_player_id: player.id }),
       (supabase as any)
         .from('invites')
         .select('id, email, token, guardian_name, phone, address, relationship, accepted_at, accepted_by, created_at')
@@ -446,7 +445,7 @@ export default function PlayerProfileScreen() {
       // under the old behavior, or never existed) while access persists.
       (supabase as any)
         .from('player_guardians')
-        .select('profile_id, profiles(id, full_name, avatar_url)')
+        .select('profile_id')
         .eq('player_id', player.id),
       supabase
         .from('player_emergency_contacts')
@@ -455,10 +454,17 @@ export default function PlayerProfileScreen() {
         .order('created_at', { ascending: true }),
     ]);
 
-    setGuardianProfile((profileRes.data as GuardianProfile | null) ?? null);
+    const infoByProfileId = new Map((guardianInfoRes.data ?? []).map((p) => [p.profile_id, p]));
+    const ownInfo = player.profile_id ? infoByProfileId.get(player.profile_id) : null;
+    setGuardianProfile(
+      ownInfo ? { id: ownInfo.profile_id, full_name: ownInfo.full_name, avatar_url: ownInfo.avatar_url, address: ownInfo.address } : null
+    );
     setGuardianAccess(
-      (((accessRes as any).data ?? []) as { profile_id: string; profiles: { id: string; full_name: string | null; avatar_url: string | null } | null }[])
-        .map((g) => ({ profileId: g.profile_id, fullName: g.profiles?.full_name ?? null, avatarUrl: g.profiles?.avatar_url ?? null }))
+      (((accessRes as any).data ?? []) as { profile_id: string }[])
+        .map((g) => {
+          const info = infoByProfileId.get(g.profile_id);
+          return { profileId: g.profile_id, fullName: info?.full_name ?? null, avatarUrl: info?.avatar_url ?? null };
+        })
     );
     setInvites(((inviteRes as any).data as Invite[]) ?? []);
     setEmergencyContacts((emergencyRes.data as EmergencyContact[]) ?? []);

@@ -1155,15 +1155,19 @@ export default function HomeScreen() {
       // Notify coaches and org admins — the invite's own event/team club, not
       // the responding parent's home club (they may belong to several).
       const clubId = invite.club_id;
+      // A direct profiles query 403s for a parent caller (RLS) —
+      // get_club_admin_ids returns just ids, safe for any authenticated
+      // caller since club-admin identity isn't sensitive the way contact
+      // details are.
       const [{ data: coachRows }, { data: adminRows }] = await Promise.all([
         supabase.from('team_members').select('profile_id').eq('team_id', invite.team_id).eq('role', 'coach'),
         clubId
-          ? supabase.from('profiles').select('id').eq('club_id', clubId).in('role', ['org_admin', 'app_admin'])
-          : Promise.resolve({ data: [] as { id: string }[] }),
+          ? supabase.rpc('get_club_admin_ids', { p_club_id: clubId })
+          : Promise.resolve({ data: [] as { profile_id: string }[] }),
       ]);
       const recipientIds = [
         ...((coachRows ?? []) as any[]).map(r => r.profile_id as string),
-        ...((adminRows ?? []) as any[]).map(r => r.id as string),
+        ...((adminRows ?? []) as any[]).map(r => r.profile_id as string),
       ].filter((id, i, arr) => !!id && arr.indexOf(id) === i);
       if (recipientIds.length > 0) {
         await sendProfilesPush({

@@ -259,12 +259,15 @@ export default function ConversationScreen() {
         // trusting that stored value.
         const teamId = (conv as any).team_id as string | null;
         if (others.length === 1) {
-          const { data: otherProfile } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', others[0])
-            .single();
-          if (otherProfile?.full_name) setTitle(otherProfile.full_name);
+          // fetchMessages() (already awaited above, in the same Promise.all)
+          // calls ensureSenderNames() internally, so senderNamesRef is
+          // already populated with every participant in this conversation
+          // by the time we get here — no separate profiles query needed
+          // (a direct one would fail the same way the old sender-name join
+          // did: profiles RLS no longer grants a plain parent's full row
+          // just for sharing a conversation).
+          const otherName = senderNamesRef.current[others[0]];
+          if (otherName) setTitle(otherName);
 
           // Coach viewing a 1:1 DM — also append which player this parent
           // guardians so the header is unambiguous, matching chat.tsx's list.
@@ -456,17 +459,19 @@ export default function ConversationScreen() {
     return () => { supabase.removeChannel(channel); };
   }
 
-  async function openReactorSheet(groups: { emoji: string; profileIds: string[] }[]) {
+  function openReactorSheet(groups: { emoji: string; profileIds: string[] }[]) {
     setReactorSheet(groups);
+    // Anyone who reacted is necessarily a conversation participant, so
+    // senderNamesRef (populated once via ensureSenderNames — see its own
+    // comment) already covers every id here. A direct profiles query would
+    // fail the same way the old sender-name join did: profiles RLS no
+    // longer grants a plain parent's full row just for sharing a
+    // conversation.
     const missing = [...new Set(groups.flatMap((g) => g.profileIds))].filter((id) => !(id in reactorNames));
     if (!missing.length) return;
-    setLoadingReactors(true);
-    const { data } = await supabase.from('profiles').select('id, full_name').in('id', missing);
-    setLoadingReactors(false);
-    if (!data) return;
     setReactorNames((prev) => {
       const next = { ...prev };
-      for (const p of data as { id: string; full_name: string | null }[]) next[p.id] = p.full_name ?? 'Someone';
+      for (const id of missing) next[id] = senderNamesRef.current[id] || 'Someone';
       return next;
     });
   }

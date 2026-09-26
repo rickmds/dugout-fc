@@ -102,9 +102,12 @@ export default function GalleryScreen() {
     const off = reset ? 0 : offsetRef.current;
     if (!reset) setLoadingMore(true);
 
+    // A direct embedded profiles join 403s for a parent reading another
+    // parent's row (RLS) — get_team_member_names resolves the uploader's
+    // name for any role on this team instead, merged in below.
     let query = (supabase as any)
       .from('team_photos')
-      .select('*, profiles!uploaded_by(full_name), events(title), team_photo_likes(profile_id)')
+      .select('*, events(title), team_photo_likes(profile_id)')
       .eq('team_id', team.id)
       .order('created_at', { ascending: false });
 
@@ -115,8 +118,15 @@ export default function GalleryScreen() {
       query = query.gte('created_at', start.toISOString());
     }
 
-    const { data } = await query.range(off, off + PAGE - 1);
-    const rows = (data as Photo[]) ?? [];
+    const [{ data }, { data: namesData }] = await Promise.all([
+      query.range(off, off + PAGE - 1),
+      supabase.rpc('get_team_member_names', { p_team_id: team.id }),
+    ]);
+    const nameByProfileId = new Map((namesData ?? []).map((p) => [p.profile_id, p.full_name as string | null]));
+    const rows = ((data ?? []) as Photo[]).map((p) => ({
+      ...p,
+      profiles: p.uploaded_by ? { full_name: nameByProfileId.get(p.uploaded_by) ?? '' } : null,
+    }));
 
     if (reset) {
       setPhotos(rows);
