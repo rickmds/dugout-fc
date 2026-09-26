@@ -1187,7 +1187,7 @@ const TBS_TYPE_LABELS: Record<string, string> = {
   'F1': 'Field TBD',
   'TBS Postponed': 'Postponed',
   'TBS-Games Conduct Decision': 'Pending conduct decision',
-  'To Be Scheduled - Northen Counties Cup': 'Cup — not yet drawn',
+  'To Be Scheduled - Northen Counties Cup': 'Cup — date/field TBD',
   'To Be Scheduled-Both': 'Date & field TBD',
   'To Be Scheduled-Field': 'Field TBD',
   'To Be Scheduled-Home': 'Waiting on us to schedule',
