@@ -205,11 +205,17 @@ export default function GamesPage() {
       opponent_raw_name: string | null; title: string;
       teams: { name: string; age_group: string | null } | null;
     };
-    setNcsaGames(((ng ?? []) as unknown as RawNcsaGame[]).map(g => ({
-      id: g.id, team_id: g.team_id, event_date: g.event_date, event_time: g.event_time,
-      location: g.location, home_away: g.home_away, opponent_raw_name: g.opponent_raw_name, title: g.title,
-      team_name: g.teams?.name ?? '', team_age_group: g.teams?.age_group ?? null,
-    })));
+    setNcsaGames(((ng ?? []) as unknown as RawNcsaGame[])
+      // TBS placeholder games (location like "To Be Scheduled-..."/"TBS
+      // Postponed"/etc — confirmed variants, same pattern used in the
+      // fields sync) belong on the dedicated TBS Games tab (sourced from
+      // NCSA's own TBS report), not mixed into the real game list here.
+      .filter(g => !g.location || !/^(to be scheduled|tbs)\b/i.test(g.location))
+      .map(g => ({
+        id: g.id, team_id: g.team_id, event_date: g.event_date, event_time: g.event_time,
+        location: g.location, home_away: g.home_away, opponent_raw_name: g.opponent_raw_name, title: g.title,
+        team_name: g.teams?.name ?? '', team_age_group: g.teams?.age_group ?? null,
+      })));
     setLoading(false);
     return { slots: sl ?? [], permits: pe ?? [] };
   }, [club]);
