@@ -119,7 +119,11 @@ async function syncFines(supabase: SB, clubId: string, fines: NcsaFine[], teamBy
 
 async function syncConflicts(supabase: SB, clubId: string, overlaps: NcsaConflict[], gaps: NcsaConflict[]) {
   await supabase.from('ncsa_schedule_conflicts').delete().eq('club_id', clubId);
-  const rows = [...overlaps.map((c) => toConflictRow(clubId, 'overlap', c)), ...gaps.map((c) => toConflictRow(clubId, 'gap', c))];
+  // NCSA's own Gap Time report defaults to "2 hours or more," but a gap
+  // of exactly 2 hours isn't actually worth flagging — only real outliers
+  // beyond that.
+  const realGaps = gaps.filter((c) => c.minutes == null || c.minutes > 120);
+  const rows = [...overlaps.map((c) => toConflictRow(clubId, 'overlap', c)), ...realGaps.map((c) => toConflictRow(clubId, 'gap', c))];
   if (rows.length) await supabase.from('ncsa_schedule_conflicts').insert(rows);
 }
 
@@ -188,6 +192,12 @@ async function syncClub(supabase: SB, clubId: string): Promise<{ error?: string 
   // either way, not a real fine calculation).
   const now = Date.now();
   const overdue = parseGameListReport(missingHtml).filter((r) => {
+    // The missing-score report also lists games that are themselves TBS
+    // (field column reads "TBS (L)"/"(V)"/"(H)"/"(R)"/"(GC)"/"(PPD)", or a
+    // full "To Be Scheduled-..." placeholder) — those trivially have no
+    // score because they haven't been played yet, not because a coach
+    // forgot to enter one. Already covered by the TBS Games tab instead.
+    if (/^(to be scheduled|tbs)\b/i.test(r.fieldOrType)) return false;
     if (!r.date || !r.time) return false;
     return new Date(`${r.date}T${r.time}`).getTime() + 4 * 60 * 60 * 1000 < now;
   });
