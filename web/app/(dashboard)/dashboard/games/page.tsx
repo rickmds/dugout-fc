@@ -1306,32 +1306,52 @@ function LeagueSchedulePanel({ games, primary }: { games: NcsaGame[]; primary: s
         <EmptyState icon="🗓️" text={homeAwayFilter === 'all' ? 'No upcoming NCSA games synced yet' : `No upcoming ${homeAwayFilter} games`} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {dates.map(date => (
-            <div key={date} style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
-              <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', fontSize: '12.5px', fontWeight: '800', color: '#0F172A' }}>
-                {fmtDate(date)}
-              </div>
-              {filteredGames.filter(g => g.event_date === date).map(g => {
-                const fee = estimateChangeFee(g.event_date, now);
-                return (
-                  <div key={g.id} style={{ padding: '10px 16px', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', color: g.home_away === 'home' ? primary : '#64748B', background: g.home_away === 'home' ? `${primary}15` : '#F1F5F9', borderRadius: '4px', padding: '2px 7px', width: '42px', textAlign: 'center', flexShrink: 0 }}>
-                      {g.home_away === 'home' ? 'HOME' : 'AWAY'}
+          {dates.map(date => {
+            const dayGames = filteredGames.filter(g => g.event_date === date);
+            // Only meaningful for Home: these are the club's own fields, so
+            // "who's on Maple West after who" is a real scheduling question.
+            // Away games sit at other clubs' fields — grouping by venue
+            // there wouldn't tell a DOC anything useful.
+            const byField = homeAwayFilter === 'home'
+              ? [...new Set(dayGames.map(g => g.location ?? 'No field listed'))].sort()
+              : null;
+
+            function renderGame(g: NcsaGame) {
+              const fee = estimateChangeFee(g.event_date, now);
+              return (
+                <div key={g.id} style={{ padding: '10px 16px', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '800', color: g.home_away === 'home' ? primary : '#64748B', background: g.home_away === 'home' ? `${primary}15` : '#F1F5F9', borderRadius: '4px', padding: '2px 7px', width: '42px', textAlign: 'center', flexShrink: 0 }}>
+                    {g.home_away === 'home' ? 'HOME' : 'AWAY'}
+                  </span>
+                  <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#0F172A', minWidth: '90px' }}>{g.team_name}</span>
+                  <span style={{ fontSize: '12.5px', color: '#64748B' }}>{g.title}</span>
+                  <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{g.event_time ? fmtT(g.event_time) : 'Time TBD'}</span>
+                  {!byField && g.location && <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>· {g.location}</span>}
+                  {fee > 0 && (
+                    <span title="Rule 5.3.6 / 5.3.7a — advisory only, NCSA assesses the actual fee" style={{ marginLeft: 'auto', fontSize: '10.5px', fontWeight: '800', color: '#B45309', background: '#FEF3C7', borderRadius: '4px', padding: '2px 7px', flexShrink: 0 }}>
+                      Change now: ~${fee}
                     </span>
-                    <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#0F172A', minWidth: '90px' }}>{g.team_name}</span>
-                    <span style={{ fontSize: '12.5px', color: '#64748B' }}>{g.title}</span>
-                    <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{g.event_time ? fmtT(g.event_time) : 'Time TBD'}</span>
-                    {g.location && <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>· {g.location}</span>}
-                    {fee > 0 && (
-                      <span title="Rule 5.3.6 / 5.3.7a — advisory only, NCSA assesses the actual fee" style={{ marginLeft: 'auto', fontSize: '10.5px', fontWeight: '800', color: '#B45309', background: '#FEF3C7', borderRadius: '4px', padding: '2px 7px', flexShrink: 0 }}>
-                        Change now: ~${fee}
-                      </span>
-                    )}
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div key={date} style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
+                <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', fontSize: '12.5px', fontWeight: '800', color: '#0F172A' }}>
+                  {fmtDate(date)}
+                </div>
+                {byField ? byField.map(field => (
+                  <div key={field}>
+                    <div style={{ padding: '7px 16px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9', fontSize: '11px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {field}
+                    </div>
+                    {dayGames.filter(g => (g.location ?? 'No field listed') === field).map(renderGame)}
                   </div>
-                );
-              })}
-            </div>
-          ))}
+                )) : dayGames.map(renderGame)}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
