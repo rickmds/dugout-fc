@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, X, Trash2, RefreshCw, Undo2, Redo2, Pencil, GripVertical, Upload } from 'lucide-react';
+import { Download, X, Trash2, RefreshCw, Undo2, Redo2, Pencil, GripVertical, Upload, MapPin, CircleDollarSign } from 'lucide-react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 
@@ -1286,6 +1286,13 @@ function IssueListPanel({ issues, kind, clubPrefix }: { issues: NcsaIssue[]; kin
 // informational NCSA change-fee estimate (Rule 5.3.7a). Never writes to
 // game_slots — NCSA already fixes date/time for these games, so there's
 // nothing here to "assign," only to see.
+function leagueTeamColor(name: string): string {
+  const palette = ['#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#06B6D4', '#EF4444', '#6366F1'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return palette[Math.abs(hash) % palette.length];
+}
+
 function LeagueSchedulePanel({ games, primary }: { games: NcsaGame[]; primary: string }) {
   const now = new Date();
   const [homeAwayFilter, setHomeAwayFilter] = useState<'all' | 'home' | 'away'>('all');
@@ -1318,18 +1325,25 @@ function LeagueSchedulePanel({ games, primary }: { games: NcsaGame[]; primary: s
 
             function renderGame(g: NcsaGame) {
               const fee = estimateChangeFee(g.event_date, now);
+              const tc = leagueTeamColor(g.team_name);
               return (
                 <div key={g.id} style={{ padding: '10px 16px', borderTop: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '11px', fontWeight: '800', color: g.home_away === 'home' ? primary : '#64748B', background: g.home_away === 'home' ? `${primary}15` : '#F1F5F9', borderRadius: '4px', padding: '2px 7px', width: '42px', textAlign: 'center', flexShrink: 0 }}>
+                  <span style={{ width: '6px', height: '20px', borderRadius: '3px', background: tc, flexShrink: 0 }} />
+                  <span style={{ fontSize: '10.5px', fontWeight: '800', color: g.home_away === 'home' ? primary : '#64748B', background: g.home_away === 'home' ? `${primary}15` : '#F1F5F9', borderRadius: '4px', padding: '2px 7px', width: '42px', textAlign: 'center', flexShrink: 0 }}>
                     {g.home_away === 'home' ? 'HOME' : 'AWAY'}
                   </span>
                   <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#0F172A', minWidth: '90px' }}>{g.team_name}</span>
                   <span style={{ fontSize: '12.5px', color: '#64748B' }}>{g.title}</span>
-                  <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{g.event_time ? fmtT(g.event_time) : 'Time TBD'}</span>
-                  {!byField && g.location && <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>· {g.location}</span>}
+                  <span style={{ fontSize: '11.5px', color: '#94A3B8', fontVariantNumeric: 'tabular-nums' }}>{g.event_time ? fmtT(g.event_time) : 'Time TBD'}</span>
+                  {!byField && g.location && (
+                    <span style={{ fontSize: '11.5px', color: '#94A3B8', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                      <MapPin size={10} /> {g.location}
+                    </span>
+                  )}
                   {fee > 0 && (
-                    <span title="Rule 5.3.6 / 5.3.7a — advisory only, NCSA assesses the actual fee" style={{ marginLeft: 'auto', fontSize: '10.5px', fontWeight: '800', color: '#B45309', background: '#FEF3C7', borderRadius: '4px', padding: '2px 7px', flexShrink: 0 }}>
-                      Change now: ~${fee}
+                    <span title={`Changing this game now may trigger a ~$${fee} NCSA fee (Rule 5.3.6 / 5.3.7a) — advisory only, NCSA assesses the actual fee`}
+                      style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '11px', fontWeight: '700', color: '#B45309', flexShrink: 0, cursor: 'help' }}>
+                      <CircleDollarSign size={12} /> ~${fee}
                     </span>
                   )}
                 </div>
@@ -1338,13 +1352,14 @@ function LeagueSchedulePanel({ games, primary }: { games: NcsaGame[]; primary: s
 
             return (
               <div key={date} style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
-                <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', fontSize: '12.5px', fontWeight: '800', color: '#0F172A' }}>
-                  {fmtDate(date)}
+                <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', borderLeft: `3px solid ${primary}`, display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>{fmtDate(date)}</span>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#94A3B8' }}>{dayGames.length} game{dayGames.length === 1 ? '' : 's'}</span>
                 </div>
                 {byField ? byField.map(field => (
                   <div key={field}>
-                    <div style={{ padding: '7px 16px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9', fontSize: '11px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {field}
+                    <div style={{ padding: '7px 16px', background: '#F8FAFC', borderTop: '1px solid #F1F5F9', fontSize: '11px', fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <MapPin size={11} /> {field}
                     </div>
                     {dayGames.filter(g => (g.location ?? 'No field listed') === field).map(renderGame)}
                   </div>
