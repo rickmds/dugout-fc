@@ -25,6 +25,15 @@ type TournamentStats = TournamentRow & {
   dateRangeLabel: string;
 };
 
+// Same list/order as the Teams page — numeric age order (U8 before U10),
+// not alphabetical (which would put U10 before U8).
+const AGE_GROUPS = ['U6','U7','U8','U9','U10','U11','U12','U13','U14','U15','U16','U17','U18','U19','Senior'];
+const GENDERS = [
+  { value: 'boys', label: 'Boys' },
+  { value: 'girls', label: 'Girls' },
+  { value: 'mixed', label: 'Mixed' },
+];
+
 function fmtDateRange(start: string | null, end: string | null, games: GameRow[]): string {
   const dates = games.length > 0 ? games.map(g => g.event_date).sort() : [start, end].filter(Boolean) as string[];
   if (dates.length === 0) return 'Dates TBD';
@@ -40,6 +49,8 @@ export default function TournamentsPage() {
   const [rows, setRows] = useState<TournamentStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'tournaments' | 'teams'>('tournaments');
+  const [ageFilter, setAgeFilter] = useState<Set<string>>(new Set());
+  const [genderFilter, setGenderFilter] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!teams.length) { setLoading(false); return; }
@@ -116,13 +127,29 @@ export default function TournamentsPage() {
     }
     return teams
       .map(t => ({ team: t, tournaments: (byTeam.get(t.id) ?? []).sort((a, b) => (a.start_date ?? '9999').localeCompare(b.start_date ?? '9999')) }))
+      // Age first (U8 before U10 — numeric, not alphabetical), youngest at
+      // the top, matching the Teams page's own default ordering. Within
+      // the same age group, a team with no tournament yet still floats up
+      // first so it isn't lost among siblings that already have one.
       .sort((a, b) => {
+        const aAge = AGE_GROUPS.indexOf(a.team.age_group ?? '');
+        const bAge = AGE_GROUPS.indexOf(b.team.age_group ?? '');
+        const ageDiff = (aAge === -1 ? AGE_GROUPS.length : aAge) - (bAge === -1 ? AGE_GROUPS.length : bAge);
+        if (ageDiff !== 0) return ageDiff;
         if (a.tournaments.length === 0 && b.tournaments.length > 0) return -1;
         if (b.tournaments.length === 0 && a.tournaments.length > 0) return 1;
         return a.team.name.localeCompare(b.team.name);
       });
   }, [teams, rows]);
   const teamsMissing = teamRows.filter(t => t.tournaments.length === 0).length;
+
+  const presentAgeGroups = AGE_GROUPS.filter(ag => teams.some(t => t.age_group === ag));
+  const presentGenders = GENDERS.filter(g => teams.some(t => t.gender === g.value));
+  const filteredTeamRows = teamRows.filter(({ team }) => {
+    if (ageFilter.size > 0 && !ageFilter.has(team.age_group ?? '')) return false;
+    if (genderFilter.size > 0 && !genderFilter.has(team.gender ?? '')) return false;
+    return true;
+  });
 
   return (
     <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
@@ -189,6 +216,46 @@ export default function TournamentsPage() {
             </button>
           ))}
         </div>
+
+        {/* Age/gender quick filters — By Team view only */}
+        {view === 'teams' && presentAgeGroups.length > 1 && (
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {presentAgeGroups.map(ag => {
+              const active = ageFilter.has(ag);
+              return (
+                <button key={ag}
+                  onClick={() => setAgeFilter(prev => { const next = new Set(prev); if (next.has(ag)) next.delete(ag); else next.add(ag); return next; })}
+                  style={{ padding: '5px 13px', borderRadius: '20px', border: `1.5px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}15` : '#fff', fontSize: '12px', fontWeight: '700', color: active ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {ag}
+                </button>
+              );
+            })}
+            {ageFilter.size > 0 && (
+              <button onClick={() => setAgeFilter(new Set())} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 4px' }}>
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+        {view === 'teams' && presentGenders.length > 1 && (
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {presentGenders.map(g => {
+              const active = genderFilter.has(g.value);
+              return (
+                <button key={g.value}
+                  onClick={() => setGenderFilter(prev => { const next = new Set(prev); if (next.has(g.value)) next.delete(g.value); else next.add(g.value); return next; })}
+                  style={{ padding: '5px 13px', borderRadius: '20px', border: `1.5px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}15` : '#fff', fontSize: '12px', fontWeight: '700', color: active ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {g.label}
+                </button>
+              );
+            })}
+            {genderFilter.size > 0 && (
+              <button onClick={() => setGenderFilter(new Set())} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 4px' }}>
+                Clear
+              </button>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
@@ -267,6 +334,14 @@ export default function TournamentsPage() {
             <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No teams yet</div>
             <div style={{ fontSize: '13px', color: '#64748B' }}>Add teams on the Teams page first.</div>
           </div>
+        ) : filteredTeamRows.length === 0 ? (
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '64px', textAlign: 'center' }}>
+            <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+              <Medal size={26} color="#94A3B8" />
+            </div>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No teams match</div>
+            <div style={{ fontSize: '13px', color: '#64748B' }}>Try clearing the age/gender filters.</div>
+          </div>
         ) : (
           <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', padding: '10px 20px', background: '#0F172A' }}>
@@ -277,9 +352,9 @@ export default function TournamentsPage() {
               ))}
             </div>
 
-            {teamRows.map(({ team, tournaments: tTournaments }, idx) => (
+            {filteredTeamRows.map(({ team, tournaments: tTournaments }, idx) => (
               <div key={team.id}
-                style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', padding: '13px 20px', borderBottom: idx < teamRows.length - 1 ? '1px solid #F1F5F9' : 'none', alignItems: 'center' }}>
+                style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', padding: '13px 20px', borderBottom: idx < filteredTeamRows.length - 1 ? '1px solid #F1F5F9' : 'none', alignItems: 'center' }}>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {team.name}
                 </div>
