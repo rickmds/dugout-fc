@@ -7,10 +7,11 @@ import {
   LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut,
   Layers, DollarSign, Target, LayoutGrid,
-  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ChevronDown, Plus, ShieldCheck, Trophy, Medal,
+  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ChevronDown, Plus, ShieldCheck, Trophy, Medal, AlertTriangle,
 } from 'lucide-react';
 import { useDashboard, type Club } from './DashboardContext';
 import { contrastText, safeAccent } from '@/lib/colorContrast';
+import { supabase } from '@/lib/supabase';
 
 type NavEntry = {
   section?: string;
@@ -25,6 +26,10 @@ type NavEntry = {
   // nav entries — a club that hasn't flagged itself as an NCSA partner
   // must never see them at all, not just have them disabled.
   show?: (club: Club | null) => boolean;
+  // Looked up in the `badges` state map by this key — a small red count
+  // pill next to the label. Only ever set for entries that need one; most
+  // items have no badgeKey and render with none.
+  badgeKey?: string;
 };
 
 const CLUB_NAV: NavEntry[] = [
@@ -43,6 +48,10 @@ const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard/email',         icon: Mail,          label: 'Email' },
   { section: 'Manage' },
   { href: '/dashboard/fees',          icon: DollarSign,    label: 'Fees',           adminOnly: true },
+  {
+    href: '/dashboard/settings?tab=club&section=NCSA%20Partner', icon: AlertTriangle, label: 'NCSA Fines',
+    show: (club) => !!club?.ncsa_partner, badgeKey: 'ncsaFines',
+  },
   { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations' },
   { href: '/dashboard/waivers',       icon: FileLock2,     label: 'Waivers' },
   { href: '/dashboard/reports',       icon: BarChart2,     label: 'Attendance' },
@@ -81,6 +90,17 @@ export default function Sidebar() {
   const router      = useRouter();
   const [clubMenuOpen, setClubMenuOpen] = useState(false);
   const clubMenuRef = useRef<HTMLDivElement>(null);
+  const [badges, setBadges] = useState<Record<string, number>>({});
+
+  // Unpaid NCSA fine count — the whole point of surfacing this in the nav
+  // is visibility without having to go looking in Settings first.
+  useEffect(() => {
+    if (!club?.ncsa_partner) return;
+    let cancelled = false;
+    supabase.from('ncsa_fines').select('id', { count: 'exact', head: true }).eq('club_id', club.id).ilike('status', 'unpaid')
+      .then(({ count }) => { if (!cancelled) setBadges((b) => ({ ...b, ncsaFines: count ?? 0 })); });
+    return () => { cancelled = true; };
+  }, [club?.ncsa_partner, club?.id]);
 
   useEffect(() => {
     if (!clubMenuOpen) return;
@@ -122,8 +142,9 @@ export default function Sidebar() {
     if (saved) el.scrollTop = parseInt(saved, 10);
   }, [pathname]);
 
-  function NavItem({ href, icon: Icon, label, exact = false }: { href: string; icon: React.ElementType; label: string; exact?: boolean }) {
-    const active = exact ? pathname === href : pathname === href || pathname.startsWith(href + '/');
+  function NavItem({ href, icon: Icon, label, exact = false, badge }: { href: string; icon: React.ElementType; label: string; exact?: boolean; badge?: number }) {
+    const path = href.split('?')[0]; // an href with a query string (e.g. a deep link into a Settings tab) still highlights by its own page path
+    const active = exact ? pathname === path : pathname === path || pathname.startsWith(path + '/');
     return (
       <Link href={href} style={{ textDecoration: 'none', display: 'block' }}>
         <div style={{
@@ -142,7 +163,12 @@ export default function Sidebar() {
           <span style={{ fontSize: '13px', fontWeight: active ? '700' : '500', color: active ? '#fff' : 'rgba(255,255,255,0.6)', letterSpacing: active ? '-0.1px' : '0' }}>
             {label}
           </span>
-          {active && <ChevronRight size={10} color={accent} style={{ marginLeft: 'auto' }} />}
+          {!!badge && (
+            <span style={{ fontSize: '10.5px', fontWeight: '800', color: '#fff', background: '#DC2626', borderRadius: '9px', padding: '1px 7px', marginLeft: active ? '8px' : 'auto' }}>
+              {badge}
+            </span>
+          )}
+          {active && <ChevronRight size={10} color={accent} style={{ marginLeft: badge ? '6px' : 'auto' }} />}
         </div>
       </Link>
     );
@@ -273,7 +299,7 @@ export default function Sidebar() {
           }
           if (!item.href || !item.icon || !item.label) return null;
           if (item.show && !item.show(club)) return null;
-          return <NavItem key={item.href} href={item.href} icon={item.icon} label={item.label} exact={item.exact} />;
+          return <NavItem key={item.href} href={item.href} icon={item.icon} label={item.label} exact={item.exact} badge={item.badgeKey ? badges[item.badgeKey] : undefined} />;
         })}
       </nav>
 
