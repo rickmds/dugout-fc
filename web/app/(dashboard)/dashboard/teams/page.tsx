@@ -58,6 +58,9 @@ export default function TeamsPage() {
   const [sortField, setSortField]   = useState<SortField>('name');
   const [sortAsc, setSortAsc]       = useState(true);
   const [attentionFilter, setAttentionFilter] = useState(false);
+  // Quick age-group chips — a DOC thinks "show me the U9s," not "scroll
+  // through 41 rows." Multi-select: click U9 and U10 to see both.
+  const [ageFilter, setAgeFilter]   = useState<Set<string>>(new Set());
 
   // Create/edit modal
   const [formModal, setFormModal]   = useState<{ mode: 'create' | 'edit'; teamId?: string } | null>(null);
@@ -283,9 +286,14 @@ export default function TeamsPage() {
     else { setSortField(field); setSortAsc(true); }
   }
 
+  // Present age groups only, in the standard U6..Senior order — no point
+  // showing a U19 chip when nobody has a U19 team.
+  const presentAgeGroups = AGE_GROUPS.filter((ag) => teams.some((t) => t.age_group === ag));
+
   const filtered = teams
     .filter((t) => {
       if (attentionFilter && t.warnings.length === 0) return false;
+      if (ageFilter.size > 0 && !ageFilter.has(t.age_group ?? '')) return false;
       if (!search) return true;
       return t.name.toLowerCase().includes(search.toLowerCase()) ||
         (t.age_group ?? '').toLowerCase().includes(search.toLowerCase());
@@ -385,6 +393,33 @@ export default function TeamsPage() {
         )}
       </div>
 
+      {/* Age-group quick filter */}
+      {presentAgeGroups.length > 1 && (
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {presentAgeGroups.map((ag) => {
+            const active = ageFilter.has(ag);
+            return (
+              <button
+                key={ag}
+                onClick={() => setAgeFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(ag)) next.delete(ag); else next.add(ag);
+                  return next;
+                })}
+                style={{ padding: '5px 13px', borderRadius: '20px', border: `1.5px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}15` : '#fff', fontSize: '12px', fontWeight: '700', color: active ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                {ag}
+              </button>
+            );
+          })}
+          {ageFilter.size > 0 && (
+            <button onClick={() => setAgeFilter(new Set())} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 4px' }}>
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Teams table */}
       {loading ? (
         <>
@@ -402,11 +437,11 @@ export default function TeamsPage() {
           <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             <Shield size={26} color="#94A3B8" />
           </div>
-          <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>{search ? 'No teams match your search' : 'No teams yet'}</div>
-          <div style={{ fontSize: '13px', color: '#64748B', marginBottom: !search ? '20px' : '0' }}>
-            {search ? `Try a different name or age group.` : 'Create your first team to get started.'}
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>{search || ageFilter.size > 0 ? 'No teams match' : 'No teams yet'}</div>
+          <div style={{ fontSize: '13px', color: '#64748B', marginBottom: !search && ageFilter.size === 0 ? '20px' : '0' }}>
+            {search || ageFilter.size > 0 ? 'Try a different name, or clear the age filter.' : 'Create your first team to get started.'}
           </div>
-          {!search && (
+          {!search && ageFilter.size === 0 && (
             <button onClick={openCreate} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '11px 22px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>
               <Plus size={15} /> Add first team
             </button>
