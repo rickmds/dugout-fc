@@ -724,6 +724,34 @@ export default function TeamsPage() {
                 <label style={labelSt}>Team name</label>
                 <input value={rollover.newName} onChange={(e) => setRollover((r) => r ? { ...r, newName: e.target.value } : null)} style={inputSt} />
               </div>
+              {club?.ncsa_partner && (() => {
+                // NCSA Rule 9.1: a rolled-over team is charged full
+                // registration fees again (not the reduced returning-team
+                // rate) if it changes age group — unless it's moving up
+                // solely on Fall performance, the one exception the rule
+                // carves out — or changes gender, or ends up with over
+                // half a new roster. Roster turnover can't be known yet at
+                // rollover time, so this only checks what's already
+                // decided on this form.
+                const oldAge = rollover.team.age_group ?? '';
+                const newAge = rollover.newAgeGroup;
+                const ageChanged = !!oldAge && !!newAge && oldAge !== newAge;
+                const genderChanged = !!rollover.team.gender && !!rollover.newGender && rollover.team.gender !== rollover.newGender;
+                const oldIdx = AGE_GROUPS.indexOf(oldAge);
+                const newIdx = AGE_GROUPS.indexOf(newAge);
+                const isOneStepUp = ageChanged && oldIdx !== -1 && newIdx === oldIdx + 1;
+                if (!ageChanged && !genderChanged) return null;
+                return (
+                  <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '10px', padding: '12px 14px' }}>
+                    <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#92400E', marginBottom: '3px' }}>NCSA Rule 9.1 — possible reclassification</div>
+                    <div style={{ fontSize: '12px', color: '#92400E', lineHeight: 1.6 }}>
+                      {genderChanged && 'Changing gender always reclassifies this as a new team — full registration fee applies. '}
+                      {ageChanged && isOneStepUp && 'Moving up one age group is only exempt from reclassification if it\'s solely due to Fall performance — otherwise this triggers full registration fees too.'}
+                      {ageChanged && !isOneStepUp && 'This age-group change (not a simple one-level move up) triggers reclassification as a new team — full registration fee applies.'}
+                    </div>
+                  </div>
+                );
+              })()}
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '14px 16px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"

@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { ncsaLogin, ncsaFetch } from '../_shared/ncsaAuth.ts';
-import { parseFinesReport, parseConflictReport, parseGameListReport, parseFieldListReport, type NcsaFine, type NcsaConflict, type NcsaGameRow, type NcsaField } from '../_shared/ncsaReports.ts';
+import { parseFinesReport, parseConflictReport, parseGameListReport, parseFieldListReport, parseCautionEjectReport, type NcsaFine, type NcsaConflict, type NcsaGameRow, type NcsaField, type NcsaDisciplineRow } from '../_shared/ncsaReports.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +19,7 @@ const REPORT_URLS = {
   missingScore: 'https://www.ncsanj.com/rptGameMissingScore.cfm?pmid=51&smid=131',
   tbs: 'https://www.ncsanj.com/rptPendingTBSgames.cfm?pmid=51&smid=174',
   fieldList: 'https://www.ncsanj.com/fieldList.cfm?club&pmid=40&smid=110',
+  cautionEject: 'https://www.ncsanj.com/cautionEjectRpt.cfm?pmid=41&smid=101',
 };
 
 type SB = ReturnType<typeof createClient>;
@@ -174,6 +175,46 @@ async function syncIssues(
   if (toResolve.length) await supabase.from('ncsa_game_issues').update({ resolved_at: new Date().toISOString() }).in('id', toResolve);
 }
 
+// cautionEjectRpt.cfm — persists across syncs (like ncsa_game_issues,
+// unlike the delete+reinsert conflicts table) since a discipline history
+// is worth keeping, not just a snapshot. served_at is never touched here
+// — NCSA's report exposes no "games served" counter, so marking a
+// suspension served is a manual club-admin action in the UI, not
+// something a sync can ever infer.
+async function syncDiscipline(supabase: SB, clubId: string, rows: NcsaDisciplineRow[], teamByRawName: Map<string, string>) {
+  const { count } = await supabase.from('ncsa_discipline_records').select('id', { count: 'exact', head: true }).eq('club_id', clubId);
+  const isFirstSync = (count ?? 0) === 0;
+
+  for (const r of rows) {
+    const teamId = teamByRawName.get(r.teamRawName) ?? null;
+    const { data: existing } = await supabase
+      .from('ncsa_discipline_records').select('id')
+      .eq('club_id', clubId).eq('ncsa_game_id', r.gameId).eq('player_name', r.player).maybeSingle();
+    const payload = {
+      club_id: clubId, ncsa_game_id: r.gameId, division: r.division, team_raw_name: r.teamRawName, team_id: teamId,
+      player_name: r.player, referee_name: r.referee, filed_on: r.filedOn, game_date: r.gameDate, game_time: r.gameTime,
+      misconduct: r.misconduct, event: r.event, scraped_at: new Date().toISOString(),
+    };
+    if (existing) {
+      await supabase.from('ncsa_discipline_records').update(payload).eq('id', (existing as any).id);
+      continue;
+    }
+    const { data: inserted } = await supabase.from('ncsa_discipline_records').insert(payload).select('id').single();
+    if (!isFirstSync && inserted) {
+      // Confirmed real event values: "Cautioned" and "Sent off" — not
+      // "Ejected" despite the report's own name, so match loosely.
+      const isEjection = /sent off|eject|red/i.test(r.event);
+      const title = isEjection ? `Player sent off — ${r.teamRawName}` : `Caution issued — ${r.teamRawName}`;
+      const body = isEjection
+        ? `${r.player} was sent off (${r.misconduct}). NCSA bars a sent-off player from all NCSA activity, including reffing, until the suspension is served.`
+        : `${r.player} was cautioned — ${r.misconduct}.`;
+      await notifyClubAdmins(supabase, clubId, title, body, 'ncsa_discipline', { record_id: (inserted as any).id });
+      if (teamId) await notifyTeamCoaches(supabase, teamId, title, body, 'ncsa_discipline', { record_id: (inserted as any).id });
+      await supabase.from('ncsa_discipline_records').update({ notified_at: new Date().toISOString() }).eq('id', (inserted as any).id);
+    }
+  }
+}
+
 async function syncClub(supabase: SB, clubId: string): Promise<{ error?: string }> {
   const { data: credRows } = await supabase.rpc('ncsa_get_club_credential', { p_club_id: clubId });
   const cred = (credRows as any[])?.[0];
@@ -185,14 +226,15 @@ async function syncClub(supabase: SB, clubId: string): Promise<{ error?: string 
   const { data: links } = await supabase.from('team_ncsa_links').select('team_id, ncsa_raw_name, teams!inner(club_id)').eq('teams.club_id', clubId);
   const teamByRawName = new Map(((links ?? []) as any[]).map((l) => [l.ncsa_raw_name as string, l.team_id as string]));
 
-  const [finesHtml, overlapHtml, gapHtml, missingHtml, tbsHtml, fieldListHtml] = await Promise.all(
-    [REPORT_URLS.fines, REPORT_URLS.overlap, REPORT_URLS.gap, REPORT_URLS.missingScore, REPORT_URLS.tbs, REPORT_URLS.fieldList]
+  const [finesHtml, overlapHtml, gapHtml, missingHtml, tbsHtml, fieldListHtml, cautionEjectHtml] = await Promise.all(
+    [REPORT_URLS.fines, REPORT_URLS.overlap, REPORT_URLS.gap, REPORT_URLS.missingScore, REPORT_URLS.tbs, REPORT_URLS.fieldList, REPORT_URLS.cautionEject]
       .map((url) => ncsaFetch(url, session).then((r) => r.text())),
   );
 
   await syncFields(supabase, clubId, parseFieldListReport(fieldListHtml));
   await syncFines(supabase, clubId, parseFinesReport(finesHtml), teamByRawName);
   await syncConflicts(supabase, clubId, parseConflictReport(overlapHtml), parseConflictReport(gapHtml));
+  await syncDiscipline(supabase, clubId, parseCautionEjectReport(cautionEjectHtml), teamByRawName);
 
   // Missing-score only stored/notified once it's actually overdue — the raw
   // report lists every unscored game including ones that haven't been

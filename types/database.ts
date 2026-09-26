@@ -2032,6 +2032,81 @@ export type Database = {
           },
         ]
       }
+      ncsa_discipline_records: {
+        Row: {
+          club_id: string
+          created_at: string
+          division: string | null
+          event: string
+          filed_on: string | null
+          game_date: string | null
+          game_time: string | null
+          id: string
+          misconduct: string | null
+          ncsa_game_id: string
+          notified_at: string | null
+          player_name: string
+          referee_name: string | null
+          scraped_at: string
+          served_at: string | null
+          team_id: string | null
+          team_raw_name: string | null
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          division?: string | null
+          event: string
+          filed_on?: string | null
+          game_date?: string | null
+          game_time?: string | null
+          id?: string
+          misconduct?: string | null
+          ncsa_game_id: string
+          notified_at?: string | null
+          player_name: string
+          referee_name?: string | null
+          scraped_at?: string
+          served_at?: string | null
+          team_id?: string | null
+          team_raw_name?: string | null
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          division?: string | null
+          event?: string
+          filed_on?: string | null
+          game_date?: string | null
+          game_time?: string | null
+          id?: string
+          misconduct?: string | null
+          ncsa_game_id?: string
+          notified_at?: string | null
+          player_name?: string
+          referee_name?: string | null
+          scraped_at?: string
+          served_at?: string | null
+          team_id?: string | null
+          team_raw_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ncsa_discipline_records_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ncsa_discipline_records_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ncsa_fines: {
         Row: {
           amount: number | null

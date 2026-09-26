@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut,
   Layers, DollarSign, Target, LayoutGrid,
-  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ChevronDown, Plus, ShieldCheck, Trophy, Medal, AlertTriangle,
+  FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ChevronDown, Plus, ShieldCheck, Trophy, Medal, AlertTriangle, AlertOctagon,
 } from 'lucide-react';
 import { useDashboard, type Club } from './DashboardContext';
 import { contrastText, safeAccent } from '@/lib/colorContrast';
@@ -51,6 +51,10 @@ const CLUB_NAV: NavEntry[] = [
   {
     href: '/dashboard/fines', icon: AlertTriangle, label: 'NCSA Fines',
     show: (club) => !!club?.ncsa_partner, badgeKey: 'ncsaFines',
+  },
+  {
+    href: '/dashboard/discipline', icon: AlertOctagon, label: 'NCSA Discipline',
+    show: (club) => !!club?.ncsa_partner, badgeKey: 'ncsaDiscipline',
   },
   { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations' },
   { href: '/dashboard/waivers',       icon: FileLock2,     label: 'Waivers' },
@@ -99,6 +103,18 @@ export default function Sidebar() {
     let cancelled = false;
     supabase.from('ncsa_fines').select('id', { count: 'exact', head: true }).eq('club_id', club.id).ilike('status', 'unpaid')
       .then(({ count }) => { if (!cancelled) setBadges((b) => ({ ...b, ncsaFines: count ?? 0 })); });
+    return () => { cancelled = true; };
+  }, [club?.ncsa_partner, club?.id]);
+
+  // Active suspensions — a sent-off player barred from all NCSA activity
+  // until served; this is the count that most needs to be visible without
+  // going looking for it.
+  useEffect(() => {
+    if (!club?.ncsa_partner) return;
+    let cancelled = false;
+    supabase.from('ncsa_discipline_records').select('id', { count: 'exact', head: true }).eq('club_id', club.id)
+      .is('served_at', null).or('event.ilike.%sent off%,event.ilike.%eject%,event.ilike.%red%')
+      .then(({ count }) => { if (!cancelled) setBadges((b) => ({ ...b, ncsaDiscipline: count ?? 0 })); });
     return () => { cancelled = true; };
   }, [club?.ncsa_partner, club?.id]);
 

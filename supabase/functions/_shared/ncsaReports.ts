@@ -130,6 +130,53 @@ export function parseGameListReport(html: string): NcsaGameRow[] {
   return results;
 }
 
+export interface NcsaDisciplineRow {
+  division: string; teamRawName: string; player: string; referee: string;
+  filedOn: string | null; gameId: string; gameDate: string | null; gameTime: string | null;
+  misconduct: string; event: string;
+}
+
+// cautionEjectRpt.cfm (Administrative Reports -> Caution Ejection
+// Reports) — a plain GET defaults to the current season and, for a
+// club-rep login, to that club only (confirmed live: only ever one
+// club-name section header appears, never other clubs'). Rows are
+// grouped under two kinds of section header row (both colspan=7, so
+// extractCells returns exactly one cell): a club-name row, then one
+// "{division} - {raw team name}" row per team, followed by that team's
+// data rows (7 cells: Player, Referee, Filed On, Game, Date Time,
+// Misconduct, Event). Event is free text — confirmed values are
+// "Cautioned" and "Sent off" (the ejection case; NOT "Ejected" despite
+// the report's own name). No stable per-row ID from NCSA, so the sync
+// layer dedupes on gameId+player instead.
+export function parseCautionEjectReport(html: string): NcsaDisciplineRow[] {
+  const results: NcsaDisciplineRow[] = [];
+  let current: { division: string; teamRawName: string } | null = null;
+  for (const rowHtml of allRows(html)) {
+    const cells = extractCells(rowHtml);
+    if (!cells.length) continue;
+    if (cells.length === 1) {
+      const m = cells[0].match(/^([A-Z0-9]+)\s*-\s*(.+)$/);
+      if (m) current = { division: m[1].trim(), teamRawName: m[2].trim() };
+      continue;
+    }
+    if (cells.length < 7 || !current) continue;
+    const [player, referee, filedOnRaw, gameId, dateTimeRaw, misconduct, event] = cells;
+    if (!/^\d+$/.test(gameId)) continue;
+    const filedMatch = filedOnRaw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    const filedOn = filedMatch
+      ? `${filedMatch[3].length === 2 ? `20${filedMatch[3]}` : filedMatch[3]}-${filedMatch[1].padStart(2, '0')}-${filedMatch[2].padStart(2, '0')}`
+      : null;
+    const dt = parseNcsaDateTime(dateTimeRaw);
+    results.push({
+      division: current.division, teamRawName: current.teamRawName,
+      player: player.replace(/\[ppu\]/i, '').trim(), referee: referee.trim(),
+      filedOn, gameId, gameDate: dt?.date ?? null, gameTime: dt?.time ?? null,
+      misconduct: misconduct.trim(), event: event.trim(),
+    });
+  }
+  return results;
+}
+
 export interface NcsaField {
   fieldId: string; abbreviation: string; name: string; city: string;
   hasLights: boolean; surface: 'turf' | 'grass' | null; active: boolean;
