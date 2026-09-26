@@ -55,12 +55,13 @@ export default function TeamsPage() {
   const [teams, setTeams]           = useState<TeamStats[]>([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
-  const [sortField, setSortField]   = useState<SortField>('name');
+  const [sortField, setSortField]   = useState<SortField>('age_group');
   const [sortAsc, setSortAsc]       = useState(true);
   const [attentionFilter, setAttentionFilter] = useState(false);
   // Quick age-group chips — a DOC thinks "show me the U9s," not "scroll
   // through 41 rows." Multi-select: click U9 and U10 to see both.
   const [ageFilter, setAgeFilter]   = useState<Set<string>>(new Set());
+  const [genderFilter, setGenderFilter] = useState<Set<string>>(new Set());
 
   // Create/edit modal
   const [formModal, setFormModal]   = useState<{ mode: 'create' | 'edit'; teamId?: string } | null>(null);
@@ -289,11 +290,14 @@ export default function TeamsPage() {
   // Present age groups only, in the standard U6..Senior order — no point
   // showing a U19 chip when nobody has a U19 team.
   const presentAgeGroups = AGE_GROUPS.filter((ag) => teams.some((t) => t.age_group === ag));
+  const presentGenders = GENDERS.filter((g) => teams.some((t) => t.gender === g.value));
+  const hasActiveFilter = !!search || ageFilter.size > 0 || genderFilter.size > 0;
 
   const filtered = teams
     .filter((t) => {
       if (attentionFilter && t.warnings.length === 0) return false;
       if (ageFilter.size > 0 && !ageFilter.has(t.age_group ?? '')) return false;
+      if (genderFilter.size > 0 && !genderFilter.has(t.gender ?? '')) return false;
       if (!search) return true;
       return t.name.toLowerCase().includes(search.toLowerCase()) ||
         (t.age_group ?? '').toLowerCase().includes(search.toLowerCase());
@@ -302,7 +306,17 @@ export default function TeamsPage() {
       let av: string | number = '';
       let bv: string | number = '';
       if (sortField === 'name')         { av = a.name;         bv = b.name; }
-      if (sortField === 'age_group')    { av = a.age_group ?? ''; bv = b.age_group ?? ''; }
+      // Youngest-first by actual age, not string order — a plain string
+      // sort puts "U10" before "U9" (comparing '1' < '9' as characters).
+      // Falls back to alphabetical for a rare age_group value that isn't
+      // one of the known groups (e.g. blank), instead of throwing it to
+      // one end of the list.
+      if (sortField === 'age_group') {
+        const ai = AGE_GROUPS.indexOf(a.age_group ?? '');
+        const bi = AGE_GROUPS.indexOf(b.age_group ?? '');
+        av = ai === -1 ? AGE_GROUPS.length : ai;
+        bv = bi === -1 ? AGE_GROUPS.length : bi;
+      }
       if (sortField === 'player_count') { av = a.player_count; bv = b.player_count; }
       if (sortField === 'coach_count')  { av = a.coach_count;  bv = b.coach_count; }
       if (typeof av === 'number') return sortAsc ? (av as number) - (bv as number) : (bv as number) - (av as number);
@@ -420,6 +434,33 @@ export default function TeamsPage() {
         </div>
       )}
 
+      {/* Gender quick filter */}
+      {presentGenders.length > 1 && (
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {presentGenders.map((g) => {
+            const active = genderFilter.has(g.value);
+            return (
+              <button
+                key={g.value}
+                onClick={() => setGenderFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(g.value)) next.delete(g.value); else next.add(g.value);
+                  return next;
+                })}
+                style={{ padding: '5px 13px', borderRadius: '20px', border: `1.5px solid ${active ? primary : '#E2E8F0'}`, background: active ? `${primary}15` : '#fff', fontSize: '12px', fontWeight: '700', color: active ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                {g.label}
+              </button>
+            );
+          })}
+          {genderFilter.size > 0 && (
+            <button onClick={() => setGenderFilter(new Set())} style={{ fontSize: '12px', fontWeight: '600', color: '#94A3B8', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 4px' }}>
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Teams table */}
       {loading ? (
         <>
@@ -437,11 +478,11 @@ export default function TeamsPage() {
           <div style={{ width: '56px', height: '56px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             <Shield size={26} color="#94A3B8" />
           </div>
-          <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>{search || ageFilter.size > 0 ? 'No teams match' : 'No teams yet'}</div>
-          <div style={{ fontSize: '13px', color: '#64748B', marginBottom: !search && ageFilter.size === 0 ? '20px' : '0' }}>
-            {search || ageFilter.size > 0 ? 'Try a different name, or clear the age filter.' : 'Create your first team to get started.'}
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>{hasActiveFilter ? 'No teams match' : 'No teams yet'}</div>
+          <div style={{ fontSize: '13px', color: '#64748B', marginBottom: !hasActiveFilter ? '20px' : '0' }}>
+            {hasActiveFilter ? 'Try a different name, or clear the age/gender filters.' : 'Create your first team to get started.'}
           </div>
-          {!search && ageFilter.size === 0 && (
+          {!hasActiveFilter && (
             <button onClick={openCreate} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '11px 22px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>
               <Plus size={15} /> Add first team
             </button>
