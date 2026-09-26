@@ -705,6 +705,26 @@ export default function EditEventScreen() {
 
   function confirmCancel() {
     const scope = editScope ?? 'this';
+    // The reason → draft-email → preview modal only exists to compose what
+    // parents get sent — with "Notify parents & players" off there's
+    // nothing to compose, so it should never appear at all. Same quick
+    // confirm pattern as confirmDelete, not the multi-step sheet.
+    if (!notifyParents) {
+      const propagateGroup = groupPropagates(scope);
+      Alert.alert(
+        'Cancel Event',
+        propagateGroup
+          ? `This also cancels the event for ${linkedTeams.map((t) => t.name).join(', ')}. Parents will not be notified.`
+          : scope === 'future'
+            ? 'This cancels this event and every future occurrence. Parents will not be notified.'
+            : 'Parents will not be notified.',
+        [
+          { text: 'Close', style: 'cancel' },
+          { text: 'Cancel Event', style: 'destructive', onPress: () => handleCancelEvent('', scope, false) },
+        ],
+      );
+      return;
+    }
     setCancelScope(scope);
     setCancelReason('');
     setCancelSubject('');
@@ -741,7 +761,7 @@ export default function EditEventScreen() {
     setCancelStep('preview');
   }
 
-  async function handleCancelEvent(reason: string, scope: RecurringScope) {
+  async function handleCancelEvent(reason: string, scope: RecurringScope, notify: boolean = true) {
     if (!eventId) return;
     setCancelling(true);
     const propagateGroup = groupPropagates(scope);
@@ -758,7 +778,7 @@ export default function EditEventScreen() {
       Alert.alert('Error', 'Could not cancel the event. Please try again.');
       return;
     }
-    if (eventTeamId) {
+    if (notify && eventTeamId) {
       const notifyTeamIds = propagateGroup ? [eventTeamId, ...linkedTeams.map((t) => t.id)] : [eventTeamId];
       for (const teamId of notifyTeamIds) {
         const teamLabel = teamNameFor(teamId);
@@ -789,7 +809,7 @@ export default function EditEventScreen() {
     }
     setIsCancelled(true);
     setCancelVisible(false);
-    Alert.alert('Event cancelled', 'Parents have been notified by push and email.');
+    Alert.alert('Event cancelled', notify ? 'Parents have been notified by push and email.' : 'Parents were not notified.');
   }
 
   function confirmRestore() {

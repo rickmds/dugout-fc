@@ -333,6 +333,14 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
       const eventTime = to24hTime(g.time);
       const title = `vs ${opponentDisplay(opponent)}`;
       const homeAway = isHome ? 'home' : 'away';
+      // NCSA has no separate "postponed" flag — it overloads the field-name
+      // slot with literal text like "TBS Postponed" instead of a real venue
+      // (confirmed live against a real postponed game: data-field="TBS
+      // Postponed", date/time otherwise unchanged from the original
+      // schedule). Treated as cancelled per the club's own preference,
+      // distinct from a game actually being removed from the schedule
+      // (handled separately below) or a coach's own manual cancel.
+      const isPostponed = /postponed/i.test(g.field);
       // events.score_home/score_away don't mean "the literal home team's
       // score" despite the name — the match tracker's own established
       // convention (lib/tournaments.ts getGameResult) is score_home = OUR
@@ -404,11 +412,12 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
             // text to NCSA's real field name, and fires a false "Game
             // rescheduled" push to every parent even though nothing
             // actually moved. Confirmed live against a real team.
-            location: g.field, event_time: eventTime,
+            location: isPostponed ? null : g.field, event_time: eventTime,
             address: g.address, field_type: g.fieldType, field_notes: g.fieldSize,
             score_home: ourScore, score_away: oppScore, tournament_id: tournamentId,
             external_source: 'ncsa', external_id: g.gameId, team_ncsa_link_id: link.id,
             opponent_raw_name: opponent,
+            ...(isPostponed ? { cancelled_at: new Date().toISOString() } : {}),
             // Only fills these in if the coach's own entry left them blank
             // — never overrides a value they actually set.
             ...(mm.home_away == null ? { home_away: homeAway } : {}),
@@ -422,14 +431,47 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
         const { error: insertErr } = await supabase.from('events').insert({
           team_id: link.team_id, title, type: 'game',
           event_date: eventDate, event_time: eventTime,
-          location: g.field, address: g.address, field_type: g.fieldType,
+          location: isPostponed ? null : g.field, address: g.address, field_type: g.fieldType,
           field_notes: g.fieldSize, home_away: homeAway, uniform: homeAway,
           score_home: ourScore, score_away: oppScore, tournament_id: tournamentId,
           external_source: 'ncsa', external_id: g.gameId, team_ncsa_link_id: link.id,
           opponent_raw_name: opponent,
+          // Never seen before, so there's no prior schedule state for
+          // parents to have noticed — created straight into cancelled with
+          // no "postponed" notification, matching how a coach cancelling a
+          // game they never announced wouldn't need to announce that either.
+          cancelled_at: isPostponed ? new Date().toISOString() : null,
         });
         if (insertErr) writeErrors.push(`create ${g.gameId}: ${insertErr.message}`);
         else created++;
+        continue;
+      }
+
+      // A postponement is a stable state of its own — once reflected
+      // (cancelled_at set, location cleared of the placeholder text), the
+      // exact same still-postponed row must not re-trigger a write or a
+      // notification on every subsequent daily sync just because "TBS
+      // Postponed" keeps not-matching whatever's stored. It's also handled
+      // BEFORE the generic block below, which otherwise unconditionally
+      // clears cancelled_at any time wasCancelled is true (the existing
+      // "a reschedule uncancels" behavior) — without this, that would
+      // uncancel a still-postponed game on its very next sync.
+      const wasCancelledBefore = !!existing.cancelled_at;
+      if (isPostponed) {
+        if (!wasCancelledBefore) {
+          const { error: postponeErr } = await supabase.from('events')
+            .update({ location: null, cancelled_at: new Date().toISOString() })
+            .eq('id', existing.id);
+          if (postponeErr) {
+            writeErrors.push(`postpone ${g.gameId}: ${postponeErr.message}`);
+          } else {
+            updated++;
+            await notifyTeam(
+              supabase, link.team_id, `Game postponed — ${title}`,
+              `The league has postponed this game. A new date hasn't been set yet.`, 'event_updated',
+            );
+          }
+        }
         continue;
       }
 
@@ -441,7 +483,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
       const scheduleChanged = existing.event_date !== eventDate || existing.event_time !== eventTime || existing.location !== g.field;
       const otherChanged = existing.address !== g.address || existing.field_type !== g.fieldType
         || existing.home_away !== homeAway || existing.score_home !== ourScore || existing.score_away !== oppScore;
-      const wasCancelled = !!existing.cancelled_at;
+      const wasCancelled = wasCancelledBefore;
 
       if (scheduleChanged || otherChanged || wasCancelled) {
         const { error: updateErr } = await supabase.from('events').update({
