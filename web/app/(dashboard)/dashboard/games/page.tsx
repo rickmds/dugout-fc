@@ -141,6 +141,7 @@ export default function GamesPage() {
   const [ncsaGames,     setNcsaGames]     = useState<NcsaGame[]>([]);
   const [ncsaConflicts, setNcsaConflicts] = useState<NcsaConflict[]>([]);
   const [ncsaIssues,    setNcsaIssues]    = useState<NcsaIssue[]>([]);
+  const [ncsaClubPrefix, setNcsaClubPrefix] = useState<string | null>(null);
   const [view,          setView]          = useState<GameView>('grid');
 
   const defaultMins = FORMAT_PRESETS.find(f => f.value === defaultFmt)?.mins ?? 90;
@@ -161,7 +162,7 @@ export default function GamesPage() {
 
   const load = useCallback(async () => {
     if (!club) return;
-    const [{ data: sl }, { data: tm }, { data: fi }, { data: pe }, { data: bl }, { data: pg }, { data: ng }, { data: nc }, { data: ni }] = await Promise.all([
+    const [{ data: sl }, { data: tm }, { data: fi }, { data: pe }, { data: bl }, { data: pg }, { data: ng }, { data: nc }, { data: ni }, { data: nl }] = await Promise.all([
       supabase.from('game_slots').select('*, home_team:teams(name, age_group)').eq('club_id', club.id).order('slot_date').order('start_time'),
       supabase.from('teams').select('id, name, age_group').eq('club_id', club.id).order('name'),
       supabase.from('tryout_fields').select('id, name, sort_order, field_group, is_full_field, sub_zones, scheduler_split, scheduler_format, is_active, half_a_name, half_b_name, has_lights, surface_type, field_notes').eq('club_id', club.id).order('sort_order').order('name'),
@@ -190,6 +191,15 @@ export default function GamesPage() {
       club.ncsa_partner
         ? supabase.from('ncsa_game_issues').select('*').eq('club_id', club.id).is('resolved_at', null).order('event_date')
         : Promise.resolve({ data: [] as unknown[] }),
+      // One linked team's raw name is enough to derive this club's NCSA
+      // name prefix (e.g. "Maroons-B09A-Breheny" -> "Maroons") — sync-
+      // ncsa-reports' club-wide scrapes (missing scores, TBS) cover every
+      // team NCSA lists for the club, not just linked ones, and each row
+      // only says home/visitor, not which side is "ours" — this is how
+      // the TBS/Missing Scores tabs identify our own team to group by.
+      club.ncsa_partner
+        ? supabase.from('team_ncsa_links').select('ncsa_raw_name, teams!inner(club_id)').eq('teams.club_id', club.id).limit(1)
+        : Promise.resolve({ data: [] as unknown[] }),
     ]);
     setSlots((sl ?? []) as GameSlot[]);
     setTeams((tm ?? []) as Team[]);
@@ -199,6 +209,8 @@ export default function GamesPage() {
     setPendingGames((pg ?? []) as PendingGame[]);
     setNcsaConflicts((nc ?? []) as NcsaConflict[]);
     setNcsaIssues((ni ?? []) as NcsaIssue[]);
+    const firstRaw = ((nl ?? []) as { ncsa_raw_name: string }[])[0]?.ncsa_raw_name ?? null;
+    setNcsaClubPrefix(firstRaw ? firstRaw.split('-')[0] : null);
     type RawNcsaGame = {
       id: string; team_id: string; event_date: string; event_time: string | null;
       location: string | null; home_away: 'home' | 'away' | null;
@@ -686,8 +698,8 @@ export default function GamesPage() {
         view === 'league' ? <LeagueSchedulePanel games={ncsaGames} primary={primary} /> :
         view === 'overlaps' ? <ConflictListPanel conflicts={ncsaConflicts} kind="overlap" /> :
         view === 'gaps' ? <ConflictListPanel conflicts={ncsaConflicts} kind="gap" /> :
-        view === 'missing_scores' ? <IssueListPanel issues={ncsaIssues} kind="missing_score" /> :
-        <IssueListPanel issues={ncsaIssues} kind="tbs" />
+        view === 'missing_scores' ? <IssueListPanel issues={ncsaIssues} kind="missing_score" clubPrefix={ncsaClubPrefix} /> :
+        <IssueListPanel issues={ncsaIssues} kind="tbs" clubPrefix={ncsaClubPrefix} />
       ) : (
       <>
       {/* Body — flex row: optional pending panel on left, grid area on right */}
@@ -1113,11 +1125,6 @@ function fmtMins(m: number) {
   const h = Math.floor(m / 60), r = m % 60;
   return h > 0 ? `${h}h${r ? ` ${r}m` : ''}` : `${r}m`;
 }
-function fmtGameTime(date: string | null, time: string | null) {
-  if (!date) return 'TBD';
-  return time ? `${fmtDate(date)} · ${fmtT(time)}` : `${fmtDate(date)} · time TBD`;
-}
-
 const EmptyState = ({ icon, text }: { icon: string; text: string }) => (
   <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8' }}>
     <div style={{ fontSize: '40px', marginBottom: '12px' }}>{icon}</div>
@@ -1173,9 +1180,60 @@ function ConflictListPanel({ conflicts, kind }: { conflicts: NcsaConflict[]; kin
 
 // Games with Missing Scores / TBS Games — same shape too (a single game
 // needing attention), straight from sync-ncsa-reports.
-function IssueListPanel({ issues, kind }: { issues: NcsaIssue[]; kind: 'missing_score' | 'tbs' }) {
+// Raw NCSA type strings -> plain English. Every variant confirmed against
+// real production data (the TBS report's own type filter dropdown).
+const TBS_TYPE_LABELS: Record<string, string> = {
+  'AGREE NO PLAY': 'Agreed no play',
+  'F1': 'Field TBD',
+  'TBS Postponed': 'Postponed',
+  'TBS-Games Conduct Decision': 'Pending conduct decision',
+  'To Be Scheduled - Northen Counties Cup': 'Cup — not yet drawn',
+  'To Be Scheduled-Both': 'Date & field TBD',
+  'To Be Scheduled-Field': 'Field TBD',
+  'To Be Scheduled-Home': 'Waiting on us to schedule',
+  'To Be Scheduled-League': 'Waiting on the league',
+  'To Be Scheduled-Rain or Snow': 'Rescheduled — weather',
+  'To Be Scheduled-Visitor': 'Waiting on opponent to schedule',
+};
+function friendlyTbsType(raw: string | null): string {
+  if (!raw) return '';
+  return TBS_TYPE_LABELS[raw] ?? raw;
+}
+
+// "Maroons-G08A4-Gillies" (raw) -> "Gillies (G08A4)" (readable group header).
+function teamLabel(raw: string, prefix: string | null): string {
+  const rest = prefix && raw.startsWith(`${prefix}-`) ? raw.slice(prefix.length + 1) : raw;
+  const m = rest.match(/^([BG]\d{2}[A-Z0-9]*)-(.+)$/i);
+  return m ? `${m[2]} (${m[1]})` : rest;
+}
+
+// Missing Scores / TBS Games — grouped by our own team rather than one
+// flat chronological list, since sync-ncsa-reports' club-wide scrapes
+// cover every team NCSA lists for the club (not just ones linked into
+// Pulse FC), and the real question here is "how many does MY team have,"
+// not "what's happening on this date."
+function IssueListPanel({ issues, kind, clubPrefix }: { issues: NcsaIssue[]; kind: 'missing_score' | 'tbs'; clubPrefix: string | null }) {
   const filtered = issues.filter(i => i.kind === kind);
   const accent = kind === 'missing_score' ? '#B91C1C' : '#7C3AED';
+
+  function ourTeamRaw(i: NcsaIssue): string {
+    const prefix = clubPrefix ? `${clubPrefix}-` : null;
+    if (prefix && i.home_team?.startsWith(prefix)) return i.home_team;
+    if (prefix && i.visitor_team?.startsWith(prefix)) return i.visitor_team;
+    return i.home_team ?? i.visitor_team ?? 'Unknown team';
+  }
+  function opponent(i: NcsaIssue, ours: string): string {
+    return (i.home_team === ours ? i.visitor_team : i.home_team) ?? '?';
+  }
+
+  const groups = new Map<string, NcsaIssue[]>();
+  for (const i of filtered) {
+    const key = ourTeamRaw(i);
+    const arr = groups.get(key);
+    if (arr) arr.push(i); else groups.set(key, [i]);
+  }
+  const sortedTeams = [...groups.keys()].sort((a, b) => teamLabel(a, clubPrefix).localeCompare(teamLabel(b, clubPrefix)));
+
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px 24px' }}>
       <NcsaTabHeader
@@ -1187,15 +1245,25 @@ function IssueListPanel({ issues, kind }: { issues: NcsaIssue[]; kind: 'missing_
       {filtered.length === 0 ? (
         <EmptyState icon="✅" text={kind === 'missing_score' ? 'No overdue scores right now' : 'No TBS games right now'} />
       ) : (
-        <div style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
-          {filtered.map((i, idx) => (
-            <div key={i.id} style={{ padding: '11px 18px', borderTop: idx > 0 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{i.home_team} vs {i.visitor_team}</span>
-              <span style={{ fontSize: '11.5px', color: '#64748B' }}>{i.division}</span>
-              {i.tbs_type && <span style={{ fontSize: '10.5px', fontWeight: '700', color: accent, background: `${accent}15`, borderRadius: '4px', padding: '1px 6px' }}>{i.tbs_type}</span>}
-              <span style={{ fontSize: '11.5px', color: '#94A3B8', marginLeft: 'auto' }}>{fmtGameTime(i.event_date, i.event_time)}</span>
-            </div>
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {sortedTeams.map(team => {
+            const rows = [...groups.get(team)!].sort((a, b) => (a.event_date ?? '').localeCompare(b.event_date ?? ''));
+            return (
+              <div key={team} style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
+                <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>{teamLabel(team, clubPrefix)}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '800', color: accent, background: `${accent}15`, borderRadius: '10px', padding: '2px 9px' }}>{rows.length}</span>
+                </div>
+                {rows.map((i, idx) => (
+                  <div key={i.id} style={{ padding: '10px 16px', borderTop: idx > 0 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12.5px', color: '#374151' }}>vs {opponent(i, team)}</span>
+                    {kind === 'tbs' && i.tbs_type && <span style={{ fontSize: '10.5px', fontWeight: '700', color: accent, background: `${accent}15`, borderRadius: '4px', padding: '1px 6px' }}>{friendlyTbsType(i.tbs_type)}</span>}
+                    <span style={{ fontSize: '11.5px', color: '#94A3B8', marginLeft: 'auto' }}>{i.event_date ? fmtDate(i.event_date) : 'Date TBD'}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
