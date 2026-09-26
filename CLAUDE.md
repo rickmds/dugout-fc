@@ -12,7 +12,7 @@ A fully self-serve, white-label soccer club management platform. Any DOC or coac
 First two clubs: MDS Academy and Maroons SC (both run by Rick, used for testing and proving the product). All other clubs self-onboard.
 
 ### Business model
-Free for the first 3 clubs while validating. Pricing TBD. No payment collection in v1. Subscriptions table stubbed and ready for Stripe later.
+Free for the first 3 clubs while validating (no club-subscription billing collected yet — `subscriptions` still only has plan/status columns, no live Stripe objects). Parent-facing payment collection is **not** a stub, though — registration/tryout/team fees, installments, refunds, and disputes run through a real, production-grade Stripe integration (correct webhook signature verification, idempotent payment handling via unique-constraint + CAS retries, Stripe Connect per club). See `web/app/api/stripe/webhook/route.ts`. Club-subscription billing itself (charging the club, not the parent) is the only piece still unbuilt.
 
 ### Who is building this
 Solo developer using Claude Code. Always choose the simpler of two approaches. Prioritise clarity and maintainability over cleverness.

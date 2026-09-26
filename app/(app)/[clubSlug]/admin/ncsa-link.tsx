@@ -247,7 +247,7 @@ export default function NcsaLinkScreen() {
   if (!ncsaPartner) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <ClubHeader title="Link to NCSA" subtitle={team.name} onBack={() => router.back()} />
+        <ClubHeader title="Link to NCSA (Northern NJ)" subtitle={team.name} onBack={() => router.back()} />
         <View style={st.body}>
           <Text style={st.hint}>This club isn't set up as an NCSA partner, so NCSA linking isn't available.</Text>
         </View>
@@ -257,7 +257,7 @@ export default function NcsaLinkScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <ClubHeader title="Link to NCSA" subtitle={team.name} onBack={() => router.back()} />
+      <ClubHeader title="Link to NCSA (Northern NJ)" subtitle={team.name} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={st.body}>
         <Text style={st.hint}>
           Link this team to its NCSA entry to pull in real games automatically — including

@@ -85,7 +85,9 @@ export default function DisciplinePage() {
     <div style={{ minHeight: '100vh', background: '#F0F2F5' }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px' }}>
         <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
-        <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>NCSA Discipline</h1>
+        <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>
+          NCSA Discipline <span style={{ fontSize: '13px', fontWeight: '600', color: '#94A3B8' }}>· Northern NJ</span>
+        </h1>
       </div>
 
       <div style={{ padding: '24px 32px' }}>
