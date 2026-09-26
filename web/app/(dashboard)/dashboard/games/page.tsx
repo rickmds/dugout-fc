@@ -1200,18 +1200,28 @@ function friendlyTbsType(raw: string | null): string {
   return TBS_TYPE_LABELS[raw] ?? raw;
 }
 
-// "Maroons-G08A4-Gillies" (raw) -> "Gillies (G08A4)" (readable group header).
-function teamLabel(raw: string, prefix: string | null): string {
+// "Maroons-G08A4-Gillies" (raw) -> { key: "G08-Gillies", label: "Gillies (G08)" }.
+// The flight/cup-marker suffix (the "A4" in "G08A4", the "X" in a cup
+// team's "B09XB" vs its league sibling's plain "B09A") is dropped from
+// both — a team's cup bracket entry and its league entry are the exact
+// same real team, same coach, just two different NCSA flight codes for
+// the two competitions, confirmed against team_ncsa_links (e.g.
+// "Maroons-B09A-Breheny" / "Maroons-B09XB-Breheny" are one team's league
+// and cup links). Coach surname is what actually distinguishes two
+// different teams sharing an age/gender bracket (e.g. "G08A4-Gillies" vs
+// "G08A4-Forsythe" are genuinely different teams) — kept in the key.
+function canonicalTeam(raw: string, prefix: string | null): { key: string; label: string } {
   const rest = prefix && raw.startsWith(`${prefix}-`) ? raw.slice(prefix.length + 1) : raw;
-  const m = rest.match(/^([BG]\d{2}[A-Z0-9]*)-(.+)$/i);
-  return m ? `${m[2]} (${m[1]})` : rest;
+  const m = rest.match(/^([BG]\d{2})[A-Z0-9]*-(.+)$/i);
+  return m ? { key: `${m[1]}-${m[2]}`, label: `${m[2]} (${m[1]})` } : { key: rest, label: rest };
 }
 
 // Missing Scores / TBS Games — grouped by our own team rather than one
 // flat chronological list, since sync-ncsa-reports' club-wide scrapes
 // cover every team NCSA lists for the club (not just ones linked into
 // Pulse FC), and the real question here is "how many does MY team have,"
-// not "what's happening on this date."
+// not "what's happening on this date." League and cup games for the same
+// team land in the same group.
 function IssueListPanel({ issues, kind, clubPrefix }: { issues: NcsaIssue[]; kind: 'missing_score' | 'tbs'; clubPrefix: string | null }) {
   const filtered = issues.filter(i => i.kind === kind);
   const accent = kind === 'missing_score' ? '#B91C1C' : '#7C3AED';
@@ -1226,13 +1236,14 @@ function IssueListPanel({ issues, kind, clubPrefix }: { issues: NcsaIssue[]; kin
     return (i.home_team === ours ? i.visitor_team : i.home_team) ?? '?';
   }
 
-  const groups = new Map<string, NcsaIssue[]>();
+  const groups = new Map<string, { label: string; rows: (NcsaIssue & { ourRaw: string })[] }>();
   for (const i of filtered) {
-    const key = ourTeamRaw(i);
-    const arr = groups.get(key);
-    if (arr) arr.push(i); else groups.set(key, [i]);
+    const ourRaw = ourTeamRaw(i);
+    const { key, label } = canonicalTeam(ourRaw, clubPrefix);
+    const g = groups.get(key);
+    if (g) g.rows.push({ ...i, ourRaw }); else groups.set(key, { label, rows: [{ ...i, ourRaw }] });
   }
-  const sortedTeams = [...groups.keys()].sort((a, b) => teamLabel(a, clubPrefix).localeCompare(teamLabel(b, clubPrefix)));
+  const sortedKeys = [...groups.keys()].sort((a, b) => groups.get(a)!.label.localeCompare(groups.get(b)!.label));
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px 24px' }}>
@@ -1246,17 +1257,18 @@ function IssueListPanel({ issues, kind, clubPrefix }: { issues: NcsaIssue[]; kin
         <EmptyState icon="✅" text={kind === 'missing_score' ? 'No overdue scores right now' : 'No TBS games right now'} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {sortedTeams.map(team => {
-            const rows = [...groups.get(team)!].sort((a, b) => (a.event_date ?? '').localeCompare(b.event_date ?? ''));
+          {sortedKeys.map(key => {
+            const group = groups.get(key)!;
+            const rows = [...group.rows].sort((a, b) => (a.event_date ?? '').localeCompare(b.event_date ?? ''));
             return (
-              <div key={team} style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
+              <div key={key} style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
                 <div style={{ padding: '10px 16px', background: '#FAFBFC', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>{teamLabel(team, clubPrefix)}</span>
+                  <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>{group.label}</span>
                   <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: '800', color: accent, background: `${accent}15`, borderRadius: '10px', padding: '2px 9px' }}>{rows.length}</span>
                 </div>
                 {rows.map((i, idx) => (
                   <div key={i.id} style={{ padding: '10px 16px', borderTop: idx > 0 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '12.5px', color: '#374151' }}>vs {opponent(i, team)}</span>
+                    <span style={{ fontSize: '12.5px', color: '#374151' }}>vs {opponent(i, i.ourRaw)}</span>
                     {kind === 'tbs' && i.tbs_type && <span style={{ fontSize: '10.5px', fontWeight: '700', color: accent, background: `${accent}15`, borderRadius: '4px', padding: '1px 6px' }}>{friendlyTbsType(i.tbs_type)}</span>}
                     <span style={{ fontSize: '11.5px', color: '#94A3B8', marginLeft: 'auto' }}>{i.event_date ? fmtDate(i.event_date) : 'Date TBD'}</span>
                   </div>
