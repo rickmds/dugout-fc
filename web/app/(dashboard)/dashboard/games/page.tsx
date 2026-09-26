@@ -32,6 +32,20 @@ type PendingGame = {
   status: 'unscheduled' | 'scheduled'; created_at: string;
 };
 
+// Fines get their own home on Settings -> NCSA Partner (administrative,
+// not scheduling) — every other NCSA report gets its own tab here since
+// each is its own real, distinct thing to check, not a sub-section of one
+// generic "league" view.
+type GameView = 'grid' | 'league' | 'overlaps' | 'gaps' | 'missing_scores' | 'tbs';
+const GAME_VIEW_TABS: { key: GameView; label: string }[] = [
+  { key: 'grid', label: 'Field Grid' },
+  { key: 'league', label: 'League Schedule' },
+  { key: 'overlaps', label: 'Field Issues' },
+  { key: 'gaps', label: 'Gap Games' },
+  { key: 'missing_scores', label: 'Missing Scores' },
+  { key: 'tbs', label: 'TBS Games' },
+];
+
 // A club's synced NCSA game, read-only here — the schedule itself is set
 // by the league (sync-ncsa-schedule owns writing these), this page only
 // ever reads them to show the club's full league schedule and flag field
@@ -60,11 +74,6 @@ type NcsaIssue = {
   event_date: string | null; event_time: string | null; division: string | null;
   home_team: string | null; visitor_team: string | null; tbs_type: string | null; team_id: string | null;
 };
-type NcsaFineRow = {
-  id: string; ncsa_fine_id: string; team_raw_name: string | null; reason: string | null;
-  fine_date: string | null; amount: number | null; status: string | null;
-};
-
 // ── Format presets ────────────────────────────────────────────────────────────
 
 const FORMAT_PRESETS = [
@@ -132,8 +141,7 @@ export default function GamesPage() {
   const [ncsaGames,     setNcsaGames]     = useState<NcsaGame[]>([]);
   const [ncsaConflicts, setNcsaConflicts] = useState<NcsaConflict[]>([]);
   const [ncsaIssues,    setNcsaIssues]    = useState<NcsaIssue[]>([]);
-  const [ncsaFines,     setNcsaFines]     = useState<NcsaFineRow[]>([]);
-  const [view,          setView]          = useState<'grid' | 'league'>('grid');
+  const [view,          setView]          = useState<GameView>('grid');
 
   const defaultMins = FORMAT_PRESETS.find(f => f.value === defaultFmt)?.mins ?? 90;
 
@@ -153,7 +161,7 @@ export default function GamesPage() {
 
   const load = useCallback(async () => {
     if (!club) return;
-    const [{ data: sl }, { data: tm }, { data: fi }, { data: pe }, { data: bl }, { data: pg }, { data: ng }, { data: nc }, { data: ni }, { data: nf }] = await Promise.all([
+    const [{ data: sl }, { data: tm }, { data: fi }, { data: pe }, { data: bl }, { data: pg }, { data: ng }, { data: nc }, { data: ni }] = await Promise.all([
       supabase.from('game_slots').select('*, home_team:teams(name, age_group)').eq('club_id', club.id).order('slot_date').order('start_time'),
       supabase.from('teams').select('id, name, age_group').eq('club_id', club.id).order('name'),
       supabase.from('tryout_fields').select('id, name, sort_order, field_group, is_full_field, sub_zones, scheduler_split, scheduler_format, is_active, half_a_name, half_b_name, has_lights, surface_type, field_notes').eq('club_id', club.id).order('sort_order').order('name'),
@@ -182,9 +190,6 @@ export default function GamesPage() {
       club.ncsa_partner
         ? supabase.from('ncsa_game_issues').select('*').eq('club_id', club.id).is('resolved_at', null).order('event_date')
         : Promise.resolve({ data: [] as unknown[] }),
-      club.ncsa_partner
-        ? supabase.from('ncsa_fines').select('*').eq('club_id', club.id).order('fine_date', { ascending: false })
-        : Promise.resolve({ data: [] as unknown[] }),
     ]);
     setSlots((sl ?? []) as GameSlot[]);
     setTeams((tm ?? []) as Team[]);
@@ -194,7 +199,6 @@ export default function GamesPage() {
     setPendingGames((pg ?? []) as PendingGame[]);
     setNcsaConflicts((nc ?? []) as NcsaConflict[]);
     setNcsaIssues((ni ?? []) as NcsaIssue[]);
-    setNcsaFines((nf ?? []) as NcsaFineRow[]);
     type RawNcsaGame = {
       id: string; team_id: string; event_date: string; event_time: string | null;
       location: string | null; home_away: 'home' | 'away' | null;
@@ -617,11 +621,11 @@ export default function GamesPage() {
               <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: '2px 0 0', letterSpacing: '-0.5px' }}>Game Scheduler</h1>
             </div>
             {club?.ncsa_partner && (
-              <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px', gap: '2px' }}>
-                {(['grid', 'league'] as const).map(v => (
-                  <button key={v} onClick={() => setView(v)}
-                    style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12.5px', fontWeight: '700', fontFamily: 'inherit', background: view === v ? '#fff' : 'transparent', color: view === v ? primary : '#64748B', boxShadow: view === v ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
-                    {v === 'grid' ? 'Field Grid' : 'League Schedule'}
+              <div style={{ display: 'flex', background: '#F1F5F9', borderRadius: '8px', padding: '3px', gap: '2px', flexWrap: 'wrap' }}>
+                {GAME_VIEW_TABS.map(t => (
+                  <button key={t.key} onClick={() => setView(t.key)}
+                    style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12.5px', fontWeight: '700', fontFamily: 'inherit', whiteSpace: 'nowrap', background: view === t.key ? '#fff' : 'transparent', color: view === t.key ? primary : '#64748B', boxShadow: view === t.key ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+                    {t.label}
                   </button>
                 ))}
               </div>
@@ -671,9 +675,13 @@ export default function GamesPage() {
         </div>
       </div>
 
-      {/* League Schedule view (NCSA partner clubs only) */}
-      {view === 'league' && club?.ncsa_partner ? (
-        <LeagueSchedulePanel games={ncsaGames} conflicts={ncsaConflicts} issues={ncsaIssues} fines={ncsaFines} primary={primary} />
+      {/* NCSA report views (partner clubs only) — each is its own tab */}
+      {view !== 'grid' && club?.ncsa_partner ? (
+        view === 'league' ? <LeagueSchedulePanel games={ncsaGames} primary={primary} /> :
+        view === 'overlaps' ? <ConflictListPanel conflicts={ncsaConflicts} kind="overlap" /> :
+        view === 'gaps' ? <ConflictListPanel conflicts={ncsaConflicts} kind="gap" /> :
+        view === 'missing_scores' ? <IssueListPanel issues={ncsaIssues} kind="missing_score" /> :
+        <IssueListPanel issues={ncsaIssues} kind="tbs" />
       ) : (
       <>
       {/* Body — flex row: optional pending panel on left, grid area on right */}
@@ -1104,92 +1112,102 @@ function fmtGameTime(date: string | null, time: string | null) {
   return time ? `${fmtDate(date)} · ${fmtT(time)}` : `${fmtDate(date)} · time TBD`;
 }
 
-const SectionCard = ({ title, subtitle, accent, children }: { title: string; subtitle: string; accent: string; children: React.ReactNode }) => (
-  <div style={{ marginBottom: '20px', borderRadius: '12px', border: `1.5px solid ${accent}40`, background: `${accent}08`, overflow: 'hidden' }}>
-    <div style={{ padding: '14px 18px', borderBottom: `1px solid ${accent}30` }}>
-      <div style={{ fontSize: '13px', fontWeight: '800', color: accent }}>{title}</div>
-      <div style={{ fontSize: '11.5px', color: accent, opacity: 0.8, marginTop: '2px' }}>{subtitle}</div>
-    </div>
-    <div style={{ display: 'flex', flexDirection: 'column' }}>{children}</div>
+const EmptyState = ({ icon, text }: { icon: string; text: string }) => (
+  <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8' }}>
+    <div style={{ fontSize: '40px', marginBottom: '12px' }}>{icon}</div>
+    <div style={{ fontSize: '14px', fontWeight: '700' }}>{text}</div>
   </div>
 );
 
-// League Schedule view — everything here is scraped from NCSA (either the
-// anonymous per-team schedule for `games`, or NCSA's own club-admin
-// reports for conflicts/issues/fines via sync-ncsa-reports), never
-// computed client-side. Never writes to game_slots — NCSA already fixes
-// date/time for these games, so there's nothing here to "assign," only
-// to see and cross-check against the club's own field usage.
-function LeagueSchedulePanel({ games, conflicts, issues, fines, primary }: {
-  games: NcsaGame[]; conflicts: NcsaConflict[]; issues: NcsaIssue[]; fines: NcsaFineRow[]; primary: string;
-}) {
+const NcsaTabHeader = ({ title, subtitle }: { title: string; subtitle: string }) => (
+  <div style={{ marginBottom: '16px' }}>
+    <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{title}</div>
+    <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>{subtitle}</div>
+  </div>
+);
+
+// Overlapping Games / Games with Gap Time — one component, since both are
+// the exact same shape (a pair of the club's own games at the same
+// field), straight from NCSA's own reports via sync-ncsa-reports. More
+// authoritative than anything computed client-side — NCSA sees every
+// club's bookings at a shared complex, not just this one's.
+function ConflictListPanel({ conflicts, kind }: { conflicts: NcsaConflict[]; kind: 'overlap' | 'gap' }) {
+  const filtered = conflicts.filter(c => c.kind === kind);
+  const accent = kind === 'overlap' ? '#DC2626' : '#F59E0B';
+  return (
+    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px 24px' }}>
+      <NcsaTabHeader
+        title={kind === 'overlap' ? 'Overlapping Games' : 'Games with Gap Time'}
+        subtitle={kind === 'overlap'
+          ? "Two of the club's games booked at the same field with overlapping times — from NCSA's Overlapping Games report."
+          : "Idle time between games at the same field — NCSA can fine the club for referee gaps caused by a schedule change (Rule 5.3.6). From NCSA's Games with Gap Time report."}
+      />
+      {filtered.length === 0 ? (
+        <EmptyState icon="✅" text={kind === 'overlap' ? 'No overlapping games right now' : 'No gaps right now'} />
+      ) : (
+        <div style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
+          {filtered.map((c, i) => (
+            <div key={c.id} style={{ padding: '12px 18px', borderTop: i > 0 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '10px', fontWeight: '800', color: '#fff', background: accent, borderRadius: '4px', padding: '2px 6px', letterSpacing: '0.3px', flexShrink: 0 }}>
+                {kind === 'overlap' ? 'OVERLAP' : c.minutes != null ? fmtMins(c.minutes) : 'GAP'}
+              </span>
+              <span style={{ fontSize: '13px', color: '#0F172A' }}>
+                <strong>{c.game_a_field ?? c.game_a_division}</strong>{c.game_a_date && ` · ${fmtDate(c.game_a_date)}`}
+              </span>
+              <span style={{ fontSize: '12.5px', color: '#64748B' }}>
+                {c.game_a_home} ({c.game_a_time ? fmtT(c.game_a_time) : '?'}) {kind === 'overlap' ? 'overlaps' : '→'} {c.game_b_home} ({c.game_b_time ? fmtT(c.game_b_time) : '?'})
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Games with Missing Scores / TBS Games — same shape too (a single game
+// needing attention), straight from sync-ncsa-reports.
+function IssueListPanel({ issues, kind }: { issues: NcsaIssue[]; kind: 'missing_score' | 'tbs' }) {
+  const filtered = issues.filter(i => i.kind === kind);
+  const accent = kind === 'missing_score' ? '#B91C1C' : '#7C3AED';
+  return (
+    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px 24px' }}>
+      <NcsaTabHeader
+        title={kind === 'missing_score' ? 'Games with Missing Scores' : 'TBS Games'}
+        subtitle={kind === 'missing_score'
+          ? 'Score not entered more than 4 hours after kickoff — NCSA can fine $25 per Rule 6.12.'
+          : 'Not yet scheduled by the league. Rule 5.3.5 allows 1 TBS game per team in Fall, 2 in Spring — extra TBS games cost $25 each.'}
+      />
+      {filtered.length === 0 ? (
+        <EmptyState icon="✅" text={kind === 'missing_score' ? 'No overdue scores right now' : 'No TBS games right now'} />
+      ) : (
+        <div style={{ borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', overflow: 'hidden' }}>
+          {filtered.map((i, idx) => (
+            <div key={i.id} style={{ padding: '11px 18px', borderTop: idx > 0 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{i.home_team} vs {i.visitor_team}</span>
+              <span style={{ fontSize: '11.5px', color: '#64748B' }}>{i.division}</span>
+              {i.tbs_type && <span style={{ fontSize: '10.5px', fontWeight: '700', color: accent, background: `${accent}15`, borderRadius: '4px', padding: '1px 6px' }}>{i.tbs_type}</span>}
+              <span style={{ fontSize: '11.5px', color: '#94A3B8', marginLeft: 'auto' }}>{fmtGameTime(i.event_date, i.event_time)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// League Schedule — every linked team's synced NCSA games, plus an
+// informational NCSA change-fee estimate (Rule 5.3.7a). Never writes to
+// game_slots — NCSA already fixes date/time for these games, so there's
+// nothing here to "assign," only to see.
+function LeagueSchedulePanel({ games, primary }: { games: NcsaGame[]; primary: string }) {
   const now = new Date();
   const dates = [...new Set(games.map(g => g.event_date))].sort();
-  const missingScores = issues.filter(i => i.kind === 'missing_score');
-  const tbsGames = issues.filter(i => i.kind === 'tbs');
-  const unpaidFines = fines.filter(f => f.status?.toLowerCase() === 'unpaid');
 
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '20px 24px 24px' }}>
-      {conflicts.length > 0 && (
-        <SectionCard accent="#C2410C" title={`⚠ ${conflicts.length} field ${conflicts.length === 1 ? 'issue' : 'issues'} — from NCSA's own reports`}
-          subtitle="Overlapping bookings, or idle gaps between games at the same complex — NCSA can fine the club for referee gaps caused by a schedule change (Rule 5.3.6).">
-          {conflicts.map((c, i) => (
-            <div key={c.id} style={{ padding: '10px 18px', borderTop: i > 0 ? '1px solid #FED7AA' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: '#fff', background: c.kind === 'overlap' ? '#DC2626' : '#F59E0B', borderRadius: '4px', padding: '2px 6px', letterSpacing: '0.3px', flexShrink: 0 }}>
-                {c.kind === 'overlap' ? 'OVERLAP' : c.minutes != null ? `${fmtMins(c.minutes)} GAP` : 'GAP'}
-              </span>
-              <span style={{ fontSize: '12.5px', color: '#7C2D12' }}>
-                <strong>{c.game_a_field ?? c.game_a_division}</strong> · {c.game_a_date && fmtDate(c.game_a_date)} · {c.game_a_home} ({c.game_a_time ? fmtT(c.game_a_time) : '?'}) {c.kind === 'overlap' ? 'overlaps' : 'then'} {c.game_b_home} ({c.game_b_time ? fmtT(c.game_b_time) : '?'})
-              </span>
-            </div>
-          ))}
-        </SectionCard>
-      )}
-
-      {missingScores.length > 0 && (
-        <SectionCard accent="#B91C1C" title={`${missingScores.length} game${missingScores.length === 1 ? '' : 's'} with a missing score`}
-          subtitle="Score not entered more than 4 hours after kickoff — NCSA can fine $25 per Rule 6.12.">
-          {missingScores.map((i, idx) => (
-            <div key={i.id} style={{ padding: '9px 18px', borderTop: idx > 0 ? '1px solid #FECACA' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12.5px', color: '#7F1D1D' }}>{i.home_team} vs {i.visitor_team} <span style={{ color: '#B91C1C90' }}>· {i.division}</span></span>
-              <span style={{ fontSize: '11.5px', color: '#B91C1C90', marginLeft: 'auto' }}>{fmtGameTime(i.event_date, i.event_time)}</span>
-            </div>
-          ))}
-        </SectionCard>
-      )}
-
-      {tbsGames.length > 0 && (
-        <SectionCard accent="#7C3AED" title={`${tbsGames.length} TBS game${tbsGames.length === 1 ? '' : 's'} not yet scheduled`}
-          subtitle="Rule 5.3.5 allows 1 TBS game per team in Fall, 2 in Spring — extra TBS games cost $25 each.">
-          {tbsGames.map((i, idx) => (
-            <div key={i.id} style={{ padding: '9px 18px', borderTop: idx > 0 ? '1px solid #DDD6FE' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12.5px', color: '#4C1D95' }}>{i.home_team} vs {i.visitor_team} <span style={{ color: '#4C1D9590' }}>· {i.division}</span></span>
-              <span style={{ fontSize: '10.5px', fontWeight: '700', color: '#7C3AED', background: '#EDE9FE', borderRadius: '4px', padding: '1px 6px' }}>{i.tbs_type}</span>
-              <span style={{ fontSize: '11.5px', color: '#4C1D9590', marginLeft: 'auto' }}>{i.event_date ? fmtDate(i.event_date) : ''}</span>
-            </div>
-          ))}
-        </SectionCard>
-      )}
-
-      {unpaidFines.length > 0 && (
-        <SectionCard accent="#B45309" title={`${unpaidFines.length} unpaid NCSA fine${unpaidFines.length === 1 ? '' : 's'} — $${unpaidFines.reduce((s, f) => s + (f.amount ?? 0), 0).toFixed(2)} total`}
-          subtitle="From NCSA's Administrative Area — View/Appeal Fines.">
-          {unpaidFines.map((f, idx) => (
-            <div key={f.id} style={{ padding: '9px 18px', borderTop: idx > 0 ? '1px solid #FDE68A' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12.5px', color: '#78350F' }}>{f.reason} {f.team_raw_name && <span style={{ color: '#78350F90' }}>· {f.team_raw_name}</span>}</span>
-              <span style={{ fontSize: '12px', fontWeight: '800', color: '#B45309', marginLeft: 'auto' }}>${f.amount?.toFixed(2) ?? '?'}</span>
-              {f.fine_date && <span style={{ fontSize: '11px', color: '#78350F90' }}>{fmtDate(f.fine_date)}</span>}
-            </div>
-          ))}
-        </SectionCard>
-      )}
-
       {dates.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94A3B8' }}>
-          <div style={{ fontSize: '40px', marginBottom: '12px' }}>🗓️</div>
-          <div style={{ fontSize: '14px', fontWeight: '700' }}>No upcoming NCSA games synced yet</div>
-        </div>
+        <EmptyState icon="🗓️" text="No upcoming NCSA games synced yet" />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {dates.map(date => (

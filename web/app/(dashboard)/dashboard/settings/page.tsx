@@ -263,6 +263,8 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
   const [ncsaCredShowPw, setNcsaCredShowPw] = useState(false);
   const [ncsaCredSaving, setNcsaCredSaving] = useState(false);
   const [ncsaCredError, setNcsaCredError] = useState('');
+  const [ncsaFines, setNcsaFines] = useState<{ id: string; reason: string | null; team_raw_name: string | null; amount: number | null; status: string | null; fine_date: string | null }[]>([]);
+  const [ncsaFinesLoaded, setNcsaFinesLoaded] = useState(false);
   const [connectingStripe, setConnectingStripe] = useState(false);
   const [showDeleteClub,   setShowDeleteClub]   = useState(false);
   const [deleteClubConfirm, setDeleteClubConfirm] = useState('');
@@ -435,12 +437,25 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
     setNcsaAdminLoaded(true);
   }
 
-  // Only fetch the connected-admin-account state once the NCSA Partner tab
-  // is actually opened, not on every Settings page visit.
+  // Fines live here, not the Game Scheduler — they're an administrative/
+  // compliance matter (NCSA itself files them under its own Administrative
+  // Area), not something tied to scheduling games.
+  async function loadNcsaFines() {
+    if (!club || ncsaFinesLoaded) return;
+    const { data } = await supabase.from('ncsa_fines').select('id, reason, team_raw_name, amount, status, fine_date').eq('club_id', club.id).order('fine_date', { ascending: false });
+    setNcsaFines(data ?? []);
+    setNcsaFinesLoaded(true);
+  }
+
+  // Only fetch the connected-admin-account/fines state once the NCSA
+  // Partner tab is actually opened, not on every Settings page visit.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
-    if (active === 'NCSA Partner') loadNcsaAdminCredential();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadNcsaAdminCredential guards itself with ncsaAdminLoaded; only re-run when the tab is opened
+    if (active === 'NCSA Partner') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
+      loadNcsaAdminCredential();
+      loadNcsaFines();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- both loaders guard themselves with their own *Loaded flag; only re-run when the tab is opened
   }, [active]);
 
   async function connectNcsaAdmin() {
@@ -785,6 +800,45 @@ function ClubTab({ primary, showToast, initialSection }: { primary: string; show
                       >
                         {ncsaCredSaving ? 'Connecting…' : 'Connect'}
                       </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {ncsaPartner && (
+              <div style={sectionCard}>
+                <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9' }}>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>NCSA Fines</div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>From NCSA&apos;s Administrative Area — View/Appeal Fines. Club admins and the relevant team&apos;s coaches are notified when a new one appears.</div>
+                </div>
+                <div style={{ padding: '24px' }}>
+                  {!ncsaAdminUsername ? (
+                    <div style={{ fontSize: '13px', color: '#94A3B8' }}>Connect your NCSA admin account above to pull fines.</div>
+                  ) : ncsaFines.length === 0 ? (
+                    <div style={{ fontSize: '13px', color: '#94A3B8' }}>No fines on record.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                      {ncsaFines.some(f => f.status?.toLowerCase() === 'unpaid') && (
+                        <div style={{ fontSize: '13px', fontWeight: '800', color: '#B45309', marginBottom: '10px' }}>
+                          {ncsaFines.filter(f => f.status?.toLowerCase() === 'unpaid').length} unpaid — $
+                          {ncsaFines.filter(f => f.status?.toLowerCase() === 'unpaid').reduce((s, f) => s + (f.amount ?? 0), 0).toFixed(2)} total
+                        </div>
+                      )}
+                      <div style={{ borderRadius: '10px', border: '1px solid #F1F5F9', overflow: 'hidden' }}>
+                        {ncsaFines.map((f, i) => {
+                          const unpaid = f.status?.toLowerCase() === 'unpaid';
+                          return (
+                            <div key={f.id} style={{ padding: '10px 14px', borderTop: i > 0 ? '1px solid #F1F5F9' : 'none', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '10px', fontWeight: '800', color: unpaid ? '#fff' : '#64748B', background: unpaid ? '#DC2626' : '#F1F5F9', borderRadius: '4px', padding: '2px 6px', flexShrink: 0 }}>{f.status?.toUpperCase() ?? '?'}</span>
+                              <span style={{ fontSize: '13px', color: '#0F172A' }}>{f.reason}</span>
+                              {f.team_raw_name && <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{f.team_raw_name}</span>}
+                              <span style={{ fontSize: '12px', fontWeight: '800', color: '#B45309', marginLeft: 'auto' }}>${f.amount?.toFixed(2) ?? '?'}</span>
+                              {f.fine_date && <span style={{ fontSize: '11px', color: '#94A3B8' }}>{new Date(f.fine_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
