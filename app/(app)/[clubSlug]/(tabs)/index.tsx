@@ -545,6 +545,11 @@ export default function HomeScreen() {
 
   async function fetchData() {
     if (!team || !profile) return;
+    // Plain string captures, referenced inside the nested async functions
+    // below — TS can't carry the null-check above across a function
+    // boundary, even though team/profile can't actually change mid-call.
+    const teamId = team.id;
+    const profileId = profile.id;
 
     // Skip re-fetch if data is fresh (30s cache) — bypassed by pull-to-refresh
     const now = Date.now();
@@ -627,262 +632,287 @@ export default function HomeScreen() {
     lastFetchRef.current = Date.now();
 
     // === BACKGROUND — fills in while the user reads ===
+    // Every section below only reads data the critical batch above already
+    // resolved (guardedPlayers, activeCallouts, nextG, nextT) — none of
+    // them depend on each other's results, so they run concurrently
+    // instead of each waiting its turn behind the last. That serial chain
+    // was exactly why the attendance streak card in particular could take
+    // several seconds to appear on a slow connection — it was the 6th
+    // thing in line, not itself slow. Headcounts/Team Pulse/Polls form a
+    // second wave since they do genuinely need `pc` from wave one.
 
-    const [
-      { count: pc },
-      { count: ec },
-      { count: unreadNotifs },
-    ] = await Promise.all([
-      supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', team.id),
-      supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null),
-      supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profile.id).eq('read', false),
-    ]);
-
-    setPlayerCount(pc ?? 0);
-    setUpcomingCount(ec ?? 0);
-    setUnreadNotifCount(unreadNotifs ?? 0);
+    async function fetchCounts() {
+      const [{ count: pc }, { count: ec }, { count: unreadNotifs }] = await Promise.all([
+        supabase.from('players').select('*', { count: 'exact', head: true }).eq('team_id', teamId),
+        supabase.from('events').select('*', { count: 'exact', head: true }).eq('team_id', teamId).gte('event_date', today).is('cancelled_at', null),
+        supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('profile_id', profileId).eq('read', false),
+      ]);
+      setPlayerCount(pc ?? 0);
+      setUpcomingCount(ec ?? 0);
+      setUnreadNotifCount(unreadNotifs ?? 0);
+      return pc ?? 0;
+    }
 
     // Callout responses (needs callout IDs from critical batch)
-    if (activeCallouts.length > 0 && profile?.id) {
-      const cIds = activeCallouts.map(c => c.id);
-      const [responseRes, helpCountRes] = await Promise.all([
-        sb.from('team_callout_responses').select('callout_id, response').in('callout_id', cIds).eq('profile_id', profile.id),
-        isCoach
-          ? sb.from('team_callout_responses').select('callout_id, profiles:profile_id(full_name)').in('callout_id', cIds).eq('response', 'helping')
-          : Promise.resolve({ data: null }),
-      ]);
+    async function fetchCalloutResponses() {
+      if (activeCallouts.length > 0 && profile?.id) {
+        const cIds = activeCallouts.map(c => c.id);
+        const [responseRes, helpCountRes] = await Promise.all([
+          sb.from('team_callout_responses').select('callout_id, response').in('callout_id', cIds).eq('profile_id', profile.id),
+          isCoach
+            ? sb.from('team_callout_responses').select('callout_id, profiles:profile_id(full_name)').in('callout_id', cIds).eq('response', 'helping')
+            : Promise.resolve({ data: null }),
+        ]);
 
-      const rMap: Record<string, 'helping' | 'dismissed'> = {};
-      for (const r of (responseRes.data ?? []) as { callout_id: string; response: string }[]) {
-        rMap[r.callout_id] = r.response as 'helping' | 'dismissed';
-      }
-      setCalloutResponses(rMap);
-
-      if (isCoach && helpCountRes.data) {
-        const helpMap: Record<string, number> = {};
-        const nameMap: Record<string, string[]> = {};
-        for (const r of helpCountRes.data as { callout_id: string; profiles: { full_name: string | null } | null }[]) {
-          helpMap[r.callout_id] = (helpMap[r.callout_id] ?? 0) + 1;
-          const name = r.profiles?.full_name;
-          if (name) {
-            if (!nameMap[r.callout_id]) nameMap[r.callout_id] = [];
-            nameMap[r.callout_id].push(name.split(' ')[0]); // first name only
-          }
+        const rMap: Record<string, 'helping' | 'dismissed'> = {};
+        for (const r of (responseRes.data ?? []) as { callout_id: string; response: string }[]) {
+          rMap[r.callout_id] = r.response as 'helping' | 'dismissed';
         }
-        setCallouts(activeCallouts.map(c => ({
-          ...c,
-          helper_count: helpMap[c.id] ?? 0,
-          helper_names: nameMap[c.id] ?? [],
-        })));
+        setCalloutResponses(rMap);
+
+        if (isCoach && helpCountRes.data) {
+          const helpMap: Record<string, number> = {};
+          const nameMap: Record<string, string[]> = {};
+          for (const r of helpCountRes.data as { callout_id: string; profiles: { full_name: string | null } | null }[]) {
+            helpMap[r.callout_id] = (helpMap[r.callout_id] ?? 0) + 1;
+            const name = r.profiles?.full_name;
+            if (name) {
+              if (!nameMap[r.callout_id]) nameMap[r.callout_id] = [];
+              nameMap[r.callout_id].push(name.split(' ')[0]); // first name only
+            }
+          }
+          setCallouts(activeCallouts.map(c => ({
+            ...c,
+            helper_count: helpMap[c.id] ?? 0,
+            helper_names: nameMap[c.id] ?? [],
+          })));
+        }
       }
     }
 
-    if (guardedPlayers.length > 0 && !isCoach) {
-      const playerNameById = new Map(guardedPlayers.map((p) => [p.id, p.full_name]));
-      const { data: feesData } = await (supabase as any)
-        .from('player_fees')
-        .select('id, team_id, player_id, description, amount_due, discount, due_date, status, payee_type, payment_instructions, payment_token, claim_status, claim_amount, claim_method, event_id, events(title, event_date)')
-        .in('player_id', guardedPlayers.map((p) => p.id))
-        .in('status', ['outstanding', 'overdue', 'partial'])
-        .order('due_date', { ascending: true, nullsFirst: false });
-      setOutstandingFees((feesData ?? []).map((f: any) => ({
-        ...f,
-        event_title: f.events?.title ?? null,
-        event_date: f.events?.event_date ?? null,
-        player_name: playerNameById.get(f.player_id) ?? '',
-      })) as OutstandingFee[]);
-    } else {
-      setOutstandingFees([]);
+    async function fetchFees() {
+      if (guardedPlayers.length > 0 && !isCoach) {
+        const playerNameById = new Map(guardedPlayers.map((p) => [p.id, p.full_name]));
+        const { data: feesData } = await (supabase as any)
+          .from('player_fees')
+          .select('id, team_id, player_id, description, amount_due, discount, due_date, status, payee_type, payment_instructions, payment_token, claim_status, claim_amount, claim_method, event_id, events(title, event_date)')
+          .in('player_id', guardedPlayers.map((p) => p.id))
+          .in('status', ['outstanding', 'overdue', 'partial'])
+          .order('due_date', { ascending: true, nullsFirst: false });
+        setOutstandingFees((feesData ?? []).map((f: any) => ({
+          ...f,
+          event_title: f.events?.title ?? null,
+          event_date: f.events?.event_date ?? null,
+          player_name: playerNameById.get(f.player_id) ?? '',
+        })) as OutstandingFee[]);
+      } else {
+        setOutstandingFees([]);
+      }
     }
 
-    if (!isCoach && profile?.id) {
-      const allPlayerIds = guardedPlayers.map((p) => p.id);
-      if (allPlayerIds.length > 0) {
-        const { data: guestRows } = await supabase
-          .from('event_guests')
-          .select('id, event_id, player_id, full_name')
-          .in('player_id', allPlayerIds)
-          .eq('status', 'pending');
-        if (guestRows && guestRows.length > 0) {
-          const eventIds = [...new Set(guestRows.map((g: any) => g.event_id as string))];
-          const { data: evData } = await supabase
-            .from('events')
-            .select('id, title, type, event_date, event_time, team_id')
-            .in('id', eventIds)
-            .gte('event_date', today);
-          const evMap: Record<string, any> = {};
-          for (const e of (evData ?? [])) evMap[(e as any).id] = e;
-          const teamIds = [...new Set((evData ?? []).map((e: any) => e.team_id as string))];
-          const { data: teamsData } = await supabase.from('teams').select('id, name, club_id').in('id', teamIds);
-          const teamMap: Record<string, string> = {};
-          const teamClubMap: Record<string, string | null> = {};
-          for (const t of (teamsData ?? [])) {
-            teamMap[(t as any).id] = (t as any).name;
-            teamClubMap[(t as any).id] = (t as any).club_id ?? null;
+    async function fetchGuestInvites() {
+      if (!isCoach && profile?.id) {
+        const allPlayerIds = guardedPlayers.map((p) => p.id);
+        if (allPlayerIds.length > 0) {
+          const { data: guestRows } = await supabase
+            .from('event_guests')
+            .select('id, event_id, player_id, full_name')
+            .in('player_id', allPlayerIds)
+            .eq('status', 'pending');
+          if (guestRows && guestRows.length > 0) {
+            const eventIds = [...new Set(guestRows.map((g: any) => g.event_id as string))];
+            const { data: evData } = await supabase
+              .from('events')
+              .select('id, title, type, event_date, event_time, team_id')
+              .in('id', eventIds)
+              .gte('event_date', today);
+            const evMap: Record<string, any> = {};
+            for (const e of (evData ?? [])) evMap[(e as any).id] = e;
+            const teamIds = [...new Set((evData ?? []).map((e: any) => e.team_id as string))];
+            const { data: teamsData } = await supabase.from('teams').select('id, name, club_id').in('id', teamIds);
+            const teamMap: Record<string, string> = {};
+            const teamClubMap: Record<string, string | null> = {};
+            for (const t of (teamsData ?? [])) {
+              teamMap[(t as any).id] = (t as any).name;
+              teamClubMap[(t as any).id] = (t as any).club_id ?? null;
+            }
+            const invites: PendingGuestInvite[] = (guestRows as any[])
+              .filter((g) => evMap[g.event_id])
+              .map((g) => {
+                const ev = evMap[g.event_id];
+                return {
+                  id: g.id, event_id: g.event_id, player_id: g.player_id, full_name: g.full_name,
+                  event_title: ev.title, event_date: ev.event_date, event_time: ev.event_time ?? null,
+                  event_type: ev.type, team_name: teamMap[ev.team_id] ?? 'Guest Event',
+                  team_id: ev.team_id, club_id: teamClubMap[ev.team_id] ?? null,
+                };
+              })
+              .sort((a, b) => a.event_date.localeCompare(b.event_date));
+            setPendingGuestInvites(invites);
+          } else {
+            setPendingGuestInvites([]);
           }
-          const invites: PendingGuestInvite[] = (guestRows as any[])
-            .filter((g) => evMap[g.event_id])
-            .map((g) => {
-              const ev = evMap[g.event_id];
-              return {
-                id: g.id, event_id: g.event_id, player_id: g.player_id, full_name: g.full_name,
-                event_title: ev.title, event_date: ev.event_date, event_time: ev.event_time ?? null,
-                event_type: ev.type, team_name: teamMap[ev.team_id] ?? 'Guest Event',
-                team_id: ev.team_id, club_id: teamClubMap[ev.team_id] ?? null,
-              };
-            })
-            .sort((a, b) => a.event_date.localeCompare(b.event_date));
-          setPendingGuestInvites(invites);
         } else {
           setPendingGuestInvites([]);
         }
       } else {
         setPendingGuestInvites([]);
       }
-    } else {
-      setPendingGuestInvites([]);
     }
 
-    if (guardedPlayers.length > 0) {
-      const playerIds = guardedPlayers.map((p) => p.id);
-      const rsvpFetches: PromiseLike<void>[] = [];
-      if (nextG) {
-        rsvpFetches.push(
-          supabase.from('event_rsvps').select('player_id, status').eq('event_id', nextG.id).in('player_id', playerIds)
-            .then(({ data }) => {
-              const map: Record<string, string | null> = {};
-              for (const row of (data ?? []) as { player_id: string; status: string }[]) map[row.player_id] = row.status;
-              setMyGameRsvpStatusByPlayer(map);
-            })
-        );
-      } else {
-        setMyGameRsvpStatusByPlayer({});
-      }
-      if (nextT) {
-        rsvpFetches.push(
-          supabase.from('event_rsvps').select('player_id, status').eq('event_id', nextT.id).in('player_id', playerIds)
-            .then(({ data }) => {
-              const map: Record<string, string | null> = {};
-              for (const row of (data ?? []) as { player_id: string; status: string }[]) map[row.player_id] = row.status;
-              setMyTrainingRsvpStatusByPlayer(map);
-            })
-        );
-      } else {
-        setMyTrainingRsvpStatusByPlayer({});
-      }
-      await Promise.all(rsvpFetches);
+    async function fetchRsvpAndStreak() {
+      if (guardedPlayers.length > 0) {
+        const playerIds = guardedPlayers.map((p) => p.id);
+        const rsvpFetches: PromiseLike<void>[] = [];
+        if (nextG) {
+          rsvpFetches.push(
+            supabase.from('event_rsvps').select('player_id, status').eq('event_id', nextG.id).in('player_id', playerIds)
+              .then(({ data }) => {
+                const map: Record<string, string | null> = {};
+                for (const row of (data ?? []) as { player_id: string; status: string }[]) map[row.player_id] = row.status;
+                setMyGameRsvpStatusByPlayer(map);
+              })
+          );
+        } else {
+          setMyGameRsvpStatusByPlayer({});
+        }
+        if (nextT) {
+          rsvpFetches.push(
+            supabase.from('event_rsvps').select('player_id, status').eq('event_id', nextT.id).in('player_id', playerIds)
+              .then(({ data }) => {
+                const map: Record<string, string | null> = {};
+                for (const row of (data ?? []) as { player_id: string; status: string }[]) map[row.player_id] = row.status;
+                setMyTrainingRsvpStatusByPlayer(map);
+              })
+          );
+        } else {
+          setMyTrainingRsvpStatusByPlayer({});
+        }
+        await Promise.all(rsvpFetches);
 
-      // Attendance streak + season stats — players only, one entry per guarded player
-      if (!isCoach) {
-        const { data: pastEvtsData } = await supabase
-          .from('events')
-          .select('id, type, event_date, title')
-          .eq('team_id', team.id)
-          .lt('event_date', today)
-          .is('cancelled_at', null)
-          .order('event_date', { ascending: false })
-          .limit(40);
-        const pastEvts = (pastEvtsData ?? []) as { id: string; type: string; event_date: string; title: string | null }[];
-        const pastIds = pastEvts.map((e) => e.id);
-        if (pastIds.length > 0) {
-          // Coaches marking real attendance is manual and opt-in per event —
-          // a coach who marks it once early in the season and never again
-          // leaves the streak stuck forever, since an unmarked event was
-          // previously excluded from history entirely rather than counted.
-          // Fall back to the player's own RSVP for any event with no explicit
-          // attendance record, so the streak keeps moving even when nobody's
-          // taking attendance — less precise (an RSVP is "said they'd come,"
-          // not confirmed they showed), but far better than staying frozen.
-          const [{ data: attRows }, { data: rsvpRows }] = await Promise.all([
-            supabase.from('event_attendance').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
-            supabase.from('event_rsvps').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
-          ]);
-          const attRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
-          for (const row of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
-            if (!attRowsByPlayer.has(row.player_id)) attRowsByPlayer.set(row.player_id, []);
-            attRowsByPlayer.get(row.player_id)!.push(row);
-          }
-          const rsvpRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
-          for (const row of (rsvpRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
-            if (!rsvpRowsByPlayer.has(row.player_id)) rsvpRowsByPlayer.set(row.player_id, []);
-            rsvpRowsByPlayer.get(row.player_id)!.push(row);
-          }
-          // WHOOP-style streak: one grace period allowed, but grace must be re-earned
-          // with 3 consecutive clean sessions before it can be used again.
-          function whoopStreak(evts: AttendanceEntry[]) {
-            let streak = 0;
-            let atRisk = false;
-            let graceAvailable = true;
-            let cleanAfterGrace = 0;
-            for (const ev of evts) {
-              if (ev.status === 'present') {
-                streak++;
-                if (atRisk) {
-                  // Saved from at-risk — grace is now spent
-                  atRisk = false;
-                  graceAvailable = false;
-                  cleanAfterGrace = 1;
-                } else if (!graceAvailable) {
-                  // Building back toward earning grace again
-                  cleanAfterGrace++;
-                  if (cleanAfterGrace >= 3) {
-                    graceAvailable = true;
-                    cleanAfterGrace = 0;
+        // Attendance streak + season stats — players only, one entry per guarded player
+        if (!isCoach) {
+          const { data: pastEvtsData } = await supabase
+            .from('events')
+            .select('id, type, event_date, title')
+            .eq('team_id', teamId)
+            .lt('event_date', today)
+            .is('cancelled_at', null)
+            .order('event_date', { ascending: false })
+            .limit(40);
+          const pastEvts = (pastEvtsData ?? []) as { id: string; type: string; event_date: string; title: string | null }[];
+          const pastIds = pastEvts.map((e) => e.id);
+          if (pastIds.length > 0) {
+            // Coaches marking real attendance is manual and opt-in per event —
+            // a coach who marks it once early in the season and never again
+            // leaves the streak stuck forever, since an unmarked event was
+            // previously excluded from history entirely rather than counted.
+            // Fall back to the player's own RSVP for any event with no explicit
+            // attendance record, so the streak keeps moving even when nobody's
+            // taking attendance — less precise (an RSVP is "said they'd come,"
+            // not confirmed they showed), but far better than staying frozen.
+            const [{ data: attRows }, { data: rsvpRows }] = await Promise.all([
+              supabase.from('event_attendance').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
+              supabase.from('event_rsvps').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
+            ]);
+            const attRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
+            for (const row of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+              if (!attRowsByPlayer.has(row.player_id)) attRowsByPlayer.set(row.player_id, []);
+              attRowsByPlayer.get(row.player_id)!.push(row);
+            }
+            const rsvpRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
+            for (const row of (rsvpRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+              if (!rsvpRowsByPlayer.has(row.player_id)) rsvpRowsByPlayer.set(row.player_id, []);
+              rsvpRowsByPlayer.get(row.player_id)!.push(row);
+            }
+            // WHOOP-style streak: one grace period allowed, but grace must be re-earned
+            // with 3 consecutive clean sessions before it can be used again.
+            function whoopStreak(evts: AttendanceEntry[]) {
+              let streak = 0;
+              let atRisk = false;
+              let graceAvailable = true;
+              let cleanAfterGrace = 0;
+              for (const ev of evts) {
+                if (ev.status === 'present') {
+                  streak++;
+                  if (atRisk) {
+                    // Saved from at-risk — grace is now spent
+                    atRisk = false;
+                    graceAvailable = false;
+                    cleanAfterGrace = 1;
+                  } else if (!graceAvailable) {
+                    // Building back toward earning grace again
+                    cleanAfterGrace++;
+                    if (cleanAfterGrace >= 3) {
+                      graceAvailable = true;
+                      cleanAfterGrace = 0;
+                    }
+                  }
+                } else {
+                  if (graceAvailable) {
+                    atRisk = true;
+                    graceAvailable = false;
+                  } else {
+                    break;
                   }
                 }
-              } else {
-                if (graceAvailable) {
-                  atRisk = true;
-                  graceAvailable = false;
-                } else {
-                  break;
-                }
               }
+              return { streak, atRisk };
             }
-            return { streak, atRisk };
-          }
 
-          const statsByPlayer: Record<string, PlayerSeasonStats> = {};
-          for (const p of guardedPlayers) {
-            const attMap = new Map((attRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
-            const rsvpMap = new Map((rsvpRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
-            const history: AttendanceEntry[] = pastEvts
-              .filter((e) => attMap.has(e.id) || rsvpMap.has(e.id))
-              .map((e) => {
-                if (attMap.has(e.id)) {
-                  return { id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null, source: 'attendance' as const };
-                }
-                const rsvp = rsvpMap.get(e.id);
-                const status = rsvp === 'attending' ? 'present' : rsvp === 'not_attending' ? 'absent' : null;
-                return { id: e.id, type: e.type, date: e.event_date, status, title: e.title ?? null, source: 'rsvp' as const };
-              });
-            const trainingHistory = history.filter((e) => e.type !== 'game');
-            const gameHistory     = history.filter((e) => e.type === 'game');
-            const cResult = whoopStreak(history);
-            const tResult = whoopStreak(trainingHistory);
-            const gResult = whoopStreak(gameHistory);
-            statsByPlayer[p.id] = {
-              combinedStreak: cResult.streak, combinedAtRisk: cResult.atRisk,
-              trainingStreak: tResult.streak, trainingAtRisk: tResult.atRisk,
-              gameStreak: gResult.streak, gameAtRisk: gResult.atRisk,
-              gamesTotal: gameHistory.length,
-              gamesAttended: gameHistory.filter((e) => e.status === 'present').length,
-              seasonTotalMarked: history.length,
-              attendanceHistory: history,
-            };
+            const statsByPlayer: Record<string, PlayerSeasonStats> = {};
+            for (const p of guardedPlayers) {
+              const attMap = new Map((attRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
+              const rsvpMap = new Map((rsvpRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
+              const history: AttendanceEntry[] = pastEvts
+                .filter((e) => attMap.has(e.id) || rsvpMap.has(e.id))
+                .map((e) => {
+                  if (attMap.has(e.id)) {
+                    return { id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null, source: 'attendance' as const };
+                  }
+                  const rsvp = rsvpMap.get(e.id);
+                  const status = rsvp === 'attending' ? 'present' : rsvp === 'not_attending' ? 'absent' : null;
+                  return { id: e.id, type: e.type, date: e.event_date, status, title: e.title ?? null, source: 'rsvp' as const };
+                });
+              const trainingHistory = history.filter((e) => e.type !== 'game');
+              const gameHistory     = history.filter((e) => e.type === 'game');
+              const cResult = whoopStreak(history);
+              const tResult = whoopStreak(trainingHistory);
+              const gResult = whoopStreak(gameHistory);
+              statsByPlayer[p.id] = {
+                combinedStreak: cResult.streak, combinedAtRisk: cResult.atRisk,
+                trainingStreak: tResult.streak, trainingAtRisk: tResult.atRisk,
+                gameStreak: gResult.streak, gameAtRisk: gResult.atRisk,
+                gamesTotal: gameHistory.length,
+                gamesAttended: gameHistory.filter((e) => e.status === 'present').length,
+                seasonTotalMarked: history.length,
+                attendanceHistory: history,
+              };
+            }
+            setSeasonStatsByPlayer(statsByPlayer);
+          } else {
+            setSeasonStatsByPlayer({});
           }
-          setSeasonStatsByPlayer(statsByPlayer);
-        } else {
-          setSeasonStatsByPlayer({});
         }
+      } else {
+        setMyGameRsvpStatusByPlayer({});
+        setMyTrainingRsvpStatusByPlayer({});
+        setSeasonStatsByPlayer({});
       }
-    } else {
-      setMyGameRsvpStatusByPlayer({});
-      setMyTrainingRsvpStatusByPlayer({});
-      setSeasonStatsByPlayer({});
     }
 
-    {
+    const [pc] = await Promise.all([
+      fetchCounts(),
+      fetchCalloutResponses(),
+      fetchFees(),
+      fetchGuestInvites(),
+      fetchRsvpAndStreak(),
+    ]);
+
+    // === WAVE 2 — needs `pc` from wave one above; independent of each
+    // other the same way wave one's sections were. ===
+
+    async function fetchHeadcounts() {
       const [gameRsvps, trainingRsvps, gameGuests, trainingGuests] = await Promise.all([
         nextG ? supabase.from('event_rsvps').select('status').eq('event_id', nextG.id) : Promise.resolve({ data: null as null }),
         nextT ? supabase.from('event_rsvps').select('status').eq('event_id', nextT.id) : Promise.resolve({ data: null as null }),
@@ -908,132 +938,142 @@ export default function HomeScreen() {
     }
 
     // Team Pulse — game vs training attendance this month (coaches only)
-    if (isCoach && (pc ?? 0) > 0) {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-      const startStr = toLocalDateStr(startOfMonth);
-      const [{ data: gameEvts }, { data: trainingEvts }] = await Promise.all([
-        // A session cancelled before it started never happened — excluded.
-        // One cancelled after start (kids may have already shown up) still
-        // counts, so this isn't a blanket "no cancelled events" filter.
-        // Must use `is` (IS NOT TRUE), not `eq` — the column is null for
-        // every never-cancelled event, and `NULL <> true` is NULL, which a
-        // WHERE clause treats as "exclude", silently dropping every real
-        // event. See player/[playerId].tsx's identical fix for the same bug.
-        supabase.from('events').select('id').eq('team_id', team.id)
-          .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'is', true),
-        supabase.from('events').select('id').eq('team_id', team.id)
-          .in('type', ['training', 'other']).gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'is', true),
-      ]);
-      const gameIds = (gameEvts ?? []).map((e: { id: string }) => e.id);
-      const trainingIds = (trainingEvts ?? []).map((e: { id: string }) => e.id);
-      const allIds = [...gameIds, ...trainingIds];
+    async function fetchTeamPulse() {
+      if (isCoach && (pc ?? 0) > 0) {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const startStr = toLocalDateStr(startOfMonth);
+        const [{ data: gameEvts }, { data: trainingEvts }] = await Promise.all([
+          // A session cancelled before it started never happened — excluded.
+          // One cancelled after start (kids may have already shown up) still
+          // counts, so this isn't a blanket "no cancelled events" filter.
+          // Must use `is` (IS NOT TRUE), not `eq` — the column is null for
+          // every never-cancelled event, and `NULL <> true` is NULL, which a
+          // WHERE clause treats as "exclude", silently dropping every real
+          // event. See player/[playerId].tsx's identical fix for the same bug.
+          supabase.from('events').select('id').eq('team_id', team.id)
+            .eq('type', 'game').gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'is', true),
+          supabase.from('events').select('id').eq('team_id', team.id)
+            .in('type', ['training', 'other']).gte('event_date', startStr).lte('event_date', today).not('cancelled_before_start', 'is', true),
+        ]);
+        const gameIds = (gameEvts ?? []).map((e: { id: string }) => e.id);
+        const trainingIds = (trainingEvts ?? []).map((e: { id: string }) => e.id);
+        const allIds = [...gameIds, ...trainingIds];
 
-      // Actual coach-marked attendance is the authoritative signal — RSVP
-      // only fills in for a session that hasn't been marked yet. Same
-      // reasoning and pattern as the web dashboard's team attendance page:
-      // RSVP is what a parent said beforehand, not whether the kid showed.
-      const [{ data: attRows }, { data: rsvpRows }] = allIds.length > 0
-        ? await Promise.all([
-            supabase.from('event_attendance').select('event_id, player_id, status').in('event_id', allIds),
-            supabase.from('event_rsvps').select('event_id, player_id, status').in('event_id', allIds),
-          ])
-        : [{ data: [] }, { data: [] }];
+        // Actual coach-marked attendance is the authoritative signal — RSVP
+        // only fills in for a session that hasn't been marked yet. Same
+        // reasoning and pattern as the web dashboard's team attendance page:
+        // RSVP is what a parent said beforehand, not whether the kid showed.
+        const [{ data: attRows }, { data: rsvpRows }] = allIds.length > 0
+          ? await Promise.all([
+              supabase.from('event_attendance').select('event_id, player_id, status').in('event_id', allIds),
+              supabase.from('event_rsvps').select('event_id, player_id, status').in('event_id', allIds),
+            ])
+          : [{ data: [] }, { data: [] }];
 
-      const attByKey = new Map<string, string>();
-      for (const a of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
-        attByKey.set(`${a.event_id}|${a.player_id}`, a.status);
-      }
-      const rsvpByKey = new Map<string, string>();
-      for (const r of (rsvpRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
-        rsvpByKey.set(`${r.event_id}|${r.player_id}`, r.status);
-      }
-
-      function attendedCount(idSet: Set<string>): number {
-        let count = 0;
-        for (const [key, status] of attByKey) {
-          const eventId = key.split('|')[0];
-          if (idSet.has(eventId) && (status === 'present' || status === 'late')) count++;
+        const attByKey = new Map<string, string>();
+        for (const a of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+          attByKey.set(`${a.event_id}|${a.player_id}`, a.status);
         }
-        for (const [key, status] of rsvpByKey) {
-          if (attByKey.has(key)) continue; // this pair already has a real attendance mark
-          const eventId = key.split('|')[0];
-          if (idSet.has(eventId) && status === 'attending') count++;
+        const rsvpByKey = new Map<string, string>();
+        for (const r of (rsvpRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
+          rsvpByKey.set(`${r.event_id}|${r.player_id}`, r.status);
         }
-        return count;
-      }
 
-      const playerN = pc ?? 0;
-      setPulseGameEvents(gameIds.length);
-      setPulseGamePct(gameIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(gameIds)) / (gameIds.length * playerN)) * 100) : null);
-      setPulseTrainingEvents(trainingIds.length);
-      setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(trainingIds)) / (trainingIds.length * playerN)) * 100) : null);
-    } else {
-      // Without this, switching to a team with no players (or viewing as a
-      // non-coach) left these four at whatever the PREVIOUSLY active team
-      // last set them to — a brand-new, empty team would silently show a
-      // prior team's real attendance numbers.
-      setPulseGameEvents(0);
-      setPulseGamePct(null);
-      setPulseTrainingEvents(0);
-      setPulseTrainingPct(null);
+        function attendedCount(idSet: Set<string>): number {
+          let count = 0;
+          for (const [key, status] of attByKey) {
+            const eventId = key.split('|')[0];
+            if (idSet.has(eventId) && (status === 'present' || status === 'late')) count++;
+          }
+          for (const [key, status] of rsvpByKey) {
+            if (attByKey.has(key)) continue; // this pair already has a real attendance mark
+            const eventId = key.split('|')[0];
+            if (idSet.has(eventId) && status === 'attending') count++;
+          }
+          return count;
+        }
+
+        const playerN = pc ?? 0;
+        setPulseGameEvents(gameIds.length);
+        setPulseGamePct(gameIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(gameIds)) / (gameIds.length * playerN)) * 100) : null);
+        setPulseTrainingEvents(trainingIds.length);
+        setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(trainingIds)) / (trainingIds.length * playerN)) * 100) : null);
+      } else {
+        // Without this, switching to a team with no players (or viewing as a
+        // non-coach) left these four at whatever the PREVIOUSLY active team
+        // last set them to — a brand-new, empty team would silently show a
+        // prior team's real attendance numbers.
+        setPulseGameEvents(0);
+        setPulseGamePct(null);
+        setPulseTrainingEvents(0);
+        setPulseTrainingPct(null);
+      }
     }
 
     // Polls
-    const { data: pollRows } = await sb
-      .from('team_polls')
-      .select('id, question, closes_at, is_anonymous, is_multiple_choice, result_visibility, rsvp_gated, event_id, created_by')
-      .eq('team_id', team.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
+    async function fetchPolls() {
+      const { data: pollRows } = await sb
+        .from('team_polls')
+        .select('id, question, closes_at, is_anonymous, is_multiple_choice, result_visibility, rsvp_gated, event_id, created_by')
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-    if (pollRows?.length > 0) {
-      const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
-      // Only a coach ever sees "who voted" (PollCard gates the reveal on
-      // is_anonymous too) — skip the extra round trip for a plain parent.
-      const [optionsRes, votesRes, namesRes] = await Promise.all([
-        sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
-        sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
-        isCoach ? sb.rpc('get_team_member_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
-      ]);
-      setPollVoterNames(Object.fromEntries(
-        ((namesRes.data ?? []) as { profile_id: string; full_name: string | null }[]).map((r) => [r.profile_id, r.full_name ?? ''])
-      ));
+      if (pollRows?.length > 0) {
+        const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
+        // Only a coach ever sees "who voted" (PollCard gates the reveal on
+        // is_anonymous too) — skip the extra round trip for a plain parent.
+        const [optionsRes, votesRes, namesRes] = await Promise.all([
+          sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
+          sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
+          isCoach ? sb.rpc('get_team_member_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
+        ]);
+        setPollVoterNames(Object.fromEntries(
+          ((namesRes.data ?? []) as { profile_id: string; full_name: string | null }[]).map((r) => [r.profile_id, r.full_name ?? ''])
+        ));
 
-      // Track which events the current user RSVPed attending (for RSVP-gated polls)
-      const gatedEventIds = [...new Set((pollRows as any[])
-        .filter((p: any) => p.rsvp_gated && p.event_id)
-        .map((p: any) => p.event_id as string))];
-      if (gatedEventIds.length > 0 && guardedPlayers.length > 0) {
-        const { data: rsvpRows } = await supabase
-          .from('event_rsvps')
-          .select('event_id')
-          .in('event_id', gatedEventIds)
-          .in('player_id', guardedPlayers.map((p) => p.id))
-          .eq('status', 'attending');
-        setMyRsvpEventIds(new Set((rsvpRows ?? []).map((r: any) => r.event_id as string)));
+        // Track which events the current user RSVPed attending (for RSVP-gated polls)
+        const gatedEventIds = [...new Set((pollRows as any[])
+          .filter((p: any) => p.rsvp_gated && p.event_id)
+          .map((p: any) => p.event_id as string))];
+        if (gatedEventIds.length > 0 && guardedPlayers.length > 0) {
+          const { data: rsvpRows } = await supabase
+            .from('event_rsvps')
+            .select('event_id')
+            .in('event_id', gatedEventIds)
+            .in('player_id', guardedPlayers.map((p) => p.id))
+            .eq('status', 'attending');
+          setMyRsvpEventIds(new Set((rsvpRows ?? []).map((r: any) => r.event_id as string)));
+        }
+
+        const teamMemberCount = pc ?? 0;
+        const builtPolls: Poll[] = (pollRows as any[]).map((p: any) => ({
+          id: p.id,
+          question: p.question,
+          closes_at: p.closes_at,
+          is_anonymous: p.is_anonymous,
+          is_multiple_choice: p.is_multiple_choice,
+          result_visibility: p.result_visibility,
+          rsvp_gated: p.rsvp_gated,
+          event_id: p.event_id,
+          created_by: p.created_by,
+          options: (optionsRes.data ?? []).filter((o: any) => o.poll_id === p.id),
+          votes: (votesRes.data ?? []).filter((v: any) => v.poll_id === p.id),
+          totalParticipants: teamMemberCount,
+        }));
+        setPolls(builtPolls);
+      } else {
+        setPolls([]);
       }
-
-      const teamMemberCount = pc ?? 0;
-      const builtPolls: Poll[] = (pollRows as any[]).map((p: any) => ({
-        id: p.id,
-        question: p.question,
-        closes_at: p.closes_at,
-        is_anonymous: p.is_anonymous,
-        is_multiple_choice: p.is_multiple_choice,
-        result_visibility: p.result_visibility,
-        rsvp_gated: p.rsvp_gated,
-        event_id: p.event_id,
-        created_by: p.created_by,
-        options: (optionsRes.data ?? []).filter((o: any) => o.poll_id === p.id),
-        votes: (votesRes.data ?? []).filter((v: any) => v.poll_id === p.id),
-        totalParticipants: teamMemberCount,
-      }));
-      setPolls(builtPolls);
-    } else {
-      setPolls([]);
     }
+
+    await Promise.all([
+      fetchHeadcounts(),
+      fetchTeamPulse(),
+      fetchPolls(),
+    ]);
 
     } catch (e) {
       console.error('fetchData error', e);
