@@ -93,6 +93,11 @@ export async function routeNotificationTap(opts: {
       // Team callouts render on Home, not a dedicated screen of their own.
       router.push(`/(app)/${slug}/(tabs)` as any);
       break;
+    case 'team_poll':
+      // A poll linked to an event renders there; an unlinked one only
+      // renders on Home, same as a callout.
+      d.event_id ? router.push(`/(app)/${slug}/event/${d.event_id}` as any) : router.push(`/(app)/${slug}/(tabs)` as any);
+      break;
     // ── Guest notifications ────────────────────────────────────────────────
     case 'guest_request':
       d.request_id ? router.push(`/(app)/${slug}/guest-request/${d.request_id}` as any) : router.push(`/(app)/${slug}/(tabs)/schedule` as any);

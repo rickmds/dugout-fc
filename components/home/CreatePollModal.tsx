@@ -7,6 +7,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../../lib/supabase';
+import { sendTeamPush } from '../../lib/push';
 import { PULSE_COLORS } from '../../constants/colors';
 
 type ResultVisibility = 'always' | 'after_vote' | 'after_close';
@@ -111,6 +112,16 @@ export default function CreatePollModal({ visible, teamId, profileId, primaryCol
       setPosting(false);
       return;
     }
+
+    // Best-effort, same as every other creation flow in this app — a poll
+    // is still fully created and usable even if the notification fails.
+    sendTeamPush({
+      teamId,
+      title: 'New poll',
+      body: q,
+      excludeProfileId: profileId,
+      data: { type: 'team_poll', poll_id: poll.id, ...(linkedEventId ? { event_id: linkedEventId } : {}) },
+    });
 
     reset();
     onCreated();
