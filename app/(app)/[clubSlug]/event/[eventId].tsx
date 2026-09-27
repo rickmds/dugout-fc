@@ -411,6 +411,11 @@ export default function EventDetailScreen() {
   const [ncsaLookupError, setNcsaLookupError] = useState<string | null>(null);
   const [ncsaCandidates, setNcsaCandidates] = useState<{ clubid: string; name: string }[] | null>(null);
   const [ncsaCopyFeedback, setNcsaCopyFeedback] = useState<'emails' | 'cells' | null>(null);
+  // Which coaches/officials the bulk copy buttons act on — keyed
+  // "coach:0", "official:1", etc. Coaches start selected (matches the old
+  // "copy ALL coaches" behavior); club leadership starts unselected — it's
+  // an opt-in addition, not assumed every time.
+  const [ncsaSelected, setNcsaSelected] = useState<Set<string>>(new Set());
 
   // team.myRole is scoped to the currently-active team's own club (see
   // TeamContext.tsx) — this screen shows coach-only data (coach notes,
@@ -852,12 +857,32 @@ export default function EventDetailScreen() {
       setNcsaLookupError("Couldn't find this opponent's coach on NCSA.");
       return;
     }
-    setNcsaLookupResult(data?.coaches ?? []);
-    setNcsaOfficialsResult(data?.officials ?? []);
+    const coaches = data?.coaches ?? [];
+    const officials = data?.officials ?? [];
+    setNcsaLookupResult(coaches);
+    setNcsaOfficialsResult(officials);
+    setNcsaSelected(new Set((coaches as NcsaCoachContact[]).map((_, i) => `coach:${i}`)));
+  }
+
+  function toggleNcsaSelected(key: string) {
+    setNcsaSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  // Coaches + club leadership merged into one addressable list, keyed the
+  // same way the checkboxes are, so the bulk copy buttons only ever act on
+  // whoever's actually checked right now.
+  function selectedNcsaContacts(): { email: string | null; cell: string | null }[] {
+    const coaches = (ncsaLookupResult ?? []).map((c, i) => ({ key: `coach:${i}`, email: c.email, cell: c.cell }));
+    const officials = ncsaOfficialsResult.map((o, i) => ({ key: `official:${i}`, email: o.email, cell: o.cell }));
+    return [...coaches, ...officials].filter((c) => ncsaSelected.has(c.key));
   }
 
   async function copyNcsaEmails() {
-    const emails = (ncsaLookupResult ?? []).map((c) => c.email).filter(Boolean) as string[];
+    const emails = selectedNcsaContacts().map((c) => c.email).filter(Boolean) as string[];
     if (!emails.length) return;
     await Clipboard.setStringAsync(emails.join(', '));
     setNcsaCopyFeedback('emails');
@@ -865,7 +890,7 @@ export default function EventDetailScreen() {
   }
 
   async function copyNcsaCells() {
-    const cells = (ncsaLookupResult ?? []).map((c) => c.cell).filter(Boolean) as string[];
+    const cells = selectedNcsaContacts().map((c) => c.cell).filter(Boolean) as string[];
     if (!cells.length) return;
     await Clipboard.setStringAsync(cells.join(', '));
     setNcsaCopyFeedback('cells');
@@ -3126,12 +3151,26 @@ export default function EventDetailScreen() {
                   <View style={{ gap: 14 }}>
                     {ncsaLookupResult.map((c, i) => (
                       <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14 } : undefined}>
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
-                          {c.role.toUpperCase()}
-                        </Text>
-                        <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
-                          {c.first} {c.last}
-                        </Text>
+                        <TouchableOpacity
+                          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}
+                          onPress={() => toggleNcsaSelected(`coach:${i}`)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={ncsaSelected.has(`coach:${i}`) ? 'checkmark-circle' : 'ellipse-outline'}
+                            size={18}
+                            color={ncsaSelected.has(`coach:${i}`) ? primaryColor : PULSE_COLORS.ui.muted}
+                            style={{ marginTop: 1 }}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
+                              {c.role.toUpperCase()}
+                            </Text>
+                            <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
+                              {c.first} {c.last}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
                         {c.cell && (
                           <View style={styles.ncsaPhoneRow}>
                             <Ionicons name="phone-portrait-outline" size={14} color={PULSE_COLORS.ui.muted} />
@@ -3172,23 +3211,32 @@ export default function EventDetailScreen() {
 
                   {/* Bulk copy — paste straight into Gmail's To: field or a
                       group text, instead of tapping each contact one by
-                      one. */}
-                  {ncsaLookupResult.length > 1 && (
-                  <View style={styles.ncsaCopyRow}>
-                    {ncsaLookupResult.some((c) => c.email) && (
-                      <TouchableOpacity style={styles.ncsaCopyBtn} onPress={copyNcsaEmails}>
-                        <Ionicons name={ncsaCopyFeedback === 'emails' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
-                        <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'emails' ? 'Copied' : 'Copy all emails'}</Text>
-                      </TouchableOpacity>
-                    )}
-                    {ncsaLookupResult.some((c) => c.cell) && (
-                      <TouchableOpacity style={styles.ncsaCopyBtn} onPress={copyNcsaCells}>
-                        <Ionicons name={ncsaCopyFeedback === 'cells' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
-                        <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'cells' ? 'Copied' : 'Copy all numbers'}</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
+                      one. Tap a name above to check/uncheck who's included
+                      — coaches start checked, club leadership starts
+                      unchecked (an explicit add, not assumed). */}
+                  {(ncsaLookupResult.length + ncsaOfficialsResult.length) > 1 && (() => {
+                    const selected = selectedNcsaContacts();
+                    const selectedEmails = selected.filter((c) => c.email).length;
+                    const selectedCells = selected.filter((c) => c.cell).length;
+                    const anyEmail = ncsaLookupResult.some((c) => c.email) || ncsaOfficialsResult.some((o) => o.email);
+                    const anyCell = ncsaLookupResult.some((c) => c.cell) || ncsaOfficialsResult.some((o) => o.cell);
+                    return (
+                      <View style={styles.ncsaCopyRow}>
+                        {anyEmail && (
+                          <TouchableOpacity style={[styles.ncsaCopyBtn, !selectedEmails && { opacity: 0.4 }]} onPress={copyNcsaEmails} disabled={!selectedEmails}>
+                            <Ionicons name={ncsaCopyFeedback === 'emails' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
+                            <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'emails' ? 'Copied' : `Copy ${selectedEmails} email${selectedEmails === 1 ? '' : 's'}`}</Text>
+                          </TouchableOpacity>
+                        )}
+                        {anyCell && (
+                          <TouchableOpacity style={[styles.ncsaCopyBtn, !selectedCells && { opacity: 0.4 }]} onPress={copyNcsaCells} disabled={!selectedCells}>
+                            <Ionicons name={ncsaCopyFeedback === 'cells' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
+                            <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'cells' ? 'Copied' : `Copy ${selectedCells} number${selectedCells === 1 ? '' : 's'}`}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    );
+                  })()}
 
                 {/* Club leadership — president/representative/alternate,
                     same page NCSA's own club-rep login shows, confirmed
@@ -3202,12 +3250,26 @@ export default function EventDetailScreen() {
                     <View style={{ gap: 14 }}>
                       {ncsaOfficialsResult.map((o, i) => (
                         <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14 } : undefined}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
-                            {o.role.toUpperCase()}
-                          </Text>
-                          <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
-                            {o.name}
-                          </Text>
+                          <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}
+                            onPress={() => toggleNcsaSelected(`official:${i}`)}
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons
+                              name={ncsaSelected.has(`official:${i}`) ? 'checkmark-circle' : 'ellipse-outline'}
+                              size={18}
+                              color={ncsaSelected.has(`official:${i}`) ? primaryColor : PULSE_COLORS.ui.muted}
+                              style={{ marginTop: 1 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
+                                {o.role.toUpperCase()}
+                              </Text>
+                              <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
+                                {o.name}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
                           {(o.cell ?? o.home) && (
                             <View style={styles.ncsaPhoneRow}>
                               <Ionicons name={o.cell ? 'phone-portrait-outline' : 'home-outline'} size={14} color={PULSE_COLORS.ui.muted} />
