@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { sendTeamPush } from './push';
-import { sendTeamEmail } from './emailTeam';
 
 export const RESULT_COLORS = { W: '#22c55e', L: '#ef4444', D: '#9ca3af' } as const;
 
@@ -63,7 +62,6 @@ export async function sendTournamentResultPush(
   teamId: string | null,
   finalHome: number,
   finalAway: number,
-  fromName?: string,
 ): Promise<void> {
   if (!tournamentId || !teamId) return;
   try {
@@ -72,32 +70,39 @@ export async function sendTournamentResultPush(
     const result = getGameResult({ type: 'game', score_home: finalHome, score_away: finalAway });
     if (!result || result.label === 'D') return; // no score, or a draw — nothing clear to announce
     const won = result.label === 'W';
+
+    // "Great run" only reads right if there actually was one — an
+    // elimination in the very first game (no prior win in this tournament)
+    // isn't a run at all, and calling it one landed exactly backwards on a
+    // real first-game loss. Every other game already saved for this
+    // tournament/team includes this one (the score write happens before
+    // this is called), so its own 'L' naturally doesn't count toward this.
+    let priorWins = 0;
+    if (!won) {
+      const { data: games } = await supabase
+        .from('events')
+        .select('score_home, score_away, cancelled_at')
+        .eq('tournament_id', tournamentId)
+        .eq('team_id', teamId)
+        .eq('type', 'game');
+      priorWins = ((games ?? []) as any[]).filter(
+        (g) => !g.cancelled_at && getGameResult(g)?.label === 'W'
+      ).length;
+    }
+
     const title = won ? "🎉 You're through!" : 'Tournament complete';
     const body = won
       ? `Final: ${finalHome}–${finalAway}. ${t.name} continues — nice work advancing!`
-      : `Final: ${finalHome}–${finalAway}. ${t.name} ends here — great run.`;
+      : priorWins > 0
+        ? `Final: ${finalHome}–${finalAway}. ${t.name} ends here — great run.`
+        : `Final: ${finalHome}–${finalAway}. ${t.name} ends here.`;
+    // Push only — this is a quick score update, not something that needs an
+    // email in every inbox too.
     await sendTeamPush({
       teamId,
       title,
       body,
       data: { type: won ? 'tournament_advance' : 'tournament_eliminated', tournament_id: tournamentId, team_id: teamId },
-    });
-
-    const { data: teamRow } = await supabase
-      .from('teams')
-      .select('name, clubs(name, logo_url, primary_color)')
-      .eq('id', teamId)
-      .single();
-    const club = (teamRow as any)?.clubs ?? null;
-    sendTeamEmail({
-      teamIds: [teamId],
-      subject: title,
-      body,
-      fromName: fromName ?? club?.name ?? 'Coach',
-      teamName: teamRow?.name ?? '',
-      clubName: club?.name ?? null,
-      logoUrl: club?.logo_url ?? null,
-      primaryColor: club?.primary_color ?? null,
     });
   } catch (err) {
     console.warn('[sendTournamentResultPush] failed', err);

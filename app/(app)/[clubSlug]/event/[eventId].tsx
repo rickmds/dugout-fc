@@ -777,7 +777,7 @@ export default function EventDetailScreen() {
     setEvent((prev) => prev ? { ...prev, score_home: scoreHomeInput, score_away: scoreAwayInput } : prev);
     setScoreModalOpen(false);
     // Only fires once, here, on an explicit save — not on every +/- tap.
-    sendTournamentResultPush(event.tournament_id, event.team_id, scoreHomeInput, scoreAwayInput, profile?.full_name ?? undefined);
+    sendTournamentResultPush(event.tournament_id, event.team_id, scoreHomeInput, scoreAwayInput);
   }
 
   function openSessionBuilder() {
