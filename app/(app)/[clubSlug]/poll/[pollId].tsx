@@ -86,7 +86,10 @@ export default function PollDetailScreen() {
       teamIsCoach
         ? supabase.from('team_members').select('profile_id').eq('team_id', pollRow.team_id).eq('role', 'parent')
         : Promise.resolve({ data: [] }),
-      teamIsCoach ? sb.rpc('get_team_member_names', { p_team_id: pollRow.team_id }) : Promise.resolve({ data: [] }),
+      // Player name(s), not the parent account's own name — a coach reads
+      // "who voted" as which family/kid, and a parent guarding twins on
+      // this team gets both names joined.
+      teamIsCoach ? sb.rpc('get_guardian_player_names', { p_team_id: pollRow.team_id }) : Promise.resolve({ data: [] }),
     ]);
 
     const votes = (votesRes.data ?? []) as { option_id: string; profile_id: string }[];
@@ -117,7 +120,7 @@ export default function PollDetailScreen() {
 
     if (teamIsCoach) {
       setVoterNames(Object.fromEntries(
-        ((namesRes.data ?? []) as { profile_id: string; full_name: string | null }[]).map((r) => [r.profile_id, r.full_name ?? ''])
+        ((namesRes.data ?? []) as { profile_id: string; player_names: string | null }[]).map((r) => [r.profile_id, r.player_names ?? ''])
       ));
       const votedIds = new Set(votes.map((v) => v.profile_id));
       const memberIds = ((memberRes.data ?? []) as { profile_id: string }[]).map((r) => r.profile_id);

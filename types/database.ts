@@ -6429,6 +6429,13 @@ export type Database = {
           profile_id: string
         }[]
       }
+      get_guardian_player_names: {
+        Args: { p_team_id: string }
+        Returns: {
+          player_names: string
+          profile_id: string
+        }[]
+      }
       get_my_conversation_participant_names: {
         Args: never
         Returns: {

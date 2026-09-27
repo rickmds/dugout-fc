@@ -1025,13 +1025,16 @@ export default function HomeScreen() {
         const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
         // Only a coach ever sees "who voted" (PollCard gates the reveal on
         // is_anonymous too) — skip the extra round trip for a plain parent.
+        // Player name(s), not the parent account's own name — a coach reads
+        // "who voted" as which family/kid, and a parent guarding twins on
+        // this team gets both names joined.
         const [optionsRes, votesRes, namesRes] = await Promise.all([
           sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
           sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
-          isCoach ? sb.rpc('get_team_member_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
+          isCoach ? sb.rpc('get_guardian_player_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
         ]);
         setPollVoterNames(Object.fromEntries(
-          ((namesRes.data ?? []) as { profile_id: string; full_name: string | null }[]).map((r) => [r.profile_id, r.full_name ?? ''])
+          ((namesRes.data ?? []) as { profile_id: string; player_names: string | null }[]).map((r) => [r.profile_id, r.player_names ?? ''])
         ));
 
         // Track which events the current user RSVPed attending (for RSVP-gated polls)
