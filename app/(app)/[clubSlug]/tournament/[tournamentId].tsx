@@ -12,6 +12,7 @@ import {
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../../../lib/supabase';
 import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
@@ -19,7 +20,7 @@ import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { getGameResult, RESULT_COLORS, formatTournamentDateRange } from '../../../../lib/tournaments';
-import { sendTeamPush } from '../../../../lib/push';
+import { sendTeamPush, sendProfilesPush } from '../../../../lib/push';
 import { sendTeamEmail } from '../../../../lib/emailTeam';
 import { useTournamentCoords } from '../../../../hooks/useTournamentCoords';
 import { useMapApp } from '../../../../hooks/useMapApp';
@@ -48,7 +49,7 @@ type Tournament = {
   cancelled_at: string | null; cancellation_reason: string | null; logo_url: string | null;
 };
 
-type RosterPlayer = { id: string; full_name: string; jersey_number: number | null };
+type RosterPlayer = { id: string; full_name: string; jersey_number: number | null; profile_id: string | null };
 type TournamentRsvp = { player_id: string; status: RsvpStatus };
 
 function fmtTime(t: string | null): string {
@@ -75,6 +76,7 @@ export default function TournamentDetailScreen() {
   const [myPlayerIds, setMyPlayerIds] = useState<string[]>([]);
   const [entryRsvps, setEntryRsvps] = useState<TournamentRsvp[]>([]);
   const [rsvpSavingId, setRsvpSavingId] = useState<string | null>(null);
+  const [nudging, setNudging] = useState(false);
   // Coach-only "who's responded" breakdown — same tap-a-count-to-filter
   // pattern as the Availability tab on a regular event, so a coach can
   // chase up specific parents instead of only seeing totals.
@@ -123,7 +125,7 @@ export default function TournamentDetailScreen() {
         .select('id, title, type, event_date, event_time, location, round_label, score_home, score_away, cancelled_at')
         .eq('tournament_id', tournamentId)
         .order('event_date').order('event_time'),
-      supabase.from('players').select('id, full_name, jersey_number').eq('team_id', tRow.team_id).order('jersey_number'),
+      supabase.from('players').select('id, full_name, jersey_number, profile_id').eq('team_id', tRow.team_id).order('jersey_number'),
       (supabase as any).rpc('get_my_guarded_players').select('id').eq('team_id', tRow.team_id),
       supabase.from('tournament_rsvps').select('player_id, status').eq('tournament_id', tournamentId),
     ]);
@@ -158,6 +160,59 @@ export default function TournamentDetailScreen() {
     } finally {
       setRsvpSavingId(null);
     }
+  }
+
+  // Manual "chase them up" for an entry RSVP — the automatic reminder cron
+  // (tournament-rsvp-reminders) only fires once entry_rsvp_lock_at is set,
+  // so an undated tournament (no lock date yet) never gets one otherwise.
+  // Mirrors event/[eventId].tsx's handleNudge, but also resolves parents
+  // via player_guardians (not just the legacy players.profile_id column),
+  // matching how the reminder cron itself resolves recipients.
+  async function handleEntryNudge() {
+    if (!tournament || !team) return;
+    if (!entryNoResponse.length) {
+      Alert.alert('All caught up', 'Everyone has already responded.');
+      return;
+    }
+
+    const COOLDOWN_MS = 30 * 60 * 1000;
+    const storageKey = `entry_nudge_last_${tournament.id}`;
+    const lastStr = await AsyncStorage.getItem(storageKey);
+    if (lastStr) {
+      const elapsed = Date.now() - parseInt(lastStr, 10);
+      if (elapsed < COOLDOWN_MS) {
+        const remaining = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
+        Alert.alert('Too soon', `Wait ${remaining} more minute${remaining !== 1 ? 's' : ''} before nudging again.`);
+        return;
+      }
+    }
+
+    setNudging(true);
+    const pendingIds = entryNoResponse.map((p) => p.id);
+    const { data: guardianRows } = await supabase
+      .from('player_guardians')
+      .select('player_id, profile_id')
+      .in('player_id', pendingIds);
+    const profileIds = [...new Set([
+      ...entryNoResponse.map((p) => p.profile_id).filter(Boolean) as string[],
+      ...((guardianRows ?? []) as { player_id: string; profile_id: string }[]).map((g) => g.profile_id),
+    ])];
+
+    if (!profileIds.length) {
+      setNudging(false);
+      Alert.alert('No linked accounts', `${entryNoResponse.length} player${entryNoResponse.length !== 1 ? 's' : ''} haven't responded, but their parents haven't linked accounts yet. Reach out directly.`);
+      return;
+    }
+
+    await sendProfilesPush({
+      profileIds,
+      title: '⏰ Confirm you\'re in',
+      body: `RSVP for ${tournament.name} — your coach needs to know who's in.`,
+      data: { type: 'tournament_rsvp_reminder', tournament_id: tournament.id, team_id: team.id },
+    });
+    await AsyncStorage.setItem(storageKey, String(Date.now()));
+    setNudging(false);
+    Alert.alert('Nudge sent', `Reminded ${profileIds.length} parent${profileIds.length !== 1 ? 's' : ''} to RSVP.`);
   }
 
   // Coach override — same 3-option action sheet (mark in / mark out /
@@ -526,6 +581,20 @@ export default function TournamentDetailScreen() {
                   </TouchableOpacity>
                 </View>
 
+                {entryNoResponse.length > 0 && (
+                  <TouchableOpacity
+                    style={styles.entryNudgeBtn}
+                    onPress={handleEntryNudge}
+                    activeOpacity={0.7}
+                    disabled={nudging}
+                  >
+                    <Ionicons name="notifications-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                    <Text style={styles.entryNudgeBtnText}>
+                      {nudging ? 'Sending…' : `Nudge ${entryNoResponse.length} pending`}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
                 {/* Who's in this bucket — tap a player to override their entry RSVP. */}
                 {(() => {
                   const list = activeEntryTab === 'attending' ? entryAttending
@@ -728,6 +797,12 @@ const styles = StyleSheet.create({
   rsvpCountNum: { fontSize: 17, fontWeight: '800' },
   rsvpCountLabel: { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5, marginTop: 1 },
   rsvpCaption: { fontSize: 10.5, color: PULSE_COLORS.ui.muted, marginTop: 12, lineHeight: 14 },
+  entryNudgeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingVertical: 8, borderRadius: 8, marginTop: 8,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  entryNudgeBtnText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
   entryListEmpty: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 12, textAlign: 'center' },
   entryPlayerCard: {
     marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
