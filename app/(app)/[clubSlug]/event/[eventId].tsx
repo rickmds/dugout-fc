@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -200,6 +201,7 @@ type EventDetail = {
   tournament_start_date: string | null;
   score_home: number | null;
   score_away: number | null;
+  opponent_raw_name: string | null;
 };
 
 type Player = {
@@ -400,6 +402,14 @@ export default function EventDetailScreen() {
   const [eventPolls, setEventPolls] = useState<Poll[]>([]);
   const [showEventPollModal, setShowEventPollModal] = useState(false);
 
+  type NcsaCoachContact = { role: string; first: string; last: string; email: string | null; cell: string | null; homephone: string | null };
+  const [showNcsaLookupModal, setShowNcsaLookupModal] = useState(false);
+  const [ncsaLookupLoading, setNcsaLookupLoading] = useState(false);
+  const [ncsaLookupResult, setNcsaLookupResult] = useState<NcsaCoachContact[] | null>(null);
+  const [ncsaLookupError, setNcsaLookupError] = useState<string | null>(null);
+  const [ncsaCandidates, setNcsaCandidates] = useState<{ clubid: string; name: string }[] | null>(null);
+  const [ncsaCopyFeedback, setNcsaCopyFeedback] = useState<'emails' | 'cells' | null>(null);
+
   // team.myRole is scoped to the currently-active team's own club (see
   // TeamContext.tsx) — this screen shows coach-only data (coach notes,
   // attendance overrides), so an org_admin merely guesting elsewhere must
@@ -440,7 +450,7 @@ export default function EventDetailScreen() {
     setLoading(true);
 
     const { data: eventRow } = await supabase.from('events')
-      .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away,tournament_id,round_label,score_home,score_away,tournaments(name,start_date)')
+      .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away,tournament_id,round_label,score_home,score_away,opponent_raw_name,tournaments(name,start_date)')
       .eq('id', eventId).single();
 
     // A notification tap lands here without ever switching the active team
@@ -792,6 +802,70 @@ export default function EventDetailScreen() {
       lat: event.lat,
       lng: event.lng,
     });
+  }
+
+  // On-demand only — nothing this returns is cached locally either, it's
+  // refetched live every time the modal opens. clubIdOverride re-runs the
+  // lookup with a specific club after the coach picks one from an
+  // ambiguous-match candidate list.
+  async function lookupOpposingCoach(clubIdOverride?: string) {
+    if (!event) return;
+    setShowNcsaLookupModal(true);
+    setNcsaLookupLoading(true);
+    setNcsaLookupError(null);
+    setNcsaCandidates(null);
+    setNcsaLookupResult(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke('ncsa-opposing-coach', {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: { event_id: event.id, ...(clubIdOverride ? { clubid_override: clubIdOverride } : {}) },
+    });
+    setNcsaLookupLoading(false);
+    if (error) {
+      setNcsaLookupError('Something went wrong. Please try again.');
+      return;
+    }
+    if (data?.error === 'not_connected') {
+      setShowNcsaLookupModal(false);
+      Alert.alert(
+        'Connect your NCSA account',
+        'Connect your NCSA login in Settings to look up opposing coaches.',
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Go to Settings', onPress: () => router.push(`/(app)/${clubSlug}/settings` as any) },
+        ]
+      );
+      return;
+    }
+    if (data?.error === 'ncsa_login_failed') {
+      setNcsaLookupError('Your saved NCSA login no longer works — reconnect it in Settings.');
+      return;
+    }
+    if (data?.error === 'ambiguous_club') {
+      setNcsaCandidates(data.candidates ?? []);
+      return;
+    }
+    if (data?.error === 'coach_not_found' || data?.error === 'no_opponent_data') {
+      setNcsaLookupError("Couldn't find this opponent's coach on NCSA.");
+      return;
+    }
+    setNcsaLookupResult(data?.coaches ?? []);
+  }
+
+  async function copyNcsaEmails() {
+    const emails = (ncsaLookupResult ?? []).map((c) => c.email).filter(Boolean) as string[];
+    if (!emails.length) return;
+    await Clipboard.setStringAsync(emails.join(', '));
+    setNcsaCopyFeedback('emails');
+    setTimeout(() => setNcsaCopyFeedback((prev) => (prev === 'emails' ? null : prev)), 1500);
+  }
+
+  async function copyNcsaCells() {
+    const cells = (ncsaLookupResult ?? []).map((c) => c.cell).filter(Boolean) as string[];
+    if (!cells.length) return;
+    await Clipboard.setStringAsync(cells.join(', '));
+    setNcsaCopyFeedback('cells');
+    setTimeout(() => setNcsaCopyFeedback((prev) => (prev === 'cells' ? null : prev)), 1500);
   }
 
   async function resolveAndSetGuests(raw: any[]) {
@@ -1658,6 +1732,24 @@ export default function EventDetailScreen() {
                     )}
                   </View>
                   <Ionicons name="open-outline" size={14} color={primaryColor} />
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Opposing coach lookup — coach-only, and only for a game
+                whose opponent was resolved from a synced NCSA game (manual
+                or pre-migration events have no opponent_raw_name). */}
+            {isCoach && event.type === 'game' && !!event.opponent_raw_name && (
+              <>
+                <View style={styles.metaDivider} />
+                <TouchableOpacity style={styles.metaRow} onPress={() => lookupOpposingCoach()} activeOpacity={0.7}>
+                  <View style={styles.metaIconWrap}>
+                    <Ionicons name="person-circle-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                  </View>
+                  <View style={[styles.metaTextBlock, { flex: 1 }]}>
+                    <Text style={[styles.metaPrimary, { color: primaryColor }]}>Look up opposing coach</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={14} color={primaryColor} />
                 </TouchableOpacity>
               </>
             )}
@@ -2987,6 +3079,106 @@ export default function EventDetailScreen() {
         </View>
       </Modal>
 
+      {/* Opposing coach lookup result — fetched live every time this
+          opens, never cached client-side either. Own dedicated styles
+          (not the score modal's) since that one's fixed-height card and
+          flex:1 cancel button — sized for a two-button row — clipped the
+          Close button off-screen once there were enough coaches to need
+          scrolling. */}
+      <Modal
+        visible={showNcsaLookupModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNcsaLookupModal(false)}
+      >
+        <View style={styles.scoreModalOverlay}>
+          <View style={styles.ncsaModalCard}>
+            <Text style={styles.scoreModalTitle}>Opposing Coach</Text>
+
+            {ncsaLookupLoading ? (
+              <ActivityIndicator color={primaryColor} style={{ marginVertical: 24 }} />
+            ) : ncsaCandidates ? (
+              <>
+                <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', marginBottom: 14, lineHeight: 18 }}>
+                  Couldn't tell which club this is automatically — pick the right one:
+                </Text>
+                <ScrollView style={{ maxHeight: 260 }}>
+                  {ncsaCandidates.map((c) => (
+                    <TouchableOpacity
+                      key={c.clubid}
+                      style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border }}
+                      onPress={() => lookupOpposingCoach(c.clubid)}
+                    >
+                      <Text style={{ fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '600' }}>{c.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            ) : ncsaLookupError ? (
+              <Text style={{ fontSize: 13.5, color: '#EF4444', textAlign: 'center', lineHeight: 19 }}>{ncsaLookupError}</Text>
+            ) : ncsaLookupResult && ncsaLookupResult.length > 0 ? (
+              <>
+                <ScrollView style={styles.ncsaResultScroll}>
+                  <View style={{ gap: 14 }}>
+                    {ncsaLookupResult.map((c, i) => (
+                      <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14 } : undefined}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
+                          {c.role.toUpperCase()}
+                        </Text>
+                        <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
+                          {c.first} {c.last}
+                        </Text>
+                        {c.cell && (
+                          <TouchableOpacity onPress={() => Linking.openURL(`tel:${c.cell}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            <Ionicons name="call-outline" size={14} color={primaryColor} />
+                            <Text style={{ fontSize: 13.5, color: primaryColor, fontWeight: '600' }}>{c.cell}</Text>
+                          </TouchableOpacity>
+                        )}
+                        {c.email && (
+                          <TouchableOpacity onPress={() => Linking.openURL(`mailto:${c.email}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Ionicons name="mail-outline" size={14} color={primaryColor} />
+                            <Text style={{ fontSize: 13.5, color: primaryColor, fontWeight: '600' }}>{c.email}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
+
+                {/* Bulk copy — paste straight into Gmail's To: field or a
+                    group text, instead of tapping each contact one by
+                    one. */}
+                {ncsaLookupResult.length > 1 && (
+                  <View style={styles.ncsaCopyRow}>
+                    {ncsaLookupResult.some((c) => c.email) && (
+                      <TouchableOpacity style={styles.ncsaCopyBtn} onPress={copyNcsaEmails}>
+                        <Ionicons name={ncsaCopyFeedback === 'emails' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
+                        <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'emails' ? 'Copied' : 'Copy all emails'}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {ncsaLookupResult.some((c) => c.cell) && (
+                      <TouchableOpacity style={styles.ncsaCopyBtn} onPress={copyNcsaCells}>
+                        <Ionicons name={ncsaCopyFeedback === 'cells' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
+                        <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'cells' ? 'Copied' : 'Copy all numbers'}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </>
+            ) : (
+              <Text style={{ fontSize: 13.5, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center' }}>No contact info found.</Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.ncsaCloseBtn}
+              onPress={() => setShowNcsaLookupModal(false)}
+            >
+              <Text style={styles.scoreModalCancelBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {isCoach && team && profile && event && (
         <CreatePollModal
           visible={showEventPollModal}
@@ -3580,6 +3772,25 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
   scoreModalCancelBtnText: { fontSize: 14.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+
+  // Opposing-coach lookup modal — its own card (not scoreModalCard) so a
+  // long coach list scrolls internally within a capped height instead of
+  // pushing the Close button below the visible screen.
+  ncsaModalCard: {
+    width: '100%', maxWidth: 380, maxHeight: '82%', backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 20,
+  },
+  ncsaResultScroll: { maxHeight: 340 },
+  ncsaCopyRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  ncsaCopyBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  ncsaCopyBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  ncsaCloseBtn: {
+    marginTop: 16, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
   scoreModalSaveBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
   scoreModalSaveBtnText: { fontSize: 14.5, fontWeight: '800', color: '#000' },
 });
