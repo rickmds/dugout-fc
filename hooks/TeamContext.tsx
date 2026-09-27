@@ -15,7 +15,16 @@ type ClubRow = Database['public']['Tables']['clubs']['Row'];
 // without a null check. Coach-gated UI should key off this, not the global
 // profiles.role, so a coach on team A who's just a parent on team B sees the
 // right UI on each.
-export type Team = TeamRow & { club: ClubRow | null; myRole: 'coach' | 'parent' | 'org_admin' | null };
+export type Team = TeamRow & {
+  club: ClubRow | null;
+  myRole: 'coach' | 'parent' | 'org_admin' | null;
+  /** True only for a genuine team_members row — an org_admin's implicit
+   * access to every other team in their home club doesn't count. Lets a
+   * "pick one team in this club" fallback (ClubSlugGuard) prefer a team
+   * someone actually coaches over whichever of their home club's teams
+   * happens to have the oldest created_at. */
+  hasExplicitMembership: boolean;
+};
 
 interface TeamContextValue {
   team: Team | null;
@@ -54,7 +63,7 @@ async function fetchAdminClubTeams(clubIds: string[]): Promise<Team[]> {
   if (!clubIds.length) return [];
   const { data, error } = await supabase.from('teams').select('*, clubs(*)').in('club_id', clubIds).order('created_at');
   if (error) return [];
-  return ((data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin' } as Team));
+  return ((data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin', hasExplicitMembership: false } as Team));
 }
 
 const STORAGE_KEY_PREFIX = 'pulse_selected_team_id';
@@ -131,7 +140,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     const adminClubIds = (adminClubsRes.data ?? []).map((r) => r.club_id as string);
     const memberTeams = ((memberRes.data ?? []) as any[])
       .filter((r) => r.teams)
-      .map((r: any) => ({ ...r.teams, club: normalizeClub(r.teams.clubs), myRole: r.role } as Team));
+      .map((r: any) => ({ ...r.teams, club: normalizeClub(r.teams.clubs), myRole: r.role, hasExplicitMembership: true } as Team));
 
     if (profile.role === 'org_admin' || profile.role === 'app_admin') {
       // Org admins implicitly manage every team in their home club (no
@@ -158,20 +167,29 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
-      const homeTeams = ((homeRes.data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin' } as Team));
+      const homeTeams = ((homeRes.data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin', hasExplicitMembership: false } as Team));
+      // Real membership on a team the org_admin also implicitly manages
+      // (their own home club) — tracked before the merge below overwrites
+      // that row with the home-club copy, so it isn't lost.
+      const explicitMemberIds = new Set(memberTeams.map((t) => t.id));
       const byId = new Map<string, Team>();
       // Home-club rows win over an explicit member row for the same team —
       // org_admin's implicit club-wide access shouldn't be shadowed by a
       // lower-tier team_members row that predates them becoming org_admin.
       for (const t of [...memberTeams, ...extraAdminTeams, ...homeTeams]) byId.set(t.id, t);
-      teams = [...byId.values()].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+      teams = [...byId.values()]
+        .map((t) => (explicitMemberIds.has(t.id) ? { ...t, hasExplicitMembership: true } : t))
+        .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
       setAllTeams(teams);
       setSelectedTeamId(resolveSelection(teams, saved));
     } else {
       const extraAdminTeams = await fetchAdminClubTeams(adminClubIds);
+      const explicitMemberIds = new Set(memberTeams.map((t) => t.id));
       const byId = new Map<string, Team>();
       for (const t of [...memberTeams, ...extraAdminTeams]) byId.set(t.id, t);
-      teams = [...byId.values()].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+      teams = [...byId.values()]
+        .map((t) => (explicitMemberIds.has(t.id) ? { ...t, hasExplicitMembership: true } : t))
+        .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
       setAllTeams(teams);
       setSelectedTeamId(resolveSelection(teams, saved));
     }

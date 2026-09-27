@@ -47,7 +47,13 @@ function ClubSlugGuard({ children }: { children: React.ReactNode }) {
     const activeSlug = activeTeam?.club?.slug ?? club?.slug;
     if (activeSlug === clubSlug) return;
 
-    const matchInThisClub = allTeams.find((t) => t.club?.slug === clubSlug);
+    // Prefer a team the user actually has a real team_members row on over
+    // whichever of an org_admin's implicitly-managed home-club teams
+    // happens to have the oldest created_at — confirmed live: an app_admin
+    // landing here got bounced onto a team they don't coach at all, purely
+    // because it was created 10 seconds before their real one.
+    const candidatesInClub = allTeams.filter((t) => t.club?.slug === clubSlug);
+    const matchInThisClub = candidatesInClub.find((t) => t.hasExplicitMembership) ?? candidatesInClub[0];
     if (matchInThisClub) selectTeam(matchInThisClub.id);
   }, [authLoading, teamsLoading, clubSlug, allTeams, club?.slug, selectTeam, getActiveTeamId]);
 
