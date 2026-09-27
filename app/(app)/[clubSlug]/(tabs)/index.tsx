@@ -346,6 +346,7 @@ export default function HomeScreen() {
   const [unsignedWaiverCount, setUnsignedWaiverCount] = useState(0);
 
   const [polls, setPolls] = useState<Poll[]>([]);
+  const [pollVoterNames, setPollVoterNames] = useState<Record<string, string>>({});
   const [showPollModal, setShowPollModal] = useState(false);
   const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
 
@@ -989,10 +990,16 @@ export default function HomeScreen() {
 
     if (pollRows?.length > 0) {
       const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
-      const [optionsRes, votesRes] = await Promise.all([
+      // Only a coach ever sees "who voted" (PollCard gates the reveal on
+      // is_anonymous too) — skip the extra round trip for a plain parent.
+      const [optionsRes, votesRes, namesRes] = await Promise.all([
         sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
         sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
+        isCoach ? sb.rpc('get_team_member_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
       ]);
+      setPollVoterNames(Object.fromEntries(
+        ((namesRes.data ?? []) as { profile_id: string; full_name: string | null }[]).map((r) => [r.profile_id, r.full_name ?? ''])
+      ));
 
       // Track which events the current user RSVPed attending (for RSVP-gated polls)
       const gatedEventIds = [...new Set((pollRows as any[])
@@ -2041,6 +2048,7 @@ export default function HomeScreen() {
                 myProfileId={profile?.id ?? ''}
                 isCoach={isCoach}
                 myRsvpEventIds={myRsvpEventIds}
+                voterNames={pollVoterNames}
                 primaryColor={primaryColor}
                 rgba={rgba}
                 onDelete={handleDeletePoll}

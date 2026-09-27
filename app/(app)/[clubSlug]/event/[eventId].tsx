@@ -400,6 +400,7 @@ export default function EventDetailScreen() {
   const [driveTime, setDriveTime] = useState<string | null>(null);
 
   const [eventPolls, setEventPolls] = useState<Poll[]>([]);
+  const [pollVoterNames, setPollVoterNames] = useState<Record<string, string>>({});
   const [showEventPollModal, setShowEventPollModal] = useState(false);
 
   type NcsaCoachContact = { role: string; first: string; last: string; email: string | null; cell: string | null; homephone: string | null };
@@ -627,10 +628,14 @@ export default function EventDetailScreen() {
 
     if (pollRows?.length > 0) {
       const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
-      const [optRes, voteRes] = await Promise.all([
+      const [optRes, voteRes, namesRes] = await Promise.all([
         sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
         sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
+        isCoach && team ? sb.rpc('get_team_member_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
       ]);
+      setPollVoterNames(Object.fromEntries(
+        ((namesRes.data ?? []) as { profile_id: string; full_name: string | null }[]).map((r) => [r.profile_id, r.full_name ?? ''])
+      ));
       const totalPlayers = (playersRes.data ?? []).length;
       setEventPolls((pollRows as any[]).map((p: any) => ({
         id: p.id, question: p.question, closes_at: p.closes_at,
@@ -2354,6 +2359,7 @@ export default function EventDetailScreen() {
                   myProfileId={profile?.id ?? ''}
                   isCoach={isCoach}
                   myRsvpEventIds={myPlayerIds.some((pid) => rsvps.find((r) => r.player_id === pid)?.status === 'attending') ? new Set([eventId]) : new Set()}
+                  voterNames={pollVoterNames}
                   primaryColor={primaryColor}
                   rgba={rgba}
                   onDelete={async (pollId) => {

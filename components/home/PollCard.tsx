@@ -1,5 +1,5 @@
 import { useState, memo } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../../lib/supabase';
@@ -31,6 +31,12 @@ type Props = {
   myProfileId: string;
   isCoach: boolean;
   myRsvpEventIds?: Set<string>;
+  /** profile_id -> full_name, for the coach-only "who voted" reveal. Only
+   * ever fetched for a coach (see index.tsx), fetched once per team rather
+   * than per-poll — this component still gates the actual reveal on
+   * !poll.is_anonymous itself, since the map has no idea which poll it's
+   * being used for. */
+  voterNames?: Record<string, string>;
   primaryColor: string;
   rgba: (a: number) => string;
   onDelete: (pollId: string) => void;
@@ -46,8 +52,9 @@ function timeLeft(closesAt: string): string {
   return `Closes in ${Math.floor(h / 24)}d`;
 }
 
-const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, primaryColor, rgba, onDelete, onVoteChange }: Props) {
+const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, primaryColor, rgba, onDelete, onVoteChange }: Props) {
   const [voting, setVoting] = useState(false);
+  const [revealOptionId, setRevealOptionId] = useState<string | null>(null);
 
   const myVotedOptionIds = new Set(
     poll.votes.filter(v => v.profile_id === myProfileId).map(v => v.option_id)
@@ -62,6 +69,18 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
   }
   const totalVoters = new Set(poll.votes.map(v => v.profile_id)).size;
   const maxCount = Math.max(1, ...Object.values(voteCounts));
+
+  // Only a coach, only a non-anonymous poll — this is what actually
+  // enforces the Anonymous toggle for this feature, not voterNames being
+  // present (that's fetched once per team, with no idea which poll it's
+  // used for).
+  const canRevealVoters = isCoach && !poll.is_anonymous && !!voterNames;
+  function namesForOption(optionId: string): string[] {
+    return poll.votes
+      .filter(v => v.option_id === optionId)
+      .map(v => voterNames?.[v.profile_id] || 'Unknown')
+      .sort((a, b) => a.localeCompare(b));
+  }
 
   // RSVP gate check
   const isRsvpBlocked = poll.rsvp_gated && poll.event_id
@@ -175,6 +194,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
           const pct = totalVoters > 0 ? Math.round((count / totalVoters) * 100) : 0;
           const isSelected = myVotedOptionIds.has(opt.id);
           const canVote = !isClosed && !isRsvpBlocked && !voting && !isCoach;
+          const canReveal = canRevealVoters && count > 0;
           const isLeading = showResults && totalVoters > 0 && count === maxCount && count > 0;
 
           return (
@@ -184,11 +204,11 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
                 styles.option,
                 isLeading && { borderColor: primaryColor, borderWidth: 1.5 },
                 isSelected && { backgroundColor: rgba(0.08) },
-                !canVote && { opacity: isClosed ? 0.7 : 1 },
+                !canVote && !canReveal && { opacity: isClosed ? 0.7 : 1 },
               ]}
-              onPress={() => handleVote(opt.id)}
-              activeOpacity={canVote ? 0.75 : 1}
-              disabled={!canVote}
+              onPress={() => (isCoach ? (canReveal && setRevealOptionId(opt.id)) : handleVote(opt.id))}
+              activeOpacity={canVote || canReveal ? 0.75 : 1}
+              disabled={isCoach ? !canReveal : !canVote}
             >
               {/* Progress fill */}
               {showResults && totalVoters > 0 && (
@@ -261,7 +281,9 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
             </Text>
           )}
           {isCoach && (
-            <Text style={styles.viewOnly}>View only</Text>
+            <Text style={[styles.viewOnly, canRevealVoters && totalVoters > 0 && { color: primaryColor, fontStyle: 'normal', fontWeight: '600' }]}>
+              {canRevealVoters && totalVoters > 0 ? 'Tap a result to see who voted' : 'View only'}
+            </Text>
           )}
           {!hasVoted && !isClosed && !isRsvpBlocked && !isCoach && (
             <Text style={[styles.tapHint, { color: primaryColor }]}>
@@ -271,6 +293,31 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
         </View>
 
       </View>
+
+      {/* Who voted for this option — coach-only, never shown for an
+          anonymous poll (see canRevealVoters). */}
+      <Modal
+        visible={!!revealOptionId}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRevealOptionId(null)}
+      >
+        <View style={styles.revealOverlay}>
+          <View style={styles.revealCard}>
+            <Text style={styles.revealTitle}>
+              {poll.options.find(o => o.id === revealOptionId)?.label ?? ''}
+            </Text>
+            <ScrollView style={styles.revealScroll}>
+              {revealOptionId && namesForOption(revealOptionId).map((name, i) => (
+                <Text key={i} style={styles.revealName}>{name}</Text>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.revealCloseBtn} onPress={() => setRevealOptionId(null)}>
+              <Text style={styles.revealCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 });
@@ -342,4 +389,21 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 11, color: PULSE_COLORS.ui.muted },
   tapHint: { fontSize: 11, fontWeight: '600' },
   viewOnly: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
+
+  revealOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  revealCard: {
+    width: '100%', maxWidth: 340, maxHeight: '70%', backgroundColor: PULSE_COLORS.ui.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 18,
+  },
+  revealTitle: { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center', marginBottom: 14 },
+  revealScroll: { maxHeight: 260 },
+  revealName: {
+    fontSize: 14, color: PULSE_COLORS.ui.text, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  },
+  revealCloseBtn: {
+    marginTop: 14, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  revealCloseBtnText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
 });
