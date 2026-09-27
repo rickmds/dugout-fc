@@ -24,11 +24,19 @@ interface AuthState {
   profile: Profile | null;
   club: Club | null;
   loading: boolean;
+  // True only when we couldn't CONFIRM a session within our timeout budget —
+  // never set just because there genuinely isn't one. Screens must treat
+  // this as "unknown, retry" rather than "signed out": the real session in
+  // storage may still be perfectly valid, we just couldn't verify it over a
+  // slow connection. Conflating the two meant a flaky network — not an
+  // actual sign-out — sent people to a full re-login screen.
+  sessionCheckFailed: boolean;
 }
 
 interface AuthContextValue extends AuthState {
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  retrySessionCheck: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -93,7 +101,12 @@ async function clearCache() {
 // only fix a user has is force-quitting, which abandons the hung request
 // and lets a fresh one succeed. Retrying in-process after a timeout does
 // the same thing automatically instead of requiring that.
-const SESSION_TIMEOUT_MS = 5000;
+// 8s (not the original 5s) because this is a REAL network round trip on
+// possibly-weak signal (a practice field, spotty wifi) — 5s×2=10s total was
+// tight enough that a merely-slow-but-working connection routinely lost the
+// race and got treated as "couldn't confirm," which is what used to force
+// people into a full re-login far more often than any actual sign-out did.
+const SESSION_TIMEOUT_MS = 8000;
 async function getSessionWithRetry() {
   const first = await withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
   if (first !== TIMEOUT) return first;
@@ -114,53 +127,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile: null,
     club: null,
     loading: true,
+    sessionCheckFailed: false,
   });
 
-  useEffect(() => {
-    let mounted = true;
+  // A ref (not a per-effect closure variable) so retrySessionCheck — called
+  // from a screen's Retry button, not from the mount effect — can share the
+  // exact same "am I still mounted" guard.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
-    getSessionWithRetry().then(async (result) => {
-      if (!mounted) return;
+  const checkSession = useCallback(async () => {
+    setState((prev) => ({ ...prev, loading: true, sessionCheckFailed: false }));
+    const result = await getSessionWithRetry();
+    if (!mountedRef.current) return;
 
-      if (!result) {
-        // Both attempts stalled — a real connectivity problem, not just a
-        // one-off hiccup. Don't leave the spinner up forever: fall through
-        // to the signed-out state so (app)/_layout's own `!loading &&
-        // !session` check can redirect somewhere the user can actually act
-        // (retry, or the app's normal offline handling), rather than a
-        // screen with nothing to tap.
-        setState({ session: null, user: null, profile: null, club: null, loading: false });
-        return;
+    if (!result) {
+      // Both attempts stalled — could be a real connectivity problem, but
+      // could just as easily be a merely-slow-but-working connection that
+      // lost the race. Either way this means "couldn't confirm," never
+      // "confirmed signed out" — the actual session in storage may still be
+      // completely valid. sessionCheckFailed lets index.tsx offer a Retry
+      // instead of funneling this into a full re-login, which is what
+      // conflating the two used to do.
+      setState({ session: null, user: null, profile: null, club: null, loading: false, sessionCheckFailed: true });
+      return;
+    }
+
+    const { data: { session } } = result;
+
+    if (session?.user) {
+      // Restore from cache immediately — removes the loading spinner on return visits
+      const cached = await readCache(session.user.id);
+      if (mountedRef.current && cached) {
+        setState({ session, user: session.user, profile: cached.profile, club: cached.club, loading: false, sessionCheckFailed: false });
       }
 
-      const { data: { session } } = result;
-
-      if (session?.user) {
-        // Restore from cache immediately — removes the loading spinner on return visits
-        const cached = await readCache(session.user.id);
-        if (mounted && cached) {
-          setState({ session, user: session.user, profile: cached.profile, club: cached.club, loading: false });
-        }
-
-        // Revalidate in background (or full load if no cache)
-        const { profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id);
-        if (mounted) {
-          if (error) {
+      // Revalidate in background (or full load if no cache)
+      const { profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id);
+      if (mountedRef.current) {
+        if (error) {
+          if (cached) {
             // Transient/network failure — keep whatever profile/club we already have
-            // (from cache, or null if there was none) instead of nulling out valid data.
-            setState((prev) => ({ ...prev, session, user: session.user, loading: false }));
+            // (from cache) instead of nulling out valid data.
+            setState((prev) => ({ ...prev, session, user: session.user, loading: false, sessionCheckFailed: false }));
           } else {
-            setState({ session, user: session.user, profile, club, loading: false });
-            if (profile) persistCache(session.user.id, profile, club);
+            // No cache to fall back on AND the live fetch failed — genuinely
+            // "couldn't confirm," not "confirmed: this profile has no club."
+            // Setting club:null with loading:false here used to read to
+            // index.tsx as the latter, sending a real user with a real club
+            // to the find-team screen on a flaky connection — recoverable
+            // only by a full logout/login (which forces a fresh fetch that
+            // usually succeeds). Route through the same Retry UI a failed
+            // getSessionWithRetry already uses instead of guessing.
+            setState({ session, user: session.user, profile: null, club: null, loading: false, sessionCheckFailed: true });
           }
+        } else {
+          setState({ session, user: session.user, profile, club, loading: false, sessionCheckFailed: false });
+          if (profile) persistCache(session.user.id, profile, club);
         }
-      } else {
-        setState({ session: null, user: null, profile: null, club: null, loading: false });
       }
-    });
+    } else {
+      setState({ session: null, user: null, profile: null, club: null, loading: false, sessionCheckFailed: false });
+    }
+  }, []);
+
+  useEffect(() => {
+    checkSession();
 
     const { data: subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
+      if (!mountedRef.current) return;
 
       // supabase-js fires INITIAL_SESSION synchronously on subscribe, with
       // the same session the getSessionWithRetry() chain above is already
@@ -171,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === 'SIGNED_OUT') {
         clearCache();
-        setState({ session: null, user: null, profile: null, club: null, loading: false });
+        setState({ session: null, user: null, profile: null, club: null, loading: false, sessionCheckFailed: false });
         return;
       }
 
@@ -181,25 +216,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // values (still null right after signing in), so a screen gated on
         // any of them just sat on its own loading state indefinitely.
         const { profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id);
-        if (mounted) {
+        if (mountedRef.current) {
           if (error) {
-            // Transient/network failure — leave the existing profile/club in state alone.
-            setState((prev) => ({ ...prev, session, user: session.user, loading: false }));
+            // Same distinction as the mount-time path above: only safe to
+            // silently keep going if there's an existing profile already in
+            // state to fall back on — otherwise this is "couldn't confirm,"
+            // not "no club."
+            setState((prev) => prev.profile
+              ? { ...prev, session, user: session.user, loading: false, sessionCheckFailed: false }
+              : { session, user: session.user, profile: null, club: null, loading: false, sessionCheckFailed: true });
           } else {
-            setState({ session, user: session.user, profile, club, loading: false });
+            setState({ session, user: session.user, profile, club, loading: false, sessionCheckFailed: false });
             if (profile) persistCache(session.user.id, profile, club);
           }
         }
       } else {
-        setState({ session: null, user: null, profile: null, club: null, loading: false });
+        setState({ session: null, user: null, profile: null, club: null, loading: false, sessionCheckFailed: false });
       }
     });
 
     return () => {
-      mounted = false;
       subscription.subscription.unsubscribe();
     };
-  }, []);
+  }, [checkSession]);
 
   // Club branding (colors, logo) and the user's own profile (avatar, etc.)
   // are only fetched on session start and after specific in-app actions —
@@ -259,6 +298,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.user?.id]);
 
+  // Not awaited by callers — it's a fire-and-forget re-run of the same
+  // mount-time check, driven from a screen's Retry button after a failed
+  // sessionCheckFailed state. checkSession() itself updates `loading` and
+  // `sessionCheckFailed` as it goes, which is what the Retry UI watches.
+  const retrySessionCheck = useCallback(() => {
+    checkSession();
+  }, [checkSession]);
+
   // Memoized so a re-render of AuthProvider that doesn't actually change
   // `state` (e.g. triggered by an ancestor re-rendering for unrelated
   // reasons) reuses the same value object instead of forcing every
@@ -266,8 +313,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // useClub() internally — to re-render regardless of whether anything
   // meaningful changed.
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, signOut, refreshProfile }),
-    [state, signOut, refreshProfile]
+    () => ({ ...state, signOut, refreshProfile, retrySessionCheck }),
+    [state, signOut, refreshProfile, retrySessionCheck]
   );
 
   return (
