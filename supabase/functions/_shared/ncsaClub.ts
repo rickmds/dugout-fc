@@ -62,6 +62,44 @@ const ROLE_BY_COLUMN: Record<string, string> = {
   asst_coach_column: 'Assistant Coach',
 };
 
+export interface ClubOfficial {
+  role: string; // "Club President" / "Representative" / "Alternate", verbatim off the page
+  name: string;
+  email: string | null;
+  home: string | null;
+  cell: string | null;
+  work: string | null;
+}
+
+// clubContactDetails.cfm's "Club Representatives:" table — confirmed
+// reachable with just a coach-level login (same session ncsa-opposing-coach
+// already holds), no need for the separate club-admin credential. Each row
+// is a name+email cell next to a nested Home/fax/cell/work table; fax is
+// deliberately not extracted, nobody's texting or calling a fax number.
+export function parseClubOfficials(html: string): ClubOfficial[] {
+  const officials: ClubOfficial[] = [];
+  const rowBlocks = html.split(/<tr valign="top"/i).slice(1);
+  for (const block of rowBlocks) {
+    const roleName = /<b>([^<:]+):?<\/b>:?\s*([^<]+?)\s*<br/i.exec(block);
+    if (!roleName) continue;
+    const field = (label: string) => {
+      const m = new RegExp(`<b>${label}:?<\\/b>\\s*<\\/td>\\s*<td>\\s*([^<]*?)\\s*<\\/td>`, 'i').exec(block);
+      const v = m?.[1]?.trim();
+      return v ? v : null;
+    };
+    const email = /<b>Email:<\/b>\s*([^<]+)/i.exec(block)?.[1]?.trim() ?? null;
+    officials.push({
+      role: cleanWhitespace(roleName[1]),
+      name: cleanWhitespace(roleName[2]),
+      email: email || null,
+      home: field('Home'),
+      cell: field('cell'),
+      work: field('work'),
+    });
+  }
+  return officials;
+}
+
 export function parseClubTeams(html: string): TeamCoachRow[] {
   const rows: TeamCoachRow[] = [];
   const rowBlocks = html.split(/<tr>/i).slice(1);

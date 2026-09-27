@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { ncsaLogin, ncsaFetch, USER_AGENT } from '../_shared/ncsaAuth.ts';
-import { parseClubDropdown, findClubCandidates, parseClubTeams } from '../_shared/ncsaClub.ts';
+import { parseClubDropdown, findClubCandidates, parseClubTeams, parseClubOfficials } from '../_shared/ncsaClub.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -103,7 +103,22 @@ Deno.serve(async (req) => {
     }
   }));
 
-  return new Response(JSON.stringify({ coaches: contacts }), {
+  // Club president/representative/alternate — confirmed reachable with the
+  // same coach-level session above (no separate club-admin credential
+  // needed). Best-effort: a coach still wants the opposing COACH's info
+  // even if this secondary lookup fails for any reason.
+  let officials: ReturnType<typeof parseClubOfficials> = [];
+  try {
+    const officialsRes = await ncsaFetch(
+      `https://www.ncsanj.com/clubContactDetails.cfm?cid=${encodeURIComponent(clubId)}`,
+      session,
+    );
+    officials = parseClubOfficials(await officialsRes.text());
+  } catch {
+    // leave officials empty
+  }
+
+  return new Response(JSON.stringify({ coaches: contacts, officials }), {
     status: 200,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });

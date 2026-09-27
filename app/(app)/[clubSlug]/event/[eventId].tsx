@@ -403,9 +403,11 @@ export default function EventDetailScreen() {
   const [showEventPollModal, setShowEventPollModal] = useState(false);
 
   type NcsaCoachContact = { role: string; first: string; last: string; email: string | null; cell: string | null; homephone: string | null };
+  type NcsaOfficial = { role: string; name: string; email: string | null; home: string | null; cell: string | null; work: string | null };
   const [showNcsaLookupModal, setShowNcsaLookupModal] = useState(false);
   const [ncsaLookupLoading, setNcsaLookupLoading] = useState(false);
   const [ncsaLookupResult, setNcsaLookupResult] = useState<NcsaCoachContact[] | null>(null);
+  const [ncsaOfficialsResult, setNcsaOfficialsResult] = useState<NcsaOfficial[]>([]);
   const [ncsaLookupError, setNcsaLookupError] = useState<string | null>(null);
   const [ncsaCandidates, setNcsaCandidates] = useState<{ clubid: string; name: string }[] | null>(null);
   const [ncsaCopyFeedback, setNcsaCopyFeedback] = useState<'emails' | 'cells' | null>(null);
@@ -815,6 +817,7 @@ export default function EventDetailScreen() {
     setNcsaLookupError(null);
     setNcsaCandidates(null);
     setNcsaLookupResult(null);
+    setNcsaOfficialsResult([]);
     const { data: { session } } = await supabase.auth.getSession();
     const { data, error } = await supabase.functions.invoke('ncsa-opposing-coach', {
       headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
@@ -850,6 +853,7 @@ export default function EventDetailScreen() {
       return;
     }
     setNcsaLookupResult(data?.coaches ?? []);
+    setNcsaOfficialsResult(data?.officials ?? []);
   }
 
   async function copyNcsaEmails() {
@@ -3165,12 +3169,11 @@ export default function EventDetailScreen() {
                       </View>
                     ))}
                   </View>
-                </ScrollView>
 
-                {/* Bulk copy — paste straight into Gmail's To: field or a
-                    group text, instead of tapping each contact one by
-                    one. */}
-                {ncsaLookupResult.length > 1 && (
+                  {/* Bulk copy — paste straight into Gmail's To: field or a
+                      group text, instead of tapping each contact one by
+                      one. */}
+                  {ncsaLookupResult.length > 1 && (
                   <View style={styles.ncsaCopyRow}>
                     {ncsaLookupResult.some((c) => c.email) && (
                       <TouchableOpacity style={styles.ncsaCopyBtn} onPress={copyNcsaEmails}>
@@ -3186,6 +3189,55 @@ export default function EventDetailScreen() {
                     )}
                   </View>
                 )}
+
+                {/* Club leadership — president/representative/alternate,
+                    same page NCSA's own club-rep login shows, confirmed
+                    reachable with just this coach-level session. Useful for
+                    anything above a single game: a forfeit dispute, a field
+                    conflict, season-long scheduling. */}
+                {ncsaOfficialsResult.length > 0 && (
+                  <>
+                    <View style={styles.ncsaSectionDivider} />
+                    <Text style={styles.ncsaSectionLabel}>CLUB LEADERSHIP</Text>
+                    <View style={{ gap: 14 }}>
+                      {ncsaOfficialsResult.map((o, i) => (
+                        <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14 } : undefined}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
+                            {o.role.toUpperCase()}
+                          </Text>
+                          <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
+                            {o.name}
+                          </Text>
+                          {(o.cell ?? o.home) && (
+                            <View style={styles.ncsaPhoneRow}>
+                              <Ionicons name={o.cell ? 'phone-portrait-outline' : 'home-outline'} size={14} color={PULSE_COLORS.ui.muted} />
+                              <Text style={styles.ncsaPhoneText}>{o.cell ?? o.home}</Text>
+                              <View style={styles.ncsaPhoneBtnGroup}>
+                                {o.cell && (
+                                  <TouchableOpacity style={styles.ncsaPhoneBtn} onPress={() => Linking.openURL(`sms:${o.cell}`)}>
+                                    <Ionicons name="chatbubble-outline" size={13} color={primaryColor} />
+                                    <Text style={[styles.ncsaPhoneBtnText, { color: primaryColor }]}>Text</Text>
+                                  </TouchableOpacity>
+                                )}
+                                <TouchableOpacity style={styles.ncsaPhoneBtn} onPress={() => Linking.openURL(`tel:${o.cell ?? o.home}`)}>
+                                  <Ionicons name="call-outline" size={13} color={primaryColor} />
+                                  <Text style={[styles.ncsaPhoneBtnText, { color: primaryColor }]}>Call</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          )}
+                          {o.email && (
+                            <TouchableOpacity onPress={() => Linking.openURL(`mailto:${o.email}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: (o.cell || o.home) ? 6 : 0 }}>
+                              <Ionicons name="mail-outline" size={14} color={primaryColor} />
+                              <Text style={{ fontSize: 13.5, color: primaryColor, fontWeight: '600' }}>{o.email}</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+                </ScrollView>
               </>
             ) : (
               <Text style={{ fontSize: 13.5, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center' }}>No contact info found.</Text>
@@ -3818,6 +3870,8 @@ const styles = StyleSheet.create({
     backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
   ncsaPhoneBtnText: { fontSize: 12, fontWeight: '700' },
+  ncsaSectionDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 16 },
+  ncsaSectionLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6, marginBottom: 12 },
   ncsaCloseBtn: {
     marginTop: 16, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
