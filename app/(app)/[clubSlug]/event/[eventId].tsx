@@ -3129,13 +3129,35 @@ export default function EventDetailScreen() {
                           {c.first} {c.last}
                         </Text>
                         {c.cell && (
-                          <TouchableOpacity onPress={() => Linking.openURL(`tel:${c.cell}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            <Ionicons name="call-outline" size={14} color={primaryColor} />
-                            <Text style={{ fontSize: 13.5, color: primaryColor, fontWeight: '600' }}>{c.cell}</Text>
-                          </TouchableOpacity>
+                          <View style={styles.ncsaPhoneRow}>
+                            <Ionicons name="phone-portrait-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                            <Text style={styles.ncsaPhoneText}>{c.cell}</Text>
+                            <View style={styles.ncsaPhoneBtnGroup}>
+                              <TouchableOpacity style={styles.ncsaPhoneBtn} onPress={() => Linking.openURL(`sms:${c.cell}`)}>
+                                <Ionicons name="chatbubble-outline" size={13} color={primaryColor} />
+                                <Text style={[styles.ncsaPhoneBtnText, { color: primaryColor }]}>Text</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.ncsaPhoneBtn} onPress={() => Linking.openURL(`tel:${c.cell}`)}>
+                                <Ionicons name="call-outline" size={13} color={primaryColor} />
+                                <Text style={[styles.ncsaPhoneBtnText, { color: primaryColor }]}>Call</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                        {c.homephone && (
+                          <View style={styles.ncsaPhoneRow}>
+                            <Ionicons name="home-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                            <Text style={styles.ncsaPhoneText}>{c.homephone}</Text>
+                            <View style={styles.ncsaPhoneBtnGroup}>
+                              <TouchableOpacity style={styles.ncsaPhoneBtn} onPress={() => Linking.openURL(`tel:${c.homephone}`)}>
+                                <Ionicons name="call-outline" size={13} color={primaryColor} />
+                                <Text style={[styles.ncsaPhoneBtnText, { color: primaryColor }]}>Call</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
                         )}
                         {c.email && (
-                          <TouchableOpacity onPress={() => Linking.openURL(`mailto:${c.email}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <TouchableOpacity onPress={() => Linking.openURL(`mailto:${c.email}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: (c.cell || c.homephone) ? 6 : 0 }}>
                             <Ionicons name="mail-outline" size={14} color={primaryColor} />
                             <Text style={{ fontSize: 13.5, color: primaryColor, fontWeight: '600' }}>{c.email}</Text>
                           </TouchableOpacity>
@@ -3787,6 +3809,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
   ncsaCopyBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  ncsaPhoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  ncsaPhoneText: { flex: 1, fontSize: 13.5, color: PULSE_COLORS.ui.text, fontWeight: '600' },
+  ncsaPhoneBtnGroup: { flexDirection: 'row', gap: 6 },
+  ncsaPhoneBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  ncsaPhoneBtnText: { fontSize: 12, fontWeight: '700' },
   ncsaCloseBtn: {
     marginTop: 16, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
