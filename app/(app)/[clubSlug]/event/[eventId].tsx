@@ -1884,7 +1884,11 @@ export default function EventDetailScreen() {
             {/* Field info */}
             {hasFieldInfo && (
               <>
-                {!hasMap && <View style={styles.metaDivider} />}
+                {/* Skip the divider only when the map image itself (edge-to-edge,
+                    its own visual boundary) is the element directly above — if the
+                    weather/drive panel rendered after the map, that panel has no
+                    boundary of its own and still needs this divider before it. */}
+                {!(hasMap && !weather && !driveTime) && <View style={styles.metaDivider} />}
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
                     <Ionicons name="layers-outline" size={17} color={PULSE_COLORS.ui.muted} />
@@ -1935,6 +1939,7 @@ export default function EventDetailScreen() {
                   </View>
                   <View style={[styles.uniformChip, {
                     backgroundColor: event.field_type === 'turf' ? 'rgba(59,130,246,0.12)' : rgba(0.10),
+                    borderColor: event.field_type === 'turf' ? 'rgba(59,130,246,0.3)' : rgba(0.28),
                   }]}>
                     <Text style={[styles.uniformChipText, {
                       color: event.field_type === 'turf' ? '#3B82F6' : primaryColor,
