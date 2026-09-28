@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,7 +16,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { signInWithApple, signInWithGoogle, SOCIAL_AUTH_ENABLED } from '../../lib/auth';
 import { routeAfterAuth as sharedRouteAfterAuth, recoverOrShowError as sharedRecoverOrShowError } from '../../lib/authRouting';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import SocialButton from '../../components/ui/SocialButton';
@@ -31,6 +32,8 @@ function mapAuthError(message: string): string {
 export default function LoginScreen() {
   const router = useRouter();
   const { refreshProfile } = useAuth();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -273,79 +276,81 @@ export default function LoginScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  flex:  { flex: 1 },
-  scroll: { paddingHorizontal: 24, paddingBottom: 40 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    root:  { flex: 1, backgroundColor: colors.background },
+    flex:  { flex: 1 },
+    scroll: { paddingHorizontal: 24, paddingBottom: 40 },
 
-  // Hero
-  hero: { alignItems: 'center', paddingTop: 40, paddingBottom: 36 },
-  logoGlow: {
-    width: 96, height: 96,
-    borderRadius: 28,
-    backgroundColor: 'rgba(34,197,94,0.08)',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 20,
-    shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 24,
-  },
-  logoRing: {
-    width: 76, height: 76,
-    borderRadius: 20,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(34,197,94,0.25)',
-    alignItems: 'center', justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  logo: { width: 76, height: 76, borderRadius: 20 },
-  wordmark: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: PULSE_COLORS.ui.text,
-    letterSpacing: -0.5,
-    marginBottom: 6,
-  },
-  wordmarkAccent: { color: PULSE_COLORS.brand.green },
-  tagline: {
-    fontSize: 14,
-    color: PULSE_COLORS.ui.muted,
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
+    // Hero
+    hero: { alignItems: 'center', paddingTop: 40, paddingBottom: 36 },
+    logoGlow: {
+      width: 96, height: 96,
+      borderRadius: 28,
+      backgroundColor: 'rgba(34,197,94,0.08)',
+      alignItems: 'center', justifyContent: 'center',
+      marginBottom: 20,
+      shadowColor: '#22C55E',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.35,
+      shadowRadius: 24,
+    },
+    logoRing: {
+      width: 76, height: 76,
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: 'rgba(34,197,94,0.25)',
+      alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    logo: { width: 76, height: 76, borderRadius: 20 },
+    wordmark: {
+      fontSize: 28,
+      fontWeight: '900',
+      color: colors.text,
+      letterSpacing: -0.5,
+      marginBottom: 6,
+    },
+    wordmarkAccent: { color: PULSE_COLORS.brand.green },
+    tagline: {
+      fontSize: 14,
+      color: colors.muted,
+      fontWeight: '500',
+      letterSpacing: 0.2,
+    },
 
-  // Heading
-  heading:    { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  subheading: { fontSize: 14, color: PULSE_COLORS.ui.muted, marginBottom: 24 },
+    // Heading
+    heading:    { fontSize: 26, fontWeight: '800', color: colors.text, marginBottom: 4 },
+    subheading: { fontSize: 14, color: colors.muted, marginBottom: 24 },
 
-  // Info
-  infoBanner: {
-    backgroundColor: 'rgba(34,197,94,0.08)',
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
-    borderRadius: 12, padding: 14, marginBottom: 16,
-  },
-  infoText: { color: PULSE_COLORS.brand.green, fontSize: 14, lineHeight: 20, marginBottom: 10 },
-  signOutLink: { alignSelf: 'flex-start' },
-  signOutLinkText: { color: PULSE_COLORS.brand.green, fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
+    // Info
+    infoBanner: {
+      backgroundColor: 'rgba(34,197,94,0.08)',
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
+      borderRadius: 12, padding: 14, marginBottom: 16,
+    },
+    infoText: { color: PULSE_COLORS.brand.green, fontSize: 14, lineHeight: 20, marginBottom: 10 },
+    signOutLink: { alignSelf: 'flex-start' },
+    signOutLinkText: { color: PULSE_COLORS.brand.green, fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
 
-  // Form
-  form: { gap: 4, marginBottom: 4 },
-  passwordHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', marginBottom: 6,
-  },
-  passwordLabel: { fontSize: 13, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary },
-  forgotText:    { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
+    // Form
+    form: { gap: 4, marginBottom: 4 },
+    passwordHeader: {
+      flexDirection: 'row', alignItems: 'center',
+      justifyContent: 'space-between', marginBottom: 6,
+    },
+    passwordLabel: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
+    forgotText:    { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
 
-  // Divider
-  divider:     { flexDirection: 'row', alignItems: 'center', marginVertical: 24, gap: 10 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: PULSE_COLORS.ui.border },
-  dividerText: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+    // Divider
+    divider:     { flexDirection: 'row', alignItems: 'center', marginVertical: 24, gap: 10 },
+    dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+    dividerText: { fontSize: 12, color: colors.muted, fontWeight: '500' },
 
-  // Register
-  registerLink: { marginTop: 32, alignItems: 'center' },
-  registerText: { fontSize: 14, color: PULSE_COLORS.ui.muted },
-  registerBold: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
-});
+    // Register
+    registerLink: { marginTop: 32, alignItems: 'center' },
+    registerText: { fontSize: 14, color: colors.muted },
+    registerBold: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
+  });
+}

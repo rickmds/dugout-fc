@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,13 +12,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -91,7 +94,7 @@ export default function ResetPasswordScreen() {
           showsVerticalScrollIndicator={false}
         >
           <TouchableOpacity style={styles.backBtn} onPress={() => router.replace('/(auth)/login')}>
-            <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.text} />
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
           </TouchableOpacity>
 
           <Text style={styles.title}>Set new password</Text>
@@ -134,36 +137,38 @@ export default function ResetPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  scroll: { padding: 24, paddingTop: 16, paddingBottom: 60 },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 30, fontWeight: '800', color: PULSE_COLORS.ui.text,
-    letterSpacing: -0.5, marginBottom: 8,
-  },
-  sub: {
-    fontSize: 15, color: PULSE_COLORS.ui.textSecondary,
-    lineHeight: 22, marginBottom: 32,
-  },
-  backLinkBtn: { alignItems: 'center', marginTop: 20 },
-  backLinkText: { color: PULSE_COLORS.ui.muted, fontSize: 14, fontWeight: '500' },
-  doneWrap: {
-    flex: 1, justifyContent: 'center',
-    padding: 32, gap: 12,
-  },
-  doneIcon: { marginBottom: 8 },
-  doneTitle: {
-    fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.5,
-  },
-  doneSub: {
-    fontSize: 15, color: PULSE_COLORS.ui.textSecondary,
-    lineHeight: 22, marginBottom: 12,
-  },
-});
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    scroll: { padding: 24, paddingTop: 16, paddingBottom: 60 },
+    backBtn: {
+      width: 38, height: 38, borderRadius: 19,
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+      marginBottom: 32,
+    },
+    title: {
+      fontSize: 30, fontWeight: '800', color: colors.text,
+      letterSpacing: -0.5, marginBottom: 8,
+    },
+    sub: {
+      fontSize: 15, color: colors.textSecondary,
+      lineHeight: 22, marginBottom: 32,
+    },
+    backLinkBtn: { alignItems: 'center', marginTop: 20 },
+    backLinkText: { color: colors.muted, fontSize: 14, fontWeight: '500' },
+    doneWrap: {
+      flex: 1, justifyContent: 'center',
+      padding: 32, gap: 12,
+    },
+    doneIcon: { marginBottom: 8 },
+    doneTitle: {
+      fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.5,
+    },
+    doneSub: {
+      fontSize: 15, color: colors.textSecondary,
+      lineHeight: 22, marginBottom: 12,
+    },
+  });
+}

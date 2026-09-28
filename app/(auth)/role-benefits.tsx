@@ -1,17 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { posthog } from '../../lib/posthog';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import { ROLE_CONTENT, type RoleKey } from '../../constants/roleContent';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 
 export default function RoleBenefitsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const { role: roleParam } = useLocalSearchParams<{ role: string }>();
   const role: RoleKey = (roleParam as RoleKey) in ROLE_CONTENT ? (roleParam as RoleKey) : 'player';
   const [loading, setLoading] = useState(false);
@@ -67,20 +70,22 @@ export default function RoleBenefitsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background, paddingHorizontal: 24 },
-  back: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 28 },
-  backText: { color: PULSE_COLORS.brand.green, fontSize: 16, fontWeight: '600' },
-  iconWrap: {
-    width: 56, height: 56, borderRadius: 16,
-    backgroundColor: 'rgba(34,197,94,0.1)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
-    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
-  },
-  heading: { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 },
-  subheading: { fontSize: 15, color: PULSE_COLORS.ui.textSecondary, marginBottom: 28 },
-  list: { gap: 16, marginBottom: 12 },
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  rowIcon: { marginTop: 1 },
-  rowText: { flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text, lineHeight: 21 },
-  continueButton: { marginTop: 32 },
-});
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 24 },
+    back: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 28 },
+    backText: { color: PULSE_COLORS.brand.green, fontSize: 16, fontWeight: '600' },
+    iconWrap: {
+      width: 56, height: 56, borderRadius: 16,
+      backgroundColor: 'rgba(34,197,94,0.1)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
+      alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+    },
+    heading: { fontSize: 26, fontWeight: '800', color: colors.text, marginBottom: 6 },
+    subheading: { fontSize: 15, color: colors.textSecondary, marginBottom: 28 },
+    list: { gap: 16, marginBottom: 12 },
+    row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    rowIcon: { marginTop: 1 },
+    rowText: { flex: 1, fontSize: 15, color: colors.text, lineHeight: 21 },
+    continueButton: { marginTop: 32 },
+  });
+}

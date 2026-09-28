@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 const OPTIONS = [
   {
@@ -22,6 +24,8 @@ const OPTIONS = [
 export default function CoachOptionsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
@@ -61,71 +65,73 @@ export default function CoachOptionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: PULSE_COLORS.ui.background,
-    paddingHorizontal: 24,
-  },
-  back: {
-    marginBottom: 24,
-  },
-  backText: {
-    color: PULSE_COLORS.brand.green,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  heading: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: PULSE_COLORS.ui.text,
-    marginBottom: 8,
-  },
-  subheading: {
-    fontSize: 14,
-    color: PULSE_COLORS.ui.textSecondary,
-    marginBottom: 36,
-  },
-  cards: {
-    gap: 14,
-  },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-  },
-  cardEmoji: {
-    fontSize: 32,
-  },
-  cardText: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: PULSE_COLORS.ui.text,
-    marginBottom: 3,
-  },
-  cardSubtitle: {
-    fontSize: 13,
-    color: PULSE_COLORS.ui.textSecondary,
-  },
-  chevron: {
-    fontSize: 24,
-    color: PULSE_COLORS.ui.muted,
-    fontWeight: '300',
-  },
-  signOutLink: {
-    alignItems: 'center',
-    marginTop: 36,
-  },
-  signOutText: {
-    color: PULSE_COLORS.ui.muted,
-    fontSize: 13,
-  },
-});
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingHorizontal: 24,
+    },
+    back: {
+      marginBottom: 24,
+    },
+    backText: {
+      color: PULSE_COLORS.brand.green,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    heading: {
+      fontSize: 26,
+      fontWeight: '800',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    subheading: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: 36,
+    },
+    cards: {
+      gap: 14,
+    },
+    card: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 16,
+      padding: 20,
+      gap: 16,
+    },
+    cardEmoji: {
+      fontSize: 32,
+    },
+    cardText: {
+      flex: 1,
+    },
+    cardTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 3,
+    },
+    cardSubtitle: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    chevron: {
+      fontSize: 24,
+      color: colors.muted,
+      fontWeight: '300',
+    },
+    signOutLink: {
+      alignItems: 'center',
+      marginTop: 36,
+    },
+    signOutText: {
+      color: colors.muted,
+      fontSize: 13,
+    },
+  });
+}

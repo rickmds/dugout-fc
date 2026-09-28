@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
@@ -28,6 +29,8 @@ interface ClubResult {
 export default function FindTeamScreen() {
   const router = useRouter();
   const { user, refreshProfile } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [clubSlug, setClubSlug] = useState('');
   const [clubLoading, setClubLoading] = useState(false);
@@ -172,89 +175,91 @@ export default function FindTeamScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-    backgroundColor: PULSE_COLORS.ui.background,
-  },
-  container: {
-    padding: 16,
-    paddingTop: 80,
-  },
-  heading: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: PULSE_COLORS.ui.text,
-  },
-  subheading: {
-    fontSize: 14,
-    color: PULSE_COLORS.ui.textSecondary,
-    marginTop: 6,
-    marginBottom: 24,
-  },
-  card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    padding: 16,
-    marginBottom: 16,
-  },
-  cardTitle: {
-    color: PULSE_COLORS.ui.text,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  clubResult: {
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: PULSE_COLORS.ui.border,
-    paddingTop: 16,
-  },
-  clubName: {
-    color: PULSE_COLORS.ui.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  noTeams: {
-    color: PULSE_COLORS.ui.textSecondary,
-    fontSize: 13,
-    marginTop: 8,
-  },
-  teamPrompt: {
-    color: PULSE_COLORS.ui.textSecondary,
-    fontSize: 13,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  joinButton: {
-    marginTop: 8,
-  },
-  coachLink: {
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  coachLinkText: {
-    color: PULSE_COLORS.brand.green,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  skipLink: {
-    alignItems: 'center',
-  },
-  skipText: {
-    color: PULSE_COLORS.ui.muted,
-    fontSize: 13,
-  },
-  signOutLink: {
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  signOutText: {
-    color: PULSE_COLORS.ui.muted,
-    fontSize: 13,
-  },
-});
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    flex: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    container: {
+      padding: 16,
+      paddingTop: 80,
+    },
+    heading: {
+      fontSize: 28,
+      fontWeight: '800',
+      color: colors.text,
+    },
+    subheading: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginTop: 6,
+      marginBottom: 24,
+    },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 16,
+      marginBottom: 16,
+    },
+    cardTitle: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '700',
+      marginBottom: 12,
+    },
+    clubResult: {
+      marginTop: 16,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      paddingTop: 16,
+    },
+    clubName: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    noTeams: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      marginTop: 8,
+    },
+    teamPrompt: {
+      color: colors.textSecondary,
+      fontSize: 13,
+      marginTop: 12,
+      marginBottom: 8,
+    },
+    joinButton: {
+      marginTop: 8,
+    },
+    coachLink: {
+      alignItems: 'center',
+      marginTop: 8,
+      marginBottom: 24,
+    },
+    coachLinkText: {
+      color: PULSE_COLORS.brand.green,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    skipLink: {
+      alignItems: 'center',
+    },
+    skipText: {
+      color: colors.muted,
+      fontSize: 13,
+    },
+    signOutLink: {
+      alignItems: 'center',
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    signOutText: {
+      color: colors.muted,
+      fontSize: 13,
+    },
+  });
+}

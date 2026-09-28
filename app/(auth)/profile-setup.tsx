@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
@@ -18,7 +18,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { addGuardianInvite } from '../../lib/inviteApi';
 import { posthog } from '../../lib/posthog';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import { resolveAccent, contrastText } from '../../lib/brandColor';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
@@ -38,6 +39,8 @@ export default function ProfileSetupScreen() {
   const { user, profile, club, refreshProfile, signOut } = useAuth();
   const isCoachOrAdmin = profile?.role === 'coach' || profile?.role === 'org_admin';
   const accent = resolveAccent(club?.primary_color);
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [fullName, setFullName]         = useState(profile?.full_name ?? '');
   const [phone, setPhone]               = useState(profile?.phone ?? '');
@@ -277,7 +280,7 @@ export default function ProfileSetupScreen() {
             <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <Ionicons name="camera-outline" size={26} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="camera-outline" size={26} color={colors.muted} />
             </View>
           )}
           <Text style={[styles.avatarLabel, { color: accent }]}>{avatarUploading ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Add a photo'}</Text>
@@ -295,7 +298,7 @@ export default function ProfileSetupScreen() {
           <Switch
             value={shareContact}
             onValueChange={setShareContact}
-            trackColor={{ false: PULSE_COLORS.ui.border, true: `${accent}80` }}
+            trackColor={{ false: colors.border, true: `${accent}80` }}
             thumbColor={shareContact ? accent : undefined}
           />
         </View>
@@ -365,80 +368,82 @@ export default function ProfileSetupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-    backgroundColor: PULSE_COLORS.ui.background,
-  },
-  container: {
-    padding: 16,
-    paddingTop: 80,
-    alignItems: 'stretch',
-  },
-  heading: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: PULSE_COLORS.ui.text,
-    textAlign: 'center',
-  },
-  subheading: {
-    fontSize: 15,
-    color: PULSE_COLORS.ui.textSecondary,
-    textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 28,
-  },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    flex: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    container: {
+      padding: 16,
+      paddingTop: 80,
+      alignItems: 'stretch',
+    },
+    heading: {
+      fontSize: 28,
+      fontWeight: '800',
+      color: colors.text,
+      textAlign: 'center',
+    },
+    subheading: {
+      fontSize: 15,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 6,
+      marginBottom: 28,
+    },
 
-  avatarWrap: { alignItems: 'center', marginBottom: 24 },
-  avatarImage: { width: 88, height: 88, borderRadius: 44, marginBottom: 8 },
-  avatarPlaceholder: {
-    width: 88, height: 88, borderRadius: 44, marginBottom: 8,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarLabel: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    avatarWrap: { alignItems: 'center', marginBottom: 24 },
+    avatarImage: { width: 88, height: 88, borderRadius: 44, marginBottom: 8 },
+    avatarPlaceholder: {
+      width: 88, height: 88, borderRadius: 44, marginBottom: 8,
+      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    avatarLabel: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.brand.green },
 
-  toggleRow: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 14, padding: 14, marginBottom: 20,
-  },
-  toggleTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  toggleSub: { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 17 },
+    toggleRow: {
+      flexDirection: 'row', alignItems: 'center',
+      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+      borderRadius: 14, padding: 14, marginBottom: 20,
+    },
+    toggleTitle: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 4 },
+    toggleSub: { fontSize: 12, color: colors.muted, lineHeight: 17 },
 
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  sectionSub: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginBottom: 14, lineHeight: 17 },
-  optional: { fontSize: 13, fontWeight: '500', color: PULSE_COLORS.ui.muted },
+    section: { marginBottom: 24 },
+    sectionTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 },
+    sectionSub: { fontSize: 12.5, color: colors.muted, marginBottom: 14, lineHeight: 17 },
+    optional: { fontSize: 13, fontWeight: '500', color: colors.muted },
 
-  childCard: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 14, padding: 14, marginBottom: 12,
-  },
-  childName: { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 10 },
+    childCard: {
+      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+      borderRadius: 14, padding: 14, marginBottom: 12,
+    },
+    childName: { fontSize: 14, fontWeight: '800', color: colors.text, marginBottom: 10 },
 
-  guardianSentBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(34,197,94,0.08)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
-    borderRadius: 10, padding: 10,
-  },
-  guardianSentText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    guardianSentBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: 'rgba(34,197,94,0.08)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
+      borderRadius: 10, padding: 10,
+    },
+    guardianSentText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.brand.green },
 
-  sendGuardianBtn: {
-    height: 50, paddingHorizontal: 18, borderRadius: 12,
-    backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center', justifyContent: 'center',
-  },
-  sendGuardianText: { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.brand.black },
+    sendGuardianBtn: {
+      height: 50, paddingHorizontal: 18, borderRadius: 12,
+      backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center', justifyContent: 'center',
+    },
+    sendGuardianText: { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.brand.black },
 
-  continueButton: {
-    marginTop: 12,
-  },
-  skipLink: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  skipText: {
-    color: PULSE_COLORS.ui.muted,
-    fontSize: 13,
-  },
-});
+    continueButton: {
+      marginTop: 12,
+    },
+    skipLink: {
+      alignItems: 'center',
+      marginTop: 20,
+    },
+    skipText: {
+      color: colors.muted,
+      fontSize: 13,
+    },
+  });
+}

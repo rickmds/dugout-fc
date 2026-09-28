@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   Dimensions,
@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 const { width } = Dimensions.get('window');
 
@@ -26,6 +27,8 @@ const FEATURES = [
 export default function WelcomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const logoAnim    = useRef(new Animated.Value(0)).current;
   const titleAnim   = useRef(new Animated.Value(0)).current;
@@ -107,141 +110,143 @@ export default function WelcomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#080808',
-    paddingHorizontal: 28,
-    justifyContent: 'center',
-    gap: 36,
-  },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#080808',
+      paddingHorizontal: 28,
+      justifyContent: 'center',
+      gap: 36,
+    },
 
-  glowTopRight: {
-    position: 'absolute',
-    top: -100,
-    right: -100,
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: 'rgba(34,197,94,0.07)',
-  },
-  glowBottomLeft: {
-    position: 'absolute',
-    bottom: 100,
-    left: -120,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: 'rgba(34,197,94,0.05)',
-  },
+    glowTopRight: {
+      position: 'absolute',
+      top: -100,
+      right: -100,
+      width: 320,
+      height: 320,
+      borderRadius: 160,
+      backgroundColor: 'rgba(34,197,94,0.07)',
+    },
+    glowBottomLeft: {
+      position: 'absolute',
+      bottom: 100,
+      left: -120,
+      width: 260,
+      height: 260,
+      borderRadius: 130,
+      backgroundColor: 'rgba(34,197,94,0.05)',
+    },
 
-  logoSection: {
-    alignItems: 'center',
-  },
-  logoGlowRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 30,
-    backgroundColor: '#111',
-    borderWidth: 1,
-    borderColor: 'rgba(34,197,94,0.2)',
-  },
-  logoImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 20,
-  },
+    logoSection: {
+      alignItems: 'center',
+    },
+    logoGlowRing: {
+      width: 120,
+      height: 120,
+      borderRadius: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#22C55E',
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.5,
+      shadowRadius: 30,
+      backgroundColor: '#111',
+      borderWidth: 1,
+      borderColor: 'rgba(34,197,94,0.2)',
+    },
+    logoImage: {
+      width: 96,
+      height: 96,
+      borderRadius: 20,
+    },
 
-  titleSection: {
-    alignItems: 'center',
-  },
-  appName: {
-    fontSize: 42,
-    fontWeight: '900',
-    color: '#fff',
-    letterSpacing: -1.5,
-    textAlign: 'center',
-  },
-  appNameGreen: {
-    color: PULSE_COLORS.brand.green,
-  },
-  tagline: {
-    fontSize: 15,
-    color: PULSE_COLORS.ui.textSecondary,
-    fontWeight: '400',
-    textAlign: 'center',
-    marginTop: 8,
-    letterSpacing: 0.1,
-  },
+    titleSection: {
+      alignItems: 'center',
+    },
+    appName: {
+      fontSize: 42,
+      fontWeight: '900',
+      color: '#fff',
+      letterSpacing: -1.5,
+      textAlign: 'center',
+    },
+    appNameGreen: {
+      color: PULSE_COLORS.brand.green,
+    },
+    tagline: {
+      fontSize: 15,
+      color: colors.textSecondary,
+      fontWeight: '400',
+      textAlign: 'center',
+      marginTop: 8,
+      letterSpacing: 0.1,
+    },
 
-  chipsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(34,197,94,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(34,197,94,0.18)',
-    borderRadius: 100,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  chipLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: PULSE_COLORS.ui.text,
-  },
+    chipsRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 10,
+      flexWrap: 'wrap',
+    },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: 'rgba(34,197,94,0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(34,197,94,0.18)',
+      borderRadius: 100,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    chipLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.text,
+    },
 
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    marginHorizontal: 12,
-  },
+    divider: {
+      height: 1,
+      backgroundColor: 'rgba(255,255,255,0.06)',
+      marginHorizontal: 12,
+    },
 
-  cta: {
-    gap: 12,
-  },
-  primaryBtn: {
-    borderRadius: 16,
-    paddingVertical: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  primaryBtnText: {
-    color: '#000',
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  secondaryBtn: {
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  secondaryBtnText: {
-    color: PULSE_COLORS.ui.muted,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  secondaryBtnHighlight: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  legalText: {
-    color: PULSE_COLORS.ui.muted,
-    fontSize: 11,
-    textAlign: 'center',
-    opacity: 0.6,
-  },
-});
+    cta: {
+      gap: 12,
+    },
+    primaryBtn: {
+      borderRadius: 16,
+      paddingVertical: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexDirection: 'row',
+    },
+    primaryBtnText: {
+      color: '#000',
+      fontSize: 17,
+      fontWeight: '800',
+      letterSpacing: -0.3,
+    },
+    secondaryBtn: {
+      paddingVertical: 14,
+      alignItems: 'center',
+    },
+    secondaryBtnText: {
+      color: colors.muted,
+      fontSize: 15,
+      fontWeight: '500',
+    },
+    secondaryBtnHighlight: {
+      color: '#fff',
+      fontWeight: '700',
+    },
+    legalText: {
+      color: colors.muted,
+      fontSize: 11,
+      textAlign: 'center',
+      opacity: 0.6,
+    },
+  });
+}

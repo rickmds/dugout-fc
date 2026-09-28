@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { withTimeout, TIMEOUT } from '../../lib/withTimeout';
 import { useAuth } from '../../hooks/useAuth';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import ErrorBanner from '../../components/ui/ErrorBanner';
@@ -34,6 +35,8 @@ function randomSuffix(): string {
 export default function CreateTeamScreen() {
   const router = useRouter();
   const { refreshProfile } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [teamName,  setTeamName]  = useState('');
   const [ageGroup,  setAgeGroup]  = useState('');
   const [gender,    setGender]    = useState('');
@@ -238,39 +241,41 @@ export default function CreateTeamScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex:        { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  container:   { padding: 24, paddingTop: 70, paddingBottom: 40 },
-  back:        { marginBottom: 24 },
-  backText:    { color: PULSE_COLORS.brand.green, fontSize: 16, fontWeight: '600' },
-  heading:     { fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 8 },
-  subheading:  { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, marginBottom: 28 },
-  button:      { marginTop: 24 },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    flex:        { flex: 1, backgroundColor: colors.background },
+    container:   { padding: 24, paddingTop: 70, paddingBottom: 40 },
+    back:        { marginBottom: 24 },
+    backText:    { color: PULSE_COLORS.brand.green, fontSize: 16, fontWeight: '600' },
+    heading:     { fontSize: 28, fontWeight: '800', color: colors.text, marginBottom: 8 },
+    subheading:  { fontSize: 14, color: colors.textSecondary, marginBottom: 28 },
+    button:      { marginTop: 24 },
 
-  fieldBlock:  { marginBottom: 20 },
-  fieldLabel:  { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
+    fieldBlock:  { marginBottom: 20 },
+    fieldLabel:  { fontSize: 11, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 },
 
-  pillRow: { flexDirection: 'row', gap: 8 },
-  pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    pillRow: { flexDirection: 'row', gap: 8 },
+    pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 
-  pill: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surface,
-  },
-  pillActive: {
-    borderColor: PULSE_COLORS.brand.green,
-    backgroundColor: `${PULSE_COLORS.brand.green}18`,
-  },
-  pillText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: PULSE_COLORS.ui.textSecondary,
-  },
-  pillTextActive: {
-    color: PULSE_COLORS.brand.green,
-  },
-});
+    pill: {
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    pillActive: {
+      borderColor: PULSE_COLORS.brand.green,
+      backgroundColor: `${PULSE_COLORS.brand.green}18`,
+    },
+    pillText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textSecondary,
+    },
+    pillTextActive: {
+      color: PULSE_COLORS.brand.green,
+    },
+  });
+}

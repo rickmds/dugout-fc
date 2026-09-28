@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { posthog } from '../../lib/posthog';
-import { PULSE_COLORS } from '../../constants/colors';
+import { ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import { resolveAccent, clubInitials, contrastText } from '../../lib/brandColor';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 
@@ -20,6 +21,8 @@ export default function ClubWelcomeScreen() {
   const { club } = useAuth();
   const accent = resolveAccent(club?.primary_color);
   const initials = clubInitials(club?.name);
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const crestAnim = useRef(new Animated.Value(0)).current;
   const titleAnim = useRef(new Animated.Value(0)).current;
@@ -87,33 +90,35 @@ export default function ClubWelcomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background, paddingHorizontal: 28, justifyContent: 'space-between' },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 28, justifyContent: 'space-between' },
 
-  glowTopRight: { position: 'absolute', top: -100, right: -100, width: 320, height: 320, borderRadius: 160 },
-  glowBottomLeft: { position: 'absolute', bottom: 100, left: -120, width: 260, height: 260, borderRadius: 130 },
+    glowTopRight: { position: 'absolute', top: -100, right: -100, width: 320, height: 320, borderRadius: 160 },
+    glowBottomLeft: { position: 'absolute', bottom: 100, left: -120, width: 260, height: 260, borderRadius: 130 },
 
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 28 },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 28 },
 
-  crestRing: {
-    width: 120, height: 120, borderRadius: 28, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1,
-    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 30,
-  },
-  crestImage: { width: 96, height: 96, borderRadius: 20 },
-  crestFallback: { width: 96, height: 96, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  crestInitials: { fontSize: 32, fontWeight: '800' },
+    crestRing: {
+      width: 120, height: 120, borderRadius: 28, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: colors.surface, borderWidth: 1,
+      shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 30,
+    },
+    crestImage: { width: 96, height: 96, borderRadius: 20 },
+    crestFallback: { width: 96, height: 96, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    crestInitials: { fontSize: 32, fontWeight: '800' },
 
-  eyebrow: {
-    fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.muted,
-    letterSpacing: 2, textAlign: 'center', marginBottom: 6,
-  },
-  clubName: {
-    fontSize: 40, fontWeight: '900', color: PULSE_COLORS.ui.text,
-    letterSpacing: -1, textAlign: 'center', lineHeight: 44,
-  },
-  subtitle: {
-    fontSize: 15, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary,
-    textAlign: 'center', marginTop: 12,
-  },
-});
+    eyebrow: {
+      fontSize: 13, fontWeight: '700', color: colors.muted,
+      letterSpacing: 2, textAlign: 'center', marginBottom: 6,
+    },
+    clubName: {
+      fontSize: 40, fontWeight: '900', color: colors.text,
+      letterSpacing: -1, textAlign: 'center', lineHeight: 44,
+    },
+    subtitle: {
+      fontSize: 15, fontWeight: '500', color: colors.textSecondary,
+      textAlign: 'center', marginTop: 12,
+    },
+  });
+}

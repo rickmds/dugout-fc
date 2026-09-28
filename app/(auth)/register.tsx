@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -6,7 +6,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { signInWithApple, signInWithGoogle, SOCIAL_AUTH_ENABLED } from '../../lib/auth';
 import { routeAfterAuth, recoverOrShowError as sharedRecoverOrShowError } from '../../lib/authRouting';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import AuthInput from '../../components/ui/AuthInput';
 import PrimaryButton from '../../components/ui/PrimaryButton';
 import SocialButton from '../../components/ui/SocialButton';
@@ -20,6 +21,8 @@ function mapAuthError(message: string): string {
 export default function RegisterScreen() {
   const router = useRouter();
   const { refreshProfile } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -235,82 +238,84 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-    backgroundColor: PULSE_COLORS.ui.background,
-  },
-  container: {
-    padding: 24,
-    paddingTop: 70,
-  },
-  brandMark: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 32,
-  },
-  brandLogo: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-  },
-  brandName: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: PULSE_COLORS.ui.text,
-    letterSpacing: -0.5,
-  },
-  heading: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: PULSE_COLORS.ui.text,
-    marginBottom: 24,
-  },
-  createButton: {
-    marginTop: 8,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: PULSE_COLORS.ui.border,
-  },
-  dividerText: {
-    color: PULSE_COLORS.ui.textSecondary,
-    marginHorizontal: 12,
-    fontSize: 13,
-  },
-  switchLink: {
-    marginTop: 28,
-    alignItems: 'center',
-  },
-  switchText: {
-    color: PULSE_COLORS.ui.textSecondary,
-    fontSize: 14,
-  },
-  switchTextBold: {
-    color: PULSE_COLORS.brand.green,
-    fontWeight: '700',
-  },
-  terms: {
-    color: PULSE_COLORS.ui.muted,
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 24,
-  },
-  confirmBody: {
-    fontSize: 15,
-    color: PULSE_COLORS.ui.textSecondary,
-    lineHeight: 22,
-    marginBottom: 28,
-  },
-  confirmEmail: {
-    color: PULSE_COLORS.ui.text,
-    fontWeight: '700',
-  },
-});
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    flex: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    container: {
+      padding: 24,
+      paddingTop: 70,
+    },
+    brandMark: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 32,
+    },
+    brandLogo: {
+      width: 34,
+      height: 34,
+      borderRadius: 8,
+    },
+    brandName: {
+      fontSize: 20,
+      fontWeight: '900',
+      color: colors.text,
+      letterSpacing: -0.5,
+    },
+    heading: {
+      fontSize: 28,
+      fontWeight: '800',
+      color: colors.text,
+      marginBottom: 24,
+    },
+    createButton: {
+      marginTop: 8,
+    },
+    divider: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginVertical: 24,
+    },
+    dividerLine: {
+      flex: 1,
+      height: 1,
+      backgroundColor: colors.border,
+    },
+    dividerText: {
+      color: colors.textSecondary,
+      marginHorizontal: 12,
+      fontSize: 13,
+    },
+    switchLink: {
+      marginTop: 28,
+      alignItems: 'center',
+    },
+    switchText: {
+      color: colors.textSecondary,
+      fontSize: 14,
+    },
+    switchTextBold: {
+      color: PULSE_COLORS.brand.green,
+      fontWeight: '700',
+    },
+    terms: {
+      color: colors.muted,
+      fontSize: 12,
+      textAlign: 'center',
+      marginTop: 24,
+    },
+    confirmBody: {
+      fontSize: 15,
+      color: colors.textSecondary,
+      lineHeight: 22,
+      marginBottom: 28,
+    },
+    confirmEmail: {
+      color: colors.text,
+      fontWeight: '700',
+    },
+  });
+}
