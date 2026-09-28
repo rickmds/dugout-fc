@@ -50,6 +50,13 @@ type Props = {
    * nonResponderProfileIds.length (that counts accounts, which
    * double-counts a player with two linked guardians). */
   nonResponderCount?: number;
+  /** An option a CO-guardian of one of this viewer's own players already
+   * voted for on this poll — a player can have two linked guardian
+   * accounts (e.g. both parents), and nothing used to stop both from
+   * casting their own, possibly conflicting vote for the same kid.
+   * Present for any non-coach viewer (fetched regardless of whether
+   * they've voted themselves), null/undefined when there's no conflict. */
+  familyVoteOptionId?: string | null;
   primaryColor: string;
   rgba: (a: number) => string;
   onDelete: (pollId: string) => void;
@@ -65,7 +72,7 @@ function timeLeft(closesAt: string): string {
   return `Closes in ${Math.floor(h / 24)}d`;
 }
 
-const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, nonResponderProfileIds, nonResponderCount, primaryColor, rgba, onDelete, onVoteChange }: Props) {
+const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, nonResponderProfileIds, nonResponderCount, familyVoteOptionId, primaryColor, rgba, onDelete, onVoteChange }: Props) {
   const [voting, setVoting] = useState(false);
   const [revealOptionId, setRevealOptionId] = useState<string | null>(null);
   const [nudging, setNudging] = useState(false);
@@ -101,14 +108,21 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
     && myRsvpEventIds && !myRsvpEventIds.has(poll.event_id)
     && !isCoach;
 
+  // A co-guardian of one of this viewer's own players already voted — only
+  // blocks a FIRST vote from this account (one that would create a second,
+  // possibly-conflicting answer for the same kid); doesn't retroactively
+  // touch a vote this account already cast before the conflict existed.
+  const familyOption = familyVoteOptionId ? poll.options.find(o => o.id === familyVoteOptionId) : undefined;
+  const familyConflict = !isCoach && !hasVoted && !!familyVoteOptionId;
+
   // Result visibility
   const showResults = isCoach
     || isClosed
     || poll.result_visibility === 'always'
-    || (poll.result_visibility === 'after_vote' && hasVoted);
+    || (poll.result_visibility === 'after_vote' && (hasVoted || familyConflict));
 
   async function handleVote(optionId: string) {
-    if (voting || isClosed || isRsvpBlocked) return;
+    if (voting || isClosed || isRsvpBlocked || familyConflict) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setVoting(true);
 
@@ -228,12 +242,22 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
           </View>
         )}
 
+        {/* A co-guardian already answered for this same player */}
+        {familyConflict && (
+          <View style={styles.gateRow}>
+            <Ionicons name="people-outline" size={13} color={PULSE_COLORS.ui.muted} />
+            <Text style={styles.gateText}>
+              Already answered by your family{familyOption ? `: ${familyOption.label}` : ''}
+            </Text>
+          </View>
+        )}
+
         {/* Options */}
         {poll.options.sort((a, b) => a.sort_order - b.sort_order).map(opt => {
           const count = voteCounts[opt.id] ?? 0;
           const pct = totalVoters > 0 ? Math.round((count / totalVoters) * 100) : 0;
           const isSelected = myVotedOptionIds.has(opt.id);
-          const canVote = !isClosed && !isRsvpBlocked && !voting && !isCoach;
+          const canVote = !isClosed && !isRsvpBlocked && !voting && !isCoach && !familyConflict;
           const canReveal = canRevealVoters && count > 0;
           const isLeading = showResults && totalVoters > 0 && count === maxCount && count > 0;
 
@@ -325,7 +349,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
               {canRevealVoters && totalVoters > 0 ? 'Tap a result to see who voted' : 'View only'}
             </Text>
           )}
-          {!hasVoted && !isClosed && !isRsvpBlocked && !isCoach && (
+          {!hasVoted && !isClosed && !isRsvpBlocked && !isCoach && !familyConflict && (
             <Text style={[styles.tapHint, { color: primaryColor }]}>
               {poll.is_multiple_choice ? 'Select all that apply' : 'Tap to vote'}
             </Text>

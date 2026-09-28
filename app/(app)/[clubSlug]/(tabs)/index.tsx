@@ -349,6 +349,7 @@ export default function HomeScreen() {
   const [pollVoterNames, setPollVoterNames] = useState<Record<string, string>>({});
   const [pollNonResponders, setPollNonResponders] = useState<Record<string, string[]>>({});
   const [pollNonResponderCounts, setPollNonResponderCounts] = useState<Record<string, number>>({});
+  const [pollFamilyVoteOptionIds, setPollFamilyVoteOptionIds] = useState<Record<string, string | null>>({});
   const [showPollModal, setShowPollModal] = useState(false);
   const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
 
@@ -1030,7 +1031,7 @@ export default function HomeScreen() {
         // Player name(s), not the parent account's own name — a coach reads
         // "who voted" as which family/kid, and a parent guarding twins on
         // this team gets both names joined.
-        const [optionsRes, votesRes, namesRes, nonRespResults] = await Promise.all([
+        const [optionsRes, votesRes, namesRes, nonRespResults, familyResults] = await Promise.all([
           sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
           sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
           isCoach ? sb.rpc('get_guardian_player_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
@@ -1040,6 +1041,11 @@ export default function HomeScreen() {
           // guardian accounts).
           isCoach
             ? Promise.all(pollIds.map((id) => sb.rpc('get_poll_nonresponders', { p_poll_id: id }).then((r: any) => [id, r.data ?? []])))
+            : Promise.resolve([]),
+          // Has a co-guardian of one of MY players already voted here?
+          // Blocks a second, independent vote for the same kid.
+          !isCoach
+            ? Promise.all(pollIds.map((id) => sb.rpc('get_family_vote_conflict', { p_poll_id: id }).then((r: any) => [id, r.data ?? []])))
             : Promise.resolve([]),
         ]);
         setPollVoterNames(Object.fromEntries(
@@ -1051,6 +1057,9 @@ export default function HomeScreen() {
           nonResponderCountsByPoll[pollId] = rows.length;
           nonRespondersByPoll[pollId] = [...new Set(rows.flatMap((r) => r.guardian_profile_ids))];
         }
+        setPollFamilyVoteOptionIds(Object.fromEntries(
+          (familyResults as [string, { option_id: string }[]][]).map(([pollId, rows]) => [pollId, rows[0]?.option_id ?? null])
+        ));
         setPollNonResponders(nonRespondersByPoll);
         setPollNonResponderCounts(nonResponderCountsByPoll);
 
@@ -2109,6 +2118,7 @@ export default function HomeScreen() {
                 voterNames={pollVoterNames}
                 nonResponderProfileIds={pollNonResponders[poll.id]}
                 nonResponderCount={pollNonResponderCounts[poll.id]}
+                familyVoteOptionId={pollFamilyVoteOptionIds[poll.id]}
                 primaryColor={primaryColor}
                 rgba={rgba}
                 onDelete={handleDeletePoll}

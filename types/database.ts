@@ -6429,6 +6429,13 @@ export type Database = {
           profile_id: string
         }[]
       }
+      get_family_vote_conflict: {
+        Args: { p_poll_id: string }
+        Returns: {
+          guardian_profile_id: string
+          option_id: string
+        }[]
+      }
       get_guardian_player_names: {
         Args: { p_team_id: string }
         Returns: {

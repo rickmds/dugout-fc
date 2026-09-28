@@ -34,6 +34,7 @@ export default function PollDetailScreen() {
   const [voterNames, setVoterNames] = useState<Record<string, string>>({});
   const [nonResponderIds, setNonResponderIds] = useState<string[]>([]);
   const [nonResponderCount, setNonResponderCount] = useState(0);
+  const [familyVoteOptionId, setFamilyVoteOptionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -77,7 +78,7 @@ export default function PollDetailScreen() {
 
     const teamIsCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
-    const [optionsRes, votesRes, guardedRes, namesRes, nonRespRes] = await Promise.all([
+    const [optionsRes, votesRes, guardedRes, namesRes, nonRespRes, familyRes] = await Promise.all([
       sb.from('team_poll_options').select('id, poll_id, label, sort_order').eq('poll_id', pollId),
       sb.from('team_poll_votes').select('poll_id, option_id, profile_id').eq('poll_id', pollId),
       sb.rpc('get_my_guarded_players').select('id').eq('team_id', pollRow.team_id),
@@ -89,7 +90,11 @@ export default function PollDetailScreen() {
       // guardian voted, so this is NOT just team_members minus voters
       // (that double-counts a player with two linked guardian accounts).
       teamIsCoach ? sb.rpc('get_poll_nonresponders', { p_poll_id: pollId }) : Promise.resolve({ data: [] }),
+      // Has a co-guardian of one of MY players already voted here? Blocks
+      // a second, independent vote for the same kid.
+      !teamIsCoach ? sb.rpc('get_family_vote_conflict', { p_poll_id: pollId }) : Promise.resolve({ data: [] }),
     ]);
+    setFamilyVoteOptionId((familyRes.data as { option_id: string }[] | null)?.[0]?.option_id ?? null);
 
     const votes = (votesRes.data ?? []) as { option_id: string; profile_id: string }[];
 
@@ -204,6 +209,7 @@ export default function PollDetailScreen() {
           voterNames={voterNames}
           nonResponderProfileIds={nonResponderIds}
           nonResponderCount={nonResponderCount}
+          familyVoteOptionId={familyVoteOptionId}
           primaryColor={primaryColor}
           rgba={rgba}
           onDelete={handleDelete}

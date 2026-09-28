@@ -403,6 +403,7 @@ export default function EventDetailScreen() {
   const [pollVoterNames, setPollVoterNames] = useState<Record<string, string>>({});
   const [pollNonResponders, setPollNonResponders] = useState<Record<string, string[]>>({});
   const [pollNonResponderCounts, setPollNonResponderCounts] = useState<Record<string, number>>({});
+  const [pollFamilyVoteOptionIds, setPollFamilyVoteOptionIds] = useState<Record<string, string | null>>({});
   const [showEventPollModal, setShowEventPollModal] = useState(false);
 
   type NcsaCoachContact = { role: string; first: string; last: string; email: string | null; cell: string | null; homephone: string | null };
@@ -630,7 +631,7 @@ export default function EventDetailScreen() {
 
     if (pollRows?.length > 0) {
       const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
-      const [optRes, voteRes, namesRes, nonRespResults] = await Promise.all([
+      const [optRes, voteRes, namesRes, nonRespResults, familyResults] = await Promise.all([
         sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
         sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
         // Player name(s), not the parent account's own name — a coach reads
@@ -643,9 +644,17 @@ export default function EventDetailScreen() {
         isCoach && team
           ? Promise.all(pollIds.map((id) => sb.rpc('get_poll_nonresponders', { p_poll_id: id }).then((r: any) => [id, r.data ?? []])))
           : Promise.resolve([]),
+        // Has a co-guardian of one of MY players already voted here?
+        // Blocks a second, independent vote for the same kid.
+        !isCoach
+          ? Promise.all(pollIds.map((id) => sb.rpc('get_family_vote_conflict', { p_poll_id: id }).then((r: any) => [id, r.data ?? []])))
+          : Promise.resolve([]),
       ]);
       setPollVoterNames(Object.fromEntries(
         ((namesRes.data ?? []) as { profile_id: string; player_names: string | null }[]).map((r) => [r.profile_id, r.player_names ?? ''])
+      ));
+      setPollFamilyVoteOptionIds(Object.fromEntries(
+        (familyResults as [string, { option_id: string }[]][]).map(([pollId, rows]) => [pollId, rows[0]?.option_id ?? null])
       ));
       const nonRespondersByPoll: Record<string, string[]> = {};
       const nonResponderCountsByPoll: Record<string, number> = {};
@@ -2379,6 +2388,7 @@ export default function EventDetailScreen() {
                   voterNames={pollVoterNames}
                   nonResponderProfileIds={pollNonResponders[poll.id]}
                   nonResponderCount={pollNonResponderCounts[poll.id]}
+                  familyVoteOptionId={pollFamilyVoteOptionIds[poll.id]}
                   primaryColor={primaryColor}
                   rgba={rgba}
                   onDelete={async (pollId) => {
