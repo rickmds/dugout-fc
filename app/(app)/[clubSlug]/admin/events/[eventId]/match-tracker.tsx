@@ -1251,7 +1251,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                 </TouchableOpacity>
               : <TouchableOpacity style={[st.overlayBtn, { backgroundColor: primaryColor }]} onPress={async () => {
                   await saveScore(scoreHome, scoreAway);
-                  sendTournamentResultPush(tournamentId, teamId, scoreHome, scoreAway);
+                  sendTournamentResultPush(tournamentId, teamId, scoreHome, scoreAway, profile?.full_name ?? undefined);
                   pendingCloseRef.current = true;
                   setOverlay(null);
                 }}>

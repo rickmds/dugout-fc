@@ -62,6 +62,7 @@ export async function sendTournamentResultPush(
   teamId: string | null,
   finalHome: number,
   finalAway: number,
+  reporterName?: string,
 ): Promise<void> {
   if (!tournamentId || !teamId) return;
   try {
@@ -91,11 +92,12 @@ export async function sendTournamentResultPush(
     }
 
     const title = won ? "🎉 You're through!" : 'Tournament complete';
+    const reportedBy = reporterName ? ` — reported by ${reporterName}` : '';
     const body = won
-      ? `Final: ${finalHome}–${finalAway}. ${t.name} continues — nice work advancing!`
+      ? `Final: ${finalHome}–${finalAway}. ${t.name} continues — nice work advancing!${reportedBy}`
       : priorWins > 0
-        ? `Final: ${finalHome}–${finalAway}. ${t.name} ends here — great run.`
-        : `Final: ${finalHome}–${finalAway}. ${t.name} ends here.`;
+        ? `Final: ${finalHome}–${finalAway}. ${t.name} ends here — great run.${reportedBy}`
+        : `Final: ${finalHome}–${finalAway}. ${t.name} ends here.${reportedBy}`;
     // Push only — this is a quick score update, not something that needs an
     // email in every inbox too.
     await sendTeamPush({
