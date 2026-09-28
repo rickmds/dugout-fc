@@ -440,6 +440,13 @@ export default function ConversationScreen() {
         setReactions((prev) => {
           const existing = prev[raw.message_id] ?? [];
           const i = existing.findIndex((r) => r.emoji === raw.emoji);
+          // toggleReaction already applies this optimistically for my own
+          // reaction, before this event round-trips back — merge
+          // idempotently (skip if already present) instead of blindly
+          // incrementing, or my own add would get double-counted. Also
+          // correctly picks up a second device reacting under the same
+          // account, since that arrives as a genuinely new profile_id here.
+          if (i !== -1 && existing[i].profileIds.includes(raw.profile_id)) return prev;
           const mine = raw.profile_id === profile?.id;
           const next = i === -1
             ? [...existing, { emoji: raw.emoji, count: 1, mine, profileIds: [raw.profile_id] }]
@@ -457,6 +464,10 @@ export default function ConversationScreen() {
           if (!existing) return prev;
           const i = existing.findIndex((r) => r.emoji === raw.emoji);
           if (i === -1) return prev;
+          // Same idempotent-merge reasoning as the INSERT handler above —
+          // if toggleReaction already removed this optimistically, the echo
+          // of that same delete must not decrement the count a second time.
+          if (!existing[i].profileIds.includes(raw.profile_id)) return prev;
           const wasMine = raw.profile_id === profile?.id;
           const nextCount = existing[i].count - 1;
           const next = nextCount <= 0
@@ -488,15 +499,74 @@ export default function ConversationScreen() {
     });
   }
 
+  // Applies the change to local state immediately, synchronously with the
+  // tap — the realtime INSERT/DELETE handlers above merge their own echo of
+  // this same change idempotently, so they never double it up. Without this,
+  // `mine` only ever updated once the realtime round-trip came back, so
+  // tapping again before it did (e.g. reacting by mistake, then immediately
+  // trying to undo it) still saw the stale "not mine" state and fired a
+  // second INSERT instead of a DELETE — which silently failed on the
+  // (message_id, profile_id, emoji) unique constraint, looking exactly like
+  // the reaction could never be removed.
   async function toggleReaction(messageId: string, emoji: string) {
     if (!profile) return;
     const existing = reactions[messageId]?.find((r) => r.emoji === emoji);
-    if (existing?.mine) {
-      await supabase.from('message_reactions').delete()
-        .eq('message_id', messageId).eq('profile_id', profile.id).eq('emoji', emoji);
-    } else {
-      await supabase.from('message_reactions').insert({
-        message_id: messageId, conversation_id: conversationId, profile_id: profile.id, emoji,
+    const removing = !!existing?.mine;
+    const myId = profile.id;
+
+    setReactions((prev) => {
+      const list = prev[messageId] ?? [];
+      const i = list.findIndex((r) => r.emoji === emoji);
+      let next: ReactionSummary[];
+      if (removing) {
+        if (i === -1) return prev;
+        const nextCount = list[i].count - 1;
+        next = nextCount <= 0
+          ? list.filter((_, idx) => idx !== i)
+          : list.map((r, idx) => idx === i
+              ? { ...r, count: nextCount, mine: false, profileIds: r.profileIds.filter((id) => id !== myId) }
+              : r);
+      } else {
+        next = i === -1
+          ? [...list, { emoji, count: 1, mine: true, profileIds: [myId] }]
+          : list.map((r, idx) => idx === i ? { ...r, count: r.count + 1, mine: true, profileIds: [...r.profileIds, myId] } : r);
+      }
+      return { ...prev, [messageId]: next };
+    });
+
+    const { error } = removing
+      ? await supabase.from('message_reactions').delete()
+          .eq('message_id', messageId).eq('profile_id', myId).eq('emoji', emoji)
+      : await supabase.from('message_reactions').insert({
+          message_id: messageId, conversation_id: conversationId, profile_id: myId, emoji,
+        });
+
+    if (error) {
+      console.error('[Conversation] toggleReaction error:', error.message);
+      // Revert — put it back exactly the way it was before the optimistic
+      // update above, rather than trusting a second derived computation.
+      setReactions((prev) => {
+        const list = prev[messageId] ?? [];
+        const i = list.findIndex((r) => r.emoji === emoji);
+        let next: ReactionSummary[];
+        if (removing) {
+          // The delete failed, so the reaction is still really there — add
+          // it back.
+          next = i === -1
+            ? [...list, { emoji, count: 1, mine: true, profileIds: [myId] }]
+            : list.map((r, idx) => idx === i ? { ...r, count: r.count + 1, mine: true, profileIds: [...r.profileIds, myId] } : r);
+        } else {
+          // The insert failed, so it never actually got added — take it
+          // back off.
+          if (i === -1) return prev;
+          const nextCount = list[i].count - 1;
+          next = nextCount <= 0
+            ? list.filter((_, idx) => idx !== i)
+            : list.map((r, idx) => idx === i
+                ? { ...r, count: nextCount, mine: false, profileIds: r.profileIds.filter((id) => id !== myId) }
+                : r);
+        }
+        return { ...prev, [messageId]: next };
       });
     }
   }
