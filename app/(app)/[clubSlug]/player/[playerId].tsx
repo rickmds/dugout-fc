@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,7 +24,8 @@ import { toLocalDateStr } from '../../../../lib/localDate';
 import { sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { useClub } from '../../../../hooks/useClub';
 import { formatPhone } from '../../../../lib/formatPhone';
 import ClubHeader from '../../../../components/ui/ClubHeader';
@@ -157,6 +158,8 @@ const FOOT_LABEL: Record<string, string> = { left: 'Left foot', right: 'Right fo
 
 export default function PlayerProfileScreen() {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const { playerId } = useLocalSearchParams<{ playerId: string }>();
   const { team, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
@@ -960,9 +963,9 @@ export default function PlayerProfileScreen() {
             <Ionicons
               name="bandage-outline"
               size={13}
-              color={player.is_injured ? '#ef4444' : PULSE_COLORS.ui.muted}
+              color={player.is_injured ? '#ef4444' : colors.muted}
             />
-            <Text style={[st.injuredBadgeText, { color: player.is_injured ? '#ef4444' : PULSE_COLORS.ui.muted }]}>
+            <Text style={[st.injuredBadgeText, { color: player.is_injured ? '#ef4444' : colors.muted }]}>
               {player.is_injured ? 'Injured' : isCoach ? 'Mark injured' : ''}
             </Text>
             {isCoach && player.is_injured && (
@@ -974,7 +977,7 @@ export default function PlayerProfileScreen() {
         {/* Private badge for non-privileged parents */}
         {player.is_private && !isCoach && !isMyPlayer && (
           <View style={st.privateBadge}>
-            <Ionicons name="lock-closed" size={11} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="lock-closed" size={11} color={colors.muted} />
             <Text style={st.privateBadgeText}>Private profile</Text>
           </View>
         )}
@@ -984,7 +987,7 @@ export default function PlayerProfileScreen() {
           <View style={st.heroMeta}>
             {player.date_of_birth && (
               <View style={st.heroMetaItem}>
-                <Ionicons name="calendar-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="calendar-outline" size={12} color={colors.muted} />
                 <Text style={st.heroMetaText}>Age {ageFromDob(player.date_of_birth)}</Text>
               </View>
             )}
@@ -993,7 +996,7 @@ export default function PlayerProfileScreen() {
             )}
             {player.preferred_foot && (
               <View style={st.heroMetaItem}>
-                <Ionicons name="footsteps-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="footsteps-outline" size={12} color={colors.muted} />
                 <Text style={st.heroMetaText}>{FOOT_LABEL[player.preferred_foot]}</Text>
               </View>
             )}
@@ -1082,7 +1085,7 @@ export default function PlayerProfileScreen() {
               <View style={st.editSheetTitleRow}>
                 <Text style={st.sheetTitle}>Edit Player</Text>
                 <TouchableOpacity onPress={() => setShowEdit(false)}>
-                  <Ionicons name="close" size={22} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close" size={22} color={colors.muted} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1104,7 +1107,7 @@ export default function PlayerProfileScreen() {
                       style={st.photoPickerImg}
                     />
                   ) : (
-                    <Ionicons name="person" size={28} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="person" size={28} color={colors.muted} />
                   )}
                   <View style={[st.photoPickerBadge, { backgroundColor: primaryColor }]}>
                     <Ionicons name="camera" size={12} color="#fff" />
@@ -1116,7 +1119,7 @@ export default function PlayerProfileScreen() {
                     {(editPhotoUri ?? player?.photo_url) ? 'Tap to change photo' : 'Tap to add photo'}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="chevron-forward" size={16} color={colors.muted} />
               </TouchableOpacity>
 
               {/* ─ IDENTITY ─ */}
@@ -1128,7 +1131,7 @@ export default function PlayerProfileScreen() {
                 value={editName}
                 onChangeText={setEditName}
                 placeholder="Jake Thompson"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 autoFocus
               />
 
@@ -1137,8 +1140,8 @@ export default function PlayerProfileScreen() {
                 style={st.datePickerBtn}
                 onPress={() => { Keyboard.dismiss(); setShowDatePicker(true); }}
               >
-                <Ionicons name="calendar-outline" size={16} color={PULSE_COLORS.ui.muted} />
-                <Text style={[st.datePickerBtnText, !editDob && { color: PULSE_COLORS.ui.muted }]}>
+                <Ionicons name="calendar-outline" size={16} color={colors.muted} />
+                <Text style={[st.datePickerBtnText, !editDob && { color: colors.muted }]}>
                   {editDob
                     ? editDob.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
                     : 'Select date of birth'}
@@ -1148,7 +1151,7 @@ export default function PlayerProfileScreen() {
                     onPress={(e) => { e.stopPropagation(); setEditDob(null); }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
@@ -1159,7 +1162,7 @@ export default function PlayerProfileScreen() {
                 value={editJersey}
                 onChangeText={setEditJersey}
                 placeholder="10"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 keyboardType="number-pad"
               />
 
@@ -1226,7 +1229,7 @@ export default function PlayerProfileScreen() {
                     value={editNotes}
                     onChangeText={setEditNotes}
                     placeholder="Strengths, areas to develop, physical attributes…"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     multiline
                     numberOfLines={4}
                     textAlignVertical="top"
@@ -1245,7 +1248,7 @@ export default function PlayerProfileScreen() {
                   <Ionicons
                     name={editPrivate ? 'lock-closed-outline' : 'people-outline'}
                     size={18}
-                    color={editPrivate ? primaryColor : PULSE_COLORS.ui.muted}
+                    color={editPrivate ? primaryColor : colors.muted}
                   />
                   <View style={st.privacyText}>
                     <Text style={st.privacyLabel}>
@@ -1312,7 +1315,7 @@ export default function PlayerProfileScreen() {
                   maximumDate={new Date()}
                   minimumDate={new Date(1990, 0, 1)}
                   onChange={(_e, date) => { if (date) setEditDob(date); }}
-                  textColor={PULSE_COLORS.ui.text}
+                  textColor={colors.text}
                   style={st.dobPicker}
                 />
               </View>
@@ -1335,7 +1338,7 @@ export default function PlayerProfileScreen() {
                   {editingInvite ? 'Edit Guardian' : 'Add Guardian'}
                 </Text>
                 <TouchableOpacity onPress={() => setShowAddGuardian(false)}>
-                  <Ionicons name="close" size={22} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close" size={22} color={colors.muted} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1355,7 +1358,7 @@ export default function PlayerProfileScreen() {
                 value={guardianName}
                 onChangeText={setGuardianName}
                 placeholder="Sarah Thompson"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 autoFocus
               />
 
@@ -1367,7 +1370,7 @@ export default function PlayerProfileScreen() {
                 value={guardianEmail}
                 onChangeText={setGuardianEmail}
                 placeholder="parent@example.com"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 editable={!editingInvite}
@@ -1379,7 +1382,7 @@ export default function PlayerProfileScreen() {
                 value={guardianPhone}
                 onChangeText={setGuardianPhone}
                 placeholder="+1 (555) 000-0000"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 keyboardType="phone-pad"
               />
 
@@ -1389,7 +1392,7 @@ export default function PlayerProfileScreen() {
                 value={guardianAddress}
                 onChangeText={setGuardianAddress}
                 placeholder="123 Main St, Anytown, NJ"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 autoCapitalize="words"
               />
 
@@ -1456,7 +1459,7 @@ export default function PlayerProfileScreen() {
                   {editingEmergencyContact ? 'Edit Emergency Contact' : 'Add Emergency Contact'}
                 </Text>
                 <TouchableOpacity onPress={() => setShowEmergencyModal(false)}>
-                  <Ionicons name="close" size={22} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close" size={22} color={colors.muted} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1475,7 +1478,7 @@ export default function PlayerProfileScreen() {
                 value={emergencyName}
                 onChangeText={setEmergencyName}
                 placeholder="Grandma Sue"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 autoFocus
               />
 
@@ -1485,7 +1488,7 @@ export default function PlayerProfileScreen() {
                 value={emergencyPhone}
                 onChangeText={setEmergencyPhone}
                 placeholder="+1 (555) 000-0000"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 keyboardType="phone-pad"
               />
 
@@ -1589,6 +1592,8 @@ function PlayerTab({
   deleting: boolean;
 }) {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
   const primaryInvite = invites[0] ?? null;
@@ -1639,7 +1644,7 @@ function PlayerTab({
                   <Text style={st.ptHeroStatNum}>{gamesPlayed}</Text>
                   <Text style={st.ptHeroStatLabel}>Games</Text>
                 </View>
-                <View style={[st.ptHeroRight, { borderLeftWidth: 1, borderLeftColor: PULSE_COLORS.ui.border }]}>
+                <View style={[st.ptHeroRight, { borderLeftWidth: 1, borderLeftColor: colors.border }]}>
                   <Text style={st.ptHeroStatNum}>{gamesStarted}</Text>
                   <Text style={st.ptHeroStatLabel}>Started</Text>
                 </View>
@@ -1743,7 +1748,7 @@ function PlayerTab({
       </Text>
       {rsvpHistory.length === 0 ? (
         <View style={st.emptyEvents}>
-          <Ionicons name="calendar-outline" size={22} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="calendar-outline" size={22} color={colors.muted} />
           <Text style={st.emptyText}>No events recorded yet.</Text>
         </View>
       ) : (
@@ -1754,7 +1759,7 @@ function PlayerTab({
             const statusColor =
               isAttending    ? PULSE_COLORS.rsvp.attending
               : isNotAttending ? PULSE_COLORS.rsvp.not_attending
-              : PULSE_COLORS.ui.muted;
+              : colors.muted;
             const statusIcon =
               isAttending    ? 'checkmark-circle'
               : isNotAttending ? 'close-circle'
@@ -1780,8 +1785,8 @@ function PlayerTab({
           {player.is_private ? (
             <View style={st.card}>
               <View style={[st.tableRow, { gap: 10 }]}>
-                <Ionicons name="lock-closed-outline" size={16} color={PULSE_COLORS.ui.muted} />
-                <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14 }}>Contact details are private</Text>
+                <Ionicons name="lock-closed-outline" size={16} color={colors.muted} />
+                <Text style={{ color: colors.muted, fontSize: 14 }}>Contact details are private</Text>
               </View>
             </View>
           ) : primaryInvite ? (
@@ -1789,7 +1794,7 @@ function PlayerTab({
               {guardianName && (
                 <View style={[st.tableRow, st.tableRowBorder]}>
                   <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
-                  <Ionicons name="person-outline" size={15} color={PULSE_COLORS.ui.muted} style={{ marginRight: 8 }} />
+                  <Ionicons name="person-outline" size={15} color={colors.muted} style={{ marginRight: 8 }} />
                   <Text style={[st.tableTitle, { flex: 1 }]}>{guardianName}</Text>
                 </View>
               )}
@@ -1801,7 +1806,7 @@ function PlayerTab({
                 <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
                 <Ionicons name="mail-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
                 <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.email}</Text>
-                <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="chevron-forward" size={13} color={colors.muted} />
               </TouchableOpacity>
               {primaryInvite.phone && (
                 <>
@@ -1814,7 +1819,7 @@ function PlayerTab({
                     <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
                     <Ionicons name="call-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
                     <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{formatPhone(primaryInvite.phone)}</Text>
-                    <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="chevron-forward" size={13} color={colors.muted} />
                   </TouchableOpacity>
                 </>
               )}
@@ -1829,7 +1834,7 @@ function PlayerTab({
                     <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
                     <Ionicons name="home-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
                     <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{guardianAddress}</Text>
-                    <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="chevron-forward" size={13} color={colors.muted} />
                   </TouchableOpacity>
                 </>
               )}
@@ -1837,7 +1842,7 @@ function PlayerTab({
           ) : (
             <View style={st.card}>
               <View style={[st.tableRow, { gap: 10, justifyContent: 'center' }]}>
-                <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14 }}>No contact details added yet</Text>
+                <Text style={{ color: colors.muted, fontSize: 14 }}>No contact details added yet</Text>
               </View>
             </View>
           )}
@@ -1858,7 +1863,7 @@ function PlayerTab({
             <Text style={st.evalLabel}>Player Evaluations</Text>
             <Text style={st.evalSub}>Seasonal reports from your coach</Text>
           </View>
-          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={15} color={colors.muted} />
         </TouchableOpacity>
       )}
 
@@ -1878,7 +1883,7 @@ function PlayerTab({
             <Text style={st.evalLabel}>Shoutouts</Text>
             <Text style={st.evalSub}>Moments your coach has recognized</Text>
           </View>
-          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={15} color={colors.muted} />
         </TouchableOpacity>
       )}
 
@@ -1899,7 +1904,7 @@ function PlayerTab({
             <Text style={st.evalLabel}>My Reflections</Text>
             <Text style={st.evalSub}>How you've felt after each game</Text>
           </View>
-          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={15} color={colors.muted} />
         </TouchableOpacity>
       )}
 
@@ -1974,6 +1979,8 @@ function GuardiansTab({
   onDeleteEmergencyContact: (contact: EmergencyContact) => void;
 }) {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const canManage = isCoach || isMyPlayer;
   const hasAny = guardianProfile || guardianAccess.length > 0 || invites.some(i => !i.accepted_at);
   const primaryInvite = invites.find((i) => i.accepted_by === guardianProfile?.id) ?? invites[0] ?? null;
@@ -2053,7 +2060,7 @@ function GuardiansTab({
               <View style={st.contactRows}>
                 {primaryInvite?.email && (
                   <View style={st.contactRow}>
-                    <Ionicons name="mail-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="mail-outline" size={15} color={colors.muted} />
                     <Text style={st.contactText} numberOfLines={1}>{primaryInvite.email}</Text>
                     <View style={st.contactBtns}>
                       <TouchableOpacity
@@ -2067,7 +2074,7 @@ function GuardiansTab({
                 )}
                 {primaryInvite?.phone && (
                   <View style={[st.contactRow, primaryInvite?.email && st.contactRowTop]}>
-                    <Ionicons name="call-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="call-outline" size={15} color={colors.muted} />
                     <Text style={st.contactText}>{formatPhone(primaryInvite.phone)}</Text>
                     <View style={st.contactBtns}>
                       <TouchableOpacity
@@ -2120,7 +2127,7 @@ function GuardiansTab({
                       {isMyPlayer && (
                         <>
                           <TouchableOpacity onPress={() => onEditEmergencyContact(c)} hitSlop={6}>
-                            <Ionicons name="pencil-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                            <Ionicons name="pencil-outline" size={15} color={colors.muted} />
                           </TouchableOpacity>
                           <TouchableOpacity onPress={() => onDeleteEmergencyContact(c)} hitSlop={6}>
                             <Ionicons name="trash-outline" size={15} color="#EF4444" />
@@ -2188,7 +2195,7 @@ function GuardiansTab({
                       )}
                       {row.invite && (
                         <TouchableOpacity style={st.editGuardianBtn} onPress={() => onEditInvite(row.invite!)}>
-                          <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                          <Ionicons name="pencil-outline" size={14} color={colors.muted} />
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity
@@ -2197,7 +2204,7 @@ function GuardiansTab({
                           ? onRevokeAccess({ profileId: row.accessProfileId!, fullName: row.displayName, avatarUrl: null })
                           : onCancelInvite(row.invite!))}
                       >
-                        <Ionicons name="close" size={13} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="close" size={13} color={colors.muted} />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -2211,7 +2218,7 @@ function GuardiansTab({
                     {/* Email */}
                     {row.email && (
                       <View style={st.contactRow}>
-                        <Ionicons name="mail-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="mail-outline" size={15} color={colors.muted} />
                         <Text style={st.contactText} numberOfLines={1}>{row.email}</Text>
                         <TouchableOpacity
                           style={st.contactBtn}
@@ -2225,7 +2232,7 @@ function GuardiansTab({
                     {/* Phone */}
                     {row.phone ? (
                       <View style={[st.contactRow, st.contactRowTop]}>
-                        <Ionicons name="call-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="call-outline" size={15} color={colors.muted} />
                         <Text style={st.contactText}>{formatPhone(row.phone)}</Text>
                         <View style={st.contactBtns}>
                           <TouchableOpacity
@@ -2247,11 +2254,11 @@ function GuardiansTab({
                         style={[st.contactRow, st.contactRowTop]}
                         onPress={() => onEditInvite(row.invite!)}
                       >
-                        <Ionicons name="call-outline" size={15} color={PULSE_COLORS.ui.border} />
-                        <Text style={[st.contactText, { color: PULSE_COLORS.ui.border }]}>
+                        <Ionicons name="call-outline" size={15} color={colors.border} />
+                        <Text style={[st.contactText, { color: colors.border }]}>
                           Add phone number
                         </Text>
-                        <Ionicons name="add-circle-outline" size={16} color={PULSE_COLORS.ui.border} />
+                        <Ionicons name="add-circle-outline" size={16} color={colors.border} />
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -2266,7 +2273,7 @@ function GuardiansTab({
       {!hasAny && (
         <View style={st.emptyGuardians}>
           <View style={st.emptyIcon}>
-            <Ionicons name="people-outline" size={28} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="people-outline" size={28} color={colors.muted} />
           </View>
           <Text style={st.emptyTitle}>No guardians yet</Text>
           <Text style={st.emptySub}>
@@ -2295,516 +2302,518 @@ function GuardiansTab({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
-  errorText: { color: PULSE_COLORS.ui.textSecondary, fontSize: 16 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    errorText: { color: colors.textSecondary, fontSize: 16 },
 
-  // ── Header
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, paddingTop: 58, paddingBottom: 10,
-  },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  iconBtn:     { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    // ── Header
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 12, paddingTop: 58, paddingBottom: 10,
+    },
+    headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    iconBtn:     { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
-  // ── Hero
-  hero: { alignItems: 'center', paddingTop: 16, paddingBottom: 20 },
-  avatar: {
-    width: 100, height: 100, borderRadius: 50,
-    backgroundColor: '#0A1810',
-    borderWidth: 2.5, borderColor: PULSE_COLORS.brand.green,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-    shadowColor: PULSE_COLORS.brand.green,
-    shadowOpacity: 0.28, shadowRadius: 20, shadowOffset: { width: 0, height: 4 },
-  },
-  avatarText: { fontSize: 34, fontWeight: '900', color: PULSE_COLORS.brand.green },
-  avatarPhoto: { width: 100, height: 100, borderRadius: 50 },
+    // ── Hero
+    hero: { alignItems: 'center', paddingTop: 16, paddingBottom: 20 },
+    avatar: {
+      width: 100, height: 100, borderRadius: 50,
+      backgroundColor: '#0A1810',
+      borderWidth: 2.5, borderColor: PULSE_COLORS.brand.green,
+      alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+      shadowColor: PULSE_COLORS.brand.green,
+      shadowOpacity: 0.28, shadowRadius: 20, shadowOffset: { width: 0, height: 4 },
+    },
+    avatarText: { fontSize: 34, fontWeight: '900', color: PULSE_COLORS.brand.green },
+    avatarPhoto: { width: 100, height: 100, borderRadius: 50 },
 
-  // ── Photo picker in edit modal
-  photoPickerRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 14, paddingHorizontal: 14,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  photoPickerThumb: {
-    width: 60, height: 60, borderRadius: 30,
-    backgroundColor: '#1A1A1A',
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  photoPickerImg: { width: 60, height: 60, borderRadius: 30 },
-  photoPickerBadge: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: PULSE_COLORS.brand.green,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.background,
-  },
-  photoPickerMeta: { flex: 1 },
-  photoPickerLabel: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  photoPickerSub: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+    // ── Photo picker in edit modal
+    photoPickerRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 14,
+      paddingVertical: 14, paddingHorizontal: 14,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+    },
+    photoPickerThumb: {
+      width: 60, height: 60, borderRadius: 30,
+      backgroundColor: '#1A1A1A',
+      borderWidth: 1.5, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    photoPickerImg: { width: 60, height: 60, borderRadius: 30 },
+    photoPickerBadge: {
+      position: 'absolute', bottom: 0, right: 0,
+      width: 20, height: 20, borderRadius: 10,
+      backgroundColor: PULSE_COLORS.brand.green,
+      alignItems: 'center', justifyContent: 'center',
+      borderWidth: 1.5, borderColor: colors.background,
+    },
+    photoPickerMeta: { flex: 1 },
+    photoPickerLabel: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 2 },
+    photoPickerSub: { fontSize: 12, color: colors.muted },
 
-  playerName: {
-    fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text,
-    letterSpacing: -0.5, marginBottom: 10,
-  },
-  badgeRow: { flexDirection: 'row', gap: 8 },
-  badge: {
-    paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  badgeJersey: { borderColor: 'rgba(34,197,94,0.3)', backgroundColor: 'rgba(34,197,94,0.08)' },
-  badgeText:   { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+    playerName: {
+      fontSize: 26, fontWeight: '800', color: colors.text,
+      letterSpacing: -0.5, marginBottom: 10,
+    },
+    badgeRow: { flexDirection: 'row', gap: 8 },
+    badge: {
+      paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20,
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    badgeJersey: { borderColor: 'rgba(34,197,94,0.3)', backgroundColor: 'rgba(34,197,94,0.08)' },
+    badgeText:   { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
 
-  // Hero sub-info
-  heroMeta: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
-  },
-  heroMetaItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  heroMetaText:  { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
-  heroMetaDot:   { fontSize: 12, color: PULSE_COLORS.ui.border },
-  heroNotes: {
-    marginTop: 12, marginHorizontal: 20,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    paddingHorizontal: 14, paddingVertical: 10,
-  },
-  heroNotesText: { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18, fontStyle: 'italic' },
+    // Hero sub-info
+    heroMeta: {
+      flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
+    },
+    heroMetaItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    heroMetaText:  { fontSize: 12, color: colors.muted, fontWeight: '500' },
+    heroMetaDot:   { fontSize: 12, color: colors.border },
+    heroNotes: {
+      marginTop: 12, marginHorizontal: 20,
+      backgroundColor: colors.surface,
+      borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+      paddingHorizontal: 14, paddingVertical: 10,
+    },
+    heroNotesText: { fontSize: 13, color: colors.muted, lineHeight: 18, fontStyle: 'italic' },
 
-  emergencyCard: {
-    backgroundColor: 'rgba(239,68,68,0.06)',
-    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
-    paddingHorizontal: 14, paddingVertical: 10, gap: 4,
-  },
-  emergencyHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
-  emergencyHeaderText: { fontSize: 10, fontWeight: '800', color: '#EF4444', letterSpacing: 1 },
-  emergencyLine: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text, flex: 1 },
-  emergencyNotes: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, lineHeight: 17 },
-  emergencyContactRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  emergencyContactActions: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 },
-  addEmergencyBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    marginTop: 10, paddingVertical: 12, borderRadius: 12,
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
-    backgroundColor: 'rgba(239,68,68,0.06)',
-  },
-  addEmergencyText: { fontSize: 13, fontWeight: '700', color: '#EF4444' },
+    emergencyCard: {
+      backgroundColor: 'rgba(239,68,68,0.06)',
+      borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)',
+      paddingHorizontal: 14, paddingVertical: 10, gap: 4,
+    },
+    emergencyHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+    emergencyHeaderText: { fontSize: 10, fontWeight: '800', color: '#EF4444', letterSpacing: 1 },
+    emergencyLine: { fontSize: 13, fontWeight: '600', color: colors.text, flex: 1 },
+    emergencyNotes: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 17 },
+    emergencyContactRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    emergencyContactActions: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 0 },
+    addEmergencyBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+      marginTop: 10, paddingVertical: 12, borderRadius: 12,
+      borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
+      backgroundColor: 'rgba(239,68,68,0.06)',
+    },
+    addEmergencyText: { fontSize: 13, fontWeight: '700', color: '#EF4444' },
 
-  // ── Tab bar
-  tabBar: {
-    flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  tab:           { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive:     { borderBottomColor: PULSE_COLORS.brand.green },
-  tabText:       { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.muted },
-  tabTextActive: { color: PULSE_COLORS.ui.text, fontWeight: '700' },
+    // ── Tab bar
+    tabBar: {
+      flexDirection: 'row',
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    tab:           { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+    tabActive:     { borderBottomColor: PULSE_COLORS.brand.green },
+    tabText:       { fontSize: 14, fontWeight: '600', color: colors.muted },
+    tabTextActive: { color: colors.text, fontWeight: '700' },
 
-  // ── Scroll
-  scrollContent: { padding: 16 },
+    // ── Scroll
+    scrollContent: { padding: 16 },
 
-  // ── Section labels
-  sectionLabel: {
-    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
-    letterSpacing: 2, marginBottom: 10,
-  },
+    // ── Section labels
+    sectionLabel: {
+      fontSize: 10, fontWeight: '800', color: colors.muted,
+      letterSpacing: 2, marginBottom: 10,
+    },
 
-  // ── Card container
-  card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    overflow: 'hidden',
-  },
+    // ── Card container
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+      overflow: 'hidden',
+    },
 
-  // ── Playing time hero card
-  ptHeroCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    padding: 16,
-  },
-  ptHeroTop: {
-    flexDirection: 'row', alignItems: 'flex-start',
-  },
-  ptHeroLabel: {
-    fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', marginBottom: 4,
-  },
-  ptHeroRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  ptHeroPct: {
-    fontSize: 36, fontWeight: '900', color: PULSE_COLORS.ui.text, letterSpacing: -1,
-  },
-  ptHeroMins: {
-    fontSize: 14, color: PULSE_COLORS.ui.muted, fontWeight: '500',
-  },
-  ptHeroRight: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 4,
-  },
-  ptHeroStatNum:   { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.5 },
-  ptHeroStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+    // ── Playing time hero card
+    ptHeroCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+      padding: 16,
+    },
+    ptHeroTop: {
+      flexDirection: 'row', alignItems: 'flex-start',
+    },
+    ptHeroLabel: {
+      fontSize: 11, color: colors.muted, fontWeight: '600', marginBottom: 4,
+    },
+    ptHeroRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+    ptHeroPct: {
+      fontSize: 36, fontWeight: '900', color: colors.text, letterSpacing: -1,
+    },
+    ptHeroMins: {
+      fontSize: 14, color: colors.muted, fontWeight: '500',
+    },
+    ptHeroRight: {
+      flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 4,
+    },
+    ptHeroStatNum:   { fontSize: 22, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+    ptHeroStatLabel: { fontSize: 11, color: colors.muted, marginTop: 2 },
 
-  // Progress bar — playing time
-  progressTrack: {
-    height: 5, borderRadius: 3, backgroundColor: '#222',
-    overflow: 'hidden', marginTop: 16,
-  },
-  progressFill: {
-    height: 5, borderRadius: 3, backgroundColor: PULSE_COLORS.brand.green,
-  },
+    // Progress bar — playing time
+    progressTrack: {
+      height: 5, borderRadius: 3, backgroundColor: '#222',
+      overflow: 'hidden', marginTop: 16,
+    },
+    progressFill: {
+      height: 5, borderRadius: 3, backgroundColor: PULSE_COLORS.brand.green,
+    },
 
-  // ── Attendance card
-  attendCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    overflow: 'hidden',
-  },
-  attendRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 16,
-    paddingHorizontal: 16, paddingVertical: 14,
-  },
-  attendRowBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  attendLeft:  { flex: 1 },
-  attendLabel: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  attendSub:   { fontSize: 11, color: PULSE_COLORS.ui.muted },
-  attendRight: { alignItems: 'flex-end', minWidth: 56 },
-  attendPct:   { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, marginBottom: 5 },
-  attendTrack: {
-    width: 72, height: 4, borderRadius: 2, backgroundColor: '#222', overflow: 'hidden',
-  },
-  attendFill: { height: 4, borderRadius: 2 },
+    // ── Attendance card
+    attendCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    attendRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 16,
+      paddingHorizontal: 16, paddingVertical: 14,
+    },
+    attendRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+    attendLeft:  { flex: 1 },
+    attendLabel: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 2 },
+    attendSub:   { fontSize: 11, color: colors.muted },
+    attendRight: { alignItems: 'flex-end', minWidth: 56 },
+    attendPct:   { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, marginBottom: 5 },
+    attendTrack: {
+      width: 72, height: 4, borderRadius: 2, backgroundColor: '#222', overflow: 'hidden',
+    },
+    attendFill: { height: 4, borderRadius: 2 },
 
-  // ── Playing time rows (with per-game bar)
-  ptRow: {
-    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10,
-  },
-  ptRowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  ptRowRight: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  ptRowPct: {
-    fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600',
-  },
-  miniTrack: {
-    height: 3, borderRadius: 1.5, backgroundColor: '#1E1E1E',
-    overflow: 'hidden', marginTop: 8,
-  },
-  miniFill: {
-    height: 3, borderRadius: 1.5, backgroundColor: PULSE_COLORS.brand.green, opacity: 0.7,
-  },
+    // ── Playing time rows (with per-game bar)
+    ptRow: {
+      paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10,
+    },
+    ptRowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    ptRowRight: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+    ptRowPct: {
+      fontSize: 11, color: colors.muted, fontWeight: '600',
+    },
+    miniTrack: {
+      height: 3, borderRadius: 1.5, backgroundColor: '#1E1E1E',
+      overflow: 'hidden', marginTop: 8,
+    },
+    miniFill: {
+      height: 3, borderRadius: 1.5, backgroundColor: PULSE_COLORS.brand.green, opacity: 0.7,
+    },
 
-  // ── Table rows (RSVP history)
-  tableRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingVertical: 12,
-  },
-  tableRowBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  typeDot:    { width: 7, height: 7, borderRadius: 3.5, flexShrink: 0 },
-  tableTitle: { flex: 1, fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '500' },
-  tableDate:  { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
-  tableMins:  { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.brand.green, fontVariant: ['tabular-nums'] },
+    // ── Table rows (RSVP history)
+    tableRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      paddingHorizontal: 14, paddingVertical: 12,
+    },
+    tableRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+    typeDot:    { width: 7, height: 7, borderRadius: 3.5, flexShrink: 0 },
+    tableTitle: { flex: 1, fontSize: 14, color: colors.text, fontWeight: '500' },
+    tableDate:  { fontSize: 11, color: colors.muted, fontWeight: '500' },
+    tableMins:  { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.brand.green, fontVariant: ['tabular-nums'] },
 
-  startedPill: {
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: 'rgba(34,197,94,0.14)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  startedText: { fontSize: 9, fontWeight: '900', color: PULSE_COLORS.brand.green },
-  subPill: {
-    paddingHorizontal: 6, paddingVertical: 3, borderRadius: 7,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  subText: { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+    startedPill: {
+      width: 22, height: 22, borderRadius: 11,
+      backgroundColor: 'rgba(34,197,94,0.14)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    startedText: { fontSize: 9, fontWeight: '900', color: PULSE_COLORS.brand.green },
+    subPill: {
+      paddingHorizontal: 6, paddingVertical: 3, borderRadius: 7,
+      backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
+    },
+    subText: { fontSize: 9, fontWeight: '700', color: colors.muted },
 
-  emptyEvents: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 4,
-  },
-  emptyText: { color: PULSE_COLORS.ui.muted, fontSize: 14 },
+    emptyEvents: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      paddingVertical: 4,
+    },
+    emptyText: { color: colors.muted, fontSize: 14 },
 
-  // ── Delete
-  evalBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderRadius: 14, borderWidth: 1, padding: 14, marginTop: 20,
-  },
-  evalIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  evalMeta: { flex: 1 },
-  evalLabel: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  evalSub:   { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+    // ── Delete
+    evalBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      borderRadius: 14, borderWidth: 1, padding: 14, marginTop: 20,
+    },
+    evalIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    evalMeta: { flex: 1 },
+    evalLabel: { fontSize: 14, fontWeight: '700', color: colors.text },
+    evalSub:   { fontSize: 11, color: colors.muted, marginTop: 1 },
 
-  deleteBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14, borderRadius: 14, marginTop: 28,
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.28)',
-    backgroundColor: 'rgba(239,68,68,0.07)',
-  },
-  deleteBtnText: { color: PULSE_COLORS.status.error, fontWeight: '700', fontSize: 15 },
+    deleteBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      gap: 8, paddingVertical: 14, borderRadius: 14, marginTop: 28,
+      borderWidth: 1, borderColor: 'rgba(239,68,68,0.28)',
+      backgroundColor: 'rgba(239,68,68,0.07)',
+    },
+    deleteBtnText: { color: PULSE_COLORS.status.error, fontWeight: '700', fontSize: 15 },
 
-  // ── Guardian rows
-  guardianRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 14, paddingVertical: 14,
-  },
-  guardianAvatar: {
-    width: 46, height: 46, borderRadius: 23,
-    backgroundColor: '#0F1F14',
-    borderWidth: 1.5, borderColor: 'rgba(34,197,94,0.25)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  guardianAvatarMail: {
-    backgroundColor: '#161616',
-    borderColor: PULSE_COLORS.ui.border,
-  },
-  guardianAvatarText: { fontSize: 16, fontWeight: '900', color: PULSE_COLORS.brand.green },
-  guardianMeta: { flex: 1 },
-  guardianName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  guardianSub:  { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+    // ── Guardian rows
+    guardianRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingHorizontal: 14, paddingVertical: 14,
+    },
+    guardianAvatar: {
+      width: 46, height: 46, borderRadius: 23,
+      backgroundColor: '#0F1F14',
+      borderWidth: 1.5, borderColor: 'rgba(34,197,94,0.25)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    guardianAvatarMail: {
+      backgroundColor: '#161616',
+      borderColor: colors.border,
+    },
+    guardianAvatarText: { fontSize: 16, fontWeight: '900', color: PULSE_COLORS.brand.green },
+    guardianMeta: { flex: 1 },
+    guardianName: { fontSize: 15, fontWeight: '600', color: colors.text },
+    guardianSub:  { fontSize: 12, color: colors.muted, marginTop: 2 },
 
-  linkedBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(34,197,94,0.10)',
-    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.22)',
-  },
-  linkedDot: {
-    width: 6, height: 6, borderRadius: 3, backgroundColor: PULSE_COLORS.brand.green,
-  },
-  linkedBadgeText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    linkedBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      backgroundColor: 'rgba(34,197,94,0.10)',
+      borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5,
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.22)',
+    },
+    linkedDot: {
+      width: 6, height: 6, borderRadius: 3, backgroundColor: PULSE_COLORS.brand.green,
+    },
+    linkedBadgeText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.brand.green },
 
-  pendingBadge: {
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  pendingBadgeText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+    pendingBadge: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    pendingBadgeText: { fontSize: 11, fontWeight: '600', color: colors.muted },
 
-  pendingActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  revokeBtn: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
+    pendingActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    revokeBtn: {
+      width: 28, height: 28, borderRadius: 14,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+    },
 
-  // ── Guardians empty state
-  emptyGuardians: { alignItems: 'center', paddingTop: 32, paddingBottom: 12 },
-  emptyIcon: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-  },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 6 },
-  emptySub: {
-    fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center',
-    lineHeight: 20, paddingHorizontal: 20,
-  },
+    // ── Guardians empty state
+    emptyGuardians: { alignItems: 'center', paddingTop: 32, paddingBottom: 12 },
+    emptyIcon: {
+      width: 64, height: 64, borderRadius: 32,
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+    },
+    emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 6 },
+    emptySub: {
+      fontSize: 13, color: colors.muted, textAlign: 'center',
+      lineHeight: 20, paddingHorizontal: 20,
+    },
 
-  addGuardianBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
-    backgroundColor: 'rgba(34,197,94,0.08)',
-  },
-  addGuardianText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    addGuardianBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+      paddingVertical: 14, borderRadius: 14,
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.35)',
+      backgroundColor: 'rgba(34,197,94,0.08)',
+    },
+    addGuardianText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
 
-  // ── Guardian card (full contact)
-  guardianCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    overflow: 'hidden',
-  },
-  guardianCardTop: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 14, paddingVertical: 14,
-  },
-  guardianNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  guardianCardActions: { flexDirection: 'row', gap: 6 },
-  resendBtn: {
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: 'rgba(34,197,94,0.08)',
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  editGuardianBtn: {
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  relBadge: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 8, borderWidth: 1, borderColor: '#2A2A2A',
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  relBadgeText: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5 },
+    // ── Guardian card (full contact)
+    guardianCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    guardianCardTop: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingHorizontal: 14, paddingVertical: 14,
+    },
+    guardianNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+    guardianCardActions: { flexDirection: 'row', gap: 6 },
+    resendBtn: {
+      width: 30, height: 30, borderRadius: 15,
+      backgroundColor: 'rgba(34,197,94,0.08)',
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    editGuardianBtn: {
+      width: 30, height: 30, borderRadius: 15,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    relBadge: {
+      backgroundColor: '#1A1A1A',
+      borderRadius: 8, borderWidth: 1, borderColor: '#2A2A2A',
+      paddingHorizontal: 8, paddingVertical: 3,
+    },
+    relBadgeText: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.5 },
 
-  // Contact rows inside guardian card
-  contactRows: {
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
-    paddingHorizontal: 14, paddingVertical: 4,
-  },
-  contactRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 10,
-  },
-  contactRowTop: { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
-  contactText: { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
-  contactBtns: { flexDirection: 'row' },
-  contactBtn: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
-    backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2A2A2A',
-  },
-  contactBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text },
+    // Contact rows inside guardian card
+    contactRows: {
+      borderTopWidth: 1, borderTopColor: colors.border,
+      paddingHorizontal: 14, paddingVertical: 4,
+    },
+    contactRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingVertical: 10,
+    },
+    contactRowTop: { borderTopWidth: 1, borderTopColor: colors.border },
+    contactText: { flex: 1, fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+    contactBtns: { flexDirection: 'row' },
+    contactBtn: {
+      paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
+      backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2A2A2A',
+    },
+    contactBtnText: { fontSize: 12, fontWeight: '700', color: colors.text },
 
-  inviteNote: {
-    fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 17,
-    marginTop: 12,
-  },
+    inviteNote: {
+      fontSize: 12, color: colors.muted, lineHeight: 17,
+      marginTop: 12,
+    },
 
-  // ── Private badge on hero
-  injuredBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1,
-    marginTop: 8,
-  },
-  injuredBadgeText: { fontSize: 12, fontWeight: '700' },
+    // ── Private badge on hero
+    injuredBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      paddingHorizontal: 10, paddingVertical: 5,
+      borderRadius: 20, borderWidth: 1,
+      marginTop: 8,
+    },
+    injuredBadgeText: { fontSize: 12, fontWeight: '700' },
 
-  privateBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    marginBottom: 8,
-  },
-  privateBadgeText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+    privateBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+      backgroundColor: 'rgba(255,255,255,0.06)',
+      borderWidth: 1, borderColor: colors.border,
+      marginBottom: 8,
+    },
+    privateBadgeText: { fontSize: 11, color: colors.muted, fontWeight: '600' },
 
-  // ── Privacy toggle
-  privacyRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    paddingHorizontal: 14, paddingVertical: 14,
-  },
-  privacyMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  privacyText: { flex: 1 },
-  privacyLabel: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  privacySub: { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
-  toggle: {
-    width: 44, height: 26, borderRadius: 13,
-    backgroundColor: PULSE_COLORS.ui.border,
-    padding: 3, justifyContent: 'center',
-  },
-  toggleOn: { backgroundColor: PULSE_COLORS.brand.green },
-  toggleThumb: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: '#fff',
-  },
-  toggleThumbOn: { alignSelf: 'flex-end' },
+    // ── Privacy toggle
+    privacyRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+      paddingHorizontal: 14, paddingVertical: 14,
+    },
+    privacyMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+    privacyText: { flex: 1 },
+    privacyLabel: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 2 },
+    privacySub: { fontSize: 12, color: colors.muted, lineHeight: 16 },
+    toggle: {
+      width: 44, height: 26, borderRadius: 13,
+      backgroundColor: colors.border,
+      padding: 3, justifyContent: 'center',
+    },
+    toggleOn: { backgroundColor: PULSE_COLORS.brand.green },
+    toggleThumb: {
+      width: 20, height: 20, borderRadius: 10,
+      backgroundColor: '#fff',
+    },
+    toggleThumbOn: { alignSelf: 'flex-end' },
 
-  // ── Date picker button
-  datePickerBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    height: 50, paddingHorizontal: 14, borderRadius: 12,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  datePickerBtnText: {
-    flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text,
-  },
+    // ── Date picker button
+    datePickerBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      height: 50, paddingHorizontal: 14, borderRadius: 12,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    datePickerBtnText: {
+      flex: 1, fontSize: 15, color: colors.text,
+    },
 
-  // ── DOB picker — absolute overlay inside edit modal
-  dobOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'flex-end', zIndex: 100,
-  },
-  dobDismiss: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-  dobSheet: {
-    backgroundColor: '#1C1C1E',
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingBottom: 40,
-  },
-  dobSheetHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4,
-  },
-  dobSheetTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  dobHeaderBtns: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  dobClearBtn: { paddingHorizontal: 12, paddingVertical: 6 },
-  dobClearText: { fontSize: 15, color: PULSE_COLORS.ui.muted },
-  dobDoneBtn: { paddingHorizontal: 14, paddingVertical: 6 },
-  dobDoneText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
-  dobPicker: { width: '100%', height: 200 },
+    // ── DOB picker — absolute overlay inside edit modal
+    dobOverlay: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      justifyContent: 'flex-end', zIndex: 100,
+    },
+    dobDismiss: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+    dobSheet: {
+      backgroundColor: '#1C1C1E',
+      borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      paddingBottom: 40,
+    },
+    dobSheetHeader: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4,
+    },
+    dobSheetTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
+    dobHeaderBtns: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    dobClearBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+    dobClearText: { fontSize: 15, color: colors.muted },
+    dobDoneBtn: { paddingHorizontal: 14, paddingVertical: 6 },
+    dobDoneText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    dobPicker: { width: '100%', height: 200 },
 
-  // ── Modals
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.72)' },
+    // ── Modals
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.72)' },
 
-  // Edit sheet — taller, scrollable
-  editSheet: {
-    backgroundColor: '#111',
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    maxHeight: '92%',
-    borderWidth: 1, borderColor: '#1E1E1E', borderBottomWidth: 0,
-  },
-  editSheetHeader: {
-    paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4,
-  },
-  editSheetTitleRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 8, marginBottom: 4,
-  },
-  editSheetScroll: { flexGrow: 0 },
-  editSheetContent: { paddingHorizontal: 24, paddingBottom: 20 },
+    // Edit sheet — taller, scrollable
+    editSheet: {
+      backgroundColor: '#111',
+      borderTopLeftRadius: 28, borderTopRightRadius: 28,
+      maxHeight: '92%',
+      borderWidth: 1, borderColor: '#1E1E1E', borderBottomWidth: 0,
+    },
+    editSheetHeader: {
+      paddingHorizontal: 24, paddingTop: 16, paddingBottom: 4,
+    },
+    editSheetTitleRow: {
+      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+      marginTop: 8, marginBottom: 4,
+    },
+    editSheetScroll: { flexGrow: 0 },
+    editSheetContent: { paddingHorizontal: 24, paddingBottom: 20 },
 
-  // Add guardian / simple sheet
-  sheet: {
-    backgroundColor: '#111',
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, paddingBottom: 48,
-    borderWidth: 1, borderColor: '#1E1E1E', borderBottomWidth: 0,
-  },
-  sheetHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: '#2A2A2A',
-    alignSelf: 'center', marginBottom: 8,
-  },
-  sheetTitle: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  sheetSub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, marginTop: 6, marginBottom: 4, lineHeight: 18 },
+    // Add guardian / simple sheet
+    sheet: {
+      backgroundColor: '#111',
+      borderTopLeftRadius: 28, borderTopRightRadius: 28,
+      padding: 24, paddingBottom: 48,
+      borderWidth: 1, borderColor: '#1E1E1E', borderBottomWidth: 0,
+    },
+    sheetHandle: {
+      width: 36, height: 4, borderRadius: 2, backgroundColor: '#2A2A2A',
+      alignSelf: 'center', marginBottom: 8,
+    },
+    sheetTitle: { fontSize: 22, fontWeight: '800', color: colors.text },
+    sheetSub:   { fontSize: 13, color: colors.muted, marginTop: 6, marginBottom: 4, lineHeight: 18 },
 
-  // Edit section headers
-  editSection: {
-    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
-    letterSpacing: 2, marginBottom: 2,
-  },
+    // Edit section headers
+    editSection: {
+      fontSize: 10, fontWeight: '800', color: colors.muted,
+      letterSpacing: 2, marginBottom: 2,
+    },
 
-  inputLabel: {
-    fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.muted,
-    letterSpacing: 0.5, marginBottom: 7, marginTop: 16,
-  },
-  input: {
-    backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A',
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13,
-    color: PULSE_COLORS.ui.text, fontSize: 16,
-  },
-  notesInput: {
-    height: 100, paddingTop: 13,
-  },
-  chipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  posRow:  { flexDirection: 'row', gap: 8 },
-  posChip: {
-    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20,
-    borderWidth: 1, borderColor: '#2A2A2A', backgroundColor: '#1A1A1A',
-  },
-  posChipActive:     { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
-  posChipText:       { color: PULSE_COLORS.ui.muted, fontWeight: '700', fontSize: 13 },
-  posChipTextActive: { color: PULSE_COLORS.brand.green },
-  modalBtns: { flexDirection: 'row', gap: 10 },
-  cancelBtn: {
-    flex: 1, padding: 15, borderRadius: 16,
-    borderWidth: 1, borderColor: '#2A2A2A', alignItems: 'center',
-  },
-  cancelBtnText: { color: PULSE_COLORS.ui.muted, fontWeight: '600', fontSize: 15 },
-  saveBtn: {
-    flex: 2, padding: 15, borderRadius: 16,
-    backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center',
-  },
-  saveBtnText: { color: '#000', fontWeight: '800', fontSize: 15 },
-});
+    inputLabel: {
+      fontSize: 11, fontWeight: '600', color: colors.muted,
+      letterSpacing: 0.5, marginBottom: 7, marginTop: 16,
+    },
+    input: {
+      backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A',
+      borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13,
+      color: colors.text, fontSize: 16,
+    },
+    notesInput: {
+      height: 100, paddingTop: 13,
+    },
+    chipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+    posRow:  { flexDirection: 'row', gap: 8 },
+    posChip: {
+      paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20,
+      borderWidth: 1, borderColor: '#2A2A2A', backgroundColor: '#1A1A1A',
+    },
+    posChipActive:     { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
+    posChipText:       { color: colors.muted, fontWeight: '700', fontSize: 13 },
+    posChipTextActive: { color: PULSE_COLORS.brand.green },
+    modalBtns: { flexDirection: 'row', gap: 10 },
+    cancelBtn: {
+      flex: 1, padding: 15, borderRadius: 16,
+      borderWidth: 1, borderColor: '#2A2A2A', alignItems: 'center',
+    },
+    cancelBtnText: { color: colors.muted, fontWeight: '600', fontSize: 15 },
+    saveBtn: {
+      flex: 2, padding: 15, borderRadius: 16,
+      backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center',
+    },
+    saveBtnText: { color: '#000', fontWeight: '800', fontSize: 15 },
+  });
+}

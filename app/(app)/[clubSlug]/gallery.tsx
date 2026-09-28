@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,7 +24,8 @@ import { supabase } from '../../../lib/supabase';
 import { useTeam } from '../../../hooks/useTeam';
 import { useAuth } from '../../../hooks/useAuth';
 import { useClub } from '../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { ThemeColors } from '../../../constants/colors';
+import { useTheme } from '../../../hooks/useTheme';
 import ClubHeader from '../../../components/ui/ClubHeader';
 
 const { width: W } = Dimensions.get('window');
@@ -75,6 +76,8 @@ export default function GalleryScreen() {
   const { team } = useTeam();
   const { profile } = useAuth();
   const { primaryColor } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   // team.myRole is scoped to the currently-active team's own club — an
   // org_admin at their home club who's just a guest/parent elsewhere must
   // not get coach-level UI there just because profile.role is org_admin globally.
@@ -342,7 +345,7 @@ export default function GalleryScreen() {
           }
           ListEmptyComponent={
             <View style={st.empty}>
-              <Ionicons name="images-outline" size={48} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="images-outline" size={48} color={colors.muted} />
               <Text style={st.emptyTitle}>No photos yet</Text>
               <Text style={st.emptySub}>Tap + to share the first photo with your team.</Text>
             </View>
@@ -419,7 +422,7 @@ export default function GalleryScreen() {
                       </TouchableOpacity>
                       {canDelete && (
                         <TouchableOpacity style={st.actionBtn} onPress={() => handleDelete(item)}>
-                          <Ionicons name="trash-outline" size={20} color={PULSE_COLORS.ui.muted} />
+                          <Ionicons name="trash-outline" size={20} color={colors.muted} />
                         </TouchableOpacity>
                       )}
                     </View>
@@ -472,7 +475,7 @@ export default function GalleryScreen() {
             <TextInput
               style={st.captionInput}
               placeholder="Add a caption… (optional)"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               value={caption}
               onChangeText={setCaption}
               maxLength={200}
@@ -498,78 +501,80 @@ export default function GalleryScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    root:   { flex: 1, backgroundColor: colors.background },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  filterBar: {
-    flexDirection: 'row', gap: 8,
-    paddingHorizontal: 16, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  pill:     { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: PULSE_COLORS.ui.surface },
-  pillText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
+    filterBar: {
+      flexDirection: 'row', gap: 8,
+      paddingHorizontal: 16, paddingVertical: 10,
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    pill:     { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: colors.surface },
+    pillText: { fontSize: 13, fontWeight: '600', color: colors.text },
 
-  empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  emptySub:   { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 20 },
+    empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },
+    emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
+    emptySub:   { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20 },
 
-  footerLoader: { height: 48, alignItems: 'center', justifyContent: 'center' },
+    footerLoader: { height: 48, alignItems: 'center', justifyContent: 'center' },
 
-  fab: {
-    position: 'absolute', bottom: 32, right: 20,
-    width: 56, height: 56, borderRadius: 28,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 8, elevation: 8,
-  },
+    fab: {
+      position: 'absolute', bottom: 32, right: 20,
+      width: 56, height: 56, borderRadius: 28,
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35, shadowRadius: 8, elevation: 8,
+    },
 
-  // Viewer
-  viewer:       { flex: 1, backgroundColor: '#000' },
-  viewerImg:    { width: W, flex: 1 },
-  viewerMeta: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: 20, paddingBottom: 44,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-  },
-  viewerCaption: { fontSize: 15, fontWeight: '600', color: '#fff', marginBottom: 4 },
-  viewerByline:  { fontSize: 12, color: 'rgba(255,255,255,0.65)' },
-  viewerEvent:   { fontSize: 12, fontWeight: '600', marginTop: 4 },
-  viewerActions: { flexDirection: 'row', gap: 24, marginTop: 16 },
-  actionBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionCount:   { fontSize: 14, fontWeight: '600', color: '#fff' },
-  closeBtn:      { position: 'absolute', top: 52, right: 16 },
-  closeBtnInner: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center', justifyContent: 'center',
-  },
+    // Viewer
+    viewer:       { flex: 1, backgroundColor: '#000' },
+    viewerImg:    { width: W, flex: 1 },
+    viewerMeta: {
+      position: 'absolute', bottom: 0, left: 0, right: 0,
+      padding: 20, paddingBottom: 44,
+      backgroundColor: 'rgba(0,0,0,0.65)',
+    },
+    viewerCaption: { fontSize: 15, fontWeight: '600', color: '#fff', marginBottom: 4 },
+    viewerByline:  { fontSize: 12, color: 'rgba(255,255,255,0.65)' },
+    viewerEvent:   { fontSize: 12, fontWeight: '600', marginTop: 4 },
+    viewerActions: { flexDirection: 'row', gap: 24, marginTop: 16 },
+    actionBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    actionCount:   { fontSize: 14, fontWeight: '600', color: '#fff' },
+    closeBtn:      { position: 'absolute', top: 52, right: 16 },
+    closeBtnInner: {
+      width: 36, height: 36, borderRadius: 18,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      alignItems: 'center', justifyContent: 'center',
+    },
 
-  // Upload sheet
-  sheetOverlay:  { flex: 1, justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    paddingTop: 12, paddingBottom: 40,
-  },
-  sheetHandle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: PULSE_COLORS.ui.border,
-    alignSelf: 'center', marginBottom: 16,
-  },
-  sheetTitle: {
-    fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text,
-    paddingHorizontal: 16, marginBottom: 12,
-  },
-  previewThumb: { width: 72, height: 72, borderRadius: 8 },
-  captionInput: {
-    marginHorizontal: 16, marginBottom: 14,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 12, padding: 12,
-    fontSize: 15, color: PULSE_COLORS.ui.text,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  uploadBtn:         { marginHorizontal: 16, padding: 15, borderRadius: 14, alignItems: 'center' },
-  uploadBtnDisabled: { opacity: 0.65 },
-  uploadBtnText:     { fontSize: 15, fontWeight: '800', color: '#000' },
-});
+    // Upload sheet
+    sheetOverlay:  { flex: 1, justifyContent: 'flex-end' },
+    sheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 20, borderTopRightRadius: 20,
+      paddingTop: 12, paddingBottom: 40,
+    },
+    sheetHandle: {
+      width: 36, height: 4, borderRadius: 2,
+      backgroundColor: colors.border,
+      alignSelf: 'center', marginBottom: 16,
+    },
+    sheetTitle: {
+      fontSize: 16, fontWeight: '700', color: colors.text,
+      paddingHorizontal: 16, marginBottom: 12,
+    },
+    previewThumb: { width: 72, height: 72, borderRadius: 8 },
+    captionInput: {
+      marginHorizontal: 16, marginBottom: 14,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 12, padding: 12,
+      fontSize: 15, color: colors.text,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    uploadBtn:         { marginHorizontal: 16, padding: 15, borderRadius: 14, alignItems: 'center' },
+    uploadBtnDisabled: { opacity: 0.65 },
+    uploadBtnText:     { fontSize: 15, fontWeight: '800', color: '#000' },
+  });
+}

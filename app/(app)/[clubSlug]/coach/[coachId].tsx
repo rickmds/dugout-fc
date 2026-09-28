@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +16,8 @@ import { resendCoachInvite } from '../../../../lib/inviteApi';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { formatPhone } from '../../../../lib/formatPhone';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
@@ -55,6 +56,8 @@ function formatDate(iso: string): string {
 
 export default function CoachProfileScreen() {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const { coachId, source } = useLocalSearchParams<{ coachId: string; source: 'member' | 'invite' }>();
   const { profile } = useAuth();
   const { team } = useTeam();
@@ -368,106 +371,108 @@ export default function CoachProfileScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background },
-  errorText: { color: PULSE_COLORS.ui.textSecondary, fontSize: 16 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    root:   { flex: 1, backgroundColor: colors.background },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+    errorText: { color: colors.textSecondary, fontSize: 16 },
 
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, paddingTop: 58, paddingBottom: 10,
-  },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 12, paddingTop: 58, paddingBottom: 10,
+    },
+    headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
-  scroll: { padding: 16 },
+    scroll: { padding: 16 },
 
-  // ── Hero
-  hero: { alignItems: 'center', paddingTop: 16, paddingBottom: 28 },
-  avatar: {
-    width: 100, height: 100, borderRadius: 50,
-    backgroundColor: '#0A1810',
-    borderWidth: 2.5,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-    shadowOpacity: 0.28, shadowRadius: 20, shadowOffset: { width: 0, height: 4 },
-  },
-  avatarText: { fontSize: 34, fontWeight: '900' },
-  name: {
-    fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text,
-    letterSpacing: -0.5, marginBottom: 12,
-  },
-  badgeRow:  { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  roleBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1,
-  },
-  roleBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  statusBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1,
-  },
-  statusDot:  { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 12, fontWeight: '600' },
-  dateLine:   { fontSize: 13, color: PULSE_COLORS.ui.muted, marginTop: 4 },
+    // ── Hero
+    hero: { alignItems: 'center', paddingTop: 16, paddingBottom: 28 },
+    avatar: {
+      width: 100, height: 100, borderRadius: 50,
+      backgroundColor: '#0A1810',
+      borderWidth: 2.5,
+      alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+      shadowOpacity: 0.28, shadowRadius: 20, shadowOffset: { width: 0, height: 4 },
+    },
+    avatarText: { fontSize: 34, fontWeight: '900' },
+    name: {
+      fontSize: 26, fontWeight: '800', color: colors.text,
+      letterSpacing: -0.5, marginBottom: 12,
+    },
+    badgeRow:  { flexDirection: 'row', gap: 8, marginBottom: 10 },
+    roleBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1,
+    },
+    roleBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+    statusBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1,
+    },
+    statusDot:  { width: 6, height: 6, borderRadius: 3 },
+    statusText: { fontSize: 12, fontWeight: '600' },
+    dateLine:   { fontSize: 13, color: colors.muted, marginTop: 4 },
 
-  // ── Section
-  sectionLabel: {
-    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
-    letterSpacing: 2, marginBottom: 10, marginTop: 4,
-  },
+    // ── Section
+    sectionLabel: {
+      fontSize: 10, fontWeight: '800', color: colors.muted,
+      letterSpacing: 2, marginBottom: 10, marginTop: 4,
+    },
 
-  // ── Contact card
-  card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    overflow: 'hidden', marginBottom: 24,
-  },
-  contactRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 14, paddingVertical: 14,
-  },
-  contactRowDivider: {
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  contactIcon: {
-    width: 38, height: 38, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  contactMeta: { flex: 1 },
-  contactLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', marginBottom: 2 },
-  contactValue: { fontSize: 15, color: PULSE_COLORS.ui.text, fontWeight: '500' },
-  contactBtnGroup: { flexDirection: 'row', gap: 6, flexShrink: 0 },
-  contactBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  contactBtnText: { fontSize: 13, fontWeight: '700' },
+    // ── Contact card
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+      overflow: 'hidden', marginBottom: 24,
+    },
+    contactRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingHorizontal: 14, paddingVertical: 14,
+    },
+    contactRowDivider: {
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    contactIcon: {
+      width: 38, height: 38, borderRadius: 10,
+      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    },
+    contactMeta: { flex: 1 },
+    contactLabel: { fontSize: 11, color: colors.muted, fontWeight: '600', marginBottom: 2 },
+    contactValue: { fontSize: 15, color: colors.text, fontWeight: '500' },
+    contactBtnGroup: { flexDirection: 'row', gap: 6, flexShrink: 0 },
+    contactBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
+      backgroundColor: colors.surfaceAlt,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    contactBtnText: { fontSize: 13, fontWeight: '700' },
 
-  // ── Pending info
-  pendingCard: {
-    flexDirection: 'row', gap: 10, alignItems: 'flex-start',
-    backgroundColor: 'rgba(234,179,8,0.07)',
-    borderWidth: 1, borderColor: 'rgba(234,179,8,0.2)',
-    borderRadius: 14, padding: 14, marginBottom: 24,
-  },
-  pendingText: {
-    flex: 1, fontSize: 13, color: '#EAB308', lineHeight: 19,
-  },
+    // ── Pending info
+    pendingCard: {
+      flexDirection: 'row', gap: 10, alignItems: 'flex-start',
+      backgroundColor: 'rgba(234,179,8,0.07)',
+      borderWidth: 1, borderColor: 'rgba(234,179,8,0.2)',
+      borderRadius: 14, padding: 14, marginBottom: 24,
+    },
+    pendingText: {
+      flex: 1, fontSize: 13, color: '#EAB308', lineHeight: 19,
+    },
 
-  // ── Remove
-  resendBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14, borderRadius: 14, marginBottom: 12,
-    borderWidth: 1,
-  },
-  resendBtnText: { fontWeight: '700', fontSize: 15 },
-  removeBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14, borderRadius: 14,
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.28)',
-    backgroundColor: 'rgba(239,68,68,0.07)',
-  },
-  removeBtnText: { color: PULSE_COLORS.status.error, fontWeight: '700', fontSize: 15 },
-});
+    // ── Remove
+    resendBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      gap: 8, paddingVertical: 14, borderRadius: 14, marginBottom: 12,
+      borderWidth: 1,
+    },
+    resendBtnText: { fontWeight: '700', fontSize: 15 },
+    removeBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      gap: 8, paddingVertical: 14, borderRadius: 14,
+      borderWidth: 1, borderColor: 'rgba(239,68,68,0.28)',
+      backgroundColor: 'rgba(239,68,68,0.07)',
+    },
+    removeBtnText: { color: PULSE_COLORS.status.error, fontWeight: '700', fontSize: 15 },
+  });
+}

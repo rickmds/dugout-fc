@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../lib/supabase';
-import { PULSE_COLORS } from '../../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../../constants/colors';
+import { useTheme } from '../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
 import { SHOUTOUT_TAGS } from '../../../../../components/shoutout/ShoutoutSheet';
 import { useAuth } from '../../../../../hooks/useAuth';
@@ -21,6 +22,8 @@ export default function PlayerShoutoutsScreen() {
   const { playerId } = useLocalSearchParams<{ clubSlug: string; playerId: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [rows, setRows] = useState<ShoutoutRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +78,7 @@ export default function PlayerShoutoutsScreen() {
         <View style={st.center}><ActivityIndicator color={PULSE_COLORS.brand.green} /></View>
       ) : rows.length === 0 ? (
         <View style={st.center}>
-          <View style={st.emptyIcon}><Ionicons name="star-outline" size={28} color={PULSE_COLORS.ui.muted} /></View>
+          <View style={st.emptyIcon}><Ionicons name="star-outline" size={28} color={colors.muted} /></View>
           <Text style={st.emptyTitle}>No shoutouts yet</Text>
           <Text style={st.emptySub}>When a coach recognizes something great, it'll show up here.</Text>
         </View>
@@ -108,22 +111,24 @@ export default function PlayerShoutoutsScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  scroll: { padding: 16, gap: 12 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.background },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+    scroll: { padding: 16, gap: 12 },
 
-  emptyIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: PULSE_COLORS.ui.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 },
-  emptySub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
+    emptyIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+    emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: 6 },
+    emptySub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
 
-  card: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16,
-    borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', padding: 15, gap: 10,
-  },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  cardEmoji: { fontSize: 26 },
-  cardTag: { fontSize: 14.5, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  cardMeta: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, marginTop: 2 },
-  cardNote: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, lineHeight: 19, fontStyle: 'italic' },
-});
+    card: {
+      backgroundColor: colors.surface, borderRadius: 16,
+      borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', padding: 15, gap: 10,
+    },
+    cardTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+    cardEmoji: { fontSize: 26 },
+    cardTag: { fontSize: 14.5, fontWeight: '800', color: colors.text },
+    cardMeta: { fontSize: 11.5, color: colors.muted, marginTop: 2 },
+    cardNote: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, fontStyle: 'italic' },
+  });
+}
