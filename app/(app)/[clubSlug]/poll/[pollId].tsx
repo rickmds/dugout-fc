@@ -33,6 +33,7 @@ export default function PollDetailScreen() {
   const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
   const [voterNames, setVoterNames] = useState<Record<string, string>>({});
   const [nonResponderIds, setNonResponderIds] = useState<string[]>([]);
+  const [nonResponderCount, setNonResponderCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -76,7 +77,7 @@ export default function PollDetailScreen() {
 
     const teamIsCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
-    const [optionsRes, votesRes, guardedRes, memberRes, namesRes] = await Promise.all([
+    const [optionsRes, votesRes, guardedRes, memberRes, namesRes, nonRespRes] = await Promise.all([
       sb.from('team_poll_options').select('id, poll_id, label, sort_order').eq('poll_id', pollId),
       sb.from('team_poll_votes').select('poll_id, option_id, profile_id').eq('poll_id', pollId),
       sb.rpc('get_my_guarded_players').select('id').eq('team_id', pollRow.team_id),
@@ -87,6 +88,10 @@ export default function PollDetailScreen() {
       // "who voted" as which family/kid, and a parent guarding twins on
       // this team gets both names joined.
       teamIsCoach ? sb.rpc('get_guardian_player_names', { p_team_id: pollRow.team_id }) : Promise.resolve({ data: [] }),
+      // Nudge targets — a player/family counts as responded once ANY
+      // guardian voted, so this is NOT just team_members minus voters
+      // (that double-counts a player with two linked guardian accounts).
+      teamIsCoach ? sb.rpc('get_poll_nonresponders', { p_poll_id: pollId }) : Promise.resolve({ data: [] }),
     ]);
 
     const votes = (votesRes.data ?? []) as { option_id: string; profile_id: string }[];
@@ -119,11 +124,12 @@ export default function PollDetailScreen() {
       setVoterNames(Object.fromEntries(
         ((namesRes.data ?? []) as { profile_id: string; player_names: string | null }[]).map((r) => [r.profile_id, r.player_names ?? ''])
       ));
-      const votedIds = new Set(votes.map((v) => v.profile_id));
-      const memberIds = ((memberRes.data ?? []) as { profile_id: string }[]).map((r) => r.profile_id);
-      setNonResponderIds(memberIds.filter((id) => !votedIds.has(id)));
+      const nonResponders = (nonRespRes.data ?? []) as { player_id: string; guardian_profile_ids: string[] }[];
+      setNonResponderCount(nonResponders.length);
+      setNonResponderIds([...new Set(nonResponders.flatMap((r) => r.guardian_profile_ids))]);
     } else {
       setVoterNames({});
+      setNonResponderCount(0);
       setNonResponderIds([]);
     }
 
@@ -201,6 +207,7 @@ export default function PollDetailScreen() {
           myRsvpEventIds={myRsvpEventIds}
           voterNames={voterNames}
           nonResponderProfileIds={nonResponderIds}
+          nonResponderCount={nonResponderCount}
           primaryColor={primaryColor}
           rgba={rgba}
           onDelete={handleDelete}

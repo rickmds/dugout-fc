@@ -39,10 +39,18 @@ type Props = {
    * !poll.is_anonymous itself, since the map has no idea which poll it's
    * being used for. */
   voterNames?: Record<string, string>;
-  /** Every profile_id eligible to vote (team_members role='parent') that
-   * hasn't yet — coach-only, drives the Nudge button. Undefined for a
-   * plain parent viewer, same as voterNames. */
+  /** Every guardian account of a still-non-responding player — coach-only,
+   * this is who the Nudge button actually pushes to. Can include BOTH
+   * guardians of one player (e.g. two parents), which is why this is kept
+   * separate from nonResponderCount below rather than just using its
+   * length — the displayed count is players/families, not accounts.
+   * Undefined for a plain parent viewer, same as voterNames. */
   nonResponderProfileIds?: string[];
+  /** How many players/families haven't voted — a family counts as
+   * responded once ANY of its guardians has voted, so this is NOT
+   * nonResponderProfileIds.length (that counts accounts, which
+   * double-counts a player with two linked guardians). */
+  nonResponderCount?: number;
   primaryColor: string;
   rgba: (a: number) => string;
   onDelete: (pollId: string) => void;
@@ -58,7 +66,7 @@ function timeLeft(closesAt: string): string {
   return `Closes in ${Math.floor(h / 24)}d`;
 }
 
-const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, nonResponderProfileIds, primaryColor, rgba, onDelete, onVoteChange }: Props) {
+const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, nonResponderProfileIds, nonResponderCount, primaryColor, rgba, onDelete, onVoteChange }: Props) {
   const [voting, setVoting] = useState(false);
   const [revealOptionId, setRevealOptionId] = useState<string | null>(null);
   const [nudging, setNudging] = useState(false);
@@ -170,7 +178,8 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
     });
     await AsyncStorage.setItem(storageKey, String(Date.now()));
     setNudging(false);
-    Alert.alert('Nudge sent', `Reminded ${nonResponderProfileIds.length} parent${nonResponderProfileIds.length !== 1 ? 's' : ''} to vote.`);
+    const familyCount = nonResponderCount ?? nonResponderProfileIds.length;
+    Alert.alert('Nudge sent', `Reminded ${familyCount} famil${familyCount !== 1 ? 'ies' : 'y'} to vote.`);
   }
 
   return (
@@ -328,7 +337,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
           <TouchableOpacity style={styles.nudgeBtn} onPress={handleNudge} activeOpacity={0.7} disabled={nudging}>
             <Ionicons name="notifications-outline" size={13} color={PULSE_COLORS.ui.muted} />
             <Text style={styles.nudgeBtnText}>
-              {nudging ? 'Sending…' : `Nudge ${nonResponderProfileIds.length} who haven't voted`}
+              {nudging ? 'Sending…' : `Nudge ${nonResponderCount ?? nonResponderProfileIds.length} who haven't voted`}
             </Text>
           </TouchableOpacity>
         )}

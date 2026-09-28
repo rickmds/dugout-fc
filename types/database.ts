@@ -6477,6 +6477,13 @@ export type Database = {
           profile_id: string
         }[]
       }
+      get_poll_nonresponders: {
+        Args: { p_poll_id: string }
+        Returns: {
+          guardian_profile_ids: string[]
+          player_id: string
+        }[]
+      }
       get_team_coaches: {
         Args: { p_team_id: string }
         Returns: {

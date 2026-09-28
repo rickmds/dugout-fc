@@ -402,6 +402,7 @@ export default function EventDetailScreen() {
   const [eventPolls, setEventPolls] = useState<Poll[]>([]);
   const [pollVoterNames, setPollVoterNames] = useState<Record<string, string>>({});
   const [pollNonResponders, setPollNonResponders] = useState<Record<string, string[]>>({});
+  const [pollNonResponderCounts, setPollNonResponderCounts] = useState<Record<string, number>>({});
   const [showEventPollModal, setShowEventPollModal] = useState(false);
 
   type NcsaCoachContact = { role: string; first: string; last: string; email: string | null; cell: string | null; homephone: string | null };
@@ -629,25 +630,31 @@ export default function EventDetailScreen() {
 
     if (pollRows?.length > 0) {
       const pollIds = (pollRows as any[]).map((p: any) => p.id as string);
-      const [optRes, voteRes, namesRes, parentMemberRes] = await Promise.all([
+      const [optRes, voteRes, namesRes, nonRespResults] = await Promise.all([
         sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
         sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
         // Player name(s), not the parent account's own name — a coach reads
         // "who voted" as which family/kid, and a parent guarding twins on
         // this team gets both names joined.
         isCoach && team ? sb.rpc('get_guardian_player_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
-        isCoach && team ? supabase.from('team_members').select('profile_id').eq('team_id', team.id).eq('role', 'parent') : Promise.resolve({ data: [] }),
+        // Nudge targets — a player/family counts as responded once ANY
+        // guardian voted, so this is per-poll, not just team_members minus
+        // voters (that double-counts a player with two linked guardians).
+        isCoach && team
+          ? Promise.all(pollIds.map((id) => sb.rpc('get_poll_nonresponders', { p_poll_id: id }).then((r: any) => [id, r.data ?? []])))
+          : Promise.resolve([]),
       ]);
       setPollVoterNames(Object.fromEntries(
         ((namesRes.data ?? []) as { profile_id: string; player_names: string | null }[]).map((r) => [r.profile_id, r.player_names ?? ''])
       ));
-      const parentMemberIds = ((parentMemberRes.data ?? []) as { profile_id: string }[]).map((r) => r.profile_id);
       const nonRespondersByPoll: Record<string, string[]> = {};
-      for (const p of pollRows as any[]) {
-        const votedIds = new Set((voteRes.data ?? []).filter((v: any) => v.poll_id === p.id).map((v: any) => v.profile_id));
-        nonRespondersByPoll[p.id] = parentMemberIds.filter((id) => !votedIds.has(id));
+      const nonResponderCountsByPoll: Record<string, number> = {};
+      for (const [pollId, rows] of nonRespResults as [string, { player_id: string; guardian_profile_ids: string[] }[]][]) {
+        nonResponderCountsByPoll[pollId] = rows.length;
+        nonRespondersByPoll[pollId] = [...new Set(rows.flatMap((r) => r.guardian_profile_ids))];
       }
       setPollNonResponders(nonRespondersByPoll);
+      setPollNonResponderCounts(nonResponderCountsByPoll);
       const totalPlayers = (playersRes.data ?? []).length;
       setEventPolls((pollRows as any[]).map((p: any) => ({
         id: p.id, question: p.question, closes_at: p.closes_at,
@@ -2373,6 +2380,7 @@ export default function EventDetailScreen() {
                   myRsvpEventIds={myPlayerIds.some((pid) => rsvps.find((r) => r.player_id === pid)?.status === 'attending') ? new Set([eventId]) : new Set()}
                   voterNames={pollVoterNames}
                   nonResponderProfileIds={pollNonResponders[poll.id]}
+                  nonResponderCount={pollNonResponderCounts[poll.id]}
                   primaryColor={primaryColor}
                   rgba={rgba}
                   onDelete={async (pollId) => {
