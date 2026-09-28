@@ -169,8 +169,11 @@ export default function PollDetailScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={primaryColor} size="large" />
+      <View style={styles.container}>
+        <ClubHeader title="Poll" onBack={() => router.back()} />
+        <View style={styles.center}>
+          <ActivityIndicator color={primaryColor} size="large" />
+        </View>
       </View>
     );
   }
@@ -198,6 +201,7 @@ export default function PollDetailScreen() {
           >
             <Ionicons name="link-outline" size={13} color={primaryColor} />
             <Text style={[styles.linkedText, { color: primaryColor }]} numberOfLines={1}>Linked to: {linkedEventTitle}</Text>
+            <Ionicons name="chevron-forward" size={14} color={primaryColor} />
           </TouchableOpacity>
         )}
 

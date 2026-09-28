@@ -63,6 +63,10 @@ type Props = {
   onVoteChange: (pollId: string, optionIds: string[]) => void;
 };
 
+function initials(name: string): string {
+  return name.split(' ').map((w) => w[0] ?? '').join('').toUpperCase().slice(0, 2);
+}
+
 function timeLeft(closesAt: string): string {
   const diff = new Date(closesAt).getTime() - Date.now();
   if (diff <= 0) return 'Closed';
@@ -316,6 +320,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
                     {isLeading && (
                       <Ionicons name="trophy" size={12} color="#F59E0B" />
                     )}
+                    <Text style={styles.optionCount}>{count} · </Text>
                     <Text style={[
                       styles.optionPct,
                       isLeading && { color: primaryColor, fontWeight: '800', fontSize: 13 },
@@ -357,9 +362,14 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
         </View>
 
         {isCoach && !!nonResponderProfileIds?.length && (
-          <TouchableOpacity style={styles.nudgeBtn} onPress={handleNudge} activeOpacity={0.7} disabled={nudging}>
-            <Ionicons name="notifications-outline" size={13} color={PULSE_COLORS.ui.muted} />
-            <Text style={styles.nudgeBtnText}>
+          <TouchableOpacity
+            style={[styles.nudgeBtn, { backgroundColor: rgba(0.08), borderColor: rgba(0.3) }]}
+            onPress={handleNudge}
+            activeOpacity={0.7}
+            disabled={nudging}
+          >
+            <Ionicons name="notifications-outline" size={13} color={primaryColor} />
+            <Text style={[styles.nudgeBtnText, { color: primaryColor }]}>
               {nudging ? 'Sending…' : `Nudge ${nonResponderCount ?? nonResponderProfileIds.length} who haven't voted`}
             </Text>
           </TouchableOpacity>
@@ -377,14 +387,31 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
       >
         <View style={styles.revealOverlay}>
           <View style={styles.revealCard}>
-            <Text style={styles.revealTitle}>
-              {poll.options.find(o => o.id === revealOptionId)?.label ?? ''}
-            </Text>
-            <ScrollView style={styles.revealScroll}>
-              {revealOptionId && namesForOption(revealOptionId).map((name, i) => (
-                <Text key={i} style={styles.revealName}>{name}</Text>
-              ))}
-            </ScrollView>
+            {(() => {
+              const names = revealOptionId ? namesForOption(revealOptionId) : [];
+              return (
+                <>
+                  <View style={styles.revealHeader}>
+                    <Text style={styles.revealTitle} numberOfLines={1}>
+                      {poll.options.find(o => o.id === revealOptionId)?.label ?? ''}
+                    </Text>
+                    <Text style={styles.revealSubtitle}>
+                      {names.length} vote{names.length !== 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                  <ScrollView style={styles.revealScroll}>
+                    {names.map((name, i) => (
+                      <View key={i} style={[styles.revealRow, i > 0 && styles.revealRowDivider]}>
+                        <View style={[styles.revealAvatar, { backgroundColor: rgba(0.14) }]}>
+                          <Text style={[styles.revealAvatarText, { color: primaryColor }]}>{initials(name)}</Text>
+                        </View>
+                        <Text style={styles.revealName} numberOfLines={1}>{name}</Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </>
+              );
+            })()}
             <TouchableOpacity style={styles.revealCloseBtn} onPress={() => setRevealOptionId(null)}>
               <Text style={styles.revealCloseBtnText}>Close</Text>
             </TouchableOpacity>
@@ -456,6 +483,7 @@ const styles = StyleSheet.create({
   },
   optionLabel: { flex: 1, fontSize: 14, color: PULSE_COLORS.ui.textSecondary },
   optionPct: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600', minWidth: 32, textAlign: 'right' },
+  optionCount: { fontSize: 11, color: PULSE_COLORS.ui.muted },
   pctRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
   footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -468,19 +496,25 @@ const styles = StyleSheet.create({
     paddingVertical: 9, borderRadius: 9, marginTop: 10,
     backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
   },
-  nudgeBtnText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  nudgeBtnText: { fontSize: 12, fontWeight: '700' },
 
   revealOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   revealCard: {
     width: '100%', maxWidth: 340, maxHeight: '70%', backgroundColor: PULSE_COLORS.ui.surface,
     borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 18,
   },
-  revealTitle: { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center', marginBottom: 14 },
+  revealHeader: { alignItems: 'center', marginBottom: 12 },
+  revealTitle: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  revealSubtitle: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600', marginTop: 2 },
   revealScroll: { maxHeight: 260 },
-  revealName: {
-    fontSize: 14, color: PULSE_COLORS.ui.text, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+  revealRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  revealRowDivider: { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
+  revealAvatar: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
+  revealAvatarText: { fontSize: 11, fontWeight: '800' },
+  revealName: { flex: 1, fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
   revealCloseBtn: {
     marginTop: 14, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
     borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
