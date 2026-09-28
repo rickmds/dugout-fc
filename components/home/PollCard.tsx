@@ -2,7 +2,9 @@ import { useState, memo } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
+import { sendProfilesPush } from '../../lib/push';
 import { PULSE_COLORS } from '../../constants/colors';
 
 export type PollOption = {
@@ -37,6 +39,10 @@ type Props = {
    * !poll.is_anonymous itself, since the map has no idea which poll it's
    * being used for. */
   voterNames?: Record<string, string>;
+  /** Every profile_id eligible to vote (team_members role='parent') that
+   * hasn't yet — coach-only, drives the Nudge button. Undefined for a
+   * plain parent viewer, same as voterNames. */
+  nonResponderProfileIds?: string[];
   primaryColor: string;
   rgba: (a: number) => string;
   onDelete: (pollId: string) => void;
@@ -52,9 +58,10 @@ function timeLeft(closesAt: string): string {
   return `Closes in ${Math.floor(h / 24)}d`;
 }
 
-const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, primaryColor, rgba, onDelete, onVoteChange }: Props) {
+const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, nonResponderProfileIds, primaryColor, rgba, onDelete, onVoteChange }: Props) {
   const [voting, setVoting] = useState(false);
   const [revealOptionId, setRevealOptionId] = useState<string | null>(null);
+  const [nudging, setNudging] = useState(false);
 
   const myVotedOptionIds = new Set(
     poll.votes.filter(v => v.profile_id === myProfileId).map(v => v.option_id)
@@ -139,6 +146,31 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => onDelete(poll.id) },
     ]);
+  }
+
+  async function handleNudge() {
+    if (!nonResponderProfileIds?.length) return;
+    const COOLDOWN_MS = 30 * 60 * 1000;
+    const storageKey = `poll_nudge_last_${poll.id}`;
+    const lastStr = await AsyncStorage.getItem(storageKey);
+    if (lastStr) {
+      const elapsed = Date.now() - parseInt(lastStr, 10);
+      if (elapsed < COOLDOWN_MS) {
+        const remaining = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
+        Alert.alert('Too soon', `Wait ${remaining} more minute${remaining !== 1 ? 's' : ''} before nudging again.`);
+        return;
+      }
+    }
+    setNudging(true);
+    await sendProfilesPush({
+      profileIds: nonResponderProfileIds,
+      title: 'New poll',
+      body: poll.question,
+      data: { type: 'team_poll', poll_id: poll.id, ...(poll.event_id ? { event_id: poll.event_id } : {}) },
+    });
+    await AsyncStorage.setItem(storageKey, String(Date.now()));
+    setNudging(false);
+    Alert.alert('Nudge sent', `Reminded ${nonResponderProfileIds.length} parent${nonResponderProfileIds.length !== 1 ? 's' : ''} to vote.`);
   }
 
   return (
@@ -292,6 +324,15 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
           )}
         </View>
 
+        {isCoach && !!nonResponderProfileIds?.length && (
+          <TouchableOpacity style={styles.nudgeBtn} onPress={handleNudge} activeOpacity={0.7} disabled={nudging}>
+            <Ionicons name="notifications-outline" size={13} color={PULSE_COLORS.ui.muted} />
+            <Text style={styles.nudgeBtnText}>
+              {nudging ? 'Sending…' : `Nudge ${nonResponderProfileIds.length} who haven't voted`}
+            </Text>
+          </TouchableOpacity>
+        )}
+
       </View>
 
       {/* Who voted for this option — coach-only, never shown for an
@@ -389,6 +430,13 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 11, color: PULSE_COLORS.ui.muted },
   tapHint: { fontSize: 11, fontWeight: '600' },
   viewOnly: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
+
+  nudgeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 9, borderRadius: 9, marginTop: 10,
+    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+  },
+  nudgeBtnText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 
   revealOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   revealCard: {

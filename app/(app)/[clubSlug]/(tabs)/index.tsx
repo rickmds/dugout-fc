@@ -347,6 +347,7 @@ export default function HomeScreen() {
 
   const [polls, setPolls] = useState<Poll[]>([]);
   const [pollVoterNames, setPollVoterNames] = useState<Record<string, string>>({});
+  const [pollNonResponders, setPollNonResponders] = useState<Record<string, string[]>>({});
   const [showPollModal, setShowPollModal] = useState(false);
   const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
 
@@ -1028,14 +1029,22 @@ export default function HomeScreen() {
         // Player name(s), not the parent account's own name — a coach reads
         // "who voted" as which family/kid, and a parent guarding twins on
         // this team gets both names joined.
-        const [optionsRes, votesRes, namesRes] = await Promise.all([
+        const [optionsRes, votesRes, namesRes, parentMemberRes] = await Promise.all([
           sb.from('team_poll_options').select('id, poll_id, label, sort_order').in('poll_id', pollIds),
           sb.from('team_poll_votes').select('poll_id, option_id, profile_id').in('poll_id', pollIds),
           isCoach ? sb.rpc('get_guardian_player_names', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
+          isCoach ? supabase.from('team_members').select('profile_id').eq('team_id', teamId).eq('role', 'parent') : Promise.resolve({ data: [] }),
         ]);
         setPollVoterNames(Object.fromEntries(
           ((namesRes.data ?? []) as { profile_id: string; player_names: string | null }[]).map((r) => [r.profile_id, r.player_names ?? ''])
         ));
+        const parentMemberIds = ((parentMemberRes.data ?? []) as { profile_id: string }[]).map((r) => r.profile_id);
+        const nonRespondersByPoll: Record<string, string[]> = {};
+        for (const p of pollRows as any[]) {
+          const votedIds = new Set((votesRes.data ?? []).filter((v: any) => v.poll_id === p.id).map((v: any) => v.profile_id));
+          nonRespondersByPoll[p.id] = parentMemberIds.filter((id) => !votedIds.has(id));
+        }
+        setPollNonResponders(nonRespondersByPoll);
 
         // Track which events the current user RSVPed attending (for RSVP-gated polls)
         const gatedEventIds = [...new Set((pollRows as any[])
@@ -2092,6 +2101,7 @@ export default function HomeScreen() {
                 isCoach={isCoach}
                 myRsvpEventIds={myRsvpEventIds}
                 voterNames={pollVoterNames}
+                nonResponderProfileIds={pollNonResponders[poll.id]}
                 primaryColor={primaryColor}
                 rgba={rgba}
                 onDelete={handleDeletePoll}

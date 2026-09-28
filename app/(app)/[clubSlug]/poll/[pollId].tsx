@@ -9,10 +9,8 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
-import { sendProfilesPush } from '../../../../lib/push';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
@@ -35,7 +33,6 @@ export default function PollDetailScreen() {
   const [myRsvpEventIds, setMyRsvpEventIds] = useState<Set<string>>(new Set());
   const [voterNames, setVoterNames] = useState<Record<string, string>>({});
   const [nonResponderIds, setNonResponderIds] = useState<string[]>([]);
-  const [nudging, setNudging] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -163,37 +160,6 @@ export default function PollDetailScreen() {
     });
   }
 
-  async function handleNudge() {
-    if (!poll || !team) return;
-    if (!nonResponderIds.length) {
-      Alert.alert('All caught up', 'Everyone has already voted.');
-      return;
-    }
-
-    const COOLDOWN_MS = 30 * 60 * 1000;
-    const storageKey = `poll_nudge_last_${poll.id}`;
-    const lastStr = await AsyncStorage.getItem(storageKey);
-    if (lastStr) {
-      const elapsed = Date.now() - parseInt(lastStr, 10);
-      if (elapsed < COOLDOWN_MS) {
-        const remaining = Math.ceil((COOLDOWN_MS - elapsed) / 60000);
-        Alert.alert('Too soon', `Wait ${remaining} more minute${remaining !== 1 ? 's' : ''} before nudging again.`);
-        return;
-      }
-    }
-
-    setNudging(true);
-    await sendProfilesPush({
-      profileIds: nonResponderIds,
-      title: 'New poll',
-      body: poll.question,
-      data: { type: 'team_poll', poll_id: poll.id, ...(poll.event_id ? { event_id: poll.event_id } : {}) },
-    });
-    await AsyncStorage.setItem(storageKey, String(Date.now()));
-    setNudging(false);
-    Alert.alert('Nudge sent', `Reminded ${nonResponderIds.length} parent${nonResponderIds.length !== 1 ? 's' : ''} to vote.`);
-  }
-
   if (loading) {
     return (
       <View style={styles.center}>
@@ -234,25 +200,12 @@ export default function PollDetailScreen() {
           isCoach={isCoach}
           myRsvpEventIds={myRsvpEventIds}
           voterNames={voterNames}
+          nonResponderProfileIds={nonResponderIds}
           primaryColor={primaryColor}
           rgba={rgba}
           onDelete={handleDelete}
           onVoteChange={handleVoteChange}
         />
-
-        {isCoach && nonResponderIds.length > 0 && (
-          <TouchableOpacity
-            style={styles.nudgeBtn}
-            onPress={handleNudge}
-            activeOpacity={0.7}
-            disabled={nudging}
-          >
-            <Ionicons name="notifications-outline" size={14} color={PULSE_COLORS.ui.muted} />
-            <Text style={styles.nudgeBtnText}>
-              {nudging ? 'Sending…' : `Nudge ${nonResponderIds.length} who haven't voted`}
-            </Text>
-          </TouchableOpacity>
-        )}
       </ScrollView>
     </View>
   );
@@ -270,11 +223,4 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   linkedText: { fontSize: 13, fontWeight: '600', flex: 1 },
-
-  nudgeBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 11, borderRadius: 10, marginTop: 12,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  nudgeBtnText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
 });
