@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,8 +10,9 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../lib/supabase';
-import { PULSE_COLORS } from '../../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../../constants/colors';
 import { useClub } from '../../../../../hooks/useClub';
+import { useTheme } from '../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -36,10 +37,11 @@ function avgRating(e: EvalSummary): number {
 }
 
 function StarBar({ value, max = 5, color }: { value: number; max?: number; color: string }) {
+  const { colors } = useTheme();
   const pct = Math.min(1, value / max);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-      <View style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: PULSE_COLORS.ui.border }}>
+      <View style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: colors.border }}>
         <View style={{ width: `${pct * 100}%`, height: '100%', borderRadius: 3, backgroundColor: color }} />
       </View>
       <Text style={{ fontSize: 12, fontWeight: '700', color, minWidth: 20, textAlign: 'right' }}>
@@ -53,6 +55,8 @@ function StarBar({ value, max = 5, color }: { value: number; max?: number; color
 
 export default function PlayerEvaluationsScreen() {
   const { primaryColor } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const { clubSlug, playerId } = useLocalSearchParams<{ clubSlug: string; playerId: string }>();
   const router = useRouter();
   const primary = primaryColor ?? '#22C55E';
@@ -95,7 +99,7 @@ export default function PlayerEvaluationsScreen() {
         <View style={st.center}><ActivityIndicator color={primary} /></View>
       ) : evals.length === 0 ? (
         <View style={st.center}>
-          <View style={st.emptyIcon}><Ionicons name="ribbon-outline" size={28} color={PULSE_COLORS.ui.muted} /></View>
+          <View style={st.emptyIcon}><Ionicons name="ribbon-outline" size={28} color={colors.muted} /></View>
           <Text style={st.emptyTitle}>No reports yet</Text>
           <Text style={st.emptySub}>Your coach will share player evaluations here after each review period.</Text>
         </View>
@@ -139,7 +143,7 @@ export default function PlayerEvaluationsScreen() {
                       {new Date(ev.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </Text>
                   )}
-                  <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="chevron-forward" size={14} color={colors.muted} />
                 </View>
               </TouchableOpacity>
             );
@@ -153,28 +157,30 @@ export default function PlayerEvaluationsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  screen:       { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  screen:       { flex: 1, backgroundColor: colors.background },
   center:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   scroll:       { padding: 16, gap: 12 },
 
-  emptyIcon:    { width: 56, height: 56, borderRadius: 16, backgroundColor: PULSE_COLORS.ui.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  emptyTitle:   { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 },
-  emptySub:     { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 19 },
+  emptyIcon:    { width: 56, height: 56, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  emptyTitle:   { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: 6 },
+  emptySub:     { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19 },
 
-  card:         { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 18, gap: 14 },
+  card:         { backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 18, gap: 14 },
   cardTop:      { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  cardPeriod:   { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.2 },
-  cardSeason:   { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, fontWeight: '500' },
+  cardPeriod:   { fontSize: 17, fontWeight: '800', color: colors.text, letterSpacing: -0.2 },
+  cardSeason:   { fontSize: 12, color: colors.textSecondary, marginTop: 2, fontWeight: '500' },
 
   avgBadge:     { flexDirection: 'row', alignItems: 'baseline', gap: 1 },
   avgNum:       { fontSize: 28, fontWeight: '900', letterSpacing: -1 },
-  avgOf:        { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  avgOf:        { fontSize: 13, color: colors.muted, fontWeight: '600' },
 
   ratingRows:   { gap: 8 },
   areaRow:      { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  areaLabel:    { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, width: 68 },
+  areaLabel:    { fontSize: 12, fontWeight: '600', color: colors.textSecondary, width: 68 },
 
   cardFooter:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
-  publishedDate: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
-});
+  publishedDate: { fontSize: 11, color: colors.muted, fontWeight: '500' },
+  });
+}

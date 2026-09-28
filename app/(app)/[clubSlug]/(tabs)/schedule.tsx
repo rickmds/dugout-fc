@@ -23,7 +23,8 @@ import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { computeArriveBy } from '../../../../lib/eventTime';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../components/ui/ClubHeader';
@@ -177,6 +178,8 @@ function buildCalendarDays(year: number, month: number): (number | null)[] {
 
 export default function ScheduleScreen() {
   const { primaryColor, rgba, secondaryColor, onSecondary, logoUrl, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
   const { team, allTeams, loading: teamLoading, selectTeam } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
@@ -854,9 +857,9 @@ export default function ScheduleScreen() {
   if (!team) {
     return (
       <View style={styles.center}>
-        <Ionicons name="calendar-outline" size={48} color={PULSE_COLORS.ui.muted} />
-        <Text style={{ color: PULSE_COLORS.ui.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
-        <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
+        <Ionicons name="calendar-outline" size={48} color={colors.muted} />
+        <Text style={{ color: colors.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
+        <Text style={{ color: colors.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
           {isCoach ? 'Import your club or create a team to get started.' : "Ask your coach for an invite to join a team."}
         </Text>
       </View>
@@ -903,7 +906,7 @@ export default function ScheduleScreen() {
             style={[styles.allTeamsBtn, showAllTeams && [styles.allTeamsBtnActive, { backgroundColor: primaryColor }]]}
             onPress={() => setShowAllTeams(true)}
           >
-            <Ionicons name="layers-outline" size={12} color={showAllTeams ? '#000' : PULSE_COLORS.ui.muted} />
+            <Ionicons name="layers-outline" size={12} color={showAllTeams ? '#000' : colors.muted} />
             <Text style={[styles.allTeamsBtnText, showAllTeams && styles.allTeamsBtnTextActive]}>All Teams</Text>
           </TouchableOpacity>
         </View>
@@ -924,7 +927,7 @@ export default function ScheduleScreen() {
             <Ionicons
               name={tab.icon as any}
               size={14}
-              color={activeTab === tab.key ? primaryColor : PULSE_COLORS.ui.muted}
+              color={activeTab === tab.key ? primaryColor : colors.muted}
             />
             <Text style={[styles.tabBtnText, activeTab === tab.key && [styles.tabBtnTextActive, { color: primaryColor }]]}>
               {tab.label}
@@ -939,7 +942,7 @@ export default function ScheduleScreen() {
           <View style={styles.empty}>
             {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} contentFit="contain" /> : null}
             <View style={[styles.emptyIconWrap, { backgroundColor: rgba(0.1) }]}>
-              <Ionicons name="calendar-outline" size={26} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="calendar-outline" size={26} color={colors.muted} />
             </View>
             <Text style={styles.emptyTitle}>No upcoming events</Text>
             <Text style={styles.emptySubtitle}>
@@ -1001,7 +1004,7 @@ export default function ScheduleScreen() {
         pastScheduleItems.length === 0 ? (
           <View style={styles.empty}>
             <View style={[styles.emptyIconWrap, { backgroundColor: rgba(0.1) }]}>
-              <Ionicons name="time-outline" size={26} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="time-outline" size={26} color={colors.muted} />
             </View>
             <Text style={styles.emptyTitle}>No past events</Text>
             <Text style={styles.emptySubtitle}>Completed events will appear here.</Text>
@@ -1032,7 +1035,7 @@ export default function ScheduleScreen() {
                   </View>
                   <View style={styles.seasonStatSep} />
                   <View style={styles.seasonStat}>
-                    <Text style={[styles.seasonStatNum, { color: PULSE_COLORS.ui.muted }]}>{seasonDraws}</Text>
+                    <Text style={[styles.seasonStatNum, { color: colors.muted }]}>{seasonDraws}</Text>
                     <Text style={styles.seasonStatLabel}>D</Text>
                   </View>
                 </View>
@@ -1055,11 +1058,11 @@ export default function ScheduleScreen() {
           {/* Month navigator */}
           <View style={styles.calNav}>
             <TouchableOpacity style={styles.calNavBtn} onPress={prevCalMonth} disabled={loading} activeOpacity={loading ? 1 : 0.7}>
-              <Ionicons name="chevron-back" size={20} color={PULSE_COLORS.ui.text} />
+              <Ionicons name="chevron-back" size={20} color={colors.text} />
             </TouchableOpacity>
             <Text style={styles.calNavTitle}>{calMonthLabel}</Text>
             <TouchableOpacity style={styles.calNavBtn} onPress={nextCalMonth} disabled={loading} activeOpacity={loading ? 1 : 0.7}>
-              <Ionicons name="chevron-forward" size={20} color={PULSE_COLORS.ui.text} />
+              <Ionicons name="chevron-forward" size={20} color={colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -1131,7 +1134,7 @@ export default function ScheduleScreen() {
           {/* Events for selected day / month */}
           {calDisplayEvents.length === 0 ? (
             <View style={styles.calEmpty}>
-              <Ionicons name="calendar-outline" size={24} color={PULSE_COLORS.ui.border} />
+              <Ionicons name="calendar-outline" size={24} color={colors.border} />
               <Text style={styles.calEmptyText}>
                 {selectedDate ? 'No events on this day' : 'No events this month'}
               </Text>
@@ -1181,6 +1184,8 @@ const EventCard = memo(function EventCardImpl({
   myPlayers, myRsvpsForItem, rsvpSavingId, homeKitColor, awayKitColor, trainingKitColor,
   driveTime, weather, guestTeamName, guestCount, counts, allTeams, primaryColor, rgba, onRsvp, onPress,
 }: EventCardProps) {
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
   const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.other;
   // A guardian can have more than one player on this team (e.g. twins) —
   // every one of them gets their own status chip and RSVP row below.
@@ -1248,8 +1253,8 @@ const EventCard = memo(function EventCardImpl({
             on a line with a big stranded gap next to it. */}
         <View style={styles.badgeRow}>
             {isMultiView && item.team_id !== myTeamId && teamNameMap.has(item.team_id) && (
-              <View style={[styles.typeBadge, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-                <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]} numberOfLines={1}>
+              <View style={[styles.typeBadge, { backgroundColor: overlay(0.08) }]}>
+                <Text style={[styles.typeText, { color: colors.textSecondary }]} numberOfLines={1}>
                   {teamNameMap.get(item.team_id)}
                 </Text>
               </View>
@@ -1300,7 +1305,7 @@ const EventCard = memo(function EventCardImpl({
               return (
                 <View style={styles.kitBadge}>
                   <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
-                  <Text style={[styles.typeText, { color: PULSE_COLORS.ui.textSecondary }]}>{kitLabel}</Text>
+                  <Text style={[styles.typeText, { color: colors.textSecondary }]}>{kitLabel}</Text>
                 </View>
               );
             })()}
@@ -1357,13 +1362,13 @@ const EventCard = memo(function EventCardImpl({
             )}
             {!isPast && !isCancelled && driveTime && (
               <View style={styles.driveTimePill}>
-                <Ionicons name="car-outline" size={10} color={PULSE_COLORS.ui.textSecondary} />
+                <Ionicons name="car-outline" size={10} color={colors.textSecondary} />
                 <Text style={styles.driveTimePillText}>{driveTime}</Text>
               </View>
             )}
         </View>
 
-        <Text style={[styles.eventTitle, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>{item.title}</Text>
+        <Text style={[styles.eventTitle, isPast && { color: colors.muted }]} numberOfLines={1}>{item.title}</Text>
 
         {/* Team indicator */}
         {!isCoach && (() => {
@@ -1388,7 +1393,7 @@ const EventCard = memo(function EventCardImpl({
         })()}
 
         {(item.event_time || item.location) && (
-          <Text style={[styles.eventMeta, isPast && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>
+          <Text style={[styles.eventMeta, isPast && { color: colors.muted }]} numberOfLines={1}>
             {[
               item.event_time
                 ? (item.duration_minutes
@@ -1442,8 +1447,8 @@ const EventCard = memo(function EventCardImpl({
               </View>
               {pending != null && pending > 0 && (
                 <View style={styles.rsvpStat}>
-                  <Ionicons name="ellipse-outline" size={13} color={PULSE_COLORS.ui.muted} />
-                  <Text style={[styles.rsvpStatText, { color: PULSE_COLORS.ui.muted }]}>{pending}</Text>
+                  <Ionicons name="ellipse-outline" size={13} color={colors.muted} />
+                  <Text style={[styles.rsvpStatText, { color: colors.muted }]}>{pending}</Text>
                 </View>
               )}
             </View>
@@ -1470,12 +1475,12 @@ const EventCard = memo(function EventCardImpl({
                       disabled={rsvpLoading}
                     >
                       {rsvpLoading
-                        ? <ActivityIndicator size="small" color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted} />
+                        ? <ActivityIndicator size="small" color={status === 'attending' ? '#000' : colors.muted} />
                         : <>
                             <Ionicons
                               name="checkmark-circle-outline"
                               size={13}
-                              color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted}
+                              color={status === 'attending' ? '#000' : colors.muted}
                             />
                             <Text style={[styles.rsvpBtnText, status === 'attending' && { color: '#000' }]}>Going</Text>
                           </>
@@ -1487,12 +1492,12 @@ const EventCard = memo(function EventCardImpl({
                       disabled={rsvpLoading}
                     >
                       {rsvpLoading
-                        ? <ActivityIndicator size="small" color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted} />
+                        ? <ActivityIndicator size="small" color={status === 'not_attending' ? '#fff' : colors.muted} />
                         : <>
                             <Ionicons
                               name="close-circle-outline"
                               size={13}
-                              color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted}
+                              color={status === 'not_attending' ? '#fff' : colors.muted}
                             />
                             <Text style={[styles.rsvpBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
                           </>
@@ -1519,25 +1524,26 @@ const EventCard = memo(function EventCardImpl({
   );
 });
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 64, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerIconBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  subtitle: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
+  title: { fontSize: 26, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 13, color: colors.textSecondary },
   syncBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14,
@@ -1567,8 +1573,8 @@ const styles = StyleSheet.create({
   tournamentBigIconNoFrame: { backgroundColor: 'transparent', borderWidth: 0 },
   tournamentBigIconImage: { width: 60, height: 60 },
   tournamentEyebrow: { fontSize: 10, fontWeight: '800', color: '#EAB308', letterSpacing: 1.2, marginBottom: 2 },
-  tournamentBigName: { fontSize: 19, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  tournamentBigMeta: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  tournamentBigName: { fontSize: 19, fontWeight: '800', color: colors.text },
+  tournamentBigMeta: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
   tournamentBigRecord: { fontSize: 12.5, fontWeight: '700', color: '#EAB308', marginTop: 12 },
   tournamentGamesList: { marginTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(234,179,8,0.2)', paddingTop: 10 },
   tournamentGameRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
@@ -1576,14 +1582,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(234,179,8,0.12)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3, maxWidth: 84,
   },
   tournamentGameStageText: { fontSize: 9, fontWeight: '800', color: '#EAB308', letterSpacing: 0.3 },
-  tournamentGameTitle: { fontSize: 13.5, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  tournamentGameMeta: { fontSize: 11.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  tournamentGameTitle: { fontSize: 13.5, fontWeight: '700', color: colors.text },
+  tournamentGameMeta: { fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
   tournamentGameBadge: { fontSize: 11.5, fontWeight: '800' },
   tournamentGameRsvpRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
   tournamentGameRsvpText: { fontSize: 10.5, fontWeight: '700', color: PULSE_COLORS.rsvp.attending },
   tournamentMoreRow: { paddingTop: 8, alignItems: 'center' },
   tournamentMoreText: { fontSize: 12.5, fontWeight: '700' },
-  tournamentNoGames: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 14, fontStyle: 'italic' },
+  tournamentNoGames: { fontSize: 12.5, color: colors.muted, marginTop: 14, fontStyle: 'italic' },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: PULSE_COLORS.brand.green,
@@ -1594,21 +1600,21 @@ const styles = StyleSheet.create({
   // Tab bar
   allTeamsBar: {
     flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   allTeamsBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
   },
   allTeamsBtnActive: { /* backgroundColor set inline */ },
-  allTeamsBtnText:       { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  allTeamsBtnText:       { fontSize: 12, fontWeight: '700', color: colors.muted },
   allTeamsBtnTextActive: { color: '#000' },
 
   tabBar: {
     flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.background,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+    backgroundColor: colors.background,
   },
   tabBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1616,19 +1622,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabBtnActive: { borderBottomColor: PULSE_COLORS.brand.green },
-  tabBtnText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  tabBtnText: { fontSize: 13, fontWeight: '600', color: colors.muted },
   tabBtnTextActive: { color: PULSE_COLORS.brand.green },
 
   // List
   list: { paddingVertical: 12, paddingHorizontal: 16 },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, marginBottom: 8 },
-  sectionHeader: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1.2 },
+  sectionHeader: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1.2 },
   sectionCountBadge: {
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1, borderColor: colors.border,
   },
-  sectionCount: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  sectionCount: { fontSize: 11, fontWeight: '700', color: colors.muted },
 
   // Empty states
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
@@ -1636,21 +1642,21 @@ const styles = StyleSheet.create({
     width: 56, height: 56, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', marginBottom: 24, maxWidth: 260, lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: 24, maxWidth: 260, lineHeight: 20 },
   emptyBtn: { backgroundColor: PULSE_COLORS.brand.green, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 20 },
   emptyBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
 
   // Event card
   eventCard: {
-    flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flexDirection: 'row', backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, marginBottom: 10, overflow: 'hidden',
   },
   eventCardPast: {},
   typeStripe: { width: 3 },
   dateCol: {
-    width: 58, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    width: 58, backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
     paddingVertical: 14, gap: 1,
   },
@@ -1662,24 +1668,24 @@ const styles = StyleSheet.create({
   // the kit badge below, which for the same reason use a fixed readable
   // color rather than the literal kit hex.
   homeAwaySwatch: { width: 6, height: 6, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
-  homeAwayTagText: { fontSize: 8, fontWeight: '900', letterSpacing: 1, color: PULSE_COLORS.ui.textSecondary },
-  dateWday: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5 },
-  dateDay: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, lineHeight: 26 },
-  dateMon: { fontSize: 10, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 0.5 },
+  homeAwayTagText: { fontSize: 8, fontWeight: '900', letterSpacing: 1, color: colors.textSecondary },
+  dateWday: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.5 },
+  dateDay: { fontSize: 22, fontWeight: '800', color: colors.text, lineHeight: 26 },
+  dateMon: { fontSize: 10, fontWeight: '600', color: colors.textSecondary, letterSpacing: 0.5 },
   todayText: { color: PULSE_COLORS.brand.green },
   eventBody: { flex: 1, paddingHorizontal: 12, paddingVertical: 11, gap: 5 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5 },
   driveTimePill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
     flexShrink: 0,
   },
-  driveTimePillText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  driveTimePillText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   tournamentBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(234,179,8,0.12)', maxWidth: 160 },
-  kitBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.08)' },
+  kitBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: overlay(0.08) },
   kitSwatch: { width: 9, height: 9, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
   typeText: { fontSize: 11, fontWeight: '700' },
   videoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: 'rgba(168,85,247,0.10)' },
@@ -1698,39 +1704,39 @@ const styles = StyleSheet.create({
   resultColScore: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
   // Season record header on Past tab
   seasonRecord: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, paddingVertical: 14, paddingHorizontal: 18,
     marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
-  seasonRecordTitle: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1.2 },
+  seasonRecordTitle: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1.2 },
   seasonRecordRow: { flexDirection: 'row', alignItems: 'center', gap: 0 },
   seasonStat: { alignItems: 'center', paddingHorizontal: 16 },
   seasonStatNum: { fontSize: 22, fontWeight: '800', lineHeight: 26 },
-  seasonStatLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5 },
-  seasonStatSep: { width: 1, height: 32, backgroundColor: PULSE_COLORS.ui.border },
+  seasonStatLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.5 },
+  seasonStatSep: { width: 1, height: 32, backgroundColor: colors.border },
   myStatusChip: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10,
   },
   myStatusChipText: { fontSize: 11, fontWeight: '700' },
-  eventTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  eventMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
+  eventTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  eventMeta: { fontSize: 12, color: colors.textSecondary },
 
   // Weather + drive time
-  contextBlock: { gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, marginTop: 2 },
+  contextBlock: { gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 2 },
   contextWeatherRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   contextWeatherEmoji: { fontSize: 13 },
-  contextWeatherTemp: { fontSize: 13, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  contextWeatherCond: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, flex: 1 },
+  contextWeatherTemp: { fontSize: 13, fontWeight: '800', color: colors.text },
+  contextWeatherCond: { fontSize: 12, color: colors.textSecondary, flex: 1 },
   contextRainPill: {
     backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: 6,
     paddingHorizontal: 6, paddingVertical: 2,
   },
   contextRainPillText: { fontSize: 11, fontWeight: '700', color: '#60A5FA' },
   contextDriveRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  contextDriveText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  contextDriveLabel: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  contextDriveText: { fontSize: 12, fontWeight: '700', color: colors.text },
+  contextDriveLabel: { fontSize: 12, color: colors.muted },
   rsvpSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 2 },
   rsvpStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rsvpStatText: { fontSize: 13, fontWeight: '700' },
@@ -1741,16 +1747,16 @@ const styles = StyleSheet.create({
   guestCountPillText: { fontSize: 9, fontWeight: '800', color: '#f97316' },
   rsvpRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
   childRsvpRow: { gap: 4 },
-  childRsvpName: { fontSize: 11.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  childRsvpName: { fontSize: 11.5, fontWeight: '700', color: colors.textSecondary },
   rsvpBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 12, paddingVertical: 12, borderRadius: 20,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
   rsvpBtnGoing: { backgroundColor: PULSE_COLORS.rsvp.attending, borderColor: PULSE_COLORS.rsvp.attending },
   rsvpBtnNotGoing: { backgroundColor: PULSE_COLORS.rsvp.not_attending, borderColor: PULSE_COLORS.rsvp.not_attending },
-  rsvpBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  rsvpBtnText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
 
   // Calendar
   calScroll: { paddingHorizontal: 16 },
@@ -1760,21 +1766,21 @@ const styles = StyleSheet.create({
   },
   calNavBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  calNavTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calNavTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
 
   calWeekLabels: {
     flexDirection: 'row',
     paddingBottom: 8,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
     marginBottom: 4,
   },
   calWeekLabel: {
     flex: 1, textAlign: 'center',
-    fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '600', color: colors.muted,
   },
 
   calGrid: { gap: 2 },
@@ -1790,8 +1796,8 @@ const styles = StyleSheet.create({
   calDayCircleToday: {
     borderWidth: 1.5, borderColor: PULSE_COLORS.brand.green,
   },
-  calDayText: { fontSize: 14, fontWeight: '500', color: PULSE_COLORS.ui.text },
-  calDayTextPast: { color: PULSE_COLORS.ui.muted },
+  calDayText: { fontSize: 14, fontWeight: '500', color: colors.text },
+  calDayTextPast: { color: colors.muted },
   calDayTextToday: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
   calDayTextSelected: { color: '#000', fontWeight: '700' },
   calDot: {
@@ -1800,30 +1806,32 @@ const styles = StyleSheet.create({
   },
   calDotSelected: { backgroundColor: '#000' },
 
-  calDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 16 },
+  calDivider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
   calEventHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 12,
   },
-  calEventHeaderText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calEventHeaderText: { fontSize: 15, fontWeight: '700', color: colors.text },
   calClearBtn: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
 
   calEmpty: { alignItems: 'center', gap: 10, paddingVertical: 32 },
-  calEmptyText: { fontSize: 14, color: PULSE_COLORS.ui.muted },
+  calEmptyText: { fontSize: 14, color: colors.muted },
   calEventList: { gap: 0 },
 
   teamDotRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -2 },
   teamDot: { width: 6, height: 6, borderRadius: 3 },
   teamDotLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
-});
+  });
+}
 
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  const { colors } = useTheme();
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16 }}>
-      <Ionicons name="calendar-outline" size={40} color={PULSE_COLORS.ui.muted} />
-      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600' }}>Schedule couldn't load</Text>
-      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
-        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, gap: 16 }}>
+      <Ionicons name="calendar-outline" size={40} color={colors.muted} />
+      <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Schedule couldn't load</Text>
+      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}>
+        <Text style={{ color: colors.text, fontWeight: '700' }}>Try Again</Text>
       </TouchableOpacity>
     </View>
   );

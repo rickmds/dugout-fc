@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Dimensions, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PULSE_COLORS } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const H_PAD   = 14;
@@ -12,6 +12,7 @@ const CARD_H  = Math.round(CARD_W * 1.1) + 59; // photo + strip
 export default function RosterSkeleton() {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.5)).current;
+  const { colors } = useTheme();
 
   useEffect(() => {
     Animated.loop(
@@ -22,12 +23,12 @@ export default function RosterSkeleton() {
     ).start();
   }, []);
 
-  const S = PULSE_COLORS.ui.surface;
+  const S = colors.surface;
   const top = insets.top + 64;
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: PULSE_COLORS.ui.background }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ paddingHorizontal: H_PAD, paddingTop: top, paddingBottom: 40 }}
       scrollEnabled={false}
     >

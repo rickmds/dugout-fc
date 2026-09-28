@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -13,7 +13,8 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import { sendProfilesPush } from '../../lib/push';
 
 export const SHOUTOUT_TAGS: { tag: string; emoji: string; label: string }[] = [
@@ -47,6 +48,8 @@ export default function ShoutoutSheet({
   const [tag, setTag] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   function reset() {
     setStep('pick'); setSelected(null); setTag(null); setNote('');
@@ -108,7 +111,7 @@ export default function ShoutoutSheet({
                   {players.map(p => (
                     <TouchableOpacity key={p.id} style={st.playerRow} onPress={() => pickPlayer(p)} activeOpacity={0.7}>
                       <Text style={st.playerName}>{p.full_name}</Text>
-                      <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
                     </TouchableOpacity>
                   ))}
                   {players.length === 0 && <Text style={st.emptyText}>No confirmed players for this event yet.</Text>}
@@ -146,7 +149,7 @@ export default function ShoutoutSheet({
                   multiline
                   numberOfLines={2}
                   placeholder="She tracked back on defense all half…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   value={note}
                   onChangeText={setNote}
                 />
@@ -187,7 +190,8 @@ export default function ShoutoutSheet({
   );
 }
 
-const st = StyleSheet.create({
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheetWrap: { width: '100%' },
   sheet: {
@@ -197,15 +201,15 @@ const st = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 10, paddingBottom: 30,
   },
   handle: { width: 36, height: 4, borderRadius: 3, backgroundColor: '#3F4045', alignSelf: 'center', marginBottom: 14 },
-  title: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 3, letterSpacing: -0.2 },
-  subtitle: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginBottom: 16 },
+  title: { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: 3, letterSpacing: -0.2 },
+  subtitle: { fontSize: 12, color: colors.muted, marginBottom: 16 },
 
   playerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#1E1F22',
   },
-  playerName: { fontSize: 14.5, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  emptyText: { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingVertical: 20 },
+  playerName: { fontSize: 14.5, fontWeight: '600', color: colors.text },
+  emptyText: { fontSize: 13, color: colors.muted, textAlign: 'center', paddingVertical: 20 },
 
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 },
   tagPill: {
@@ -215,14 +219,14 @@ const st = StyleSheet.create({
   },
   tagPillSel: { backgroundColor: 'rgba(34,197,94,0.14)', borderColor: PULSE_COLORS.brand.green },
   tagEmoji: { fontSize: 15 },
-  tagLabel: { fontSize: 12.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  tagLabel: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
   tagLabelSel: { color: PULSE_COLORS.brand.green },
 
-  fieldLabel: { fontSize: 11.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginBottom: 7 },
-  optional: { fontWeight: '400', color: PULSE_COLORS.ui.muted, textTransform: 'none' },
+  fieldLabel: { fontSize: 11.5, fontWeight: '700', color: colors.textSecondary, marginBottom: 7 },
+  optional: { fontWeight: '400', color: colors.muted, textTransform: 'none' },
   input: {
     backgroundColor: '#1A1B1E', borderWidth: 1.5, borderColor: '#2A2B30', borderRadius: 12,
-    padding: 12, color: PULSE_COLORS.ui.text, fontSize: 13, minHeight: 52, textAlignVertical: 'top',
+    padding: 12, color: colors.text, fontSize: 13, minHeight: 52, textAlignVertical: 'top',
     marginBottom: 16,
   },
 
@@ -231,5 +235,6 @@ const st = StyleSheet.create({
   sendBtnText: { fontSize: 14.5, fontWeight: '800', color: '#6B6F78', letterSpacing: -0.2 },
   sendBtnTextReady: { color: '#06210F' },
   skipBtn: { alignItems: 'center', paddingVertical: 12 },
-  skipText: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
-});
+  skipText: { fontSize: 12.5, color: colors.muted, fontWeight: '600' },
+  });
+}

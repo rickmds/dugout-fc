@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator, Alert, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
@@ -8,7 +8,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
@@ -20,6 +21,8 @@ export default function EmergencyBroadcastScreen() {
   const router = useRouter();
   const { club, session } = useAuth();
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [step, setStep]         = useState<Step>('compose');
   const [situation, setSituation] = useState('');
@@ -149,7 +152,7 @@ export default function EmergencyBroadcastScreen() {
               <TextInput
                 style={[st.textArea, { minHeight: 120 }]}
                 placeholder="e.g. Lightning has been spotted near the complex. All fields are closing immediately and everyone must evacuate to the main building."
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 multiline
                 value={situation}
                 onChangeText={setSituation}
@@ -159,7 +162,7 @@ export default function EmergencyBroadcastScreen() {
             <Text style={st.hint}>AI will turn this into a professional broadcast message</Text>
 
             <TouchableOpacity
-              style={[st.primaryBtn, { backgroundColor: situation.trim() ? primaryColor : PULSE_COLORS.ui.border, marginTop: 24 }]}
+              style={[st.primaryBtn, { backgroundColor: situation.trim() ? primaryColor : colors.border, marginTop: 24 }]}
               onPress={generateMessage}
               disabled={!situation.trim()}
               activeOpacity={0.85}
@@ -203,7 +206,7 @@ export default function EmergencyBroadcastScreen() {
                 value={subject}
                 onChangeText={setSubject}
                 placeholder={`🚨 Urgent Message from ${club?.name ?? 'Club'}`}
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
               />
             </View>
 
@@ -214,7 +217,7 @@ export default function EmergencyBroadcastScreen() {
                 value={message}
                 onChangeText={setMessage}
                 multiline
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 placeholder="Your message to the club…"
               />
             </View>
@@ -226,7 +229,7 @@ export default function EmergencyBroadcastScreen() {
             </View>
 
             <TouchableOpacity
-              style={[st.primaryBtn, { backgroundColor: sending ? PULSE_COLORS.ui.border : '#DC2626', marginTop: 24 }]}
+              style={[st.primaryBtn, { backgroundColor: sending ? colors.border : '#DC2626', marginTop: 24 }]}
               onPress={() => {
                 Alert.alert(
                   '🚨 Confirm broadcast',
@@ -261,22 +264,24 @@ export default function EmergencyBroadcastScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  root:            { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  root:            { flex: 1, backgroundColor: colors.background },
   scroll:          { padding: 16, paddingBottom: 40 },
   center:          { alignItems: 'center', justifyContent: 'center', padding: 40 },
   warnBanner:      { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', marginBottom: 24 },
   warnText:        { fontSize: 13, color: '#B91C1C', lineHeight: 19, flex: 1 },
-  sectionLabel:    { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
-  card:            { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, overflow: 'hidden' },
-  textArea:        { fontSize: 14, color: PULSE_COLORS.ui.text, lineHeight: 22, padding: 14 },
-  hint:            { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 6, marginBottom: 0, paddingHorizontal: 4 },
+  sectionLabel:    { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  card:            { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  textArea:        { fontSize: 14, color: colors.text, lineHeight: 22, padding: 14 },
+  hint:            { fontSize: 12, color: colors.muted, marginTop: 6, marginBottom: 0, paddingHorizontal: 4 },
   primaryBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 14 },
   primaryBtnText:  { fontSize: 15, fontWeight: '800', color: '#fff' },
   ghostBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 14, marginTop: 10 },
   ghostBtnText:    { fontSize: 14, fontWeight: '600' },
-  generatingTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center' },
-  generatingBody:  { fontSize: 14, color: PULSE_COLORS.ui.muted, marginTop: 6, textAlign: 'center' },
+  generatingTitle: { fontSize: 18, fontWeight: '800', color: colors.text, textAlign: 'center' },
+  generatingBody:  { fontSize: 14, color: colors.muted, marginTop: 6, textAlign: 'center' },
   recipientBadge:  { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, borderWidth: 1, padding: 12, marginTop: 16 },
   recipientText:   { fontSize: 13, fontWeight: '600', flex: 1 },
-});
+  });
+}

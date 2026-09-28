@@ -25,7 +25,8 @@ import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { sendCoachInvites, sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { POSITION_COLORS, POSITION_DEFAULT } from '../../../../constants/positions';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
@@ -96,6 +97,8 @@ const PlayerCard = memo(function PlayerCard({
   // roster screen re-rendered.
   const onPress = () => onPressPlayer(item.id);
   const { primaryColor } = useClub();
+  const { colors, overlay } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const [imgErr, setImgErr] = useState(false);
   const isMyPlayer   = item.profile_id !== null && item.profile_id === myProfileId;
   const canSeeDetail = isCoach || isMyPlayer || !item.is_private;
@@ -108,13 +111,13 @@ const PlayerCard = memo(function PlayerCard({
   const [first, last] = splitName(item.full_name);
 
   return (
-    <TouchableOpacity style={[st.card, { borderColor: 'rgba(255,255,255,0.1)' }]} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity style={[st.card, { borderColor: overlay(0.1) }]} onPress={onPress} activeOpacity={0.75}>
 
       {/* ── Thin top brand stripe ── */}
       <View style={{ height: 3, backgroundColor: primaryColor }} />
 
       {/* ── Photo zone ── */}
-      <View style={[st.photoZone, { backgroundColor: 'rgba(255,255,255,0.05)' }]}>
+      <View style={[st.photoZone, { backgroundColor: overlay(0.05) }]}>
 
         {hasImg ? (
           /* Real photo ─ fill, cover, fade bottom, position badge */
@@ -129,8 +132,8 @@ const PlayerCard = memo(function PlayerCard({
         ) : (
           /* No photo ─ initials as hero */
           <View style={st.placeholder}>
-            <View style={[st.bgRing, { width: CARD_W * 0.90, height: CARD_W * 0.90, borderRadius: CARD_W * 0.45, borderColor: 'rgba(255,255,255,0.07)', backgroundColor: 'rgba(255,255,255,0.03)' }]} />
-            <View style={[st.bgRing, { width: CARD_W * 0.62, height: CARD_W * 0.62, borderRadius: CARD_W * 0.31, opacity: 0.7, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.04)' }]} />
+            <View style={[st.bgRing, { width: CARD_W * 0.90, height: CARD_W * 0.90, borderRadius: CARD_W * 0.45, borderColor: overlay(0.07), backgroundColor: overlay(0.03) }]} />
+            <View style={[st.bgRing, { width: CARD_W * 0.62, height: CARD_W * 0.62, borderRadius: CARD_W * 0.31, opacity: 0.7, borderColor: overlay(0.1), backgroundColor: overlay(0.04) }]} />
             <Text
               style={[st.placeholderInitials, { color: pc.primary, opacity: 0.38 }]}
               adjustsFontSizeToFit
@@ -150,20 +153,20 @@ const PlayerCard = memo(function PlayerCard({
         {/* Lock icon for private players (other parents only) */}
         {item.is_private && !isCoach && !isMyPlayer && (
           <View style={st.privateLockBadge}>
-            <Ionicons name="lock-closed" size={10} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="lock-closed" size={10} color={colors.muted} />
           </View>
         )}
 
       </View>
 
       {/* ── Name strip ── */}
-      <View style={[st.strip, { backgroundColor: 'rgba(255,255,255,0.05)', borderTopColor: 'rgba(255,255,255,0.1)' }]}>
+      <View style={[st.strip, { backgroundColor: overlay(0.05), borderTopColor: overlay(0.1) }]}>
         {item.jersey_number != null ? (
           <>
             <View style={st.stripNumCol}>
-              <Text style={[st.stripNum, { color: '#ffffff' }]}>{item.jersey_number}</Text>
+              <Text style={[st.stripNum, { color: colors.text }]}>{item.jersey_number}</Text>
             </View>
-            <View style={[st.stripDivider, { backgroundColor: 'rgba(255,255,255,0.12)' }]} />
+            <View style={[st.stripDivider, { backgroundColor: overlay(0.12) }]} />
           </>
         ) : null}
 
@@ -183,6 +186,8 @@ const PlayerCard = memo(function PlayerCard({
 
 function CoachAvatar({ uri, name }: { uri: string | null; name: string }) {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const [err, setErr] = useState(false);
   if (uri && !err) {
     return <Image source={{ uri }} style={st.coachImg} transition={200} onError={() => setErr(true)} />;
@@ -207,6 +212,8 @@ function ListHeader({
   onPendingCoachPress: (id: string) => void;
 }) {
   const { primaryColor, rgba } = useClub();
+  const { colors, overlay } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const hasStaff = coaches.length > 0 || pendingCoaches.length > 0;
   const totalRows = coaches.length + pendingCoaches.length;
   return (
@@ -224,11 +231,11 @@ function ListHeader({
                     <Text style={st.coachName}>{n}</Text>
                     <Text style={st.coachRole} numberOfLines={1}>{c.profiles?.phone ? `Coach · ${formatPhone(c.profiles.phone)}` : 'Coach'}</Text>
                   </View>
-                  <View style={[st.coachTag, { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.18)' }]}>
-                    <Ionicons name="shield-checkmark" size={10} color="#ffffff" />
-                    <Text style={[st.coachTagText, { color: '#ffffff' }]}>STAFF</Text>
+                  <View style={[st.coachTag, { backgroundColor: overlay(0.08), borderColor: overlay(0.18) }]}>
+                    <Ionicons name="shield-checkmark" size={10} color={colors.text} />
+                    <Text style={[st.coachTagText, { color: colors.text }]}>STAFF</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+                  <Ionicons name="chevron-forward" size={14} color={colors.muted} style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
               );
             })}
@@ -243,7 +250,7 @@ function ListHeader({
                   <Ionicons name="mail-outline" size={10} color="#EAB308" />
                   <Text style={[st.coachTagText, { color: '#EAB308' }]}>INVITED</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />
+                <Ionicons name="chevron-forward" size={14} color={colors.muted} style={{ marginLeft: 4 }} />
               </TouchableOpacity>
             ))}
           </View>
@@ -262,6 +269,8 @@ function ListHeader({
 
 export default function RosterScreen() {
   const { primaryColor, rgba, clubName, logoUrl, secondaryColor, onSecondary } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const { team, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
@@ -501,9 +510,9 @@ export default function RosterScreen() {
   if (!team) {
     return (
       <View style={st.center}>
-        <Ionicons name="people-outline" size={48} color={PULSE_COLORS.ui.muted} />
-        <Text style={{ color: PULSE_COLORS.ui.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
-        <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>Import your club or create a team to get started.</Text>
+        <Ionicons name="people-outline" size={48} color={colors.muted} />
+        <Text style={{ color: colors.textSecondary, fontSize: 17, fontWeight: '700', marginTop: 16 }}>No teams yet</Text>
+        <Text style={{ color: colors.muted, fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>Import your club or create a team to get started.</Text>
       </View>
     );
   }
@@ -533,13 +542,13 @@ export default function RosterScreen() {
 
       {/* ── Search bar ── */}
       <View style={st.searchRow}>
-        <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} style={st.searchIcon} />
+        <Ionicons name="search-outline" size={16} color={colors.muted} style={st.searchIcon} />
         <TextInput
           style={st.searchInput}
           value={search}
           onChangeText={setSearch}
           placeholder="Search players…"
-          placeholderTextColor={PULSE_COLORS.ui.muted}
+          placeholderTextColor={colors.muted}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
@@ -547,7 +556,7 @@ export default function RosterScreen() {
         />
         {search.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="close-circle" size={16} color={colors.muted} />
           </TouchableOpacity>
         )}
       </View>
@@ -586,7 +595,7 @@ export default function RosterScreen() {
           <View style={st.empty}>
             {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} contentFit="contain" /> : null}
             <View style={st.emptyIcon}>
-              <Ionicons name="people-outline" size={30} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="people-outline" size={30} color={colors.muted} />
             </View>
             <Text style={st.emptyTitle}>No players yet</Text>
             <Text style={st.emptySub}>
@@ -652,7 +661,7 @@ export default function RosterScreen() {
                   </View>
                 )}
                 {successInfo.type === 'player_no_email' && (
-                  <Text style={{ fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginTop: 8, marginBottom: 24, paddingHorizontal: 8, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: 8, marginBottom: 24, paddingHorizontal: 8, lineHeight: 18 }}>
                     You can add a parent email from the roster later.
                   </Text>
                 )}
@@ -671,7 +680,7 @@ export default function RosterScreen() {
                 <View style={st.sheetHeaderRow}>
                   <Text style={st.sheetTitle}>Add to Roster</Text>
                   <TouchableOpacity onPress={() => setAddStep(null)} style={st.sheetClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={20} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close" size={20} color={colors.muted} />
                   </TouchableOpacity>
                 </View>
 
@@ -683,7 +692,7 @@ export default function RosterScreen() {
                     <Text style={st.pickerTitle}>Player</Text>
                     <Text style={st.pickerSub}>Add to the squad, optionally invite parent</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.border} />
+                  <Ionicons name="chevron-forward" size={18} color={colors.border} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[st.pickerCard, { marginTop: 10 }]} onPress={() => setAddStep('coach')} activeOpacity={0.78}>
@@ -694,7 +703,7 @@ export default function RosterScreen() {
                     <Text style={st.pickerTitle}>Coach / Staff</Text>
                     <Text style={st.pickerSub}>Sends an invite to join as coaching staff</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.border} />
+                  <Ionicons name="chevron-forward" size={18} color={colors.border} />
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[st.cancelBtn, { marginTop: 20, alignItems: 'center' }]} onPress={() => setAddStep(null)}>
@@ -708,14 +717,14 @@ export default function RosterScreen() {
               <>
                 <View style={st.sheetHeaderRow}>
                   <TouchableOpacity onPress={() => setAddStep('picker')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="chevron-back" size={22} color={colors.muted} />
                   </TouchableOpacity>
                   <View style={{ flex: 1, marginLeft: 8 }}>
                     <Text style={st.sheetTitle}>Add Player</Text>
                     <Text style={st.sheetSub}>Add a parent email to send an instant invite.</Text>
                   </View>
                   <TouchableOpacity onPress={() => setAddStep(null)} style={st.sheetClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={20} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close" size={20} color={colors.muted} />
                   </TouchableOpacity>
                 </View>
 
@@ -723,12 +732,12 @@ export default function RosterScreen() {
                   <Text style={st.sectionDivLabel}>PLAYER</Text>
 
                   <Text style={st.inputLabel}>Full name *</Text>
-                  <TextInput style={st.input} value={name} onChangeText={setName} placeholder="Jane Smith" placeholderTextColor={PULSE_COLORS.ui.muted} autoFocus />
+                  <TextInput style={st.input} value={name} onChangeText={setName} placeholder="Jane Smith" placeholderTextColor={colors.muted} autoFocus />
 
                   <View style={st.rowInputs}>
                     <View style={{ flex: 1 }}>
                       <Text style={st.inputLabel}>Jersey</Text>
-                      <TextInput style={st.input} value={jersey} onChangeText={setJersey} placeholder="#10" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="number-pad" />
+                      <TextInput style={st.input} value={jersey} onChangeText={setJersey} placeholder="#10" placeholderTextColor={colors.muted} keyboardType="number-pad" />
                     </View>
                     <View style={{ flex: 2 }}>
                       <Text style={st.inputLabel}>Position</Text>
@@ -753,10 +762,10 @@ export default function RosterScreen() {
                   </View>
 
                   <Text style={st.inputLabel}>Parent name</Text>
-                  <TextInput style={st.input} value={parentName} onChangeText={setParentName} placeholder="Sarah Smith" placeholderTextColor={PULSE_COLORS.ui.muted} autoCapitalize="words" />
+                  <TextInput style={st.input} value={parentName} onChangeText={setParentName} placeholder="Sarah Smith" placeholderTextColor={colors.muted} autoCapitalize="words" />
 
                   <Text style={st.inputLabel}>Parent email</Text>
-                  <TextInput style={st.input} value={parentEmail} onChangeText={setParentEmail} placeholder="sarah@example.com" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+                  <TextInput style={st.input} value={parentEmail} onChangeText={setParentEmail} placeholder="sarah@example.com" placeholderTextColor={colors.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
                   {parentEmail.trim().length > 0 && (
                     <View style={st.inviteHint}>
                       <Ionicons name="mail-outline" size={13} color={PULSE_COLORS.brand.green} />
@@ -781,26 +790,26 @@ export default function RosterScreen() {
               <>
                 <View style={st.sheetHeaderRow}>
                   <TouchableOpacity onPress={() => setAddStep('picker')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="chevron-back" size={22} color={colors.muted} />
                   </TouchableOpacity>
                   <View style={{ flex: 1, marginLeft: 8 }}>
                     <Text style={st.sheetTitle}>Add Coach</Text>
                     <Text style={st.sheetSub}>They'll receive an invite to join as coaching staff.</Text>
                   </View>
                   <TouchableOpacity onPress={() => setAddStep(null)} style={st.sheetClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close" size={20} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close" size={20} color={colors.muted} />
                   </TouchableOpacity>
                 </View>
 
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 8 }}>
                   <Text style={st.inputLabel}>Full name *</Text>
-                  <TextInput style={st.input} value={coachName} onChangeText={setCoachName} placeholder="Mike Johnson" placeholderTextColor={PULSE_COLORS.ui.muted} autoCapitalize="words" autoFocus />
+                  <TextInput style={st.input} value={coachName} onChangeText={setCoachName} placeholder="Mike Johnson" placeholderTextColor={colors.muted} autoCapitalize="words" autoFocus />
 
                   <Text style={st.inputLabel}>Email address *</Text>
-                  <TextInput style={st.input} value={coachEmail} onChangeText={setCoachEmail} placeholder="coach@example.com" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+                  <TextInput style={st.input} value={coachEmail} onChangeText={setCoachEmail} placeholder="coach@example.com" placeholderTextColor={colors.muted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
 
                   <Text style={st.inputLabel}>Phone number</Text>
-                  <TextInput style={st.input} value={coachPhone} onChangeText={setCoachPhone} placeholder="+1 (555) 000-0000" placeholderTextColor={PULSE_COLORS.ui.muted} keyboardType="phone-pad" />
+                  <TextInput style={st.input} value={coachPhone} onChangeText={setCoachPhone} placeholder="+1 (555) 000-0000" placeholderTextColor={colors.muted} keyboardType="phone-pad" />
 
                   <Text style={st.inputLabel}>Role</Text>
                   <View style={st.posRow}>
@@ -843,19 +852,20 @@ export default function RosterScreen() {
 
 const COACH_SZ = 46;
 
-const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
 
   // ── Header
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 20, paddingTop: 60, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  title:    { fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.5 },
-  teamName: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  title:    { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  teamName: { fontSize: 12, color: colors.muted, marginTop: 2 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -865,8 +875,8 @@ const st = StyleSheet.create({
   addBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
   iconBtn: {
     width: 34, height: 34, borderRadius: 17,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
 
@@ -874,13 +884,13 @@ const st = StyleSheet.create({
   searchRow: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 14, marginTop: 10, marginBottom: 4,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 12, paddingVertical: 10, gap: 8,
   },
   searchIcon: { flexShrink: 0 },
   searchInput: {
-    flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text,
+    flex: 1, fontSize: 15, color: colors.text,
   },
 
   // ── Grid
@@ -890,23 +900,23 @@ const st = StyleSheet.create({
   // ── List header
   listHeader: { marginBottom: 6 },
   sectionLabel: {
-    fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '800', color: colors.muted,
     letterSpacing: 2, marginBottom: 12, marginTop: 24,
   },
   squadRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  squadCount: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  squadCount: { fontSize: 11, color: colors.muted, fontWeight: '600' },
 
   // ── Coach card
   coachCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
   coachRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 13, gap: 12,
   },
-  coachDivider: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  coachDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   coachImg: { width: COACH_SZ, height: COACH_SZ, borderRadius: COACH_SZ / 2 },
   coachImgFallback: {
     width: COACH_SZ, height: COACH_SZ, borderRadius: COACH_SZ / 2,
@@ -916,8 +926,8 @@ const st = StyleSheet.create({
   },
   coachInitials: { fontSize: 16, fontWeight: '900', color: PULSE_COLORS.brand.green },
   coachMeta: { flex: 1 },
-  coachName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  coachRole: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  coachName: { fontSize: 15, fontWeight: '600', color: colors.text },
+  coachRole: { fontSize: 12, color: colors.muted, marginTop: 1 },
   coachTag: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(34,197,94,0.08)',
@@ -930,8 +940,8 @@ const st = StyleSheet.create({
   card: {
     width: CARD_W,
     borderRadius: 16,
-    backgroundColor: PULSE_COLORS.ui.background,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.background,
+    borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
 
@@ -983,9 +993,9 @@ const st = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 11,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
-    borderTopColor: PULSE_COLORS.ui.border,
+    borderTopColor: colors.border,
     gap: 0,
   },
   stripNumCol: {
@@ -1004,21 +1014,21 @@ const st = StyleSheet.create({
   stripDivider: {
     width: 1,
     height: 28,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     marginHorizontal: 10,
   },
   stripNames: { flex: 1, justifyContent: 'center' },
   stripFirst: {
     fontSize: 13,
     fontWeight: '700',
-    color: PULSE_COLORS.ui.text,
+    color: colors.text,
     letterSpacing: -0.1,
     lineHeight: 16,
   },
   stripLast: {
     fontSize: 11,
     fontWeight: '500',
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
     letterSpacing: -0.1,
     lineHeight: 15,
     marginTop: 2,
@@ -1028,26 +1038,26 @@ const st = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 48 },
   emptyIcon: {
     width: 72, height: 72, borderRadius: 20,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', marginBottom: 16,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 6 },
-  emptySub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 24 },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 6 },
+  emptySub:   { fontSize: 13, color: colors.muted, textAlign: 'center', marginBottom: 24 },
   emptyBtn:   { backgroundColor: PULSE_COLORS.brand.green, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
   emptyBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
 
   // ── Modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.72)' },
   sheet: {
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 24, paddingTop: 16, paddingBottom: 46,
     maxHeight: '88%',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderBottomWidth: 0,
+    borderWidth: 1, borderColor: colors.border, borderBottomWidth: 0,
   },
   sheetHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border,
+    width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border,
     alignSelf: 'center', marginBottom: 20,
   },
   sheetHeaderRow: {
@@ -1055,38 +1065,38 @@ const st = StyleSheet.create({
   },
   sheetClose: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', marginTop: 2,
   },
-  sheetTitle: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  sheetSub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
+  sheetTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  sheetSub:   { fontSize: 13, color: colors.muted, lineHeight: 18 },
   sectionDivLabel: {
-    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '800', color: colors.muted,
     letterSpacing: 1.5, marginTop: 4, marginBottom: 0,
   },
   inputLabel: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: colors.muted,
     letterSpacing: 0.8, marginBottom: 8, marginTop: 16,
   },
   rowInputs: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   input: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13,
-    color: PULSE_COLORS.ui.text, fontSize: 16,
+    color: colors.text, fontSize: 16,
   },
   posRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 0 },
   posChip: {
     paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
-  posChipText: { color: PULSE_COLORS.ui.muted, fontWeight: '800', fontSize: 12 },
+  posChipText: { color: colors.muted, fontWeight: '800', fontSize: 12 },
   parentDivider: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 24, marginBottom: 0,
   },
-  parentDividerLine: { flex: 1, height: 1, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+  parentDividerLine: { flex: 1, height: 1, backgroundColor: colors.surfaceAlt },
   parentDividerLabel: {
-    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '800', color: colors.muted,
     letterSpacing: 1.5,
   },
   inviteHint: {
@@ -1105,11 +1115,11 @@ const st = StyleSheet.create({
     shadowOpacity: 0.22, shadowRadius: 24, shadowOffset: { width: 0, height: 0 },
   },
   successTitle: {
-    fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text,
+    fontSize: 26, fontWeight: '800', color: colors.text,
     letterSpacing: -0.5, marginBottom: 8,
   },
   successSub: {
-    fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center',
+    fontSize: 13, color: colors.muted, textAlign: 'center',
   },
   successEmailPill: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
@@ -1130,8 +1140,8 @@ const st = StyleSheet.create({
   // ── Picker cards
   pickerCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
     padding: 16,
   },
   pickerIconWrap: {
@@ -1140,28 +1150,30 @@ const st = StyleSheet.create({
     borderWidth: 1,
   },
   pickerMeta: { flex: 1 },
-  pickerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 3 },
-  pickerSub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
+  pickerTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 3 },
+  pickerSub:   { fontSize: 13, color: colors.muted, lineHeight: 18 },
   modalBtns: { flexDirection: 'row', gap: 10 },
   cancelBtn: {
     flex: 1, padding: 15, borderRadius: 16,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center',
   },
-  cancelText: { color: PULSE_COLORS.ui.muted, fontWeight: '600', fontSize: 15 },
+  cancelText: { color: colors.muted, fontWeight: '600', fontSize: 15 },
   saveBtn: {
     flex: 2, padding: 15, borderRadius: 16,
     backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center',
   },
   saveText: { color: '#000', fontWeight: '800', fontSize: 15 },
-});
+  });
+}
 
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  const { colors } = useTheme();
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16 }}>
-      <Ionicons name="people-outline" size={40} color={PULSE_COLORS.ui.muted} />
-      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600' }}>Roster couldn't load</Text>
-      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
-        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, gap: 16 }}>
+      <Ionicons name="people-outline" size={40} color={colors.muted} />
+      <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Roster couldn't load</Text>
+      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}>
+        <Text style={{ color: colors.text, fontWeight: '700' }}>Try Again</Text>
       </TouchableOpacity>
     </View>
   );

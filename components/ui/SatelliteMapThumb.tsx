@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PULSE_COLORS } from '../../constants/colors';
+import { ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
@@ -21,15 +22,17 @@ export default function SatelliteMapThumb({
 }) {
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   if (!address && lat == null) return null; // nothing to show or link to
 
   if (!PLACES_KEY || imgError) {
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.fallback}>
-        <Ionicons name="map-outline" size={16} color={PULSE_COLORS.ui.muted} />
+        <Ionicons name="map-outline" size={16} color={colors.muted} />
         <Text style={styles.fallbackText} numberOfLines={1}>{address ?? 'View on map'}</Text>
-        <Ionicons name="open-outline" size={14} color={PULSE_COLORS.ui.muted} />
+        <Ionicons name="open-outline" size={14} color={colors.muted} />
       </TouchableOpacity>
     );
   }
@@ -42,7 +45,7 @@ export default function SatelliteMapThumb({
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={[styles.wrapper, { height }]}>
       {!imgLoaded && (
         <View style={styles.skeleton}>
-          <ActivityIndicator color={PULSE_COLORS.ui.muted} />
+          <ActivityIndicator color={colors.muted} />
         </View>
       )}
       <Image
@@ -62,39 +65,41 @@ export default function SatelliteMapThumb({
   );
 }
 
-const styles = StyleSheet.create({
-  wrapper: {
-    width: '100%',
-    overflow: 'hidden',
-    borderRadius: 12,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-  },
-  skeleton: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  image: { width: '100%', height: '100%' },
-  hint: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.58)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  hintText: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '600' },
-  fallback: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 10,
-  },
-  fallbackText: { flex: 1, fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-});
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    wrapper: {
+      width: '100%',
+      overflow: 'hidden',
+      borderRadius: 12,
+      backgroundColor: colors.surfaceAlt,
+    },
+    skeleton: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    image: { width: '100%', height: '100%' },
+    hint: {
+      position: 'absolute',
+      bottom: 8,
+      left: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(0,0,0,0.58)',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 20,
+    },
+    hintText: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '600' },
+    fallback: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 10,
+    },
+    fallbackText: { flex: 1, fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  });
+}

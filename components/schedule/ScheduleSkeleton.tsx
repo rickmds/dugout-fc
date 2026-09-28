@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { Animated, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PULSE_COLORS } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function ScheduleSkeleton() {
   const insets = useSafeAreaInsets();
   const pulse = useRef(new Animated.Value(0.5)).current;
+  const { colors } = useTheme();
 
   useEffect(() => {
     Animated.loop(
@@ -16,12 +17,12 @@ export default function ScheduleSkeleton() {
     ).start();
   }, []);
 
-  const S = PULSE_COLORS.ui.surface;
+  const S = colors.surface;
   const top = insets.top + 64; // safe area + ClubHeader height
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: PULSE_COLORS.ui.background }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: top, paddingBottom: 40 }}
       scrollEnabled={false}
     >

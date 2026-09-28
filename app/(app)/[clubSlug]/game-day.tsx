@@ -12,7 +12,8 @@ import {
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
+import { useTheme } from '../../../hooks/useTheme';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import {
   useGameDayFeed, localDateStr, detectClashes, upcomingDates, detectCoachClashes, getCoverageFlag,
@@ -73,6 +74,8 @@ type TravelLeg = { minutes: number | null; leaveBy: string | null; isClash: bool
 export default function GameDayScreen() {
   const router = useRouter();
   const mapApp = useMapApp();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const { allTeams } = useTeam();
   const teamIds = useMemo(() => allTeams.map((t) => t.id), [allTeams]);
@@ -260,13 +263,13 @@ export default function GameDayScreen() {
 
       {!dates.length ? (
         <View style={styles.empty}>
-          <Ionicons name="calendar-outline" size={48} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="calendar-outline" size={48} color={colors.muted} />
           <Text style={styles.emptyTitle}>No upcoming games</Text>
           <Text style={styles.emptyBody}>Nothing on the schedule for any of your teams right now.</Text>
         </View>
       ) : !dayEvents.length ? (
         <View style={styles.empty}>
-          <Ionicons name="calendar-outline" size={48} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="calendar-outline" size={48} color={colors.muted} />
           <Text style={styles.emptyTitle}>No games on this day</Text>
           <Text style={styles.emptyBody}>Select another date above.</Text>
         </View>
@@ -284,7 +287,7 @@ export default function GameDayScreen() {
                 <Text style={[styles.originText, { color: GAME_COLOR }]}>Starting from {locationLabel}</Text>
                 {legsLoading && (
                   <Animated.View style={[styles.syncIcon, { transform: [{ rotate: spin }] }]}>
-                    <Ionicons name="sync-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="sync-outline" size={12} color={colors.muted} />
                   </Animated.View>
                 )}
               </View>
@@ -354,10 +357,12 @@ export default function GameDayScreen() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function NeedsAttentionBanner({ clashes, noLineup, tbd }: { clashes: number; noLineup: number; tbd: number }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const items: { icon: keyof typeof Ionicons.glyphMap; color: string; text: string }[] = [];
   if (clashes > 0) items.push({ icon: 'warning-outline', color: '#F59E0B', text: `${clashes} clash${clashes > 1 ? 'es' : ''}` });
   if (noLineup > 0) items.push({ icon: 'grid-outline', color: '#EF4444', text: `${noLineup} no lineup` });
-  if (tbd > 0) items.push({ icon: 'help-circle-outline', color: PULSE_COLORS.ui.muted, text: `${tbd} TBD` });
+  if (tbd > 0) items.push({ icon: 'help-circle-outline', color: colors.muted, text: `${tbd} TBD` });
 
   return (
     <View style={styles.attentionBanner}>
@@ -375,12 +380,14 @@ function NeedsAttentionBanner({ clashes, noLineup, tbd }: { clashes: number; noL
 }
 
 function TravelStrip({ minutes, leaveBy, isFirst }: { minutes: number | null; leaveBy: string | null; isFirst: boolean }) {
-  const color = isFirst ? GAME_COLOR : PULSE_COLORS.ui.textSecondary;
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
+  const color = isFirst ? GAME_COLOR : colors.textSecondary;
   return (
     <View style={styles.travelLeg}>
       <View style={styles.travelLegLeft}>
         <View style={styles.travelLine} />
-        <View style={[styles.travelCarWrap, { backgroundColor: PULSE_COLORS.ui.surface, borderColor: PULSE_COLORS.ui.border }]}>
+        <View style={[styles.travelCarWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Ionicons name={isFirst ? 'navigate-outline' : 'car-outline'} size={14} color={color} />
         </View>
         <View style={styles.travelLine} />
@@ -411,6 +418,8 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
   router: ReturnType<typeof useRouter>;
   onOpenMaps: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const scale = useRef(new Animated.Value(1)).current;
   const accent = event.club?.primary_color ?? GAME_COLOR;
   const canManage = event.my_role === 'coach' || event.my_role === 'org_admin';
@@ -431,10 +440,10 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
     if (!event.rsvp_lock_at) return null;
     const lockTime = new Date(event.rsvp_lock_at);
     const now = new Date();
-    if (lockTime < now) return { label: 'RSVP closed', color: PULSE_COLORS.ui.muted };
+    if (lockTime < now) return { label: 'RSVP closed', color: colors.muted };
     const diffH = (lockTime.getTime() - now.getTime()) / (1000 * 60 * 60);
     const timeStr = lockTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    return { label: `RSVP closes ${timeStr}`, color: diffH < 2 ? '#F59E0B' : PULSE_COLORS.ui.muted };
+    return { label: `RSVP closes ${timeStr}`, color: diffH < 2 ? '#F59E0B' : colors.muted };
   })();
 
   const slug = event.club?.slug;
@@ -478,7 +487,7 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
             </Text>
             {kitLabel && (
               <View style={styles.kitChip}>
-                <Ionicons name="shirt-outline" size={10} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="shirt-outline" size={10} color={colors.muted} />
                 <Text style={styles.kitChipText}>{kitLabel}</Text>
               </View>
             )}
@@ -487,7 +496,7 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
           <Text style={styles.cardTitle}>{event.title}</Text>
 
           <View style={styles.cardMetaRow}>
-            <Ionicons name="time-outline" size={13} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="time-outline" size={13} color={colors.muted} />
             <Text style={styles.cardMeta}>{event.event_time ? fmt12(event.event_time) : 'TBC'}</Text>
             {event.event_time && event.arrival_buffer_minutes != null && (
               <>
@@ -499,11 +508,11 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
 
           {(event.location || event.address) && (
             <TouchableOpacity onPress={onOpenMaps} style={styles.cardMetaRow} hitSlop={8}>
-              <Ionicons name="location-outline" size={13} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="location-outline" size={13} color={colors.muted} />
               <Text style={[styles.cardMeta, styles.cardMetaLink]} numberOfLines={1}>
                 {event.location || event.address}
               </Text>
-              <Ionicons name="open-outline" size={11} color={PULSE_COLORS.ui.border} />
+              <Ionicons name="open-outline" size={11} color={colors.border} />
             </TouchableOpacity>
           )}
 
@@ -530,7 +539,7 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
                   style={styles.messageBtn}
                   hitSlop={8}
                 >
-                  <Ionicons name="chatbubble-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="chatbubble-outline" size={14} color={colors.muted} />
                 </TouchableOpacity>
               )}
 
@@ -564,6 +573,8 @@ function GameCard({ event, clash, flag, router, onOpenMaps }: {
 }
 
 function RsvpBubble({ count, color, label }: { count: number; color: string; label: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return (
     <View style={styles.rsvpBubbleWrap}>
       <View style={[styles.rsvpBubble, { backgroundColor: color }]}>
@@ -576,8 +587,9 @@ function RsvpBubble({ count, color, label }: { count: number; color: string; lab
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  root:   { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   clashBadge: {
@@ -591,12 +603,12 @@ const styles = StyleSheet.create({
   dateTabs: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
   dateTab: {
     height: 36, paddingHorizontal: 16, borderRadius: 18,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
   dateTabActive:     { borderColor: 'transparent' },
-  dateTabText:       { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  dateTabText:       { fontSize: 13, fontWeight: '600', color: colors.muted },
   dateTabTextActive: { color: '#000', fontWeight: '700' },
 
   scrollContent: { paddingHorizontal: 16, paddingTop: 16 },
@@ -613,9 +625,9 @@ const styles = StyleSheet.create({
   attentionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   attentionChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 20,
+    backgroundColor: colors.surface, borderRadius: 20,
     paddingHorizontal: 10, paddingVertical: 4,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1, borderColor: colors.border,
   },
   attentionChipText: { fontSize: 12, fontWeight: '600' },
 
@@ -624,8 +636,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: 8, marginBottom: 12,
   },
-  coverageHeaderLabel: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1.2 },
-  coverageHeaderCount: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  coverageHeaderLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 1.2 },
+  coverageHeaderCount: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
 
   flagBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 6,
@@ -647,14 +659,14 @@ const styles = StyleSheet.create({
   // Travel leg
   travelLeg: { flexDirection: 'row', gap: 12, marginVertical: 4, alignItems: 'stretch', paddingHorizontal: 2 },
   travelLegLeft: { alignItems: 'center', width: 30 },
-  travelLine: { flex: 1, width: 1.5, alignSelf: 'center', minHeight: 8, backgroundColor: PULSE_COLORS.ui.border },
+  travelLine: { flex: 1, width: 1.5, alignSelf: 'center', minHeight: 8, backgroundColor: colors.border },
   travelCarWrap: {
     width: 30, height: 30, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1,
   },
   travelLegRight: { flex: 1, justifyContent: 'center', paddingVertical: 6 },
-  travelMins: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  travelMins: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   leaveByRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   leaveByText: { fontSize: 14, fontWeight: '800', color: '#F59E0B' },
 
@@ -669,8 +681,8 @@ const styles = StyleSheet.create({
 
   // Game card
   card: {
-    flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flexDirection: 'row', backgroundColor: colors.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: colors.border,
     marginBottom: 12, overflow: 'hidden',
   },
   cardClash: { borderColor: 'rgba(245,158,11,0.5)' },
@@ -679,13 +691,13 @@ const styles = StyleSheet.create({
 
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   homeAwayLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  teamLabel: { flex: 1, fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  teamLabel: { flex: 1, fontSize: 11, color: colors.muted, fontWeight: '500' },
   kitChip: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 20,
+    backgroundColor: colors.surfaceAlt, borderRadius: 20,
     paddingHorizontal: 7, paddingVertical: 2,
   },
-  kitChipText: { fontSize: 10, color: PULSE_COLORS.ui.muted },
+  kitChipText: { fontSize: 10, color: colors.muted },
   parentChip: {
     position: 'absolute', top: 10, right: 10, zIndex: 1,
     flexDirection: 'row', alignItems: 'center', gap: 3,
@@ -698,19 +710,19 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
 
   cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' },
-  cardMeta: { fontSize: 12, color: PULSE_COLORS.ui.muted },
-  cardMetaDivider: { fontSize: 12, color: PULSE_COLORS.ui.border },
-  cardMetaArrive: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
-  cardMetaLink: { flex: 1, textDecorationLine: 'underline', textDecorationColor: PULSE_COLORS.ui.border },
+  cardMeta: { fontSize: 12, color: colors.muted },
+  cardMetaDivider: { fontSize: 12, color: colors.border },
+  cardMetaArrive: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  cardMetaLink: { flex: 1, textDecorationLine: 'underline', textDecorationColor: colors.border },
 
-  cardDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 4 },
+  cardDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
   cardBottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   messageBtn: {
     width: 30, height: 30, borderRadius: 15,
     justifyContent: 'center', alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
   },
 
   // RSVP
@@ -718,7 +730,7 @@ const styles = StyleSheet.create({
   rsvpBubbleWrap: { alignItems: 'center', gap: 3 },
   rsvpBubble: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   rsvpBubbleNum: { fontSize: 13, fontWeight: '800', color: '#fff' },
-  rsvpBubbleLabel: { fontSize: 9, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  rsvpBubbleLabel: { fontSize: 9, color: colors.muted, fontWeight: '600' },
 
   // Lineup chip
   lineupChip: {
@@ -730,5 +742,6 @@ const styles = StyleSheet.create({
   // Empty state
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 40 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: '#fff' },
-  emptyBody: { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 20 },
-});
+  emptyBody: { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20 },
+  });
+}

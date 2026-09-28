@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,7 +18,8 @@ import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
 import { useMapApp } from '../../../../hooks/useMapApp';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { sendProfilesPush } from '../../../../lib/push';
 import { fetchDriveTime } from '../../../../lib/drivetime';
 
@@ -72,6 +73,8 @@ export default function GuestRequestScreen() {
   const { primaryColor, rgba, timezone } = useClub();
   const router = useRouter();
   const mapApp = useMapApp();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [request,            setRequest]            = useState<GuestRequest | null>(null);
   const [event,              setEvent]              = useState<EventInfo | null>(null);
@@ -319,7 +322,7 @@ export default function GuestRequestScreen() {
           {/* Date + time */}
           <View style={st.metaDivider} />
           <View style={st.metaRow}>
-            <Ionicons name="calendar-outline" size={17} color={PULSE_COLORS.ui.muted} style={st.metaIcon} />
+            <Ionicons name="calendar-outline" size={17} color={colors.muted} style={st.metaIcon} />
             <View style={{ gap: 2 }}>
               <Text style={st.metaPrimary}>{formatDay(event.event_date)}</Text>
               {event.event_time && (
@@ -336,7 +339,7 @@ export default function GuestRequestScreen() {
             <>
               <View style={st.metaDivider} />
               <View style={st.metaRow}>
-                <Ionicons name="walk-outline" size={17} color={PULSE_COLORS.ui.muted} style={st.metaIcon} />
+                <Ionicons name="walk-outline" size={17} color={colors.muted} style={st.metaIcon} />
                 <View style={{ gap: 2 }}>
                   <Text style={st.metaLabel}>Arrive by</Text>
                   <Text style={st.metaPrimary}>
@@ -352,7 +355,7 @@ export default function GuestRequestScreen() {
             <>
               <View style={st.metaDivider} />
               <TouchableOpacity style={st.metaRow} onPress={openMaps} activeOpacity={0.7}>
-                <Ionicons name="location-outline" size={17} color={PULSE_COLORS.ui.muted} style={st.metaIcon} />
+                <Ionicons name="location-outline" size={17} color={colors.muted} style={st.metaIcon} />
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={st.metaPrimary} numberOfLines={2}>{event.location ?? event.address}</Text>
                   {event.location && event.address && event.address !== event.location && (
@@ -365,7 +368,7 @@ export default function GuestRequestScreen() {
                     </View>
                   )}
                 </View>
-                <Ionicons name="open-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="open-outline" size={15} color={colors.muted} />
               </TouchableOpacity>
             </>
           )}
@@ -379,7 +382,7 @@ export default function GuestRequestScreen() {
                   <>
                     {!mapImgLoaded && (
                       <View style={st.mapSkeleton}>
-                        <ActivityIndicator color={PULSE_COLORS.ui.muted} />
+                        <ActivityIndicator color={colors.muted} />
                       </View>
                     )}
                     <Image
@@ -398,7 +401,7 @@ export default function GuestRequestScreen() {
                   </>
                 ) : (
                   <View style={st.mapFallback}>
-                    <Ionicons name="map-outline" size={20} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="map-outline" size={20} color={colors.muted} />
                     <Text style={[st.mapFallbackText, { color: primaryColor }]}>
                       {event.address ?? event.location ?? 'Tap to open map'}
                     </Text>
@@ -414,7 +417,7 @@ export default function GuestRequestScreen() {
             guardian can have more than one (e.g. twins on the same team) */}
         {myPlayers.length === 0 ? (
           <View style={st.noPlayerCard}>
-            <Ionicons name="information-circle-outline" size={20} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="information-circle-outline" size={20} color={colors.muted} />
             <Text style={st.noPlayerText}>
               You don't have a player on the team that was asked. If you think this is wrong, contact your coach.
             </Text>
@@ -471,31 +474,32 @@ export default function GuestRequestScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorText: { color: PULSE_COLORS.ui.textSecondary, fontSize: 15 },
+  errorText: { color: colors.textSecondary, fontSize: 15 },
   scroll:    { padding: 16, gap: 14 },
 
   statusBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 10, borderWidth: 1 },
   statusBannerText: { fontSize: 13, fontWeight: '600', flex: 1 },
 
-  heroCard:     { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16, borderWidth: 1.5, padding: 24, alignItems: 'center', gap: 8 },
+  heroCard:     { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1.5, padding: 24, alignItems: 'center', gap: 8 },
   heroIcon:     { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  heroTeam:     { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 },
-  heroHeadline: { fontSize: 20, fontWeight: '800', textAlign: 'center', color: PULSE_COLORS.ui.text },
-  heroNote:     { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 4 },
+  heroTeam:     { fontSize: 13, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 },
+  heroHeadline: { fontSize: 20, fontWeight: '800', textAlign: 'center', color: colors.text },
+  heroNote:     { fontSize: 14, color: colors.textSecondary, fontStyle: 'italic', textAlign: 'center', marginTop: 4 },
 
   spotsRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 },
   spotDot:    { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  spotsLabel: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', marginLeft: 4 },
+  spotsLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', marginLeft: 4 },
 
-  sectionLabel: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: -4 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: -4 },
 
   // Meta card (mirrors the event detail screen style)
   metaCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, overflow: 'hidden',
   },
   eventTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 16, paddingBottom: 4 },
@@ -503,34 +507,35 @@ const st = StyleSheet.create({
   gameBadgeText: { fontSize: 12, fontWeight: '700', color: '#F59E0B', letterSpacing: 0.5 },
   homeAwayBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
   homeAwayText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
-  eventTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, paddingHorizontal: 16, paddingBottom: 12 },
+  eventTitle: { fontSize: 18, fontWeight: '800', color: colors.text, paddingHorizontal: 16, paddingBottom: 12 },
   metaRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
   metaIcon: { marginTop: 1, width: 20 },
-  metaDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
-  metaPrimary: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  metaSecondary: { fontSize: 13, color: PULSE_COLORS.ui.muted },
-  metaLabel: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 },
+  metaDivider: { height: 1, backgroundColor: colors.border },
+  metaPrimary: { fontSize: 15, fontWeight: '600', color: colors.text },
+  metaSecondary: { fontSize: 13, color: colors.muted },
+  metaLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2 },
   driveRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   driveText: { fontSize: 12, fontWeight: '700' },
 
   // Map
   mapWrapper: { height: 180, overflow: 'hidden' },
-  mapSkeleton: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+  mapSkeleton: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
   mapImg: { width: '100%', height: '100%' },
   mapHint: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.58)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20 },
   mapHintText: { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600' },
-  mapFallback: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: PULSE_COLORS.ui.surface },
+  mapFallback: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: colors.surface },
   mapFallbackText: { flex: 1, fontSize: 14, fontWeight: '600' },
 
-  noPlayerCard: { backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 16, flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  noPlayerText: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, flex: 1, lineHeight: 19 },
+  noPlayerCard: { backgroundColor: colors.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 16, flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  noPlayerText: { fontSize: 13, color: colors.textSecondary, flex: 1, lineHeight: 19 },
 
   volunteerConfirmed:      { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 12, borderWidth: 1 },
   volunteerConfirmedTitle: { fontSize: 15, fontWeight: '800' },
-  volunteerConfirmedSub:   { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  volunteerConfirmedSub:   { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
 
   volunteerBtn:     { borderRadius: 14, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   volunteerBtnText: { fontSize: 17, fontWeight: '800' },
 
-  disclaimer: { fontSize: 11, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 16, paddingHorizontal: 8 },
-});
+  disclaimer: { fontSize: 11, color: colors.muted, textAlign: 'center', lineHeight: 16, paddingHorizontal: 8 },
+  });
+}

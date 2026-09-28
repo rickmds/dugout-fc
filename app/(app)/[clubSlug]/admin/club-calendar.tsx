@@ -13,7 +13,8 @@ import { supabase } from '../../../../lib/supabase';
 import { toLocalDateStr } from '../../../../lib/localDate';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -98,6 +99,8 @@ export default function ClubCalendarScreen() {
   const { primaryColor, rgba } = useClub();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [weekOffset, setWeekOffset] = useState(0);
   const [events, setEvents] = useState<CalEvent[]>([]);
@@ -224,11 +227,11 @@ export default function ClubCalendarScreen() {
       {/* Week navigation */}
       <View style={st.weekNav}>
         <TouchableOpacity onPress={() => setWeekOffset(o => o - 1)} style={st.weekNavBtn} hitSlop={12}>
-          <Ionicons name="chevron-back" size={18} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-back" size={18} color={colors.muted} />
         </TouchableOpacity>
         <Text style={st.weekLabel}>{label}</Text>
         <TouchableOpacity onPress={() => setWeekOffset(o => o + 1)} style={st.weekNavBtn} hitSlop={12}>
-          <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
         </TouchableOpacity>
       </View>
 
@@ -284,7 +287,7 @@ export default function ClubCalendarScreen() {
         </View>
       ) : byDay.length === 0 ? (
         <View style={st.emptyWrap}>
-          <Ionicons name="calendar-outline" size={48} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="calendar-outline" size={48} color={colors.muted} />
           <Text style={st.emptyTitle}>Nothing scheduled</Text>
           <Text style={st.emptyBody}>No events across all teams {label.toLowerCase()}.</Text>
         </View>
@@ -333,7 +336,7 @@ export default function ClubCalendarScreen() {
 
                     {/* Time + location */}
                     <View style={st.cardMetaRow}>
-                      <Ionicons name="time-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="time-outline" size={12} color={colors.muted} />
                       <Text style={st.cardMeta}>{fmtTime(ev.event_time)}</Text>
                       {ev.location && (
                         <>
@@ -361,7 +364,7 @@ export default function ClubCalendarScreen() {
                           )}
                         </View>
                       ) : null}
-                      <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.border} />
+                      <Ionicons name="chevron-forward" size={14} color={colors.border} />
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -376,8 +379,9 @@ export default function ClubCalendarScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
 
   weekNav: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -397,32 +401,32 @@ const st = StyleSheet.create({
   filterRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8, alignItems: 'center' },
   filterPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 20, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 12, paddingVertical: 6,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
   },
   filterDot: { width: 7, height: 7, borderRadius: 3.5 },
-  filterPillText: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  filterPillText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
 
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 4 },
 
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: PULSE_COLORS.ui.muted },
+  loadingText: { fontSize: 14, color: colors.muted },
 
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  emptyBody: { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center' },
+  emptyBody: { fontSize: 14, color: colors.muted, textAlign: 'center' },
 
   daySection: { marginBottom: 20 },
   dayHeader: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: colors.muted,
     letterSpacing: 1.3, marginBottom: 8,
   },
 
   eventCard: {
-    flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flexDirection: 'row', backgroundColor: colors.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: colors.border,
     marginBottom: 8, overflow: 'hidden',
   },
   cardBar: { width: 4 },
@@ -444,13 +448,13 @@ const st = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: '800', color: '#fff', letterSpacing: -0.2 },
 
   cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  cardMeta: { fontSize: 12, color: PULSE_COLORS.ui.muted, flex: 1 },
-  cardMetaDot: { fontSize: 12, color: PULSE_COLORS.ui.border },
+  cardMeta: { fontSize: 12, color: colors.muted, flex: 1 },
+  cardMetaDot: { fontSize: 12, color: colors.border },
 
   cardBottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
   rsvpRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   rsvpDot: { width: 6, height: 6, borderRadius: 3 },
-  rsvpText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  rsvpText: { fontSize: 11, color: colors.muted, fontWeight: '500' },
 
   scoreChip: {
     backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 8,
@@ -458,4 +462,5 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
   },
   scoreChipText: { fontSize: 12, fontWeight: '800', color: '#22C55E' },
-});
+  });
+}

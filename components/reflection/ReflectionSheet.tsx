@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 export const FACES: { rating: number; emoji: string; label: string; color: string }[] = [
   { rating: 1, emoji: '😞', label: 'Rough', color: '#EF4444' },
@@ -45,6 +46,8 @@ export default function ReflectionSheet({
   const [wentWell, setWentWell] = useState('');
   const [needsImprovement, setNeedsImprovement] = useState('');
   const [saving, setSaving] = useState(false);
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   useEffect(() => {
     if (visible) {
@@ -101,7 +104,7 @@ export default function ReflectionSheet({
               multiline
               numberOfLines={2}
               placeholder="First touch felt sharp, won a few duels…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               value={wentWell}
               onChangeText={setWentWell}
             />
@@ -112,7 +115,7 @@ export default function ReflectionSheet({
               multiline
               numberOfLines={2}
               placeholder="Lost focus late in the second half…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               value={needsImprovement}
               onChangeText={setNeedsImprovement}
             />
@@ -137,7 +140,8 @@ export default function ReflectionSheet({
   );
 }
 
-const st = StyleSheet.create({
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheetWrap: { width: '100%' },
   sheet: {
@@ -147,8 +151,8 @@ const st = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 10, paddingBottom: 30,
   },
   handle: { width: 36, height: 4, borderRadius: 3, backgroundColor: '#3F4045', alignSelf: 'center', marginBottom: 14 },
-  title: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 3, letterSpacing: -0.2 },
-  subtitle: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginBottom: 18 },
+  title: { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: 3, letterSpacing: -0.2 },
+  subtitle: { fontSize: 12, color: colors.muted, marginBottom: 18 },
 
   faces: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
   faceBtn: { flex: 1, alignItems: 'center', gap: 6, paddingVertical: 6 },
@@ -156,10 +160,10 @@ const st = StyleSheet.create({
   faceEmojiDim: { opacity: 0.45 },
   faceLabel: { fontSize: 10, fontWeight: '700', color: '#5B5F68' },
 
-  fieldLabel: { fontSize: 11.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginBottom: 7 },
+  fieldLabel: { fontSize: 11.5, fontWeight: '700', color: colors.textSecondary, marginBottom: 7 },
   input: {
     backgroundColor: '#1A1B1E', borderWidth: 1.5, borderColor: '#2A2B30', borderRadius: 12,
-    padding: 12, color: PULSE_COLORS.ui.text, fontSize: 13, minHeight: 52, textAlignVertical: 'top',
+    padding: 12, color: colors.text, fontSize: 13, minHeight: 52, textAlignVertical: 'top',
     marginBottom: 14,
   },
 
@@ -168,5 +172,6 @@ const st = StyleSheet.create({
   saveBtnText: { fontSize: 14.5, fontWeight: '800', color: '#6B6F78', letterSpacing: -0.2 },
   saveBtnTextReady: { color: '#06210F' },
   skipBtn: { alignItems: 'center', paddingVertical: 12 },
-  skipText: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
-});
+  skipText: { fontSize: 12.5, color: colors.muted, fontWeight: '600' },
+  });
+}

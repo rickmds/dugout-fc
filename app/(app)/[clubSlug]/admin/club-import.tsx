@@ -17,7 +17,8 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,8 @@ export default function ClubImportScreen() {
   const { profile, club } = useAuth();
   const { refetch: refetchTeam } = useTeam();
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [phase, setPhase]             = useState<Phase>('idle');
   const [parseMsg, setParseMsg]       = useState(PARSE_MESSAGES[0]);
@@ -594,7 +597,7 @@ export default function ClubImportScreen() {
                       <Text style={styles.uncertainIssue}>{row.issue}</Text>
                     </View>
                     <TouchableOpacity onPress={() => removeUncertain(i)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close-circle" size={18} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="close-circle" size={18} color={colors.muted} />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -674,6 +677,8 @@ export default function ClubImportScreen() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SummaryChip({ icon, value, label, color }: { icon: any; value: number; label: string; color: string }) {
+  const { colors } = useTheme();
+  const chipStyles = useMemo(() => getChipStyles(colors), [colors]);
   return (
     <View style={[chipStyles.root, { backgroundColor: `${color}12`, borderColor: `${color}25` }]}>
       <Ionicons name={icon} size={14} color={color} />
@@ -682,13 +687,17 @@ function SummaryChip({ icon, value, label, color }: { icon: any; value: number; 
     </View>
   );
 }
-const chipStyles = StyleSheet.create({
+function getChipStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   root:  { flex: 1, alignItems: 'center', gap: 2, padding: 12, borderRadius: 12, borderWidth: 1 },
   value: { fontSize: 22, fontWeight: '800' },
-  label: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-});
+  label: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
+  });
+}
 
 function DoneStat({ value, label, color }: { value: number; label: string; color: string }) {
+  const { colors } = useTheme();
+  const doneStyles = useMemo(() => getDoneStyles(colors), [colors]);
   return (
     <View style={doneStyles.root}>
       <Text style={[doneStyles.value, { color }]}>{value}</Text>
@@ -696,11 +705,13 @@ function DoneStat({ value, label, color }: { value: number; label: string; color
     </View>
   );
 }
-const doneStyles = StyleSheet.create({
+function getDoneStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   root:  { flex: 1, alignItems: 'center', gap: 4 },
   value: { fontSize: 28, fontWeight: '800' },
-  label: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary, textAlign: 'center' },
-});
+  label: { fontSize: 11, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
+  });
+}
 
 function TeamSection({
   team, players, teamNames, existingTeams, primaryColor, expanded, existingNames,
@@ -730,6 +741,8 @@ function TeamSection({
   onOpenLinkPicker: () => void;
   onLinkExisting: (existingTeamId: string | null) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const meta = [team.age_group, team.season].filter(Boolean).join(' · ');
   const counts = [
     team.coaches.length > 0 ? `${team.coaches.length} coach${team.coaches.length !== 1 ? 'es' : ''}` : null,
@@ -753,18 +766,18 @@ function TeamSection({
           : <View style={styles.newBadge}><Text style={styles.newBadgeText}>New team</Text></View>}
         {existingTeams.length > 0 && (
           <TouchableOpacity onPress={onOpenLinkPicker} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }} style={styles.moveTeamBtn}>
-            <Ionicons name="link-outline" size={15} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="link-outline" size={15} color={colors.muted} />
           </TouchableOpacity>
         )}
         {otherTeamNames.length > 0 && (
           <TouchableOpacity onPress={onOpenTeamPicker} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }} style={styles.moveTeamBtn}>
-            <Ionicons name="swap-horizontal-outline" size={15} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="swap-horizontal-outline" size={15} color={colors.muted} />
           </TouchableOpacity>
         )}
         <TouchableOpacity onPress={onRemoveTeam} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }} style={styles.removeTeamBtn}>
-          <Ionicons name="trash-outline" size={15} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="trash-outline" size={15} color={colors.muted} />
         </TouchableOpacity>
-        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 2 }} />
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color={colors.muted} style={{ marginLeft: 2 }} />
       </TouchableOpacity>
 
       {linkPickerOpen && existingTeams.length > 0 && (
@@ -833,7 +846,7 @@ function TeamSection({
                     <>
                       <TouchableOpacity style={styles.playerTeamPill} onPress={() => onOpenPicker(p.uid)} activeOpacity={0.7}>
                         <Text style={styles.playerTeamPillText}>{team.name}</Text>
-                        <Ionicons name="chevron-down" size={10} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="chevron-down" size={10} color={colors.muted} />
                       </TouchableOpacity>
                       {pickerOpenForUid === p.uid && (
                         <View style={styles.nestedMovePicker}>
@@ -865,6 +878,8 @@ function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconCo
   onRemove: () => void;
   footer?: React.ReactNode;
 }) {
+  const { colors } = useTheme();
+  const rpStyles = useMemo(() => getRpStyles(colors), [colors]);
   return (
     <View style={[rpStyles.row, uncertain && rpStyles.rowUncertain]}>
       <View style={[rpStyles.icon, { backgroundColor: `${iconColor}15` }]}>
@@ -894,63 +909,66 @@ function ReviewPersonRow({ name, detail, email, secondaryEmail, iconName, iconCo
         {footer}
       </View>
       <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={rpStyles.removeBtn}>
-        <Ionicons name="close" size={15} color={PULSE_COLORS.ui.muted} />
+        <Ionicons name="close" size={15} color={colors.muted} />
       </TouchableOpacity>
     </View>
   );
 }
 
-const rpStyles = StyleSheet.create({
-  row:         { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, paddingLeft: 8, borderLeftWidth: 3, borderLeftColor: 'transparent', borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+function getRpStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  row:         { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 10, paddingLeft: 8, borderLeftWidth: 3, borderLeftColor: 'transparent', borderBottomWidth: 1, borderBottomColor: colors.border },
   rowUncertain:{ backgroundColor: 'rgba(245,158,11,0.06)', borderLeftColor: '#F59E0B' },
   icon:        { width: 26, height: 26, borderRadius: 7, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 },
   body:        { flex: 1, gap: 3 },
   removeBtn:   { marginTop: 2 },
   nameRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  name:        { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  name:        { fontSize: 14, fontWeight: '600', color: colors.text },
   badge:       { backgroundColor: 'rgba(245,158,11,0.2)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
   badgeText:   { fontSize: 10, fontWeight: '700', color: '#F59E0B' },
   dupBadge:     { backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
   dupBadgeText: { fontSize: 10, fontWeight: '700', color: '#60A5FA' },
   guardianBadge:     { backgroundColor: 'rgba(236,72,153,0.15)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 1 },
   guardianBadgeText: { fontSize: 10, fontWeight: '700', color: '#EC4899' },
-  detail:      { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  detail:      { fontSize: 12, color: colors.muted },
   emailRow:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
   email:       { fontSize: 11, color: '#60A5FA' },
   reason:      { fontSize: 11, color: '#F59E0B', marginTop: 1 },
-});
+  });
+}
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.background },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn:     { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
 
   centerContent: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, paddingBottom: 48 },
   heroIcon:      { width: 80, height: 80, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  heroTitle:     { fontSize: 24, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center', marginBottom: 10, letterSpacing: -0.4 },
-  heroSub:       { fontSize: 15, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
+  heroTitle:     { fontSize: 24, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 10, letterSpacing: -0.4 },
+  heroSub:       { fontSize: 15, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
 
-  formatBox:   { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, padding: 16, width: '100%', gap: 10, marginBottom: 16 },
-  formatTitle: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 4 },
+  formatBox:   { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16, width: '100%', gap: 10, marginBottom: 16 },
+  formatTitle: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 4 },
   formatRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  formatLabel: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
-  formatHint:  { fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 24, lineHeight: 18 },
+  formatLabel: { fontSize: 13, color: colors.textSecondary },
+  formatHint:  { fontSize: 12, color: colors.muted, textAlign: 'center', marginBottom: 24, lineHeight: 18 },
 
   uploadBtn:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 14, width: '100%', justifyContent: 'center' },
   uploadBtnText: { fontSize: 16, fontWeight: '800', color: '#000' },
 
   reviewContent: { padding: 16, paddingBottom: 40 },
   summaryBar:    { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  sectionLabel:  { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
-  newTeamsNote:  { fontSize: 12, color: PULSE_COLORS.ui.muted, marginBottom: 14, lineHeight: 17 },
+  sectionLabel:  { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 8 },
+  newTeamsNote:  { fontSize: 12, color: colors.muted, marginBottom: 14, lineHeight: 17 },
 
   warningBanner: {
     backgroundColor: 'rgba(245,158,11,0.08)', borderRadius: 10,
@@ -964,12 +982,12 @@ const styles = StyleSheet.create({
   warningDot:   { fontSize: 12, color: '#F59E0B', lineHeight: 17, flexShrink: 0 },
   warningItemText: { flex: 1, fontSize: 12, color: '#F59E0B', lineHeight: 17 },
 
-  teamSection:    { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 14, marginBottom: 8, overflow: 'hidden' },
+  teamSection:    { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, marginBottom: 8, overflow: 'hidden' },
   teamHeader:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
   teamDot:        { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
   teamHeaderBody: { flex: 1 },
-  teamName:       { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.2 },
-  teamMeta:       { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  teamName:       { fontSize: 15, fontWeight: '800', color: colors.text, letterSpacing: -0.2 },
+  teamMeta:       { fontSize: 11, color: colors.muted, marginTop: 1 },
   removeTeamBtn:  { padding: 4 },
   moveTeamBtn:    { padding: 4 },
 
@@ -978,40 +996,41 @@ const styles = StyleSheet.create({
   newBadge:         { backgroundColor: 'rgba(139,92,246,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 0 },
   newBadgeText:     { fontSize: 10, fontWeight: '700', color: '#8B5CF6' },
 
-  personGroup: { paddingHorizontal: 14, paddingBottom: 8, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
-  groupLabel:  { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginTop: 10, marginBottom: 2 },
+  personGroup: { paddingHorizontal: 14, paddingBottom: 8, borderTopWidth: 1, borderTopColor: colors.border },
+  groupLabel:  { fontSize: 9, fontWeight: '700', color: colors.muted, letterSpacing: 0.8, marginTop: 10, marginBottom: 2 },
 
-  playerTeamPill:     { flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-start', backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, marginTop: 3 },
-  playerTeamPillText: { fontSize: 10.5, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  playerTeamPill:     { flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-start', backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, marginTop: 3 },
+  playerTeamPillText: { fontSize: 10.5, fontWeight: '600', color: colors.textSecondary },
 
-  movePicker:       { marginHorizontal: 14, marginBottom: 10, padding: 10, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  nestedMovePicker: { marginTop: 8, padding: 10, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  movePickerLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginBottom: 6, fontWeight: '600' },
+  movePicker:       { marginHorizontal: 14, marginBottom: 10, padding: 10, backgroundColor: colors.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
+  nestedMovePicker: { marginTop: 8, padding: 10, backgroundColor: colors.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
+  movePickerLabel: { fontSize: 11, color: colors.muted, marginBottom: 6, fontWeight: '600' },
   chipRow:         { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  teamChip:        { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  teamChipText:    { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  teamChip:        { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  teamChipText:    { fontSize: 12, fontWeight: '600', color: colors.text },
   teamChipActive:     { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.4)' },
   teamChipActiveText: { color: '#22C55E' },
   unlinkBtn:     { marginTop: 8, alignSelf: 'flex-start' },
-  unlinkBtnText: { fontSize: 11.5, fontWeight: '600', color: PULSE_COLORS.ui.muted, textDecorationLine: 'underline' },
+  unlinkBtnText: { fontSize: 11.5, fontWeight: '600', color: colors.muted, textDecorationLine: 'underline' },
 
-  uncertainCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', borderRadius: 10, padding: 10, marginBottom: 6 },
+  uncertainCard:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)', borderRadius: 10, padding: 10, marginBottom: 6 },
   uncertainBody:  { flex: 1 },
-  uncertainRaw:   { fontSize: 12, color: PULSE_COLORS.ui.text, fontFamily: 'monospace', marginBottom: 3 },
+  uncertainRaw:   { fontSize: 12, color: colors.text, fontFamily: 'monospace', marginBottom: 3 },
   uncertainIssue: { fontSize: 11, color: '#F59E0B' },
-  uncertainSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted, marginBottom: 8, lineHeight: 17 },
+  uncertainSub:   { fontSize: 12, color: colors.muted, marginBottom: 8, lineHeight: 17 },
 
-  reviewFooter: { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 36, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.background },
-  cancelBtn:    { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  cancelBtnText:{ fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  reviewFooter: { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 36, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background },
+  cancelBtn:    { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  cancelBtnText:{ fontSize: 15, fontWeight: '700', color: colors.text },
   importBtn:    { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14 },
   importBtnText:{ fontSize: 15, fontWeight: '800', color: '#000' },
 
-  progressTrack: { width: '100%', height: 6, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 3, overflow: 'hidden', marginTop: 24, marginBottom: 10 },
+  progressTrack: { width: '100%', height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden', marginTop: 24, marginBottom: 10 },
   progressFill:  { height: '100%', borderRadius: 3 },
-  progressLabel: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  progressLabel: { fontSize: 13, color: colors.muted, fontWeight: '600' },
 
   doneStats:      { flexDirection: 'row', gap: 16, marginBottom: 16, width: '100%' },
   invitesSentRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   invitesSentText:{ fontSize: 14, color: '#60A5FA', fontWeight: '600' },
-});
+  });
+}

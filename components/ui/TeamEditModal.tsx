@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 type Gender = 'boys' | 'girls' | 'mixed';
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
@@ -40,6 +41,8 @@ export default function TeamEditModal({
   const [gender, setGender]     = useState<Gender | null>(null);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   useEffect(() => {
     if (visible && team) {
@@ -86,7 +89,7 @@ export default function TeamEditModal({
       <View style={st.root}>
         <View style={st.header}>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close" size={22} color={PULSE_COLORS.ui.text} />
+            <Ionicons name="close" size={22} color={colors.text} />
           </TouchableOpacity>
           <Text style={st.title}>Edit Team</Text>
           <TouchableOpacity
@@ -109,7 +112,7 @@ export default function TeamEditModal({
             value={name}
             onChangeText={(v) => { setName(v); setError(''); }}
             placeholder="e.g. Oakwood U14 Girls"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             returnKeyType="next"
             autoFocus
           />
@@ -120,7 +123,7 @@ export default function TeamEditModal({
             value={ageGroup}
             onChangeText={setAgeGroup}
             placeholder="e.g. U14"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             returnKeyType="next"
           />
 
@@ -147,7 +150,7 @@ export default function TeamEditModal({
             value={season}
             onChangeText={setSeason}
             placeholder="e.g. Spring 2026"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             returnKeyType="done"
             onSubmitEditing={handleSave}
           />
@@ -157,31 +160,33 @@ export default function TeamEditModal({
   );
 }
 
-const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  title:  { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  save:   { fontSize: 16, fontWeight: '600' },
-  error:  { color: PULSE_COLORS.status.error, fontSize: 13, marginHorizontal: 20, marginTop: 12 },
-  form:   { padding: 20 },
-  label:  { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8 },
-  input:  {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 16, color: PULSE_COLORS.ui.text,
-  },
-  genderRow: { flexDirection: 'row', gap: 8 },
-  genderPill: {
-    flex: 1, alignItems: 'center',
-    paddingVertical: 11, borderRadius: 10,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  genderPillText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-  genderPillTextSelected: { color: '#fff' },
-});
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: colors.background },
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    title:  { fontSize: 17, fontWeight: '700', color: colors.text },
+    save:   { fontSize: 16, fontWeight: '600' },
+    error:  { color: PULSE_COLORS.status.error, fontSize: 13, marginHorizontal: 20, marginTop: 12 },
+    form:   { padding: 20 },
+    label:  { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 8 },
+    input:  {
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+      borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+      fontSize: 16, color: colors.text,
+    },
+    genderRow: { flexDirection: 'row', gap: 8 },
+    genderPill: {
+      flex: 1, alignItems: 'center',
+      paddingVertical: 11, borderRadius: 10,
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    genderPillText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+    genderPillTextSelected: { color: '#fff' },
+  });
+}

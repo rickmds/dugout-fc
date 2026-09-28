@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PULSE_COLORS } from '../../constants/colors';
+import { ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import { groupTeamsByAgeGroup, resolveTeamGender, nameAlreadySaysGender, TEAM_GROUPING_THRESHOLD } from '../../lib/teamGrouping';
 
 type BaseTeam = { id: string; age_group: string | null; name: string; gender?: string | null };
@@ -98,6 +99,8 @@ export default function GroupedTeamList<T extends BaseTeam>({
   showDividers = true,
 }: GroupedTeamListProps<T>) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const { colors } = useTheme();
+  const gs = useMemo(() => getGs(colors), [colors]);
 
   if (teams.length === 0) {
     return (
@@ -155,7 +158,7 @@ export default function GroupedTeamList<T extends BaseTeam>({
                 <View style={gs.countPill}>
                   <Text style={gs.countPillText}>{section.data.length}</Text>
                 </View>
-                <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
               </View>
             </TouchableOpacity>
             {isOpen && (
@@ -181,46 +184,48 @@ export default function GroupedTeamList<T extends BaseTeam>({
   );
 }
 
-const gs = StyleSheet.create({
-  emptyRow: { paddingVertical: 16, alignItems: 'center' },
-  emptyText: { color: PULSE_COLORS.ui.muted, fontSize: 13 },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: PULSE_COLORS.ui.border },
+function getGs(colors: ThemeColors) {
+  return StyleSheet.create({
+    emptyRow: { paddingVertical: 16, alignItems: 'center' },
+    emptyText: { color: colors.muted, fontSize: 13 },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
 
-  sectionWrap: { marginBottom: 8 },
-  sectionHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingVertical: 13,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderRadius: 12,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  sectionHeaderOpen: {
-    borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
-    borderBottomWidth: 0,
-  },
-  sectionHeaderText: {
-    fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text,
-    letterSpacing: 0.1,
-  },
-  sectionHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  countPill: {
-    minWidth: 24, paddingHorizontal: 7, height: 21, borderRadius: 11,
-    backgroundColor: PULSE_COLORS.ui.background,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  countPillText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+    sectionWrap: { marginBottom: 8 },
+    sectionHeader: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 13,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 12,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    sectionHeaderOpen: {
+      borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
+      borderBottomWidth: 0,
+    },
+    sectionHeaderText: {
+      fontSize: 14, fontWeight: '700', color: colors.text,
+      letterSpacing: 0.1,
+    },
+    sectionHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    countPill: {
+      minWidth: 24, paddingHorizontal: 7, height: 21, borderRadius: 11,
+      backgroundColor: colors.background,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    countPillText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
 
-  genderLabel: {
-    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
-    textTransform: 'uppercase', letterSpacing: 0.8,
-    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 5,
-  },
+    genderLabel: {
+      fontSize: 10, fontWeight: '700', color: colors.muted,
+      textTransform: 'uppercase', letterSpacing: 0.8,
+      paddingHorizontal: 14, paddingTop: 12, paddingBottom: 5,
+    },
 
-  sectionBody: {
-    borderWidth: 1, borderTopWidth: 0, borderColor: PULSE_COLORS.ui.border,
-    borderBottomLeftRadius: 12, borderBottomRightRadius: 12,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    paddingVertical: 2,
-    overflow: 'hidden',
-  },
-});
+    sectionBody: {
+      borderWidth: 1, borderTopWidth: 0, borderColor: colors.border,
+      borderBottomLeftRadius: 12, borderBottomRightRadius: 12,
+      backgroundColor: colors.surface,
+      paddingVertical: 2,
+      overflow: 'hidden',
+    },
+  });
+}

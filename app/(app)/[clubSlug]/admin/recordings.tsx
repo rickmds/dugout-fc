@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -13,8 +13,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 type Recording = {
@@ -41,6 +42,8 @@ export default function RecordingsScreen() {
   const { team } = useTeam();
   const router = useRouter();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,9 +130,10 @@ export default function RecordingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
   list: { paddingHorizontal: 16, paddingTop: 16 },
 
   empty: { flex: 1, alignItems: 'center', paddingTop: 80, gap: 12 },
@@ -137,13 +141,13 @@ const styles = StyleSheet.create({
     width: 60, height: 60, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center', marginBottom: 8,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  emptySubtitle: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+  emptySubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', maxWidth: 260, lineHeight: 20 },
 
   card: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, marginBottom: 10, overflow: 'hidden',
   },
   typeStripe: { width: 3, alignSelf: 'stretch' },
@@ -151,8 +155,9 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   typeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   typeBadgeText: { fontSize: 11, fontWeight: '700' },
-  dateText: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
-  title: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  url: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  dateText: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  title: { fontSize: 15, fontWeight: '700', color: colors.text },
+  url: { fontSize: 12, color: colors.muted },
   playBtn: { paddingHorizontal: 14 },
-});
+  });
+}

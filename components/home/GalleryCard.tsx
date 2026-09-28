@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../lib/supabase';
 import { useTeam } from '../../hooks/useTeam';
 import { useClub } from '../../hooks/useClub';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 type Preview = { id: string; storage_path: string };
 
@@ -18,6 +19,8 @@ function thumbUrl(path: string): string {
 export default function GalleryCard({ onPress }: { onPress: () => void }) {
   const { team } = useTeam();
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const [previews, setPreviews] = useState<Preview[]>([]);
 
   useEffect(() => {
@@ -65,7 +68,7 @@ export default function GalleryCard({ onPress }: { onPress: () => void }) {
 
         <View style={st.footer}>
           <Text style={st.footerText}>View all photos</Text>
-          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={15} color={colors.muted} />
         </View>
       </TouchableOpacity>
     </>
@@ -74,26 +77,28 @@ export default function GalleryCard({ onPress }: { onPress: () => void }) {
 
 const THUMB = 88;
 
-const st = StyleSheet.create({
-  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  dot:      { width: 6, height: 6, borderRadius: 3 },
-  label:    { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 1.5 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+    dot:      { width: 6, height: 6, borderRadius: 3 },
+    label:    { fontSize: 11, fontWeight: '800', color: colors.textSecondary, letterSpacing: 1.5 },
 
-  card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 14, borderWidth: 1,
-    overflow: 'hidden', marginBottom: 24,
-  },
-  thumbRow: { flexDirection: 'row', padding: 10 },
-  thumb: {
-    flex: 1, height: THUMB, borderRadius: 8,
-  },
-  thumbPlaceholder: { backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 14, borderWidth: 1,
+      overflow: 'hidden', marginBottom: 24,
+    },
+    thumbRow: { flexDirection: 'row', padding: 10 },
+    thumb: {
+      flex: 1, height: THUMB, borderRadius: 8,
+    },
+    thumbPlaceholder: { backgroundColor: colors.surfaceAlt },
 
-  footer: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingVertical: 11,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
-  },
-  footerText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
-});
+    footer: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 11,
+      borderTopWidth: 1, borderTopColor: colors.border,
+    },
+    footerText: { fontSize: 13, fontWeight: '600', color: colors.text },
+  });
+}

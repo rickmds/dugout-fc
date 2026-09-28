@@ -2,14 +2,12 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Tabs } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PULSE_COLORS } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
+import { useTheme } from '../../../../hooks/useTheme';
 import { supabase } from '../../../../lib/supabase';
 import { uniqueChannelName } from '../../../../lib/realtime';
-
-const INACTIVE = '#555';
 
 function TabIcon({ focused, primary, children }: { focused: boolean; primary: string; children: React.ReactNode }) {
   return (
@@ -29,6 +27,7 @@ export default function TabsLayout() {
   const { primaryColor } = useClub();
   const { profile } = useAuth();
   const { team } = useTeam();
+  const { colors } = useTheme();
   const [chatUnread, setChatUnread] = useState(0);
   const [pendingGuestCount, setPendingGuestCount] = useState(0);
 
@@ -115,18 +114,18 @@ export default function TabsLayout() {
         tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginBottom: 2 },
         tabBarStyle: {
           backgroundColor: 'transparent',
-          borderTopColor: 'rgba(255,255,255,0.08)',
+          borderTopColor: colors.border,
           height: 64,
           paddingTop: 6,
         },
         tabBarBackground: () => (
           <View style={StyleSheet.absoluteFill}>
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#111111' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: primaryColor, opacity: 0.08 }]} />
           </View>
         ),
         tabBarActiveTintColor: primaryColor,
-        tabBarInactiveTintColor: INACTIVE,
+        tabBarInactiveTintColor: colors.muted,
       }}
     >
       <Tabs.Screen
@@ -135,7 +134,7 @@ export default function TabsLayout() {
           title: 'Home',
           tabBarIcon: ({ focused }) => (
             <TabIcon focused={focused} primary={primaryColor}>
-              <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+              <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={focused ? primaryColor : colors.muted} />
             </TabIcon>
           ),
         }}
@@ -148,7 +147,7 @@ export default function TabsLayout() {
           tabBarBadgeStyle: { backgroundColor: '#F59E0B', fontSize: 10, minWidth: 18, height: 18 },
           tabBarIcon: ({ focused }) => (
             <TabIcon focused={focused} primary={primaryColor}>
-              <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+              <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={22} color={focused ? primaryColor : colors.muted} />
             </TabIcon>
           ),
         }}
@@ -159,7 +158,7 @@ export default function TabsLayout() {
           title: 'Roster',
           tabBarIcon: ({ focused }) => (
             <TabIcon focused={focused} primary={primaryColor}>
-              <Ionicons name={focused ? 'people' : 'people-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+              <Ionicons name={focused ? 'people' : 'people-outline'} size={22} color={focused ? primaryColor : colors.muted} />
             </TabIcon>
           ),
         }}
@@ -172,7 +171,7 @@ export default function TabsLayout() {
           tabBarBadgeStyle: { backgroundColor: '#EF4444', fontSize: 10, minWidth: 18, height: 18 },
           tabBarIcon: ({ focused }) => (
             <TabIcon focused={focused} primary={primaryColor}>
-              <Ionicons name={focused ? 'chatbubble' : 'chatbubble-outline'} size={22} color={focused ? primaryColor : INACTIVE} />
+              <Ionicons name={focused ? 'chatbubble' : 'chatbubble-outline'} size={22} color={focused ? primaryColor : colors.muted} />
             </TabIcon>
           ),
         }}

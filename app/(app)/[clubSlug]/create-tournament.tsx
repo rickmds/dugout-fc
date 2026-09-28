@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,8 +21,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../lib/supabase';
 import { useTeam } from '../../../hooks/useTeam';
 import { useAuth } from '../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import { useTheme } from '../../../hooks/useTheme';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
 import SmartLocationInput from '../../../components/ui/SmartLocationInput';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
@@ -61,6 +62,8 @@ export default function CreateTournamentScreen() {
   const { clubSlug, tournamentId } = useLocalSearchParams<{ clubSlug: string; tournamentId?: string }>();
   const { team } = useTeam();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [name, setName] = useState('');
   const [locationName, setLocationName] = useState('');
@@ -358,7 +361,7 @@ export default function CreateTournamentScreen() {
               ) : logoUrl ? (
                 <Image source={{ uri: logoUrl }} style={styles.logoImage} contentFit="cover" />
               ) : (
-                <Ionicons name="image-outline" size={24} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="image-outline" size={24} color={colors.muted} />
               )}
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
@@ -380,7 +383,7 @@ export default function CreateTournamentScreen() {
               value={name}
               onChangeText={setName}
               placeholder="Jefferson Cup, State Cup 2026…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               autoFocus={!isEdit}
               returnKeyType="done"
             />
@@ -389,13 +392,13 @@ export default function CreateTournamentScreen() {
           <Text style={styles.sectionHeader}>LOCATION <Text style={styles.hint}>optional</Text></Text>
           <View style={[styles.card, { padding: 12 }]}>
             <View style={styles.locationNameRow}>
-              <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={{ width: 22 }} />
+              <Ionicons name="business-outline" size={17} color={colors.muted} style={{ width: 22 }} />
               <TextInput
                 style={styles.inlineInput}
                 value={locationName}
                 onChangeText={setLocationName}
                 placeholder="Venue name (e.g. Richmond Sportsplex)"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 returnKeyType="next"
               />
             </View>
@@ -416,13 +419,13 @@ export default function CreateTournamentScreen() {
           <Text style={styles.sectionHeader}>DATES <Text style={styles.hint}>optional</Text></Text>
           <View style={[styles.card, { padding: 12 }]}>
             <TouchableOpacity style={styles.dateRow} onPress={() => setShowStartDatePicker(true)}>
-              <Ionicons name="calendar-outline" size={17} color={PULSE_COLORS.ui.muted} style={{ width: 22 }} />
+              <Ionicons name="calendar-outline" size={17} color={colors.muted} style={{ width: 22 }} />
               <Text style={startDate ? [styles.dateValue, { color: primaryColor }] : styles.dateValueMuted}>
                 {startDate ? fmtDate(startDate) : 'Not set'}
               </Text>
               {startDate && (
                 <TouchableOpacity onPress={() => setStartDate(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close-circle" size={16} color={colors.muted} />
                 </TouchableOpacity>
               )}
             </TouchableOpacity>
@@ -450,14 +453,14 @@ export default function CreateTournamentScreen() {
                 {/* Directly editable for anything longer than the quick
                     shortcuts above — a multi-day showcase, for instance. */}
                 <TouchableOpacity style={[styles.dateRow, { marginTop: 12 }]} onPress={() => setShowEndDatePicker(true)}>
-                  <Ionicons name="calendar-outline" size={17} color={PULSE_COLORS.ui.muted} style={{ width: 22 }} />
+                  <Ionicons name="calendar-outline" size={17} color={colors.muted} style={{ width: 22 }} />
                   <Text style={[styles.dateValue, { color: primaryColor, flex: 1 }]}>
                     Ends {fmtDate(endDate ?? startDate)}
                   </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[styles.dateRow, { marginTop: 12 }]} onPress={() => setShowDeadlinePicker(true)}>
-                  <Ionicons name="timer-outline" size={17} color={PULSE_COLORS.ui.muted} style={{ width: 22 }} />
+                  <Ionicons name="timer-outline" size={17} color={colors.muted} style={{ width: 22 }} />
                   <View style={{ flex: 1 }}>
                     <Text style={rsvpDeadline ? [styles.dateValue, { color: primaryColor }] : styles.dateValueMuted}>
                       {rsvpDeadline ? `RSVP by ${fmtDate(rsvpDeadline)}` : 'RSVP deadline — not set'}
@@ -465,7 +468,7 @@ export default function CreateTournamentScreen() {
                   </View>
                   {rsvpDeadline && (
                     <TouchableOpacity onPress={() => setRsvpDeadline(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                      <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="close-circle" size={16} color={colors.muted} />
                     </TouchableOpacity>
                   )}
                 </TouchableOpacity>
@@ -514,42 +517,44 @@ export default function CreateTournamentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
   scroll: { padding: 16, paddingBottom: 40 },
-  sectionHeader: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 8, marginTop: 4 },
+  sectionHeader: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 8, marginTop: 4 },
   hint: { fontWeight: '400', letterSpacing: 0, textTransform: 'none' },
   card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, marginBottom: 20, overflow: 'hidden',
   },
-  titleInput: { fontSize: 16, fontWeight: '600', color: PULSE_COLORS.ui.text, paddingHorizontal: 16, paddingVertical: 14 },
+  titleInput: { fontSize: 16, fontWeight: '600', color: colors.text, paddingHorizontal: 16, paddingVertical: 14 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
   logoTap: {
     width: 56, height: 56, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, overflow: 'hidden',
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
   logoImage: { width: 56, height: 56 },
   logoActionText: { fontSize: 14, fontWeight: '700' },
   logoRemoveText: { fontSize: 12.5, fontWeight: '600', color: PULSE_COLORS.status.error, marginTop: 4 },
   locationNameRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  inlineInput: { flex: 1, color: PULSE_COLORS.ui.text, fontSize: 14 },
-  locationSub: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, marginTop: 10, lineHeight: 16 },
+  inlineInput: { flex: 1, color: colors.text, fontSize: 14 },
+  locationSub: { fontSize: 11.5, color: colors.muted, marginTop: 10, lineHeight: 16 },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   dateValue: { flex: 1, fontSize: 14.5, fontWeight: '600' },
-  dateValueMuted: { flex: 1, fontSize: 14.5, fontWeight: '400', color: PULSE_COLORS.ui.muted },
+  dateValueMuted: { flex: 1, fontSize: 14.5, fontWeight: '400', color: colors.muted },
   chipRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   chip: {
     flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surfaceAlt,
   },
-  chipActive: { backgroundColor: PULSE_COLORS.ui.surfaceAlt },
-  chipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  chipActive: { backgroundColor: colors.surfaceAlt },
+  chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   scanBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 13, marginBottom: 20,
   },
   scanBtnText: { color: '#fff', fontWeight: '800', fontSize: 13.5 },
-});
+  });
+}

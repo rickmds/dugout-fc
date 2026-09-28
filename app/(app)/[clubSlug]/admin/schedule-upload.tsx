@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,10 +24,11 @@ import { todayLocalStr } from '../../../../lib/localDate';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { zonedTimeToUtc } from '../../../../lib/timezone';
 import { parseFlexibleTime, toTimeString } from '../../../../lib/eventTime';
 import { useClub } from '../../../../hooks/useClub';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import SmartLocationInput from '../../../../components/ui/SmartLocationInput';
 import PickerSheet from '../../../../components/ui/PickerSheet';
@@ -165,6 +166,8 @@ export default function ScheduleUploadScreen() {
   const { clubSlug, tournamentId } = useLocalSearchParams<{ clubSlug: string; tournamentId?: string }>();
   const { team } = useTeam();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [phase, setPhase]         = useState<Phase>('idle');
   const [events, setEvents]       = useState<ParsedEvent[]>([]);
@@ -506,7 +509,7 @@ export default function ScheduleUploadScreen() {
             <Text style={st.bulkCardTitle}>DEFAULT SETTINGS <Text style={st.fieldHint}>· edit any event to override</Text></Text>
             {!bulkOpen && <Text style={st.bulkSummary}>{summary}</Text>}
           </View>
-          <Ionicons name={bulkOpen ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name={bulkOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
         </TouchableOpacity>
 
         {bulkOpen && (
@@ -737,7 +740,7 @@ export default function ScheduleUploadScreen() {
                 </View>
 
                 <View style={st.editHint}>
-                  <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="pencil-outline" size={14} color={colors.muted} />
                 </View>
               </TouchableOpacity>
             )}
@@ -783,16 +786,16 @@ export default function ScheduleUploadScreen() {
             </View>
           ) : (
             <TouchableOpacity
-              style={[st.importBtn, { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, marginTop: 24, paddingHorizontal: 32 }]}
+              style={[st.importBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginTop: 24, paddingHorizontal: 32 }]}
               onPress={handleNotify}
               disabled={notifying}
               activeOpacity={0.8}
             >
               {notifying
-                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.text} />
+                ? <ActivityIndicator size="small" color={colors.text} />
                 : <>
-                    <Ionicons name="megaphone-outline" size={16} color={PULSE_COLORS.ui.text} />
-                    <Text style={[st.importBtnText, { color: PULSE_COLORS.ui.text }]}>Notify team</Text>
+                    <Ionicons name="megaphone-outline" size={16} color={colors.text} />
+                    <Text style={[st.importBtnText, { color: colors.text }]}>Notify team</Text>
                   </>
               }
             </TouchableOpacity>
@@ -806,7 +809,7 @@ export default function ScheduleUploadScreen() {
             <Text style={st.importBtnText}>View Schedule</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 14 }}>
-            <Text style={{ fontSize: 14, color: PULSE_COLORS.ui.muted }}>Back to admin</Text>
+            <Text style={{ fontSize: 14, color: colors.muted }}>Back to admin</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -841,6 +844,8 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
   onClose: () => void;
 }) {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const [date, setDate]         = useState(event.date ?? '');
   const [time, setTime]         = useState(event.time ?? '');
   const [title, setTitle]       = useState(event.title);
@@ -904,14 +909,14 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
   const homeAwayOpts: { value: 'home' | 'away' | null; label: string; color: string }[] = [
     { value: 'home', label: 'Home', color: primaryColor },
     { value: 'away', label: 'Away', color: '#8B5CF6' },
-    { value: null,   label: 'N/A',  color: PULSE_COLORS.ui.muted },
+    { value: null,   label: 'N/A',  color: colors.muted },
   ];
 
   const surfaceOpts: { value: 'turf' | 'grass' | 'indoor' | null; label: string; color: string }[] = [
     { value: 'turf',   label: 'Turf',    color: '#3B82F6' },
     { value: 'grass',  label: 'Grass',   color: primaryColor },
     { value: 'indoor', label: 'Indoor',  color: '#8B5CF6' },
-    { value: null,     label: 'Unknown', color: PULSE_COLORS.ui.muted },
+    { value: null,     label: 'Unknown', color: colors.muted },
   ];
 
   const uniformOpts: { value: 'home' | 'away' | 'training' | null; label: string }[] = [
@@ -944,7 +949,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
                   value={roundLabel}
                   onChangeText={setRoundLabel}
                   placeholder="Quarterfinal, Pool Play…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   returnKeyType="done"
                 />
               </>
@@ -996,7 +1001,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               value={date}
               onChangeText={setDate}
               placeholder="2026-08-15"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               keyboardType="numbers-and-punctuation"
               returnKeyType="done"
             />
@@ -1007,7 +1012,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               value={time}
               onChangeText={setTime}
               placeholder="14:30"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               keyboardType="numbers-and-punctuation"
               returnKeyType="done"
             />
@@ -1019,10 +1024,10 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               </Text>
               {duration !== null ? (
                 <TouchableOpacity onPress={() => setDuration(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close-circle" size={16} color={colors.muted} />
                 </TouchableOpacity>
               ) : (
-                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="chevron-forward" size={16} color={colors.muted} />
               )}
             </TouchableOpacity>
 
@@ -1033,10 +1038,10 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               </Text>
               {arrival !== null ? (
                 <TouchableOpacity onPress={() => setArrival(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close-circle" size={16} color={colors.muted} />
                 </TouchableOpacity>
               ) : (
-                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="chevron-forward" size={16} color={colors.muted} />
               )}
             </TouchableOpacity>
 
@@ -1102,7 +1107,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
                   value={locationName}
                   onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
                   placeholder="Habernickel Park"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   returnKeyType="done"
                 />
                 <Text style={[st.fieldLabel, { marginTop: 12 }]}>ADDRESS <Text style={st.fieldHint}>optional</Text></Text>
@@ -1125,7 +1130,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               value={fieldNotes}
               onChangeText={setFieldNotes}
               placeholder="Field 1, Pitch B…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               returnKeyType="done"
             />
 
@@ -1162,7 +1167,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               value={playerNotes}
               onChangeText={setPlayerNotes}
               placeholder="Visible to all players and parents…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               multiline
             />
 
@@ -1172,7 +1177,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               value={coachNotes}
               onChangeText={setCoachNotes}
               placeholder="Notes for coaching staff…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               multiline
             />
 
@@ -1182,7 +1187,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               value={videoUrl}
               onChangeText={setVideoUrl}
               placeholder="Veo, YouTube, Hudl URL…"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               autoCapitalize="none"
               keyboardType="url"
               returnKeyType="done"
@@ -1197,7 +1202,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
                   <Switch
                     value={requireRsvp}
                     onValueChange={setRequireRsvp}
-                    trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                    trackColor={{ false: colors.border, true: primaryColor }}
                     thumbColor="#fff"
                   />
                 </View>
@@ -1231,37 +1236,38 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  container:  { flex: 1, backgroundColor: colors.background },
   centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
 
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 60, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 60, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { width: 36 },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
 
   // Idle
   idleScroll: { padding: 20, paddingBottom: 60 },
-  uploadBox: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 20, padding: 28, alignItems: 'center', marginBottom: 20 },
+  uploadBox: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 20, padding: 28, alignItems: 'center', marginBottom: 20 },
   uploadIcon: { width: 76, height: 76, borderRadius: 24, backgroundColor: 'rgba(34,197,94,0.1)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
-  uploadTitle: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 8, textAlign: 'center' },
-  uploadSub: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 24 },
+  uploadTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 8, textAlign: 'center' },
+  uploadSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 21, marginBottom: 24 },
   uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: PULSE_COLORS.brand.green, borderRadius: 14, paddingHorizontal: 22, paddingVertical: 14, marginBottom: 10, width: '100%', justifyContent: 'center' },
   uploadBtnAlt: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: PULSE_COLORS.brand.green },
   uploadBtnText: { fontSize: 15, fontWeight: '700', color: '#000' },
 
-  tipsCard: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, padding: 18 },
-  tipsTitle: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6, marginBottom: 14 },
+  tipsCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 18 },
+  tipsTitle: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.6, marginBottom: 14 },
   tipRow: { flexDirection: 'row', gap: 12, marginBottom: 10, alignItems: 'center' },
-  tipText: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, lineHeight: 20, flex: 1 },
+  tipText: { fontSize: 14, color: colors.textSecondary, lineHeight: 20, flex: 1 },
 
   // Processing / Done
   processingIcon: { width: 80, height: 80, borderRadius: 24, backgroundColor: 'rgba(34,197,94,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  processingTitle: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 8, textAlign: 'center' },
-  processingSub: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 20 },
+  processingTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 8, textAlign: 'center' },
+  processingSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
 
   // Review
-  summaryBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  summaryTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  summaryBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  summaryTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
   summaryWarn: { fontSize: 12, color: '#F59E0B', marginTop: 2 },
   selectAllBtn: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.brand.green },
 
@@ -1276,30 +1282,30 @@ const st = StyleSheet.create({
   notifiedRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20 },
   notifiedText: { fontSize: 14, color: '#22C55E', fontWeight: '600' },
 
-  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border },
   eventRowUncertain: { backgroundColor: 'rgba(245,158,11,0.04)' },
   eventRowOff: { opacity: 0.4 },
   eventCheckArea: { padding: 4 },
-  checkBox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center' },
+  checkBox: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   checkBoxOn: { backgroundColor: PULSE_COLORS.brand.green, borderColor: PULSE_COLORS.brand.green },
   eventRowTop:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  eventTitle:    { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, flex: 1 },
+  eventTitle:    { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 },
   inlineBadges:  { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
   badgeRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 4 },
-  eventMeta:     { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
-  eventAddress:  { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
-  editHint: { width: 28, height: 28, borderRadius: 8, backgroundColor: PULSE_COLORS.ui.surface, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
+  eventMeta:     { fontSize: 12, color: colors.textSecondary },
+  eventAddress:  { fontSize: 11, color: colors.muted, marginTop: 2 },
+  editHint: { width: 28, height: 28, borderRadius: 8, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
 
   // Bulk card
-  bulkCard: { margin: 12, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 14, padding: 14 },
+  bulkCard: { margin: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14 },
   bulkHeader: { flexDirection: 'row', alignItems: 'center' },
-  bulkCardTitle: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5, marginBottom: 2 },
-  bulkSummary: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  bulkFieldLabel: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 6 },
+  bulkCardTitle: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.5, marginBottom: 2 },
+  bulkSummary: { fontSize: 13, fontWeight: '600', color: colors.text },
+  bulkFieldLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.4, marginBottom: 6 },
   bulkChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  bulkChip: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.background },
+  bulkChip: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
   bulkChipActive: { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
-  bulkChipText: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  bulkChipText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
   bulkChipTextActive: { color: PULSE_COLORS.brand.green, fontWeight: '700' },
 
   typePill: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2 },
@@ -1307,24 +1313,24 @@ const st = StyleSheet.create({
   uncertainRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
   uncertainText: { fontSize: 11, color: '#F59E0B', fontStyle: 'italic' },
 
-  importFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 32, backgroundColor: PULSE_COLORS.ui.background, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
+  importFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 32, backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.border },
   importBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: PULSE_COLORS.brand.green, borderRadius: 16, paddingVertical: 16 },
   importBtnOff: { opacity: 0.35 },
   importBtnText: { fontSize: 16, fontWeight: '700', color: '#000' },
 
   // Edit modal
-  sheet: { flex: 1, marginTop: 60, backgroundColor: PULSE_COLORS.ui.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginTop: 10 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  sheetCancel: { fontSize: 15, color: PULSE_COLORS.ui.muted, minWidth: 60 },
+  sheet: { flex: 1, marginTop: 60, backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: colors.border },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 10 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  sheetTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  sheetCancel: { fontSize: 15, color: colors.muted, minWidth: 60 },
   sheetSave: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green, minWidth: 60, textAlign: 'right' },
-  fieldLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 8 },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8, marginBottom: 8 },
   fieldHint: { fontWeight: '400', letterSpacing: 0, textTransform: 'none', fontSize: 11 },
-  fieldInput: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: PULSE_COLORS.ui.text },
+  fieldInput: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.text },
   typeRow: { flexDirection: 'row', gap: 8 },
-  typeBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border },
-  typeBtnText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  typeBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border },
+  typeBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
 
   // Wrapping chip rows (variable item counts: saved fields, duration,
   // arrive-early, RSVP lock hours) — typeBtn's flex:1 only makes sense for
@@ -1337,18 +1343,19 @@ const st = StyleSheet.create({
 
   pickerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14,
   },
-  fieldValue: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  fieldValueMuted: { fontSize: 15, fontWeight: '400', color: PULSE_COLORS.ui.muted },
+  fieldValue: { fontSize: 15, fontWeight: '600', color: colors.text },
+  fieldValueMuted: { fontSize: 15, fontWeight: '400', color: colors.muted },
 
   selectedFieldBox: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
   },
-  selectedFieldName: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  selectedFieldAddress: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  selectedFieldName: { fontSize: 14, fontWeight: '700', color: colors.text },
+  selectedFieldAddress: { fontSize: 12, color: colors.muted, marginTop: 2 },
   changeLink: { fontSize: 13, fontWeight: '700' },
-});
+  });
+}

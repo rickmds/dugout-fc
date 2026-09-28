@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -8,7 +8,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useClub } from '../../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
@@ -38,6 +39,8 @@ export default function CloseFieldScreen() {
   const router = useRouter();
   const { user, club, session } = useAuth();
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getStyles(colors), [colors]);
 
   const [fields, setFields]               = useState<Field[]>([]);
   const [loadingFields, setLoadingFields] = useState(true);
@@ -236,7 +239,7 @@ export default function CloseFieldScreen() {
                 <TextInput
                   style={st.textArea}
                   placeholder="e.g. The field is waterlogged after last night's rain. Session will not be rescheduled."
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   multiline
                   numberOfLines={3}
                   value={situation}
@@ -245,7 +248,7 @@ export default function CloseFieldScreen() {
               </View>
 
               <TouchableOpacity
-                style={[st.primaryBtn, { backgroundColor: canProceed ? primaryColor : PULSE_COLORS.ui.border }, { marginTop: 28 }]}
+                style={[st.primaryBtn, { backgroundColor: canProceed ? primaryColor : colors.border }, { marginTop: 28 }]}
                 onPress={() => setStep('message')}
                 disabled={!canProceed}
                 activeOpacity={0.85}
@@ -259,7 +262,7 @@ export default function CloseFieldScreen() {
                 onPress={() => { setMessage(''); setStep('preview'); }}
                 disabled={!canProceed}
               >
-                <Text style={[st.ghostBtnText, { color: canProceed ? primaryColor : PULSE_COLORS.ui.muted }]}>Write it myself</Text>
+                <Text style={[st.ghostBtnText, { color: canProceed ? primaryColor : colors.muted }]}>Write it myself</Text>
               </TouchableOpacity>
             </>
           )}
@@ -291,7 +294,7 @@ export default function CloseFieldScreen() {
                   onChangeText={setMessage}
                   multiline
                   placeholder="What should parents and coaches know?"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   autoFocus={!message}
                 />
               </View>
@@ -299,24 +302,24 @@ export default function CloseFieldScreen() {
 
               <View style={st.summaryCard}>
                 <View style={st.summaryRow}>
-                  <Ionicons name="location-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="location-outline" size={14} color={colors.muted} />
                   <Text style={st.summaryLabel}>Field(s)</Text>
                   <Text style={st.summaryValue}>{selectedFields.join(', ')}</Text>
                 </View>
-                <View style={[st.summaryRow, { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border }]}>
-                  <Ionicons name="alert-circle-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                <View style={[st.summaryRow, { borderTopWidth: 1, borderTopColor: colors.border }]}>
+                  <Ionicons name="alert-circle-outline" size={14} color={colors.muted} />
                   <Text style={st.summaryLabel}>Reason</Text>
                   <Text style={st.summaryValue}>{reason}</Text>
                 </View>
-                <View style={[st.summaryRow, { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border }]}>
-                  <Ionicons name="time-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                <View style={[st.summaryRow, { borderTopWidth: 1, borderTopColor: colors.border }]}>
+                  <Ionicons name="time-outline" size={14} color={colors.muted} />
                   <Text style={st.summaryLabel}>Duration</Text>
                   <Text style={st.summaryValue}>{DURATIONS.find(d => d.value === duration)?.label}</Text>
                 </View>
               </View>
 
               <TouchableOpacity
-                style={[st.primaryBtn, { backgroundColor: sending ? PULSE_COLORS.ui.border : '#DC2626', marginTop: 28 }]}
+                style={[st.primaryBtn, { backgroundColor: sending ? colors.border : '#DC2626', marginTop: 28 }]}
                 onPress={sendClosure}
                 disabled={sending || !message.trim()}
                 activeOpacity={0.85}
@@ -357,32 +360,34 @@ function GenerateTrigger({ active, onGenerate }: { active: boolean; onGenerate: 
   return null;
 }
 
-const st = StyleSheet.create({
-  root:             { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  root:             { flex: 1, backgroundColor: colors.background },
   center:           { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   scroll:           { padding: 16, paddingBottom: 40 },
-  sectionLabel:     { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
-  card:             { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, overflow: 'hidden' },
+  sectionLabel:     { fontSize: 11, fontWeight: '800', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  card:             { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   fieldRow:         { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
-  divider:          { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
-  checkbox:         { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center' },
-  fieldName:        { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, flex: 1 },
-  fieldSub:         { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  divider:          { borderTopWidth: 1, borderTopColor: colors.border },
+  checkbox:         { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  fieldName:        { fontSize: 14, fontWeight: '600', color: colors.text, flex: 1 },
+  fieldSub:         { fontSize: 12, color: colors.muted, marginTop: 2 },
   reasonIcon:       { fontSize: 18, width: 28 },
-  emptyCard:        { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 20 },
-  emptyText:        { fontSize: 14, color: PULSE_COLORS.ui.muted, lineHeight: 20, textAlign: 'center' },
-  textArea:         { fontSize: 14, color: PULSE_COLORS.ui.text, lineHeight: 22, padding: 14, minHeight: 80 },
+  emptyCard:        { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 20 },
+  emptyText:        { fontSize: 14, color: colors.muted, lineHeight: 20, textAlign: 'center' },
+  textArea:         { fontSize: 14, color: colors.text, lineHeight: 22, padding: 14, minHeight: 80 },
   alertBanner:      { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14, borderRadius: 12, borderWidth: 1, marginBottom: 20 },
   alertText:        { fontSize: 13, color: '#B91C1C', lineHeight: 19, flex: 1 },
-  hint:             { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 6, marginBottom: 16, paddingHorizontal: 4 },
-  summaryCard:      { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, overflow: 'hidden' },
+  hint:             { fontSize: 12, color: colors.muted, marginTop: 6, marginBottom: 16, paddingHorizontal: 4 },
+  summaryCard:      { backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   summaryRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
-  summaryLabel:     { fontSize: 12, color: PULSE_COLORS.ui.muted, width: 70 },
-  summaryValue:     { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text, flex: 1 },
+  summaryLabel:     { fontSize: 12, color: colors.muted, width: 70 },
+  summaryValue:     { fontSize: 13, fontWeight: '600', color: colors.text, flex: 1 },
   primaryBtn:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 14 },
   primaryBtnText:   { fontSize: 15, fontWeight: '800', color: '#fff' },
   ghostBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 14, marginTop: 10 },
   ghostBtnText:     { fontSize: 14, fontWeight: '600' },
-  generatingTitle:  { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center' },
-  generatingBody:   { fontSize: 14, color: PULSE_COLORS.ui.muted, marginTop: 6, textAlign: 'center' },
-});
+  generatingTitle:  { fontSize: 18, fontWeight: '800', color: colors.text, textAlign: 'center' },
+  generatingBody:   { fontSize: 14, color: colors.muted, marginTop: 6, textAlign: 'center' },
+  });
+}

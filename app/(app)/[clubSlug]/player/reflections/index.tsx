@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../lib/supabase';
-import { PULSE_COLORS } from '../../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../../constants/colors';
+import { useTheme } from '../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
 import { FACES } from '../../../../../components/reflection/ReflectionSheet';
 
@@ -23,6 +24,8 @@ function faceFor(rating: number) {
 export default function PlayerReflectionsScreen() {
   const { clubSlug, playerId } = useLocalSearchParams<{ clubSlug: string; playerId: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [rows, setRows] = useState<ReflectionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +56,7 @@ export default function PlayerReflectionsScreen() {
         <View style={st.center}><ActivityIndicator color={PULSE_COLORS.brand.green} /></View>
       ) : rows.length === 0 ? (
         <View style={st.center}>
-          <View style={st.emptyIcon}><Ionicons name="happy-outline" size={28} color={PULSE_COLORS.ui.muted} /></View>
+          <View style={st.emptyIcon}><Ionicons name="happy-outline" size={28} color={colors.muted} /></View>
           <Text style={st.emptyTitle}>No reflections yet</Text>
           <Text style={st.emptySub}>After each game, you'll get a quick prompt to share how it felt. They'll show up here.</Text>
         </View>
@@ -118,33 +121,35 @@ export default function PlayerReflectionsScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   scroll: { padding: 16, gap: 12 },
 
-  emptyIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: PULSE_COLORS.ui.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 },
-  emptySub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
+  emptyIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: colors.text, marginBottom: 6 },
+  emptySub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
 
-  summaryCard: { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 18, marginBottom: 4 },
+  summaryCard: { backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 18, marginBottom: 4 },
   summaryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  summaryAvgLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  summaryAvg: { fontSize: 30, fontWeight: '900', color: PULSE_COLORS.ui.text, letterSpacing: -1, marginTop: 3 },
-  summaryAvgOf: { fontSize: 14, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  summaryAvgLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  summaryAvg: { fontSize: 30, fontWeight: '900', color: colors.text, letterSpacing: -1, marginTop: 3 },
+  summaryAvgOf: { fontSize: 14, color: colors.muted, fontWeight: '600' },
   summaryEmoji: { fontSize: 34 },
   trendRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 50 },
   trendBarWrap: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%' },
   trendBar: { width: '100%', borderRadius: 4 },
-  trendCaption: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 8, fontWeight: '500' },
+  trendCaption: { fontSize: 11, color: colors.muted, marginTop: 8, fontWeight: '500' },
 
-  card: { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 15, gap: 10 },
+  card: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 15, gap: 10 },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   cardEmoji: { fontSize: 24 },
-  cardTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  cardDate: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  cardTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  cardDate: { fontSize: 11.5, color: colors.muted, marginTop: 1 },
   cardFeeling: { fontSize: 12, fontWeight: '800' },
-  cardNote: { backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10, padding: 10 },
-  cardNoteLabel: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 3 },
-  cardNoteText: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18 },
-});
+  cardNote: { backgroundColor: colors.surfaceAlt, borderRadius: 10, padding: 10 },
+  cardNoteLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 3 },
+  cardNoteText: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 18 },
+  });
+}

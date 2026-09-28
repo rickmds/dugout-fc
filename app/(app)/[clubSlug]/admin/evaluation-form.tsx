@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,8 +20,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 const API_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
@@ -104,6 +105,8 @@ function SectionCard({ title, color, icon, note, children }: {
   title: string; color: string; icon: keyof typeof Ionicons.glyphMap;
   note?: string; children: React.ReactNode;
 }) {
+  const { colors } = useTheme();
+  const sc = useMemo(() => getSc(colors), [colors]);
   return (
     <View style={[sc.card, { borderLeftColor: color }]}>
       <View style={sc.head}>
@@ -115,21 +118,24 @@ function SectionCard({ title, color, icon, note, children }: {
     </View>
   );
 }
-const sc = StyleSheet.create({
-  card:  { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderLeftWidth: 4, padding: 16, gap: 12 },
-  head:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  title: { fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
-  note:  { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, marginTop: -4 },
-});
+function getSc(colors: ThemeColors) {
+  return StyleSheet.create({
+    card:  { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, padding: 16, gap: 12 },
+    head:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    title: { fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
+    note:  { fontSize: 11, color: colors.textSecondary, marginTop: -4 },
+  });
+}
 
 function RatingRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  const { colors } = useTheme();
   return (
     <View style={{ gap: 6 }}>
-      <Text style={{ fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.text }}>{label}</Text>
+      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>{label}</Text>
       <View style={{ flexDirection: 'row', gap: 4 }}>
         {[1, 2, 3, 4, 5].map(n => (
           <TouchableOpacity key={n} onPress={() => onChange(n)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
-            <Ionicons name={n <= value ? 'star' : 'star-outline'} size={26} color={n <= value ? '#F59E0B' : PULSE_COLORS.ui.border} />
+            <Ionicons name={n <= value ? 'star' : 'star-outline'} size={26} color={n <= value ? '#F59E0B' : colors.border} />
           </TouchableOpacity>
         ))}
       </View>
@@ -141,6 +147,8 @@ function RatingRow({ label, value, onChange }: { label: string; value: number; o
 function NumberedInput({ index, value, onChange, color, placeholder }: {
   index: number; value: string; onChange: (v: string) => void; color: string; placeholder: string;
 }) {
+  const { colors } = useTheme();
+  const inp = useMemo(() => getInp(colors), [colors]);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
       <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: `${color}18`, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}>
@@ -151,7 +159,7 @@ function NumberedInput({ index, value, onChange, color, placeholder }: {
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
-        placeholderTextColor={PULSE_COLORS.ui.muted}
+        placeholderTextColor={colors.muted}
         multiline
       />
     </View>
@@ -162,6 +170,8 @@ function GridInputs({ items, onChange }: {
   items: { k: string; label: string; value: string; placeholder: string }[];
   onChange: (key: string, value: string) => void;
 }) {
+  const { colors } = useTheme();
+  const grid = useMemo(() => getGrid(colors), [colors]);
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
       {items.map(it => (
@@ -172,7 +182,7 @@ function GridInputs({ items, onChange }: {
             value={it.value}
             onChangeText={v => onChange(it.k, v)}
             placeholder={it.placeholder}
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
           />
         </View>
       ))}
@@ -180,11 +190,15 @@ function GridInputs({ items, onChange }: {
   );
 }
 
-const inp  = StyleSheet.create({ base: { flex: 1, backgroundColor: PULSE_COLORS.ui.background, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: PULSE_COLORS.ui.text, minHeight: 44 } });
-const grid = StyleSheet.create({
-  label: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginBottom: 4, letterSpacing: 0.5 },
-  input: { backgroundColor: PULSE_COLORS.ui.background, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: PULSE_COLORS.ui.text },
-});
+function getInp(colors: ThemeColors) {
+  return StyleSheet.create({ base: { flex: 1, backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: colors.text, minHeight: 44 } });
+}
+function getGrid(colors: ThemeColors) {
+  return StyleSheet.create({
+    label: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, marginBottom: 4, letterSpacing: 0.5 },
+    input: { backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: colors.text },
+  });
+}
 
 // ─── Preview sub-components ──────────────────────────────────────────────────
 
@@ -259,6 +273,11 @@ export default function EvaluationFormScreen() {
   const { team }    = useTeam();
   const router      = useRouter();
   const { profile } = useAuth();
+  const { colors }  = useTheme();
+  const st   = useMemo(() => getSt(colors), [colors]);
+  const idp  = useMemo(() => getIdp(colors), [colors]);
+  const pvSt = useMemo(() => getPvSt(colors), [colors]);
+  const inp  = useMemo(() => getInp(colors), [colors]);
 
   const primary = primaryColor ?? '#22C55E';
   const isEdit  = !!evalId;
@@ -673,7 +692,7 @@ export default function EvaluationFormScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 11, fontWeight: '800', color: '#A855F7', letterSpacing: 0.5 }}>Plan {rowIdx + 1}</Text>
                       <TouchableOpacity onPress={() => removeIdpRow(rowIdx)}>
-                        <Ionicons name="trash-outline" size={15} color={PULSE_COLORS.ui.textSecondary} />
+                        <Ionicons name="trash-outline" size={15} color={colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
                   )}
@@ -682,7 +701,7 @@ export default function EvaluationFormScreen() {
                   <TextInput style={idp.area} multiline value={row.goal}
                     onChangeText={v => setIdpField(rowIdx, 'goal', v)}
                     placeholder="Improve my ability to defend a player 1v1"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     textAlignVertical="top"
                   />
 
@@ -690,7 +709,7 @@ export default function EvaluationFormScreen() {
                   <TextInput style={idp.area} multiline value={row.measurables}
                     onChangeText={v => setIdpField(rowIdx, 'measurables', v)}
                     placeholder="Improve ground tackle win % to 80%"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     textAlignVertical="top"
                   />
 
@@ -708,7 +727,7 @@ export default function EvaluationFormScreen() {
                             'Work on not over-committing when pressing',
                             'Watch film to recognize technical breakdowns',
                           ][itemIdx]}
-                          placeholderTextColor={PULSE_COLORS.ui.muted}
+                          placeholderTextColor={colors.muted}
                         />
                       </View>
                     ))}
@@ -751,7 +770,7 @@ export default function EvaluationFormScreen() {
               value={form.final_text}
               onChangeText={v => setForm(prev => ({ ...prev, final_text: v }))}
               placeholder="Write your summary, or use Generate Coach Summary above"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               textAlignVertical="top"
             />
           </SectionCard>
@@ -759,10 +778,10 @@ export default function EvaluationFormScreen() {
           {/* ── ACTIONS ──────────────────────────────── */}
           <View style={st.actions}>
             <TouchableOpacity
-              style={[st.btn, { backgroundColor: PULSE_COLORS.ui.surface, borderColor: PULSE_COLORS.ui.border }]}
+              style={[st.btn, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => save(false)} disabled={saving} activeOpacity={0.8}
             >
-              {saving ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.text} /> : <Text style={st.btnText}>Save Draft</Text>}
+              {saving ? <ActivityIndicator size="small" color={colors.text} /> : <Text style={st.btnText}>Save Draft</Text>}
             </TouchableOpacity>
             <TouchableOpacity
               style={[st.btn, { backgroundColor: primary, borderColor: 'transparent', flexDirection: 'row', gap: 6 }]}
@@ -779,12 +798,12 @@ export default function EvaluationFormScreen() {
 
       {/* ── PREVIEW MODAL ─────────────────────────────────────────────────── */}
       <Modal visible={previewVisible} animationType="slide" onRequestClose={() => setPreviewVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: PULSE_COLORS.ui.background }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
 
           {/* Header */}
           <View style={pvSt.header}>
             <TouchableOpacity onPress={() => setPreviewVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="chevron-back" size={24} color={PULSE_COLORS.ui.text} />
+              <Ionicons name="chevron-back" size={24} color={colors.text} />
             </TouchableOpacity>
             <Text style={pvSt.headerTitle}>Report Preview</Text>
             <View style={{ width: 24 }} />
@@ -978,7 +997,7 @@ export default function EvaluationFormScreen() {
           {/* Bottom actions */}
           <View style={pvSt.footer}>
             <TouchableOpacity style={pvSt.backBtn} onPress={() => setPreviewVisible(false)} activeOpacity={0.8}>
-              <Ionicons name="chevron-back" size={16} color={PULSE_COLORS.ui.text} />
+              <Ionicons name="chevron-back" size={16} color={colors.text} />
               <Text style={pvSt.backBtnText}>Back to Edit</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1000,33 +1019,38 @@ export default function EvaluationFormScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  scroll: { padding: 16, gap: 14 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.background },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    scroll: { padding: 16, gap: 14 },
 
-  periodBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(168,85,247,0.1)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, alignSelf: 'flex-start' },
-  periodText:  { fontSize: 12, fontWeight: '700', color: '#A855F7' },
+    periodBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(168,85,247,0.1)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, alignSelf: 'flex-start' },
+    periodText:  { fontSize: 12, fontWeight: '700', color: '#A855F7' },
 
-  generateBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#A855F7', borderRadius: 14, paddingVertical: 15 },
-  generateBtnText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+    generateBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#A855F7', borderRadius: 14, paddingVertical: 15 },
+    generateBtnText: { fontSize: 15, fontWeight: '800', color: '#fff' },
 
-  actions: { flexDirection: 'row', gap: 10 },
-  btn:     { flex: 1, padding: 15, borderRadius: 14, alignItems: 'center', borderWidth: 1, justifyContent: 'center' },
-  btnText: { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text },
-});
+    actions: { flexDirection: 'row', gap: 10 },
+    btn:     { flex: 1, padding: 15, borderRadius: 14, alignItems: 'center', borderWidth: 1, justifyContent: 'center' },
+    btnText: { fontSize: 15, fontWeight: '800', color: colors.text },
+  });
+}
 
-const idp = StyleSheet.create({
-  row:        { backgroundColor: 'rgba(168,85,247,0.05)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(168,85,247,0.2)', padding: 14, gap: 10 },
-  fieldLabel: { fontSize: 9, fontWeight: '900', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 1.5 },
-  area:       { backgroundColor: PULSE_COLORS.ui.background, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: PULSE_COLORS.ui.text, minHeight: 70 },
-  bullet:     { width: 5, height: 5, borderRadius: 3, backgroundColor: '#A855F7', marginTop: 2 },
-  addBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', paddingVertical: 10 },
-});
+function getIdp(colors: ThemeColors) {
+  return StyleSheet.create({
+    row:        { backgroundColor: 'rgba(168,85,247,0.05)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(168,85,247,0.2)', padding: 14, gap: 10 },
+    fieldLabel: { fontSize: 9, fontWeight: '900', color: colors.textSecondary, letterSpacing: 1.5 },
+    area:       { backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, color: colors.text, minHeight: 70 },
+    bullet:     { width: 5, height: 5, borderRadius: 3, backgroundColor: '#A855F7', marginTop: 2 },
+    addBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', paddingVertical: 10 },
+  });
+}
 
-const pvSt = StyleSheet.create({
-  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 60, paddingBottom: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  headerTitle:   { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text },
+function getPvSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 60, paddingBottom: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerTitle:   { fontSize: 17, fontWeight: '800', color: colors.text },
   scroll:        { padding: 16 },
 
   card:          { width: PREVIEW_CARD_W, backgroundColor: '#ffffff', borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 18, elevation: 7 },
@@ -1064,9 +1088,10 @@ const pvSt = StyleSheet.create({
   cardFooter:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 13, marginHorizontal: 18, borderTopWidth: 1, marginTop: 10 },
   cardFooterText:{ fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
 
-  footer:        { flexDirection: 'row', gap: 10, padding: 16, paddingBottom: 32, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
-  backBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 15, borderRadius: 14, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  backBtnText:   { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  footer:        { flexDirection: 'row', gap: 10, padding: 16, paddingBottom: 32, borderTopWidth: 1, borderTopColor: colors.border },
+  backBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 15, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  backBtnText:   { fontSize: 15, fontWeight: '800', color: colors.text },
   submitBtn:     { flex: 1.5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 15, borderRadius: 14 },
   submitBtnText: { fontSize: 15, fontWeight: '800', color: '#000' },
-});
+  });
+}

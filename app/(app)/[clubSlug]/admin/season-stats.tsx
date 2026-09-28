@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -12,8 +12,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,6 +44,8 @@ export default function SeasonStatsScreen() {
   const { team } = useTeam();
   const router = useRouter();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [stats, setStats]               = useState<PlayerStat[]>([]);
   const [totalGames, setTotalGames]     = useState(0);
@@ -154,7 +157,7 @@ export default function SeasonStatsScreen() {
       ) : stats.length === 0 ? (
         <View style={st.center}>
           <View style={st.emptyIcon}>
-            <Ionicons name="bar-chart-outline" size={30} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="bar-chart-outline" size={30} color={colors.muted} />
           </View>
           <Text style={st.emptyTitle}>No game data yet</Text>
           <Text style={st.emptySub}>
@@ -209,7 +212,7 @@ export default function SeasonStatsScreen() {
                     <View style={st.info}>
                       <View style={st.nameRow}>
                         <Text style={st.name} numberOfLines={1}>{p.full_name}</Text>
-                        <Text style={[st.pctText, { color: p.pct > 0 ? PULSE_COLORS.ui.text : PULSE_COLORS.ui.muted }]}>
+                        <Text style={[st.pctText, { color: p.pct > 0 ? colors.text : colors.muted }]}>
                           {p.pct}%
                         </Text>
                       </View>
@@ -246,79 +249,81 @@ export default function SeasonStatsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  root:   { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
 
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn:      { width: 36, alignItems: 'flex-start' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle:  { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
-  headerSub:    { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  headerTitle:  { fontSize: 17, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
+  headerSub:    { fontSize: 12, color: colors.muted, marginTop: 1 },
 
   scroll: { padding: 20 },
 
   summaryRow: {
     flexDirection: 'row',
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden', marginBottom: 28,
   },
   summaryCell:    { flex: 1, alignItems: 'center', paddingVertical: 16, gap: 3 },
-  summaryDivider: { width: 1, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'stretch' },
+  summaryDivider: { width: 1, backgroundColor: colors.border, alignSelf: 'stretch' },
   summaryNum:     { fontSize: 22, fontWeight: '800' },
-  summaryLabel:   { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  summaryLabel:   { fontSize: 11, color: colors.muted, fontWeight: '600' },
 
   sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: colors.muted,
     letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12,
   },
 
   tableCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
-  rowDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  rowDivider: { height: 1, backgroundColor: colors.border },
 
   playerRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, paddingHorizontal: 14, gap: 10,
   },
-  rank: { width: 26, fontSize: 12, fontWeight: '800', color: PULSE_COLORS.ui.muted, textAlign: 'center' },
+  rank: { width: 26, fontSize: 12, fontWeight: '800', color: colors.muted, textAlign: 'center' },
 
   jersey: {
     width: 34, height: 34, borderRadius: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  jerseyNum: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted },
+  jerseyNum: { fontSize: 11, fontWeight: '800', color: colors.muted },
 
   info:    { flex: 1, gap: 5 },
   nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  name:    { flex: 1, fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginRight: 6 },
+  name:    { flex: 1, fontSize: 14, fontWeight: '700', color: colors.text, marginRight: 6 },
   pctText: { fontSize: 15, fontWeight: '800', minWidth: 38, textAlign: 'right' },
 
-  barTrack: { height: 5, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 3, overflow: 'hidden' },
+  barTrack: { height: 5, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' },
   barFill:  { height: '100%', borderRadius: 3 },
 
-  meta: { fontSize: 11, color: PULSE_COLORS.ui.muted },
+  meta: { fontSize: 11, color: colors.muted },
 
   emptyIcon: {
     width: 64, height: 64, borderRadius: 32,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, textAlign: 'center' },
-  emptySub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text, textAlign: 'center' },
+  emptySub:   { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19, maxWidth: 280 },
 
   footnote: {
-    fontSize: 11, color: PULSE_COLORS.ui.muted,
+    fontSize: 11, color: colors.muted,
     textAlign: 'center', marginTop: 16, lineHeight: 17,
   },
-});
+  });
+}

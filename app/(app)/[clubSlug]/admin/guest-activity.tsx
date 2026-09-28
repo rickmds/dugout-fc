@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -11,9 +11,10 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useActiveTeam } from '../../../../hooks/TeamContext';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 type GuestRow = {
@@ -49,6 +50,8 @@ export default function GuestActivityScreen() {
   const { profile } = useAuth();
   const { team } = useActiveTeam();
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [guests, setGuests] = useState<GuestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,7 +183,7 @@ export default function GuestActivityScreen() {
           <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
             {filtered.length === 0 ? (
               <View style={st.empty}>
-                <Ionicons name="people-outline" size={40} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="people-outline" size={40} color={colors.muted} />
                 <Text style={st.emptyTitle}>No guest activity yet</Text>
                 <Text style={st.emptySub}>Guest players and coaches added to events will appear here.</Text>
               </View>
@@ -236,53 +239,55 @@ export default function GuestActivityScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingHorizontal: 16, paddingTop: 8 },
 
   summaryStrip: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
     paddingVertical: 14,
   },
   summaryStat: { flex: 1, alignItems: 'center' },
   summaryNum: { fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
-  summaryLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2, fontWeight: '600' },
-  summaryDivider: { width: 1, height: 36, backgroundColor: PULSE_COLORS.ui.border },
+  summaryLabel: { fontSize: 11, color: colors.muted, marginTop: 2, fontWeight: '600' },
+  summaryDivider: { width: 1, height: 36, backgroundColor: colors.border },
 
   filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
   chip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   chipActive: { borderColor: 'transparent' },
-  chipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  chipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   chipTextActive: { color: '#fff', fontWeight: '700' },
 
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  emptySub: { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 18 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+  emptySub: { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 18 },
 
   list: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14 },
-  rowBorder: { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
+  rowBorder: { borderTopWidth: 1, borderTopColor: colors.border },
   roleIcon: {
     width: 36, height: 36, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   info: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
-  name: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, flex: 1 },
+  name: { fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 },
   statusChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
-  eventTitle: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 4 },
+  eventTitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 4 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
-  metaDot: { fontSize: 11, color: PULSE_COLORS.ui.muted },
-});
+  metaText: { fontSize: 11, color: colors.muted, fontWeight: '500' },
+  metaDot: { fontSize: 11, color: colors.muted },
+  });
+}

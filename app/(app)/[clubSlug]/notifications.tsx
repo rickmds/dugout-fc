@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,8 +14,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import { useTheme } from '../../../hooks/useTheme';
 import { useTeam } from '../../../hooks/useTeam';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import { formatCurrency } from '../../../lib/formatCurrency';
@@ -106,6 +107,8 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { team, allTeams, selectTeam } = useTeam();
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
 
   const [notifications, setNotifications] = useState<Notif[]>([]);
   const [teamNameByNotifId, setTeamNameByNotifId] = useState<Record<string, string>>({});
@@ -395,13 +398,13 @@ export default function NotificationsScreen() {
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="notifications-off-outline" size={48} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="notifications-off-outline" size={48} color={colors.muted} />
           <Text style={styles.emptyTitle}>No notifications yet</Text>
           <Text style={styles.emptyBody}>RSVP reminders, announcements, and messages will appear here.</Text>
         </View>
       ) : visible.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="checkmark-done-outline" size={48} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="checkmark-done-outline" size={48} color={colors.muted} />
           <Text style={styles.emptyTitle}>All caught up</Text>
           <Text style={styles.emptyBody}>No unread notifications.</Text>
         </View>
@@ -416,7 +419,7 @@ export default function NotificationsScreen() {
             <Text style={styles.dayLabel}>{section.title}</Text>
           )}
           renderItem={({ item: n, index, section }) => {
-            const cfg = TYPE_CFG[n.type] ?? { icon: 'notifications-outline' as const, color: PULSE_COLORS.ui.muted };
+            const cfg = TYPE_CFG[n.type] ?? { icon: 'notifications-outline' as const, color: colors.muted };
             const cfgColor = (n.type === 'new_dm' || n.type === 'invite_accepted') ? primaryColor : cfg.color;
             const isFirst = index === 0;
             const isLast = index === section.data.length - 1;
@@ -464,8 +467,8 @@ export default function NotificationsScreen() {
                   style={styles.deleteBtn}
                 >
                   {deletingId === n.id
-                    ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
-                    : <Ionicons name="trash-outline" size={16} color={PULSE_COLORS.ui.muted} />}
+                    ? <ActivityIndicator size="small" color={colors.muted} />
+                    : <Ionicons name="trash-outline" size={16} color={colors.muted} />}
                 </TouchableOpacity>
               </View>
             );
@@ -478,7 +481,7 @@ export default function NotificationsScreen() {
               activeOpacity={0.7}
             >
               {loadingMore
-                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                ? <ActivityIndicator size="small" color={colors.muted} />
                 : <Text style={styles.loadMoreText}>Load more</Text>}
             </TouchableOpacity>
           ) : <View style={{ height: 40 }} />}
@@ -490,42 +493,43 @@ export default function NotificationsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
+  return StyleSheet.create({
+  root:   { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: 24 },
 
   filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 14 },
   filterChip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt,
   },
-  filterChipText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  filterChipText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
 
   loadMoreBtn: {
     alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 24,
     marginVertical: 8, borderRadius: 20,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1, borderColor: colors.border,
     minWidth: 48, alignItems: 'center',
   },
-  loadMoreText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  loadMoreText: { fontSize: 13, color: colors.muted, fontWeight: '500' },
 
   dayLabel: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8,
+    fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8,
     marginHorizontal: 20, marginTop: 20, marginBottom: 8,
-    backgroundColor: PULSE_COLORS.ui.background,
+    backgroundColor: colors.background,
   },
   notifRow: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 16,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderLeftWidth: 1, borderRightWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
+    borderColor: colors.border,
   },
   notifRowFirst: { borderTopWidth: 1, borderTopLeftRadius: 16, borderTopRightRadius: 16 },
   notifRowLast:  { borderBottomWidth: 1, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 },
   notifRowBorder: {
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   notifRowTouchable: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
@@ -542,16 +546,17 @@ const styles = StyleSheet.create({
 
   notifContent:     { flex: 1, gap: 2 },
   notifTitleRow:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  notifTitle:       { fontSize: 14, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary, flexShrink: 1 },
-  notifTitleUnread: { fontWeight: '700', color: PULSE_COLORS.ui.text },
-  notifTeamBadge:   { flexShrink: 0, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' },
-  notifTeamBadgeText: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
-  notifBody:        { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
-  notifTime:        { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  notifTitle:       { fontSize: 14, fontWeight: '500', color: colors.textSecondary, flexShrink: 1 },
+  notifTitleUnread: { fontWeight: '700', color: colors.text },
+  notifTeamBadge:   { flexShrink: 0, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, backgroundColor: overlay(0.08) },
+  notifTeamBadgeText: { fontSize: 10, fontWeight: '700', color: colors.textSecondary },
+  notifBody:        { fontSize: 13, color: colors.muted, lineHeight: 18 },
+  notifTime:        { fontSize: 11, color: colors.muted, marginTop: 2 },
 
   empty: {
     flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 10,
   },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
-  emptyBody:  { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center', lineHeight: 20 },
-});
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: colors.textSecondary },
+  emptyBody:  { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20 },
+  });
+}

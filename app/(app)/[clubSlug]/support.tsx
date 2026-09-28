@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,7 +16,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { useClub } from '../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { useTheme } from '../../../hooks/useTheme';
+import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
 import ClubHeader from '../../../components/ui/ClubHeader';
 
 const TOPICS = [
@@ -33,6 +34,8 @@ export default function SupportScreen() {
   const router = useRouter();
   const { profile, user } = useAuth();
   const { primaryColor } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [topic, setTopic]     = useState<Topic>('Bug report');
   const [message, setMessage] = useState('');
@@ -107,14 +110,14 @@ export default function SupportScreen() {
             value={message}
             onChangeText={setMessage}
             placeholder="Describe what's happening…"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             multiline
             numberOfLines={6}
             textAlignVertical="top"
           />
 
           <Text style={st.replyNote}>
-            We&apos;ll reply to <Text style={{ color: PULSE_COLORS.ui.text }}>{user?.email}</Text>
+            We&apos;ll reply to <Text style={{ color: colors.text }}>{user?.email}</Text>
           </Text>
 
           <TouchableOpacity
@@ -136,38 +139,39 @@ export default function SupportScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 60, paddingHorizontal: 16, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   content: { padding: 20, paddingBottom: 48 },
-  intro: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, marginBottom: 24, lineHeight: 20 },
+  intro: { fontSize: 14, color: colors.textSecondary, marginBottom: 24, lineHeight: 20 },
 
-  label: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5, marginBottom: 10 },
+  label: { fontSize: 12, fontWeight: '700', color: colors.muted, letterSpacing: 0.5, marginBottom: 10 },
 
   topicGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
   topicChip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   topicChipActive: { borderColor: 'transparent' },
-  topicChipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  topicChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   topicChipTextActive: { color: '#000' },
 
   textArea: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, padding: 14,
-    color: PULSE_COLORS.ui.text, fontSize: 15,
+    color: colors.text, fontSize: 15,
     minHeight: 140, marginBottom: 12,
   },
-  replyNote: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginBottom: 24 },
+  replyNote: { fontSize: 12, color: colors.muted, marginBottom: 24 },
 
   sendBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -177,8 +181,9 @@ const st = StyleSheet.create({
 
   sentWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   sentIcon: { width: 80, height: 80, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  sentTitle: { fontSize: 24, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 10 },
-  sentSub: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
+  sentTitle: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 10 },
+  sentSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
   doneBtn: { borderRadius: 14, paddingHorizontal: 32, paddingVertical: 14 },
   doneBtnText: { fontSize: 15, fontWeight: '700', color: '#000' },
-});
+  });
+}

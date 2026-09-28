@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,7 +14,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
+import { useTheme } from '../../../hooks/useTheme';
 
 type WaiverItem = {
   id: string;
@@ -29,6 +30,8 @@ export default function SignWaiversScreen() {
   const insets = useSafeAreaInsets();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
   const [waivers, setWaivers] = useState<WaiverItem[]>([]);
@@ -221,7 +224,7 @@ export default function SignWaiversScreen() {
             value={signedName}
             onChangeText={t => { setSignedName(t); setError(null); }}
             placeholder="Full name"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             autoCapitalize="words"
             autoCorrect={false}
             returnKeyType="done"
@@ -249,115 +252,117 @@ export default function SignWaiversScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-    backgroundColor: PULSE_COLORS.ui.background,
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  container: {
-    paddingHorizontal: 20,
-  },
-  progressRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 24,
-  },
-  progressDot: {
-    width: 28,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-  },
-  progressDotActive: {
-    backgroundColor: PULSE_COLORS.brand.green,
-  },
-  eyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    color: PULSE_COLORS.brand.green,
-    marginBottom: 8,
-  },
-  heading: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: PULSE_COLORS.ui.text,
-    marginBottom: 12,
-  },
-  signingForRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  signingForLabel: {
-    fontSize: 13,
-    color: PULSE_COLORS.ui.textSecondary,
-  },
-  signingForName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: PULSE_COLORS.ui.text,
-  },
-  bodyCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    padding: 16,
-    marginBottom: 24,
-    maxHeight: 340,
-  },
-  bodyText: {
-    fontSize: 13,
-    color: PULSE_COLORS.ui.textSecondary,
-    lineHeight: 20,
-  },
-  signSection: {
-    gap: 10,
-    marginBottom: 20,
-  },
-  signLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: PULSE_COLORS.ui.text,
-  },
-  nameInput: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    fontSize: 16,
-    color: PULSE_COLORS.ui.text,
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#F87171',
-  },
-  signButton: {
-    backgroundColor: PULSE_COLORS.brand.green,
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  signButtonDisabled: {
-    opacity: 0.4,
-  },
-  signButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#000',
-  },
-  skipLink: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  skipText: {
-    fontSize: 13,
-    color: PULSE_COLORS.ui.muted,
-  },
-});
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    flex: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    center: {
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    container: {
+      paddingHorizontal: 20,
+    },
+    progressRow: {
+      flexDirection: 'row',
+      gap: 6,
+      marginBottom: 24,
+    },
+    progressDot: {
+      width: 28,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.surfaceAlt,
+    },
+    progressDotActive: {
+      backgroundColor: PULSE_COLORS.brand.green,
+    },
+    eyebrow: {
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 1.5,
+      color: PULSE_COLORS.brand.green,
+      marginBottom: 8,
+    },
+    heading: {
+      fontSize: 26,
+      fontWeight: '800',
+      color: colors.text,
+      marginBottom: 12,
+    },
+    signingForRow: {
+      flexDirection: 'row',
+      marginBottom: 16,
+    },
+    signingForLabel: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    signingForName: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    bodyCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 16,
+      marginBottom: 24,
+      maxHeight: 340,
+    },
+    bodyText: {
+      fontSize: 13,
+      color: colors.textSecondary,
+      lineHeight: 20,
+    },
+    signSection: {
+      gap: 10,
+      marginBottom: 20,
+    },
+    signLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    nameInput: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 13,
+      fontSize: 16,
+      color: colors.text,
+    },
+    errorText: {
+      fontSize: 13,
+      color: '#F87171',
+    },
+    signButton: {
+      backgroundColor: PULSE_COLORS.brand.green,
+      borderRadius: 14,
+      paddingVertical: 15,
+      alignItems: 'center',
+    },
+    signButtonDisabled: {
+      opacity: 0.4,
+    },
+    signButtonText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#000',
+    },
+    skipLink: {
+      alignItems: 'center',
+      paddingVertical: 8,
+    },
+    skipText: {
+      fontSize: 13,
+      color: colors.muted,
+    },
+  });
+}

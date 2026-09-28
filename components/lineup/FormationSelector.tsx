@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Formation, GameFormat, FORMATIONS_BY_FORMAT } from '../../constants/formations';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 const FORMATS: GameFormat[] = ['4v4', '7v7', '9v9', '11v11'];
 
@@ -32,6 +33,8 @@ export function FormationSelector({
   onToggleFavourite,
 }: Props) {
   const [tooltip, setTooltip] = useState<Formation | null>(null);
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const formations = FORMATIONS_BY_FORMAT[format];
   const favouritesForFormat = formations.filter((f) => favourites.includes(f.id));
@@ -63,7 +66,7 @@ export function FormationSelector({
           <Ionicons
             name={isFav ? 'star' : 'star-outline'}
             size={14}
-            color={isFav ? '#FBBF24' : PULSE_COLORS.ui.muted}
+            color={isFav ? '#FBBF24' : colors.muted}
           />
         </TouchableOpacity>
       </TouchableOpacity>
@@ -141,21 +144,22 @@ export function FormationSelector({
   );
 }
 
-const styles = StyleSheet.create({
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: {
-    backgroundColor: PULSE_COLORS.ui.background,
+    backgroundColor: colors.background,
   },
 
   // ── Format toggle ─────────────────────────────────────────────────────────
   formatBar: {
     flexDirection: 'row',
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 4,
     marginHorizontal: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
+    borderColor: colors.border,
   },
   formatBtn: {
     flex: 1,
@@ -169,7 +173,7 @@ const styles = StyleSheet.create({
   formatBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
   },
   formatBtnTextActive: {
     color: '#000',
@@ -189,7 +193,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
     letterSpacing: 0.8,
     marginHorizontal: 16,
     marginBottom: 8,
@@ -213,9 +217,9 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
+    borderColor: colors.border,
     borderRadius: 12,
     paddingVertical: 10,
     paddingLeft: 12,
@@ -234,14 +238,14 @@ const styles = StyleSheet.create({
   pillName: {
     fontSize: 14,
     fontWeight: '700',
-    color: PULSE_COLORS.ui.text,
+    color: colors.text,
   },
   pillNameSelected: {
     color: PULSE_COLORS.brand.green,
   },
   pillNickname: {
     fontSize: 11,
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
   },
   starBtn: {
     paddingLeft: 8,
@@ -258,11 +262,11 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   tooltipCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderRadius: 18,
     padding: 20,
     borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
+    borderColor: colors.border,
     width: '100%',
   },
   tooltipHeader: {
@@ -274,30 +278,31 @@ const styles = StyleSheet.create({
   tooltipName: {
     fontSize: 20,
     fontWeight: '800',
-    color: PULSE_COLORS.ui.text,
+    color: colors.text,
   },
   tooltipBadge: {
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
+    borderColor: colors.border,
   },
   tooltipNickname: {
     fontSize: 12,
     fontWeight: '600',
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
   },
   tooltipDesc: {
     fontSize: 15,
-    color: PULSE_COLORS.ui.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 22,
     marginBottom: 16,
   },
   tooltipHint: {
     fontSize: 12,
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
     textAlign: 'center',
   },
-});
+  });
+}

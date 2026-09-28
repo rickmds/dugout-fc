@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,8 +19,9 @@ import { useTeam } from '../../../hooks/useTeam';
 import { useAuth } from '../../../hooks/useAuth';
 import { sendTeamPush } from '../../../lib/push';
 import { sendTeamEmail } from '../../../lib/emailTeam';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import { useTheme } from '../../../hooks/useTheme';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
 import SmartLocationInput from '../../../components/ui/SmartLocationInput';
@@ -188,14 +189,20 @@ function generateRecurringDates(
 // ─── Section helpers ──────────────────────────────────────────────────────────
 
 function SectionHeader({ title }: { title: string }) {
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
   return <Text style={styles.sectionHeader}>{title.toUpperCase()}</Text>;
 }
 
 function Card({ children }: { children: React.ReactNode }) {
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
   return <View style={styles.card}>{children}</View>;
 }
 
 function RowDivider() {
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
   return <View style={styles.rowDivider} />;
 }
 
@@ -207,10 +214,12 @@ function FieldRow({
   onPress?: () => void;
   children: React.ReactNode;
 }) {
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
   const inner = (
     <View style={styles.fieldRow}>
       <View style={styles.fieldRowLeft}>
-        <Ionicons name={icon} size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+        <Ionicons name={icon} size={17} color={colors.muted} style={styles.fieldIcon} />
         <Text style={styles.fieldLabel}>{label}</Text>
       </View>
       <View style={styles.fieldRowRight}>{children}</View>
@@ -221,6 +230,8 @@ function FieldRow({
 }
 
 function ValueText({ v, color }: { v: string; color?: string }) {
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
   return <Text style={[styles.fieldValue, color ? { color } : undefined]}>{v}</Text>;
 }
 
@@ -232,6 +243,8 @@ export default function CreateEventScreen() {
   const { clubSlug, duplicateFrom, tournamentId } = useLocalSearchParams<{ clubSlug: string; duplicateFrom?: string; tournamentId?: string }>();
   const { team } = useTeam();
   const { profile } = useAuth();
+  const { colors, overlay } = useTheme();
+  const styles = useMemo(() => getStyles(colors, overlay), [colors, overlay]);
 
   // Event basics
   const [eventType, setEventType] = useState<EventType>(tournamentId ? 'game' : 'training');
@@ -631,7 +644,7 @@ export default function CreateEventScreen() {
                 value={title}
                 onChangeText={setTitle}
                 placeholder={eventType === 'game' ? 'Opponent…' : 'Event title…'}
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 autoFocus
                 returnKeyType="done"
               />
@@ -645,7 +658,7 @@ export default function CreateEventScreen() {
                     value={roundLabel}
                     onChangeText={setRoundLabel}
                     placeholder="Round (e.g. Quarterfinal, Pool Play)"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     returnKeyType="done"
                   />
                 </View>
@@ -696,7 +709,7 @@ export default function CreateEventScreen() {
                 <ValueText v={hasTime ? fmtTime(startTime) : 'No time'} color={primaryColor} />
                 {hasTime && (
                   <TouchableOpacity onPress={() => setHasTime(false)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -710,7 +723,7 @@ export default function CreateEventScreen() {
                 </Text>
                 {duration !== null && (
                   <TouchableOpacity onPress={() => setDuration(null)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -724,7 +737,7 @@ export default function CreateEventScreen() {
                 </Text>
                 {arrival !== null && (
                   <TouchableOpacity onPress={() => setArrival(null)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -783,13 +796,13 @@ export default function CreateEventScreen() {
               <>
                 {/* Venue name */}
                 <View style={styles.locationNameRow}>
-                  <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+                  <Ionicons name="business-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
                   <TextInput
                     style={styles.inlineInput}
                     value={locationName}
                     onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
                     placeholder="Venue name (e.g. City Park)"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     returnKeyType="next"
                   />
                 </View>
@@ -812,13 +825,13 @@ export default function CreateEventScreen() {
             <RowDivider />
             {/* Field notes */}
             <View style={styles.locationNameRow}>
-              <Ionicons name="create-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="create-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <TextInput
                 style={styles.inlineInput}
                 value={fieldNotes}
                 onChangeText={setFieldNotes}
                 placeholder="Field details (e.g. Field 1, Pitch B)"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 returnKeyType="next"
               />
             </View>
@@ -861,7 +874,7 @@ export default function CreateEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="chatbubble-ellipses-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="chatbubble-ellipses-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Team message</Text>
                 <TextInput
@@ -869,7 +882,7 @@ export default function CreateEventScreen() {
                   value={playerNotes}
                   onChangeText={setPlayerNotes}
                   placeholder="Visible to all players and parents…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   multiline
                   numberOfLines={3}
                 />
@@ -878,7 +891,7 @@ export default function CreateEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="lock-closed-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="lock-closed-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Coach notes <Text style={styles.coachOnlyTag}>(coach only)</Text></Text>
                 <TextInput
@@ -886,7 +899,7 @@ export default function CreateEventScreen() {
                   value={coachNotes}
                   onChangeText={setCoachNotes}
                   placeholder="Notes for coaching staff…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   multiline
                   numberOfLines={3}
                 />
@@ -895,7 +908,7 @@ export default function CreateEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="videocam-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="videocam-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Video link</Text>
                 <TextInput
@@ -903,7 +916,7 @@ export default function CreateEventScreen() {
                   value={videoUrl}
                   onChangeText={setVideoUrl}
                   placeholder="Veo, YouTube, Hudl URL…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   autoCapitalize="none"
                   keyboardType="url"
                   returnKeyType="done"
@@ -920,7 +933,7 @@ export default function CreateEventScreen() {
                   <Switch
                     value={requireRsvp}
                     onValueChange={setRequireRsvp}
-                    trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                    trackColor={{ false: colors.border, true: primaryColor }}
                     thumbColor="#fff"
                   />
                 </FieldRow>
@@ -952,7 +965,7 @@ export default function CreateEventScreen() {
               <Switch
                 value={notifyParents}
                 onValueChange={setNotifyParents}
-                trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                trackColor={{ false: colors.border, true: primaryColor }}
                 thumbColor="#fff"
               />
             </FieldRow>
@@ -1128,29 +1141,30 @@ export default function CreateEventScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
+  return StyleSheet.create({
   eventCountBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginHorizontal: 16, marginTop: 8,
     paddingHorizontal: 14, paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: overlay(0.04),
+    borderWidth: 1, borderColor: overlay(0.08),
   },
-  eventCountText: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
+  eventCountText: { fontSize: 13, color: colors.textSecondary },
   eventCountBold: { fontWeight: '700' },
 
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.background,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+    backgroundColor: colors.background,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   headerSaveBtn: {
     backgroundColor: PULSE_COLORS.brand.green,
     paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20,
@@ -1160,38 +1174,38 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: 16, paddingTop: 20 },
 
   sectionHeader: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: colors.muted,
     letterSpacing: 1, marginBottom: 8, marginTop: 4,
   },
   savedFieldsLabel: {
-    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '700', color: colors.muted,
     letterSpacing: 1, marginBottom: 8,
   },
 
   card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, marginBottom: 20, overflow: 'hidden',
   },
 
-  rowDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  rowDivider: { height: 1, backgroundColor: colors.border },
 
   typeRow: { flexDirection: 'row', padding: 12, gap: 8, flexWrap: 'wrap' },
   typeChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
   typeChipActive: { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
-  typeChipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  typeChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   typeChipTextActive: { color: PULSE_COLORS.brand.green },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4 },
   titlePrefix: {
-    fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.muted, marginRight: 6,
+    fontSize: 18, fontWeight: '700', color: colors.muted, marginRight: 6,
   },
   titleInput: {
-    flex: 1, fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text,
+    flex: 1, fontSize: 18, fontWeight: '700', color: colors.text,
     paddingVertical: 12,
   },
   titleRequiredHint: {
@@ -1207,9 +1221,9 @@ const styles = StyleSheet.create({
   fieldRowRight: { flex: 1, alignItems: 'flex-end' },
   fieldRowActions: { flexDirection: 'row', alignItems: 'center' },
   fieldIcon: { width: 24 },
-  fieldLabel: { fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '500' },
+  fieldLabel: { fontSize: 14, color: colors.text, fontWeight: '500' },
   fieldValue: { fontSize: 14, color: PULSE_COLORS.brand.green, fontWeight: '600' },
-  fieldValueMuted: { fontSize: 14, color: PULSE_COLORS.ui.muted, fontWeight: '400' },
+  fieldValueMuted: { fontSize: 14, color: colors.muted, fontWeight: '400' },
 
   locationNameRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -1219,32 +1233,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 14, gap: 4,
   },
-  selectedFieldName: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  selectedFieldAddress: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  selectedFieldName: { fontSize: 14, fontWeight: '700', color: colors.text },
+  selectedFieldAddress: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
   changeLink: { fontSize: 13, fontWeight: '700' },
   locationInputRow: {
     paddingHorizontal: 16, paddingVertical: 12,
   },
-  inlineInput: { flex: 1, color: PULSE_COLORS.ui.text, fontSize: 14 },
+  inlineInput: { flex: 1, color: colors.text, fontSize: 14 },
 
   chipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
   chip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
   chipActive: { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
-  chipText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  chipText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   chipTextActive: { color: PULSE_COLORS.brand.green },
 
   notesRow: {
     flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, gap: 10,
   },
   notesInput: {
-    color: PULSE_COLORS.ui.text, fontSize: 14, marginTop: 6,
+    color: colors.text, fontSize: 14, marginTop: 6,
     minHeight: 70, textAlignVertical: 'top',
   },
-  coachOnlyTag: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
+  coachOnlyTag: { fontSize: 11, color: colors.muted, fontStyle: 'italic' },
 
   daysRow: {
     flexDirection: 'row', justifyContent: 'space-between',
@@ -1252,38 +1266,39 @@ const styles = StyleSheet.create({
   },
   dayChip: {
     flex: 1, aspectRatio: 1, borderRadius: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
   dayChipActive: { backgroundColor: PULSE_COLORS.brand.green, borderColor: PULSE_COLORS.brand.green },
-  dayChipText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  dayChipText: { fontSize: 12, fontWeight: '700', color: colors.muted },
   dayChipTextActive: { color: '#000' },
 
   radioRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   radioOuter: {
     width: 20, height: 20, borderRadius: 10,
-    borderWidth: 2, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 2, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
   radioOuterActive: { borderColor: PULSE_COLORS.brand.green },
   radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: PULSE_COLORS.brand.green },
-  radioLabel: { flex: 1, fontSize: 14, color: PULSE_COLORS.ui.text },
+  radioLabel: { flex: 1, fontSize: 14, color: colors.text },
 
   homeAwayRow: {
     flexDirection: 'row', gap: 10, padding: 12,
   },
   homeAwayTile: {
     flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 12,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
   homeAwayTileActive: {
     borderColor: PULSE_COLORS.brand.green,
     backgroundColor: 'rgba(34,197,94,0.1)',
   },
   homeAwayLabel: {
-    fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 15, fontWeight: '700', color: colors.muted,
   },
   homeAwayLabelActive: { color: PULSE_COLORS.brand.green },
 
-});
+  });
+}

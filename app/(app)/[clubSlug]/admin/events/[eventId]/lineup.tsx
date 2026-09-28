@@ -19,8 +19,9 @@ import { supabase } from '../../../../../../lib/supabase';
 import { useAuth } from '../../../../../../hooks/useAuth';
 import { useLineup } from '../../../../../../hooks/useLineup';
 import { FormationSelector } from '../../../../../../components/lineup/FormationSelector';
-import { PULSE_COLORS } from '../../../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../../../constants/colors';
 import { useClub } from '../../../../../../hooks/useClub';
+import { useTheme } from '../../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../../components/ui/ClubHeader';
 import type { PositionSlot } from '../../../../../../constants/formations';
 
@@ -112,6 +113,8 @@ const SlotToken = memo(function SlotToken({
   isDimmed: boolean;
 }) {
   const { primaryColor } = useClub();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const assigned = player !== null;
   return (
     <View
@@ -146,6 +149,8 @@ const DragGhost = memo(function DragGhost({
   ghostPlayer: Player | null;
   primaryColor: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.ghostLayer]}>
       <View
@@ -190,10 +195,12 @@ const PlayersList = memo(function PlayersList({
   rgba: (alpha: number) => string;
   onSelectPlayer: (player: Player) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   if (players.length === 0) {
     return (
       <View style={styles.emptyState}>
-        <Ionicons name="people-outline" size={32} color={PULSE_COLORS.ui.muted} />
+        <Ionicons name="people-outline" size={32} color={colors.muted} />
         <Text style={styles.emptyTitle}>No confirmed RSVPs yet</Text>
         <Text style={styles.emptyBody}>Players who RSVP attending will appear here</Text>
       </View>
@@ -232,7 +239,7 @@ const PlayersList = memo(function PlayersList({
 
             <View style={styles.playerInfo}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={[styles.playerName, isAssigned && styles.playerNameDone, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>
+                <Text style={[styles.playerName, isAssigned && styles.playerNameDone, player.isInjured && { color: colors.muted }]}>
                   {player.full_name}
                 </Text>
                 {player.isGuest && (
@@ -248,7 +255,7 @@ const PlayersList = memo(function PlayersList({
                 )}
               </View>
               {player.position && (
-                <Text style={[styles.playerPos, player.isInjured && { color: PULSE_COLORS.ui.muted }]}>{player.position}</Text>
+                <Text style={[styles.playerPos, player.isInjured && { color: colors.muted }]}>{player.position}</Text>
               )}
             </View>
 
@@ -264,7 +271,7 @@ const PlayersList = memo(function PlayersList({
                 <Text style={styles.assignText}>Assign</Text>
               </View>
             ) : (
-              <Ionicons name="ellipse-outline" size={18} color={PULSE_COLORS.ui.border} />
+              <Ionicons name="ellipse-outline" size={18} color={colors.border} />
             )}
           </TouchableOpacity>
         );
@@ -281,6 +288,8 @@ export default function LineupScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   // Pitch dimensions — computed from actual header height so nothing overflows
   const HEADER_H     = insets.top + 74; // ClubHeader: paddingTop(top+10)+marginTop(8)+row(40)+paddingBottom(16)
@@ -798,7 +807,7 @@ export default function LineupScreen() {
               Tap a player below to fill <Text style={styles.hintLabel}>{selectedLabel}</Text>
             </Text>
             <TouchableOpacity onPress={() => setSelectedSlot(null)}>
-              <Ionicons name="close-circle" size={18} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="close-circle" size={18} color={colors.muted} />
             </TouchableOpacity>
           </>
         ) : (
@@ -827,7 +836,7 @@ export default function LineupScreen() {
                 style={[styles.tab, active && [styles.tabActive, { borderBottomColor: primaryColor }]]}
                 onPress={() => setActiveTab(tab)}
               >
-                <Ionicons name={icon} size={14} color={active ? primaryColor : PULSE_COLORS.ui.muted} />
+                <Ionicons name={icon} size={14} color={active ? primaryColor : colors.muted} />
                 <Text style={[styles.tabText, active && [styles.tabTextActive, { color: primaryColor }]]}>
                   {label}
                 </Text>
@@ -986,33 +995,30 @@ function SubPlanModal({
   );
 }
 
-    </View>
-  );
-}
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  root:   { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
 
   // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 54, paddingBottom: 10, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn:       { width: 32 },
   headerCenter:  { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
-  headerTitle:   { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  headerSub:     { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  headerTitle:   { fontSize: 15, fontWeight: '700', color: colors.text },
+  headerSub:     { fontSize: 11, color: colors.muted, marginTop: 1 },
   headerRight:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
   countPill: {
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1, borderColor: colors.border,
   },
-  countPillText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  countPillText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
   saveBtn:       { paddingLeft: 4 },
   saveBtnText:   { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
   aiBtn:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
@@ -1057,28 +1063,28 @@ const styles = StyleSheet.create({
   hintStrip: {
     height: HINT_H, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 16, gap: 8,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1, borderTopColor: colors.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   hintStripActive: { backgroundColor: 'rgba(251,191,36,0.06)' },
   hintDot:     { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FBBF24' },
-  hintText:    { flex: 1, fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
+  hintText:    { flex: 1, fontSize: 13, color: colors.textSecondary },
   hintLabel:   { color: '#FBBF24', fontWeight: '700' },
-  hintIdleText:{ fontSize: 12, color: PULSE_COLORS.ui.muted },
+  hintIdleText:{ fontSize: 12, color: colors.muted },
 
   // Bottom panel
   bottomPanel: {
-    height: BOTTOM_H, backgroundColor: PULSE_COLORS.ui.background,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    height: BOTTOM_H, backgroundColor: colors.background,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
-  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border },
   tab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 11, gap: 6,
   },
   tabActive:     { borderBottomWidth: 2, borderBottomColor: PULSE_COLORS.brand.green, marginBottom: -1 },
-  tabText:       { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  tabText:       { fontSize: 12, fontWeight: '600', color: colors.muted },
   tabTextActive: { color: PULSE_COLORS.brand.green },
 
   // Players list
@@ -1086,25 +1092,25 @@ const styles = StyleSheet.create({
   playerRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 10, gap: 12,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   playerRowDone:   { opacity: 0.55 },
   playerRowTarget: { backgroundColor: 'rgba(34,197,94,0.05)' },
 
   jersey: {
     width: 32, height: 32, borderRadius: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
   jerseyDone:    { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: PULSE_COLORS.brand.green },
-  jerseyNum:     { fontSize: 12, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  jerseyNum:     { fontSize: 12, fontWeight: '800', color: colors.text },
   jerseyNumDone: { color: PULSE_COLORS.brand.green },
 
   playerInfo:     { flex: 1 },
-  playerName:     { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  playerNameDone: { color: PULSE_COLORS.ui.textSecondary },
-  playerPos:      { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  playerName:     { fontSize: 14, fontWeight: '600', color: colors.text },
+  playerNameDone: { color: colors.textSecondary },
+  playerPos:      { fontSize: 11, color: colors.muted, marginTop: 1 },
 
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   statusText:  { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.brand.green },
@@ -1116,8 +1122,8 @@ const styles = StyleSheet.create({
 
   // Empty state
   emptyState: { alignItems: 'center', paddingTop: 28, gap: 6 },
-  emptyTitle: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-  emptyBody:  { fontSize: 12, color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  emptyBody:  { fontSize: 12, color: colors.muted, textAlign: 'center', paddingHorizontal: 32 },
 
   // Ghost overlay
   ghostLayer: { zIndex: 999 },
@@ -1139,4 +1145,5 @@ const styles = StyleSheet.create({
   playerRowInjured: { opacity: 0.55 },
   injuredBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(239,68,68,0.12)', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
   injuredBadgeText: { fontSize: 10, fontWeight: '700', color: '#ef4444' },
-});
+  });
+}

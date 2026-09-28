@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,8 @@ import { sendParentInviteEmail, resendCoachInvite } from '../../../../lib/invite
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -55,6 +56,8 @@ export default function PendingInvitesScreen() {
   const { profile } = useAuth();
   const { team } = useTeam();
   const router = useRouter();
+  const { colors, overlay } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,16 +163,16 @@ export default function PendingInvitesScreen() {
         </View>
       ) : loadError ? (
         <View style={st.empty}>
-          <Ionicons name="cloud-offline-outline" size={52} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="cloud-offline-outline" size={52} color={colors.muted} />
           <Text style={st.emptyTitle}>Couldn't load invites</Text>
           <Text style={st.emptyBody}>Check your connection and try again.</Text>
           <TouchableOpacity
-            style={[st.resendAllBtn, { marginTop: 16, borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]}
+            style={[st.resendAllBtn, { marginTop: 16, borderColor: overlay(0.13), backgroundColor: overlay(0.07) }]}
             onPress={fetchInvites}
             activeOpacity={0.8}
           >
-            <Ionicons name="refresh" size={16} color="#ffffff" />
-            <Text style={[st.resendAllText, { color: '#ffffff' }]}>Retry</Text>
+            <Ionicons name="refresh" size={16} color={colors.text} />
+            <Text style={[st.resendAllText, { color: colors.text }]}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : invites.length === 0 ? (
@@ -183,7 +186,7 @@ export default function PendingInvitesScreen() {
 
           {/* ── Resend All ── */}
           <TouchableOpacity
-            style={[st.resendAllBtn, { borderColor: 'rgba(255,255,255,0.13)', backgroundColor: 'rgba(255,255,255,0.07)' }]}
+            style={[st.resendAllBtn, { borderColor: overlay(0.13), backgroundColor: overlay(0.07) }]}
             onPress={handleResendAll}
             disabled={resendingAll}
             activeOpacity={0.8}
@@ -192,8 +195,8 @@ export default function PendingInvitesScreen() {
               <ActivityIndicator size="small" color={primaryColor} />
             ) : (
               <>
-                <Ionicons name="send" size={16} color="#ffffff" />
-                <Text style={[st.resendAllText, { color: '#ffffff' }]}>
+                <Ionicons name="send" size={16} color={colors.text} />
+                <Text style={[st.resendAllText, { color: colors.text }]}>
                   Resend All ({invites.length})
                 </Text>
               </>
@@ -253,6 +256,8 @@ function InviteRow({
   onResend: (inv: PendingInvite) => void;
   primaryColor: string;
 }) {
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   return (
     <View style={[st.row, !isLast && st.rowBorder]}>
       <View style={st.avatar}>
@@ -280,23 +285,24 @@ function InviteRow({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  root:   { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 12, paddingTop: 58, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
 
   scroll: { padding: 16 },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  emptyBody:  { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center' },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
+  emptyBody:  { fontSize: 14, color: colors.muted, textAlign: 'center' },
 
   resendAllBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -306,18 +312,18 @@ const st = StyleSheet.create({
   resendAllText: { fontSize: 16, fontWeight: '700' },
 
   sectionLabel: {
-    fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '800', color: colors.muted,
     letterSpacing: 2, marginBottom: 10,
   },
 
   card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
 
   row:       { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 13 },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
 
   avatar: {
     width: 40, height: 40, borderRadius: 20,
@@ -328,12 +334,13 @@ const st = StyleSheet.create({
   avatarText: { fontSize: 16, fontWeight: '900' },
 
   rowMeta:  { flex: 1 },
-  rowEmail: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  rowSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  rowEmail: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 2 },
+  rowSub:   { fontSize: 12, color: colors.muted },
 
   resendBtn: {
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, flexShrink: 0,
   },
-});
+  });
+}

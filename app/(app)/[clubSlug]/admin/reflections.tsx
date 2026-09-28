@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { FACES } from '../../../../components/reflection/ReflectionSheet';
 import { TEAM_PULSE_ENABLED } from '../../../../lib/featureFlags';
@@ -41,6 +42,8 @@ function relativeDay(iso: string): string {
 export default function TeamReflectionsScreen() {
   const { team } = useTeam();
   const router = useRouter();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [rows, setRows] = useState<TrendRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,8 +75,8 @@ export default function TeamReflectionsScreen() {
       <View style={st.screen}>
         <ClubHeader title="Team Pulse" onBack={() => router.back()} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 }}>
-          <Ionicons name="construct-outline" size={32} color={PULSE_COLORS.ui.muted} />
-          <Text style={{ color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', fontSize: 14 }}>
+          <Ionicons name="construct-outline" size={32} color={colors.muted} />
+          <Text style={{ color: colors.textSecondary, textAlign: 'center', fontSize: 14 }}>
             Team Pulse is temporarily unavailable.
           </Text>
         </View>
@@ -127,22 +130,24 @@ export default function TeamReflectionsScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  intro: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
+  intro: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 18, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   scroll: { padding: 16, gap: 10 },
 
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 14,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 13,
+    backgroundColor: colors.surface, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.border, padding: 13,
   },
   emoji: { fontSize: 24, width: 30, textAlign: 'center' },
-  name: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  sub: { fontSize: 11.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
-  subMuted: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  name: { fontSize: 14, fontWeight: '700', color: colors.text },
+  sub: { fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
+  subMuted: { fontSize: 12, color: colors.muted },
 
   trendBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8 },
   trendText: { fontSize: 10.5, fontWeight: '800' },
-});
+  });
+}

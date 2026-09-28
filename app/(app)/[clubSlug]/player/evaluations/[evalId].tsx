@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,8 +16,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../../../lib/supabase';
-import { PULSE_COLORS } from '../../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../../constants/colors';
 import { useClub } from '../../../../../hooks/useClub';
+import { useTheme } from '../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -153,6 +154,8 @@ function RadarChart({ values, color }: { values: number[]; color: string }) {
 
 export default function EvalDetailScreen() {
   const { primaryColor, logoUrl: clubLogoUrl, clubName } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const { evalId } = useLocalSearchParams<{ clubSlug: string; evalId: string }>();
   const router = useRouter();
   const primary = primaryColor ?? '#22C55E';
@@ -374,7 +377,7 @@ export default function EvalDetailScreen() {
     return (
       <View style={st.screen}>
         <ClubHeader title="Player Report" onBack={() => router.back()} />
-        <View style={st.center}><Text style={{ color: PULSE_COLORS.ui.textSecondary }}>Report not found.</Text></View>
+        <View style={st.center}><Text style={{ color: colors.textSecondary }}>Report not found.</Text></View>
       </View>
     );
   }
@@ -609,8 +612,9 @@ export default function EvalDetailScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  screen:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  screen:   { flex: 1, backgroundColor: colors.background },
   shareBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { padding: 16 },
@@ -667,4 +671,5 @@ const st = StyleSheet.create({
   // Footer
   footer:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 13, marginHorizontal: 18, borderTopWidth: 1, marginTop: 10 },
   footerText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
-});
+  });
+}

@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, AppState, Dimensions, StyleSheet, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import * as WebBrowser from 'expo-web-browser';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { TeamProvider, useActiveTeam } from '../hooks/TeamContext';
+import { ThemeProvider, useTheme } from '../hooks/useTheme';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { routeNotificationTap } from '../lib/notificationRouting';
 import { formatCurrency } from '../lib/formatCurrency';
@@ -184,9 +186,12 @@ function AppShell() {
     });
   }, []);
 
+  const { theme } = useTheme();
+
   return (
     <>
       <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       <WebPushPrompt />
       <ViewAsBanner />
       {updateRequired && <UpdateRequiredModal />}
@@ -250,9 +255,11 @@ function SplashVideo({ ready, onFinished }: { ready: boolean; onFinished: () => 
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <TeamProvider>
-        <RootLayoutInner />
-      </TeamProvider>
+      <ThemeProvider>
+        <TeamProvider>
+          <RootLayoutInner />
+        </TeamProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }

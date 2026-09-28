@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,8 +17,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -49,6 +50,8 @@ export default function EvaluationsScreen() {
   const { team } = useTeam();
   const router = useRouter();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [batch,     setBatch]     = useState<BatchRow | null>(null);
   const [players,   setPlayers]   = useState<PlayerRow[]>([]);
@@ -156,7 +159,7 @@ export default function EvaluationsScreen() {
   const canSubmit = batch?.status === 'in_progress' && completed === players.length && players.length > 0;
 
   function statusColor(s: PlayerRow['evalStatus']): string {
-    if (!s) return PULSE_COLORS.ui.border;
+    if (!s) return colors.border;
     if (s === 'draft') return '#F59E0B';
     return '#22C55E';
   }
@@ -232,7 +235,7 @@ export default function EvaluationsScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <Text style={st.sectionLabel}>PLAYERS</Text>
                 {batch && (
-                  <Text style={{ fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' }}>Tap to write evaluation</Text>
+                  <Text style={{ fontSize: 11, color: colors.muted, fontWeight: '500' }}>Tap to write evaluation</Text>
                 )}
               </View>
               {players.map((p, i) => (
@@ -259,7 +262,7 @@ export default function EvaluationsScreen() {
                   </View>
                   <View style={[st.statusDot, { backgroundColor: statusColor(p.evalStatus) }]} />
                   <Text style={[st.statusText, { color: statusColor(p.evalStatus) }]}>{statusLabel(p.evalStatus)}</Text>
-                  {batch && <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 4 }} />}
+                  {batch && <Ionicons name="chevron-forward" size={14} color={colors.muted} style={{ marginLeft: 4 }} />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -284,7 +287,7 @@ export default function EvaluationsScreen() {
             <TextInput
               style={st.input}
               placeholder="e.g. Spring 2026"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               value={season}
               onChangeText={setSeason}
               autoFocus
@@ -293,7 +296,7 @@ export default function EvaluationsScreen() {
             <TextInput
               style={st.input}
               placeholder="e.g. Mid-Season or End of Season"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               value={period}
               onChangeText={setPeriod}
             />
@@ -321,50 +324,52 @@ export default function EvaluationsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  screen:          { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  screen:          { flex: 1, backgroundColor: colors.background },
   center:          { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll:          { padding: 16, gap: 16 },
 
-  batchCard:       { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, padding: 18, gap: 14 },
+  batchCard:       { backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, padding: 18, gap: 14 },
   batchTop:        { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  batchPeriod:     { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
-  batchSeason:     { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500', marginTop: 2 },
+  batchPeriod:     { fontSize: 18, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
+  batchSeason:     { fontSize: 13, color: colors.textSecondary, fontWeight: '500', marginTop: 2 },
   batchStatusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   batchStatusText: { fontSize: 11, fontWeight: '700' },
 
   progressWrap:  { gap: 6 },
-  progressTrack: { height: 6, borderRadius: 3, backgroundColor: PULSE_COLORS.ui.border, flexDirection: 'row', overflow: 'hidden' },
+  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.border, flexDirection: 'row', overflow: 'hidden' },
   progressFill:  { height: '100%', borderRadius: 3 },
-  progressLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600' },
+  progressLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
 
   submitBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, paddingVertical: 13 },
   submitBtnText: { fontSize: 15, fontWeight: '800', color: '#000' },
 
-  newBatchBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', padding: 20 },
+  newBatchBtn:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', padding: 20 },
   newBatchText:  { fontSize: 15, fontWeight: '700' },
 
-  sectionLabel:  { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, marginBottom: 2 },
-  playerList:    { backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 16 },
+  sectionLabel:  { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 2 },
+  playerList:    { backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 16 },
   playerRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
-  playerRowDivider: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  playerRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
   playerAvatar:  { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   playerAvatarText: { fontSize: 15, fontWeight: '800' },
   playerMeta:    { flex: 1 },
-  playerName:    { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  playerSub:     { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  playerName:    { fontSize: 14, fontWeight: '700', color: colors.text },
+  playerSub:     { fontSize: 11, color: colors.muted, marginTop: 1 },
   statusDot:     { width: 7, height: 7, borderRadius: 3.5 },
   statusText:    { fontSize: 11, fontWeight: '700' },
 
   modalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet:    { backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 4, paddingBottom: 32 },
-  modalTitle:    { fontSize: 20, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  modalSub:      { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 12 },
-  inputLabel:    { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 8, marginBottom: 4 },
-  input:         { backgroundColor: PULSE_COLORS.ui.background, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 14, fontSize: 15, color: PULSE_COLORS.ui.text },
+  modalSheet:    { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 4, paddingBottom: 32 },
+  modalTitle:    { fontSize: 20, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  modalSub:      { fontSize: 13, color: colors.textSecondary, marginBottom: 12 },
+  inputLabel:    { fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginTop: 8, marginBottom: 4 },
+  input:         { backgroundColor: colors.background, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14, fontSize: 15, color: colors.text },
   modalActions:  { flexDirection: 'row', gap: 10, marginTop: 16 },
-  cancelBtn:     { flex: 1, padding: 14, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surfaceAlt, alignItems: 'center', borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  cancelBtnText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  cancelBtn:     { flex: 1, padding: 14, borderRadius: 12, backgroundColor: colors.surfaceAlt, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+  cancelBtnText: { fontSize: 15, fontWeight: '700', color: colors.text },
   createBtn:     { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   createBtnText: { fontSize: 15, fontWeight: '800', color: '#000' },
-});
+  });
+}

@@ -1,7 +1,8 @@
 import { memo, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 import {
   useGameDayFeed, localDateStr, detectClashes, upcomingDates, detectCoachClashes, getCoverageFlag,
   type FeedEvent, type TeamCoach, type GuestCoachStatus,
@@ -36,6 +37,8 @@ const GameDayWidget = memo(function GameDayWidget({ onPress }: { onPress: () => 
   const { allTeams } = useTeam();
   const teamIds = useMemo(() => allTeams.map((t) => t.id), [allTeams]);
   const { events: allEvents, teamCoaches, guestCoachStatuses, loading } = useGameDayFeed(14, teamIds);
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   if (loading || !allEvents.length) return null;
 
   const dates = upcomingDates(allEvents);
@@ -97,7 +100,7 @@ const GameDayWidget = memo(function GameDayWidget({ onPress }: { onPress: () => 
               </Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={15} color={colors.muted} />
         </View>
 
         {/* Event list */}
@@ -108,9 +111,9 @@ const GameDayWidget = memo(function GameDayWidget({ onPress }: { onPress: () => 
               <View key={ev.id}>
                 {i > 0 && (
                   <View style={styles.connector}>
-                    <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
-                    <Ionicons name="car-outline" size={12} color={PULSE_COLORS.ui.muted} />
-                    <View style={[styles.connectorDash, { backgroundColor: PULSE_COLORS.ui.border }]} />
+                    <View style={[styles.connectorDash, { backgroundColor: colors.border }]} />
+                    <Ionicons name="car-outline" size={12} color={colors.muted} />
+                    <View style={[styles.connectorDash, { backgroundColor: colors.border }]} />
                   </View>
                 )}
                 <View style={styles.eventRow}>
@@ -168,6 +171,8 @@ function AdminCoverageWidget({ events, teamCoaches, guestCoachStatuses, dateLabe
   dateLabel: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const guestCoachEventIds = new Set(guestCoachStatuses.map((g) => g.event_id));
   const coachClashes = detectCoachClashes(events, teamCoaches, guestCoachEventIds);
   const flaggedEvents = events.filter((e) => getCoverageFlag(e, coachClashes.get(e.id)));
@@ -212,7 +217,7 @@ function AdminCoverageWidget({ events, teamCoaches, guestCoachStatuses, dateLabe
               </Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={15} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={15} color={colors.muted} />
         </View>
 
         <View style={[styles.cta, { backgroundColor: gameRgba(0.09), borderTopColor: gameRgba(0.15) }]}>
@@ -227,9 +232,10 @@ function AdminCoverageWidget({ events, teamCoaches, guestCoachStatuses, dateLabe
   );
 }
 
-const styles = StyleSheet.create({
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   sectionLabel: {
-    fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 12, fontWeight: '700', color: colors.muted,
     letterSpacing: 0.8, marginBottom: 10,
   },
 
@@ -256,7 +262,7 @@ const styles = StyleSheet.create({
   },
   clashBadgeStandalone: { alignSelf: 'flex-start', marginTop: 4, marginBottom: 4 },
   clashBadgeText: { fontSize: 10, fontWeight: '700', color: '#EF4444' },
-  cardSub: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  cardSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
 
   eventList: { paddingVertical: 4 },
 
@@ -269,8 +275,8 @@ const styles = StyleSheet.create({
   eventRow: { flexDirection: 'row', alignItems: 'stretch' },
   teamBar: { width: 3, marginVertical: 4, marginLeft: 14, borderRadius: 2 },
   eventContent: { flex: 1, paddingVertical: 10, paddingHorizontal: 12, position: 'relative' },
-  eventTime: { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  eventArrive: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  eventTime: { fontSize: 14, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  eventArrive: { fontSize: 11, fontWeight: '600', color: colors.muted },
   eventBottom: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   teamBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 20 },
   teamBadgeText: { fontSize: 11, fontWeight: '700' },
@@ -282,7 +288,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(96,165,250,0.35)',
   },
   parentTagText: { fontSize: 10, fontWeight: '800', color: '#60A5FA', letterSpacing: 0.2 },
-  eventGameTitle: { fontSize: 12, color: PULSE_COLORS.ui.muted, flex: 1 },
+  eventGameTitle: { fontSize: 12, color: colors.muted, flex: 1 },
 
   extraText: { fontSize: 12, fontWeight: '700', paddingHorizontal: 14, paddingVertical: 8 },
 
@@ -292,4 +298,5 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   ctaText: { flex: 1, fontSize: 13, fontWeight: '700' },
-});
+  });
+}
