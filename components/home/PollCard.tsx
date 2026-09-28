@@ -25,7 +25,6 @@ export type Poll = {
   created_by: string | null;
   options: PollOption[];
   votes: { option_id: string; profile_id: string }[];
-  totalParticipants: number;
 };
 
 type Props = {
@@ -312,8 +311,8 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
           {showResults ? (
             <Text style={styles.footerText}>
               {totalVoters} {totalVoters === 1 ? 'response' : 'responses'}
-              {isCoach && poll.totalParticipants > 0
-                ? ` · ${poll.totalParticipants - totalVoters} haven't voted`
+              {isCoach && nonResponderCount !== undefined
+                ? ` · ${nonResponderCount} haven't voted`
                 : ''}
             </Text>
           ) : (

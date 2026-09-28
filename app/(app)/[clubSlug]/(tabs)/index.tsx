@@ -1068,7 +1068,6 @@ export default function HomeScreen() {
           setMyRsvpEventIds(new Set((rsvpRows ?? []).map((r: any) => r.event_id as string)));
         }
 
-        const teamMemberCount = pc ?? 0;
         const builtPolls: Poll[] = (pollRows as any[]).map((p: any) => ({
           id: p.id,
           question: p.question,
@@ -1081,7 +1080,6 @@ export default function HomeScreen() {
           created_by: p.created_by,
           options: (optionsRes.data ?? []).filter((o: any) => o.poll_id === p.id),
           votes: (votesRes.data ?? []).filter((v: any) => v.poll_id === p.id),
-          totalParticipants: teamMemberCount,
         }));
         setPolls(builtPolls);
       } else {

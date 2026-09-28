@@ -655,7 +655,6 @@ export default function EventDetailScreen() {
       }
       setPollNonResponders(nonRespondersByPoll);
       setPollNonResponderCounts(nonResponderCountsByPoll);
-      const totalPlayers = (playersRes.data ?? []).length;
       setEventPolls((pollRows as any[]).map((p: any) => ({
         id: p.id, question: p.question, closes_at: p.closes_at,
         is_anonymous: p.is_anonymous, is_multiple_choice: p.is_multiple_choice,
@@ -663,7 +662,6 @@ export default function EventDetailScreen() {
         event_id: p.event_id, created_by: p.created_by,
         options: (optRes.data ?? []).filter((o: any) => o.poll_id === p.id),
         votes: (voteRes.data ?? []).filter((v: any) => v.poll_id === p.id),
-        totalParticipants: totalPlayers,
       })));
     } else {
       setEventPolls([]);

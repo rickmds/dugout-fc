@@ -77,13 +77,10 @@ export default function PollDetailScreen() {
 
     const teamIsCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
 
-    const [optionsRes, votesRes, guardedRes, memberRes, namesRes, nonRespRes] = await Promise.all([
+    const [optionsRes, votesRes, guardedRes, namesRes, nonRespRes] = await Promise.all([
       sb.from('team_poll_options').select('id, poll_id, label, sort_order').eq('poll_id', pollId),
       sb.from('team_poll_votes').select('poll_id, option_id, profile_id').eq('poll_id', pollId),
       sb.rpc('get_my_guarded_players').select('id').eq('team_id', pollRow.team_id),
-      teamIsCoach
-        ? supabase.from('team_members').select('profile_id').eq('team_id', pollRow.team_id).eq('role', 'parent')
-        : Promise.resolve({ data: [] }),
       // Player name(s), not the parent account's own name — a coach reads
       // "who voted" as which family/kid, and a parent guarding twins on
       // this team gets both names joined.
@@ -145,7 +142,6 @@ export default function PollDetailScreen() {
       created_by: pollRow.created_by,
       options: (optionsRes.data ?? []) as Poll['options'],
       votes,
-      totalParticipants: ((memberRes.data ?? []) as unknown[]).length,
     });
     setLoading(false);
   }
