@@ -3,8 +3,10 @@ import Constants from 'expo-constants';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Linking,
   Modal,
+  Platform,
   ScrollView,
   Share,
   StyleSheet,
@@ -145,6 +147,20 @@ export default function SettingsScreen() {
   // gates editing THAT club's branding, so an org_admin at their home club
   // who's just a guest/parent elsewhere must not be able to edit it.
   const isOrgAdmin = team?.myRole === 'org_admin';
+
+  // Only shown at all when the active team is actually linked to a partner
+  // league (today just NCSA) — a coach with no league link has nothing to
+  // connect a login for, so the whole section stays hidden rather than
+  // dangling as dead UI.
+  const [ncsaTeamLinked, setNcsaTeamLinked] = useState(false);
+  const [ncsaConnected, setNcsaConnected]   = useState(false);
+  const [ncsaUsername, setNcsaUsername]     = useState<string | null>(null);
+  const [showNcsaModal, setShowNcsaModal]         = useState(false);
+  const [ncsaUsernameInput, setNcsaUsernameInput] = useState('');
+  const [ncsaPasswordInput, setNcsaPasswordInput] = useState('');
+  const [savingNcsa, setSavingNcsa]         = useState(false);
+  const [ncsaError, setNcsaError]           = useState('');
+
   const [tagline, setTagline]                 = useState(clubTagline ?? '');
   const [editingTagline, setEditingTagline]   = useState(false);
   const [savingTagline, setSavingTagline]     = useState(false);
@@ -250,6 +266,69 @@ export default function SettingsScreen() {
       setShareContact((profile as any).share_contact_with_team ?? true);
     }
   }, [profile?.id]);
+
+  useEffect(() => {
+    if (team?.id) {
+      supabase.from('team_ncsa_links').select('id').eq('team_id', team.id).limit(1)
+        .then(({ data }) => setNcsaTeamLinked((data?.length ?? 0) > 0));
+    }
+    if (profile?.id) {
+      supabase.from('ncsa_coach_credentials').select('ncsa_username').eq('profile_id', profile.id).maybeSingle()
+        .then(({ data }) => {
+          setNcsaConnected(!!data);
+          setNcsaUsername(data?.ncsa_username ?? null);
+        });
+    }
+  }, [team?.id, profile?.id]);
+
+  async function submitNcsaLogin() {
+    if (!ncsaUsernameInput.trim() || !ncsaPasswordInput) {
+      setNcsaError('Enter your NCSA username and password.');
+      return;
+    }
+    setSavingNcsa(true);
+    setNcsaError('');
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data, error } = await supabase.functions.invoke('ncsa-connect-account', {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: { ncsa_username: ncsaUsernameInput.trim(), ncsa_password: ncsaPasswordInput },
+    });
+    setSavingNcsa(false);
+    if (error || data?.error === 'invalid_credentials') {
+      setNcsaError("Couldn't sign in with those credentials — check your NCSA username and password.");
+      return;
+    }
+    if (data?.error) {
+      setNcsaError('Something went wrong. Please try again.');
+      return;
+    }
+    setNcsaConnected(true);
+    setNcsaUsername(data.username);
+    setNcsaUsernameInput('');
+    setNcsaPasswordInput('');
+    setShowNcsaModal(false);
+  }
+
+  function confirmDisconnectNcsa() {
+    Alert.alert(
+      'Disconnect NCSA account?',
+      "You won't be able to look up opposing coach contact info until you reconnect.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Disconnect', style: 'destructive', onPress: disconnectNcsa },
+      ]
+    );
+  }
+
+  async function disconnectNcsa() {
+    const { data: { session } } = await supabase.auth.getSession();
+    await supabase.functions.invoke('ncsa-connect-account', {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      body: { action: 'disconnect' },
+    });
+    setNcsaConnected(false);
+    setNcsaUsername(null);
+  }
 
   useEffect(() => {
     if (isParent && profile?.id) {
@@ -1477,6 +1556,29 @@ export default function SettingsScreen() {
         )}
       </Section>
 
+      {/* ── Partner League — only shown when the active team is actually
+          linked to one, so this never dangles as dead UI for a team with
+          no league connection. */}
+      {ncsaTeamLinked && (team?.myRole === 'coach' || team?.myRole === 'org_admin') && (
+        <Section label="PARTNER LEAGUE">
+          <View style={st.row}>
+            <IconCell name="trophy-outline" color="#fff" bg="#3B82F6" />
+            <Text style={[st.rowLabel, { flex: 1 }]}>Connected to NCSA</Text>
+          </View>
+          <View style={st.divider} />
+          <TouchableOpacity
+            style={st.row}
+            onPress={() => (ncsaConnected ? confirmDisconnectNcsa() : setShowNcsaModal(true))}
+            activeOpacity={0.65}
+          >
+            <IconCell name="key-outline" color="#fff" bg="#6B7280" />
+            <Text style={[st.rowLabel, { flex: 1 }]}>NCSA Login</Text>
+            <Text style={st.rowValue} numberOfLines={1}>{ncsaConnected ? ncsaUsername : 'Not connected'}</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.muted} />
+          </TouchableOpacity>
+        </Section>
+      )}
+
       {/* ── Support & Legal ── */}
       <Section label="SUPPORT & LEGAL">
         <SettingsRow
@@ -1778,6 +1880,72 @@ export default function SettingsScreen() {
             )}
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={showNcsaModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => { setShowNcsaModal(false); setNcsaError(''); }}
+      >
+        <KeyboardAvoidingView
+          style={cp.overlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={cp.sheet}>
+            <View style={cp.handle} />
+            <Text style={cp.title}>Connect NCSA Account</Text>
+            <Text style={{ fontSize: 12.5, color: colors.textSecondary, lineHeight: 18, marginBottom: 16 }}>
+              Used to look up opposing coaches' contact info for your scheduled games. Your login is stored securely and only used for that — never shown again after you save it.
+            </Text>
+
+            {!!ncsaError && (
+              <View style={{ backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
+                <Text style={{ fontSize: 12.5, color: '#EF4444', fontWeight: '600', lineHeight: 17 }}>{ncsaError}</Text>
+              </View>
+            )}
+
+            <Text style={st.pwLabel}>NCSA Username</Text>
+            <TextInput
+              style={[st.pwInput, { marginBottom: 16 }]}
+              value={ncsaUsernameInput}
+              onChangeText={setNcsaUsernameInput}
+              placeholder="Your NCSA username"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <Text style={st.pwLabel}>NCSA Password</Text>
+            <TextInput
+              style={[st.pwInput, { marginBottom: 24 }]}
+              value={ncsaPasswordInput}
+              onChangeText={setNcsaPasswordInput}
+              secureTextEntry
+              placeholder="Your NCSA password"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="none"
+            />
+
+            <View style={cp.btns}>
+              <TouchableOpacity
+                style={cp.cancelBtn}
+                onPress={() => { setShowNcsaModal(false); setNcsaError(''); setNcsaUsernameInput(''); setNcsaPasswordInput(''); }}
+              >
+                <Text style={cp.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[cp.applyBtn, { backgroundColor: primaryColor }, (!ncsaUsernameInput.trim() || !ncsaPasswordInput || savingNcsa) && { opacity: 0.35 }]}
+                onPress={submitNcsaLogin}
+                disabled={!ncsaUsernameInput.trim() || !ncsaPasswordInput || savingNcsa}
+              >
+                {savingNcsa
+                  ? <ActivityIndicator color="#000" size="small" />
+                  : <Text style={cp.applyText}>Connect</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <TeamEditModal
