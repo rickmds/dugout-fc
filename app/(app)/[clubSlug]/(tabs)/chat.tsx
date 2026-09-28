@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ErrorBoundaryProps } from 'expo-router';
 import {
   ActivityIndicator,
@@ -26,7 +26,8 @@ import { supabase } from '../../../../lib/supabase';
 import { uniqueChannelName } from '../../../../lib/realtime';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { useClub } from '../../../../hooks/useClub';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import ClubHeader from '../../../../components/ui/ClubHeader';
@@ -61,6 +62,8 @@ function initials(name: string | null): string {
 
 export default function ChatScreen() {
   const { primaryColor, rgba, secondaryColor } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const router = useRouter();
   const { clubSlug, tab: tabParam } = useLocalSearchParams<{ clubSlug: string; tab?: string }>();
   const { team, loading: teamLoading } = useTeam();
@@ -221,6 +224,8 @@ type PlayerGroup = {
 
 function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Profile | null; clubSlug: string }) {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const router = useRouter();
 
   const [convos, setConvos]             = useState<ConvoItem[]>([]);
@@ -680,7 +685,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
   if (!team) {
     return (
       <View style={st.center}>
-        <Text style={{ color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', padding: 32, fontSize: 15 }}>
+        <Text style={{ color: colors.textSecondary, textAlign: 'center', padding: 32, fontSize: 15 }}>
           No team found. Make sure your club and team are set up.
         </Text>
       </View>
@@ -690,14 +695,14 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
   if (loadError) {
     return (
       <View style={st.center}>
-        <Ionicons name="chatbubble-outline" size={40} color={PULSE_COLORS.ui.muted} />
-        <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' }}>Could not open chat</Text>
-        <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 32 }}>Check your connection and try again.</Text>
+        <Ionicons name="chatbubble-outline" size={40} color={colors.muted} />
+        <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', marginTop: 16, textAlign: 'center' }}>Could not open chat</Text>
+        <Text style={{ color: colors.muted, fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 32 }}>Check your connection and try again.</Text>
         <TouchableOpacity
           onPress={fetchConvos}
-          style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}
+          style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}
         >
-          <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+          <Text style={{ color: colors.text, fontWeight: '700' }}>Try Again</Text>
         </TouchableOpacity>
       </View>
     );
@@ -783,7 +788,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[st.convoName, hasUnread && { fontWeight: '800' }]} numberOfLines={1}>{item.title}</Text>
-                <Text style={[st.convoPreview, hasUnread && { color: PULSE_COLORS.ui.text }]} numberOfLines={1}>{preview}</Text>
+                <Text style={[st.convoPreview, hasUnread && { color: colors.text }]} numberOfLines={1}>{preview}</Text>
               </View>
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
                 {item.last_at && <Text style={st.convoTime}>{timeLabel(item.last_at)}</Text>}
@@ -822,13 +827,13 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
 
           {/* Search */}
           <View style={st.searchWrap}>
-            <Ionicons name="search" size={16} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="search" size={16} color={colors.muted} />
             <TextInput
               style={st.searchInput}
               value={search}
               onChangeText={setSearch}
               placeholder="Search members..."
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               autoCorrect={false}
               clearButtonMode="while-editing"
             />
@@ -842,7 +847,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
                   value={groupName}
                   onChangeText={setGroupName}
                   placeholder="Group name (optional)"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                 />
               </View>
             )}
@@ -869,7 +874,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
               );
 
               if (filteredCoaches.length === 0 && filteredOther.length === 0 && filteredGroups.length === 0)
-                return <Text style={{ color: PULSE_COLORS.ui.muted, textAlign: 'center', marginTop: 40 }}>No members found.</Text>;
+                return <Text style={{ color: colors.muted, textAlign: 'center', marginTop: 40 }}>No members found.</Text>;
 
               return (
                 <>
@@ -899,7 +904,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
                                 activeOpacity={0.6}
                               >
                                 <View style={st.playerGroupAvatar}>
-                                  <Ionicons name="football-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                                  <Ionicons name="football-outline" size={17} color={colors.muted} />
                                 </View>
                                 <View style={{ flex: 1 }}>
                                   <Text style={st.playerGroupName} numberOfLines={1}>{g.player_name}</Text>
@@ -907,7 +912,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
                                     {g.guardians.length} {g.guardians.length === 1 ? 'family member' : 'family members'}
                                   </Text>
                                 </View>
-                                <Ionicons name={expanded ? 'chevron-down' : 'chevron-forward'} size={16} color={PULSE_COLORS.ui.muted} />
+                                <Ionicons name={expanded ? 'chevron-down' : 'chevron-forward'} size={16} color={colors.muted} />
                               </TouchableOpacity>
                               {expanded && g.guardians.map((m, mi) => renderPersonRow(m, true, isLastGroup && mi === g.guardians.length - 1))}
                             </View>
@@ -950,6 +955,8 @@ type AnnEmailRecipient = {
 
 function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; profile: Profile | null; coachEmail: string | null }) {
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   // team.myRole is scoped to the currently-active team's own club — see
   // TeamContext.tsx's Team type comment.
   const isCoach = team?.myRole === 'org_admin' || team?.myRole === 'coach';
@@ -1153,7 +1160,7 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
         ListEmptyComponent={
           <View style={st.empty}>
             {logoUrl ? <Image source={{ uri: logoUrl }} style={{ position: 'absolute', width: 160, height: 160, opacity: 0.05 }} contentFit="contain" /> : null}
-            <View style={st.emptyIcon}><Ionicons name="megaphone-outline" size={32} color={PULSE_COLORS.ui.muted} /></View>
+            <View style={st.emptyIcon}><Ionicons name="megaphone-outline" size={32} color={colors.muted} /></View>
             <Text style={st.emptyTitle}>No announcements yet</Text>
             <Text style={st.emptySub}>{isCoach ? 'Tap + to post your first announcement.' : "Your coach hasn't posted anything yet."}</Text>
           </View>
@@ -1168,7 +1175,7 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
                   <Text style={st.aTitle}>{item.title}</Text>
                   <Text style={st.aMeta}>{item.creator_name ?? 'Coach'} · {timeLabel(item.created_at)}</Text>
                 </View>
-                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
               </View>
               {open && (
                 <View style={st.aBody}>
@@ -1296,6 +1303,8 @@ function CreateAnnouncementModal({ visible, teamId, profileId, teamName, coachNa
   onUpdated?: (a: Announcement) => void;
 }) {
   const { primaryColor, rgba } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const isEdit = !!editing;
   const [title, setTitle]       = useState('');
   const [body, setBody]         = useState('');
@@ -1400,7 +1409,7 @@ function CreateAnnouncementModal({ visible, teamId, profileId, teamName, coachNa
                   value={aiBullets}
                   onChangeText={setAiBullets}
                   placeholder={'- Game moved to Saturday 10am\n- Bring red kit\n- Arrive 30 mins early'}
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   multiline
                   textAlignVertical="top"
                 />
@@ -1417,11 +1426,11 @@ function CreateAnnouncementModal({ visible, teamId, profileId, teamName, coachNa
             )}
 
             <Text style={[st.fieldLabel, { marginTop: showAi ? 16 : 0 }]}>TITLE</Text>
-            <TextInput style={st.fieldInput} value={title} onChangeText={setTitle} placeholder="e.g. Game day reminder" placeholderTextColor={PULSE_COLORS.ui.muted} autoFocus={!showAi} />
+            <TextInput style={st.fieldInput} value={title} onChangeText={setTitle} placeholder="e.g. Game day reminder" placeholderTextColor={colors.muted} autoFocus={!showAi} />
             <Text style={[st.fieldLabel, { marginTop: 16 }]}>MESSAGE</Text>
-            <TextInput style={[st.fieldInput, st.fieldTextarea]} value={body} onChangeText={setBody} placeholder="Write your announcement..." placeholderTextColor={PULSE_COLORS.ui.muted} multiline textAlignVertical="top" />
+            <TextInput style={[st.fieldInput, st.fieldTextarea]} value={body} onChangeText={setBody} placeholder="Write your announcement..." placeholderTextColor={colors.muted} multiline textAlignVertical="top" />
             <TouchableOpacity style={st.pinRow} onPress={() => setPinned(!pinned)}>
-              <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={18} color={pinned ? primaryColor : PULSE_COLORS.ui.muted} />
+              <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={18} color={pinned ? primaryColor : colors.muted} />
               <Text style={[st.pinLabel, pinned && { color: primaryColor }]}>Pin this announcement</Text>
             </TouchableOpacity>
           </ScrollView>
@@ -1468,6 +1477,8 @@ function fmtBytes(n: number): string {
 
 function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: Profile | null; coachEmail: string | null }) {
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const [mode, setMode]                 = useState<'list' | 'compose'>('list');
   const [logs, setLogs]                 = useState<EmailLog[]>([]);
   const [logsLoading, setLogsLoading]   = useState(true);
@@ -1741,7 +1752,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
             contentContainerStyle={st.aList}
             ListEmptyComponent={
               <View style={st.empty}>
-                <View style={st.emptyIcon}><Ionicons name="mail-outline" size={32} color={PULSE_COLORS.ui.muted} /></View>
+                <View style={st.emptyIcon}><Ionicons name="mail-outline" size={32} color={colors.muted} /></View>
                 <Text style={st.emptyTitle}>No emails sent yet</Text>
                 <Text style={st.emptySub}>Emails you send to parents will appear here.</Text>
               </View>
@@ -1759,7 +1770,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
                         {sentDate ? ` · ${sentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
                       </Text>
                     </View>
-                    <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
                   </View>
                   {open && (
                     <View style={st.aBody}>
@@ -1779,7 +1790,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={st.emailComposeTopHeader}>
         <TouchableOpacity onPress={() => setMode('list')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={22} color={PULSE_COLORS.ui.text} />
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={st.emailListHeaderTitle}>New Email</Text>
         <View style={{ width: 22 }} />
@@ -1805,12 +1816,12 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
                 </Text>
               )}
             </View>
-            <Ionicons name={recipientsOpen ? 'chevron-up' : 'chevron-down'} size={16} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name={recipientsOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
           </TouchableOpacity>
 
           {/* Expanded list */}
           {recipientsOpen && (
-            <View style={{ borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border }}>
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border }}>
               <TouchableOpacity style={st.emailRow} onPress={toggleAll}>
                 <View style={[st.checkBox, allSelected && [st.checkBoxOn, { backgroundColor: primaryColor, borderColor: primaryColor }]]}>
                   {allSelected && <Ionicons name="checkmark" size={14} color="#000" />}
@@ -1819,7 +1830,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
               </TouchableOpacity>
 
               {recipients.length === 0 && (
-                <Text style={{ color: PULSE_COLORS.ui.muted, padding: 16 }}>No players on roster yet.</Text>
+                <Text style={{ color: colors.muted, padding: 16 }}>No players on roster yet.</Text>
               )}
 
               {recipients.map((r, i) => {
@@ -1843,7 +1854,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
                         <Text style={st.emailMeta}>{emailLine}</Text>
                       </View>
                       {!hasEmail && (
-                        <Ionicons name="alert-circle-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="alert-circle-outline" size={16} color={colors.muted} />
                       )}
                     </TouchableOpacity>
                   </View>
@@ -1868,7 +1879,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
             value={subject}
             onChangeText={setSubject}
             placeholder="Subject"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
           />
           <View style={st.divider} />
           <TextInput
@@ -1876,7 +1887,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
             value={body}
             onChangeText={setBody}
             placeholder="Write your message..."
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             multiline
             textAlignVertical="top"
           />
@@ -1902,13 +1913,13 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
                   <Text style={st.attachSize}>{a.sizeLabel}</Text>
                 </View>
                 <TouchableOpacity onPress={() => removeAttachment(i)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close-circle" size={20} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close-circle" size={20} color={colors.muted} />
                 </TouchableOpacity>
               </View>
             </View>
           ))}
 
-          <View style={attachments.length > 0 ? { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border } : {}}>
+          <View style={attachments.length > 0 ? { borderTopWidth: 1, borderTopColor: colors.border } : {}}>
             <View style={st.attachActions}>
               <TouchableOpacity style={st.attachBtn} onPress={pickDocument}>
                 <Ionicons name="document-attach-outline" size={16} color={primaryColor} />
@@ -1927,12 +1938,12 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
         <Text style={[st.emailSection, { marginTop: 20 }]}>OPTIONS</Text>
         <View style={st.emailCard}>
           <View style={st.emailRow}>
-            <Ionicons name="copy-outline" size={16} color={PULSE_COLORS.ui.muted} style={{ marginRight: 4 }} />
+            <Ionicons name="copy-outline" size={16} color={colors.muted} style={{ marginRight: 4 }} />
             <Text style={[st.emailLabel, { flex: 1 }]}>CC myself</Text>
             <Switch
               value={ccSelf}
               onValueChange={setCcSelf}
-              trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+              trackColor={{ false: colors.border, true: primaryColor }}
               thumbColor="#fff"
             />
           </View>
@@ -1940,7 +1951,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
             <View>
               <View style={st.divider} />
               <View style={[st.emailRow, { paddingVertical: 10 }]}>
-                <Ionicons name="arrow-undo-outline" size={16} color={PULSE_COLORS.ui.muted} style={{ marginRight: 4 }} />
+                <Ionicons name="arrow-undo-outline" size={16} color={colors.muted} style={{ marginRight: 4 }} />
                 <Text style={st.emailMeta}>Replies go to {coachEmail}</Text>
               </View>
             </View>
@@ -2001,7 +2012,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
                 value={aiBullets}
                 onChangeText={setAiBullets}
                 placeholder={"- Remind parents about Saturday's game\n- Arrive 30 mins early for warm-up\n- Kit colour is red this week"}
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 multiline
                 textAlignVertical="top"
                 autoFocus
@@ -2019,59 +2030,60 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
 
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 64, paddingBottom: 12 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerRight: { flexDirection: 'row', gap: 8 },
-  iconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginTop: 1 },
+  iconBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  title: { fontSize: 26, fontWeight: '800', color: colors.text, letterSpacing: -0.5 },
+  subtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 1 },
 
-  tabs: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, marginBottom: 12, backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 12, padding: 3, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  tabs: { flexDirection: 'row', marginHorizontal: 16, marginTop: 12, marginBottom: 12, backgroundColor: colors.surface, borderRadius: 12, padding: 3, borderWidth: 1, borderColor: colors.border },
   tabsTwo: {},
   tab: { flex: 1, paddingVertical: 7, borderRadius: 9, alignItems: 'center' },
   tabActive: { backgroundColor: PULSE_COLORS.brand.green },
-  tabText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  tabText: { fontSize: 12, fontWeight: '600', color: colors.muted },
   tabTextActive: { color: '#000' },
   tabDot: {
     position: 'absolute', top: -2, right: -8,
     width: 8, height: 8, borderRadius: 4,
     backgroundColor: '#EF4444',
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1.5, borderColor: colors.surface,
   },
 
   // Conversation list
-  convoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  convoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   convoRowTeam: { backgroundColor: 'rgba(34,197,94,0.04)' },
-  convoAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  convoAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   convoAvatarTeam: { backgroundColor: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.25)' },
   convoAvatarText: { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.brand.green },
-  convoName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  convoPreview: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
-  convoTime: { fontSize: 11, color: PULSE_COLORS.ui.muted, flexShrink: 0 },
+  convoName: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  convoPreview: { fontSize: 13, color: colors.textSecondary },
+  convoTime: { fontSize: 11, color: colors.muted, flexShrink: 0 },
 
   fab: { position: 'absolute', bottom: 24, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: PULSE_COLORS.brand.green, alignItems: 'center', justifyContent: 'center', shadowColor: PULSE_COLORS.brand.green, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8 },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 40, gap: 10 },
-  emptyIcon: { width: 64, height: 64, borderRadius: 20, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  emptySub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', paddingHorizontal: 40 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  emptySub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 },
 
   // Sheet
-  sheet: { flex: 1, marginTop: 60, backgroundColor: PULSE_COLORS.ui.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginTop: 10 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  sheetTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  sheetCancel: { fontSize: 15, color: PULSE_COLORS.ui.muted },
+  sheet: { flex: 1, marginTop: 60, backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: colors.border },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 10 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  sheetTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  sheetCancel: { fontSize: 15, color: colors.muted },
   sheetSave: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
   sheetBody: { padding: 20 },
 
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 14, marginBottom: 8, backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 11 },
-  searchInput: { flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text },
-  groupNameInput: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: PULSE_COLORS.ui.text, marginTop: 12 },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 14, marginBottom: 8, backgroundColor: colors.surface, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 11 },
+  searchInput: { flex: 1, fontSize: 15, color: colors.text },
+  groupNameInput: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: colors.text, marginTop: 12 },
   selectedChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: PULSE_COLORS.brand.green, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
   chipText: { fontSize: 13, fontWeight: '600', color: '#000' },
@@ -2081,73 +2093,73 @@ const st = StyleSheet.create({
   // border via rowNoBorder so it doesn't double up with the rounded edge).
   pickerCard: {
     marginHorizontal: 16, marginBottom: 4,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surface, overflow: 'hidden',
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, overflow: 'hidden',
   },
   rowNoBorder: { borderBottomWidth: 0 },
-  pickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  pickerRowIndent: { paddingLeft: 50, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
-  checkBox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.muted, alignItems: 'center', justifyContent: 'center' },
+  pickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  pickerRowIndent: { paddingLeft: 50, backgroundColor: colors.surfaceAlt },
+  checkBox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: colors.muted, alignItems: 'center', justifyContent: 'center' },
   checkBoxOn: { backgroundColor: PULSE_COLORS.brand.green, borderColor: PULSE_COLORS.brand.green },
   pickerAvatar: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   pickerAvatarText: { fontSize: 13, fontWeight: '800' },
-  pickerName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  pickerRole: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
+  pickerName: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 2 },
+  pickerRole: { fontSize: 12, color: colors.textSecondary },
   pickerSectionLabel: {
-    fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 12, fontWeight: '700', color: colors.muted,
     textTransform: 'uppercase', letterSpacing: 0.6,
     paddingHorizontal: 20, paddingTop: 18, paddingBottom: 8,
   },
   playerGroupRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 14, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   playerGroupAvatar: {
     width: 38, height: 38, borderRadius: 11,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
-  playerGroupName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  playerGroupCount: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
+  playerGroupName: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  playerGroupCount: { fontSize: 12, color: colors.textSecondary },
 
   // Announcements
   aList: { padding: 16, paddingBottom: 100, flexGrow: 1 },
-  aCard: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, marginBottom: 12, overflow: 'hidden' },
+  aCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, marginBottom: 12, overflow: 'hidden' },
   aCardTop: { flexDirection: 'row', alignItems: 'flex-start', padding: 16, gap: 12 },
   pinnedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   pinnedText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.brand.green, letterSpacing: 0.3 },
-  aTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  aMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
-  aBody: { paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14 },
-  aBodyText: { fontSize: 14, color: PULSE_COLORS.ui.text, lineHeight: 22 },
+  aTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 4 },
+  aMeta: { fontSize: 12, color: colors.textSecondary },
+  aBody: { paddingHorizontal: 16, paddingBottom: 16, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 },
+  aBodyText: { fontSize: 14, color: colors.text, lineHeight: 22 },
   aActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
   aActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', backgroundColor: 'rgba(34,197,94,0.08)' },
   aActionDanger: { borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.08)' },
   aActionText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
 
   // Announcements modal
-  fieldLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 8 },
-  fieldInput: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: PULSE_COLORS.ui.text },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8, marginBottom: 8 },
+  fieldInput: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.text },
   fieldTextarea: { height: 120, textAlignVertical: 'top' },
   pinRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20, paddingVertical: 4 },
-  pinLabel: { fontSize: 15, fontWeight: '500', color: PULSE_COLORS.ui.textSecondary },
+  pinLabel: { fontSize: 15, fontWeight: '500', color: colors.textSecondary },
 
   // Email tab
   emailListHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 },
-  emailListHeaderTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  emailListHeaderTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
   newEmailBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
   newEmailBtnText: { fontSize: 13, fontWeight: '700', color: '#000' },
   emailComposeTopHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   emailScroll: { padding: 16, paddingBottom: 60 },
-  emailSection: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 8 },
-  emailCard: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 16, overflow: 'hidden' },
+  emailSection: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8, marginBottom: 8 },
+  emailCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, overflow: 'hidden' },
   emailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
-  emailLabel: { fontSize: 15, color: PULSE_COLORS.ui.text },
-  emailMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 1 },
-  emailSubjectInput: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: PULSE_COLORS.ui.text },
-  emailBodyInput: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: PULSE_COLORS.ui.text, minHeight: 140, textAlignVertical: 'top' },
-  divider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginLeft: 14 },
+  emailLabel: { fontSize: 15, color: colors.text },
+  emailMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  emailSubjectInput: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.text },
+  emailBodyInput: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.text, minHeight: 140, textAlignVertical: 'top' },
+  divider: { height: 1, backgroundColor: colors.border, marginLeft: 14 },
   sendEmailBtn: { backgroundColor: PULSE_COLORS.brand.green, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 20 },
   sendEmailBtnOff: { opacity: 0.4 },
   unreadBadge: { backgroundColor: PULSE_COLORS.brand.green, borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
@@ -2157,60 +2169,62 @@ const st = StyleSheet.create({
 
   // Recipients collapsible
   recipientsHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
-  recipientsTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  recipientsPreview: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  recipientsTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  recipientsPreview: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 
   // Email compose extras
   emailComposeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 8 },
   templateBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', backgroundColor: 'rgba(34,197,94,0.08)' },
   templateBtnText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.brand.green },
-  charCount: { fontSize: 11, color: PULSE_COLORS.ui.muted, textAlign: 'right', paddingRight: 14, paddingBottom: 8 },
+  charCount: { fontSize: 11, color: colors.muted, textAlign: 'right', paddingRight: 14, paddingBottom: 8 },
 
   // Attachments
   attachRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
-  attachName: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  attachSize: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 1 },
+  attachName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  attachSize: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
   attachActions: { flexDirection: 'row' },
   attachBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
   attachBtnText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.brand.green },
-  attachBtnDivider: { width: 1, backgroundColor: PULSE_COLORS.ui.border },
+  attachBtnDivider: { width: 1, backgroundColor: colors.border },
 
   // Pinned team chat pill
   pinnedPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1 },
   pinnedPillText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.3 },
 
   // DMs section label
-  dmSectionLabel: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
+  dmSectionLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
 
   // AI Write modal
   toneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  toneBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface },
+  toneBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   toneBtnActive: {},
-  toneBtnText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  toneBtnText: { fontSize: 13, fontWeight: '600', color: colors.muted },
   toneBtnTextActive: {},
-  aiHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 10, lineHeight: 17 },
+  aiHint: { fontSize: 12, color: colors.muted, marginTop: 10, lineHeight: 17 },
 
   // AI Write in announcement modal
   aiWriteToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 20, alignSelf: 'flex-start' },
   aiWriteToggleText: { fontSize: 13, fontWeight: '700' },
-  aiPanel: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 14, padding: 14, marginBottom: 16, gap: 0 },
+  aiPanel: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14, marginBottom: 16, gap: 0 },
   aiGenerateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 10, paddingVertical: 10, marginTop: 12 },
   aiGenerateBtnText: { fontSize: 14, fontWeight: '700', color: '#000' },
 
   // Email recipients picker
-  emailPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  emailSubjectBanner: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface },
-  emailSubjectBannerLabel: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 2 },
-  emailSubjectBannerTitle: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-});
+  emailPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border },
+  emailSubjectBanner: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.surface },
+  emailSubjectBannerLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.8, marginBottom: 2 },
+  emailSubjectBannerTitle: { fontSize: 14, fontWeight: '600', color: colors.text },
+  });
+}
 
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  const { colors } = useTheme();
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16 }}>
-      <Ionicons name="chatbubble-outline" size={40} color={PULSE_COLORS.ui.muted} />
-      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600' }}>Chat couldn't load</Text>
-      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
-        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, gap: 16 }}>
+      <Ionicons name="chatbubble-outline" size={40} color={colors.muted} />
+      <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Chat couldn't load</Text>
+      <TouchableOpacity onPress={retry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}>
+        <Text style={{ color: colors.text, fontWeight: '700' }}>Try Again</Text>
       </TouchableOpacity>
     </View>
   );

@@ -14,7 +14,8 @@ import { todayLocalStr } from '../../../../lib/localDate';
 import { TEAM_PULSE_ENABLED } from '../../../../lib/featureFlags';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../../components/ui/TeamEditModal';
@@ -70,6 +71,8 @@ function formatTime(t: string): string {
 function SectionRow({ label, linkLabel, onLink, primaryColor }: {
   label: string; linkLabel?: string; onLink?: () => void; primaryColor?: string;
 }) {
+  const { colors } = useTheme();
+  const secSt = useMemo(() => getSecSt(colors), [colors]);
   return (
     <View style={secSt.row}>
       <Text style={secSt.label}>{label}</Text>
@@ -81,15 +84,19 @@ function SectionRow({ label, linkLabel, onLink, primaryColor }: {
     </View>
   );
 }
-const secSt = StyleSheet.create({
-  row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 22, marginBottom: 8 },
-  label: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1 },
-  link:  { fontSize: 13, fontWeight: '600' },
-});
+function getSecSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    row:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginHorizontal: 20, marginTop: 22, marginBottom: 8 },
+    label: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1 },
+    link:  { fontSize: 13, fontWeight: '600' },
+  });
+}
 
 // ─── Featured next-up card ────────────────────────────────────────────────────
 
 function AttendanceBar({ attending, notAttending, total }: { attending: number; notAttending: number; total: number }) {
+  const { colors } = useTheme();
+  const abSt = useMemo(() => getAbSt(colors), [colors]);
   if (total === 0) return null;
   const goingPct    = Math.min(100, Math.round((attending    / total) * 100));
   const cantPct     = Math.min(100 - goingPct, Math.round((notAttending / total) * 100));
@@ -99,7 +106,7 @@ function AttendanceBar({ attending, notAttending, total }: { attending: number; 
       <View style={abSt.track}>
         {goingPct > 0   && <View style={[abSt.seg, { flex: goingPct,   backgroundColor: '#22C55E' }]} />}
         {cantPct > 0    && <View style={[abSt.seg, { flex: cantPct,    backgroundColor: '#EF4444' }]} />}
-        {pendingPct > 0 && <View style={[abSt.seg, { flex: pendingPct, backgroundColor: PULSE_COLORS.ui.border }]} />}
+        {pendingPct > 0 && <View style={[abSt.seg, { flex: pendingPct, backgroundColor: colors.border }]} />}
       </View>
       <View style={abSt.legend}>
         <View style={abSt.legendItem}>
@@ -111,27 +118,31 @@ function AttendanceBar({ attending, notAttending, total }: { attending: number; 
           <Text style={abSt.legendText}>{notAttending} can't</Text>
         </View>
         <View style={abSt.legendItem}>
-          <View style={[abSt.dot, { backgroundColor: PULSE_COLORS.ui.border }]} />
+          <View style={[abSt.dot, { backgroundColor: colors.border }]} />
           <Text style={abSt.legendText}>{total - attending - notAttending} pending</Text>
         </View>
       </View>
     </View>
   );
 }
-const abSt = StyleSheet.create({
-  wrap:        { gap: 7, marginBottom: 16 },
-  track:       { height: 8, borderRadius: 4, overflow: 'hidden', flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.border },
-  seg:         { height: '100%' },
-  legend:      { flexDirection: 'row', gap: 12 },
-  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  dot:         { width: 6, height: 6, borderRadius: 3 },
-  legendText:  { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
-});
+function getAbSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    wrap:        { gap: 7, marginBottom: 16 },
+    track:       { height: 8, borderRadius: 4, overflow: 'hidden', flexDirection: 'row', backgroundColor: colors.border },
+    seg:         { height: '100%' },
+    legend:      { flexDirection: 'row', gap: 12 },
+    legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    dot:         { width: 6, height: 6, borderRadius: 3 },
+    legendText:  { fontSize: 11, color: colors.muted, fontWeight: '500' },
+  });
+}
 
 function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }: {
   ev: EventRow; total: number; primaryColor: string; secondaryColor: string;
   onPress: () => void; onEdit: () => void;
 }) {
+  const { colors } = useTheme();
+  const nuSt = useMemo(() => getNuSt(colors), [colors]);
   const cfg = TYPE_CFG[ev.type] ?? TYPE_CFG.other;
 
   return (
@@ -160,7 +171,7 @@ function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }
         {/* Location */}
         {ev.location ? (
           <View style={nuSt.locationRow}>
-            <Ionicons name="location-outline" size={13} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="location-outline" size={13} color={colors.muted} />
             <Text style={nuSt.locationText} numberOfLines={1}>{ev.location}</Text>
           </View>
         ) : (
@@ -185,7 +196,7 @@ function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }
             onPress={onEdit}
             activeOpacity={0.75}
           >
-            <Ionicons name="create-outline" size={15} color={PULSE_COLORS.ui.text} />
+            <Ionicons name="create-outline" size={15} color={colors.text} />
             <Text style={nuSt.secondaryBtnText}>Edit</Text>
           </TouchableOpacity>
         </View>
@@ -193,23 +204,25 @@ function NextUpCard({ ev, total, primaryColor, secondaryColor, onPress, onEdit }
     </TouchableOpacity>
   );
 }
-const nuSt = StyleSheet.create({
-  card:          { flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 18, borderWidth: 1, marginHorizontal: 16, overflow: 'hidden' },
-  stripe:        { width: 5, alignSelf: 'stretch' },
-  body:          { flex: 1, padding: 16, gap: 0 },
-  metaRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  typeBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
-  typeText:      { fontSize: 10, fontWeight: '700' },
-  dateText:      { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500', flex: 1 },
-  title:         { fontSize: 20, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3, marginBottom: 6 },
-  locationRow:   { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 14 },
-  locationText:  { fontSize: 12, color: PULSE_COLORS.ui.muted, flex: 1 },
-  actions:       { flexDirection: 'row', gap: 10 },
-  primaryBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, paddingVertical: 11 },
-  primaryBtnText:{ fontSize: 14, fontWeight: '800', color: '#000' },
-  secondaryBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  secondaryBtnText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-});
+function getNuSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    card:          { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, marginHorizontal: 16, overflow: 'hidden' },
+    stripe:        { width: 5, alignSelf: 'stretch' },
+    body:          { flex: 1, padding: 16, gap: 0 },
+    metaRow:       { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+    typeBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+    typeText:      { fontSize: 10, fontWeight: '700' },
+    dateText:      { fontSize: 12, color: colors.textSecondary, fontWeight: '500', flex: 1 },
+    title:         { fontSize: 20, fontWeight: '800', color: colors.text, letterSpacing: -0.3, marginBottom: 6 },
+    locationRow:   { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 14 },
+    locationText:  { fontSize: 12, color: colors.muted, flex: 1 },
+    actions:       { flexDirection: 'row', gap: 10 },
+    primaryBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, paddingVertical: 11 },
+    primaryBtnText:{ fontSize: 14, fontWeight: '800', color: '#000' },
+    secondaryBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingVertical: 11, paddingHorizontal: 16, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+    secondaryBtnText: { fontSize: 14, fontWeight: '700', color: colors.text },
+  });
+}
 
 
 
@@ -219,6 +232,8 @@ function AiToolCard({ icon, color, bg, label, desc, onPress, showDivider }: {
   icon: any; color: string; bg: string; label: string; desc: string;
   onPress: () => void; showDivider?: boolean;
 }) {
+  const { colors } = useTheme();
+  const atSt = useMemo(() => getAtSt(colors), [colors]);
   return (
     <>
       {showDivider && <View style={atSt.divider} />}
@@ -230,18 +245,20 @@ function AiToolCard({ icon, color, bg, label, desc, onPress, showDivider }: {
           <Text style={atSt.label}>{label}</Text>
           <Text style={atSt.desc}>{desc}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+        <Ionicons name="chevron-forward" size={16} color={colors.muted} />
       </TouchableOpacity>
     </>
   );
 }
-const atSt = StyleSheet.create({
-  row:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14 },
-  icon:    { width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  label:   { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  desc:    { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 16 },
-  divider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 16 },
-});
+function getAtSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    row:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14 },
+    icon:    { width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+    label:   { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
+    desc:    { fontSize: 12, color: colors.muted, lineHeight: 16 },
+    divider: { height: 1, backgroundColor: colors.border, marginHorizontal: 16 },
+  });
+}
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
@@ -251,6 +268,9 @@ export default function AdminPanel() {
   const router = useRouter();
   const { profile } = useAuth();
   const { team, loading: teamLoading, refetch } = useTeam();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
+  const atndSt = useMemo(() => getAtndSt(colors), [colors]);
 
   const [upcoming, setUpcoming] = useState<EventRow[]>([]);
   const [total,    setTotal]    = useState(0);
@@ -433,7 +453,7 @@ export default function AdminPanel() {
         </View>
       ) : !team ? (
         <ScrollView contentContainerStyle={st.noTeamScroll} showsVerticalScrollIndicator={false}>
-          <Ionicons name="shield-outline" size={52} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="shield-outline" size={52} color={colors.muted} />
           <Text style={st.noTeamTitle}>No teams yet</Text>
           <Text style={st.noTeamBody}>Get your club set up using one of the options below.</Text>
 
@@ -445,10 +465,10 @@ export default function AdminPanel() {
               <Text style={st.noTeamCardTitle}>Import Club with AI</Text>
               <Text style={st.noTeamCardSub}>Upload a spreadsheet — AI creates all your teams, players and coaches</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[st.noTeamCard, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]} onPress={() => router.push(`/(app)/${slug}/admin/club-schedule` as any)} activeOpacity={0.75}>
+          <TouchableOpacity style={[st.noTeamCard, { borderColor: colors.border, backgroundColor: colors.surface }]} onPress={() => router.push(`/(app)/${slug}/admin/club-schedule` as any)} activeOpacity={0.75}>
             <View style={[st.noTeamCardIcon, { backgroundColor: 'rgba(59,130,246,0.12)' }]}>
               <Ionicons name="calendar" size={22} color="#3B82F6" />
             </View>
@@ -456,10 +476,10 @@ export default function AdminPanel() {
               <Text style={st.noTeamCardTitle}>Import Season Schedule</Text>
               <Text style={st.noTeamCardSub}>Upload a PDF or spreadsheet and AI adds all events automatically</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={[st.noTeamCard, { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surface }]} onPress={() => router.push(`/(app)/${slug}/create-event` as any)} activeOpacity={0.75}>
+          <TouchableOpacity style={[st.noTeamCard, { borderColor: colors.border, backgroundColor: colors.surface }]} onPress={() => router.push(`/(app)/${slug}/create-event` as any)} activeOpacity={0.75}>
             <View style={[st.noTeamCardIcon, { backgroundColor: 'rgba(249,115,22,0.12)' }]}>
               <Ionicons name="add-circle" size={22} color="#F97316" />
             </View>
@@ -467,7 +487,7 @@ export default function AdminPanel() {
               <Text style={st.noTeamCardTitle}>Create Event</Text>
               <Text style={st.noTeamCardSub}>Manually add a game, training session or other event</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -499,7 +519,7 @@ export default function AdminPanel() {
                 {eventsWithoutSurface} {eventsWithoutSurface === 1 ? 'event' : 'events'} missing a surface type — add in Edit Event
               </Text>
               <TouchableOpacity onPress={() => setSurfaceNudgeDismissed(true)} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                <Ionicons name="close" size={14} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="close" size={14} color={colors.muted} />
               </TouchableOpacity>
             </View>
           )}
@@ -522,7 +542,7 @@ export default function AdminPanel() {
           {/* Empty schedule state */}
           {upcoming.length === 0 && (
             <View style={st.emptyCard}>
-              <Ionicons name="calendar-outline" size={28} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="calendar-outline" size={28} color={colors.muted} />
               <Text style={st.emptyTitle}>No upcoming events</Text>
               <TouchableOpacity onPress={() => router.push(`/(app)/${slug}/create-event` as any)}>
                 <Text style={[st.emptyLink, { color: primaryColor }]}>Create your first event →</Text>
@@ -535,7 +555,7 @@ export default function AdminPanel() {
           <View style={st.aiGroup}>
             {pastEventCount === 0 ? (
               <View style={st.attendanceEmpty}>
-                <Ionicons name="bar-chart-outline" size={24} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="bar-chart-outline" size={24} color={colors.muted} />
                 <Text style={st.attendanceEmptyText}>No completed events yet — attendance will appear here.</Text>
               </View>
             ) : (
@@ -701,17 +721,18 @@ export default function AdminPanel() {
 
 // ─── Screen styles ────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  root:   { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   noTeamScroll:    { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 48, gap: 12 },
-  noTeamTitle:     { fontSize: 20, fontWeight: '700', color: PULSE_COLORS.ui.text, marginTop: 16 },
-  noTeamBody:      { fontSize: 14, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 8 },
+  noTeamTitle:     { fontSize: 20, fontWeight: '700', color: colors.text, marginTop: 16 },
+  noTeamBody:      { fontSize: 14, color: colors.muted, textAlign: 'center', marginBottom: 8 },
   noTeamCard:      { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16, borderWidth: 1 },
   noTeamCardIcon:  { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   noTeamCardText:  { flex: 1 },
-  noTeamCardTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  noTeamCardSub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, lineHeight: 18 },
+  noTeamCardTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
+  noTeamCardSub:   { fontSize: 13, color: colors.muted, lineHeight: 18 },
   scroll: { paddingTop: 4, paddingBottom: 24 },
 
   // Surface type nudge
@@ -721,18 +742,18 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(245,158,11,0.06)', borderRadius: 8, borderWidth: 1,
     borderColor: 'rgba(245,158,11,0.18)', paddingHorizontal: 10, paddingVertical: 7,
   },
-  nudgeTitle: { flex: 1, fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  nudgeTitle: { flex: 1, fontSize: 11, fontWeight: '600', color: colors.textSecondary },
 
   // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn:      { width: 36, alignItems: 'flex-start' },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  headerTitle:  { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
-  headerSub:    { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1, fontWeight: '500' },
+  headerTitle:  { fontSize: 17, fontWeight: '800', color: colors.text, letterSpacing: -0.3 },
+  headerSub:    { fontSize: 12, color: colors.muted, marginTop: 1, fontWeight: '500' },
   teamSwitcher: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   createBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -743,34 +764,34 @@ const st = StyleSheet.create({
   // Stats
   statsRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     marginHorizontal: 16, marginTop: 16,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
   statCell:    { flex: 1, alignItems: 'center', paddingVertical: 16, gap: 3 },
-  statDivider: { width: 1, height: 40, backgroundColor: PULSE_COLORS.ui.border },
+  statDivider: { width: 1, height: 40, backgroundColor: colors.border },
   statNum:     { fontSize: 22, fontWeight: '800' },
-  statLabel:   { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  statLabel:   { fontSize: 11, color: colors.muted, fontWeight: '600' },
 
   // Empty
   emptyCard: {
     alignItems: 'center', paddingVertical: 32,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     marginHorizontal: 16, borderRadius: 16,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, gap: 8,
+    borderWidth: 1, borderColor: colors.border, gap: 8,
   },
-  emptyTitle: { fontSize: 15, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  emptyTitle: { fontSize: 15, color: colors.textSecondary, fontWeight: '500' },
   emptyLink:  { fontSize: 14, fontWeight: '600', marginTop: 4 },
 
 
   // AI tools grouped card
   aiGroup: {
     marginHorizontal: 16,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
 
@@ -779,21 +800,24 @@ const st = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     padding: 20,
   },
-  attendanceEmptyText: { fontSize: 13, color: PULSE_COLORS.ui.muted, flex: 1, lineHeight: 18 },
-});
+  attendanceEmptyText: { fontSize: 13, color: colors.muted, flex: 1, lineHeight: 18 },
+  });
+}
 
 // ─── Attendance row styles ────────────────────────────────────────────────────
 
-const atndSt = StyleSheet.create({
-  divider:    { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 16 },
+function getAtndSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  divider:    { height: 1, backgroundColor: colors.border, marginHorizontal: 16 },
   row:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  jersey:     { width: 28, height: 28, borderRadius: 7, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  jerseyText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  name:       { flex: 1, fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  fraction:   { fontSize: 12, color: PULSE_COLORS.ui.muted, fontVariant: ['tabular-nums'] },
+  jersey:     { width: 28, height: 28, borderRadius: 7, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  jerseyText: { fontSize: 11, fontWeight: '800', color: colors.text },
+  name:       { flex: 1, fontSize: 13, fontWeight: '600', color: colors.text },
+  fraction:   { fontSize: 12, color: colors.muted, fontVariant: ['tabular-nums'] },
   pctPill:    { minWidth: 48, alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   pctPillText:{ fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
   viewAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 12 },
   viewAllText:{ fontSize: 13, fontWeight: '600' },
-});
+  });
+}
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,7 +23,8 @@ import { supabase } from '../../../../lib/supabase';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { uniqueChannelName } from '../../../../lib/realtime';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import PhotoViewerModal from '../../../../components/ui/PhotoViewerModal';
@@ -118,6 +119,8 @@ export default function ConversationScreen() {
   const router = useRouter();
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const { profile } = useAuth();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   const [title, setTitle]           = useState<string>('Direct Message');
   const [convType, setConvType]     = useState<string | null>(null);
@@ -703,14 +706,14 @@ export default function ConversationScreen() {
               activeOpacity={0.7}
             >
               {loadingMore
-                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+                ? <ActivityIndicator size="small" color={colors.muted} />
                 : <Text style={st.loadEarlierText}>Load earlier messages</Text>}
             </TouchableOpacity>
           ) : null}
           ListEmptyComponent={
             <View style={st.empty}>
               <View style={st.emptyIcon}>
-                <Ionicons name="chatbubble-outline" size={28} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="chatbubble-outline" size={28} color={colors.muted} />
               </View>
               <Text style={st.emptyTitle}>Start the conversation</Text>
               <Text style={st.emptySub}>Send your first message below.</Text>
@@ -816,21 +819,21 @@ export default function ConversationScreen() {
         <View style={st.pendingImageRow}>
           <Image source={{ uri: pendingImage.uri }} style={st.pendingImageThumb} contentFit="cover" />
           <TouchableOpacity style={st.pendingImageRemove} onPress={() => setPendingImage(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="close-circle" size={22} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="close-circle" size={22} color={colors.muted} />
           </TouchableOpacity>
         </View>
       )}
 
       <View style={st.inputRow}>
         <TouchableOpacity style={st.attachBtn} onPress={showAttachOptions} disabled={sending}>
-          <Ionicons name="camera-outline" size={22} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="camera-outline" size={22} color={colors.muted} />
         </TouchableOpacity>
         <TextInput
           style={st.input}
           value={text}
           onChangeText={setText}
           placeholder="Message..."
-          placeholderTextColor={PULSE_COLORS.ui.muted}
+          placeholderTextColor={colors.muted}
           multiline
           returnKeyType="send"
           onSubmitEditing={handleSend}
@@ -885,7 +888,7 @@ export default function ConversationScreen() {
                       openReactorSheet(groups);
                     }}
                   >
-                    <Ionicons name="people-outline" size={16} color={PULSE_COLORS.ui.text} />
+                    <Ionicons name="people-outline" size={16} color={colors.text} />
                     <Text style={st.reactionSheetActionText}>View reactions</Text>
                   </TouchableOpacity>
                 )}
@@ -898,7 +901,7 @@ export default function ConversationScreen() {
                       await Clipboard.setStringAsync(body);
                     }}
                   >
-                    <Ionicons name="copy-outline" size={16} color={PULSE_COLORS.ui.text} />
+                    <Ionicons name="copy-outline" size={16} color={colors.text} />
                     <Text style={st.reactionSheetActionText}>Copy text</Text>
                   </TouchableOpacity>
                 )}
@@ -911,7 +914,7 @@ export default function ConversationScreen() {
                       setReactionSheetMsg(null);
                     }}
                   >
-                    <Ionicons name="pencil-outline" size={16} color={PULSE_COLORS.ui.text} />
+                    <Ionicons name="pencil-outline" size={16} color={colors.text} />
                     <Text style={st.reactionSheetActionText}>Edit</Text>
                   </TouchableOpacity>
                 )}
@@ -972,14 +975,15 @@ export default function ConversationScreen() {
   );
 }
 
-const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn: { width: 36, alignItems: 'flex-start' },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
@@ -989,87 +993,87 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, flexShrink: 1 },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text, flexShrink: 1 },
 
   list: { padding: 16, paddingBottom: 8, flexGrow: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
   loadEarlierBtn: {
     alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 16,
     marginTop: 8, marginBottom: 4,
-    borderRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderRadius: 20, borderWidth: 1, borderColor: colors.border,
     minWidth: 48, alignItems: 'center',
   },
-  loadEarlierText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  loadEarlierText: { fontSize: 13, color: colors.muted, fontWeight: '500' },
   emptyIcon: {
     width: 56, height: 56, borderRadius: 18,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', marginBottom: 4,
   },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  emptySub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  emptySub: { fontSize: 13, color: colors.textSecondary },
 
   msgWrap: { flexDirection: 'row', marginBottom: 4, alignItems: 'flex-end', gap: 8 },
   msgWrapMe: { justifyContent: 'flex-end' },
   msgWrapThem: { justifyContent: 'flex-start' },
   avatar: {
     width: 28, height: 28, borderRadius: 14,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   avatarText: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.brand.green },
   msgCol: { maxWidth: '75%' },
-  senderName: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginBottom: 3, marginLeft: 4 },
+  senderName: { fontSize: 11, color: colors.muted, marginBottom: 3, marginLeft: 4 },
   bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
   bubbleMe: { backgroundColor: PULSE_COLORS.brand.green, borderBottomRightRadius: 4 },
   bubbleThem: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderBottomLeftRadius: 4,
   },
-  bubbleText: { fontSize: 15, color: PULSE_COLORS.ui.text, lineHeight: 20 },
+  bubbleText: { fontSize: 15, color: colors.text, lineHeight: 20 },
   linkText: { textDecorationLine: 'underline', fontWeight: '600' },
   bubbleWithImage: { padding: 4, overflow: 'hidden' },
-  bubbleImage: { width: 220, height: 220, borderRadius: 14, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+  bubbleImage: { width: 220, height: 220, borderRadius: 14, backgroundColor: colors.surfaceAlt },
   bubbleTextWithImage: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 2 },
   timestampRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, marginHorizontal: 4 },
-  timestamp: { fontSize: 10, color: PULSE_COLORS.ui.muted },
-  editedLabel: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
+  timestamp: { fontSize: 10, color: colors.muted },
+  editedLabel: { fontSize: 10, color: colors.muted, fontStyle: 'italic' },
 
   reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 4, marginHorizontal: 4 },
   reactionPill: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 12,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
   },
   reactionPillEmoji: { fontSize: 12 },
-  reactionPillCount: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  reactionPillCount: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
 
   // Inline edit
   editWrap: { borderRadius: 14, borderWidth: 1.5, borderColor: PULSE_COLORS.brand.green, overflow: 'hidden' },
   editInput: {
     paddingHorizontal: 14, paddingVertical: 10,
-    color: PULSE_COLORS.ui.text, fontSize: 15, lineHeight: 20,
-    backgroundColor: PULSE_COLORS.ui.surface, minHeight: 40,
+    color: colors.text, fontSize: 15, lineHeight: 20,
+    backgroundColor: colors.surface, minHeight: 40,
   },
-  editActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
-  editCancel: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRightWidth: 0.5, borderRightColor: PULSE_COLORS.ui.border },
-  editCancelText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  editActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border },
+  editCancel: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRightWidth: 0.5, borderRightColor: colors.border },
+  editCancelText: { fontSize: 13, color: colors.muted, fontWeight: '600' },
   editSave: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   editSaveText: { fontSize: 13, color: PULSE_COLORS.brand.green, fontWeight: '700' },
 
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.background,
+    borderTopWidth: 1, borderTopColor: colors.border,
+    backgroundColor: colors.background,
   },
   input: {
-    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flex: 1, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10,
-    color: PULSE_COLORS.ui.text, fontSize: 15, maxHeight: 100,
+    color: colors.text, fontSize: 15, maxHeight: 100,
   },
   sendBtn: {
     width: 40, height: 40, borderRadius: 20,
@@ -1080,35 +1084,35 @@ const st = StyleSheet.create({
   attachBtn: {
     width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
   },
   pendingImageRow: {
     flexDirection: 'row', alignItems: 'flex-start',
     paddingHorizontal: 16, paddingTop: 10,
-    backgroundColor: PULSE_COLORS.ui.background,
+    backgroundColor: colors.background,
   },
   pendingImageThumb: {
     width: 64, height: 64, borderRadius: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
   },
-  pendingImageRemove: { marginLeft: -12, marginTop: -8, backgroundColor: PULSE_COLORS.ui.background, borderRadius: 11 },
+  pendingImageRemove: { marginLeft: -12, marginTop: -8, backgroundColor: colors.background, borderRadius: 11 },
 
   // Reaction sheet
   reactionSheetOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   reactionSheet: {
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingTop: 10, paddingBottom: 32, paddingHorizontal: 16,
   },
   sheetHandle: {
     width: 36, height: 4, borderRadius: 2,
-    backgroundColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.border,
     alignSelf: 'center', marginBottom: 16,
   },
   reactionEmojiRow: {
     flexDirection: 'row', justifyContent: 'space-between',
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 16,
+    backgroundColor: colors.surfaceAlt, borderRadius: 16,
     paddingVertical: 10, paddingHorizontal: 6, marginBottom: 8,
   },
   reactionEmojiBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
@@ -1116,15 +1120,16 @@ const st = StyleSheet.create({
   reactionSheetAction: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingVertical: 14, paddingHorizontal: 6,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
-  reactionSheetActionText: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  reactionSheetActionText: { fontSize: 15, fontWeight: '600', color: colors.text },
   reactionSheetCancel: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
-  reactionSheetCancelText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  reactionSheetCancelText: { fontSize: 15, fontWeight: '700', color: colors.muted },
   reactorGroup: { marginBottom: 8 },
-  reactorSheetTitle: { fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 12, textAlign: 'center' },
+  reactorSheetTitle: { fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 12, textAlign: 'center' },
   reactorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   reactorAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   reactorAvatarText: { fontSize: 12, fontWeight: '800' },
-  reactorName: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-});
+  reactorName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  });
+}

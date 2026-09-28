@@ -27,7 +27,8 @@ import { computeArriveBy } from '../../../../lib/eventTime';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { positionColor } from '../../../../constants/positions';
 import ClubBadge from '../../../../components/ui/ClubBadge';
 import GroupedTeamList from '../../../../components/ui/GroupedTeamList';
@@ -221,6 +222,7 @@ function timeAgo(dateStr: string): string {
 
 
 function HomeSkeleton() {
+  const { colors } = useTheme();
   const pulse = useRef(new Animated.Value(0.5)).current;
   useEffect(() => {
     Animated.loop(
@@ -230,9 +232,9 @@ function HomeSkeleton() {
       ])
     ).start();
   }, []);
-  const SKEL = PULSE_COLORS.ui.surface;
+  const SKEL = colors.surface;
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: PULSE_COLORS.ui.background }} contentContainerStyle={{ padding: 20, paddingTop: 120, paddingBottom: 48 }} scrollEnabled={false}>
+    <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={{ padding: 20, paddingTop: 120, paddingBottom: 48 }} scrollEnabled={false}>
       <Animated.View style={{ opacity: pulse }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -270,13 +272,14 @@ function HomeSkeleton() {
 }
 
 function HomeLoadError({ onRetry }: { onRetry: () => void }) {
+  const { colors } = useTheme();
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background, gap: 16, paddingHorizontal: 32 }}>
-      <Ionicons name="cloud-offline-outline" size={40} color={PULSE_COLORS.ui.muted} />
-      <Text style={{ color: PULSE_COLORS.ui.text, fontSize: 16, fontWeight: '600', textAlign: 'center' }}>Couldn't load your home screen</Text>
-      <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13, textAlign: 'center' }}>Check your connection and try again.</Text>
-      <TouchableOpacity onPress={onRetry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: PULSE_COLORS.ui.surface }}>
-        <Text style={{ color: PULSE_COLORS.ui.text, fontWeight: '700' }}>Try Again</Text>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, gap: 16, paddingHorizontal: 32 }}>
+      <Ionicons name="cloud-offline-outline" size={40} color={colors.muted} />
+      <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', textAlign: 'center' }}>Couldn't load your home screen</Text>
+      <Text style={{ color: colors.muted, fontSize: 13, textAlign: 'center' }}>Check your connection and try again.</Text>
+      <TouchableOpacity onPress={onRetry} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}>
+        <Text style={{ color: colors.text, fontWeight: '700' }}>Try Again</Text>
       </TouchableOpacity>
     </View>
   );
@@ -289,6 +292,8 @@ export default function HomeScreen() {
   const { profile, club, refreshProfile, signOut } = useAuth();
   const { team, allTeams, loading: teamLoading, selectTeam, teamsWithUnreadChat } = useTeam();
   const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const fmt = (n: number) => formatCurrency(n, club?.currency);
 
   const [playerCount, setPlayerCount]       = useState(0);
@@ -1459,7 +1464,7 @@ export default function HomeScreen() {
             {/* Date/time + location */}
             <View style={styles.nextCardMeta}>
               <View style={styles.nextCardMetaRow}>
-                <Ionicons name="time-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="time-outline" size={12} color={colors.muted} />
                 <Text style={styles.nextCardMetaText}>
                   {new Date(event.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                   {event.event_time ? `  ·  ${formatTime(event.event_time)}` : ''}
@@ -1470,7 +1475,7 @@ export default function HomeScreen() {
               </View>
               {event.location ? (
                 <View style={styles.nextCardMetaRow}>
-                  <Ionicons name="location-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="location-outline" size={12} color={colors.muted} />
                   <Text style={styles.nextCardMetaText} numberOfLines={1}>{event.location}</Text>
                 </View>
               ) : null}
@@ -1481,14 +1486,14 @@ export default function HomeScreen() {
               <View style={styles.nextCardChipRow}>
                 {driveTime ? (
                   <View style={[styles.nextCardChip, styles.nextCardChipWeather]}>
-                    <Ionicons name="car-outline" size={11} color={PULSE_COLORS.ui.muted} />
-                    <Text style={[styles.nextCardChipText, { color: PULSE_COLORS.ui.textSecondary }]}>{driveTime}</Text>
+                    <Ionicons name="car-outline" size={11} color={colors.muted} />
+                    <Text style={[styles.nextCardChipText, { color: colors.textSecondary }]}>{driveTime}</Text>
                   </View>
                 ) : null}
                 {weather ? (
                   <View style={[styles.nextCardChip, styles.nextCardChipWeather]}>
                     <Text style={styles.nextCardChipEmoji}>{weather.icon}</Text>
-                    <Text style={[styles.nextCardChipText, { color: PULSE_COLORS.ui.textSecondary }]}>
+                    <Text style={[styles.nextCardChipText, { color: colors.textSecondary }]}>
                       {weather.temp_f}°F{weather.precip_chance >= 20 ? `  💧${weather.precip_chance}%` : ''}
                     </Text>
                   </View>
@@ -1511,9 +1516,9 @@ export default function HomeScreen() {
                   // Fixed neutral chip + a bordered swatch, not the literal kit
                   // color as border/text — a black kit (a valid club color)
                   // otherwise disappears entirely against the dark theme.
-                  <View style={[styles.nextCardChip, { borderColor: PULSE_COLORS.ui.border, backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+                  <View style={[styles.nextCardChip, { borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.06)' }]}>
                     <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
-                    <Text style={[styles.nextCardChipText, { color: PULSE_COLORS.ui.textSecondary }]}>
+                    <Text style={[styles.nextCardChipText, { color: colors.textSecondary }]}>
                       {event.uniform === 'home' ? 'Home' : event.uniform === 'away' ? 'Away' : 'Training'} Kit
                     </Text>
                   </View>
@@ -1536,7 +1541,7 @@ export default function HomeScreen() {
                   <View style={styles.attendanceBarTrack}>
                     {goingPct   > 0 && <View style={[styles.attendanceBarSeg, { flex: goingPct,   backgroundColor: '#22C55E' }]} />}
                     {cantPct    > 0 && <View style={[styles.attendanceBarSeg, { flex: cantPct,    backgroundColor: '#EF4444' }]} />}
-                    {pendingPct > 0 && <View style={[styles.attendanceBarSeg, { flex: pendingPct, backgroundColor: PULSE_COLORS.ui.border }]} />}
+                    {pendingPct > 0 && <View style={[styles.attendanceBarSeg, { flex: pendingPct, backgroundColor: colors.border }]} />}
                   </View>
                   <View style={styles.attendanceBarLegend}>
                     <View style={styles.attendanceBarLegendItem}>
@@ -1548,12 +1553,12 @@ export default function HomeScreen() {
                       <Text style={styles.attendanceBarLegendText}>{cantGo} can't</Text>
                     </View>
                     <View style={styles.attendanceBarLegendItem}>
-                      <View style={[styles.attendanceBarDot, { backgroundColor: PULSE_COLORS.ui.border }]} />
+                      <View style={[styles.attendanceBarDot, { backgroundColor: colors.border }]} />
                       <Text style={styles.attendanceBarLegendText}>{pending} pending</Text>
                     </View>
                     {isCoach && (
                       <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <Ionicons name="chevron-forward" size={12} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="chevron-forward" size={12} color={colors.muted} />
                       </View>
                     )}
                   </View>
@@ -1598,7 +1603,7 @@ export default function HomeScreen() {
                           style={[styles.rsvpBtn,
                             rsvpStatus === 'attending'
                               ? { backgroundColor: rgba(0.14), borderColor: rgba(0.35) }
-                              : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
+                              : { backgroundColor: 'transparent', borderColor: colors.border },
                           ]}
                           onPress={() => onRsvp(p.id, 'attending')}
                           disabled={rsvpLoading}
@@ -1607,17 +1612,17 @@ export default function HomeScreen() {
                           <Ionicons
                             name={rsvpStatus === 'attending' ? 'checkmark-circle' : 'checkmark-circle-outline'}
                             size={15}
-                            color={rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted}
+                            color={rsvpStatus === 'attending' ? primaryColor : colors.muted}
                           />
                           <Text style={[styles.rsvpBtnText,
-                            { color: rsvpStatus === 'attending' ? primaryColor : PULSE_COLORS.ui.muted },
+                            { color: rsvpStatus === 'attending' ? primaryColor : colors.muted },
                           ]}>Going</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.rsvpBtn,
                             rsvpStatus === 'not_attending'
                               ? { backgroundColor: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.3)' }
-                              : { backgroundColor: 'transparent', borderColor: PULSE_COLORS.ui.border },
+                              : { backgroundColor: 'transparent', borderColor: colors.border },
                           ]}
                           onPress={() => onRsvp(p.id, 'not_attending')}
                           disabled={rsvpLoading}
@@ -1626,10 +1631,10 @@ export default function HomeScreen() {
                           <Ionicons
                             name={rsvpStatus === 'not_attending' ? 'close-circle' : 'close-circle-outline'}
                             size={15}
-                            color={rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted}
+                            color={rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : colors.muted}
                           />
                           <Text style={[styles.rsvpBtnText,
-                            { color: rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : PULSE_COLORS.ui.muted },
+                            { color: rsvpStatus === 'not_attending' ? PULSE_COLORS.rsvp.not_attending : colors.muted },
                           ]}>Can't go</Text>
                         </TouchableOpacity>
                       </View>
@@ -1773,7 +1778,7 @@ export default function HomeScreen() {
                         </>
                       )}
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="chevron-forward" size={16} color={colors.muted} />
                   </View>
                   {hasOverdue && (
                     <View style={styles.feeOverdueBadge}>
@@ -1880,7 +1885,7 @@ export default function HomeScreen() {
                 {/* Game attendance % this month */}
                 {(() => {
                   const pct = pulseGamePct;
-                  const color = pct == null ? PULSE_COLORS.ui.muted
+                  const color = pct == null ? colors.muted
                     : pct >= 75 ? '#22C55E' : pct >= 50 ? '#F59E0B' : '#EF4444';
                   return (
                     <View style={styles.pulseMetric}>
@@ -1904,7 +1909,7 @@ export default function HomeScreen() {
                 {/* Training attendance % this month */}
                 {(() => {
                   const pct = pulseTrainingPct;
-                  const color = pct == null ? PULSE_COLORS.ui.muted
+                  const color = pct == null ? colors.muted
                     : pct >= 75 ? '#22C55E' : pct >= 50 ? '#F59E0B' : '#EF4444';
                   return (
                     <View style={styles.pulseMetric}>
@@ -1944,7 +1949,7 @@ export default function HomeScreen() {
                   ? { color: '#F97316', glow: '#F97316', label: 'Building' }
                   : combinedStreak >= 1
                     ? { color: '#EAB308', glow: '#EAB308', label: 'Getting started' }
-                    : { color: PULSE_COLORS.ui.muted, glow: 'transparent', label: 'No streak yet' };
+                    : { color: colors.muted, glow: 'transparent', label: 'No streak yet' };
           const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
           return (
             <View key={p.id}>
@@ -1981,7 +1986,7 @@ export default function HomeScreen() {
                         textShadowOffset: { width: 0, height: 0 },
                         textShadowRadius: 10,
                       } : {}]}>{gPerfect ? '🥇' : '⚽'}</Text>
-                      <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.muted, fontSize: 28, paddingTop: 6 }]}>
+                      <Text style={[styles.seasonStatNum, { color: gPerfect ? '#22C55E' : colors.muted, fontSize: 28, paddingTop: 6 }]}>
                         {gamesAttended}/{gamesTotal}
                       </Text>
                       <Text style={styles.seasonStatLabel}>{gPerfect ? 'Perfect!' : 'Games'}</Text>
@@ -1990,7 +1995,7 @@ export default function HomeScreen() {
                 )}
 
                 <View style={styles.seasonTapHint}>
-                  <Ionicons name="chevron-forward" size={13} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="chevron-forward" size={13} color={colors.muted} />
                 </View>
               </TouchableOpacity>
             </View>
@@ -2035,18 +2040,18 @@ export default function HomeScreen() {
                       </View>
                       {isCoach ? (
                         <TouchableOpacity onPress={() => deleteCallout(callout.id)} style={styles.calloutDeleteBtn} activeOpacity={0.7}>
-                          <Ionicons name="trash-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                          <Ionicons name="trash-outline" size={14} color={colors.muted} />
                         </TouchableOpacity>
                       ) : (
                         <TouchableOpacity onPress={() => respondToCallout(callout.id, 'dismissed')} style={styles.calloutDeleteBtn} activeOpacity={0.7}>
-                          <Ionicons name="close" size={15} color={PULSE_COLORS.ui.muted} />
+                          <Ionicons name="close" size={15} color={colors.muted} />
                         </TouchableOpacity>
                       )}
                     </View>
                     {callout.body ? <Text style={styles.calloutBodyText}>{callout.body}</Text> : null}
                     {isCoach ? (
                       <View style={styles.calloutCoachFooter}>
-                        <Ionicons name="people-outline" size={12} color={(callout.helper_count ?? 0) > 0 ? accentColor : PULSE_COLORS.ui.muted} />
+                        <Ionicons name="people-outline" size={12} color={(callout.helper_count ?? 0) > 0 ? accentColor : colors.muted} />
                         {(callout.helper_count ?? 0) === 0 ? (
                           <Text style={styles.calloutHelperCount}>No responses yet</Text>
                         ) : (
@@ -2225,7 +2230,7 @@ export default function HomeScreen() {
                     </View>
                   </View>
 
-                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="chevron-forward" size={16} color={colors.muted} />
                 </TouchableOpacity>
               );
             })}
@@ -2252,7 +2257,7 @@ export default function HomeScreen() {
                 <Text style={styles.announcementPreview} numberOfLines={2}>{latestAnnouncement.body}</Text>
                 <Text style={styles.announcementTime}>{timeAgo(latestAnnouncement.created_at)}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
             </TouchableOpacity>
           </>
         )}
@@ -2397,7 +2402,7 @@ export default function HomeScreen() {
 
                   {fee.event_title && (
                     <View style={styles.feeEventTag}>
-                      <Ionicons name="calendar-outline" size={11} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="calendar-outline" size={11} color={colors.muted} />
                       <Text style={styles.feeEventTagText} numberOfLines={1}>
                         {fee.event_title}{fmtEventDate ? `  ·  ${fmtEventDate}` : ''}
                       </Text>
@@ -2456,7 +2461,7 @@ export default function HomeScreen() {
             onChangeText={setClaimAmount}
             keyboardType="decimal-pad"
             placeholder="0.00"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             style={styles.claimInput}
           />
 
@@ -2481,7 +2486,7 @@ export default function HomeScreen() {
             value={claimNote}
             onChangeText={setClaimNote}
             placeholder="e.g. Sent last night"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             style={styles.claimInput}
           />
 
@@ -2542,7 +2547,7 @@ export default function HomeScreen() {
                 <TextInput
                   style={styles.calloutInput}
                   placeholder="What do you need from parents?"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   value={calloutTitle}
                   onChangeText={setCalloutTitle}
                   maxLength={120}
@@ -2552,7 +2557,7 @@ export default function HomeScreen() {
                 <TextInput
                   style={[styles.calloutInput, styles.calloutInputMulti]}
                   placeholder="More detail (optional)"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   value={calloutBody}
                   onChangeText={setCalloutBody}
                   multiline
@@ -2570,7 +2575,7 @@ export default function HomeScreen() {
                     onPress={() => setCalloutUrgency('normal')}
                     activeOpacity={0.75}
                   >
-                    <Ionicons name="hand-right-outline" size={15} color={calloutUrgency === 'normal' ? '#F59E0B' : PULSE_COLORS.ui.muted} />
+                    <Ionicons name="hand-right-outline" size={15} color={calloutUrgency === 'normal' ? '#F59E0B' : colors.muted} />
                     <Text style={[styles.calloutUrgencyBtnText, calloutUrgency === 'normal' && { color: '#F59E0B' }]}>Normal</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -2578,7 +2583,7 @@ export default function HomeScreen() {
                     onPress={() => setCalloutUrgency('urgent')}
                     activeOpacity={0.75}
                   >
-                    <Ionicons name="warning-outline" size={15} color={calloutUrgency === 'urgent' ? '#EF4444' : PULSE_COLORS.ui.muted} />
+                    <Ionicons name="warning-outline" size={15} color={calloutUrgency === 'urgent' ? '#EF4444' : colors.muted} />
                     <Text style={[styles.calloutUrgencyBtnText, calloutUrgency === 'urgent' && { color: '#EF4444' }]}>Urgent</Text>
                   </TouchableOpacity>
                 </View>
@@ -2616,7 +2621,7 @@ export default function HomeScreen() {
               </View>
               {devLoading === a.email
                 ? <ActivityIndicator size="small" color={primaryColor} />
-                : <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                : <Ionicons name="chevron-forward" size={16} color={colors.muted} />
               }
             </TouchableOpacity>
           ))}
@@ -2635,7 +2640,7 @@ export default function HomeScreen() {
               {(seasonSheetPlayerId && myPlayers.find((p) => p.id === seasonSheetPlayerId)?.full_name.split(' ')[0]) ?? 'Player'}'s Season
             </Text>
             <TouchableOpacity onPress={() => setSeasonSheetPlayerId(null)} style={styles.attSheetClose}>
-              <Ionicons name="close" size={20} color={PULSE_COLORS.ui.textSecondary} />
+              <Ionicons name="close" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -2659,7 +2664,7 @@ export default function HomeScreen() {
                       ? { color: '#F97316', glow: '#F97316', label: 'Building momentum' }
                       : combinedStreak >= 1
                         ? { color: '#EAB308', glow: '#EAB308', label: 'Getting started' }
-                        : { color: PULSE_COLORS.ui.muted, glow: 'transparent', label: 'No streak yet' };
+                        : { color: colors.muted, glow: 'transparent', label: 'No streak yet' };
               const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
               return (
                 <>
@@ -2691,7 +2696,7 @@ export default function HomeScreen() {
                         textShadowRadius: 14,
                       } : {}]}>{gPerfect ? '🥇' : '⚽'}</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.attSheetGameNum, { color: gPerfect ? '#22C55E' : PULSE_COLORS.ui.textSecondary }]}>
+                        <Text style={[styles.attSheetGameNum, { color: gPerfect ? '#22C55E' : colors.textSecondary }]}>
                           {gamesAttended}/{gamesTotal} games this season
                         </Text>
                         {gPerfect && (
@@ -2706,7 +2711,7 @@ export default function HomeScreen() {
                     <View style={styles.attSheetGameRow}>
                       <Text style={styles.attSheetGameEmoji}>⚡</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.attSheetGameNum, { color: tPerfect ? primaryColor : PULSE_COLORS.ui.textSecondary }]}>
+                        <Text style={[styles.attSheetGameNum, { color: tPerfect ? primaryColor : colors.textSecondary }]}>
                           {trainingsAttended}/{trainingsTotal} training sessions
                         </Text>
                         {tPerfect && (
@@ -2795,21 +2800,24 @@ export default function HomeScreen() {
 function SectionEmptyCTA({ icon, color, label, onPress }: {
   icon: React.ComponentProps<typeof Ionicons>['name']; color: string; label: string; onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return (
     <TouchableOpacity style={styles.sectionEmptyCta} onPress={onPress} activeOpacity={0.75}>
       <View style={[styles.sectionEmptyIcon, { backgroundColor: `${color}18` }]}>
         <Ionicons name={icon} size={16} color={color} />
       </View>
       <Text style={styles.sectionEmptyText}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+      <Ionicons name="chevron-forward" size={16} color={colors.muted} />
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingTop: 0, paddingBottom: 48 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
 
   // Hero banner
   heroBanner: {
@@ -2861,7 +2869,7 @@ const styles = StyleSheet.create({
     position: 'absolute', top: -1, right: -1,
     width: 8, height: 8, borderRadius: 4,
     backgroundColor: '#EF4444',
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.background,
+    borderWidth: 1.5, borderColor: colors.background,
   },
 
   // Section title with dot accent
@@ -2871,44 +2879,44 @@ const styles = StyleSheet.create({
   // Stats (parents only)
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 28 },
   statCard: {
-    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flex: 1, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, padding: 16, alignItems: 'center', gap: 4,
   },
   statIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   statNumber: { fontSize: 36, fontWeight: '900', lineHeight: 40, letterSpacing: -1 },
-  statLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', letterSpacing: 0.3 },
+  statLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', letterSpacing: 0.3 },
 
   // Team Pulse
   pulseCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, padding: 20, marginBottom: 28,
   },
   pulseCardHeader: {
-    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '700', color: colors.muted,
     letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 14,
   },
   pulseMetricRow: { flexDirection: 'row', alignItems: 'flex-start' },
   pulseMetric: { flex: 1, alignItems: 'center', gap: 4 },
   pulseMetricNum: { fontSize: 32, fontWeight: '900', lineHeight: 36, letterSpacing: -1 },
-  pulseMetricLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', textAlign: 'center', lineHeight: 15 },
+  pulseMetricLabel: { fontSize: 11, color: colors.muted, fontWeight: '600', textAlign: 'center', lineHeight: 15 },
   pulseBar: {
     height: 4, width: '80%', borderRadius: 2,
-    backgroundColor: PULSE_COLORS.ui.border, marginTop: 6, overflow: 'hidden',
+    backgroundColor: colors.border, marginTop: 6, overflow: 'hidden',
   },
   pulseBarFill: { height: '100%', borderRadius: 2 },
-  pulseDivider: { width: 1, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'stretch', marginHorizontal: 4 },
+  pulseDivider: { width: 1, backgroundColor: colors.border, alignSelf: 'stretch', marginHorizontal: 4 },
   pulseChase: { marginTop: 6 },
   pulseChaseText: { fontSize: 11, fontWeight: '700' },
 
   // Section title
-  sectionTitle: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.textSecondary, letterSpacing: 1.5 },
+  sectionTitle: { fontSize: 11, fontWeight: '800', color: colors.textSecondary, letterSpacing: 1.5 },
 
   // Next Event card
   nextEventCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, padding: 18,
   },
 
@@ -2922,7 +2930,7 @@ const styles = StyleSheet.create({
     borderRadius: 6, borderWidth: 1, marginBottom: 5,
   },
   nextCardUniformBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
-  nextCardTitle: { fontSize: 20, fontWeight: '900', color: PULSE_COLORS.ui.text, letterSpacing: -0.5, lineHeight: 24 },
+  nextCardTitle: { fontSize: 20, fontWeight: '900', color: colors.text, letterSpacing: -0.5, lineHeight: 24 },
   nextCardTopRight: { alignItems: 'flex-end', gap: 6, flexShrink: 0 },
   nextCardBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   nextCardBadgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.6, color: '#fff' },
@@ -2930,11 +2938,11 @@ const styles = StyleSheet.create({
   // Meta rows (time + location)
   nextCardMeta: { gap: 5, marginBottom: 12 },
   nextCardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  nextCardMetaText: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, fontWeight: '500', flex: 1 },
+  nextCardMetaText: { fontSize: 12.5, color: colors.muted, fontWeight: '500', flex: 1 },
 
   // Unified context chip row (weather + surface + kit)
   nextCardChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 4 },
-  nextCardChipWeather: { borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt },
+  nextCardChipWeather: { borderColor: colors.border, backgroundColor: colors.surfaceAlt },
   nextCardChipEmoji: { fontSize: 12 },
   nextCardChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -2946,23 +2954,23 @@ const styles = StyleSheet.create({
 
   // Attendance bar
   attendanceBarWrap: {
-    marginTop: 6, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 12, gap: 7,
+    marginTop: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 7,
   },
   attendanceBarTrack: {
     height: 6, borderRadius: 3, overflow: 'hidden', flexDirection: 'row',
-    backgroundColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.border,
   },
   attendanceBarSeg: { height: '100%' },
   attendanceBarLegend: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   attendanceBarLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   attendanceBarDot: { width: 6, height: 6, borderRadius: 3 },
-  attendanceBarLegendText: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  attendanceBarLegendText: { fontSize: 11, color: colors.muted, fontWeight: '500' },
 
   // Inline RSVP
-  nextEventRsvpName: { fontSize: 11.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginBottom: 4 },
+  nextEventRsvpName: { fontSize: 11.5, fontWeight: '700', color: colors.textSecondary, marginBottom: 4 },
   nextEventRsvpRow: {
     flexDirection: 'row', gap: 10,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    borderTopWidth: 1, borderTopColor: colors.border,
     paddingTop: 12, marginTop: 10,
   },
   rsvpBtn: {
@@ -2979,19 +2987,19 @@ const styles = StyleSheet.create({
     gap: 6, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
   },
   rsvpConfirmedText: { fontSize: 13, fontWeight: '700' },
-  rsvpTapToChange: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  rsvpTapToChange: { fontSize: 11, color: colors.muted, fontWeight: '500' },
 
   noEvent: {
     alignItems: 'center',
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, paddingVertical: 24,
   },
-  noEventText: { color: PULSE_COLORS.ui.muted, fontSize: 14, fontWeight: '600' },
+  noEventText: { color: colors.muted, fontSize: 14, fontWeight: '600' },
 
   // My Player card
   myPlayerCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, padding: 16, marginBottom: 28,
   },
   playerAvatarRing: {
@@ -3002,7 +3010,7 @@ const styles = StyleSheet.create({
   playerAvatarFill: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   playerAvatarText: { fontSize: 18, fontWeight: '800' },
   myPlayerBody: { flex: 1, gap: 6 },
-  myPlayerName: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  myPlayerName: { fontSize: 16, fontWeight: '800', color: colors.text },
   myPlayerBadges: { flexDirection: 'row', gap: 8 },
   jerseyBadge: {
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1,
@@ -3016,7 +3024,7 @@ const styles = StyleSheet.create({
   // Announcement card
   announcementCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, padding: 16, marginBottom: 28,
   },
   announcementIcon: {
@@ -3024,21 +3032,21 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   announcementBody: { flex: 1, gap: 3 },
-  announcementTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  announcementPreview: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, lineHeight: 17 },
-  announcementTime: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500', marginTop: 2 },
+  announcementTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  announcementPreview: { fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
+  announcementTime: { fontSize: 11, color: colors.muted, fontWeight: '500', marginTop: 2 },
 
 
   // Team picker
   genderFilterRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   genderFilterChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  genderFilterChipText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
-  genderFilterEmpty: { color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingVertical: 24, fontSize: 13 },
+  genderFilterChipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  genderFilterEmpty: { color: colors.muted, textAlign: 'center', paddingVertical: 24, fontSize: 13 },
   teamPickerClubHeader: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: colors.muted,
     letterSpacing: 0.8, textTransform: 'uppercase',
     marginTop: 14, marginBottom: 8,
   },
@@ -3047,8 +3055,8 @@ const styles = StyleSheet.create({
   // its own floating box, so the sheet reads as one calm list rather than
   // a stack of separate buttons.
   teamCard: {
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surface, overflow: 'hidden',
+    borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, overflow: 'hidden',
   },
   teamPickerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -3056,21 +3064,21 @@ const styles = StyleSheet.create({
   },
   teamPickerBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
   teamPickerUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', flexShrink: 0 },
-  teamPickerName: { flexShrink: 1, fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  teamPickerName: { flexShrink: 1, fontSize: 15, fontWeight: '700', color: colors.text },
   // Compact trailing tags instead of a second text line under the name —
   // every row stays the same height whether or not it needs one, unlike a
   // stacked subtitle that only appears for some teams and made the list
   // look uneven.
   teamPickerPill: {
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
   },
-  teamPickerPillText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  teamPickerPillText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
 
   // Fee card
   feeCard: {
     flexDirection: 'row',
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderRadius: 16,
     overflow: 'hidden',
@@ -3080,7 +3088,7 @@ const styles = StyleSheet.create({
   feeBody: { flex: 1, padding: 16, gap: 10 },
   feeTop: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   feeIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  feeTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
+  feeTitle: { fontSize: 14, fontWeight: '700', color: colors.text, marginBottom: 2 },
   feeAmount: { fontSize: 13, fontWeight: '600' },
   feeOverdueBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -3091,8 +3099,8 @@ const styles = StyleSheet.create({
 
   // Fee modal rows
   feeModalRow: {
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 16,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt, borderRadius: 16,
+    borderWidth: 1, borderColor: colors.border,
     padding: 14, marginBottom: 12,
   },
   feeModalRowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -3100,19 +3108,19 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  feeModalTitle: { fontSize: 14.5, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  feePlayerTag: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 1 },
+  feeModalTitle: { fontSize: 14.5, fontWeight: '700', color: colors.text },
+  feePlayerTag: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, marginTop: 1 },
   feeModalMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   feeStatusDot: { width: 6, height: 6, borderRadius: 3 },
   feeModalAmount: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
-  feeModalDue: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  feeModalDue: { fontSize: 11.5, color: colors.muted, fontWeight: '500' },
   feeStatusText: { fontSize: 11.5, fontWeight: '700' },
   feeEventTag: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border,
   },
-  feeEventTagText: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, fontWeight: '500', flexShrink: 1 },
-  feePayInstructions: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, fontWeight: '500', marginTop: 10 },
+  feeEventTagText: { fontSize: 11.5, color: colors.muted, fontWeight: '500', flexShrink: 1 },
+  feePayInstructions: { fontSize: 11.5, color: colors.muted, fontWeight: '500', marginTop: 10 },
 
   // Fee payment claims
   claimPendingPill: {
@@ -3123,21 +3131,21 @@ const styles = StyleSheet.create({
   claimPendingText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.status.info, flex: 1 },
   claimBtn: {
     alignSelf: 'flex-start', marginTop: 10,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 8,
+    borderWidth: 1, borderColor: colors.border, borderRadius: 8,
     paddingHorizontal: 12, paddingVertical: 6,
   },
-  claimBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  claimLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 14, marginBottom: 6 },
+  claimBtnText: { fontSize: 12, fontWeight: '700', color: colors.text },
+  claimLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 14, marginBottom: 6 },
   claimInput: {
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: PULSE_COLORS.ui.text,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: colors.text,
+    backgroundColor: colors.surface,
   },
   claimMethodChip: {
-    flex: 1, alignItems: 'center', borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 10, paddingVertical: 10, backgroundColor: PULSE_COLORS.ui.surface,
+    flex: 1, alignItems: 'center', borderWidth: 1, borderColor: colors.border,
+    borderRadius: 10, paddingVertical: 10, backgroundColor: colors.surface,
   },
-  claimMethodText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  claimMethodText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
   claimSubmitBtn: { marginTop: 20, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   claimSubmitText: { fontSize: 15, fontWeight: '800', color: '#fff' },
   payNowBtn: {
@@ -3149,19 +3157,19 @@ const styles = StyleSheet.create({
 
   // Callouts
   calloutCard: {
-    flexDirection: 'row', backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flexDirection: 'row', backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, marginBottom: 10, overflow: 'hidden',
   },
   calloutAccent: { width: 3 },
   calloutBody: { flex: 1, paddingHorizontal: 13, paddingVertical: 12, gap: 8 },
   calloutHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
   calloutUrgencyBadge: { fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginBottom: 2 },
-  calloutTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calloutTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
   calloutDeleteBtn: { padding: 4, marginLeft: 4 },
-  calloutBodyText: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18 },
+  calloutBodyText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   calloutCoachFooter: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  calloutHelperCount: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+  calloutHelperCount: { fontSize: 12, color: colors.muted, fontWeight: '600' },
   calloutHelpBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     alignSelf: 'flex-start',
@@ -3179,50 +3187,50 @@ const styles = StyleSheet.create({
   calloutAddBtnText: { fontSize: 11, fontWeight: '700', color: '#F59E0B' },
   sectionEmptyCta: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 20,
   },
   sectionEmptyIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  sectionEmptyText: { flex: 1, fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  sectionEmptyText: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text },
   // Modal
   calloutSheet: {
     flex: 1, marginTop: 60,
-    backgroundColor: PULSE_COLORS.ui.background,
+    backgroundColor: colors.background,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1, borderColor: colors.border,
   },
   calloutSheetHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  calloutSheetCancel: { fontSize: 15, color: PULSE_COLORS.ui.muted },
-  calloutSheetTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  calloutSheetCancel: { fontSize: 15, color: colors.muted },
+  calloutSheetTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   calloutSheetPost: { fontSize: 15, fontWeight: '700', color: '#F59E0B' },
-  calloutSectionLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6 },
+  calloutSectionLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.6 },
   calloutChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
   calloutChipIcon: { fontSize: 14 },
-  calloutChipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  calloutChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
   calloutInput: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, color: PULSE_COLORS.ui.text,
+    fontSize: 14, color: colors.text,
   },
   calloutInputMulti: { minHeight: 80, textAlignVertical: 'top' },
   calloutUrgencyRow: { flexDirection: 'row', gap: 10 },
   calloutUrgencyBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     paddingVertical: 12, borderRadius: 12,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  calloutUrgencyBtnText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.muted },
-  calloutUrgencyHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 17 },
+  calloutUrgencyBtnText: { fontSize: 14, fontWeight: '600', color: colors.muted },
+  calloutUrgencyHint: { fontSize: 12, color: colors.muted, lineHeight: 17 },
   // keep these unused stubs to avoid ref errors
   calloutPostBtn: { display: 'none' },
   calloutPostBtnText: { display: 'none' },
@@ -3230,37 +3238,37 @@ const styles = StyleSheet.create({
   // Dev switcher / shared sheet styles
   devOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   devSheet: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 48,
   },
-  devHandle: { width: 40, height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  devTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 4 },
-  devSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 20 },
+  devHandle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  devTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  devSub: { fontSize: 13, color: colors.textSecondary, marginBottom: 20 },
   devRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: colors.background, borderRadius: 14, padding: 14, marginBottom: 10,
   },
   devRowLoading: { opacity: 0.6 },
   devAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   devAvatarText: { fontSize: 16, fontWeight: '800' },
   devRowBody: { flex: 1 },
-  devRowLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  devRowEmail: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
-  devSignOut: { marginTop: 8, padding: 14, alignItems: 'center', borderRadius: 14, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
+  devRowLabel: { fontSize: 15, fontWeight: '700', color: colors.text },
+  devRowEmail: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  devSignOut: { marginTop: 8, padding: 14, alignItems: 'center', borderRadius: 14, borderWidth: 1, borderColor: colors.border },
   devSignOutText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.status.error },
 
   // MY SEASON card
   seasonCard: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderRadius: 16,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderRadius: 16,
+    borderWidth: 1, borderColor: colors.border,
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 12, paddingTop: 14, paddingBottom: 16, marginBottom: 20,
   },
   seasonStat: { flex: 1, alignItems: 'center', gap: 2 },
   seasonFlameEmoji: { fontSize: 34, paddingTop: 8, paddingHorizontal: 8, paddingBottom: 8 },
   seasonStatNum: { fontSize: 56, fontWeight: '900', letterSpacing: -3, paddingTop: 8, paddingHorizontal: 4 },
-  seasonStatLabel: { fontSize: 11, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
-  seasonDivider: { width: 1, height: 68, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 8 },
+  seasonStatLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
+  seasonDivider: { width: 1, height: 68, backgroundColor: colors.border, marginHorizontal: 8 },
   seasonTapHint: { width: 24, alignItems: 'center' },
   superStreakChip: {
     fontSize: 9, fontWeight: '900', letterSpacing: 1,
@@ -3269,17 +3277,17 @@ const styles = StyleSheet.create({
 
   // Attendance detail sheet
   attSheet: {
-    flex: 1, backgroundColor: PULSE_COLORS.ui.background,
+    flex: 1, backgroundColor: colors.background,
   },
   attSheetHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  attSheetTitle: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  attSheetTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
   attSheetClose: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
   attSheetHero: {
@@ -3287,7 +3295,7 @@ const styles = StyleSheet.create({
   },
   attSheetHeroEmoji: { fontSize: 52, padding: 16 },
   attSheetHeroNum: { fontSize: 80, fontWeight: '900', letterSpacing: -4, paddingTop: 14, paddingHorizontal: 8, marginTop: 0 },
-  attSheetHeroLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, marginTop: 4 },
+  attSheetHeroLabel: { fontSize: 15, fontWeight: '700', color: colors.textSecondary, marginTop: 4 },
   attSheetHeroSub: { fontSize: 13, color: '#60A5FA', fontWeight: '600', marginTop: 8, textAlign: 'center' },
   attSheetSuperChip: {
     marginTop: 12, paddingHorizontal: 12, paddingVertical: 5,
@@ -3298,31 +3306,31 @@ const styles = StyleSheet.create({
   attSheetGameRow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     marginHorizontal: 20, marginBottom: 16,
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, padding: 14,
   },
   attSheetGameEmoji: { fontSize: 28, padding: 10 },
   attSheetGameNum: { fontSize: 17, fontWeight: '800' },
-  attSheetGameSub: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  attSheetGameSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   attSheetInfoInline: {
-    fontSize: 12, color: PULSE_COLORS.ui.muted, lineHeight: 17,
+    fontSize: 12, color: colors.muted, lineHeight: 17,
     marginHorizontal: 20, marginBottom: 16, textAlign: 'center',
   },
   attSheetList: { marginHorizontal: 20, marginTop: 8, gap: 2 },
   attSheetRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   attSheetTypeBadge: {
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1,
   },
   attSheetTypeBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  attSheetRowDate: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, fontWeight: '500' },
+  attSheetRowDate: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
   attSheetRowRsvpTag: {
-    fontSize: 9, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+    fontSize: 9, fontWeight: '800', color: colors.muted, letterSpacing: 0.4,
+    borderWidth: 1, borderColor: colors.border, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
   },
-  attSheetRowTitle: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '500', marginTop: 1 },
+  attSheetRowTitle: { fontSize: 11, color: colors.muted, fontWeight: '500', marginTop: 1 },
   attSheetStatusDot: {
     width: 22, height: 22, borderRadius: 11,
     alignItems: 'center', justifyContent: 'center',
@@ -3330,7 +3338,7 @@ const styles = StyleSheet.create({
 
   // Guest invite cards
   guestInviteCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: '#F59E0B22',
     borderRadius: 16,
@@ -3360,23 +3368,23 @@ const styles = StyleSheet.create({
   },
   guestInviteTeam: {
     fontSize: 10,
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
     fontWeight: '500',
     marginLeft: 4,
   },
   guestInviteTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: PULSE_COLORS.ui.text,
+    color: colors.text,
   },
   guestInviteDate: {
     fontSize: 12,
-    color: PULSE_COLORS.ui.textSecondary,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   guestInviteSubtext: {
     fontSize: 12,
-    color: PULSE_COLORS.ui.muted,
+    color: colors.muted,
     marginTop: 2,
   },
   guestInviteActions: {
@@ -3439,4 +3447,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#000',
   },
-});
+  });
+}
