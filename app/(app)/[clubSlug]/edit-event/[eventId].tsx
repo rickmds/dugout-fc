@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,8 +18,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useActiveTeam } from '../../../../hooks/TeamContext';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { useTheme } from '../../../../hooks/useTheme';
 import { zonedTimeToUtc } from '../../../../lib/timezone';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { sendTeamPush } from '../../../../lib/push';
@@ -148,14 +149,20 @@ function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTim
 // ─── Section helpers ──────────────────────────────────────────────────────────
 
 function SectionHeader({ title }: { title: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return <Text style={styles.sectionHeader}>{title.toUpperCase()}</Text>;
 }
 
 function Card({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return <View style={styles.card}>{children}</View>;
 }
 
 function RowDivider() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return <View style={styles.rowDivider} />;
 }
 
@@ -167,10 +174,12 @@ function FieldRow({
   onPress?: () => void;
   children: React.ReactNode;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const inner = (
     <View style={styles.fieldRow}>
       <View style={styles.fieldRowLeft}>
-        <Ionicons name={icon} size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+        <Ionicons name={icon} size={17} color={colors.muted} style={styles.fieldIcon} />
         <Text style={styles.fieldLabel}>{label}</Text>
       </View>
       <View style={styles.fieldRowRight}>{children}</View>
@@ -181,6 +190,8 @@ function FieldRow({
 }
 
 function ValueText({ v, color }: { v: string; color?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return <Text style={[styles.fieldValue, color ? { color } : undefined]}>{v}</Text>;
 }
 
@@ -192,6 +203,8 @@ export default function EditEventScreen() {
   const { clubSlug, eventId } = useLocalSearchParams<{ clubSlug: string; eventId: string }>();
   const { profile } = useAuth();
   const { allTeams } = useActiveTeam();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -973,7 +986,7 @@ export default function EditEventScreen() {
                 value={title}
                 onChangeText={setTitle}
                 placeholder={eventType === 'game' ? 'Opponent…' : 'Event title…'}
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 returnKeyType="done"
               />
             </View>
@@ -986,7 +999,7 @@ export default function EditEventScreen() {
                     value={roundLabel}
                     onChangeText={setRoundLabel}
                     placeholder="Round (e.g. Quarterfinal, Pool Play)"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     returnKeyType="done"
                   />
                 </View>
@@ -1011,7 +1024,7 @@ export default function EditEventScreen() {
                 <ValueText v={hasTime ? fmtTime(startTime) : 'No time'} color={primaryColor} />
                 {hasTime && (
                   <TouchableOpacity onPress={() => setHasTime(false)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1025,7 +1038,7 @@ export default function EditEventScreen() {
                 </Text>
                 {duration !== null && (
                   <TouchableOpacity onPress={() => setDuration(null)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1039,7 +1052,7 @@ export default function EditEventScreen() {
                 </Text>
                 {arrival !== null && (
                   <TouchableOpacity onPress={() => setArrival(null)} style={{ marginLeft: 8 }}>
-                    <Ionicons name="close-circle" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1098,13 +1111,13 @@ export default function EditEventScreen() {
             ) : (
               <>
                 <View style={styles.locationNameRow}>
-                  <Ionicons name="business-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+                  <Ionicons name="business-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
                   <TextInput
                     style={styles.inlineInput}
                     value={locationName}
                     onChangeText={(v) => { setLocationName(v); setFieldId(null); }}
                     placeholder="Venue name (e.g. City Park)"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     returnKeyType="next"
                   />
                 </View>
@@ -1126,13 +1139,13 @@ export default function EditEventScreen() {
             )}
             <RowDivider />
             <View style={styles.locationNameRow}>
-              <Ionicons name="create-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="create-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <TextInput
                 style={styles.inlineInput}
                 value={fieldNotes}
                 onChangeText={setFieldNotes}
                 placeholder="Field details (e.g. Field 1, Pitch B)"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 returnKeyType="next"
               />
             </View>
@@ -1175,7 +1188,7 @@ export default function EditEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="chatbubble-ellipses-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="chatbubble-ellipses-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Team message</Text>
                 <TextInput
@@ -1183,7 +1196,7 @@ export default function EditEventScreen() {
                   value={playerNotes}
                   onChangeText={setPlayerNotes}
                   placeholder="Visible to all players and parents…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   multiline
                   numberOfLines={3}
                 />
@@ -1192,7 +1205,7 @@ export default function EditEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="lock-closed-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="lock-closed-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Coach notes <Text style={styles.coachOnlyTag}>(coach only)</Text></Text>
                 <TextInput
@@ -1200,7 +1213,7 @@ export default function EditEventScreen() {
                   value={coachNotes}
                   onChangeText={setCoachNotes}
                   placeholder="Notes for coaching staff…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   multiline
                   numberOfLines={3}
                 />
@@ -1209,7 +1222,7 @@ export default function EditEventScreen() {
 
             <RowDivider />
             <View style={styles.notesRow}>
-              <Ionicons name="videocam-outline" size={17} color={PULSE_COLORS.ui.muted} style={styles.fieldIcon} />
+              <Ionicons name="videocam-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>Video link</Text>
                 <TextInput
@@ -1217,7 +1230,7 @@ export default function EditEventScreen() {
                   value={videoUrl}
                   onChangeText={setVideoUrl}
                   placeholder="Veo, YouTube, Hudl URL…"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   autoCapitalize="none"
                   keyboardType="url"
                   returnKeyType="done"
@@ -1232,7 +1245,7 @@ export default function EditEventScreen() {
                   <Switch
                     value={requireRsvp}
                     onValueChange={setRequireRsvp}
-                    trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                    trackColor={{ false: colors.border, true: primaryColor }}
                     thumbColor="#fff"
                   />
                 </FieldRow>
@@ -1264,7 +1277,7 @@ export default function EditEventScreen() {
               <Switch
                 value={notifyParents}
                 onValueChange={setNotifyParents}
-                trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                trackColor={{ false: colors.border, true: primaryColor }}
                 thumbColor="#fff"
               />
             </FieldRow>
@@ -1375,7 +1388,7 @@ export default function EditEventScreen() {
                 <>
                   {(groupPropagates(cancelScope) || cancelScope === 'future') && (
                     <View style={styles.cmInfoBanner}>
-                      <Ionicons name="information-circle-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="information-circle-outline" size={16} color={colors.muted} />
                       <Text style={styles.cmInfoText}>
                         {groupPropagates(cancelScope)
                           ? `This also cancels the event for ${linkedTeams.map((t) => t.name).join(', ')}.`
@@ -1389,7 +1402,7 @@ export default function EditEventScreen() {
                     value={cancelReason}
                     onChangeText={setCancelReason}
                     placeholder="e.g. Heavy rain forecast, field unsafe"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     multiline
                     textAlignVertical="top"
                     autoFocus
@@ -1426,7 +1439,7 @@ export default function EditEventScreen() {
                     value={cancelSubject}
                     onChangeText={setCancelSubject}
                     placeholder="e.g. Practice cancelled today"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     autoFocus={!cancelSubject}
                   />
 
@@ -1438,7 +1451,7 @@ export default function EditEventScreen() {
                     multiline
                     textAlignVertical="top"
                     placeholder="What should parents know?"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                   />
                   <Text style={styles.cmHint}>Edit before sending. Parents get this by push notification and email.</Text>
 
@@ -1470,18 +1483,19 @@ export default function EditEventScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.background,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+    backgroundColor: colors.background,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: colors.text },
   headerSaveBtn: {
     backgroundColor: PULSE_COLORS.brand.green,
     paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20,
@@ -1501,45 +1515,45 @@ const styles = StyleSheet.create({
   scopeBannerChange: { fontSize: 13, fontWeight: '700' },
 
   sectionHeader: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: colors.muted,
     letterSpacing: 1, marginBottom: 8, marginTop: 4,
   },
   savedFieldsLabel: {
-    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '700', color: colors.muted,
     letterSpacing: 1, marginBottom: 8,
   },
 
   card: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, marginBottom: 20, overflow: 'hidden',
   },
 
-  rowDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  rowDivider: { height: 1, backgroundColor: colors.border },
 
   typeRow: { flexDirection: 'row', padding: 12, gap: 8, flexWrap: 'wrap' },
   typeChip: {
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
-  typeChipText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  typeChipText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 4 },
-  titlePrefix: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.muted, marginRight: 6 },
+  titlePrefix: { fontSize: 18, fontWeight: '700', color: colors.muted, marginRight: 6 },
   titleInput: {
-    flex: 1, fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text,
+    flex: 1, fontSize: 18, fontWeight: '700', color: colors.text,
     paddingVertical: 12,
   },
 
   homeAwayRow: { flexDirection: 'row', gap: 10, padding: 12 },
   homeAwayTile: {
     flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: 12,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
   homeAwayTileActive: { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.1)' },
-  homeAwayLabel: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  homeAwayLabel: { fontSize: 15, fontWeight: '700', color: colors.muted },
   homeAwayLabelActive: { color: PULSE_COLORS.brand.green },
 
   fieldRow: {
@@ -1550,9 +1564,9 @@ const styles = StyleSheet.create({
   fieldRowRight: { flex: 1, alignItems: 'flex-end' },
   fieldRowActions: { flexDirection: 'row', alignItems: 'center' },
   fieldIcon: { width: 24 },
-  fieldLabel: { fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '500' },
+  fieldLabel: { fontSize: 14, color: colors.text, fontWeight: '500' },
   fieldValue: { fontSize: 14, color: PULSE_COLORS.brand.green, fontWeight: '600' },
-  fieldValueMuted: { fontSize: 14, color: PULSE_COLORS.ui.muted, fontWeight: '400' },
+  fieldValueMuted: { fontSize: 14, color: colors.muted, fontWeight: '400' },
 
   locationNameRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -1562,28 +1576,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 14, gap: 4,
   },
-  selectedFieldName: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  selectedFieldAddress: { fontSize: 12.5, color: PULSE_COLORS.ui.muted, marginTop: 2 },
+  selectedFieldName: { fontSize: 14, fontWeight: '700', color: colors.text },
+  selectedFieldAddress: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
   changeLink: { fontSize: 13, fontWeight: '700' },
   locationInputRow: { paddingHorizontal: 16, paddingVertical: 12 },
-  inlineInput: { flex: 1, color: PULSE_COLORS.ui.text, fontSize: 14 },
+  inlineInput: { flex: 1, color: colors.text, fontSize: 14 },
 
   chipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
   chip: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
   chipActive: { borderColor: PULSE_COLORS.brand.green, backgroundColor: 'rgba(34,197,94,0.12)' },
-  chipText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  chipText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
   chipTextActive: { color: PULSE_COLORS.brand.green },
 
   notesRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   notesInput: {
-    color: PULSE_COLORS.ui.text, fontSize: 14, marginTop: 6,
+    color: colors.text, fontSize: 14, marginTop: 6,
     minHeight: 70, textAlignVertical: 'top',
   },
-  coachOnlyTag: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
+  coachOnlyTag: { fontSize: 11, color: colors.muted, fontStyle: 'italic' },
 
   cancelEventBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -1608,20 +1622,21 @@ const styles = StyleSheet.create({
   deleteBtnText: { color: '#EF4444', fontWeight: '700', fontSize: 15 },
 
   // Cancel modal (AI-drafted email preview)
-  cmSheet: { flex: 1, marginTop: 60, backgroundColor: PULSE_COLORS.ui.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  cmHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginTop: 10 },
-  cmHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
-  cmCancel: { fontSize: 15, color: PULSE_COLORS.ui.muted },
-  cmTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  cmSheet: { flex: 1, marginTop: 60, backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: colors.border },
+  cmHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 10 },
+  cmHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  cmCancel: { fontSize: 15, color: colors.muted },
+  cmTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   cmBody: { padding: 20 },
-  cmLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.8, marginBottom: 8, textTransform: 'uppercase' },
-  cmInput: { backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: PULSE_COLORS.ui.text },
+  cmLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8, marginBottom: 8, textTransform: 'uppercase' },
+  cmInput: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.text },
   cmTextarea: { height: 110, textAlignVertical: 'top' },
-  cmHint: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 10, lineHeight: 17 },
-  cmInfoBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: 10, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, marginBottom: 16 },
-  cmInfoText: { fontSize: 12.5, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18, flex: 1 },
+  cmHint: { fontSize: 12, color: colors.muted, marginTop: 10, lineHeight: 17 },
+  cmInfoBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginBottom: 16 },
+  cmInfoText: { fontSize: 12.5, color: colors.textSecondary, lineHeight: 18, flex: 1 },
   cmPrimaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 12 },
   cmPrimaryBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   cmGhostBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, marginTop: 8 },
   cmGhostBtnText: { fontSize: 13, fontWeight: '600' },
-});
+  });
+}

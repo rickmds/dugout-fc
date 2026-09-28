@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,8 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../../../lib/supabase';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import { useClub } from '../../../../hooks/useClub';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -69,6 +70,8 @@ export default function TournamentDetailScreen() {
   const { team, allTeams, selectTeam } = useTeam();
   const { profile } = useAuth();
   const mapApp = useMapApp();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [games, setGames] = useState<Game[]>([]);
@@ -437,11 +440,11 @@ export default function TournamentDetailScreen() {
         onBack={() => router.back()}
         right={
           <TouchableOpacity
-            style={[headerBtnStyle as object, { backgroundColor: PULSE_COLORS.ui.surfaceAlt }]}
+            style={[headerBtnStyle as object, { backgroundColor: colors.surfaceAlt }]}
             onPress={() => router.push(`/(app)/${clubSlug}/create-tournament?tournamentId=${tournamentId}` as any)}
           >
-            <Ionicons name="pencil" size={13} color={PULSE_COLORS.ui.textSecondary} />
-            <Text style={{ color: PULSE_COLORS.ui.textSecondary, fontWeight: '700', fontSize: 12 }}>Edit</Text>
+            <Ionicons name="pencil" size={13} color={colors.textSecondary} />
+            <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>Edit</Text>
           </TouchableOpacity>
         }
       />
@@ -530,8 +533,8 @@ export default function TournamentDetailScreen() {
                             disabled={saving}
                           >
                             {saving && status !== 'attending'
-                              ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
-                              : <><Ionicons name="checkmark" size={14} color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted} />
+                              ? <ActivityIndicator size="small" color={colors.muted} />
+                              : <><Ionicons name="checkmark" size={14} color={status === 'attending' ? '#000' : colors.muted} />
                                  <Text style={[styles.rsvpInlineBtnText, status === 'attending' && { color: '#000' }]}>We're in</Text></>}
                           </TouchableOpacity>
                           <TouchableOpacity
@@ -540,8 +543,8 @@ export default function TournamentDetailScreen() {
                             disabled={saving}
                           >
                             {saving && status !== 'not_attending'
-                              ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
-                              : <><Ionicons name="close" size={14} color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted} />
+                              ? <ActivityIndicator size="small" color={colors.muted} />
+                              : <><Ionicons name="close" size={14} color={status === 'not_attending' ? '#fff' : colors.muted} />
                                  <Text style={[styles.rsvpInlineBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't make it</Text></>}
                           </TouchableOpacity>
                         </View>
@@ -576,7 +579,7 @@ export default function TournamentDetailScreen() {
                     onPress={() => setActiveEntryTab('none')}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.rsvpCountNum, { color: PULSE_COLORS.ui.muted }]}>{entryNoResponse.length}</Text>
+                    <Text style={[styles.rsvpCountNum, { color: colors.muted }]}>{entryNoResponse.length}</Text>
                     <Text style={styles.rsvpCountLabel}>PENDING</Text>
                   </TouchableOpacity>
                 </View>
@@ -588,7 +591,7 @@ export default function TournamentDetailScreen() {
                     activeOpacity={0.7}
                     disabled={nudging}
                   >
-                    <Ionicons name="notifications-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="notifications-outline" size={13} color={colors.muted} />
                     <Text style={styles.entryNudgeBtnText}>
                       {nudging ? 'Sending…' : `Nudge ${entryNoResponse.length} pending`}
                     </Text>
@@ -624,7 +627,7 @@ export default function TournamentDetailScreen() {
                             <Text style={styles.entryPlayerName} numberOfLines={1}>{p.full_name}</Text>
                             {activeEntryTab === 'attending' && <Ionicons name="checkmark-circle" size={20} color={PULSE_COLORS.rsvp.attending} />}
                             {activeEntryTab === 'not_attending' && <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />}
-                            {activeEntryTab === 'none' && <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />}
+                            {activeEntryTab === 'none' && <Ionicons name="ellipse-outline" size={20} color={colors.muted} />}
                           </TouchableOpacity>
                         </View>
                       ))}
@@ -662,7 +665,7 @@ export default function TournamentDetailScreen() {
 
         {games.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="calendar-outline" size={22} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="calendar-outline" size={22} color={colors.muted} />
             <Text style={styles.emptyText}>No games yet — import a schedule or add the first one.</Text>
           </View>
         ) : (
@@ -754,12 +757,13 @@ export default function TournamentDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
 
   hero: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, padding: 16, marginBottom: 14,
   },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -772,50 +776,50 @@ const styles = StyleSheet.create({
   // read as the logo, not a logo-inside-a-swatch.
   iconNoFrame: { backgroundColor: 'transparent', borderWidth: 0 },
   iconImage: { width: 48, height: 48 },
-  name: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  loc: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, marginTop: 3 },
+  name: { fontSize: 18, fontWeight: '800', color: colors.text },
+  loc: { fontSize: 12, color: colors.textSecondary, marginTop: 3 },
 
   recordRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  recordChip: { flex: 1, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderRadius: 11, paddingVertical: 8, alignItems: 'center' },
+  recordChip: { flex: 1, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderRadius: 11, paddingVertical: 8, alignItems: 'center' },
   recordNum: { fontSize: 18, fontWeight: '800' },
-  recordLabel: { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5, marginTop: 1 },
+  recordLabel: { fontSize: 9, fontWeight: '700', color: colors.muted, letterSpacing: 0.5, marginTop: 1 },
 
   rsvpCard: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, padding: 14, marginBottom: 18,
   },
   rsvpClosedTag: { fontSize: 10, fontWeight: '700', color: '#ef4444', letterSpacing: 0.4 },
-  rsvpPlayerName: { fontSize: 13.5, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  rsvpPlayerName: { fontSize: 13.5, fontWeight: '600', color: colors.text },
   rsvpInlineRow: { flexDirection: 'row', gap: 8 },
   rsvpInlineBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
+    paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border,
   },
-  rsvpInlineBtnText: { fontSize: 12.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  rsvpInlineBtnText: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary },
   rsvpCountRow: { flexDirection: 'row', gap: 8 },
-  rsvpCountStat: { flex: 1, backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 11, paddingVertical: 8, alignItems: 'center' },
+  rsvpCountStat: { flex: 1, backgroundColor: colors.surfaceAlt, borderRadius: 11, paddingVertical: 8, alignItems: 'center' },
   rsvpCountNum: { fontSize: 17, fontWeight: '800' },
-  rsvpCountLabel: { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.5, marginTop: 1 },
-  rsvpCaption: { fontSize: 10.5, color: PULSE_COLORS.ui.muted, marginTop: 12, lineHeight: 14 },
+  rsvpCountLabel: { fontSize: 9, fontWeight: '700', color: colors.muted, letterSpacing: 0.5, marginTop: 1 },
+  rsvpCaption: { fontSize: 10.5, color: colors.muted, marginTop: 12, lineHeight: 14 },
   entryNudgeBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     paddingVertical: 8, borderRadius: 8, marginTop: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
   },
-  entryNudgeBtnText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-  entryListEmpty: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 12, textAlign: 'center' },
+  entryNudgeBtnText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
+  entryListEmpty: { fontSize: 12, color: colors.muted, marginTop: 12, textAlign: 'center' },
   entryPlayerCard: {
-    marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.background, overflow: 'hidden',
+    marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.background, overflow: 'hidden',
   },
-  entryPlayerDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  entryPlayerDivider: { height: 1, backgroundColor: colors.border },
   entryPlayerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
   entryJerseyBadge: {
-    width: 28, height: 28, borderRadius: 7, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    width: 28, height: 28, borderRadius: 7, backgroundColor: colors.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  entryJerseyNum: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  entryPlayerName: { flex: 1, fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  entryJerseyNum: { fontSize: 11, fontWeight: '800', color: colors.text },
+  entryPlayerName: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.text },
 
   aiBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -824,27 +828,27 @@ const styles = StyleSheet.create({
   aiBtnText: { color: '#fff', fontWeight: '800', fontSize: 13.5 },
 
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.6 },
   addLink: { fontSize: 13, fontWeight: '700' },
 
   emptyCard: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, padding: 24, alignItems: 'center', gap: 8,
   },
-  emptyText: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center' },
+  emptyText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
 
   gamesCard: {
-    backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, overflow: 'hidden',
   },
   gameRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
-  gameRowBorder: { borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border },
+  gameRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   stagePill: {
     backgroundColor: 'rgba(234,179,8,0.1)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3, maxWidth: 84,
   },
   stagePillText: { fontSize: 9, fontWeight: '800', color: '#EAB308', letterSpacing: 0.3 },
-  gameTitle: { fontSize: 13.5, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  gameMeta: { fontSize: 11.5, color: PULSE_COLORS.ui.textSecondary, marginTop: 2 },
+  gameTitle: { fontSize: 13.5, fontWeight: '700', color: colors.text },
+  gameMeta: { fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
   resultBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   resultBadgeText: { fontSize: 11.5, fontWeight: '800' },
 
@@ -876,4 +880,5 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.08)',
   },
   deleteBtnText: { color: '#EF4444', fontWeight: '700', fontSize: 15 },
-});
+  });
+}

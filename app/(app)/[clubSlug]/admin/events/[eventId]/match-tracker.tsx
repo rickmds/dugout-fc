@@ -19,7 +19,8 @@ import { useNavigation, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../../../lib/supabase';
 import { useAuth } from '../../../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../../../constants/colors';
+import { useTheme } from '../../../../../../hooks/useTheme';
 import { useClub } from '../../../../../../hooks/useClub';
 import ClubHeader from '../../../../../../components/ui/ClubHeader';
 import { getGameResult, sendTournamentResultPush } from '../../../../../../lib/tournaments';
@@ -252,6 +253,8 @@ type MatchTrackerContentProps = { eventId: string; clubSlug: string; onClose: ()
 export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTrackerContentProps) {
   const { primaryColor, rgba } = useClub();
   const { profile, club } = useAuth();
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [loading,         setLoading]         = useState(true);
@@ -831,12 +834,12 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
     && totalElapsed >= 300;
 
   const statusConfig: Record<GameStatus | 'none', { label: string; color: string }> = {
-    none:      { label: 'Pre-match',  color: PULSE_COLORS.ui.muted },
-    not_started:{ label: 'Pre-match', color: PULSE_COLORS.ui.muted },
+    none:      { label: 'Pre-match',  color: colors.muted },
+    not_started:{ label: 'Pre-match', color: colors.muted },
     half1:     { label: '1st Half',   color: primaryColor },
     half_time: { label: 'Half Time',  color: '#F59E0B' },
     half2:     { label: '2nd Half',   color: primaryColor },
-    full_time: { label: 'Full Time',  color: PULSE_COLORS.ui.muted },
+    full_time: { label: 'Full Time',  color: colors.muted },
   };
   const sc = statusConfig[session?.status ?? 'none'];
 
@@ -934,7 +937,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
             <Text style={[st.scoreDigit, { color: primaryColor }]}>{scoreHome}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={decHome} hitSlop={10}>
-            <Ionicons name="remove-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="remove-circle-outline" size={18} color={colors.muted} />
           </TouchableOpacity>
         </View>
 
@@ -944,10 +947,10 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
         <View style={[st.scoreSide, { flexDirection: 'row-reverse' }]}>
           <Text style={st.scoreOppName} numberOfLines={1}>{opponentName}</Text>
           <TouchableOpacity onPress={incAway} hitSlop={8}>
-            <Text style={[st.scoreDigit, { color: PULSE_COLORS.ui.textSecondary }]}>{scoreAway}</Text>
+            <Text style={[st.scoreDigit, { color: colors.textSecondary }]}>{scoreAway}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={decAway} hitSlop={10}>
-            <Ionicons name="remove-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="remove-circle-outline" size={18} color={colors.muted} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1097,7 +1100,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                   {(wasSub && !eqCol) && <View style={[st.usedDot, { backgroundColor: primaryColor }]} />}
                   {eqCol && <View style={[st.usedDot, { backgroundColor: eqCol }]} />}
                   {player.isGuest && <View style={st.guestDot}><Text style={st.guestDotText}>G</Text></View>}
-                  <Text style={[st.benchNum, { color: eqCol ?? (wasSub ? primaryColor : PULSE_COLORS.ui.text) }]}>
+                  <Text style={[st.benchNum, { color: eqCol ?? (wasSub ? primaryColor : colors.text) }]}>
                     {player.jersey_number ?? initials(player.full_name)}
                   </Text>
                   <Text style={[st.benchName, eqCol && { color: eqCol + 'cc' }]} numberOfLines={1}>{firstName(player.full_name)}</Text>
@@ -1170,7 +1173,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                     <Text style={[st.scoreEntryNum, { color: primaryColor }]}>{scoreHome}</Text>
                     <View style={st.scoreEntryBtns}>
                       <TouchableOpacity onPress={decHome} style={st.scoreEntryBtn} hitSlop={8}>
-                        <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="remove" size={20} color={colors.muted} />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={incHome} style={[st.scoreEntryBtn, { borderColor: primaryColor + '55', backgroundColor: primaryColor + '18' }]} hitSlop={8}>
                         <Ionicons name="add" size={20} color={primaryColor} />
@@ -1184,17 +1187,17 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                   <View style={st.scoreEntryTeam}>
                     <View style={st.scoreEntryId}>
                       <View style={st.scoreEntryOppBadge}>
-                        <Ionicons name="shield-outline" size={12} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="shield-outline" size={12} color={colors.muted} />
                       </View>
                       <Text style={st.scoreEntryName} numberOfLines={1}>{opponentName}</Text>
                     </View>
-                    <Text style={[st.scoreEntryNum, { color: PULSE_COLORS.ui.textSecondary }]}>{scoreAway}</Text>
+                    <Text style={[st.scoreEntryNum, { color: colors.textSecondary }]}>{scoreAway}</Text>
                     <View style={st.scoreEntryBtns}>
                       <TouchableOpacity onPress={decAway} style={st.scoreEntryBtn} hitSlop={8}>
-                        <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="remove" size={20} color={colors.muted} />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={incAway} style={[st.scoreEntryBtn, { borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.08)' }]} hitSlop={8}>
-                        <Ionicons name="add" size={20} color={PULSE_COLORS.ui.textSecondary} />
+                        <Ionicons name="add" size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1234,7 +1237,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                           )}
                           <Text style={st.summaryName} numberOfLines={1}>{player.full_name}</Text>
                         </View>
-                        <Text style={[st.summaryTime, { color: secs > 0 ? primaryColor : PULSE_COLORS.ui.muted }]}>
+                        <Text style={[st.summaryTime, { color: secs > 0 ? primaryColor : colors.muted }]}>
                           {secs > 0 ? fmtMSS(secs) : '—'}
                         </Text>
                       </View>
@@ -1293,7 +1296,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                   keyboardType="number-pad"
                   maxLength={2}
                   placeholder="Custom"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   selectTextOnFocus
                   onSubmitEditing={Keyboard.dismiss}
                 />
@@ -1384,7 +1387,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                           <Text style={[st.counterLabel, { color }]}>{label}</Text>
                           <View style={st.counterRow}>
                             <TouchableOpacity onPress={() => adjStat(player.id, key, -1)} hitSlop={8} style={st.counterBtn}>
-                              <Ionicons name="remove" size={14} color={PULSE_COLORS.ui.muted} />
+                              <Ionicons name="remove" size={14} color={colors.muted} />
                             </TouchableOpacity>
                             <Text style={[st.counterVal, s[key] > 0 && { color }]}>{s[key]}</Text>
                             <TouchableOpacity onPress={() => adjStat(player.id, key, 1)} hitSlop={8} style={[st.counterBtn, { borderColor: color + '50', backgroundColor: color + '12' }]}>
@@ -1441,7 +1444,7 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
                     </View>
                     {active
                       ? <Ionicons name="checkmark-circle" size={20} color={primaryColor} />
-                      : <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />}
+                      : <Ionicons name="chevron-forward" size={16} color={colors.border} />}
                   </TouchableOpacity>
                 );
               })}
@@ -1459,382 +1462,384 @@ export function MatchTrackerContent({ eventId, clubSlug, onClose }: MatchTracker
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: '#0F0F0F' },
-  center:{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: PULSE_COLORS.ui.muted },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    root:  { flex: 1, backgroundColor: '#0F0F0F' },
+    center:{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+    loadingText: { fontSize: 14, color: colors.muted },
 
-  // Header
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16,
-    backgroundColor: '#0F0F0F',
-  },
-  backBtn:      { width: 40, height: 36, justifyContent: 'center' },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle:  { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  headerSub:    { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 },
-  fmChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(34,197,94,0.1)',
-    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
-  },
-  fmChipText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.brand.green },
+    // Header
+    header: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16,
+      backgroundColor: '#0F0F0F',
+    },
+    backBtn:      { width: 40, height: 36, justifyContent: 'center' },
+    headerCenter: { flex: 1, alignItems: 'center' },
+    headerTitle:  { fontSize: 16, fontWeight: '700', color: colors.text },
+    headerSub:    { fontSize: 11, color: colors.muted, marginTop: 1 },
+    fmChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      backgroundColor: 'rgba(34,197,94,0.1)',
+      borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6,
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
+    },
+    fmChipText: { fontSize: 11, fontWeight: '800', color: PULSE_COLORS.brand.green },
 
-  // Match bar
-  matchBar: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: '#161616',
-    borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#222',
-    gap: 12,
-  },
-  matchBarLeft:  { flex: 1 },
-  matchBarRight: { flex: 1, alignItems: 'flex-end' },
-  statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    borderRadius: 20, borderWidth: 1,
-    paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start',
-  },
-  liveDot:       { width: 6, height: 6, borderRadius: 3 },
-  statusPillText:{ fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  clock: {
-    fontSize: 44, fontWeight: '900', color: PULSE_COLORS.ui.text,
-    fontVariant: ['tabular-nums'], letterSpacing: -1,
-  },
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: PULSE_COLORS.brand.green,
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9,
-  },
-  actionBtnText: { fontSize: 13, fontWeight: '800', color: '#000' },
+    // Match bar
+    matchBar: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 16, paddingVertical: 12,
+      backgroundColor: '#161616',
+      borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#222',
+      gap: 12,
+    },
+    matchBarLeft:  { flex: 1 },
+    matchBarRight: { flex: 1, alignItems: 'flex-end' },
+    statusPill: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      borderRadius: 20, borderWidth: 1,
+      paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start',
+    },
+    liveDot:       { width: 6, height: 6, borderRadius: 3 },
+    statusPillText:{ fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+    clock: {
+      fontSize: 44, fontWeight: '900', color: colors.text,
+      fontVariant: ['tabular-nums'], letterSpacing: -1,
+    },
+    actionBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      backgroundColor: PULSE_COLORS.brand.green,
+      borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9,
+    },
+    actionBtnText: { fontSize: 13, fontWeight: '800', color: '#000' },
 
-  // Progress bar
-  progressTrack: { height: 3, backgroundColor: '#222' },
-  progressFill:  { height: 3, borderRadius: 1.5 },
+    // Progress bar
+    progressTrack: { height: 3, backgroundColor: '#222' },
+    progressFill:  { height: 3, borderRadius: 1.5 },
 
-  // Live score strip
-  scoreStrip: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 16, paddingVertical: 8,
-    backgroundColor: '#161616', borderBottomWidth: 1, borderBottomColor: '#222',
-    gap: 12,
-  },
-  scoreSide: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  scoreLogo: { width: 22, height: 22, borderRadius: 11 },
-  scoreLogoFallback: {
-    width: 22, height: 22, borderRadius: 11,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  scoreLogoFallbackText: { fontSize: 7, fontWeight: '900' },
-  scoreOppName: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
-    flexShrink: 1, letterSpacing: 0.3,
-  },
-  scoreDigit: { fontSize: 28, fontWeight: '900', fontVariant: ['tabular-nums'], minWidth: 22, textAlign: 'center' },
-  scoreSep: { fontSize: 20, fontWeight: '700', color: '#444' },
+    // Live score strip
+    scoreStrip: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      paddingHorizontal: 16, paddingVertical: 8,
+      backgroundColor: '#161616', borderBottomWidth: 1, borderBottomColor: '#222',
+      gap: 12,
+    },
+    scoreSide: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    scoreLogo: { width: 22, height: 22, borderRadius: 11 },
+    scoreLogoFallback: {
+      width: 22, height: 22, borderRadius: 11,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    scoreLogoFallbackText: { fontSize: 7, fontWeight: '900' },
+    scoreOppName: {
+      fontSize: 11, fontWeight: '700', color: colors.muted,
+      flexShrink: 1, letterSpacing: 0.3,
+    },
+    scoreDigit: { fontSize: 28, fontWeight: '900', fontVariant: ['tabular-nums'], minWidth: 22, textAlign: 'center' },
+    scoreSep: { fontSize: 20, fontWeight: '700', color: '#444' },
 
-  // Full-time score entry
-  scoreEntry: {
-    backgroundColor: '#1A1A1A', borderRadius: 16, padding: 18, marginBottom: 16,
-    borderWidth: 1, borderColor: '#2A2A2A',
-  },
-  scoreEntryLabel: { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1.5, textAlign: 'center', marginBottom: 16 },
-  scoreEntryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  scoreEntryTeam: { flex: 1, alignItems: 'center', gap: 6 },
-  scoreEntryId: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%' },
-  scoreEntryLogo: { width: 18, height: 18, borderRadius: 9 },
-  scoreEntryLogoFb: {
-    width: 18, height: 18, borderRadius: 9,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  scoreEntryLogoFbText: { fontSize: 6, fontWeight: '900' },
-  scoreEntryOppBadge: {
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  scoreEntryName: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, flexShrink: 1 },
-  scoreEntryNum: { fontSize: 48, fontWeight: '900', fontVariant: ['tabular-nums'], textAlign: 'center', lineHeight: 52 },
-  scoreEntryBtns: { flexDirection: 'row', gap: 8 },
-  scoreEntryBtn: {
-    width: 36, height: 36, borderRadius: 10, borderWidth: 1,
-    borderColor: '#333', backgroundColor: '#252525',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  scoreEntrySep: { fontSize: 24, fontWeight: '700', color: '#333', paddingTop: 20 },
+    // Full-time score entry
+    scoreEntry: {
+      backgroundColor: '#1A1A1A', borderRadius: 16, padding: 18, marginBottom: 16,
+      borderWidth: 1, borderColor: '#2A2A2A',
+    },
+    scoreEntryLabel: { fontSize: 10, fontWeight: '800', color: colors.muted, letterSpacing: 1.5, textAlign: 'center', marginBottom: 16 },
+    scoreEntryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    scoreEntryTeam: { flex: 1, alignItems: 'center', gap: 6 },
+    scoreEntryId: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: '100%' },
+    scoreEntryLogo: { width: 18, height: 18, borderRadius: 9 },
+    scoreEntryLogoFb: {
+      width: 18, height: 18, borderRadius: 9,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    scoreEntryLogoFbText: { fontSize: 6, fontWeight: '900' },
+    scoreEntryOppBadge: {
+      width: 18, height: 18, borderRadius: 9,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    scoreEntryName: { fontSize: 11, fontWeight: '700', color: colors.muted, flexShrink: 1 },
+    scoreEntryNum: { fontSize: 48, fontWeight: '900', fontVariant: ['tabular-nums'], textAlign: 'center', lineHeight: 52 },
+    scoreEntryBtns: { flexDirection: 'row', gap: 8 },
+    scoreEntryBtn: {
+      width: 36, height: 36, borderRadius: 10, borderWidth: 1,
+      borderColor: '#333', backgroundColor: '#252525',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    scoreEntrySep: { fontSize: 24, fontWeight: '700', color: '#333', paddingTop: 20 },
 
-  // Pitch wrapper
-  pitchBench:   { flex: 1 },
-  pitchWrapper: {
-    flex: 1,
-    margin: 10,
-    borderRadius: 14,
-    overflow: 'visible', // allow token labels to bleed slightly
-    position: 'relative',
-  },
-  pitchSurface: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: PITCH_GREEN,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
+    // Pitch wrapper
+    pitchBench:   { flex: 1 },
+    pitchWrapper: {
+      flex: 1,
+      margin: 10,
+      borderRadius: 14,
+      overflow: 'visible', // allow token labels to bleed slightly
+      position: 'relative',
+    },
+    pitchSurface: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: PITCH_GREEN,
+      borderRadius: 14,
+      overflow: 'hidden',
+    },
 
-  // Tokens
-  token: {
-    position: 'absolute',
-    width: TOKEN_W, height: TOKEN_H,
-    borderRadius: 10,
-    backgroundColor: PULSE_COLORS.brand.green,
-    alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 3,
-    shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 5, shadowOffset: { width: 0, height: 2 },
-    elevation: 6,
-  },
-  tokenHover: {
-    backgroundColor: '#60A5FA',
-    transform: [{ scale: 1.2 }],
-    shadowColor: '#60A5FA', shadowOpacity: 0.8, shadowRadius: 10,
-    elevation: 12,
-  },
-  tokenPending: {
-    borderWidth: 2,
-    borderColor: '#FDE68A',
-  },
-  tokenEmpty: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
-    borderStyle: 'dashed',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  tokenNum:       { fontSize: 13, fontWeight: '900', lineHeight: 16 },
-  tokenName:      { fontSize: 8,  fontWeight: '700', maxWidth: TOKEN_W - 4, lineHeight: 10 },
-  tokenTimeBadge: {
-    backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4,
-    paddingHorizontal: 4, paddingVertical: 1, marginTop: 2,
-  },
-  tokenTimeText:  { fontSize: 7, fontWeight: '800', color: '#fff' },
-  tokenSlotLabel: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.45)' },
+    // Tokens
+    token: {
+      position: 'absolute',
+      width: TOKEN_W, height: TOKEN_H,
+      borderRadius: 10,
+      backgroundColor: PULSE_COLORS.brand.green,
+      alignItems: 'center', justifyContent: 'center',
+      paddingVertical: 3,
+      shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 5, shadowOffset: { width: 0, height: 2 },
+      elevation: 6,
+    },
+    tokenHover: {
+      backgroundColor: '#60A5FA',
+      transform: [{ scale: 1.2 }],
+      shadowColor: '#60A5FA', shadowOpacity: 0.8, shadowRadius: 10,
+      elevation: 12,
+    },
+    tokenPending: {
+      borderWidth: 2,
+      borderColor: '#FDE68A',
+    },
+    tokenEmpty: {
+      backgroundColor: 'rgba(255,255,255,0.06)',
+      borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+      borderStyle: 'dashed',
+      shadowOpacity: 0,
+      elevation: 0,
+    },
+    tokenNum:       { fontSize: 13, fontWeight: '900', lineHeight: 16 },
+    tokenName:      { fontSize: 8,  fontWeight: '700', maxWidth: TOKEN_W - 4, lineHeight: 10 },
+    tokenTimeBadge: {
+      backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 4,
+      paddingHorizontal: 4, paddingVertical: 1, marginTop: 2,
+    },
+    tokenTimeText:  { fontSize: 7, fontWeight: '800', color: '#fff' },
+    tokenSlotLabel: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.45)' },
 
-  // No lineup
-  noLineup: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center', gap: 8,
-  },
-  noLineupText: { fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.5)' },
-  noLineupSub:  { fontSize: 12, color: 'rgba(255,255,255,0.3)' },
+    // No lineup
+    noLineup: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      alignItems: 'center', justifyContent: 'center', gap: 8,
+    },
+    noLineupText: { fontSize: 15, fontWeight: '700', color: 'rgba(255,255,255,0.5)' },
+    noLineupSub:  { fontSize: 12, color: 'rgba(255,255,255,0.3)' },
 
-  // Bench
-  bench: {
-    backgroundColor: '#161616',
-    borderTopWidth: 1, borderTopColor: '#222',
-    paddingHorizontal: 14, paddingTop: 10, paddingBottom: 16,
-  },
-  benchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  benchLabel:  { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 2 },
-  benchHint:   { fontSize: 10, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
-  subConfirmRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cancelSubsBtn:  { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#333' },
-  cancelSubsText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
-  confirmSubsBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
-  confirmSubsText:{ fontSize: 12, fontWeight: '800', color: '#000' },
-  benchRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    // Bench
+    bench: {
+      backgroundColor: '#161616',
+      borderTopWidth: 1, borderTopColor: '#222',
+      paddingHorizontal: 14, paddingTop: 10, paddingBottom: 16,
+    },
+    benchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    benchLabel:  { fontSize: 10, fontWeight: '800', color: colors.muted, letterSpacing: 2 },
+    benchHint:   { fontSize: 10, color: colors.muted, fontStyle: 'italic' },
+    subConfirmRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    cancelSubsBtn:  { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#333' },
+    cancelSubsText: { fontSize: 12, fontWeight: '600', color: colors.muted },
+    confirmSubsBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
+    confirmSubsText:{ fontSize: 12, fontWeight: '800', color: '#000' },
+    benchRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 
-  benchToken: {
-    width: BENCH_SZ, height: BENCH_SZ, borderRadius: BENCH_SZ / 2,
-    backgroundColor: '#1E1E1E',
-    borderWidth: 1.5, borderColor: '#2E2E2E',
-    alignItems: 'center', justifyContent: 'center',
-    position: 'relative',
-  },
-  benchTokenUsed: {
-    borderColor: 'rgba(34,197,94,0.35)',
-    backgroundColor: 'rgba(34,197,94,0.06)',
-  },
-  benchDragging: { opacity: 0.15, transform: [{ scale: 0.9 }] },
-  usedDot: {
-    position: 'absolute', top: 2, right: 2,
-    width: 7, height: 7, borderRadius: 3.5,
-    backgroundColor: PULSE_COLORS.brand.green,
-  },
-  benchNum:     { fontSize: 14, fontWeight: '900', color: PULSE_COLORS.ui.text },
-  benchNumUsed: { color: PULSE_COLORS.brand.green },
-  benchName:    { fontSize: 7, fontWeight: '700', color: PULSE_COLORS.ui.muted, maxWidth: BENCH_SZ - 6 },
-  benchTime:    { fontSize: 7, color: PULSE_COLORS.brand.green, fontVariant: ['tabular-nums'], fontWeight: '700' },
-  benchEmpty:   { fontSize: 12, color: PULSE_COLORS.ui.muted, paddingVertical: 4 },
+    benchToken: {
+      width: BENCH_SZ, height: BENCH_SZ, borderRadius: BENCH_SZ / 2,
+      backgroundColor: '#1E1E1E',
+      borderWidth: 1.5, borderColor: '#2E2E2E',
+      alignItems: 'center', justifyContent: 'center',
+      position: 'relative',
+    },
+    benchTokenUsed: {
+      borderColor: 'rgba(34,197,94,0.35)',
+      backgroundColor: 'rgba(34,197,94,0.06)',
+    },
+    benchDragging: { opacity: 0.15, transform: [{ scale: 0.9 }] },
+    usedDot: {
+      position: 'absolute', top: 2, right: 2,
+      width: 7, height: 7, borderRadius: 3.5,
+      backgroundColor: PULSE_COLORS.brand.green,
+    },
+    benchNum:     { fontSize: 14, fontWeight: '900', color: colors.text },
+    benchNumUsed: { color: PULSE_COLORS.brand.green },
+    benchName:    { fontSize: 7, fontWeight: '700', color: colors.muted, maxWidth: BENCH_SZ - 6 },
+    benchTime:    { fontSize: 7, color: PULSE_COLORS.brand.green, fontVariant: ['tabular-nums'], fontWeight: '700' },
+    benchEmpty:   { fontSize: 12, color: colors.muted, paddingVertical: 4 },
 
-  // Ghost
-  ghost: {
-    position: 'absolute', zIndex: 999,
-    width: BENCH_SZ, height: BENCH_SZ, borderRadius: BENCH_SZ / 2,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#3B82F6', shadowOpacity: 0.8, shadowRadius: 16, elevation: 16,
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
-  },
-  ghostNum:  { fontSize: 14, fontWeight: '900', color: '#fff' },
-  ghostName: { fontSize: 7, fontWeight: '700', color: 'rgba(255,255,255,0.85)', maxWidth: BENCH_SZ - 6 },
+    // Ghost
+    ghost: {
+      position: 'absolute', zIndex: 999,
+      width: BENCH_SZ, height: BENCH_SZ, borderRadius: BENCH_SZ / 2,
+      backgroundColor: '#3B82F6',
+      alignItems: 'center', justifyContent: 'center',
+      shadowColor: '#3B82F6', shadowOpacity: 0.8, shadowRadius: 16, elevation: 16,
+      borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
+    },
+    ghostNum:  { fontSize: 14, fontWeight: '900', color: '#fff' },
+    ghostName: { fontSize: 7, fontWeight: '700', color: 'rgba(255,255,255,0.85)', maxWidth: BENCH_SZ - 6 },
 
-  // Overlay
-  overlayBg: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
-    alignItems: 'center', justifyContent: 'center', padding: 20,
-  },
-  overlayCard: {
-    width: '100%', backgroundColor: '#161616',
-    borderRadius: 24, padding: 24,
-    borderWidth: 1, borderColor: '#2E2E2E',
-    shadowColor: '#000', shadowOpacity: 0.7, shadowRadius: 20, elevation: 20,
-  },
-  overlayTitle: {
-    fontSize: 36, fontWeight: '900', textAlign: 'center',
-    letterSpacing: 3, marginBottom: 4,
-  },
-  overlaySub:   { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', marginBottom: 20 },
-  overlaySummary: {
-    backgroundColor: '#1E1E1E', borderRadius: 16,
-    borderWidth: 1, borderColor: '#2E2E2E', overflow: 'hidden', marginBottom: 16,
-  },
-  overlaySummaryHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: '#2E2E2E',
-    backgroundColor: '#252525',
-  },
-  overlaySummaryHdr: { fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 1 },
-  summaryRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: '#222',
-  },
-  summaryLeft:      { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  summaryJersey: {
-    width: 26, height: 26, borderRadius: 7,
-    backgroundColor: 'rgba(34,197,94,0.12)',
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  summaryJerseyNum: { fontSize: 10, fontWeight: '900', color: PULSE_COLORS.brand.green },
-  summaryName:      { fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '500', flex: 1 },
-  summaryTime:      { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  overlayBtn: {
-    backgroundColor: PULSE_COLORS.brand.green,
-    borderRadius: 16, paddingVertical: 15, alignItems: 'center',
-  },
-  overlayBtnText: { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
+    // Overlay
+    overlayBg: {
+      flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
+      alignItems: 'center', justifyContent: 'center', padding: 20,
+    },
+    overlayCard: {
+      width: '100%', backgroundColor: '#161616',
+      borderRadius: 24, padding: 24,
+      borderWidth: 1, borderColor: '#2E2E2E',
+      shadowColor: '#000', shadowOpacity: 0.7, shadowRadius: 20, elevation: 20,
+    },
+    overlayTitle: {
+      fontSize: 36, fontWeight: '900', textAlign: 'center',
+      letterSpacing: 3, marginBottom: 4,
+    },
+    overlaySub:   { fontSize: 13, color: colors.muted, textAlign: 'center', marginBottom: 20 },
+    overlaySummary: {
+      backgroundColor: '#1E1E1E', borderRadius: 16,
+      borderWidth: 1, borderColor: '#2E2E2E', overflow: 'hidden', marginBottom: 16,
+    },
+    overlaySummaryHeader: {
+      flexDirection: 'row', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 8,
+      borderBottomWidth: 1, borderBottomColor: '#2E2E2E',
+      backgroundColor: '#252525',
+    },
+    overlaySummaryHdr: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 1 },
+    summaryRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 10,
+      borderBottomWidth: 1, borderBottomColor: '#222',
+    },
+    summaryLeft:      { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+    summaryJersey: {
+      width: 26, height: 26, borderRadius: 7,
+      backgroundColor: 'rgba(34,197,94,0.12)',
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    summaryJerseyNum: { fontSize: 10, fontWeight: '900', color: PULSE_COLORS.brand.green },
+    summaryName:      { fontSize: 14, color: colors.text, fontWeight: '500', flex: 1 },
+    summaryTime:      { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+    overlayBtn: {
+      backgroundColor: PULSE_COLORS.brand.green,
+      borderRadius: 16, paddingVertical: 15, alignItems: 'center',
+    },
+    overlayBtnText: { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
 
-  // Sheet (bottom sheet style)
-  sheetBg:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: '#161616',
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    paddingHorizontal: 24, paddingTop: 16, paddingBottom: 40,
-    borderWidth: 1, borderColor: '#2E2E2E', borderBottomWidth: 0,
-  },
-  sheetHandle: {
-    width: 40, height: 4, borderRadius: 2, backgroundColor: '#3E3E3E',
-    alignSelf: 'center', marginBottom: 20,
-  },
-  sheetTitle: { fontSize: 22, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 },
-  sheetBody:  { fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 20 },
+    // Sheet (bottom sheet style)
+    sheetBg:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+    sheet: {
+      backgroundColor: '#161616',
+      borderTopLeftRadius: 28, borderTopRightRadius: 28,
+      paddingHorizontal: 24, paddingTop: 16, paddingBottom: 40,
+      borderWidth: 1, borderColor: '#2E2E2E', borderBottomWidth: 0,
+    },
+    sheetHandle: {
+      width: 40, height: 4, borderRadius: 2, backgroundColor: '#3E3E3E',
+      alignSelf: 'center', marginBottom: 20,
+    },
+    sheetTitle: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 6 },
+    sheetBody:  { fontSize: 13, color: colors.muted, marginBottom: 20 },
 
-  // Half input
-  halfInputRow:   { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  halfChip: {
-    flex: 1, paddingVertical: 10, borderRadius: 12,
-    backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2E2E2E',
-    alignItems: 'center',
-  },
-  halfChipActive: { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: PULSE_COLORS.brand.green },
-  halfChipText:     { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.muted },
-  halfChipTextActive: { color: PULSE_COLORS.brand.green },
-  halfCustomRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
-  halfCustomInput: {
-    flex: 1,
-    backgroundColor: '#1E1E1E', borderRadius: 14,
-    borderWidth: 1, borderColor: '#2E2E2E',
-    paddingHorizontal: 16, paddingVertical: 13,
-    fontSize: 16, color: PULSE_COLORS.ui.text,
-    textAlign: 'center',
-  },
-  halfDoneBtn: {
-    backgroundColor: 'rgba(34,197,94,0.12)',
-    borderRadius: 14, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
-    paddingHorizontal: 16, paddingVertical: 13,
-  },
-  halfDoneText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
-  kickOffBtn: {
-    backgroundColor: PULSE_COLORS.brand.green,
-    borderRadius: 16, paddingVertical: 15, alignItems: 'center',
-  },
-  kickOffText:  { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
-  sheetCancel:  { alignItems: 'center', paddingVertical: 14 },
-  sheetCancelText: { fontSize: 15, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+    // Half input
+    halfInputRow:   { flexDirection: 'row', gap: 8, marginBottom: 16 },
+    halfChip: {
+      flex: 1, paddingVertical: 10, borderRadius: 12,
+      backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#2E2E2E',
+      alignItems: 'center',
+    },
+    halfChipActive: { backgroundColor: 'rgba(34,197,94,0.12)', borderColor: PULSE_COLORS.brand.green },
+    halfChipText:     { fontSize: 14, fontWeight: '700', color: colors.muted },
+    halfChipTextActive: { color: PULSE_COLORS.brand.green },
+    halfCustomRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
+    halfCustomInput: {
+      flex: 1,
+      backgroundColor: '#1E1E1E', borderRadius: 14,
+      borderWidth: 1, borderColor: '#2E2E2E',
+      paddingHorizontal: 16, paddingVertical: 13,
+      fontSize: 16, color: colors.text,
+      textAlign: 'center',
+    },
+    halfDoneBtn: {
+      backgroundColor: 'rgba(34,197,94,0.12)',
+      borderRadius: 14, borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)',
+      paddingHorizontal: 16, paddingVertical: 13,
+    },
+    halfDoneText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    kickOffBtn: {
+      backgroundColor: PULSE_COLORS.brand.green,
+      borderRadius: 16, paddingVertical: 15, alignItems: 'center',
+    },
+    kickOffText:  { fontSize: 16, fontWeight: '900', color: '#000', letterSpacing: 0.5 },
+    sheetCancel:  { alignItems: 'center', paddingVertical: 14 },
+    sheetCancelText: { fontSize: 15, color: colors.muted, fontWeight: '600' },
 
-  // Bench right-side area
-  benchRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  subPlanChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderWidth: 1, borderRadius: 16,
-    paddingHorizontal: 9, paddingVertical: 5,
-  },
-  subPlanChipText: { fontSize: 11, fontWeight: '700' },
+    // Bench right-side area
+    benchRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    subPlanChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      borderWidth: 1, borderRadius: 16,
+      paddingHorizontal: 9, paddingVertical: 5,
+    },
+    subPlanChipText: { fontSize: 11, fontWeight: '700' },
 
-  // Equal time sheet content
-  eqTargetCard: {
-    alignItems: 'center', paddingVertical: 20, marginBottom: 18,
-    borderRadius: 16, backgroundColor: '#1A1A1A',
-    borderWidth: 1, borderColor: '#2E2E2E',
-  },
-  eqTargetNum:   { fontSize: 48, fontWeight: '800', lineHeight: 52 },
-  eqTargetLabel: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, marginTop: 2 },
-  eqTargetSub:   { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 4 },
-  eqHint: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 19, marginTop: 4 },
+    // Equal time sheet content
+    eqTargetCard: {
+      alignItems: 'center', paddingVertical: 20, marginBottom: 18,
+      borderRadius: 16, backgroundColor: '#1A1A1A',
+      borderWidth: 1, borderColor: '#2E2E2E',
+    },
+    eqTargetNum:   { fontSize: 48, fontWeight: '800', lineHeight: 52 },
+    eqTargetLabel: { fontSize: 14, fontWeight: '600', color: colors.text, marginTop: 2 },
+    eqTargetSub:   { fontSize: 12, color: colors.muted, marginTop: 4 },
+    eqHint: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, marginTop: 4 },
 
-  // Formation picker
-  fmOption: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#1E1E1E', borderRadius: 14,
-    paddingHorizontal: 14, paddingVertical: 14,
-    borderWidth: 1, borderColor: '#2E2E2E', marginBottom: 8,
-  },
-  fmOptionActive: { borderColor: 'rgba(34,197,94,0.4)', backgroundColor: 'rgba(34,197,94,0.06)' },
-  fmOptionLeft:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  fmOptionBadge: {
-    backgroundColor: '#2E2E2E', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 5,
-  },
-  fmOptionBadgeActive: { backgroundColor: 'rgba(34,197,94,0.15)' },
-  fmOptionBadgeText:   { fontSize: 14, fontWeight: '800', color: PULSE_COLORS.ui.muted },
-  fmOptionBadgeTextActive: { color: PULSE_COLORS.brand.green },
-  fmOptionNick: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+    // Formation picker
+    fmOption: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      backgroundColor: '#1E1E1E', borderRadius: 14,
+      paddingHorizontal: 14, paddingVertical: 14,
+      borderWidth: 1, borderColor: '#2E2E2E', marginBottom: 8,
+    },
+    fmOptionActive: { borderColor: 'rgba(34,197,94,0.4)', backgroundColor: 'rgba(34,197,94,0.06)' },
+    fmOptionLeft:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    fmOptionBadge: {
+      backgroundColor: '#2E2E2E', borderRadius: 8,
+      paddingHorizontal: 10, paddingVertical: 5,
+    },
+    fmOptionBadgeActive: { backgroundColor: 'rgba(34,197,94,0.15)' },
+    fmOptionBadgeText:   { fontSize: 14, fontWeight: '800', color: colors.muted },
+    fmOptionBadgeTextActive: { color: PULSE_COLORS.brand.green },
+    fmOptionNick: { fontSize: 13, color: colors.muted, fontWeight: '500' },
 
-  // Log stats button
-  logStatsBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 14 },
-  logStatsBtnText: { flex: 1, fontSize: 14, fontWeight: '700' },
+    // Log stats button
+    logStatsBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 14 },
+    logStatsBtnText: { flex: 1, fontSize: 14, fontWeight: '700' },
 
-  // Stats sheet
-  statsRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1E1E1E' },
-  statsRowLeft:   { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  statsJersey:    { width: 28, height: 28, borderRadius: 7, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  statsJerseyNum: { fontSize: 11, fontWeight: '900' },
-  statsPlayerName:{ fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, flex: 1 },
-  statsCounters:  { flexDirection: 'row', gap: 12 },
-  counterGroup:   { alignItems: 'center', gap: 4 },
-  counterLabel:   { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
-  counterRow:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  counterBtn:     { width: 24, height: 24, borderRadius: 7, borderWidth: 1, borderColor: '#333', backgroundColor: '#252525', alignItems: 'center', justifyContent: 'center' },
-  counterVal:     { fontSize: 15, fontWeight: '900', color: PULSE_COLORS.ui.muted, minWidth: 18, textAlign: 'center', fontVariant: ['tabular-nums'] },
+    // Stats sheet
+    statsRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1E1E1E' },
+    statsRowLeft:   { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+    statsJersey:    { width: 28, height: 28, borderRadius: 7, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    statsJerseyNum: { fontSize: 11, fontWeight: '900' },
+    statsPlayerName:{ fontSize: 14, fontWeight: '600', color: colors.text, flex: 1 },
+    statsCounters:  { flexDirection: 'row', gap: 12 },
+    counterGroup:   { alignItems: 'center', gap: 4 },
+    counterLabel:   { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+    counterRow:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    counterBtn:     { width: 24, height: 24, borderRadius: 7, borderWidth: 1, borderColor: '#333', backgroundColor: '#252525', alignItems: 'center', justifyContent: 'center' },
+    counterVal:     { fontSize: 15, fontWeight: '900', color: colors.muted, minWidth: 18, textAlign: 'center', fontVariant: ['tabular-nums'] },
 
-  guestDot: {
-    backgroundColor: 'rgba(249,115,22,0.9)',
-    borderRadius: 3, paddingHorizontal: 3, paddingVertical: 1,
-    alignSelf: 'flex-start',
-  },
-  guestDotText: { fontSize: 7, fontWeight: '900', color: '#fff', letterSpacing: 0.3 },
-});
+    guestDot: {
+      backgroundColor: 'rgba(249,115,22,0.9)',
+      borderRadius: 3, paddingHorizontal: 3, paddingVertical: 1,
+      alignSelf: 'flex-start',
+    },
+    guestDotText: { fontSize: 7, fontWeight: '900', color: '#fff', letterSpacing: 0.3 },
+  });
+}
 
 // ─── Route wrapper (thin — keep for any direct navigation) ───────────────────
 

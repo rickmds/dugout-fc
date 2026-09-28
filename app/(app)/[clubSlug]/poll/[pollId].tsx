@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,8 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { ThemeColors } from '../../../../constants/colors';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import PollCard, { type Poll } from '../../../../components/home/PollCard';
 
@@ -27,6 +28,8 @@ export default function PollDetailScreen() {
   const { profile } = useAuth();
   const { team, allTeams, selectTeam } = useTeam();
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [poll, setPoll] = useState<Poll | null>(null);
   const [linkedEventTitle, setLinkedEventTitle] = useState<string | null>(null);
@@ -224,16 +227,18 @@ export default function PollDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: PULSE_COLORS.ui.background },
-  errorText: { fontSize: 14, color: PULSE_COLORS.ui.textSecondary },
-  scroll: { padding: 16 },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+    errorText: { fontSize: 14, color: colors.textSecondary },
+    scroll: { padding: 16 },
 
-  linkedBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
-    marginBottom: 10,
-  },
-  linkedText: { fontSize: 13, fontWeight: '600', flex: 1 },
-});
+    linkedBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+      marginBottom: 10,
+    },
+    linkedText: { fontSize: 13, fontWeight: '600', flex: 1 },
+  });
+}

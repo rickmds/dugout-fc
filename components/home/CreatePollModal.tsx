@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Switch, Text,
@@ -8,7 +8,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../../lib/supabase';
 import { sendTeamPush } from '../../lib/push';
-import { PULSE_COLORS } from '../../constants/colors';
+import { ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 type ResultVisibility = 'always' | 'after_vote' | 'after_close';
 
@@ -31,6 +32,8 @@ const RESULT_OPTIONS: { key: ResultVisibility; label: string; desc: string }[] =
 ];
 
 export default function CreatePollModal({ visible, teamId, profileId, primaryColor, rgba, linkedEventId, linkedEventTitle, onClose, onCreated }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [question, setQuestion]           = useState('');
   const [options, setOptions]             = useState(['', '']);
   const [isAnonymous, setIsAnonymous]     = useState(false);
@@ -136,7 +139,7 @@ export default function CreatePollModal({ visible, teamId, profileId, primaryCol
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="close" size={22} color={PULSE_COLORS.ui.textSecondary} />
+            <Ionicons name="close" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
           <Text style={styles.title}>New Poll</Text>
           <TouchableOpacity
@@ -163,7 +166,7 @@ export default function CreatePollModal({ visible, teamId, profileId, primaryCol
           <TextInput
             style={styles.questionInput}
             placeholder="Ask your team something…"
-            placeholderTextColor={PULSE_COLORS.ui.muted}
+            placeholderTextColor={colors.muted}
             value={question}
             onChangeText={setQuestion}
             multiline
@@ -177,14 +180,14 @@ export default function CreatePollModal({ visible, teamId, profileId, primaryCol
               <TextInput
                 style={styles.optionInput}
                 placeholder={`Option ${i + 1}`}
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 value={opt}
                 onChangeText={v => updateOption(i, v)}
                 maxLength={80}
               />
               {options.length > 2 && (
                 <TouchableOpacity onPress={() => removeOption(i)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close-circle" size={18} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="close-circle" size={18} color={colors.muted} />
                 </TouchableOpacity>
               )}
             </View>
@@ -287,6 +290,8 @@ function ToggleRow({ label, desc, value, onChange, primaryColor }: {
   label: string; desc: string; value: boolean;
   onChange: (v: boolean) => void; primaryColor: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   return (
     <View style={styles.toggleRow}>
       <View style={{ flex: 1, gap: 2 }}>
@@ -296,77 +301,79 @@ function ToggleRow({ label, desc, value, onChange, primaryColor }: {
       <Switch
         value={value}
         onValueChange={onChange}
-        trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+        trackColor={{ false: colors.border, true: primaryColor }}
         thumbColor="#fff"
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    flex: { flex: 1, backgroundColor: colors.background },
 
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-  },
-  title: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  postBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  postBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12,
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    title: { fontSize: 16, fontWeight: '700', color: colors.text },
+    postBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+    postBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
-  scroll: { flex: 1 },
-  content: { padding: 16, gap: 8 },
+    scroll: { flex: 1 },
+    content: { padding: 16, gap: 8 },
 
-  linkedBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
-    marginBottom: 4,
-  },
-  linkedText: { fontSize: 13, fontWeight: '600' },
+    linkedBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+      marginBottom: 4,
+    },
+    linkedText: { fontSize: 13, fontWeight: '600' },
 
-  label: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6, marginBottom: 6, marginTop: 4 },
+    label: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.6, marginBottom: 6, marginTop: 4 },
 
-  questionInput: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 12, padding: 14,
-    fontSize: 15, color: PULSE_COLORS.ui.text,
-    minHeight: 72, textAlignVertical: 'top',
-  },
+    questionInput: {
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+      borderRadius: 12, padding: 14,
+      fontSize: 15, color: colors.text,
+      minHeight: 72, textAlignVertical: 'top',
+    },
 
-  optionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  optionInput: {
-    flex: 1,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11,
-    fontSize: 14, color: PULSE_COLORS.ui.text,
-  },
-  addOptionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: 4,
-  },
-  addOptionText: { fontSize: 14, fontWeight: '600' },
+    optionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+    optionInput: {
+      flex: 1,
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+      borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11,
+      fontSize: 14, color: colors.text,
+    },
+    addOptionBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      paddingVertical: 4,
+    },
+    addOptionText: { fontSize: 14, fontWeight: '600' },
 
-  settingsCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    borderRadius: 14, overflow: 'hidden',
-  },
-  divider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 16 },
+    settingsCard: {
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+      borderRadius: 14, overflow: 'hidden',
+    },
+    divider: { height: 1, backgroundColor: colors.border, marginHorizontal: 16 },
 
-  toggleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
-  toggleLabel: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  toggleDesc: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+    toggleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
+    toggleLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
+    toggleDesc: { fontSize: 12, color: colors.muted },
 
-  radioRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
-  radioLabel: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  radioDesc: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
-  radioOuter: {
-    width: 18, height: 18, borderRadius: 9,
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  radioInner: { width: 8, height: 8, borderRadius: 4 },
-});
+    radioRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
+    radioLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
+    radioDesc: { fontSize: 12, color: colors.muted, marginTop: 1 },
+    radioOuter: {
+      width: 18, height: 18, borderRadius: 9,
+      borderWidth: 1.5, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    radioInner: { width: 8, height: 8, borderRadius: 4 },
+  });
+}

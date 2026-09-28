@@ -1,11 +1,12 @@
-import { useState, memo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { sendProfilesPush } from '../../lib/push';
-import { PULSE_COLORS } from '../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../constants/colors';
+import { useTheme } from '../../hooks/useTheme';
 
 export type PollOption = {
   id: string;
@@ -77,6 +78,8 @@ function timeLeft(closesAt: string): string {
 }
 
 const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEventIds, voterNames, nonResponderProfileIds, nonResponderCount, familyVoteOptionId, primaryColor, rgba, onDelete, onVoteChange }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [voting, setVoting] = useState(false);
   const [revealOptionId, setRevealOptionId] = useState<string | null>(null);
   const [nudging, setNudging] = useState(false);
@@ -211,7 +214,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
             <Text style={[styles.pollLabel, { color: primaryColor }]}>POLL</Text>
             {poll.is_anonymous && (
               <View style={styles.anonBadge}>
-                <Ionicons name="eye-off-outline" size={10} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="eye-off-outline" size={10} color={colors.muted} />
                 <Text style={styles.anonText}>Anonymous</Text>
               </View>
             )}
@@ -229,7 +232,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
             )}
             {isCoach && (
               <TouchableOpacity onPress={confirmDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="trash-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="trash-outline" size={14} color={colors.muted} />
               </TouchableOpacity>
             )}
           </View>
@@ -241,7 +244,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
         {/* RSVP gate message */}
         {isRsvpBlocked && (
           <View style={styles.gateRow}>
-            <Ionicons name="lock-closed-outline" size={13} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
             <Text style={styles.gateText}>RSVP attending to vote</Text>
           </View>
         )}
@@ -249,7 +252,7 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
         {/* A co-guardian already answered for this same player */}
         {familyConflict && (
           <View style={styles.gateRow}>
-            <Ionicons name="people-outline" size={13} color={PULSE_COLORS.ui.muted} />
+            <Ionicons name="people-outline" size={13} color={colors.muted} />
             <Text style={styles.gateText}>
               Already answered by your family{familyOption ? `: ${familyOption.label}` : ''}
             </Text>
@@ -309,8 +312,8 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
 
                 <Text style={[
                   styles.optionLabel,
-                  isLeading && { color: PULSE_COLORS.ui.text, fontWeight: '700' },
-                  isSelected && { color: PULSE_COLORS.ui.text, fontWeight: '600' },
+                  isLeading && { color: colors.text, fontWeight: '700' },
+                  isSelected && { color: colors.text, fontWeight: '600' },
                 ]}>
                   {opt.label}
                 </Text>
@@ -423,101 +426,103 @@ const PollCard = memo(function PollCard({ poll, myProfileId, isCoach, myRsvpEven
 });
 export default PollCard;
 
-const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    marginBottom: 10,
-    overflow: 'hidden',
-  },
-  accent: { width: 3 },
-  body: { flex: 1, padding: 14, gap: 10 },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    card: {
+      flexDirection: 'row',
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: 10,
+      overflow: 'hidden',
+    },
+    accent: { width: 3 },
+    body: { flex: 1, padding: 14, gap: 10 },
 
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 
-  pollLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  anonBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
-  },
-  anonText: { fontSize: 10, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
-  closeLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600' },
+    pollLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+    anonBadge: {
+      flexDirection: 'row', alignItems: 'center', gap: 3,
+      backgroundColor: 'rgba(255,255,255,0.06)',
+      paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+    },
+    anonText: { fontSize: 10, color: colors.muted, fontWeight: '600' },
+    closeLabel: { fontSize: 11, color: colors.muted, fontWeight: '600' },
 
-  question: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, lineHeight: 20 },
+    question: { fontSize: 15, fontWeight: '700', color: colors.text, lineHeight: 20 },
 
-  gateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  gateText: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
+    gateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    gateText: { fontSize: 12, color: colors.muted, fontStyle: 'italic' },
 
-  option: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: PULSE_COLORS.ui.border,
-    overflow: 'hidden',
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  optionFill: {
-    position: 'absolute', top: 0, left: 0, bottom: 0,
-    borderRadius: 10,
-    minWidth: 4,
-  },
-  optionRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 11, gap: 10,
-  },
-  radio: {
-    width: 16, height: 16, borderRadius: 8,
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  checkbox: {
-    width: 16, height: 16, borderRadius: 4,
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  optionLabel: { flex: 1, fontSize: 14, color: PULSE_COLORS.ui.textSecondary },
-  optionPct: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600', minWidth: 32, textAlign: 'right' },
-  optionCount: { fontSize: 11, color: PULSE_COLORS.ui.muted },
-  pctRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    option: {
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+      minHeight: 44,
+      justifyContent: 'center',
+    },
+    optionFill: {
+      position: 'absolute', top: 0, left: 0, bottom: 0,
+      borderRadius: 10,
+      minWidth: 4,
+    },
+    optionRow: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 12, paddingVertical: 11, gap: 10,
+    },
+    radio: {
+      width: 16, height: 16, borderRadius: 8,
+      borderWidth: 1.5, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    checkbox: {
+      width: 16, height: 16, borderRadius: 4,
+      borderWidth: 1.5, borderColor: colors.border,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    optionLabel: { flex: 1, fontSize: 14, color: colors.textSecondary },
+    optionPct: { fontSize: 12, color: colors.muted, fontWeight: '600', minWidth: 32, textAlign: 'right' },
+    optionCount: { fontSize: 11, color: colors.muted },
+    pctRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
-  footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  footerText: { fontSize: 11, color: PULSE_COLORS.ui.muted },
-  tapHint: { fontSize: 11, fontWeight: '600' },
-  viewOnly: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontStyle: 'italic' },
+    footer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    footerText: { fontSize: 11, color: colors.muted },
+    tapHint: { fontSize: 11, fontWeight: '600' },
+    viewOnly: { fontSize: 11, color: colors.muted, fontStyle: 'italic' },
 
-  nudgeBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 9, borderRadius: 9, marginTop: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  nudgeBtnText: { fontSize: 12, fontWeight: '700' },
+    nudgeBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+      paddingVertical: 9, borderRadius: 9, marginTop: 10,
+      backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
+    },
+    nudgeBtnText: { fontSize: 12, fontWeight: '700' },
 
-  revealOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  revealCard: {
-    width: '100%', maxWidth: 340, maxHeight: '70%', backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 16, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 18,
-  },
-  revealHeader: { alignItems: 'center', marginBottom: 12 },
-  revealTitle: { fontSize: 17, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  revealSubtitle: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '600', marginTop: 2 },
-  revealScroll: { maxHeight: 260 },
-  revealRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  revealRowDivider: { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border },
-  revealAvatar: {
-    width: 28, height: 28, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  revealAvatarText: { fontSize: 11, fontWeight: '800' },
-  revealName: { flex: 1, fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  revealCloseBtn: {
-    marginTop: 14, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  revealCloseBtnText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
-});
+    revealOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+    revealCard: {
+      width: '100%', maxWidth: 340, maxHeight: '70%', backgroundColor: colors.surface,
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 18,
+    },
+    revealHeader: { alignItems: 'center', marginBottom: 12 },
+    revealTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
+    revealSubtitle: { fontSize: 12, color: colors.muted, fontWeight: '600', marginTop: 2 },
+    revealScroll: { maxHeight: 260 },
+    revealRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+    revealRowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+    revealAvatar: {
+      width: 28, height: 28, borderRadius: 14,
+      alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    },
+    revealAvatarText: { fontSize: 11, fontWeight: '800' },
+    revealName: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text },
+    revealCloseBtn: {
+      marginTop: 14, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
+      borderWidth: 1, borderColor: colors.border,
+    },
+    revealCloseBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
+  });
+}

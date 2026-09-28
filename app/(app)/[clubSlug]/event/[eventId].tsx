@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,8 +22,9 @@ import { computeArriveBy, computeLeaveBy } from '../../../../lib/eventTime';
 import { isEligibleTeam, parseAgeGroup } from '../../../../lib/guestEligibility';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
-import { PULSE_COLORS } from '../../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { useMapApp } from '../../../../hooks/useMapApp';
 import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
@@ -55,6 +56,8 @@ function LocationMap({
   onDriveTime?: (t: string) => void;
 }) {
   const { primaryColor, timezone } = useClub();
+  const { colors } = useTheme();
+  const mapStyles = useMemo(() => getMapStyles(colors), [colors]);
   const [drivingTime, setDrivingTime] = useState<string | null>(null);
   const [imgError, setImgError]       = useState(false);
   const [imgLoaded, setImgLoaded]     = useState(false);
@@ -70,7 +73,7 @@ function LocationMap({
   if (!PLACES_KEY || imgError) {
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={mapStyles.fallback}>
-        <Ionicons name="map-outline" size={22} color={PULSE_COLORS.ui.muted} />
+        <Ionicons name="map-outline" size={22} color={colors.muted} />
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[mapStyles.fallbackAddress, { color: primaryColor }]} numberOfLines={2}>{address ?? 'View on map'}</Text>
           <Text style={mapStyles.fallbackHint}>Tap to get directions</Text>
@@ -90,7 +93,7 @@ function LocationMap({
     <TouchableOpacity onPress={onPress} activeOpacity={0.9} style={mapStyles.wrapper}>
       {!imgLoaded && (
         <View style={mapStyles.skeleton}>
-          <ActivityIndicator color={PULSE_COLORS.ui.muted} />
+          <ActivityIndicator color={colors.muted} />
         </View>
       )}
       <Image
@@ -118,17 +121,18 @@ function LocationMap({
   );
 }
 
-const mapStyles = StyleSheet.create({
+function getMapStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   wrapper: {
     height: 190,
     overflow: 'hidden',
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
   },
   skeleton: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
   },
   image: { width: '100%', height: '100%' },
   directionsHint: {
@@ -163,11 +167,12 @@ const mapStyles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
   },
   fallbackAddress: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.brand.green },
-  fallbackHint: { fontSize: 12, color: PULSE_COLORS.ui.muted },
-});
+  fallbackHint: { fontSize: 12, color: colors.muted },
+  });
+}
 
 type EventType = 'game' | 'training' | 'other';
 type RsvpStatus = 'attending' | 'not_attending';
@@ -344,6 +349,8 @@ export default function EventDetailScreen() {
   const { team, allTeams, selectTeam, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -1487,16 +1494,16 @@ export default function EventDetailScreen() {
         style={{
           flexDirection: 'row', alignItems: 'center', gap: 5,
           paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
-          backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
-          borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+          backgroundColor: sel ? primaryColor : colors.surfaceAlt,
+          borderWidth: 1.5, borderColor: sel ? primaryColor : colors.border,
         }}
       >
         {sel && <Ionicons name="checkmark" size={13} color="#fff" />}
-        <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>
+        <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : colors.text }}>
           {t.name}{t.age_group ? ` · ${t.age_group}` : ''}
         </Text>
         {!t.eligible && (
-          <Text style={{ fontSize: 10, fontWeight: '700', color: sel ? 'rgba(255,255,255,0.75)' : PULSE_COLORS.ui.muted }}>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: sel ? 'rgba(255,255,255,0.75)' : colors.muted }}>
             · Check eligibility
           </Text>
         )}
@@ -1660,7 +1667,7 @@ export default function EventDetailScreen() {
                     </Text>
                     <Text style={styles.reflectionDoneSub}>Tap to edit</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="chevron-forward" size={16} color={colors.muted} />
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity key={pid} style={styles.reflectionBanner} onPress={() => setReflectionPlayerId(pid)} activeOpacity={0.8}>
@@ -1742,7 +1749,7 @@ export default function EventDetailScreen() {
             {/* Date + time */}
             <View style={styles.metaRow}>
               <View style={styles.metaIconWrap}>
-                <Ionicons name="calendar-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="calendar-outline" size={17} color={colors.muted} />
               </View>
               <View style={styles.metaTextBlock}>
                 <Text style={styles.metaPrimary}>{formatDay(event.event_date)}</Text>
@@ -1763,7 +1770,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="walk-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="walk-outline" size={17} color={colors.muted} />
                   </View>
                   <View style={styles.metaTextBlock}>
                     <Text style={styles.metaLabel}>Arrive by</Text>
@@ -1781,7 +1788,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <TouchableOpacity style={styles.metaRow} onPress={openMaps} activeOpacity={0.7}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="location-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="location-outline" size={17} color={colors.muted} />
                   </View>
                   <View style={[styles.metaTextBlock, { flex: 1 }]}>
                     <Text style={[styles.metaPrimary, { color: primaryColor }]} numberOfLines={2}>
@@ -1804,7 +1811,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <TouchableOpacity style={styles.metaRow} onPress={() => lookupOpposingCoach()} activeOpacity={0.7}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="person-circle-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="person-circle-outline" size={17} color={colors.muted} />
                   </View>
                   <View style={[styles.metaTextBlock, { flex: 1 }]}>
                     <Text style={[styles.metaPrimary, { color: primaryColor }]}>Look up opposing coach</Text>
@@ -1849,7 +1856,7 @@ export default function EventDetailScreen() {
                             </View>
                           )}
                           <View style={[styles.weatherStatPill, { backgroundColor: 'rgba(100,116,139,0.12)' }]}>
-                            <Text style={[styles.weatherStatPillText, { color: PULSE_COLORS.ui.textSecondary }]}>💨 {weather.wind_mph}mph</Text>
+                            <Text style={[styles.weatherStatPillText, { color: colors.textSecondary }]}>💨 {weather.wind_mph}mph</Text>
                           </View>
                         </View>
                       </View>
@@ -1863,7 +1870,7 @@ export default function EventDetailScreen() {
                       <View style={styles.driveBlock}>
                         <View style={styles.driveRow}>
                           <View style={styles.driveIconWrap}>
-                            <Ionicons name="car-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                            <Ionicons name="car-outline" size={15} color={colors.muted} />
                           </View>
                           <Text style={styles.driveText}>{driveTime}</Text>
                           <Text style={styles.driveLabel}>from your location</Text>
@@ -1891,7 +1898,7 @@ export default function EventDetailScreen() {
                 {!(hasMap && !weather && !driveTime) && <View style={styles.metaDivider} />}
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="layers-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="layers-outline" size={17} color={colors.muted} />
                   </View>
                   <Text style={styles.metaPrimary}>{event.field_notes}</Text>
                 </View>
@@ -1904,7 +1911,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="shirt-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="shirt-outline" size={17} color={colors.muted} />
                   </View>
                   {(() => {
                     const kitColor = event.uniform === 'home' ? homeKitColor
@@ -1919,9 +1926,9 @@ export default function EventDetailScreen() {
                       // valid club color choice — so the swatch below carries the
                       // actual color (always visible via its border ring) while the
                       // chip itself stays a fixed, always-readable neutral.
-                      <View style={[styles.uniformChip, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: PULSE_COLORS.ui.border }]}>
+                      <View style={[styles.uniformChip, { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: colors.border }]}>
                         <View style={[styles.kitSwatch, { backgroundColor: kitColor }]} />
-                        <Text style={[styles.uniformChipText, { color: PULSE_COLORS.ui.textSecondary }]}>{kitLabel}</Text>
+                        <Text style={[styles.uniformChipText, { color: colors.textSecondary }]}>{kitLabel}</Text>
                       </View>
                     );
                   })()}
@@ -1935,7 +1942,7 @@ export default function EventDetailScreen() {
                 <View style={styles.metaDivider} />
                 <View style={styles.metaRow}>
                   <View style={styles.metaIconWrap}>
-                    <Ionicons name="football-outline" size={17} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="football-outline" size={17} color={colors.muted} />
                   </View>
                   <View style={[styles.uniformChip, {
                     backgroundColor: event.field_type === 'turf' ? 'rgba(59,130,246,0.12)' : rgba(0.10),
@@ -1975,7 +1982,7 @@ export default function EventDetailScreen() {
                           color={
                             status === 'attending' ? PULSE_COLORS.rsvp.attending
                             : status === 'not_attending' ? PULSE_COLORS.rsvp.not_attending
-                            : PULSE_COLORS.ui.muted
+                            : colors.muted
                           }
                         />
                       </View>
@@ -2012,8 +2019,8 @@ export default function EventDetailScreen() {
                               activeOpacity={0.8}
                             >
                               {saving && status !== 'attending'
-                                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
-                                : <><Ionicons name="checkmark" size={14} color={status === 'attending' ? '#000' : PULSE_COLORS.ui.muted} />
+                                ? <ActivityIndicator size="small" color={colors.muted} />
+                                : <><Ionicons name="checkmark" size={14} color={status === 'attending' ? '#000' : colors.muted} />
                                    <Text style={[styles.rsvpInlineBtnText, status === 'attending' && { color: '#000' }]}>Going</Text></>}
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -2023,8 +2030,8 @@ export default function EventDetailScreen() {
                               activeOpacity={0.8}
                             >
                               {saving && status !== 'not_attending'
-                                ? <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
-                                : <><Ionicons name="close" size={14} color={status === 'not_attending' ? '#fff' : PULSE_COLORS.ui.muted} />
+                                ? <ActivityIndicator size="small" color={colors.muted} />
+                                : <><Ionicons name="close" size={14} color={status === 'not_attending' ? '#fff' : colors.muted} />
                                    <Text style={[styles.rsvpInlineBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't go</Text></>}
                             </TouchableOpacity>
                           </View>
@@ -2091,7 +2098,7 @@ export default function EventDetailScreen() {
               <Text style={styles.sectionTitle}>Coach Notes</Text>
               <View style={[styles.notesBox, styles.coachNotesBox]}>
                 <View style={styles.coachNotesHeader}>
-                  <Ionicons name="lock-closed-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
                   <Text style={styles.coachOnlyTag}>Coach only</Text>
                 </View>
                 <Text style={styles.notesText}>{event.coach_notes}</Text>
@@ -2135,7 +2142,7 @@ export default function EventDetailScreen() {
                   <Text style={styles.summaryLabel}>Can't go</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.summaryPill} onPress={() => switchToAvailability('none')} activeOpacity={0.7}>
-                  <Text style={[styles.summaryNum, { color: PULSE_COLORS.ui.muted }]}>{noResponse.length}</Text>
+                  <Text style={[styles.summaryNum, { color: colors.muted }]}>{noResponse.length}</Text>
                   <Text style={styles.summaryLabel}>No reply</Text>
                 </TouchableOpacity>
               </View>
@@ -2147,7 +2154,7 @@ export default function EventDetailScreen() {
                 </TouchableOpacity>
                 {noResponse.length > 0 && upcoming && (
                   <TouchableOpacity style={styles.nudgeQuickBtn} onPress={handleNudge} activeOpacity={0.7}>
-                    <Ionicons name="notifications-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="notifications-outline" size={13} color={colors.muted} />
                     <Text style={styles.nudgeQuickBtnText}>Nudge {noResponse.length}</Text>
                   </TouchableOpacity>
                 )}
@@ -2172,7 +2179,7 @@ export default function EventDetailScreen() {
 
               {guests.length === 0 ? (
                 <View style={styles.guestCardEmpty}>
-                  <Ionicons name="people-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="people-outline" size={18} color={colors.muted} />
                   <Text style={styles.guestCardEmptyText}>No guests yet — add players or coaches from other teams.</Text>
                 </View>
               ) : (
@@ -2199,7 +2206,7 @@ export default function EventDetailScreen() {
                               </Text>
                             </View>
                             <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
-                              <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                              <Ionicons name="close-circle-outline" size={18} color={colors.muted} />
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -2208,7 +2215,7 @@ export default function EventDetailScreen() {
                   )}
                   {guestCoaches.length > 0 && (
                     <>
-                      <View style={[styles.guestRoleHeader, guestPlayers.length > 0 && { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border }]}>
+                      <View style={[styles.guestRoleHeader, guestPlayers.length > 0 && { borderTopWidth: 1, borderTopColor: colors.border }]}>
                         <Text style={styles.guestRoleLabel}>COACHES</Text>
                       </View>
                       {guestCoaches.map((g) => (
@@ -2227,7 +2234,7 @@ export default function EventDetailScreen() {
                               </Text>
                             </View>
                             <TouchableOpacity onPress={() => handleRemoveGuest(g.id, g.full_name)} hitSlop={8} style={{ marginLeft: 8 }}>
-                              <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                              <Ionicons name="close-circle-outline" size={18} color={colors.muted} />
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -2265,7 +2272,7 @@ export default function EventDetailScreen() {
                         </View>
                         {c.status === 'open' && (
                           <TouchableOpacity onPress={() => handleCancelCallout(c.id, teamNames)} hitSlop={8} style={{ marginLeft: 8 }}>
-                            <Ionicons name="close-circle-outline" size={18} color={PULSE_COLORS.ui.muted} />
+                            <Ionicons name="close-circle-outline" size={18} color={colors.muted} />
                           </TouchableOpacity>
                         )}
                       </View>
@@ -2279,7 +2286,7 @@ export default function EventDetailScreen() {
                 style={styles.addGuestCoachLink}
                 hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
               >
-                <Ionicons name="person-add-outline" size={13} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="person-add-outline" size={13} color={colors.muted} />
                 <Text style={styles.addGuestCoachLinkText}>Add a guest coach</Text>
               </TouchableOpacity>
             </View>
@@ -2294,21 +2301,21 @@ export default function EventDetailScreen() {
                   <Ionicons name="grid-outline" size={17} color={primaryColor} />
                 </View>
                 <Text style={styles.actionBtnText}>Lineup Builder</Text>
-                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
+                <Ionicons name="chevron-forward" size={16} color={colors.border} />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openMatchTracker} activeOpacity={0.7}>
                 <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
                   <Ionicons name="timer-outline" size={17} color={primaryColor} />
                 </View>
                 <Text style={styles.actionBtnText}>Match Tracker</Text>
-                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
+                <Ionicons name="chevron-forward" size={16} color={colors.border} />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.actionBtn, styles.actionBtnBorderTop]} onPress={openScoreModal} activeOpacity={0.7}>
                 <View style={[styles.actionBtnIcon, { backgroundColor: rgba(0.1) }]}>
                   <Ionicons name="football-outline" size={17} color={primaryColor} />
                 </View>
                 <Text style={styles.actionBtnText}>{event.score_home != null ? 'Edit Score' : 'Enter Score'}</Text>
-                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
+                <Ionicons name="chevron-forward" size={16} color={colors.border} />
               </TouchableOpacity>
             </View>
           )}
@@ -2321,7 +2328,7 @@ export default function EventDetailScreen() {
                   <Ionicons name="clipboard-outline" size={17} color={primaryColor} />
                 </View>
                 <Text style={styles.actionBtnText}>{sessionPlanExists ? 'View Session Plan' : 'Session Builder'}</Text>
-                <Ionicons name="chevron-forward" size={16} color={PULSE_COLORS.ui.border} />
+                <Ionicons name="chevron-forward" size={16} color={colors.border} />
               </TouchableOpacity>
             </View>
           )}
@@ -2332,7 +2339,7 @@ export default function EventDetailScreen() {
               <View style={styles.statsSectionHeader}>
                 <Text style={styles.sectionTitle}>Match Stats</Text>
                 <View style={styles.coachOnlyChip}>
-                  <Ionicons name="lock-closed-outline" size={11} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="lock-closed-outline" size={11} color={colors.muted} />
                   <Text style={styles.coachOnlyTag}>Coach only</Text>
                 </View>
               </View>
@@ -2371,7 +2378,7 @@ export default function EventDetailScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#818CF8' }} />
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6 }}>POLLS</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.6 }}>POLLS</Text>
                 </View>
                 {isCoach && (
                   <TouchableOpacity
@@ -2415,10 +2422,10 @@ export default function EventDetailScreen() {
               {eventPolls.length === 0 && isCoach && (
                 <TouchableOpacity
                   onPress={() => setShowEventPollModal(true)}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderStyle: 'dashed' }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed' }}
                 >
-                  <Ionicons name="bar-chart-outline" size={14} color={PULSE_COLORS.ui.muted} />
-                  <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted }}>Poll your squad about this event</Text>
+                  <Ionicons name="bar-chart-outline" size={14} color={colors.muted} />
+                  <Text style={{ fontSize: 13, color: colors.muted }}>Poll your squad about this event</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -2516,7 +2523,7 @@ export default function EventDetailScreen() {
                                   onPress={() => markAttendance(p.id, s)}
                                   hitSlop={4}
                                 >
-                                  <Ionicons name={icon} size={14} color={attStatus === s ? clr : PULSE_COLORS.ui.muted} />
+                                  <Ionicons name={icon} size={14} color={attStatus === s ? clr : colors.muted} />
                                 </TouchableOpacity>
                               );
                             })}
@@ -2563,8 +2570,8 @@ export default function EventDetailScreen() {
                 style={[styles.availStat, activeRsvpTab === 'none' && { backgroundColor: 'rgba(100,116,139,0.08)', borderRadius: 14 }]}
                 onPress={() => setActiveRsvpTab('none')} activeOpacity={0.7}
               >
-                <Text style={[styles.availStatNum, { color: PULSE_COLORS.ui.muted }]}>{noResponse.length}</Text>
-                <Text style={[styles.availStatLabel, activeRsvpTab === 'none' && { color: PULSE_COLORS.ui.text, fontWeight: '700' }]}>Pending</Text>
+                <Text style={[styles.availStatNum, { color: colors.muted }]}>{noResponse.length}</Text>
+                <Text style={[styles.availStatLabel, activeRsvpTab === 'none' && { color: colors.text, fontWeight: '700' }]}>Pending</Text>
               </TouchableOpacity>
             </View>
             {players.length > 0 && (
@@ -2605,7 +2612,7 @@ export default function EventDetailScreen() {
                       activeRsvpTab === 'not_attending' ? 'close-circle-outline' : 'time-outline'
                     }
                     size={26}
-                    color={PULSE_COLORS.ui.muted}
+                    color={colors.muted}
                   />
                 </View>
                 <Text style={styles.emptyTitle}>
@@ -2657,7 +2664,7 @@ export default function EventDetailScreen() {
                             <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />
                           )}
                           {activeRsvpTab === 'none' && (
-                            <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />
+                            <Ionicons name="ellipse-outline" size={20} color={colors.muted} />
                           )}
                         </TouchableOpacity>
                       ) : (
@@ -2669,7 +2676,7 @@ export default function EventDetailScreen() {
                             <Ionicons name="close-circle" size={20} color={PULSE_COLORS.rsvp.not_attending} />
                           )}
                           {activeRsvpTab === 'none' && (
-                            <Ionicons name="ellipse-outline" size={20} color={PULSE_COLORS.ui.muted} />
+                            <Ionicons name="ellipse-outline" size={20} color={colors.muted} />
                           )}
                         </View>
                       )}
@@ -2739,14 +2746,14 @@ export default function EventDetailScreen() {
                 onPress={() => setGuestRole('player')}
                 style={[styles.guestRoleToggleBtn, guestRole === 'player' && { backgroundColor: rgba(0.1), borderColor: primaryColor }]}
               >
-                <Ionicons name="person-outline" size={14} color={guestRole === 'player' ? primaryColor : PULSE_COLORS.ui.muted} />
+                <Ionicons name="person-outline" size={14} color={guestRole === 'player' ? primaryColor : colors.muted} />
                 <Text style={[styles.guestRoleToggleText, guestRole === 'player' && { color: primaryColor }]}>Players</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setGuestRole('coach')}
                 style={[styles.guestRoleToggleBtn, guestRole === 'coach' && { backgroundColor: 'rgba(59,130,246,0.1)', borderColor: '#3B82F6' }]}
               >
-                <Ionicons name="people-outline" size={14} color={guestRole === 'coach' ? '#3B82F6' : PULSE_COLORS.ui.muted} />
+                <Ionicons name="people-outline" size={14} color={guestRole === 'coach' ? '#3B82F6' : colors.muted} />
                 <Text style={[styles.guestRoleToggleText, guestRole === 'coach' && { color: '#3B82F6' }]}>Coaches</Text>
               </TouchableOpacity>
             </View>
@@ -2768,7 +2775,7 @@ export default function EventDetailScreen() {
                     onPress={() => setGuestTab('callout')}
                     style={[styles.guestInnerTab, guestTab === 'callout' && { borderBottomColor: '#f97316' }]}
                   >
-                    <Ionicons name="megaphone-outline" size={13} color={guestTab === 'callout' ? '#f97316' : PULSE_COLORS.ui.muted} />
+                    <Ionicons name="megaphone-outline" size={13} color={guestTab === 'callout' ? '#f97316' : colors.muted} />
                     <Text style={[styles.guestInnerTabText, guestTab === 'callout' && { color: '#f97316', fontWeight: '700' }]}>
                       Send a call out
                     </Text>
@@ -2779,11 +2786,11 @@ export default function EventDetailScreen() {
                   /* ── Invite tab: browse + search ── */
                   <>
                     <View style={styles.guestSearchRow}>
-                      <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="search-outline" size={16} color={colors.muted} />
                       <TextInput
                         style={styles.guestSearchInput}
                         placeholder="Search by name…"
-                        placeholderTextColor={PULSE_COLORS.ui.muted}
+                        placeholderTextColor={colors.muted}
                         value={guestQuery}
                         onChangeText={q => { setGuestQuery(q); searchGuests(q); }}
                         returnKeyType="search"
@@ -2822,7 +2829,7 @@ export default function EventDetailScreen() {
                                   style={styles.ageSectionHeader}
                                   activeOpacity={0.7}
                                 >
-                                  <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={PULSE_COLORS.ui.muted} />
+                                  <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={colors.muted} />
                                   <Text style={styles.ageSectionLabel}>{section.ageGroup ?? 'Other'}</Text>
                                   <Text style={styles.ageSectionCount}>
                                     {section.items.length} team{section.items.length !== 1 ? 's' : ''}
@@ -2892,11 +2899,11 @@ export default function EventDetailScreen() {
                       <Text style={styles.requestSectionLabel}>WHICH TEAM(S)? {requestTargetIds.length > 0 ? `(${requestTargetIds.length} selected)` : ''}</Text>
                       {requestTeams.length > 6 && (
                         <View style={[styles.guestSearchRow, { marginBottom: 12 }]}>
-                          <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                          <Ionicons name="search-outline" size={16} color={colors.muted} />
                           <TextInput
                             style={styles.guestSearchInput}
                             placeholder="Search teams…"
-                            placeholderTextColor={PULSE_COLORS.ui.muted}
+                            placeholderTextColor={colors.muted}
                             value={teamSearchQuery}
                             onChangeText={setTeamSearchQuery}
                             returnKeyType="search"
@@ -2904,12 +2911,12 @@ export default function EventDetailScreen() {
                         </View>
                       )}
                       {requestTeams.length === 0 ? (
-                        <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No other teams in your club yet.</Text>
+                        <Text style={{ fontSize: 13, color: colors.muted, marginBottom: 16 }}>No other teams in your club yet.</Text>
                       ) : teamSearchQuery.trim() ? (() => {
                         const q = teamSearchQuery.trim().toLowerCase();
                         const matches = requestTeams.filter(t => t.name.toLowerCase().includes(q));
                         return matches.length === 0 ? (
-                          <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.muted, marginBottom: 16 }}>No teams match "{teamSearchQuery}"</Text>
+                          <Text style={{ fontSize: 13, color: colors.muted, marginBottom: 16 }}>No teams match "{teamSearchQuery}"</Text>
                         ) : (
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
                             {matches.map(renderTeamChip)}
@@ -2925,7 +2932,7 @@ export default function EventDetailScreen() {
                                 style={styles.ageSectionHeader}
                                 activeOpacity={0.7}
                               >
-                                <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={PULSE_COLORS.ui.muted} />
+                                <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={colors.muted} />
                                 <Text style={styles.ageSectionLabel}>{section.ageGroup ?? 'Other'}</Text>
                                 <Text style={styles.ageSectionCount}>
                                   {section.items.length} team{section.items.length !== 1 ? 's' : ''}
@@ -2958,11 +2965,11 @@ export default function EventDetailScreen() {
                                   onPress={() => setRequestSpots(n)}
                                   style={{
                                     width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center',
-                                    backgroundColor: sel ? primaryColor : PULSE_COLORS.ui.surfaceAlt,
-                                    borderWidth: 1.5, borderColor: sel ? primaryColor : PULSE_COLORS.ui.border,
+                                    backgroundColor: sel ? primaryColor : colors.surfaceAlt,
+                                    borderWidth: 1.5, borderColor: sel ? primaryColor : colors.border,
                                   }}
                                 >
-                                  <Text style={{ fontSize: 16, fontWeight: '800', color: sel ? '#fff' : PULSE_COLORS.ui.text }}>{n}</Text>
+                                  <Text style={{ fontSize: 16, fontWeight: '800', color: sel ? '#fff' : colors.text }}>{n}</Text>
                                 </TouchableOpacity>
                               );
                             })}
@@ -2975,17 +2982,17 @@ export default function EventDetailScreen() {
                         value={requestNote}
                         onChangeText={setRequestNote}
                         placeholder="e.g. Need a striker — any position fine"
-                        placeholderTextColor={PULSE_COLORS.ui.muted}
+                        placeholderTextColor={colors.muted}
                         style={{
-                          borderWidth: 1, borderColor: PULSE_COLORS.ui.border, borderRadius: 10,
-                          padding: 12, fontSize: 14, color: PULSE_COLORS.ui.text,
+                          borderWidth: 1, borderColor: colors.border, borderRadius: 10,
+                          padding: 12, fontSize: 14, color: colors.text,
                           fontFamily: 'System', marginBottom: 8,
                         }}
                         maxLength={120}
                       />
                       <View style={{ height: 8 }} />
                     </ScrollView>
-                    <View style={{ paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: PULSE_COLORS.ui.border }}>
+                    <View style={{ paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
                       <TouchableOpacity
                         onPress={sendRequest}
                         disabled={requestTargetIds.length === 0 || requestSending}
@@ -3014,11 +3021,11 @@ export default function EventDetailScreen() {
               <>
                 {allCoaches.length > 6 && (
                   <View style={styles.guestSearchRow}>
-                    <Ionicons name="search-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="search-outline" size={16} color={colors.muted} />
                     <TextInput
                       style={styles.guestSearchInput}
                       placeholder="Filter coaches…"
-                      placeholderTextColor={PULSE_COLORS.ui.muted}
+                      placeholderTextColor={colors.muted}
                       value={guestQuery}
                       onChangeText={setGuestQuery}
                       returnKeyType="search"
@@ -3105,7 +3112,7 @@ export default function EventDetailScreen() {
                 <Text style={[styles.scoreModalNum, { color: primaryColor }]}>{scoreHomeInput}</Text>
                 <View style={styles.scoreModalBtns}>
                   <TouchableOpacity onPress={() => setScoreHomeInput((n) => Math.max(0, n - 1))} style={styles.scoreModalBtn} hitSlop={8}>
-                    <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="remove" size={20} color={colors.muted} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setScoreHomeInput((n) => n + 1)} style={[styles.scoreModalBtn, { borderColor: primaryColor + '55', backgroundColor: primaryColor + '18' }]} hitSlop={8}>
                     <Ionicons name="add" size={20} color={primaryColor} />
@@ -3117,18 +3124,18 @@ export default function EventDetailScreen() {
 
               <View style={styles.scoreModalTeam}>
                 <View style={styles.scoreModalOppBadge}>
-                  <Ionicons name="shield-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="shield-outline" size={14} color={colors.muted} />
                 </View>
                 <Text style={styles.scoreModalName} numberOfLines={1}>
                   {(event?.title ?? '').replace(/^(vs\.?|@)\s+/i, '').trim() || 'Them'}
                 </Text>
-                <Text style={[styles.scoreModalNum, { color: PULSE_COLORS.ui.textSecondary }]}>{scoreAwayInput}</Text>
+                <Text style={[styles.scoreModalNum, { color: colors.textSecondary }]}>{scoreAwayInput}</Text>
                 <View style={styles.scoreModalBtns}>
                   <TouchableOpacity onPress={() => setScoreAwayInput((n) => Math.max(0, n - 1))} style={styles.scoreModalBtn} hitSlop={8}>
-                    <Ionicons name="remove" size={20} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="remove" size={20} color={colors.muted} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setScoreAwayInput((n) => n + 1)} style={[styles.scoreModalBtn, { borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.08)' }]} hitSlop={8}>
-                    <Ionicons name="add" size={20} color={PULSE_COLORS.ui.textSecondary} />
+                    <Ionicons name="add" size={20} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -3168,17 +3175,17 @@ export default function EventDetailScreen() {
               <ActivityIndicator color={primaryColor} style={{ marginVertical: 24 }} />
             ) : ncsaCandidates ? (
               <>
-                <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', marginBottom: 14, lineHeight: 18 }}>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginBottom: 14, lineHeight: 18 }}>
                   Couldn't tell which club this is automatically — pick the right one:
                 </Text>
                 <ScrollView style={{ maxHeight: 260 }}>
                   {ncsaCandidates.map((c) => (
                     <TouchableOpacity
                       key={c.clubid}
-                      style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border }}
+                      style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
                       onPress={() => lookupOpposingCoach(c.clubid)}
                     >
-                      <Text style={{ fontSize: 14, color: PULSE_COLORS.ui.text, fontWeight: '600' }}>{c.name}</Text>
+                      <Text style={{ fontSize: 14, color: colors.text, fontWeight: '600' }}>{c.name}</Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -3190,7 +3197,7 @@ export default function EventDetailScreen() {
                 <ScrollView style={styles.ncsaResultScroll}>
                   <View style={{ gap: 14 }}>
                     {ncsaLookupResult.map((c, i) => (
-                      <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14 } : undefined}>
+                      <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 } : undefined}>
                         <TouchableOpacity
                           style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}
                           onPress={() => toggleNcsaSelected(`coach:${i}`)}
@@ -3199,21 +3206,21 @@ export default function EventDetailScreen() {
                           <Ionicons
                             name={ncsaSelected.has(`coach:${i}`) ? 'checkmark-circle' : 'ellipse-outline'}
                             size={18}
-                            color={ncsaSelected.has(`coach:${i}`) ? primaryColor : PULSE_COLORS.ui.muted}
+                            color={ncsaSelected.has(`coach:${i}`) ? primaryColor : colors.muted}
                             style={{ marginTop: 1 }}
                           />
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.4, marginBottom: 3 }}>
                               {c.role.toUpperCase()}
                             </Text>
-                            <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
+                            <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 6 }}>
                               {c.first} {c.last}
                             </Text>
                           </View>
                         </TouchableOpacity>
                         {c.cell && (
                           <View style={styles.ncsaPhoneRow}>
-                            <Ionicons name="phone-portrait-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                            <Ionicons name="phone-portrait-outline" size={14} color={colors.muted} />
                             <Text style={styles.ncsaPhoneText}>{c.cell}</Text>
                             <View style={styles.ncsaPhoneBtnGroup}>
                               <TouchableOpacity style={styles.ncsaPhoneBtn} onPress={() => Linking.openURL(`sms:${c.cell}`)}>
@@ -3229,7 +3236,7 @@ export default function EventDetailScreen() {
                         )}
                         {c.homephone && (
                           <View style={styles.ncsaPhoneRow}>
-                            <Ionicons name="home-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                            <Ionicons name="home-outline" size={14} color={colors.muted} />
                             <Text style={styles.ncsaPhoneText}>{c.homephone}</Text>
                             <View style={styles.ncsaPhoneBtnGroup}>
                               <TouchableOpacity style={styles.ncsaPhoneBtn} onPress={() => Linking.openURL(`tel:${c.homephone}`)}>
@@ -3264,13 +3271,13 @@ export default function EventDetailScreen() {
                       <View style={styles.ncsaCopyRow}>
                         {anyEmail && (
                           <TouchableOpacity style={[styles.ncsaCopyBtn, !selectedEmails && { opacity: 0.4 }]} onPress={copyNcsaEmails} disabled={!selectedEmails}>
-                            <Ionicons name={ncsaCopyFeedback === 'emails' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
+                            <Ionicons name={ncsaCopyFeedback === 'emails' ? 'checkmark' : 'copy-outline'} size={13} color={colors.textSecondary} />
                             <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'emails' ? 'Copied' : `Copy ${selectedEmails} email${selectedEmails === 1 ? '' : 's'}`}</Text>
                           </TouchableOpacity>
                         )}
                         {anyCell && (
                           <TouchableOpacity style={[styles.ncsaCopyBtn, !selectedCells && { opacity: 0.4 }]} onPress={copyNcsaCells} disabled={!selectedCells}>
-                            <Ionicons name={ncsaCopyFeedback === 'cells' ? 'checkmark' : 'copy-outline'} size={13} color={PULSE_COLORS.ui.textSecondary} />
+                            <Ionicons name={ncsaCopyFeedback === 'cells' ? 'checkmark' : 'copy-outline'} size={13} color={colors.textSecondary} />
                             <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'cells' ? 'Copied' : `Copy ${selectedCells} number${selectedCells === 1 ? '' : 's'}`}</Text>
                           </TouchableOpacity>
                         )}
@@ -3289,7 +3296,7 @@ export default function EventDetailScreen() {
                     <Text style={styles.ncsaSectionLabel}>CLUB LEADERSHIP</Text>
                     <View style={{ gap: 14 }}>
                       {ncsaOfficialsResult.map((o, i) => (
-                        <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border, paddingTop: 14 } : undefined}>
+                        <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 14 } : undefined}>
                           <TouchableOpacity
                             style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}
                             onPress={() => toggleNcsaSelected(`official:${i}`)}
@@ -3298,21 +3305,21 @@ export default function EventDetailScreen() {
                             <Ionicons
                               name={ncsaSelected.has(`official:${i}`) ? 'checkmark-circle' : 'ellipse-outline'}
                               size={18}
-                              color={ncsaSelected.has(`official:${i}`) ? primaryColor : PULSE_COLORS.ui.muted}
+                              color={ncsaSelected.has(`official:${i}`) ? primaryColor : colors.muted}
                               style={{ marginTop: 1 }}
                             />
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.4, marginBottom: 3 }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.4, marginBottom: 3 }}>
                                 {o.role.toUpperCase()}
                               </Text>
-                              <Text style={{ fontSize: 15, fontWeight: '800', color: PULSE_COLORS.ui.text, marginBottom: 6 }}>
+                              <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 6 }}>
                                 {o.name}
                               </Text>
                             </View>
                           </TouchableOpacity>
                           {(o.cell ?? o.home) && (
                             <View style={styles.ncsaPhoneRow}>
-                              <Ionicons name={o.cell ? 'phone-portrait-outline' : 'home-outline'} size={14} color={PULSE_COLORS.ui.muted} />
+                              <Ionicons name={o.cell ? 'phone-portrait-outline' : 'home-outline'} size={14} color={colors.muted} />
                               <Text style={styles.ncsaPhoneText}>{o.cell ?? o.home}</Text>
                               <View style={styles.ncsaPhoneBtnGroup}>
                                 {o.cell && (
@@ -3342,7 +3349,7 @@ export default function EventDetailScreen() {
                 </ScrollView>
               </>
             ) : (
-              <Text style={{ fontSize: 13.5, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center' }}>No contact info found.</Text>
+              <Text style={{ fontSize: 13.5, color: colors.textSecondary, textAlign: 'center' }}>No contact info found.</Text>
             )}
 
             <TouchableOpacity
@@ -3406,23 +3413,24 @@ export default function EventDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: PULSE_COLORS.ui.background },
-  errorText: { color: PULSE_COLORS.ui.textSecondary, fontSize: 16 },
+function getStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+  errorText: { color: colors.textSecondary, fontSize: 16 },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 60, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
 
   mainTabBar: {
     flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.background,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+    backgroundColor: colors.background,
   },
   mainTab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -3430,14 +3438,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   mainTabActive: { borderBottomColor: PULSE_COLORS.brand.green },
-  mainTabText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  mainTabText: { fontSize: 14, fontWeight: '600', color: colors.muted },
   mainTabTextActive: { color: PULSE_COLORS.brand.green },
   mainTabBadge: {
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10,
   },
   mainTabBadgeActive: { backgroundColor: 'rgba(34,197,94,0.15)' },
-  mainTabBadgeText: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  mainTabBadgeText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
   mainTabBadgeTextActive: { color: PULSE_COLORS.brand.green },
 
   scroll: { padding: 20 },
@@ -3455,12 +3463,12 @@ const styles = StyleSheet.create({
   },
   typeText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
 
-  title: { fontSize: 26, fontWeight: '800', color: PULSE_COLORS.ui.text, lineHeight: 32, marginBottom: 18 },
+  title: { fontSize: 26, fontWeight: '800', color: colors.text, lineHeight: 32, marginBottom: 18 },
 
   // Meta card
   metaCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 16, overflow: 'hidden', marginBottom: 24,
   },
   metaRow: {
@@ -3469,13 +3477,13 @@ const styles = StyleSheet.create({
   },
   metaIconWrap: { width: 22, alignItems: 'center', paddingTop: 1 },
   metaTextBlock: { gap: 3 },
-  metaPrimary: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  metaSecondary: { fontSize: 13, color: PULSE_COLORS.ui.muted },
+  metaPrimary: { fontSize: 15, fontWeight: '600', color: colors.text },
+  metaSecondary: { fontSize: 13, color: colors.muted },
   metaLabel: {
-    fontSize: 10, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 10, fontWeight: '700', color: colors.muted,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 1,
   },
-  metaDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginHorizontal: 16 },
+  metaDivider: { height: 1, backgroundColor: colors.border, marginHorizontal: 16 },
 
   weatherPill: {
     borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
@@ -3490,11 +3498,11 @@ const styles = StyleSheet.create({
   },
   weatherPanelEmoji: { fontSize: 34 },
   weatherPanelCenter: { alignItems: 'flex-end', marginRight: 4 },
-  weatherPanelTemp: { fontSize: 28, fontWeight: '800', color: PULSE_COLORS.ui.text, lineHeight: 30 },
-  weatherPanelTempUnit: { fontSize: 16, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-  weatherPanelTempAlt: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  weatherPanelTemp: { fontSize: 28, fontWeight: '800', color: colors.text, lineHeight: 30 },
+  weatherPanelTempUnit: { fontSize: 16, fontWeight: '600', color: colors.textSecondary },
+  weatherPanelTempAlt: { fontSize: 12, color: colors.muted, fontWeight: '500' },
   weatherPanelRight: { flex: 1, gap: 6 },
-  weatherPanelCond: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  weatherPanelCond: { fontSize: 15, fontWeight: '700', color: colors.text },
   weatherPanelStats: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   weatherStatPill: {
     backgroundColor: 'rgba(59,130,246,0.1)', borderRadius: 8,
@@ -3502,17 +3510,17 @@ const styles = StyleSheet.create({
   },
   weatherStatPillText: { fontSize: 12, fontWeight: '600', color: '#60A5FA' },
   weatherDriveDivider: {
-    height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 12,
+    height: 1, backgroundColor: colors.border, marginVertical: 12,
   },
   driveBlock: { gap: 8 },
   driveRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   driveIconWrap: {
     width: 30, height: 30, borderRadius: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
-  driveText: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  driveLabel: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  driveText: { fontSize: 15, fontWeight: '700', color: colors.text },
+  driveLabel: { fontSize: 13, color: colors.muted, fontWeight: '500' },
   leaveByRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginLeft: 40 },
   leaveByText: { fontSize: 13, fontWeight: '800', color: '#F59E0B' },
 
@@ -3525,40 +3533,40 @@ const styles = StyleSheet.create({
   uniformChipText: { fontSize: 13, fontWeight: '700' },
   kitSwatch: { width: 10, height: 10, borderRadius: 3, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
 
-  divider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 20 },
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: 20 },
 
   section: { marginBottom: 24 },
   sectionTitle: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '700', color: colors.muted,
     letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12,
   },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  deadlineLabel: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  deadlineLabel: { fontSize: 12, fontWeight: '600', color: colors.muted },
   deadlineLabelClosed: { color: PULSE_COLORS.status.error },
 
   notesBox: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 12, padding: 14,
   },
   coachNotesBox: { borderColor: 'rgba(156,163,175,0.25)', backgroundColor: 'rgba(156,163,175,0.05)' },
   coachNotesHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
-  coachOnlyTag: { fontSize: 11, color: PULSE_COLORS.ui.muted, fontWeight: '600', fontStyle: 'italic' },
-  notesText: { fontSize: 14, color: PULSE_COLORS.ui.text, lineHeight: 21 },
+  coachOnlyTag: { fontSize: 11, color: colors.muted, fontWeight: '600', fontStyle: 'italic' },
+  notesText: { fontSize: 14, color: colors.text, lineHeight: 21 },
 
   recordingBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 12, padding: 14,
   },
   recordingIconWrap: {
     width: 38, height: 38, borderRadius: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
   recordingLabel: { fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  recordingUrl: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  recordingUrl: { fontSize: 12, color: colors.muted },
 
   statusChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -3571,44 +3579,44 @@ const styles = StyleSheet.create({
   rsvpInlineBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   rsvpInlineBtnGoing: { backgroundColor: PULSE_COLORS.rsvp.attending, borderColor: PULSE_COLORS.rsvp.attending },
   rsvpInlineBtnNotGoing: { backgroundColor: PULSE_COLORS.rsvp.not_attending, borderColor: PULSE_COLORS.rsvp.not_attending },
-  rsvpInlineBtnText: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  rsvpInlineBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
 
-  noPlayerText: { color: PULSE_COLORS.ui.muted, fontSize: 14 },
+  noPlayerText: { color: colors.muted, fontSize: 14 },
 
   // Attendance summary
   progressWrap: { marginBottom: 14 },
   progressTrack: {
-    height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, overflow: 'hidden', marginBottom: 6,
+    height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden', marginBottom: 6,
   },
   progressFill: { height: '100%', backgroundColor: PULSE_COLORS.brand.green, borderRadius: 2 },
-  progressLabel: { fontSize: 12, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  progressLabel: { fontSize: 12, color: colors.muted, fontWeight: '500' },
 
   summaryRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   summaryPill: {
-    flex: 1, backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    flex: 1, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 12, paddingVertical: 14, alignItems: 'center',
   },
   summaryNum: { fontSize: 24, fontWeight: '800' },
-  summaryLabel: { fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 3 },
+  summaryLabel: { fontSize: 11, color: colors.muted, marginTop: 3 },
   summaryGuestNote: { fontSize: 9, color: '#f97316', fontWeight: '700', marginTop: 3 },
 
   attendanceFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
   viewBreakdownBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewBreakdownText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.brand.green },
-  nudgeQuickBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: PULSE_COLORS.ui.surface, borderWidth: 1, borderColor: PULSE_COLORS.ui.border },
-  nudgeQuickBtnText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+  nudgeQuickBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  nudgeQuickBtnText: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },
 
   // Actions
   actionBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 12, padding: 14,
   },
   actionBtnBorderTop: { marginTop: 8 },
@@ -3617,7 +3625,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34,197,94,0.1)',
     alignItems: 'center', justifyContent: 'center',
   },
-  actionBtnText: { flex: 1, fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
+  actionBtnText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.text },
 
   deleteBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -3630,17 +3638,17 @@ const styles = StyleSheet.create({
   // Availability tab
   availHeader: {
     paddingHorizontal: 20, paddingTop: 18, paddingBottom: 16,
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   availStats: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   availStat: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, paddingHorizontal: 4 },
   availStatNum: { fontSize: 30, fontWeight: '800' },
-  availStatLabel: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  availStatLabel: { fontSize: 12, color: colors.muted },
   availStatGuestNote: { fontSize: 10, color: '#f97316', fontWeight: '700', marginTop: 1 },
-  availStatDivider: { width: 1, height: 36, backgroundColor: PULSE_COLORS.ui.border },
+  availStatDivider: { width: 1, height: 36, backgroundColor: colors.border },
   availProgressTrack: {
-    height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, overflow: 'hidden',
+    height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden',
   },
   availProgressFill: { height: '100%', backgroundColor: PULSE_COLORS.brand.green, borderRadius: 2 },
 
@@ -3656,17 +3664,17 @@ const styles = StyleSheet.create({
   segmentedWrap: { paddingHorizontal: 20, paddingVertical: 14 },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 10, overflow: 'hidden',
   },
   segment: {
     flex: 1, paddingVertical: 9, alignItems: 'center',
-    borderRightWidth: 1, borderRightColor: PULSE_COLORS.ui.border,
+    borderRightWidth: 1, borderRightColor: colors.border,
   },
   segmentLast: { borderRightWidth: 0 },
   segmentActive: { backgroundColor: PULSE_COLORS.brand.green },
-  segmentText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  segmentText: { fontSize: 13, fontWeight: '600', color: colors.muted },
   segmentTextActive: { color: '#000' },
 
   availScroll: { paddingHorizontal: 20, paddingTop: 14 },
@@ -3674,37 +3682,37 @@ const styles = StyleSheet.create({
   emptyAvailability: { alignItems: 'center', paddingVertical: 52, gap: 10 },
   emptyIconWrap: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
-  emptySubtitle: { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', maxWidth: 260, lineHeight: 19 },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
+  emptySubtitle: { fontSize: 13, color: colors.muted, textAlign: 'center', maxWidth: 260, lineHeight: 19 },
 
   playerCard: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, overflow: 'hidden',
   },
-  playerDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border },
+  playerDivider: { height: 1, backgroundColor: colors.border },
   playerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 12, paddingHorizontal: 14,
   },
   jerseyBadge: {
     width: 36, height: 36, borderRadius: 9,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
   jerseyBadgeGoing: { backgroundColor: 'rgba(34,197,94,0.12)' },
   jerseyBadgeNotGoing: { backgroundColor: 'rgba(239,68,68,0.12)' },
-  jerseyNum: { fontSize: 12, fontWeight: '800', color: PULSE_COLORS.ui.muted },
+  jerseyNum: { fontSize: 12, fontWeight: '800', color: colors.muted },
   playerInfo: { flex: 1, gap: 2 },
-  playerName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  playerPosition: { fontSize: 12, color: PULSE_COLORS.ui.muted },
+  playerName: { fontSize: 15, fontWeight: '600', color: colors.text },
+  playerPosition: { fontSize: 12, color: colors.muted },
   overrideBtn: { padding: 2 },
-  overrideHint: { fontSize: 11, color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingHorizontal: 16, paddingBottom: 8 },
+  overrideHint: { fontSize: 11, color: colors.muted, textAlign: 'center', paddingHorizontal: 16, paddingBottom: 8 },
 
   // Match stats
   statsSectionHeader: {
@@ -3717,9 +3725,9 @@ const styles = StyleSheet.create({
   },
   statInfo: { flex: 1, gap: 6 },
   statNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  statMins: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
+  statMins: { fontSize: 14, fontWeight: '700', color: colors.text },
   statBarTrack: {
-    height: 4, backgroundColor: PULSE_COLORS.ui.border, borderRadius: 2, overflow: 'hidden',
+    height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden',
   },
   statBarFill: { height: '100%', borderRadius: 2 },
 
@@ -3735,13 +3743,13 @@ const styles = StyleSheet.create({
   // Guest invite banner (shown to the invited person in Details tab)
   guestInviteBanner: {
     marginHorizontal: 16, marginTop: 12, marginBottom: 4,
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1, borderRadius: 14, padding: 14, gap: 12,
   },
   guestInviteBannerTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   guestInviteIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  guestInviteTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  guestInviteSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, lineHeight: 18 },
+  guestInviteTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  guestInviteSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 18 },
   guestInviteActions: { flexDirection: 'row', gap: 10 },
   guestAcceptBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -3750,11 +3758,11 @@ const styles = StyleSheet.create({
   guestAcceptText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   guestDeclineBtn: {
     paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
-  guestDeclineText: { color: PULSE_COLORS.ui.textSecondary, fontWeight: '600', fontSize: 14 },
+  guestDeclineText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
 
   // Post-game reflection banner
   reflectionBanner: {
@@ -3767,22 +3775,22 @@ const styles = StyleSheet.create({
   reflectionBannerDone: {
     marginHorizontal: 16, marginTop: 12, marginBottom: 4,
     flexDirection: 'row', alignItems: 'center', gap: 11,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, padding: 13,
   },
   reflectionEmoji: { fontSize: 22 },
-  reflectionTitle: { fontSize: 13, fontWeight: '800', color: PULSE_COLORS.ui.text },
+  reflectionTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
   reflectionSub: { fontSize: 11.5, color: '#A7F3C5', marginTop: 1 },
-  reflectionDoneTitle: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
-  reflectionDoneSub: { fontSize: 11.5, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  reflectionDoneTitle: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  reflectionDoneSub: { fontSize: 11.5, color: colors.muted, marginTop: 1 },
 
   // Coach shoutout banner
   shoutoutBanner: {
     marginHorizontal: 16, marginTop: 12, marginBottom: 16,
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 14, padding: 14,
   },
   shoutoutIconChip: {
@@ -3791,32 +3799,32 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   shoutoutEmoji: { fontSize: 17 },
-  shoutoutTitle: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  shoutoutSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginTop: 2, lineHeight: 18 },
+  shoutoutTitle: { fontSize: 14, fontWeight: '700', color: colors.text },
+  shoutoutSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2, lineHeight: 18 },
 
   // Guests card in Details tab
   guestCardAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   guestCardAddBtnText: { fontSize: 12, fontWeight: '700' },
   guestCardEmpty: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt, borderRadius: 10,
+    borderWidth: 1, borderColor: colors.border,
     padding: 14,
   },
-  guestCardEmptyText: { fontSize: 13, color: PULSE_COLORS.ui.muted, flex: 1, lineHeight: 18 },
+  guestCardEmptyText: { fontSize: 13, color: colors.muted, flex: 1, lineHeight: 18 },
   guestRoleHeader: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    backgroundColor: colors.surfaceAlt,
   },
-  guestRoleLabel: { fontSize: 10, fontWeight: '800', color: PULSE_COLORS.ui.muted, letterSpacing: 1, textTransform: 'uppercase' },
+  guestRoleLabel: { fontSize: 10, fontWeight: '800', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase' },
   guestListHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   guestListLine: { flex: 1, height: 1, backgroundColor: 'rgba(249,115,22,0.25)' },
   guestListLabelWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   guestListLabel: { fontSize: 10, fontWeight: '800', color: '#f97316', letterSpacing: 0.8 },
   guestPlayerCard: { borderLeftWidth: 3, borderLeftColor: '#f97316' },
   addGuestCoachLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  addGuestCoachLinkText: { fontSize: 13, color: PULSE_COLORS.ui.muted, fontWeight: '500' },
+  addGuestCoachLinkText: { fontSize: 13, color: colors.muted, fontWeight: '500' },
   calloutList: { marginTop: 10, gap: 6 },
   calloutRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -3827,8 +3835,8 @@ const styles = StyleSheet.create({
     width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(249,115,22,0.12)',
     alignItems: 'center', justifyContent: 'center',
   },
-  calloutTeam: { fontSize: 13, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  calloutMeta: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 1 },
+  calloutTeam: { fontSize: 13, fontWeight: '700', color: colors.text },
+  calloutMeta: { fontSize: 12, color: colors.muted, marginTop: 1 },
   calloutBadge: {
     backgroundColor: 'rgba(249,115,22,0.12)', borderRadius: 6,
     paddingHorizontal: 7, paddingVertical: 2,
@@ -3841,71 +3849,71 @@ const styles = StyleSheet.create({
   guestSheetKAV: { flex: 1, justifyContent: 'flex-end' },
   guestSheetOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   guestSheetPanel: {
-    backgroundColor: PULSE_COLORS.ui.surface,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     paddingTop: 12, paddingHorizontal: 16, paddingBottom: 32,
     height: '85%',
   },
-  guestSheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: PULSE_COLORS.ui.border, alignSelf: 'center', marginBottom: 14 },
-  guestSheetSub: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 12, lineHeight: 18 },
+  guestSheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 14 },
+  guestSheetSub: { fontSize: 13, color: colors.textSecondary, marginBottom: 12, lineHeight: 18 },
   guestRoleToggleRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
   guestRoleToggleBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
-  guestRoleToggleText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.ui.muted },
+  guestRoleToggleText: { fontSize: 14, fontWeight: '700', color: colors.muted },
   guestInnerTabRow: {
-    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border, marginBottom: 12,
+    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: 12,
   },
   guestInnerTab: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
-  guestInnerTabText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.ui.muted },
+  guestInnerTabText: { fontSize: 13, fontWeight: '600', color: colors.muted },
   guestCalloutHint: {
-    fontSize: 13, color: PULSE_COLORS.ui.textSecondary, lineHeight: 18,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 10,
+    fontSize: 13, color: colors.textSecondary, lineHeight: 18,
+    backgroundColor: colors.surfaceAlt, borderRadius: 10,
     padding: 12, marginBottom: 14,
   },
   requestSectionLabel: {
-    fontSize: 11, fontWeight: '800', color: PULSE_COLORS.ui.muted,
+    fontSize: 11, fontWeight: '800', color: colors.muted,
     letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 10,
   },
   guestTeamHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, paddingTop: 14, paddingBottom: 6 },
   guestTeamLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
-  guestEligBadge: { backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2 },
-  guestEligBadgeText: { fontSize: 9, fontWeight: '700', color: PULSE_COLORS.ui.muted, textTransform: 'none', letterSpacing: 0.2 },
+  guestEligBadge: { backgroundColor: colors.surfaceAlt, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 2 },
+  guestEligBadgeText: { fontSize: 9, fontWeight: '700', color: colors.muted, textTransform: 'none', letterSpacing: 0.2 },
   ageSectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 7,
     paddingVertical: 10, paddingHorizontal: 4,
-    borderTopWidth: 1, borderTopColor: PULSE_COLORS.ui.border,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
-  ageSectionLabel: { fontSize: 13, fontWeight: '800', color: PULSE_COLORS.ui.text },
-  ageSectionCount: { fontSize: 11, color: PULSE_COLORS.ui.muted, flex: 1 },
+  ageSectionLabel: { fontSize: 13, fontWeight: '800', color: colors.text },
+  ageSectionCount: { fontSize: 11, color: colors.muted, flex: 1 },
   guestSearchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 4,
   },
-  guestSearchInput: { flex: 1, fontSize: 15, color: PULSE_COLORS.ui.text },
+  guestSearchInput: { flex: 1, fontSize: 15, color: colors.text },
   guestResultsList: { marginTop: 8 },
   guestResultRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.ui.border,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  guestResultName: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text },
-  guestResultSub: { fontSize: 12, color: PULSE_COLORS.ui.muted, marginTop: 2 },
-  guestNoResults: { fontSize: 13, color: PULSE_COLORS.ui.muted, textAlign: 'center', paddingVertical: 24 },
+  guestResultName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  guestResultSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  guestNoResults: { fontSize: 13, color: colors.muted, textAlign: 'center', paddingVertical: 24 },
 
   // Attendance tab
   attendanceHeader: { padding: 16, paddingBottom: 8 },
-  attendanceHint: { fontSize: 13, color: PULSE_COLORS.ui.textSecondary, marginBottom: 12, lineHeight: 18 },
+  attendanceHint: { fontSize: 13, color: colors.textSecondary, marginBottom: 12, lineHeight: 18 },
   attendanceLegend: { flexDirection: 'row', gap: 16 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary, fontWeight: '600' },
+  legendLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
   attMarkRestBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     marginTop: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1,
@@ -3914,17 +3922,17 @@ const styles = StyleSheet.create({
   attendanceBtns: { flexDirection: 'row', gap: 6 },
   attBtn: {
     width: 30, height: 30, borderRadius: 8,
-    borderWidth: 1.5, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1.5, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
 
   // Score entry modal
   scoreModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   scoreModalCard: {
-    width: '100%', maxWidth: 380, backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 20,
+    width: '100%', maxWidth: 380, backgroundColor: colors.surface,
+    borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 20,
   },
-  scoreModalTitle: { fontSize: 16, fontWeight: '800', color: PULSE_COLORS.ui.text, textAlign: 'center', marginBottom: 18 },
+  scoreModalTitle: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: 18 },
   scoreModalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
   scoreModalTeam: { flex: 1, alignItems: 'center', gap: 6 },
   scoreModalLogo: { width: 32, height: 32, borderRadius: 8 },
@@ -3934,50 +3942,51 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  scoreModalName: { fontSize: 12.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary, maxWidth: 100 },
+  scoreModalName: { fontSize: 12.5, fontWeight: '700', color: colors.textSecondary, maxWidth: 100 },
   scoreModalNum: { fontSize: 34, fontWeight: '900' },
   scoreModalBtns: { flexDirection: 'row', gap: 8, marginTop: 2 },
   scoreModalBtn: {
     width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border, backgroundColor: PULSE_COLORS.ui.surfaceAlt,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt,
   },
-  scoreModalSep: { fontSize: 20, fontWeight: '700', color: PULSE_COLORS.ui.muted, marginTop: 30 },
+  scoreModalSep: { fontSize: 20, fontWeight: '700', color: colors.muted, marginTop: 30 },
   scoreModalActions: { flexDirection: 'row', gap: 10, marginTop: 22 },
   scoreModalCancelBtn: {
     flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1, borderColor: colors.border,
   },
-  scoreModalCancelBtnText: { fontSize: 14.5, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  scoreModalCancelBtnText: { fontSize: 14.5, fontWeight: '700', color: colors.textSecondary },
 
   // Opposing-coach lookup modal — its own card (not scoreModalCard) so a
   // long coach list scrolls internally within a capped height instead of
   // pushing the Close button below the visible screen.
   ncsaModalCard: {
-    width: '100%', maxWidth: 380, maxHeight: '82%', backgroundColor: PULSE_COLORS.ui.surface,
-    borderRadius: 18, borderWidth: 1, borderColor: PULSE_COLORS.ui.border, padding: 20,
+    width: '100%', maxWidth: 380, maxHeight: '82%', backgroundColor: colors.surface,
+    borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 20,
   },
   ncsaResultScroll: { maxHeight: 340 },
   ncsaCopyRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
   ncsaCopyBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
   },
-  ncsaCopyBtnText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.ui.textSecondary },
+  ncsaCopyBtnText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
   ncsaPhoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  ncsaPhoneText: { flex: 1, fontSize: 13.5, color: PULSE_COLORS.ui.text, fontWeight: '600' },
+  ncsaPhoneText: { flex: 1, fontSize: 13.5, color: colors.text, fontWeight: '600' },
   ncsaPhoneBtnGroup: { flexDirection: 'row', gap: 6 },
   ncsaPhoneBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt, borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border,
   },
   ncsaPhoneBtnText: { fontSize: 12, fontWeight: '700' },
-  ncsaSectionDivider: { height: 1, backgroundColor: PULSE_COLORS.ui.border, marginVertical: 16 },
-  ncsaSectionLabel: { fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted, letterSpacing: 0.6, marginBottom: 12 },
+  ncsaSectionDivider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
+  ncsaSectionLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.6, marginBottom: 12 },
   ncsaCloseBtn: {
     marginTop: 16, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
+    borderWidth: 1, borderColor: colors.border,
   },
   scoreModalSaveBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
   scoreModalSaveBtnText: { fontSize: 14.5, fontWeight: '800', color: '#000' },
-});
+  });
+}
