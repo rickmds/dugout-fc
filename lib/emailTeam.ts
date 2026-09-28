@@ -24,6 +24,11 @@ export async function sendTeamEmail(opts: {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token ?? '';
+    // Every send through here is triggered by a real, logged-in coach/admin
+    // action — never automated/cron — so a parent hitting Reply should
+    // reach that person directly, not a generic support inbox with no
+    // context on what they're even asking about.
+    const replyTo = session?.user?.email ?? null;
     const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
     const seen = new Set<string>();
@@ -48,7 +53,7 @@ export async function sendTeamEmail(opts: {
 
     await supabase.functions.invoke('send-team-email', {
       body: {
-        to, cc: [], subject: opts.subject, body: opts.body, reply_to: null,
+        to, cc: [], subject: opts.subject, body: opts.body, reply_to: replyTo,
         from_name: opts.fromName, team_name: opts.teamName, attachments: [],
         club_logo_url: opts.logoUrl, club_name: opts.clubName, primary_color: opts.primaryColor,
       },
