@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Constants from 'expo-constants';
 import {
   ActivityIndicator,
@@ -24,8 +24,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
 import { useActiveTeam } from '../../../hooks/TeamContext';
-import { PULSE_COLORS } from '../../../constants/colors';
+import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import { useTheme } from '../../../hooks/useTheme';
 import GroupedTeamList from '../../../components/ui/GroupedTeamList';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import TeamEditModal from '../../../components/ui/TeamEditModal';
@@ -70,6 +71,8 @@ type LinkedPlayer = {
 // ─── Icon cell helper ─────────────────────────────────────────────────────────
 
 function IconCell({ name, color, bg }: { name: string; color: string; bg: string }) {
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   return (
     <View style={[st.iconCell, { backgroundColor: bg }]}>
       <Ionicons name={name as any} size={16} color={color} />
@@ -91,6 +94,8 @@ function SettingsRow({
   danger?: boolean;
   children?: React.ReactNode;
 }) {
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   const content = (
     <View style={st.row}>
       <IconCell name={icon} color={iconColor} bg={iconBg} />
@@ -98,7 +103,7 @@ function SettingsRow({
       {value ? <Text style={st.rowValue} numberOfLines={1}>{value}</Text> : null}
       {children}
       {onPress && !children ? (
-        <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
+        <Ionicons name="chevron-forward" size={14} color={colors.muted} />
       ) : null}
     </View>
   );
@@ -115,6 +120,9 @@ export default function SettingsScreen() {
   const { profile, club, user, signOut, refreshProfile } = useAuth();
   const { team, allTeams, refetch: refetchTeams } = useActiveTeam();
   const mapApp = useMapApp();
+  const { colors, theme, setTheme } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
+  const cp = useMemo(() => getCp(colors), [colors]);
 
   const [editingName, setEditingName] = useState(false);
   const [name, setName]               = useState(profile?.full_name ?? '');
@@ -728,7 +736,7 @@ export default function SettingsScreen() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: PULSE_COLORS.ui.background }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
     <ClubHeader title="Settings" onBack={() => router.back()} />
     <ScrollView style={st.container} contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
 
@@ -750,12 +758,12 @@ export default function SettingsScreen() {
         <Section label="MY PLAYERS">
           {!playersLoaded ? (
             <View style={[st.row, { justifyContent: 'center' }]}>
-              <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+              <ActivityIndicator size="small" color={colors.muted} />
             </View>
           ) : myPlayers.length === 0 ? (
             <View style={st.emptyPlayers}>
               <View style={st.emptyIcon}>
-                <Ionicons name="people-outline" size={22} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="people-outline" size={22} color={colors.muted} />
               </View>
               <Text style={st.emptyTitle}>No players linked yet</Text>
               <Text style={st.emptySub}>
@@ -860,14 +868,14 @@ export default function SettingsScreen() {
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       style={{ marginRight: 14 }}
                     >
-                      <Ionicons name="pencil-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="pencil-outline" size={16} color={colors.muted} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleSyncCalendar(t.id, t.name)}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       style={{ marginRight: 14 }}
                     >
-                      <Ionicons name="calendar-outline" size={16} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="calendar-outline" size={16} color={colors.muted} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleLeaveTeam(t.id, t.name)}
@@ -912,7 +920,7 @@ export default function SettingsScreen() {
                   ) : logoUrl ? (
                     <Image source={{ uri: logoUrl }} style={st.logoImg} contentFit="contain" />
                   ) : (
-                    <Ionicons name="image-outline" size={28} color={PULSE_COLORS.ui.muted} />
+                    <Ionicons name="image-outline" size={28} color={colors.muted} />
                   )}
                 </TouchableOpacity>
                 {logoUrl ? (
@@ -921,7 +929,7 @@ export default function SettingsScreen() {
                       <Text style={[st.logoHint, { color: primaryColor }]}>Edit crop</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={handleLogoUpload} disabled={logoUploading} activeOpacity={0.7}>
-                      <Text style={[st.logoHint, { color: PULSE_COLORS.ui.muted }]}>Change</Text>
+                      <Text style={[st.logoHint, { color: colors.muted }]}>Change</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -965,7 +973,7 @@ export default function SettingsScreen() {
                   : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
               </TouchableOpacity>
             ) : (
-              <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+              <Ionicons name="pencil-outline" size={14} color={colors.muted} style={{ marginLeft: 8 }} />
             )}
           </View>
 
@@ -985,7 +993,7 @@ export default function SettingsScreen() {
                 autoFocus
                 maxLength={80}
                 placeholder="Where great players are made"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 returnKeyType="done"
                 onSubmitEditing={handleSaveTagline}
               />
@@ -994,7 +1002,7 @@ export default function SettingsScreen() {
                 onPress={() => { setTagline(clubTagline ?? ''); setEditingTagline(true); }}
                 style={{ flex: 1, alignItems: 'flex-end' }}
               >
-                <Text style={[st.rowValue, !clubTagline && { color: PULSE_COLORS.ui.muted, fontStyle: 'italic' }]}>
+                <Text style={[st.rowValue, !clubTagline && { color: colors.muted, fontStyle: 'italic' }]}>
                   {clubTagline || 'Add tagline'}
                 </Text>
               </TouchableOpacity>
@@ -1006,7 +1014,7 @@ export default function SettingsScreen() {
                   : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
               </TouchableOpacity>
             ) : (
-              <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+              <Ionicons name="pencil-outline" size={14} color={colors.muted} style={{ marginLeft: 8 }} />
             )}
           </View>
 
@@ -1017,7 +1025,7 @@ export default function SettingsScreen() {
             <View style={[st.iconCell, { backgroundColor: 'rgba(2,132,199,0.12)' }]}>
               <Ionicons name="color-palette-outline" size={16} color="#0284C7" />
             </View>
-            <Text style={[st.rowValue, { flex: 1, color: PULSE_COLORS.ui.textSecondary, textAlign: 'left' }]}>
+            <Text style={[st.rowValue, { flex: 1, color: colors.textSecondary, textAlign: 'left' }]}>
               {allTeams.length <= 1
                 ? 'Manage colors and kits at pulse-fc.app/dashboard/settings'
                 : 'Manage your logo, colors, and kits at pulse-fc.app/dashboard/settings'}
@@ -1032,24 +1040,24 @@ export default function SettingsScreen() {
         <Section label={`TEAMS (${allTeams.length})`}>
           {allTeams.length === 0 ? (
             <View style={[st.row, { justifyContent: 'center' }]}>
-              <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13 }}>No teams yet</Text>
+              <Text style={{ color: colors.muted, fontSize: 13 }}>No teams yet</Text>
             </View>
           ) : (
             <>
               {allTeams.length > 6 && (
                 <View style={st.teamSearchWrap}>
-                  <Ionicons name="search-outline" size={15} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="search-outline" size={15} color={colors.muted} />
                   <TextInput
                     style={st.teamSearchInput}
                     placeholder="Search teams…"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                     value={teamSearch}
                     onChangeText={setTeamSearch}
                     autoCorrect={false}
                   />
                   {teamSearch.length > 0 && (
                     <TouchableOpacity onPress={() => setTeamSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="close-circle" size={15} color={PULSE_COLORS.ui.muted} />
+                      <Ionicons name="close-circle" size={15} color={colors.muted} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1059,7 +1067,7 @@ export default function SettingsScreen() {
                 if (filtered.length === 0) {
                   return (
                     <View style={[st.row, { justifyContent: 'center' }]}>
-                      <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13 }}>No teams match "{teamSearch}"</Text>
+                      <Text style={{ color: colors.muted, fontSize: 13 }}>No teams match "{teamSearch}"</Text>
                     </View>
                   );
                 }
@@ -1084,7 +1092,7 @@ export default function SettingsScreen() {
                             </Text>
                           </View>
                         )}
-                        <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} />
+                        <Ionicons name="pencil-outline" size={14} color={colors.muted} />
                       </TouchableOpacity>
                     )}
                   />
@@ -1112,7 +1120,7 @@ export default function SettingsScreen() {
               </View>
             )}
           </View>
-          <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
+          <Ionicons name="chevron-forward" size={14} color={colors.muted} />
         </TouchableOpacity>
 
         <View style={st.divider} />
@@ -1145,7 +1153,7 @@ export default function SettingsScreen() {
                 : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
             </TouchableOpacity>
           ) : (
-            <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+            <Ionicons name="pencil-outline" size={14} color={colors.muted} style={{ marginLeft: 8 }} />
           )}
         </View>
 
@@ -1164,7 +1172,7 @@ export default function SettingsScreen() {
               keyboardType="phone-pad"
               returnKeyType="done"
               placeholder="Mobile number"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               onSubmitEditing={handleSavePhone}
             />
           ) : (
@@ -1172,7 +1180,7 @@ export default function SettingsScreen() {
               onPress={() => { setPhone((profile as any)?.phone ?? ''); setEditingPhone(true); }}
               style={{ flex: 1, alignItems: 'flex-end' }}
             >
-              <Text style={[st.rowValue, !((profile as any)?.phone) && { color: PULSE_COLORS.ui.muted }]}>
+              <Text style={[st.rowValue, !((profile as any)?.phone) && { color: colors.muted }]}>
                 {formatPhone((profile as any)?.phone) ?? 'Add number'}
               </Text>
             </TouchableOpacity>
@@ -1184,14 +1192,14 @@ export default function SettingsScreen() {
                 : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
             </TouchableOpacity>
           ) : (
-            <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+            <Ionicons name="pencil-outline" size={14} color={colors.muted} style={{ marginLeft: 8 }} />
           )}
         </View>
 
         <View style={st.divider} />
 
         {/* Share contact with team parents toggle */}
-        <View style={[st.row, { backgroundColor: PULSE_COLORS.ui.surfaceAlt }]}>
+        <View style={[st.row, { backgroundColor: colors.surfaceAlt }]}>
           <IconCell name="people-outline" color="#fff" bg="#8B5CF6" />
           <Text style={[st.rowLabel, { flex: 1 }]}>Share contact with team parents</Text>
           <Switch
@@ -1207,9 +1215,9 @@ export default function SettingsScreen() {
                   }
                 });
             }}
-            trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+            trackColor={{ false: colors.border, true: primaryColor }}
             thumbColor="#fff"
-            ios_backgroundColor={PULSE_COLORS.ui.border}
+            ios_backgroundColor={colors.border}
           />
         </View>
 
@@ -1227,7 +1235,7 @@ export default function SettingsScreen() {
               autoFocus
               returnKeyType="done"
               placeholder="123 Main St, Anytown"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
               autoCapitalize="words"
               onSubmitEditing={handleSaveAddress}
             />
@@ -1236,7 +1244,7 @@ export default function SettingsScreen() {
               onPress={() => { setAddress((profile as any)?.address ?? ''); setEditingAddress(true); }}
               style={{ flex: 1, alignItems: 'flex-end' }}
             >
-              <Text style={[st.rowValue, !((profile as any)?.address) && { color: PULSE_COLORS.ui.muted }]} numberOfLines={1}>
+              <Text style={[st.rowValue, !((profile as any)?.address) && { color: colors.muted }]} numberOfLines={1}>
                 {(profile as any)?.address ?? 'Add address'}
               </Text>
             </TouchableOpacity>
@@ -1248,7 +1256,7 @@ export default function SettingsScreen() {
                 : <Text style={[st.saveText, { color: primaryColor }]}>Save</Text>}
             </TouchableOpacity>
           ) : (
-            <Ionicons name="pencil-outline" size={14} color={PULSE_COLORS.ui.muted} style={{ marginLeft: 8 }} />
+            <Ionicons name="pencil-outline" size={14} color={colors.muted} style={{ marginLeft: 8 }} />
           )}
         </View>
 
@@ -1265,7 +1273,7 @@ export default function SettingsScreen() {
         <Section label="MY CERTIFICATIONS">
           {!certsLoaded ? (
             <View style={[st.row, { justifyContent: 'center' }]}>
-              <ActivityIndicator size="small" color={PULSE_COLORS.ui.muted} />
+              <ActivityIndicator size="small" color={colors.muted} />
             </View>
           ) : (
             <>
@@ -1302,7 +1310,7 @@ export default function SettingsScreen() {
                       <View style={{ flex: 1 }}>
                         <Text style={st.rowLabel}>{label}</Text>
                         {cert.expiry_date && (
-                          <Text style={{ fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 1 }}>
+                          <Text style={{ fontSize: 11, color: colors.muted, marginTop: 1 }}>
                             Expires {new Date(cert.expiry_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </Text>
                         )}
@@ -1327,7 +1335,7 @@ export default function SettingsScreen() {
               <TouchableOpacity style={st.row} onPress={openAddCert} activeOpacity={0.65}>
                 <IconCell name="add-circle-outline" color="#fff" bg="#22C55E" />
                 <Text style={[st.rowLabel, { color: '#22C55E', fontWeight: '600' }]}>Add certification</Text>
-                <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
+                <Ionicons name="chevron-forward" size={14} color={colors.muted} />
               </TouchableOpacity>
             </>
           )}
@@ -1342,7 +1350,7 @@ export default function SettingsScreen() {
               name={authProvider === 'apple' ? 'logo-apple' : 'logo-google'}
               color="#fff" bg="#6B7280"
             />
-            <Text style={[st.rowLabel, { flex: 1, color: PULSE_COLORS.ui.textSecondary }]}>
+            <Text style={[st.rowLabel, { flex: 1, color: colors.textSecondary }]}>
               Password managed by {providerLabel}
             </Text>
           </View>
@@ -1358,13 +1366,13 @@ export default function SettingsScreen() {
             <TextInput
               style={st.pwInput} value={newPw} onChangeText={setNewPw}
               secureTextEntry placeholder="At least 8 characters"
-              placeholderTextColor={PULSE_COLORS.ui.muted} autoFocus
+              placeholderTextColor={colors.muted} autoFocus
             />
             <Text style={[st.pwLabel, { marginTop: 12 }]}>Confirm password</Text>
             <TextInput
               style={st.pwInput} value={confirmPw} onChangeText={setConfirmPw}
               secureTextEntry placeholder="Re-enter password"
-              placeholderTextColor={PULSE_COLORS.ui.muted}
+              placeholderTextColor={colors.muted}
             />
             <View style={st.pwBtns}>
               <TouchableOpacity
@@ -1387,6 +1395,30 @@ export default function SettingsScreen() {
         )}
       </Section>
 
+      {/* ── Appearance ── */}
+      <Section label="APPEARANCE">
+        <View style={st.row}>
+          <IconCell name="contrast-outline" color="#fff" bg="#6B7280" />
+          <Text style={[st.rowLabel, { flex: 1 }]}>Theme</Text>
+          <View style={st.themeToggle}>
+            <TouchableOpacity
+              style={[st.themeToggleBtn, theme === 'dark' && { backgroundColor: primaryColor }]}
+              onPress={() => setTheme('dark')}
+              activeOpacity={0.7}
+            >
+              <Text style={[st.themeToggleBtnText, theme === 'dark' && { color: '#fff' }]}>Dark</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[st.themeToggleBtn, theme === 'light' && { backgroundColor: primaryColor }]}
+              onPress={() => setTheme('light')}
+              activeOpacity={0.7}
+            >
+              <Text style={[st.themeToggleBtnText, theme === 'light' && { color: '#fff' }]}>Light</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Section>
+
       {/* ── Notifications ── */}
       <Section label="NOTIFICATIONS">
         {/* Dropdown trigger */}
@@ -1396,7 +1428,7 @@ export default function SettingsScreen() {
           <Ionicons
             name={notifOpen ? 'chevron-up' : 'chevron-down'}
             size={14}
-            color={PULSE_COLORS.ui.muted}
+            color={colors.muted}
           />
         </TouchableOpacity>
 
@@ -1414,7 +1446,7 @@ export default function SettingsScreen() {
                     <Text style={st.pushTitle}>Notifications are off</Text>
                     <Text style={st.pushSub}>Tap to enable in iPhone Settings</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />
+                  <Ionicons name="chevron-forward" size={14} color={colors.muted} />
                 </TouchableOpacity>
               </>
             ) : (
@@ -1426,16 +1458,16 @@ export default function SettingsScreen() {
               ] as { key: keyof NotifPrefs; label: string; icon: string; bg: string }[]).map(({ key, label, icon, bg }) => (
                 <View key={key}>
                   <View style={st.divider} />
-                  <View style={[st.row, { backgroundColor: PULSE_COLORS.ui.surfaceAlt }]}>
+                  <View style={[st.row, { backgroundColor: colors.surfaceAlt }]}>
                     <IconCell name={icon} color="#fff" bg={bg} />
                     <Text style={[st.rowLabel, { flex: 1 }]}>{label}</Text>
                     <Switch
                       value={notifPrefs[key]}
                       onValueChange={() => toggleNotif(key)}
                       disabled={savingNotif}
-                      trackColor={{ false: PULSE_COLORS.ui.border, true: primaryColor }}
+                      trackColor={{ false: colors.border, true: primaryColor }}
                       thumbColor="#fff"
-                      ios_backgroundColor={PULSE_COLORS.ui.border}
+                      ios_backgroundColor={colors.border}
                     />
                   </View>
                 </View>
@@ -1495,7 +1527,7 @@ export default function SettingsScreen() {
           <Text style={[st.rowLabel, { flex: 1, color: PULSE_COLORS.status.error }]}>Delete account</Text>
           {deletingAccount
             ? <ActivityIndicator size="small" color={PULSE_COLORS.status.error} />
-            : <Ionicons name="chevron-forward" size={14} color={PULSE_COLORS.ui.muted} />}
+            : <Ionicons name="chevron-forward" size={14} color={colors.muted} />}
         </TouchableOpacity>
       </Section>
 
@@ -1508,7 +1540,7 @@ export default function SettingsScreen() {
         <View style={cp.overlay}>
           <View style={[cp.sheet, { maxHeight: '75%' }]}>
             <Text style={cp.title}>View As</Text>
-            <Text style={[st.rowLabel, { color: PULSE_COLORS.ui.muted, marginBottom: 16 }]}>
+            <Text style={[st.rowLabel, { color: colors.muted, marginBottom: 16 }]}>
               Pick a parent to sign in as. Tap Exit on the banner to switch back.
             </Text>
             {viewAsLoading ? (
@@ -1525,13 +1557,13 @@ export default function SettingsScreen() {
                     activeOpacity={0.65}
                   >
                     <Text style={[st.rowLabel, { flex: 1 }]}>{p.full_name}</Text>
-                    <Text style={{ color: PULSE_COLORS.ui.muted, fontSize: 13 }}>{p.team_name}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 13 }}>{p.team_name}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             )}
             <TouchableOpacity style={[st.row, { marginTop: 12 }]} onPress={() => setShowViewAsPicker(false)} activeOpacity={0.65}>
-              <Text style={[st.rowLabel, { flex: 1, textAlign: 'center', color: PULSE_COLORS.ui.muted }]}>Cancel</Text>
+              <Text style={[st.rowLabel, { flex: 1, textAlign: 'center', color: colors.muted }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1560,12 +1592,12 @@ export default function SettingsScreen() {
                     onPress={() => setCertType(key)}
                     style={{
                       paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-                      backgroundColor: certType === key ? primaryColor : PULSE_COLORS.ui.background,
+                      backgroundColor: certType === key ? primaryColor : colors.background,
                       borderWidth: 1.5,
-                      borderColor: certType === key ? primaryColor : PULSE_COLORS.ui.border,
+                      borderColor: certType === key ? primaryColor : colors.border,
                     }}
                   >
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: certType === key ? '#fff' : PULSE_COLORS.ui.text }}>{label}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: certType === key ? '#fff' : colors.text }}>{label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1581,11 +1613,11 @@ export default function SettingsScreen() {
                         onPress={() => setCertLevel(level)}
                         style={{
                           paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
-                          backgroundColor: certLevel === level ? primaryColor : PULSE_COLORS.ui.background,
-                          borderWidth: 1.5, borderColor: certLevel === level ? primaryColor : PULSE_COLORS.ui.border,
+                          backgroundColor: certLevel === level ? primaryColor : colors.background,
+                          borderWidth: 1.5, borderColor: certLevel === level ? primaryColor : colors.border,
                         }}
                       >
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: certLevel === level ? '#fff' : PULSE_COLORS.ui.text }}>{level}</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: certLevel === level ? '#fff' : colors.text }}>{level}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1601,7 +1633,7 @@ export default function SettingsScreen() {
                     value={certCustomLabel}
                     onChangeText={setCertCustomLabel}
                     placeholder="e.g. State coaching certificate"
-                    placeholderTextColor={PULSE_COLORS.ui.muted}
+                    placeholderTextColor={colors.muted}
                   />
                 </>
               )}
@@ -1613,7 +1645,7 @@ export default function SettingsScreen() {
                 value={certExpiry}
                 onChangeText={setCertExpiry}
                 placeholder="2027-06-30"
-                placeholderTextColor={PULSE_COLORS.ui.muted}
+                placeholderTextColor={colors.muted}
                 keyboardType="numbers-and-punctuation"
                 maxLength={10}
               />
@@ -1625,17 +1657,17 @@ export default function SettingsScreen() {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 10,
                   padding: 14, borderRadius: 10, marginBottom: 20,
-                  backgroundColor: PULSE_COLORS.ui.background,
-                  borderWidth: 1.5, borderColor: certDocUri ? primaryColor : PULSE_COLORS.ui.border,
+                  backgroundColor: colors.background,
+                  borderWidth: 1.5, borderColor: certDocUri ? primaryColor : colors.border,
                   borderStyle: certDocUri ? 'solid' : 'dashed',
                 }}
               >
-                <Ionicons name={certDocUri ? 'document-text' : 'cloud-upload-outline'} size={20} color={certDocUri ? primaryColor : PULSE_COLORS.ui.muted} />
+                <Ionicons name={certDocUri ? 'document-text' : 'cloud-upload-outline'} size={20} color={certDocUri ? primaryColor : colors.muted} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: certDocUri ? primaryColor : PULSE_COLORS.ui.muted }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: certDocUri ? primaryColor : colors.muted }}>
                     {certDocUri ? certDocName : 'Upload photo or PDF'}
                   </Text>
-                  {!certDocUri && <Text style={{ fontSize: 11, color: PULSE_COLORS.ui.muted, marginTop: 2 }}>Max 10MB · JPG, PNG, PDF</Text>}
+                  {!certDocUri && <Text style={{ fontSize: 11, color: colors.muted, marginTop: 2 }}>Max 10MB · JPG, PNG, PDF</Text>}
                 </View>
                 {certDocUri && <Ionicons name="checkmark-circle" size={18} color={primaryColor} />}
               </TouchableOpacity>
@@ -1673,8 +1705,8 @@ export default function SettingsScreen() {
                 <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(34,197,94,0.15)', alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name="checkmark-circle" size={32} color="#22C55E" />
                 </View>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: PULSE_COLORS.ui.text, textAlign: 'center' }}>Confirmation sent</Text>
-                <Text style={{ fontSize: 13, color: PULSE_COLORS.ui.textSecondary, textAlign: 'center', lineHeight: 19 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, textAlign: 'center' }}>Confirmation sent</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19 }}>
                   Click the link sent to your new email address to complete the change. Your email stays the same until you confirm.
                 </Text>
                 <TouchableOpacity
@@ -1700,7 +1732,7 @@ export default function SettingsScreen() {
                   onChangeText={setEmailPw}
                   secureTextEntry
                   placeholder="Your current password"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   autoCapitalize="none"
                 />
 
@@ -1710,7 +1742,7 @@ export default function SettingsScreen() {
                   value={newEmailVal}
                   onChangeText={setNewEmailVal}
                   placeholder="new@email.com"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -1722,7 +1754,7 @@ export default function SettingsScreen() {
                   value={confirmEmailVal}
                   onChangeText={setConfirmEmailVal}
                   placeholder="Repeat new email"
-                  placeholderTextColor={PULSE_COLORS.ui.muted}
+                  placeholderTextColor={colors.muted}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -1778,34 +1810,38 @@ export default function SettingsScreen() {
 
 // Shared bottom-sheet modal chrome — used by the certification, password,
 // and email-change modals below.
-const cp = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 48,
-  },
-  handle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: PULSE_COLORS.ui.border,
-    alignSelf: 'center', marginBottom: 20,
-  },
-  title: { fontSize: 18, fontWeight: '800', color: PULSE_COLORS.ui.text, letterSpacing: -0.4, marginBottom: 16 },
-  btns: { flexDirection: 'row', gap: 12 },
-  cancelBtn: {
-    flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  cancelText: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-  applyBtn: {
-    flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-  },
-  applyText: { fontSize: 15, fontWeight: '800', color: '#000' },
-});
+function getCp(colors: ThemeColors) {
+  return StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+    sheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      padding: 24, paddingBottom: 48,
+    },
+    handle: {
+      width: 40, height: 4, borderRadius: 2,
+      backgroundColor: colors.border,
+      alignSelf: 'center', marginBottom: 20,
+    },
+    title: { fontSize: 18, fontWeight: '800', color: colors.text, letterSpacing: -0.4, marginBottom: 16 },
+    btns: { flexDirection: 'row', gap: 12 },
+    cancelBtn: {
+      flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+      borderWidth: 1, borderColor: colors.border,
+    },
+    cancelText: { fontSize: 15, fontWeight: '600', color: colors.textSecondary },
+    applyBtn: {
+      flex: 1, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    },
+    applyText: { fontSize: 15, fontWeight: '800', color: '#000' },
+  });
+}
 
 // ─── Section wrapper ──────────────────────────────────────────────────────────
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  const { colors } = useTheme();
+  const st = useMemo(() => getSt(colors), [colors]);
   return (
     <View style={st.section}>
       <Text style={st.sectionLabel}>{label}</Text>
@@ -1816,186 +1852,194 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
-  container: { flex: 1, backgroundColor: PULSE_COLORS.ui.background },
-  content: { paddingBottom: 60 },
+function getSt(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    content: { paddingBottom: 60 },
 
-  // Header
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 60, paddingBottom: 8,
-  },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 17, fontWeight: '700', color: PULSE_COLORS.ui.text, letterSpacing: -0.3 },
+    // Header
+    header: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 20, paddingTop: 60, paddingBottom: 8,
+    },
+    backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    title: { fontSize: 17, fontWeight: '700', color: colors.text, letterSpacing: -0.3 },
 
-  // Identity block
-  identityBlock: { alignItems: 'center', paddingVertical: 24, paddingHorizontal: 20, gap: 6 },
-  avatarFallback: {
-    width: 76, height: 76, borderRadius: 38,
-    backgroundColor: PULSE_COLORS.brand.green,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarThumb: { width: 32, height: 32, borderRadius: 16 },
-  avatarInitials: { fontSize: 26, fontWeight: '800', color: '#000' },
-  identityName: { fontSize: 18, fontWeight: '700', color: PULSE_COLORS.ui.text, letterSpacing: -0.4 },
-  rolePill: {
-    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20,
-    backgroundColor: 'rgba(34,197,94,0.12)',
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
-  },
-  rolePillText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.brand.green },
-  // Section
-  section: { marginBottom: 4 },
-  sectionLabel: {
-    fontSize: 11, fontWeight: '700', color: PULSE_COLORS.ui.muted,
-    letterSpacing: 0.8, marginHorizontal: 20, marginBottom: 6, marginTop: 20,
-  },
-  card: {
-    marginHorizontal: 16, borderRadius: 16,
-    backgroundColor: PULSE_COLORS.ui.surface,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    overflow: 'hidden',
-  },
+    // Identity block
+    identityBlock: { alignItems: 'center', paddingVertical: 24, paddingHorizontal: 20, gap: 6 },
+    avatarFallback: {
+      width: 76, height: 76, borderRadius: 38,
+      backgroundColor: PULSE_COLORS.brand.green,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    avatarThumb: { width: 32, height: 32, borderRadius: 16 },
+    avatarInitials: { fontSize: 26, fontWeight: '800', color: '#000' },
+    identityName: { fontSize: 18, fontWeight: '700', color: colors.text, letterSpacing: -0.4 },
+    rolePill: {
+      paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20,
+      backgroundColor: 'rgba(34,197,94,0.12)',
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
+    },
+    rolePillText: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.brand.green },
+    // Section
+    section: { marginBottom: 4 },
+    sectionLabel: {
+      fontSize: 11, fontWeight: '700', color: colors.muted,
+      letterSpacing: 0.8, marginHorizontal: 20, marginBottom: 6, marginTop: 20,
+    },
+    card: {
+      marginHorizontal: 16, borderRadius: 16,
+      backgroundColor: colors.surface,
+      borderWidth: 1, borderColor: colors.border,
+      overflow: 'hidden',
+    },
 
-  // Row
-  row: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 12, gap: 12,
-    minHeight: 52,
-  },
-  rowLabel: { fontSize: 15, color: PULSE_COLORS.ui.text, fontWeight: '500' },
-  rowValue: {
-    flex: 1, fontSize: 14, color: PULSE_COLORS.ui.textSecondary,
-    textAlign: 'right',
-  },
-  nameInput: {
-    flex: 1, fontSize: 14, color: PULSE_COLORS.ui.text, textAlign: 'right',
-    borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.brand.green,
-    paddingBottom: 2,
-  },
-  saveText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.brand.green },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: PULSE_COLORS.ui.border, marginLeft: 58 },
+    // Row
+    row: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 14, paddingVertical: 12, gap: 12,
+      minHeight: 52,
+    },
+    rowLabel: { fontSize: 15, color: colors.text, fontWeight: '500' },
+    rowValue: {
+      flex: 1, fontSize: 14, color: colors.textSecondary,
+      textAlign: 'right',
+    },
+    themeToggle: {
+      flexDirection: 'row', backgroundColor: colors.surfaceAlt,
+      borderRadius: 9, padding: 2, gap: 2,
+    },
+    themeToggleBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 7 },
+    themeToggleBtnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+    nameInput: {
+      flex: 1, fontSize: 14, color: colors.text, textAlign: 'right',
+      borderBottomWidth: 1, borderBottomColor: PULSE_COLORS.brand.green,
+      paddingBottom: 2,
+    },
+    saveText: { fontSize: 14, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 58 },
 
-  teamSearchWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: 16, marginTop: 10, marginBottom: 6,
-    backgroundColor: PULSE_COLORS.ui.background, borderRadius: 10,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    paddingHorizontal: 12, paddingVertical: 8,
-  },
-  teamSearchInput: { flex: 1, fontSize: 14, color: PULSE_COLORS.ui.text },
-  teamMetaPill: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-    backgroundColor: PULSE_COLORS.ui.background,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    maxWidth: 130,
-  },
-  teamMetaPillText: { fontSize: 11, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
+    teamSearchWrap: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      marginHorizontal: 16, marginTop: 10, marginBottom: 6,
+      backgroundColor: colors.background, borderRadius: 10,
+      borderWidth: 1, borderColor: colors.border,
+      paddingHorizontal: 12, paddingVertical: 8,
+    },
+    teamSearchInput: { flex: 1, fontSize: 14, color: colors.text },
+    teamMetaPill: {
+      paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+      backgroundColor: colors.background,
+      borderWidth: 1, borderColor: colors.border,
+      maxWidth: 130,
+    },
+    teamMetaPillText: { fontSize: 11, fontWeight: '600', color: colors.textSecondary },
 
-  // Icon cell
-  iconCell: {
-    width: 32, height: 32, borderRadius: 8,
-    alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
-  },
+    // Icon cell
+    iconCell: {
+      width: 32, height: 32, borderRadius: 8,
+      alignItems: 'center', justifyContent: 'center',
+      flexShrink: 0,
+    },
 
-  // Password form
-  pwForm: { padding: 16 },
-  pwLabel: { fontSize: 12, fontWeight: '600', color: PULSE_COLORS.ui.muted, marginBottom: 6, letterSpacing: 0.3 },
-  pwInput: {
-    height: 44, paddingHorizontal: 14, borderRadius: 10,
-    backgroundColor: PULSE_COLORS.ui.background,
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-    fontSize: 15, color: PULSE_COLORS.ui.text,
-  },
-  pwBtns: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  pwCancel: {
-    flex: 1, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: PULSE_COLORS.ui.border,
-  },
-  pwCancelText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.textSecondary },
-  pwSave: {
-    flex: 1, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: PULSE_COLORS.brand.green,
-  },
-  pwSaveText: { fontSize: 14, fontWeight: '800', color: '#000' },
+    // Password form
+    pwForm: { padding: 16 },
+    pwLabel: { fontSize: 12, fontWeight: '600', color: colors.muted, marginBottom: 6, letterSpacing: 0.3 },
+    pwInput: {
+      height: 44, paddingHorizontal: 14, borderRadius: 10,
+      backgroundColor: colors.background,
+      borderWidth: 1, borderColor: colors.border,
+      fontSize: 15, color: colors.text,
+    },
+    pwBtns: { flexDirection: 'row', gap: 10, marginTop: 14 },
+    pwCancel: {
+      flex: 1, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+      borderWidth: 1, borderColor: colors.border,
+    },
+    pwCancelText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+    pwSave: {
+      flex: 1, height: 42, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: PULSE_COLORS.brand.green,
+    },
+    pwSaveText: { fontSize: 14, fontWeight: '800', color: '#000' },
 
-  // Push banner
-  pushBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 14, paddingVertical: 14,
-  },
-  pushTitle: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 1 },
-  pushSub: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
+    // Push banner
+    pushBanner: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      paddingHorizontal: 14, paddingVertical: 14,
+    },
+    pushTitle: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 1 },
+    pushSub: { fontSize: 12, color: colors.textSecondary },
 
-  // My Players
-  emptyPlayers: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 24, gap: 8 },
-  emptyIcon: {
-    width: 52, height: 52, borderRadius: 16,
-    backgroundColor: PULSE_COLORS.ui.surfaceAlt,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 4,
-  },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text },
-  emptySub: {
-    fontSize: 13, color: PULSE_COLORS.ui.textSecondary,
-    textAlign: 'center', lineHeight: 19,
-  },
-  playerRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 12, gap: 12,
-  },
-  playerAvatar: { width: 44, height: 44, borderRadius: 22 },
-  playerAvatarFallback: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: PULSE_COLORS.brand.green,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  playerAvatarText: { fontSize: 15, fontWeight: '800', color: '#000' },
-  playerName: { fontSize: 15, fontWeight: '700', color: PULSE_COLORS.ui.text, marginBottom: 2 },
-  playerMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
-  editChip: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
-    backgroundColor: 'rgba(34,197,94,0.1)',
-    borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
-  },
-  editChipText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.brand.green },
+    // My Players
+    emptyPlayers: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 24, gap: 8 },
+    emptyIcon: {
+      width: 52, height: 52, borderRadius: 16,
+      backgroundColor: colors.surfaceAlt,
+      alignItems: 'center', justifyContent: 'center',
+      marginBottom: 4,
+    },
+    emptyTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+    emptySub: {
+      fontSize: 13, color: colors.textSecondary,
+      textAlign: 'center', lineHeight: 19,
+    },
+    playerRow: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 14, paddingVertical: 12, gap: 12,
+    },
+    playerAvatar: { width: 44, height: 44, borderRadius: 22 },
+    playerAvatarFallback: {
+      width: 44, height: 44, borderRadius: 22,
+      backgroundColor: PULSE_COLORS.brand.green,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    playerAvatarText: { fontSize: 15, fontWeight: '800', color: '#000' },
+    playerName: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 2 },
+    playerMeta: { fontSize: 12, color: colors.textSecondary },
+    editChip: {
+      paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
+      backgroundColor: 'rgba(34,197,94,0.1)',
+      borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)',
+    },
+    editChipText: { fontSize: 12, fontWeight: '700', color: PULSE_COLORS.brand.green },
 
-  // Leave team
-  teamRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingVertical: 12, gap: 12, minHeight: 52,
-  },
-  teamAccent: { width: 3, alignSelf: 'stretch', borderRadius: 2, marginVertical: 2 },
-  teamClubLogo: { width: 22, height: 22 },
-  teamName: { fontSize: 15, fontWeight: '600', color: PULSE_COLORS.ui.text, marginBottom: 1 },
-  teamMeta: { fontSize: 12, color: PULSE_COLORS.ui.textSecondary },
-  leaveText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.status.error },
-  leaveTeamRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingVertical: 10,
-  },
-  leaveTeamText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.status.error },
+    // Leave team
+    teamRow: {
+      flexDirection: 'row', alignItems: 'center',
+      paddingHorizontal: 14, paddingVertical: 12, gap: 12, minHeight: 52,
+    },
+    teamAccent: { width: 3, alignSelf: 'stretch', borderRadius: 2, marginVertical: 2 },
+    teamClubLogo: { width: 22, height: 22 },
+    teamName: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 1 },
+    teamMeta: { fontSize: 12, color: colors.textSecondary },
+    leaveText: { fontSize: 14, fontWeight: '600', color: PULSE_COLORS.status.error },
+    leaveTeamRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      paddingHorizontal: 14, paddingVertical: 10,
+    },
+    leaveTeamText: { fontSize: 13, fontWeight: '600', color: PULSE_COLORS.status.error },
 
-  version: {
-    textAlign: 'center', color: PULSE_COLORS.ui.muted,
-    fontSize: 12, marginTop: 36, marginBottom: 8,
-  },
+    version: {
+      textAlign: 'center', color: colors.muted,
+      fontSize: 12, marginTop: 36, marginBottom: 8,
+    },
 
-  // Club branding
-  logoBlock: { alignItems: 'center', paddingVertical: 20, gap: 10 },
-  logoCircle: {
-    width: 80, height: 80, borderRadius: 22,
-    borderWidth: 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-  },
-  logoImg: { width: 72, height: 72 },
-  logoHint: { fontSize: 13, fontWeight: '700' },
+    // Club branding
+    logoBlock: { alignItems: 'center', paddingVertical: 20, gap: 10 },
+    logoCircle: {
+      width: 80, height: 80, borderRadius: 22,
+      borderWidth: 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    },
+    logoImg: { width: 72, height: 72 },
+    logoHint: { fontSize: 13, fontWeight: '700' },
 
-  // Parent avatar circle
-  avatarCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    borderWidth: 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-  },
-  avatarCircleImg: { width: 80, height: 80 },
-  avatarCircleInitials: { fontSize: 26, fontWeight: '800' },
-});
+    // Parent avatar circle
+    avatarCircle: {
+      width: 80, height: 80, borderRadius: 40,
+      borderWidth: 2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    },
+    avatarCircleImg: { width: 80, height: 80 },
+    avatarCircleInitials: { fontSize: 26, fontWeight: '800' },
+  });
+}
