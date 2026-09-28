@@ -39,6 +39,14 @@ export async function resolveNotificationTeamId(
     const { data: row } = await supabase.from('announcements').select('team_id').eq('id', data.announcement_id).single();
     return row?.team_id ?? null;
   }
+  if (typeof data.tournament_id === 'string') {
+    const { data: row } = await supabase.from('tournaments').select('team_id').eq('id', data.tournament_id).single();
+    return row?.team_id ?? null;
+  }
+  if (typeof data.poll_id === 'string') {
+    const { data: row } = await supabase.from('team_polls').select('team_id').eq('id', data.poll_id).single();
+    return row?.team_id ?? null;
+  }
 
   return null;
 }

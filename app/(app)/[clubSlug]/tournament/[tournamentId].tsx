@@ -66,7 +66,7 @@ function fmtDate(dateStr: string): string {
 export default function TournamentDetailScreen() {
   const { primaryColor, rgba, clubName, logoUrl } = useClub();
   const router = useRouter();
-  const { clubSlug, tournamentId } = useLocalSearchParams<{ clubSlug: string; tournamentId: string }>();
+  const { clubSlug, tournamentId, fromNotification } = useLocalSearchParams<{ clubSlug: string; tournamentId: string; fromNotification?: string }>();
   const { team, allTeams, selectTeam } = useTeam();
   const { profile } = useAuth();
   const mapApp = useMapApp();
@@ -106,11 +106,12 @@ export default function TournamentDetailScreen() {
     if (!tRow) { setLoading(false); setRefreshing(false); return; }
     setTournament(tRow as Tournament);
 
-    // A notification tap or deep link can land here without ever switching
-    // the globally-selected team — realign it to the tournament's own team
-    // before running the roster/RSVP queries below, same fix already
-    // applied to event/[eventId].tsx for the identical class of bug.
-    if (tRow.team_id !== team?.id && allTeams.some((t) => t.id === tRow.team_id)) {
+    // Only realign when we genuinely got here via a notification tap — see
+    // the identical fix (and its full reasoning) in event/[eventId].tsx.
+    // Firing unconditionally meant any in-app navigation to another of your
+    // own teams' tournaments (e.g. Schedule's "All Teams" view) silently
+    // reassigned your active team with no confirmation.
+    if (fromNotification === '1' && tRow.team_id !== team?.id && allTeams.some((t) => t.id === tRow.team_id)) {
       const tournamentTeam = allTeams.find((t) => t.id === tRow.team_id);
       // Not awaited — see app/_layout.tsx's notification handler for why.
       selectTeam(tRow.team_id);

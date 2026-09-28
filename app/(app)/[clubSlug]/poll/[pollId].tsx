@@ -23,7 +23,7 @@ import PollCard, { type Poll } from '../../../../components/home/PollCard';
 // scroll to find the one poll they were notified about — this screen exists
 // so that tap can land somewhere that IS the poll, nothing else.
 export default function PollDetailScreen() {
-  const { clubSlug, pollId } = useLocalSearchParams<{ clubSlug: string; pollId: string }>();
+  const { clubSlug, pollId, fromNotification } = useLocalSearchParams<{ clubSlug: string; pollId: string; fromNotification?: string }>();
   const { primaryColor, rgba } = useClub();
   const { profile } = useAuth();
   const { team, allTeams, selectTeam } = useTeam();
@@ -65,12 +65,12 @@ export default function PollDetailScreen() {
       return;
     }
 
-    // A notification tap lands here without ever switching the active team
-    // (see app/_layout.tsx's notification handler — it only navigates), so
-    // realign to the poll's own team first, same fix already applied to
-    // event/[eventId].tsx and tournament/[tournamentId].tsx for the
-    // identical class of bug.
-    if (pollRow.team_id !== team?.id && allTeams.some((t) => t.id === pollRow.team_id)) {
+    // Only realign when we genuinely got here via a notification tap — see
+    // the identical fix (and its full reasoning) in event/[eventId].tsx.
+    // Firing unconditionally meant any in-app navigation to another of your
+    // own teams' polls silently reassigned your active team with no
+    // confirmation.
+    if (fromNotification === '1' && pollRow.team_id !== team?.id && allTeams.some((t) => t.id === pollRow.team_id)) {
       const pollTeam = allTeams.find((t) => t.id === pollRow.team_id);
       selectTeam(pollRow.team_id);
       if (pollTeam?.club?.slug && pollTeam.club.slug !== clubSlug) {

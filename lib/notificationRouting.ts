@@ -50,6 +50,18 @@ export async function routeNotificationTap(opts: {
     selectTeam(targetTeamId);
   }
 
+  // event/[eventId].tsx, tournament/[tournamentId].tsx, and poll/[pollId].tsx
+  // each carry their own defensive team-realignment as a backup for the
+  // `selectTeam` call above (which isn't awaited, so a still-mounting screen
+  // can otherwise render one tick with the old team). That backup used to
+  // fire unconditionally on ANY team mismatch, including plain in-app
+  // navigation to another of your own teams' items (e.g. tapping a card in
+  // Schedule's "All Teams" view) — silently reassigning your active team
+  // with no confirmation. This flag tells those screens "you really did get
+  // here via a notification, the backup realignment is warranted" — omitted
+  // (and so ignored) for every other navigation path.
+  const notifParams = { fromNotification: '1' };
+
   switch (type) {
     // ── Event notifications ────────────────────────────────────────────────
     case 'new_event':
@@ -61,7 +73,9 @@ export async function routeNotificationTap(opts: {
     case 'attendance_absent':
     case 'video_added':
     case 'reflection_prompt':
-      d.event_id ? router.push(`/(app)/${slug}/event/${d.event_id}` as any) : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+      d.event_id
+        ? router.push({ pathname: `/(app)/${slug}/event/${d.event_id}` as any, params: notifParams })
+        : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
       break;
     case 'event_cancelled':
     case 'field_closure':
@@ -79,7 +93,9 @@ export async function routeNotificationTap(opts: {
     case 'tournament_eliminated':
     case 'tournament_game_day':
     case 'tournament_cancelled':
-      d.tournament_id ? router.push(`/(app)/${slug}/tournament/${d.tournament_id}` as any) : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+      d.tournament_id
+        ? router.push({ pathname: `/(app)/${slug}/tournament/${d.tournament_id}` as any, params: notifParams })
+        : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
       break;
     // ── Chat notifications ─────────────────────────────────────────────────
     case 'new_announcement':
@@ -97,7 +113,9 @@ export async function routeNotificationTap(opts: {
       // Its own dedicated screen — landing on Home (or a whole event page)
       // just to go find the one poll someone was notified about meant
       // scrolling to locate it every time.
-      d.poll_id ? router.push(`/(app)/${slug}/poll/${d.poll_id}` as any) : router.push(`/(app)/${slug}/(tabs)` as any);
+      d.poll_id
+        ? router.push({ pathname: `/(app)/${slug}/poll/${d.poll_id}` as any, params: notifParams })
+        : router.push(`/(app)/${slug}/(tabs)` as any);
       break;
     // ── Guest notifications ────────────────────────────────────────────────
     case 'guest_request':
@@ -109,7 +127,9 @@ export async function routeNotificationTap(opts: {
     case 'guest_response':
     case 'guest_removed':
     case 'guest_cancelled':
-      d.event_id ? router.push(`/(app)/${slug}/event/${d.event_id}` as any) : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
+      d.event_id
+        ? router.push({ pathname: `/(app)/${slug}/event/${d.event_id}` as any, params: notifParams })
+        : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
       break;
     // ── Admin notifications ────────────────────────────────────────────────
     case 'invite_accepted':

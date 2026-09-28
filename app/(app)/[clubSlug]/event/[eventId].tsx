@@ -345,7 +345,7 @@ function rsvpDeadlineLabel(lockAt: string): string {
 
 export default function EventDetailScreen() {
   const { primaryColor, rgba, homeKitColor, awayKitColor, trainingKitColor, clubName, logoUrl } = useClub();
-  const { eventId, clubSlug, section } = useLocalSearchParams<{ eventId: string; clubSlug: string; section?: string }>();
+  const { eventId, clubSlug, section, fromNotification } = useLocalSearchParams<{ eventId: string; clubSlug: string; section?: string; fromNotification?: string }>();
   const { team, allTeams, selectTeam, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
@@ -471,19 +471,21 @@ export default function EventDetailScreen() {
       .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away,tournament_id,round_label,score_home,score_away,opponent_raw_name,tournaments(name,start_date)')
       .eq('id', eventId).single();
 
-    // A notification tap lands here without ever switching the active team
-    // (see app/_layout.tsx's notification-response handler — it only
-    // navigates), so the context team can be whatever was last active on a
-    // totally different team. Every query below keys off `team.id`, so
-    // realign the active team to the event's own team first — otherwise
-    // Availability/Attendance show the wrong roster entirely. This check
-    // sits outside the try/finally below (which unconditionally clears
-    // `loading`) so bailing out here keeps the spinner up instead of
-    // flashing "Event not found" — team?.id changing re-triggers this same
-    // load() with the right team, and that pass is the one that actually
-    // finishes and clears loading.
+    // Only realign the active team when we genuinely got here via a
+    // notification tap (fromNotification, set by routeNotificationTap) —
+    // otherwise this fired on ANY navigation to another of your own teams'
+    // events (e.g. tapping a card in Schedule's "All Teams" view), silently
+    // reassigning your active team with no confirmation. routeNotificationTap
+    // already does its own proactive switch before navigating here, but
+    // isn't awaited, so a still-mounting screen can render one tick with the
+    // old team — this is that backup, now correctly scoped to only the case
+    // it exists for. This check sits outside the try/finally below (which
+    // unconditionally clears `loading`) so bailing out here keeps the
+    // spinner up instead of flashing "Event not found" — team?.id changing
+    // re-triggers this same load() with the right team, and that pass is
+    // the one that actually finishes and clears loading.
     const eventTeamId = eventRow?.team_id ?? null;
-    if (eventTeamId && eventTeamId !== team.id && allTeams.some((t) => t.id === eventTeamId)) {
+    if (fromNotification === '1' && eventTeamId && eventTeamId !== team.id && allTeams.some((t) => t.id === eventTeamId)) {
       const eventTeam = allTeams.find((t) => t.id === eventTeamId);
       // Not awaited — see app/_layout.tsx's notification handler for why.
       selectTeam(eventTeamId);
