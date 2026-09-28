@@ -88,6 +88,23 @@ const TEAM_PALETTE = ['#3B82F6', '#22c55e', '#F59E0B', '#8B5CF6', '#EF4444', '#0
 type RsvpCounts = { attending: number; not_attending: number };
 type MyRsvp = 'attending' | 'not_attending' | null;
 
+type StandingsRow = {
+  division: string; rank: number; team_raw_name: string; is_self: boolean;
+  games_played: number; wins: number; losses: number; draws: number;
+  points: number; goals_for: number; goals_against: number;
+};
+
+function ordinalSuffix(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return 'th';
+  switch (n % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+}
+
 const TYPE_CONFIG: Record<EventType, { label: string; color: string; bg: string }> = {
   game:     { label: 'Game',     color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
   training: { label: 'Training', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
@@ -195,6 +212,7 @@ export default function ScheduleScreen() {
   const [rsvpSavingId, setRsvpSavingId] = useState<string | null>(null);
   const [myPlayersByTeam, setMyPlayersByTeam] = useState<Map<string, { id: string; full_name: string }[]>>(new Map());
   const [playerCount, setPlayerCount] = useState(0);
+  const [standingsSummary, setStandingsSummary] = useState<{ division: string; rank: number; total: number; row: StandingsRow } | null>(null);
   const [loading, setLoading] = useState(true);
   // Once we've shown real content, later refetches (regaining focus after
   // popping back from an event, toggling filters) shouldn't blank the whole
@@ -204,6 +222,24 @@ export default function ScheduleScreen() {
   useEffect(() => {
     if (!loading) hasLoadedOnceRef.current = true;
   }, [loading]);
+
+  useEffect(() => {
+    if (!team?.id) return;
+    supabase
+      .from('ncsa_standings')
+      .select('division, rank, team_raw_name, is_self, games_played, wins, losses, draws, points, goals_for, goals_against')
+      .eq('team_id', team.id)
+      .order('rank')
+      .then(({ data }) => {
+        const rows = (data ?? []) as StandingsRow[];
+        const self = rows.find((r) => r.is_self);
+        if (self) {
+          setStandingsSummary({ division: self.division, rank: self.rank, total: rows.length, row: self });
+        } else {
+          setStandingsSummary(null);
+        }
+      });
+  }, [team?.id]);
   const [refreshing, setRefreshing] = useState(false);
   const [weatherMap, setWeatherMap] = useState<Record<string, WeatherData>>({});
   const [driveTimeMap, setDriveTimeMap] = useState<Record<string, string>>({});
@@ -600,40 +636,60 @@ export default function ScheduleScreen() {
     };
   }, [gamesByTournamentId]);
 
-  // Undated tournaments (State Cup — dates unknown until each round is
-  // scheduled) have no natural chronological slot, so they stay pinned in
-  // the Upcoming header instead. Pinned only while still alive in the
-  // knockout — a team that keeps winning stays pinned indefinitely between
-  // rounds, even though its last played game's date is technically in the
-  // past; a loss (or the tournament running out of games) "graduates" it,
-  // and its games fall back to showing individually in Past (still
-  // trophy-tagged) rather than vanishing along with the card.
+  // A tournament gets a real chronological slot (sorted alongside events,
+  // full-size card) whenever there's something concrete to place it at:
+  // either it was given a start_date up front (a weekend/round-robin
+  // format, dated at creation), or at least one of its games has a real
+  // upcoming time — which covers NCSA Cup/State Cup-style brackets that
+  // never get a tournament-level start_date, only per-round game times as
+  // they're scheduled. Returns null when neither is true, meaning it
+  // should stay pinned at the top of Upcoming instead (compact card) —
+  // covers both "nothing scheduled yet" and "between rounds, last game
+  // played, next one not on the calendar yet."
+  function tournamentChronoSlot(t: Tournament, games: Event[]): { date: string; time: string } | null {
+    if (t.start_date) return { date: t.start_date, time: '00:00' };
+    const timedUpcoming = games.filter((g) => !!g.event_time && isUpcoming(g));
+    if (timedUpcoming.length === 0) return null;
+    const soonest = timedUpcoming.slice().sort((a, b) =>
+      a.event_date === b.event_date ? a.event_time!.localeCompare(b.event_time!) : a.event_date.localeCompare(b.event_date)
+    )[0];
+    return { date: soonest.event_date, time: soonest.event_time! };
+  }
+
+  // Pinned in the Upcoming header, compact — only while still alive in the
+  // knockout (a team that keeps winning stays pinned indefinitely between
+  // rounds even though its last played game is technically in the past; a
+  // loss, or running out of games, "graduates" it, and its games fall back
+  // to showing individually in Past, still trophy-tagged, rather than
+  // vanishing along with the card).
   const undatedTournaments = useMemo<TournamentMarker[]>(() =>
     tournaments
-      .filter((t) => !t.start_date)
       .filter((t) => !t.cancelled_at)
+      .filter((t) => !tournamentChronoSlot(t, gamesByTournamentId.get(t.id) ?? []))
       .filter((t) => isKnockoutStillAlive(gamesByTournamentId.get(t.id) ?? []))
       .map(buildTournamentMarker),
     [tournaments, gamesByTournamentId, buildTournamentMarker]
   );
 
-  // Dated tournaments (weekend format — the date is known up front) DO get
-  // a chronological slot: a special marker card sorted to start_date,
-  // alongside every real event. Unlike undated ones, a dated tournament's
-  // card never disappears — it just moves from Upcoming to Past by date,
-  // same as any event — so its games stay nested inside it permanently.
+  // Everything else gets a real slot in the chronological stream, full-size
+  // card — same as any event. It never disappears once placed here; it
+  // just moves from Upcoming to Past by date like any other item, so its
+  // games stay nested inside it permanently.
   const datedTournamentItems = useMemo<Extract<ScheduleItem, { kind: 'tournament' }>[]>(() =>
     tournaments
-      .filter((t) => !!t.start_date)
       .filter((t) => !t.cancelled_at)
-      .map((t) => ({
-        kind: 'tournament' as const,
-        date: t.start_date!,
-        time: '00:00',
-        endDate: t.end_date ?? t.start_date!,
-        data: buildTournamentMarker(t),
-      })),
-    [tournaments, buildTournamentMarker]
+      .flatMap((t) => {
+        const slot = tournamentChronoSlot(t, gamesByTournamentId.get(t.id) ?? []);
+        if (!slot) return [];
+        return [{
+          kind: 'tournament' as const,
+          date: slot.date,
+          time: slot.time,
+          endDate: t.end_date ?? slot.date,
+          data: buildTournamentMarker(t),
+        }];
+      }),
+    [tournaments, gamesByTournamentId, buildTournamentMarker]
   );
 
   // A game "belongs" to a visible tournament card (dated, or undated-and-
@@ -737,7 +793,11 @@ export default function ScheduleScreen() {
   // rather than also competing for their own separate rows nearby.
   const TOURNAMENT_GAMES_CAP = 4;
 
-  function renderTournamentCard({ tournament, games, gameCount, dateRange, wins, losses, draws }: TournamentMarker) {
+  // `compact` is passed by the caller, not recomputed here — it must agree
+  // exactly with which bucket (pinned-undated vs. chronological-dated) the
+  // marker was sorted into above, or the card style and its position in
+  // the list could disagree with each other.
+  function renderTournamentCard({ tournament, games, gameCount, dateRange, wins, losses, draws }: TournamentMarker, compact: boolean) {
     const hasRecord = gameCount > 0;
     // Soonest-upcoming first (what a parent actually wants to see next),
     // padded out with the most recent past games for context if there
@@ -747,6 +807,31 @@ export default function ScheduleScreen() {
     const visibleGames = [...upcomingGames, ...recentPastGames].slice(0, TOURNAMENT_GAMES_CAP);
     const overflowCount = gameCount - visibleGames.length;
     const openTournament = () => router.push(`/(app)/${clubSlug}/tournament/${tournament.id}` as any);
+
+    // Nothing concrete scheduled yet (e.g. NCSA Cup's "To Be Scheduled"
+    // placeholder rows before a real matchup is set) — the full card's
+    // gold border + nested game rows was taking a lot of space above the
+    // actual schedule to say "TBD". Collapse to one line instead.
+    if (compact) {
+      return (
+        <TouchableOpacity
+          key={tournament.id}
+          style={styles.tournamentCompactCard}
+          onPress={openTournament}
+          activeOpacity={0.75}
+        >
+          <View style={[styles.tournamentCompactIcon, !!tournament.logo_url && styles.tournamentBigIconNoFrame]}>
+            {tournament.logo_url
+              ? <Image source={{ uri: tournament.logo_url }} style={styles.tournamentCompactIconImage} contentFit="contain" />
+              : <Text style={{ fontSize: 15 }}>🏆</Text>}
+          </View>
+          <Text style={styles.tournamentCompactText} numberOfLines={1}>
+            {tournament.name} · {gameCount} game{gameCount !== 1 ? 's' : ''} TBD
+          </Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.muted} />
+        </TouchableOpacity>
+      );
+    }
 
     return (
       <View key={tournament.id} style={styles.tournamentBigCard}>
@@ -834,7 +919,7 @@ export default function ScheduleScreen() {
   }
 
   function renderScheduleItem(item: ScheduleItem) {
-    return item.kind === 'event' ? renderCard(item.data) : renderTournamentCard(item.data);
+    return item.kind === 'event' ? renderCard(item.data) : renderTournamentCard(item.data, false);
   }
 
   function handleSyncCalendar() {
@@ -874,21 +959,31 @@ export default function ScheduleScreen() {
         subtitle={upcomingEvents.length > 0
           ? `${upcomingEvents.length} upcoming event${upcomingEvents.length !== 1 ? 's' : ''}`
           : 'No upcoming events'}
-        right={isCoach ? (
+        right={(
           <>
-            <TouchableOpacity
-              onPress={() => router.push(`/(app)/${clubSlug}/admin/schedule-upload` as any)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#7C3AED', shadowColor: '#A855F7', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 10, elevation: 6 }}
-            >
-              <Ionicons name="sparkles" size={13} color="#fff" />
-              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>AI</Text>
+            {/* Was a permanent banner above every game in the list — moved
+                here so it's still one tap away without competing with the
+                actual schedule for space on every load. */}
+            <TouchableOpacity style={headerBtnStyle} onPress={handleSyncCalendar}>
+              <Ionicons name="calendar-outline" size={16} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity style={[headerBtnStyle, { backgroundColor: secondaryColor }]} onPress={openCreateEvent}>
-              <Ionicons name="add" size={16} color={onSecondary} />
-              <Text style={[headerBtnTextStyle, { color: onSecondary }]}>Add</Text>
-            </TouchableOpacity>
+            {isCoach && (
+              <>
+                <TouchableOpacity
+                  onPress={() => router.push(`/(app)/${clubSlug}/admin/schedule-upload` as any)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: '#7C3AED', shadowColor: '#A855F7', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 10, elevation: 6 }}
+                >
+                  <Ionicons name="sparkles" size={13} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>AI</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[headerBtnStyle, { backgroundColor: secondaryColor }]} onPress={openCreateEvent}>
+                  <Ionicons name="add" size={16} color={onSecondary} />
+                  <Text style={[headerBtnTextStyle, { color: onSecondary }]}>Add</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </>
-        ) : undefined}
+        )}
       />
 
       {/* All-teams toggle — anyone (coach or parent) with more than one team */}
@@ -967,30 +1062,45 @@ export default function ScheduleScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primaryColor} />}
             ListHeaderComponent={
               <>
-                {undatedTournaments.map((marker) => renderTournamentCard(marker))}
+                {standingsSummary && (
                 <TouchableOpacity
-                  style={[styles.syncBanner, { backgroundColor: 'rgba(255,255,255,0.07)', borderColor: 'rgba(255,255,255,0.13)' }]}
-                  onPress={handleSyncCalendar}
+                  style={[styles.standingsCard, { backgroundColor: rgba(0.06), borderColor: rgba(0.25) }]}
+                  onPress={() => router.push(`/(app)/${clubSlug}/standings` as any)}
                   activeOpacity={0.75}
                 >
-                  <View style={[styles.syncIconWrap, { backgroundColor: primaryColor }]}>
-                    <Ionicons name="calendar" size={20} color="#ffffff" />
+                  <View style={styles.standingsCardTop}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="trophy" size={14} color={primaryColor} />
+                      <Text style={styles.standingsCardLabel}>{standingsSummary.division} Standing</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.muted} />
                   </View>
-                  <View style={styles.syncBannerText}>
-                    <Text style={[styles.syncBannerTitle, { color: '#ffffff' }]}>Sync schedule to calendar</Text>
-                    <View style={styles.syncPlatforms}>
-                      <Ionicons name="logo-apple" size={11} color={PULSE_COLORS.ui.muted} />
-                      <Text style={styles.syncPlatformText}>Apple</Text>
-                      <Text style={styles.syncDot}>·</Text>
-                      <Ionicons name="logo-google" size={11} color={PULSE_COLORS.ui.muted} />
-                      <Text style={styles.syncPlatformText}>Google</Text>
-                      <Text style={styles.syncDot}>· Copy link</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                    <Text style={[styles.standingsPlace, { color: primaryColor }]}>
+                      {standingsSummary.rank}{ordinalSuffix(standingsSummary.rank)}
+                    </Text>
+                    <Text style={styles.standingsOf}>of {standingsSummary.total} teams</Text>
+                  </View>
+                  <View style={styles.standingsStatRow}>
+                    <View>
+                      <Text style={styles.standingsStatVal}>{standingsSummary.row.points}</Text>
+                      <Text style={styles.standingsStatLabel}>PTS</Text>
+                    </View>
+                    <View>
+                      <Text style={styles.standingsStatVal}>{standingsSummary.row.wins}-{standingsSummary.row.losses}-{standingsSummary.row.draws}</Text>
+                      <Text style={styles.standingsStatLabel}>W-L-D</Text>
+                    </View>
+                    <View>
+                      <Text style={styles.standingsStatVal}>
+                        {standingsSummary.row.goals_for - standingsSummary.row.goals_against > 0 ? '+' : ''}
+                        {standingsSummary.row.goals_for - standingsSummary.row.goals_against}
+                      </Text>
+                      <Text style={styles.standingsStatLabel}>GD</Text>
                     </View>
                   </View>
-                  <View style={[styles.syncChevron, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-                    <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
-                  </View>
                 </TouchableOpacity>
+                )}
+                {undatedTournaments.map((marker) => renderTournamentCard(marker, true))}
               </>
             }
             renderSectionHeader={({ section }) => renderSectionHeader(section.title, section.data.length)}
@@ -1544,19 +1654,6 @@ function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
   },
   title: { fontSize: 26, fontWeight: '800', color: colors.text },
   subtitle: { fontSize: 13, color: colors.textSecondary },
-  syncBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-  },
-  syncIconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  syncBannerText: { flex: 1 },
-  syncBannerTitle: { fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
-  syncPlatforms: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  syncPlatformText: { fontSize: 11, color: PULSE_COLORS.ui.muted },
-  syncDot: { fontSize: 11, color: PULSE_COLORS.ui.muted },
-  syncChevron: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   tournamentBigCard: {
     borderRadius: 20, padding: 18, marginBottom: 14,
     borderWidth: 1.5, backgroundColor: 'rgba(234,179,8,0.08)', borderColor: 'rgba(234,179,8,0.4)',
@@ -1572,6 +1669,21 @@ function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
   // read as the logo, not a logo-inside-a-swatch.
   tournamentBigIconNoFrame: { backgroundColor: 'transparent', borderWidth: 0 },
   tournamentBigIconImage: { width: 60, height: 60 },
+  // Compact one-liner for a tournament with games but nothing concrete
+  // scheduled yet (see the "all games undated" check above) — same gold
+  // accent so it still reads as a tournament, just not competing with the
+  // real schedule for vertical space.
+  tournamentCompactCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 10,
+    borderWidth: 1, backgroundColor: 'rgba(234,179,8,0.06)', borderColor: 'rgba(234,179,8,0.25)',
+  },
+  tournamentCompactIcon: {
+    width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(234,179,8,0.16)', borderWidth: 1, borderColor: 'rgba(234,179,8,0.35)', overflow: 'hidden',
+  },
+  tournamentCompactIconImage: { width: 30, height: 30 },
+  tournamentCompactText: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.text },
   tournamentEyebrow: { fontSize: 10, fontWeight: '800', color: '#EAB308', letterSpacing: 1.2, marginBottom: 2 },
   tournamentBigName: { fontSize: 19, fontWeight: '800', color: colors.text },
   tournamentBigMeta: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
@@ -1715,6 +1827,17 @@ function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
   seasonStatNum: { fontSize: 22, fontWeight: '800', lineHeight: 26 },
   seasonStatLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.5 },
   seasonStatSep: { width: 1, height: 32, backgroundColor: colors.border },
+  standingsCard: {
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 14, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 8,
+  },
+  standingsCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  standingsCardLabel: { fontSize: 12, fontWeight: '800', color: colors.text },
+  standingsPlace: { fontSize: 26, fontWeight: '800' },
+  standingsOf: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  standingsStatRow: { flexDirection: 'row', gap: 20, marginTop: 10 },
+  standingsStatVal: { fontSize: 15, fontWeight: '800', color: colors.text },
+  standingsStatLabel: { fontSize: 10, fontWeight: '700', color: colors.muted, letterSpacing: 0.4, marginTop: 1 },
   myStatusChip: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10,
