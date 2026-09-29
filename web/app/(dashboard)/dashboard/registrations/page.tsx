@@ -49,7 +49,7 @@ export default function RegistrationsPage() {
       {/* ── Tab content ── */}
       <div style={{ flex: 1, overflow: 'auto' }}>
         {tab === 'overview'    && <OverviewTab    onNavigate={(t) => setTab(t as Tab)} />}
-        {tab === 'forms'       && <FormsTab />}
+        {tab === 'forms'       && <FormsTab       onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'submissions' && <SubmissionsTab />}
         {tab === 'reports'     && <ReportsTab />}
       </div>

@@ -26,7 +26,13 @@ type SubmissionRow = {
   financial_aid_amount: number | null;
 };
 
-export default function FormsTab() {
+// Beyond this many rows, the inline card stops being a quick glance and
+// starts being an unwieldy list to scroll through — hand off to Submissions
+// instead, which already has search and payment/flag filters built for
+// managing a large roster.
+const VISIBLE_SUB_CAP = 8;
+
+export default function FormsTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
   const { profile, club, teams } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const isOrgAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
@@ -421,7 +427,7 @@ export default function FormsTab() {
                                 <span key={h} style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: align as 'left' | 'right' }}>{h}</span>
                               ))}
                             </div>
-                            {subs.map((sub, i) => {
+                            {subs.slice(0, VISIBLE_SUB_CAP).map((sub, i) => {
                               const subInstallments = installmentsBySub[sub.id] ?? [];
                               const bucket    = derivePaymentBucket(sub, subInstallments);
                               const ps        = bucket ? PAYMENT_BUCKET_STYLES[bucket] : null;
@@ -447,6 +453,22 @@ export default function FormsTab() {
                                 </div>
                               );
                             })}
+                            {/* This card is a quick glance, not the workspace for managing
+                                hundreds of registrants — Submissions already has search and
+                                payment/flag filters built for that. Cap the inline list and
+                                hand off there once it'd otherwise get unwieldy. */}
+                            {subs.length > VISIBLE_SUB_CAP && (
+                              <button
+                                onClick={() => onNavigate('submissions')}
+                                style={{
+                                  width: '100%', display: 'block', textAlign: 'center', cursor: 'pointer',
+                                  fontSize: '12px', fontWeight: '700', color: primary, background: '#F8FAFC',
+                                  border: 'none', borderTop: '1px solid #E2E8F0', padding: '10px 16px', fontFamily: 'inherit',
+                                }}
+                              >
+                                View all {subs.length} in Submissions →
+                              </button>
+                            )}
                             {/* Footer summary */}
                             {subs.length > 0 && (
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 105px 78px 78px 78px', padding: '8px 16px', background: '#F8FAFC', borderTop: '1px solid #E2E8F0', gap: '8px', alignItems: 'center' }}>

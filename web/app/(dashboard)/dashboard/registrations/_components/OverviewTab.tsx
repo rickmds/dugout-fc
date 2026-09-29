@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { FileText, Users, CreditCard, TrendingUp, AlertCircle, CheckCircle, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { fmtMoney, fmtDate, derivePaymentBucket } from './shared';
-import type { RegForm, Submission, InstallmentBucketInfo } from './shared';
+import { fmtMoney, fmtDate, derivePaymentBucket, playerName, PAYMENT_BUCKET_STYLES } from './shared';
+import type { RegForm, Submission, InstallmentBucketInfo, PaymentBucket } from './shared';
 
 interface OverviewStats {
   openForms: number;
@@ -15,7 +15,7 @@ interface OverviewStats {
   financialAidRequests: number;
   duplicateFlags: number;
   paymentIssues: number;
-  recentSubmissions: (Submission & { form_title: string; form_currency: string })[];
+  recentSubmissions: (Submission & { form_title: string; form_currency: string; player_name: string; payment_bucket: PaymentBucket | null })[];
   formSummaries: { form: RegForm; total: number; waitlisted: number }[];
 }
 
@@ -76,7 +76,13 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
       .slice(0, 6)
       .map((s) => {
         const form = forms.find((f) => f.id === s.form_id);
-        return { ...s, form_title: form?.title ?? '—', form_currency: form?.currency ?? 'GBP' };
+        return {
+          ...s,
+          form_title: form?.title ?? '—',
+          form_currency: form?.currency ?? 'GBP',
+          player_name: playerName(s.data),
+          payment_bucket: derivePaymentBucket(s, installmentsBySub.get(s.id) ?? []),
+        };
       });
 
     const formSummaries = forms.slice(0, 8).map((form) => {
@@ -249,12 +255,19 @@ export default function OverviewTab({ onNavigate }: { onNavigate: (tab: string) 
               stats.recentSubmissions.map((s) => (
                 <div key={s.id} style={{ padding: '10px 16px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.form_title}</div>
-                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>{fmtDate(s.submitted_at)}</div>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.player_name}</div>
+                    <div style={{ fontSize: '11px', color: '#94A3B8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.form_title} · {fmtDate(s.submitted_at)}</div>
                   </div>
-                  {s.status === 'waitlisted' && (
+                  {s.status === 'waitlisted' ? (
                     <span style={{ fontSize: '11px', fontWeight: '700', color: '#7C3AED', background: '#EDE9FE', borderRadius: '20px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
                       Waitlisted
+                    </span>
+                  ) : s.payment_bucket && (
+                    <span style={{
+                      fontSize: '11px', fontWeight: '700', whiteSpace: 'nowrap', borderRadius: '20px', padding: '2px 8px',
+                      color: PAYMENT_BUCKET_STYLES[s.payment_bucket].color, background: PAYMENT_BUCKET_STYLES[s.payment_bucket].bg,
+                    }}>
+                      {PAYMENT_BUCKET_STYLES[s.payment_bucket].label}
                     </span>
                   )}
                 </div>
