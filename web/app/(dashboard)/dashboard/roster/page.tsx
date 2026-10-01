@@ -1,16 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
-import {
-  Plus, Search, Mail, User, X, ChevronDown, Trash2, Send,
-  Sparkles, Check, AlertCircle, Hash,
-  CalendarCheck, CalendarX, Clock, RotateCcw,
-} from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Plus, Search, Mail, User, X, ChevronDown, Trash2, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import AIRosterImport from '@/components/dashboard/AIRosterImport';
-import { movePlayerToTeam } from '@/lib/movePlayer';
 
 type Player = {
   id: string;
@@ -20,20 +15,6 @@ type Player = {
   team_id: string;
   photo_url: string | null;
 };
-
-type Invite = {
-  id: string;
-  token: string;
-  email: string;
-  guardian_name: string | null;
-  phone: string | null;
-  relationship: string | null;
-  accepted_at: string | null;
-  accepted_by: string | null;
-  created_at: string;
-};
-
-type RsvpStats = { attending: number; not_attending: number; pending: number };
 
 type FormState = {
   full_name: string;
@@ -55,21 +36,6 @@ const POSITIONS = [
 const emptyForm = (teamId: string): FormState => ({
   full_name: '', jersey_number: '', position: '', parent_email: '', team_id: teamId,
 });
-
-function timeAgo(iso: string | null): string | null {
-  if (!iso) return null;
-  const ms = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}d ago`;
-  const mo = Math.floor(day / 30);
-  if (mo < 12) return `${mo}mo ago`;
-  return `${Math.floor(mo / 12)}y ago`;
-}
 
 function positionStyle(pos: string | null): { color: string; bg: string } {
   if (!pos) return { color: '#94A3B8', bg: '#F8FAFC' };
@@ -100,6 +66,7 @@ function positionGroups(players: Player[]): PosGroup[] {
 }
 
 export default function RosterPage() {
+  const router = useRouter();
   const { profile, club, teams, selectedTeamId } = useDashboard();
   const searchParams = useSearchParams();
   const [players, setPlayers]         = useState<Player[]>([]);
@@ -114,27 +81,6 @@ export default function RosterPage() {
   const [showAI, setShowAI]             = useState(false);
   const [form, setForm]                 = useState<FormState>(emptyForm(selectedTeamId ?? teams[0]?.id ?? ''));
   const [saving, setSaving]             = useState(false);
-
-  // Player profile panel
-  const [selectedPlayer, setSelectedPlayer]   = useState<Player | null>(null);
-  const [panelForm, setPanelForm]             = useState<{ full_name: string; jersey_number: string; position: string; team_id: string }>({ full_name: '', jersey_number: '', position: '', team_id: '' });
-  const [panelSaving, setPanelSaving]         = useState(false);
-  const [panelSaved, setPanelSaved]           = useState(false);
-  const [moveError, setMoveError]             = useState('');
-  const [invites, setInvites]                 = useState<Invite[]>([]);
-  const [inviteLoading, setInviteLoading]     = useState(false);
-  const [parentLastActive, setParentLastActive] = useState<string | null>(null);
-  const [rsvpStats, setRsvpStats]             = useState<RsvpStats>({ attending: 0, not_attending: 0, pending: 0 });
-  const [rsvpLoading, setRsvpLoading]         = useState(false);
-  const [sendingInvite, setSendingInvite]     = useState(false);
-  const [inviteEmail, setInviteEmail]         = useState('');
-  const [inviteSent, setInviteSent]           = useState(false);
-  const [inviteError, setInviteError]         = useState('');
-  const [showAddGuardianForm, setShowAddGuardianForm] = useState(false);
-  const [editingInviteId, setEditingInviteId]   = useState<string | null>(null);
-  const [inviteEditForm, setInviteEditForm]     = useState({ email: '', guardian_name: '', phone: '', relationship: '' });
-  const [savingInviteEdit, setSavingInviteEdit] = useState(false);
-  const [deletingInviteId, setDeletingInviteId] = useState<string | null>(null);
 
   // Other modals
   const [deleteModal, setDeleteModal]   = useState<DeleteModal | null>(null);
@@ -156,239 +102,6 @@ export default function RosterPage() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/filter-change; loadPlayers sets loading/players from a real network call, not derivable at render time
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
-
-  // Load invite + RSVP stats when a player is selected
-  useEffect(() => {
-    if (!selectedPlayer) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets the whole edit-panel/invite-form state in response to the selection actually changing, not derivable from props alone
-    setPanelForm({
-      full_name: selectedPlayer.full_name,
-      jersey_number: selectedPlayer.jersey_number?.toString() ?? '',
-      position: selectedPlayer.position ?? '',
-      team_id: selectedPlayer.team_id,
-    });
-    setPanelSaved(false);
-    setMoveError('');
-    setInviteSent(false);
-    setInviteEmail('');
-    setInviteError('');
-    setEditingInviteId(null);
-    setInviteEditForm({ email: '', guardian_name: '', phone: '', relationship: '' });
-    setDeletingInviteId(null);
-    setShowAddGuardianForm(false);
-
-    setInviteLoading(true);
-    setParentLastActive(null);
-    supabase
-      .from('invites')
-      .select('id, token, email, guardian_name, phone, relationship, accepted_at, accepted_by, created_at')
-      .eq('player_id', selectedPlayer.id)
-      .order('created_at', { ascending: true })
-      .then(async ({ data }) => {
-        const rows = (data ?? []) as Invite[];
-        setInvites(rows);
-        setInviteLoading(false);
-        if (rows.some((inv) => inv.accepted_at)) {
-          const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`/api/parent-status?player_id=${selectedPlayer.id}`, {
-            headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
-          });
-          const statusData = await res.json().catch(() => ({}));
-          setParentLastActive(statusData.lastSignInAt ?? null);
-        }
-      });
-
-    setRsvpLoading(true);
-    Promise.all([
-      supabase.from('event_rsvps').select('event_id,status').eq('player_id', selectedPlayer.id),
-      supabase.from('event_attendance').select('event_id,status').eq('player_id', selectedPlayer.id),
-    ]).then(([{ data: rsvpRows }, { data: attRows }]) => {
-      const stats: RsvpStats = { attending: 0, not_attending: 0, pending: 0 };
-      // Coach-marked attendance wins per event; RSVP only fills in events
-      // that haven't been marked yet.
-      const markedEventIds = new Set<string>();
-      for (const a of attRows ?? []) {
-        markedEventIds.add(a.event_id);
-        if (a.status === 'present' || a.status === 'late') stats.attending++;
-        else if (a.status === 'absent') stats.not_attending++;
-      }
-      for (const r of rsvpRows ?? []) {
-        if (markedEventIds.has(r.event_id)) continue;
-        if (r.status === 'attending') stats.attending++;
-        else if (r.status === 'not_attending') stats.not_attending++;
-      }
-      // We'll treat "total events" as attending + not_attending
-      setRsvpStats(stats);
-      setRsvpLoading(false);
-    });
-  }, [selectedPlayer]);
-
-  async function savePanel() {
-    if (!selectedPlayer || !panelForm.full_name.trim()) return;
-    setPanelSaving(true); setMoveError('');
-    try {
-      const updates = {
-        full_name: panelForm.full_name.trim(),
-        jersey_number: panelForm.jersey_number ? parseInt(panelForm.jersey_number) : null,
-        position: panelForm.position || null,
-      };
-      const { error } = await supabase.from('players').update(updates).eq('id', selectedPlayer.id);
-      if (error) { alert(`Could not save player: ${error.message}`); return; }
-
-      if (panelForm.team_id !== selectedPlayer.team_id) {
-        const { error: moveErr } = await movePlayerToTeam(selectedPlayer.id, selectedPlayer.team_id, panelForm.team_id);
-        if (moveErr) { setMoveError(`Details saved, but couldn't move the team: ${moveErr}`); return; }
-        if (panelForm.team_id !== teamFilter) {
-          // Moved off the team this page is currently filtered to.
-          setPlayers((prev) => prev.filter((p) => p.id !== selectedPlayer.id));
-          setSelectedPlayer(null);
-          return;
-        }
-      }
-
-      setPlayers((prev) => prev.map((p) => p.id === selectedPlayer.id ? { ...p, ...updates, team_id: panelForm.team_id } : p));
-      setSelectedPlayer((prev) => prev ? { ...prev, ...updates, team_id: panelForm.team_id } : null);
-      setPanelSaved(true);
-      setTimeout(() => setPanelSaved(false), 2500);
-    } finally {
-      setPanelSaving(false);
-    }
-  }
-
-  async function sendInviteFromPanel() {
-    if (!selectedPlayer || !inviteEmail.trim()) return;
-    setSendingInvite(true);
-    setInviteError('');
-    const { data: newRow, error: dbErr } = await supabase
-      .from('invites')
-      .insert({
-        team_id: selectedPlayer.team_id,
-        club_id: club?.id,
-        player_id: selectedPlayer.id,
-        email: inviteEmail.trim(),
-        created_by: profile?.id,
-      })
-      .select('id, token, email, guardian_name, phone, relationship, accepted_at, accepted_by, created_at')
-      .single();
-    if (dbErr) {
-      setInviteError('Could not save invite: ' + dbErr.message);
-      setSendingInvite(false);
-      return;
-    }
-    const teamName = teams.find((t) => t.id === selectedPlayer.team_id)?.name ?? 'your team';
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch('/api/send-invite', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({
-        invite_id: (newRow as Invite).id,
-        team_name: teamName,
-        player_name: selectedPlayer.full_name,
-        club_name: club?.name ?? '',
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setInviteError('Invite saved but email failed: ' + (err.error ?? res.statusText));
-    }
-    setInvites((prev) => [...prev, newRow as Invite]);
-    setInviteEmail('');
-    setInviteSent(true);
-    setShowAddGuardianForm(false);
-    setSendingInvite(false);
-    setTimeout(() => setInviteSent(false), 3000);
-  }
-
-  async function saveInviteEdit() {
-    if (!editingInviteId || !inviteEditForm.email.trim()) return;
-    setSavingInviteEdit(true);
-    const updates = {
-      email: inviteEditForm.email.trim(),
-      guardian_name: inviteEditForm.guardian_name.trim() || null,
-      phone: inviteEditForm.phone.trim() || null,
-      relationship: inviteEditForm.relationship.trim() || null,
-    };
-    await supabase.from('invites').update(updates).eq('id', editingInviteId);
-    setInvites((prev) => prev.map((inv) => inv.id === editingInviteId ? { ...inv, ...updates } : inv));
-    setEditingInviteId(null);
-    setSavingInviteEdit(false);
-  }
-
-  // Mirrors the mobile fix (app/(app)/[clubSlug]/player/[playerId].tsx
-  // confirmRevokeAccess): for a guardian who has already joined the app, a
-  // plain `invites` delete only removes the historical invite row — it
-  // doesn't touch player_guardians/team_members, so they'd keep full
-  // roster/chat/schedule access. Only a not-yet-accepted invite is safe to
-  // just delete outright, since there's nothing else to clean up for it.
-  async function deleteInviteRecord(inv: Invite) {
-    const isAccepted = !!inv.accepted_at;
-    const confirmMsg = isAccepted
-      ? `Remove ${inv.guardian_name || inv.email} as a guardian? They will lose access to this player's info, RSVPs, and chat.`
-      : `Cancel the pending invite to ${inv.guardian_name || inv.email}?`;
-    if (!confirm(confirmMsg)) return;
-
-    setDeletingInviteId(inv.id);
-
-    if (isAccepted) {
-      if (!inv.accepted_by || !selectedPlayer) {
-        alert('Could not remove this guardian — missing account info. Please contact support.');
-        setDeletingInviteId(null);
-        return;
-      }
-      const { data, error } = await supabase.rpc('revoke_guardian_access', {
-        p_player_id: selectedPlayer.id,
-        p_profile_id: inv.accepted_by,
-      });
-      const result = data as { success?: boolean; error?: string } | null;
-      if (error || result?.error) {
-        alert(result?.error ?? 'Could not remove guardian. Please try again.');
-        setDeletingInviteId(null);
-        return;
-      }
-    } else {
-      const { error } = await supabase.from('invites').delete().eq('id', inv.id);
-      if (error) {
-        alert('Could not cancel invite: ' + error.message);
-        setDeletingInviteId(null);
-        return;
-      }
-    }
-
-    setInvites((prev) => prev.filter((x) => x.id !== inv.id));
-    setDeletingInviteId(null);
-  }
-
-  async function resendInvite(inv: Invite) {
-    if (!selectedPlayer) return;
-    setSendingInvite(true);
-    setInviteError('');
-    const teamName = teams.find((t) => t.id === selectedPlayer.team_id)?.name ?? 'your team';
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch('/api/send-invite', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: JSON.stringify({
-        invite_id: inv.id,
-        team_name: teamName,
-        player_name: selectedPlayer.full_name,
-        club_name: club?.name ?? '',
-      }),
-    });
-    setSendingInvite(false);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      setInviteError('Resend failed: ' + (err.error ?? res.statusText));
-      return;
-    }
-    setInviteSent(true);
-    setTimeout(() => setInviteSent(false), 2500);
-  }
 
   async function handleAddPlayer() {
     if (!form.full_name.trim()) return;
@@ -442,7 +155,6 @@ export default function RosterPage() {
     if (error) { alert(`Could not delete player: ${error.message}`); return; }
     setPlayers((prev) => prev.filter((p) => p.id !== player.id));
     setDeleteModal(null);
-    if (selectedPlayer?.id === player.id) setSelectedPlayer(null);
   }
 
   const filtered = players.filter((p) =>
@@ -453,16 +165,11 @@ export default function RosterPage() {
   const paginated  = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const currentTeam = teams.find((t) => t.id === teamFilter);
 
-  const posStyle = positionStyle(selectedPlayer?.position ?? null);
-  const panelInitials = selectedPlayer?.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2) ?? '';
-  const totalRsvps = rsvpStats.attending + rsvpStats.not_attending;
-  const attendancePct = totalRsvps > 0 ? Math.round((rsvpStats.attending / totalRsvps) * 100) : null;
-
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
 
       {/* Main content */}
-      <div style={{ flex: 1, padding: '32px 36px', maxWidth: selectedPlayer ? '680px' : '960px', minWidth: 0 }}>
+      <div style={{ flex: 1, padding: '32px 36px', maxWidth: '960px', minWidth: 0 }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
@@ -549,11 +256,10 @@ export default function RosterPage() {
             {paginated.map((p, idx) => {
               const pos = positionStyle(p.position);
               const initials = p.full_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
-              const isSelected = selectedPlayer?.id === p.id;
               return (
                 <PlayerRow key={p.id} player={p} primary={primary} pos={pos} initials={initials}
-                  isLast={idx === paginated.length - 1} isSelected={isSelected}
-                  onClick={() => setSelectedPlayer(isSelected ? null : p)}
+                  isLast={idx === paginated.length - 1}
+                  onClick={() => router.push(`/dashboard/players/${p.id}`)}
                   onDelete={(e) => { e.stopPropagation(); setDeleteModal({ player: p, deleting: false }); }}
                 />
               );
@@ -586,311 +292,6 @@ export default function RosterPage() {
           </div>
         )}
       </div>
-
-      {/* ── Player profile panel ─────────────────────────────────────────────── */}
-      {selectedPlayer && (
-        <div style={{
-          width: '360px', flexShrink: 0, borderLeft: '1px solid #E2E8F0',
-          background: '#fff', height: '100vh', overflowY: 'auto',
-          position: 'sticky', top: 0, display: 'flex', flexDirection: 'column',
-        }}>
-          {/* Panel header */}
-          <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <span style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>Player Profile</span>
-            <button onClick={() => setSelectedPlayer(null)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '6px', display: 'flex' }}
-              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#F1F5F9'}
-              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
-              <X size={16} color="#64748B" />
-            </button>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-
-            {/* Avatar + headline */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '24px' }}>
-              <div style={{
-                width: '60px', height: '60px', borderRadius: '50%',
-                background: `${primary}15`, border: `2px solid ${primary}30`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '18px', fontWeight: '800', color: primary, flexShrink: 0,
-              }}>
-                {panelInitials}
-              </div>
-              <div>
-                <div style={{ fontSize: '17px', fontWeight: '800', color: '#0F172A' }}>{selectedPlayer.full_name}</div>
-                <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
-                  {selectedPlayer.jersey_number != null && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '12px', fontWeight: '700', color: primary }}>
-                      <Hash size={11} strokeWidth={2.5} /> {selectedPlayer.jersey_number}
-                    </span>
-                  )}
-                  {selectedPlayer.position && (
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: posStyle.color, background: posStyle.bg, borderRadius: '5px', padding: '2px 7px' }}>
-                      {selectedPlayer.position}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Edit details ─────────────────────── */}
-            <Section label="Details">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={labelStyle}>Full Name</label>
-                  <input value={panelForm.full_name}
-                    onChange={(e) => { setPanelForm((f) => ({ ...f, full_name: e.target.value })); setPanelSaved(false); }}
-                    style={inputStyle} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div>
-                    <label style={labelStyle}>Jersey #</label>
-                    <input type="number" min="1" max="99" value={panelForm.jersey_number}
-                      onChange={(e) => { setPanelForm((f) => ({ ...f, jersey_number: e.target.value })); setPanelSaved(false); }}
-                      placeholder="—" style={inputStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Position</label>
-                    <input
-                      list="positions-list"
-                      value={panelForm.position}
-                      onChange={(e) => { setPanelForm((f) => ({ ...f, position: e.target.value })); setPanelSaved(false); }}
-                      placeholder="e.g. GK, CM, ST…"
-                      style={inputStyle}
-                    />
-                    <datalist id="positions-list">
-                      {POSITIONS.map((pos) => <option key={pos} value={pos} />)}
-                    </datalist>
-                  </div>
-                </div>
-
-                {teams.length > 1 && (
-                  <div>
-                    <label style={labelStyle}>Team</label>
-                    <select value={panelForm.team_id}
-                      onChange={(e) => { setPanelForm((f) => ({ ...f, team_id: e.target.value })); setPanelSaved(false); setMoveError(''); }}
-                      style={{ ...inputStyle, cursor: 'pointer' }}>
-                      {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  </div>
-                )}
-
-                {moveError && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '9px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '9px', fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
-                    <AlertCircle size={12} />{moveError}
-                  </div>
-                )}
-
-                <button onClick={savePanel} disabled={panelSaving || !panelForm.full_name.trim()}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', width: '100%', padding: '10px', background: panelSaved ? '#22C55E' : primary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', transition: 'background 0.2s' }}>
-                  {panelSaved ? <><Check size={15} strokeWidth={2.5} /> Saved</> : panelSaving ? 'Saving…' : 'Save Changes'}
-                </button>
-              </div>
-            </Section>
-
-            {/* ── Attendance ─────────────────────── */}
-            <Section label="Attendance">
-              {rsvpLoading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '16px' }}>
-                  <div style={{ width: '18px', height: '18px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                </div>
-              ) : totalRsvps === 0 ? (
-                <p style={{ fontSize: '13px', color: '#94A3B8', textAlign: 'center', padding: '8px 0' }}>No RSVP data yet</p>
-              ) : (
-                <>
-                  {/* % bar */}
-                  {attendancePct !== null && (
-                    <div style={{ marginBottom: '14px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748B' }}>Attendance rate</span>
-                        <span style={{ fontSize: '13px', fontWeight: '800', color: attendancePct >= 80 ? '#16A34A' : attendancePct >= 60 ? '#D97706' : '#DC2626' }}>
-                          {attendancePct}%
-                        </span>
-                      </div>
-                      <div style={{ height: '6px', background: '#F1F5F9', borderRadius: '99px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${attendancePct}%`, background: attendancePct >= 80 ? '#22C55E' : attendancePct >= 60 ? '#F59E0B' : '#EF4444', borderRadius: '99px', transition: 'width 0.4s' }} />
-                      </div>
-                    </div>
-                  )}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <StatCard icon={<CalendarCheck size={14} color="#16A34A" />} label="Going" value={rsvpStats.attending} color="#16A34A" bg="#F0FDF4" />
-                    <StatCard icon={<CalendarX size={14} color="#DC2626" />} label="Not going" value={rsvpStats.not_attending} color="#DC2626" bg="#FEF2F2" />
-                  </div>
-                </>
-              )}
-            </Section>
-
-            {/* ── Parent / Guardian ─────────────────── */}
-            <Section label="Parent / Guardian">
-              {inviteLoading ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '16px' }}>
-                  <div style={{ width: '18px', height: '18px', border: `2px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {/* ── Guardian cards ── */}
-                  {invites.map((inv) => (
-                    <div key={inv.id}>
-                      {editingInviteId === inv.id ? (
-                        /* Edit form */
-                        <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <div>
-                            <label style={labelStyle}>Email *</label>
-                            <input type="email" value={inviteEditForm.email} autoFocus
-                              onChange={(e) => setInviteEditForm((f) => ({ ...f, email: e.target.value }))}
-                              style={inputStyle} />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Guardian name</label>
-                            <input value={inviteEditForm.guardian_name}
-                              onChange={(e) => setInviteEditForm((f) => ({ ...f, guardian_name: e.target.value }))}
-                              placeholder="e.g. Sarah Turner" style={inputStyle} />
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                            <div>
-                              <label style={labelStyle}>Phone</label>
-                              <input type="tel" value={inviteEditForm.phone}
-                                onChange={(e) => setInviteEditForm((f) => ({ ...f, phone: e.target.value }))}
-                                placeholder="07700…" style={inputStyle} />
-                            </div>
-                            <div>
-                              <label style={labelStyle}>Relationship</label>
-                              <input value={inviteEditForm.relationship}
-                                onChange={(e) => setInviteEditForm((f) => ({ ...f, relationship: e.target.value }))}
-                                placeholder="Mother…" style={inputStyle} />
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => setEditingInviteId(null)}
-                              style={{ flex: 1, padding: '8px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
-                              Cancel
-                            </button>
-                            <button onClick={saveInviteEdit} disabled={savingInviteEdit || !inviteEditForm.email.trim()}
-                              style={{ flex: 1, padding: '8px', background: primary, border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-                              {savingInviteEdit ? 'Saving…' : 'Save'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        /* Display card */
-                        <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px 14px', border: '1px solid #E2E8F0' }}>
-                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              {inv.guardian_name && (
-                                <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>
-                                  {inv.guardian_name}
-                                  {inv.relationship && <span style={{ fontSize: '11px', fontWeight: '500', color: '#94A3B8', marginLeft: '6px' }}>({inv.relationship})</span>}
-                                </div>
-                              )}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px' }}>
-                                <Mail size={11} color="#64748B" />
-                                <span style={{ fontSize: '12px', color: '#374151', wordBreak: 'break-all' }}>{inv.email}</span>
-                              </div>
-                              {inv.phone && (
-                                <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '3px' }}>📞 {inv.phone}</div>
-                              )}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px', flexWrap: 'wrap' }}>
-                                {inv.accepted_at ? (
-                                  <>
-                                    <Check size={11} color="#16A34A" strokeWidth={2.5} /><span style={{ fontSize: '11px', color: '#16A34A', fontWeight: '600' }}>Joined the app</span>
-                                    {parentLastActive && (
-                                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>· Active {timeAgo(parentLastActive)}</span>
-                                    )}
-                                  </>
-                                ) : (
-                                  <><Clock size={11} color="#94A3B8" /><span style={{ fontSize: '11px', color: '#94A3B8' }}>Invite pending · sent {timeAgo(inv.created_at)}</span></>
-                                )}
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                              <button
-                                onClick={() => { setInviteEditForm({ email: inv.email, guardian_name: inv.guardian_name ?? '', phone: inv.phone ?? '', relationship: inv.relationship ?? '' }); setEditingInviteId(inv.id); }}
-                                title="Edit guardian"
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', borderRadius: '6px', display: 'flex' }}
-                                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#E2E8F0'}
-                                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
-                              </button>
-                              <button onClick={() => deleteInviteRecord(inv)} disabled={deletingInviteId === inv.id} title="Remove guardian"
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', borderRadius: '6px', display: 'flex' }}
-                                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = '#FEF2F2'}
-                                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = 'none'}>
-                                <Trash2 size={13} color="#EF4444" />
-                              </button>
-                            </div>
-                          </div>
-                          {!inv.accepted_at && (
-                            <button onClick={() => resendInvite(inv)} disabled={sendingInvite}
-                              style={{ width: '100%', marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '7px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '7px', fontSize: '12px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>
-                              <RotateCcw size={11} /> Resend invite
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {/* ── Sent confirmation ── */}
-                  {inviteSent && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 12px', background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: '9px', fontSize: '12px', fontWeight: '600', color: '#16A34A' }}>
-                      <Check size={13} strokeWidth={2.5} /> Invite sent!
-                    </div>
-                  )}
-
-                  {inviteError && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '9px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '9px', fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
-                      <AlertCircle size={12} /> {inviteError}
-                    </div>
-                  )}
-
-                  {/* ── Add guardian form ── */}
-                  {showAddGuardianForm ? (
-                    <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div>
-                        <label style={labelStyle}>Email *</label>
-                        <div style={{ position: 'relative' }}>
-                          <Mail size={13} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                          <input type="email" value={inviteEmail} autoFocus
-                            onChange={(e) => { setInviteEmail(e.target.value); setInviteError(''); }}
-                            placeholder="parent@example.com"
-                            style={{ ...inputStyle, paddingLeft: '32px' }} />
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => { setShowAddGuardianForm(false); setInviteEmail(''); setInviteError(''); }}
-                          style={{ flex: 1, padding: '8px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          Cancel
-                        </button>
-                        <button onClick={sendInviteFromPanel} disabled={sendingInvite || !inviteEmail.trim()}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px', background: sendingInvite || !inviteEmail.trim() ? '#E2E8F0' : primary, border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', color: sendingInvite || !inviteEmail.trim() ? '#94A3B8' : '#fff', cursor: sendingInvite || !inviteEmail.trim() ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                          <Send size={12} /> {sendingInvite ? 'Sending…' : 'Send Invite'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => { setShowAddGuardianForm(true); setInviteError(''); }}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '9px', background: '#fff', border: `1px dashed ${invites.length === 0 ? primary : '#CBD5E1'}`, borderRadius: '9px', fontSize: '13px', fontWeight: '600', color: invites.length === 0 ? primary : '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      <Plus size={14} /> {invites.length === 0 ? 'Add guardian' : 'Add another guardian'}
-                    </button>
-                  )}
-                </div>
-              )}
-            </Section>
-
-            {/* ── Remove ─────────────────────── */}
-            <div style={{ marginTop: '8px', paddingTop: '16px', borderTop: '1px solid #F1F5F9' }}>
-              <button onClick={() => setDeleteModal({ player: selectedPlayer, deleting: false })}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', padding: '10px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px', fontSize: '13px', fontWeight: '700', color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit' }}>
-                <Trash2 size={14} /> Remove Player
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Add player modal ─────────────────────────────────────────────────── */}
       {showAddModal && (
@@ -993,10 +394,10 @@ export default function RosterPage() {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function PlayerRow({ player: p, primary, pos, initials, isLast, isSelected, onClick, onDelete }: {
+function PlayerRow({ player: p, primary, pos, initials, isLast, onClick, onDelete }: {
   player: Player; primary: string;
   pos: { color: string; bg: string };
-  initials: string; isLast: boolean; isSelected: boolean;
+  initials: string; isLast: boolean;
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
@@ -1007,8 +408,8 @@ function PlayerRow({ player: p, primary, pos, initials, isLast, isSelected, onCl
         display: 'grid', gridTemplateColumns: '56px 1fr 160px 24px',
         padding: '12px 20px', borderBottom: isLast ? 'none' : '1px solid #F8FAFC',
         alignItems: 'center', cursor: 'pointer', transition: 'background 0.1s',
-        background: isSelected ? `${primary}08` : hover ? '#FAFBFF' : 'transparent',
-        borderLeft: isSelected ? `3px solid ${primary}` : '3px solid transparent',
+        background: hover ? '#FAFBFF' : 'transparent',
+        borderLeft: '3px solid transparent',
       }}>
       <div style={{ fontSize: '15px', fontWeight: '800', color: primary, letterSpacing: '-0.3px' }}>
         {p.jersey_number != null ? p.jersey_number : <span style={{ fontSize: '13px', color: '#CBD5E1' }}>—</span>}
@@ -1034,24 +435,6 @@ function PlayerRow({ player: p, primary, pos, initials, isLast, isSelected, onCl
           <Trash2 size={13} color="#94A3B8" />
         </button>
       </div>
-    </div>
-  );
-}
-
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: '20px' }}>
-      <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>{label}</div>
-      {children}
-    </div>
-  );
-}
-
-function StatCard({ icon, label, value, color, bg }: { icon: React.ReactNode; label: string; value: number; color: string; bg: string }) {
-  return (
-    <div style={{ background: bg, borderRadius: '10px', padding: '10px 12px', border: `1px solid ${color}20` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>{icon}<span style={{ fontSize: '11px', fontWeight: '600', color }}>{label}</span></div>
-      <div style={{ fontSize: '20px', fontWeight: '800', color }}>{value}</div>
     </div>
   );
 }

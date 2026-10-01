@@ -5,28 +5,28 @@ import { useParams } from 'next/navigation';
 import { Users, Plus, ChevronRight, RotateCcw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import PlayerPanel, { type PlayerForPanel } from '@/components/dashboard/PlayerPanel';
 import { useRouter } from 'next/navigation';
 
-type Player = PlayerForPanel & { parent_email: string | null };
+type Player = {
+  id: string; full_name: string; jersey_number: number | null;
+  position: string | null; team_id: string; photo_url: string | null;
+  parent_email: string | null;
+};
 type Invite  = { player_id: string; email: string; accepted_at: string | null };
 type Coach   = { profile_id: string; full_name: string | null; avatar_url: string | null };
 type PendingCoach = { id: string; email: string };
 
 export default function TeamRosterPage() {
   const { teamId } = useParams<{ teamId: string }>();
-  const { profile, club, teams } = useDashboard();
+  const { club } = useDashboard();
   const router   = useRouter();
   const primary  = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
-  const teamName = teams.find(t => t.id === teamId)?.name ?? 'Team';
-  const clubName = club?.name ?? '';
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [pendingCoaches, setPendingCoaches] = useState<PendingCoach[]>([]);
   const [loading, setLoading] = useState(true);
-  const [panel,   setPanel]   = useState<Player | null>(null);
   const [resending, setResending] = useState(false);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
 
@@ -198,7 +198,7 @@ export default function TeamRosterPage() {
                 const status = inviteStatus(p);
                 return (
                   <tr key={p.id}
-                    onClick={() => setPanel(p)}
+                    onClick={() => router.push(`/dashboard/players/${p.id}`)}
                     style={{ borderBottom: i < players.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#fff'}
@@ -237,33 +237,6 @@ export default function TeamRosterPage() {
         </div>
       )}
 
-      {panel && (
-        <PlayerPanel
-          player={panel}
-          teamName={teamName}
-          clubName={clubName}
-          clubId={club?.id}
-          primary={primary}
-          profileId={profile?.id}
-          teams={teams}
-          onClose={() => setPanel(null)}
-          onSaved={updated => {
-            if (updated.team_id !== teamId) {
-              // Moved to a different team — no longer belongs in this
-              // team-scoped list.
-              setPlayers(prev => prev.filter(p => p.id !== updated.id));
-              setPanel(null);
-              return;
-            }
-            setPlayers(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
-            setPanel(prev => prev ? { ...prev, ...updated } : null);
-          }}
-          onDeleted={id => {
-            setPlayers(prev => prev.filter(p => p.id !== id));
-            setPanel(null);
-          }}
-        />
-      )}
     </div>
   );
 }

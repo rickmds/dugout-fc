@@ -4,28 +4,32 @@ import { useEffect, useState, useCallback } from 'react';
 import { Search, ChevronDown, X, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import PlayerPanel, { type PlayerForPanel } from '@/components/dashboard/PlayerPanel';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-type Player = PlayerForPanel & { team_name: string; age_group: string | null };
+type Player = {
+  id: string; full_name: string; jersey_number: number | null;
+  position: string | null; team_id: string; photo_url: string | null;
+  team_name: string; age_group: string | null;
+};
 type GuardianInfo = { name: string | null; email: string | null; phone: string | null };
 
 export default function PlayersPage() {
-  const { profile, club, teams } = useDashboard();
+  const router = useRouter();
+  const { club, teams } = useDashboard();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
   const [players,    setPlayers]    = useState<Player[]>([]);
   // Keyed by player_id — every guardian (parent/guardian name, email, phone)
-  // on file for that player, from the invites table (the same source
-  // PlayerPanel reads/edits guardians from — a player can have more than
-  // one). Searched alongside the player's own name below so a coach can
-  // find a kid by typing a parent's name or email instead.
+  // on file for that player, from the invites table (the same source the
+  // player profile page reads/edits guardians from — a player can have
+  // more than one). Searched alongside the player's own name below so a
+  // coach can find a kid by typing a parent's name or email instead.
   const [guardiansByPlayer, setGuardiansByPlayer] = useState<Map<string, GuardianInfo[]>>(new Map());
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');
   const [teamFilter, setTeamFilter] = useState('');
   const [ageFilter,  setAgeFilter]  = useState('');
-  const [panel,      setPanel]      = useState<Player | null>(null);
 
   const ageGroups = [...new Set(teams.map(t => t.age_group).filter(Boolean))] as string[];
 
@@ -209,7 +213,7 @@ export default function PlayersPage() {
                   style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#fff'}
-                  onClick={() => setPanel(p)}
+                  onClick={() => router.push(`/dashboard/players/${p.id}`)}
                 >
                   <td style={{ padding: '11px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -255,28 +259,6 @@ export default function PlayersPage() {
         </div>
       )}
 
-      {panel && (
-        <PlayerPanel
-          player={panel}
-          teamName={panel.team_name}
-          clubName={club?.name ?? ''}
-          clubId={club?.id}
-          primary={primary}
-          profileId={profile?.id}
-          teams={teams}
-          onClose={() => setPanel(null)}
-          onSaved={updated => {
-            const matchedTeam = teams.find(t => t.id === updated.team_id);
-            const merged = { ...updated, team_name: matchedTeam?.name ?? '—', age_group: matchedTeam?.age_group ?? null };
-            setPlayers(prev => prev.map(p => p.id === updated.id ? { ...p, ...merged } : p));
-            setPanel(prev => prev ? { ...prev, ...merged } : null);
-          }}
-          onDeleted={id => {
-            setPlayers(prev => prev.filter(p => p.id !== id));
-            setPanel(null);
-          }}
-        />
-      )}
       </div> {/* end scrollable content */}
     </div>
   );
