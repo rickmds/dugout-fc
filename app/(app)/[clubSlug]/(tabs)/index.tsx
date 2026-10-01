@@ -43,6 +43,8 @@ import { sendTeamEmail } from '../../../../lib/emailTeam';
 import GalleryCard from '../../../../components/home/GalleryCard';
 import * as WebBrowser from 'expo-web-browser';
 import { formatCurrency } from '../../../../lib/formatCurrency';
+import { PLAYER_CARD_ENABLED } from '../../../../lib/featureFlags';
+import PlayerCard, { type CardTierKey } from '../../../../components/player-card/PlayerCard';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -72,6 +74,24 @@ type MyPlayer = {
   jersey_number: number | null;
   position: string | null;
   photo_url: string | null;
+  card_photo_url: string | null;
+  card_photo_offset_x: number;
+  card_photo_offset_y: number;
+  country_code: string | null;
+};
+
+type PlayerCardTeaser = {
+  player_id: string;
+  full_name: string;
+  photo_url: string | null;
+  photo_offset_x: number;
+  photo_offset_y: number;
+  tier_key: CardTierKey;
+  tier_label: string;
+  overall: number;
+  position: string | null;
+  country_code: string | null;
+  pac: number; sho: number; pas: number; dri: number; def: number; phy: number;
 };
 
 type Announcement = {
@@ -219,7 +239,35 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+type FlameTier = { color: string; glow: string; label: string; emoji: string };
 
+// WHOOP-style color/label progression for the attendance streak — shared by
+// both the Home season card and the attendance detail sheet so the two
+// views can't drift out of sync the way their two separately-hand-written
+// copies previously had (slightly different label text for the same tier).
+// `emoji` is the actual glyph rendered in the card (seasonFlameEmoji) — fire
+// imagery is reserved for "On fire" and up, so a 1-streak doesn't show the
+// same flame as a 20-streak; each tier from there escalates to its own icon
+// rather than reusing 🔥 throughout (which also can't be recolored to match
+// the tier's own color the way the number/glow can).
+function getFlameTier(combinedStreak: number, combinedAtRisk: boolean, mutedColor: string): FlameTier {
+  if (combinedAtRisk) return { color: '#60A5FA', glow: '#60A5FA', label: '⚡ At risk', emoji: '⚡' };
+  if (combinedStreak >= 40) return { color: '#F59E0B', glow: '#F59E0B', label: '👑 Immortal', emoji: '👑' };
+  if (combinedStreak >= 25) return { color: '#D946EF', glow: '#D946EF', label: '🌟 Mythic', emoji: '🌟' };
+  if (combinedStreak >= 15) return { color: '#A855F7', glow: '#A855F7', label: '⭐ Legendary', emoji: '⭐' };
+  if (combinedStreak >= 10) return { color: '#7C3AED', glow: '#7C3AED', label: '🔥 Blazing', emoji: '🔥' };
+  if (combinedStreak >= 6) return { color: '#EF4444', glow: '#EF4444', label: '🔥 On fire', emoji: '🔥' };
+  if (combinedStreak >= 3) return { color: '#F97316', glow: '#F97316', label: '💪 Building', emoji: '💪' };
+  if (combinedStreak >= 1) return { color: '#EAB308', glow: '#EAB308', label: '🌱 Getting started', emoji: '🌱' };
+  return { color: mutedColor, glow: 'transparent', label: 'No streak yet', emoji: '' };
+}
+
+// Raised from >=10 to >=15 alongside the new, longer ladder above — keeps
+// this badge a genuinely elite achievement (now aligned with "Legendary")
+// rather than just meaning "Blazing + perfect attendance".
+function isSuperStreak(combinedStreak: number, gamesTotal: number, gamesAttended: number): boolean {
+  return combinedStreak >= 15 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+}
 
 function HomeSkeleton() {
   const { colors } = useTheme();
@@ -313,6 +361,7 @@ export default function HomeScreen() {
   // every section below (hero card, quick RSVP, season stats, fees) is
   // keyed per player rather than assuming a single "my player".
   const [myPlayers, setMyPlayers]           = useState<MyPlayer[]>([]);
+  const [playerCards, setPlayerCards]       = useState<PlayerCardTeaser[]>([]);
   const [myGameRsvpStatusByPlayer, setMyGameRsvpStatusByPlayer]         = useState<Record<string, string | null>>({});
   const [myTrainingRsvpStatusByPlayer, setMyTrainingRsvpStatusByPlayer] = useState<Record<string, string | null>>({});
   const [latestAnnouncement, setLatestAnnouncement] = useState<Announcement | null>(null);
@@ -545,7 +594,12 @@ export default function HomeScreen() {
       ? `${event.lat},${event.lng}`
       : (event.address ?? event.location ?? '');
     if (!loc) return;
-    fetchDriveTime(loc, event.event_date, event.event_time, timezone).then(t => { if (t) setDrive(t); });
+    // Drive time only matters for away games — training and home games are
+    // at the team's usual local venue, which families already know how to
+    // get to. Weather still applies to everything.
+    if (event.type === 'game' && event.home_away === 'away') {
+      fetchDriveTime(loc, event.event_date, event.event_time, timezone).then(t => { if (t) setDrive(t); });
+    }
     if (isWeatherForecastable(event.event_date)) {
       fetchEventWeather(loc, event.event_date, event.event_time ?? null).then(w => { if (w) setWeather(w); });
     }
@@ -572,41 +626,59 @@ export default function HomeScreen() {
 
     try {
     // === CRITICAL PATH — unblocks skeleton as fast as possible ===
-    // Raced against a timeout so a stalled connection doesn't leave the
-    // skeleton up forever — on timeout/failure the screen shows a retry
-    // affordance instead of hanging indefinitely or rendering as if
-    // there's simply nothing to show.
+    // Each query gets its OWN timeout race, not one shared race around the
+    // whole batch — a single shared race meant one stalled query (a cold
+    // index, a momentarily slow connection) discarded the other five
+    // already-resolved results too, showing the full retry screen when
+    // 5/6 of the data was sitting right there. A per-query timeout
+    // degrades just the one that didn't make it in time to "empty" (same
+    // as a genuinely-empty table looks today) instead of failing the
+    // whole screen over one slow piece.
     const CRITICAL_TIMEOUT_MS = 10_000;
-    const criticalResult = await withTimeout(Promise.all([
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1),
-      supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1),
-      supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    const [
+      gameEventsRes,
+      trainingEventsRes,
+      announcementResRaw,
+      playerResRaw,
+      calloutResRaw,
+      tournamentsResRaw,
+    ] = await Promise.all([
+      withTimeout(supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1), CRITICAL_TIMEOUT_MS),
+      withTimeout(supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1), CRITICAL_TIMEOUT_MS),
+      withTimeout(supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(), CRITICAL_TIMEOUT_MS),
       // get_my_guarded_players() also checks player_guardians — a second
       // guardian otherwise never saw their own kid's card/RSVP on Home at all.
       // Not .maybeSingle() — a guardian can have more than one player on this
       // team (e.g. twins), which would otherwise error and blank the whole
       // card. Every section below (hero, quick RSVP, season stats, fees) is
       // rendered once per guarded player.
-      (supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url').eq('team_id', team.id).order('full_name'),
-      sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5),
-      supabase.from('tournaments').select('id, start_date').eq('team_id', team.id),
-    ]), CRITICAL_TIMEOUT_MS);
+      withTimeout((supabase as any).rpc('get_my_guarded_players').select('id, full_name, jersey_number, position, photo_url, card_photo_url, card_photo_offset_x, card_photo_offset_y, country_code').eq('team_id', team.id).order('full_name'), CRITICAL_TIMEOUT_MS),
+      withTimeout(sb.from('team_callouts').select('id, title, body, created_at, expires_at, urgency').eq('team_id', team.id).or('expires_at.is.null,expires_at.gt.now()').order('created_at', { ascending: false }).limit(5), CRITICAL_TIMEOUT_MS),
+      // Unbounded before — a team with a long tournament history had no cap
+      // on this query, making it a plausible slow-outlier in a batch that's
+      // otherwise all .limit(1)/.limit(5).
+      withTimeout(supabase.from('tournaments').select('id, start_date').eq('team_id', team.id).limit(50), CRITICAL_TIMEOUT_MS),
+    ]);
 
-    if (criticalResult === TIMEOUT) {
-      console.error('fetchData critical path timed out');
+    // Only fail the whole screen if EVERY query timed out — that's the
+    // real "can't reach the network at all" case. A mix of hits and
+    // timeouts means the connection works, just not uniformly fast, so
+    // render whatever did come back instead of discarding it.
+    const allTimedOut = [gameEventsRes, trainingEventsRes, announcementResRaw, playerResRaw, calloutResRaw, tournamentsResRaw]
+      .every((r) => r === TIMEOUT);
+    if (allTimedOut) {
+      console.error('fetchData critical path timed out entirely');
       setLoadError(true);
       setLoading(false);
       return;
     }
 
-    const [
-      { data: gameEvents },
-      { data: trainingEvents },
-      announcementRes,
-      playerRes,
-      { data: calloutData },
-      { data: tournamentRows },
-    ] = criticalResult;
+    const gameEvents = gameEventsRes === TIMEOUT ? null : gameEventsRes.data;
+    const trainingEvents = trainingEventsRes === TIMEOUT ? null : trainingEventsRes.data;
+    const announcementRes = announcementResRaw === TIMEOUT ? { data: null } : announcementResRaw;
+    const playerRes = playerResRaw === TIMEOUT ? { data: null } : playerResRaw;
+    const calloutData = calloutResRaw === TIMEOUT ? null : (calloutResRaw as any).data;
+    const tournamentRows = tournamentsResRaw === TIMEOUT ? null : tournamentsResRaw.data;
     setLoadError(false);
 
     const nextG = (gameEvents as NextEvent[])?.[0] ?? null;
@@ -909,12 +981,57 @@ export default function HomeScreen() {
       }
     }
 
+    async function fetchPlayerCard() {
+      const canSeePlayerCard = PLAYER_CARD_ENABLED || profile?.role === 'app_admin';
+      // !isCoach is the real-launch rule (a coach's own team shouldn't show
+      // THEM a parent-facing "my kid's card" teaser) — but it was silently
+      // defeating the app_admin override above too: an org_admin/coach is
+      // `isCoach` on nearly every team they can view, so the admin-preview
+      // teaser only ever appeared on the one team where they happened to
+      // also be a plain guardian, making it look like it "sometimes
+      // doesn't show" rather than being gated correctly. The admin
+      // override should bypass both gates, not just the feature flag.
+      if (canSeePlayerCard && guardedPlayers.length > 0 && (!isCoach || profile?.role === 'app_admin')) {
+        const results = await Promise.all(
+          guardedPlayers.map((p) =>
+            (supabase as any)
+              .rpc('get_player_card', { p_player_id: p.id })
+              .then((r: any) => ({ player: p, row: r.data?.[0] ?? null, error: r.error }))
+          )
+        );
+        setPlayerCards(
+          results
+            .filter((r) => r.row && !r.error)
+            .map((r) => ({
+              player_id: r.player.id,
+              full_name: r.player.full_name,
+              photo_url: r.player.card_photo_url ?? r.player.photo_url,
+              // Only apply the saved drag offset when showing the actual
+              // card photo it was positioned for — meaningless (and
+              // possibly visually wrong) against the roster-photo fallback.
+              photo_offset_x: r.player.card_photo_url ? r.player.card_photo_offset_x : 0,
+              photo_offset_y: r.player.card_photo_url ? r.player.card_photo_offset_y : 0,
+              tier_key: r.row.tier_key,
+              tier_label: r.row.tier_label,
+              overall: r.row.overall,
+              position: r.player.position,
+              country_code: r.player.country_code,
+              pac: r.row.pac, sho: r.row.sho, pas: r.row.pas,
+              dri: r.row.dri, def: r.row.def, phy: r.row.phy,
+            }))
+        );
+      } else {
+        setPlayerCards([]);
+      }
+    }
+
     const [pc] = await Promise.all([
       fetchCounts(),
       fetchCalloutResponses(),
       fetchFees(),
       fetchGuestInvites(),
       fetchRsvpAndStreak(),
+      fetchPlayerCard(),
     ]);
 
     // === WAVE 2 — needs `pc` from wave one above; independent of each
@@ -1272,6 +1389,13 @@ export default function HomeScreen() {
       controlsColor: primaryColor,
       dismissButtonStyle: 'close',
     });
+    // Without this, a Pay Now tapped within 30s of Home's own last fetch —
+    // the normal case, since the fee card that triggered it just loaded —
+    // hits fetchData's cache guard (`lastFetchRef`) and silently no-ops: a
+    // parent returns from a real, successful Stripe payment and the fee
+    // still shows as owing. handleRefresh (pull-to-refresh) already bypasses
+    // the same guard the same way.
+    lastFetchRef.current = 0;
     fetchData();
   }
 
@@ -1872,6 +1996,42 @@ export default function HomeScreen() {
           <GameDayWidget onPress={handleGameDayPress} />
         )}
 
+        {/* Player Card teasers — parents only, one per guarded player */}
+        {playerCards.map((pc2) => (
+          <TouchableOpacity
+            key={pc2.player_id}
+            style={[
+              styles.cardTeaser,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+            activeOpacity={0.7}
+            onPress={() => router.push(`/(app)/${slug}/player/${pc2.player_id}?tab=card` as never)}
+          >
+            <PlayerCard
+              tier={pc2.tier_key}
+              overall={pc2.overall}
+              position={pc2.position}
+              name={pc2.full_name}
+              photoUrl={pc2.photo_url}
+              photoOffsetX={pc2.photo_offset_x}
+              photoOffsetY={pc2.photo_offset_y}
+              countryCode={pc2.country_code}
+              crestUrl={logoUrl}
+              stats={{ pac: pc2.pac, sho: pc2.sho, pas: pc2.pas, dri: pc2.dri, def: pc2.def, phy: pc2.phy }}
+              width={56}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.cardTeaserName, { color: colors.text }]} numberOfLines={1}>
+                {pc2.full_name}'s Player Card
+              </Text>
+              <Text style={styles.cardTeaserMeta}>
+                {pc2.tier_label} · {pc2.overall} OVR
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+          </TouchableOpacity>
+        ))}
+
         {/* Team Pulse — coaches only */}
         {isCoach && (
           <>
@@ -1937,19 +2097,8 @@ export default function HomeScreen() {
           const stats = seasonStatsByPlayer[p.id];
           if (!stats || stats.seasonTotalMarked === 0) return null;
           const { combinedStreak, combinedAtRisk, gamesTotal, gamesAttended } = stats;
-          const superStreak = combinedStreak >= 10 && (gamesTotal === 0 || gamesAttended === gamesTotal);
-          // Flame tier — WHOOP-style color progression
-          const flameTier = combinedAtRisk
-            ? { color: '#60A5FA', glow: '#60A5FA', label: '⚡ At risk' }
-            : combinedStreak >= 10
-              ? { color: '#A855F7', glow: '#A855F7', label: '⭐ Legendary' }
-              : combinedStreak >= 6
-                ? { color: '#EF4444', glow: '#EF4444', label: '🔥 On fire' }
-                : combinedStreak >= 3
-                  ? { color: '#F97316', glow: '#F97316', label: 'Building' }
-                  : combinedStreak >= 1
-                    ? { color: '#EAB308', glow: '#EAB308', label: 'Getting started' }
-                    : { color: colors.muted, glow: 'transparent', label: 'No streak yet' };
+          const superStreak = isSuperStreak(combinedStreak, gamesTotal, gamesAttended);
+          const flameTier = getFlameTier(combinedStreak, combinedAtRisk, colors.muted);
           const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
           return (
             <View key={p.id}>
@@ -1971,7 +2120,7 @@ export default function HomeScreen() {
                     textShadowColor: flameTier.glow,
                     textShadowOffset: { width: 0, height: 0 },
                     textShadowRadius: combinedStreak >= 1 ? 12 : 0,
-                  }]}>🔥</Text>
+                  }]}>{flameTier.emoji}</Text>
                   <Text style={[styles.seasonStatNum, { color: flameTier.color }]}>{combinedStreak}</Text>
                   <Text style={styles.seasonStatLabel}>{flameTier.label}</Text>
                 </View>
@@ -2650,21 +2799,11 @@ export default function HomeScreen() {
               const stats = seasonSheetPlayerId ? seasonStatsByPlayer[seasonSheetPlayerId] : undefined;
               if (!stats) return null;
               const { combinedStreak, combinedAtRisk, gamesTotal, gamesAttended, attendanceHistory } = stats;
-              const superStreak = combinedStreak >= 10 && (gamesTotal === 0 || gamesAttended === gamesTotal);
+              const superStreak = isSuperStreak(combinedStreak, gamesTotal, gamesAttended);
               const trainingsTotal = attendanceHistory.filter(e => e.type !== 'game').length;
               const trainingsAttended = attendanceHistory.filter(e => e.type !== 'game' && e.status === 'present').length;
               const tPerfect = trainingsTotal > 0 && trainingsAttended === trainingsTotal;
-              const tier = combinedAtRisk
-                ? { color: '#60A5FA', glow: '#60A5FA', label: 'At risk' }
-                : combinedStreak >= 10
-                  ? { color: '#A855F7', glow: '#A855F7', label: '⭐ Legendary' }
-                  : combinedStreak >= 6
-                    ? { color: '#EF4444', glow: '#EF4444', label: 'On fire' }
-                    : combinedStreak >= 3
-                      ? { color: '#F97316', glow: '#F97316', label: 'Building momentum' }
-                      : combinedStreak >= 1
-                        ? { color: '#EAB308', glow: '#EAB308', label: 'Getting started' }
-                        : { color: colors.muted, glow: 'transparent', label: 'No streak yet' };
+              const tier = getFlameTier(combinedStreak, combinedAtRisk, colors.muted);
               const gPerfect = gamesTotal > 0 && gamesAttended === gamesTotal;
               return (
                 <>
@@ -2674,7 +2813,7 @@ export default function HomeScreen() {
                       textShadowColor: tier.glow,
                       textShadowOffset: { width: 0, height: 0 },
                       textShadowRadius: combinedStreak >= 1 ? 14 : 0,
-                    }]}>🔥</Text>
+                    }]}>{tier.emoji}</Text>
                     <Text style={[styles.attSheetHeroNum, { color: tier.color }]}>{combinedStreak}</Text>
                     <Text style={styles.attSheetHeroLabel}>{tier.label}</Text>
                     {combinedAtRisk && (
@@ -2875,6 +3014,15 @@ function getStyles(colors: ThemeColors) {
   // Section title with dot accent
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionTitleDot: { width: 6, height: 6, borderRadius: 3 },
+
+  // Player Card teaser (Home)
+  cardTeaser: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12,
+    borderLeftWidth: 3, borderLeftColor: '#fbbf24',
+  },
+  cardTeaserName: { fontSize: 14, fontWeight: '700' },
+  cardTeaserMeta: { fontSize: 12, fontWeight: '700', color: '#fbbf24', marginTop: 2 },
 
   // Stats (parents only)
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 28 },

@@ -40,16 +40,118 @@ function toDepartureTimestamp(eventDate: string | undefined, eventTime: string |
   }
 }
 
-// Resolve a venue name / address to "lat,lng" using Google Geocoding
+// The paid "Advanced" Distance Matrix tier (triggered by sending
+// departure_time at all) only gets requested within this window of the
+// actual departure. Google's traffic-predicted duration is pattern-based
+// for any future departure_time — it doesn't get progressively more "live"
+// the closer departure gets, except right near the actual moment, where
+// current observed conditions genuinely factor in. A prediction for 2
+// hours from now and one for 2 weeks from now are both just historical
+// pattern estimates, so there's no real accuracy to trade away by using
+// the cheaper Basic tier outside this short window — only a departure
+// that's essentially imminent benefits from the live-influenced number.
+const ADVANCED_TIER_WINDOW_SEC = 2 * 60 * 60;
+
+function resolveDeparture(eventDate: string | undefined, eventTime: string | null | undefined, timezone: string): { departure: number; useAdvanced: boolean } {
+  const departure = toDepartureTimestamp(eventDate, eventTime, timezone);
+  const nowSec = Math.floor(Date.now() / 1000);
+  return { departure, useAdvanced: departure - nowSec <= ADVANCED_TIER_WINDOW_SEC };
+}
+
+// In-memory only (resets on app restart) — still covers the dominant cost
+// pattern, which is the same handful of results being re-requested
+// repeatedly within one session (switching tabs back and forth, pulling to
+// refresh, returning to Home). Departure time is rounded to the nearest 15
+// minutes for the cache key only — the real API call still uses the precise
+// timestamp — so two lookups a few minutes apart hit the same entry instead
+// of missing on a technicality.
+type CacheEntry = { duration: string; expiresAt: number };
+const driveTimeCache = new Map<string, CacheEntry>();
+const DRIVE_TIME_TTL_MS = 45 * 60 * 1000;
+
+function roundOrigin(origin: string): string {
+  const [lat, lng] = origin.split(',').map(Number);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return origin;
+  // ~1.1km grid at mid-latitudes — far finer than a drive-time estimate
+  // needs, but stable across the small GPS jitter between repeat reads of
+  // an otherwise-stationary device.
+  return `${Math.round(lat * 100) / 100},${Math.round(lng * 100) / 100}`;
+}
+
+function driveTimeCacheKey(origin: string, destination: string, departure: number, useAdvanced: boolean): string {
+  const roundedDeparture = Math.round(departure / 900) * 900;
+  return `${roundOrigin(origin)}|${destination}|${roundedDeparture}|${useAdvanced ? 'adv' : 'basic'}`;
+}
+
+function getCachedDuration(key: string): string | null {
+  const entry = driveTimeCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { driveTimeCache.delete(key); return null; }
+  return entry.duration;
+}
+
+function setCachedDuration(key: string, duration: string) {
+  driveTimeCache.set(key, { duration, expiresAt: Date.now() + DRIVE_TIME_TTL_MS });
+}
+
+// Prefers the traffic-adjusted duration Google returns when departure_time
+// is set; falls back to the plain duration if traffic data isn't available
+// for this route (happens occasionally, e.g. transit-only areas) or wasn't
+// requested at all (events outside the Advanced-tier window).
+function bestDuration(element: any): string | null {
+  return element?.duration_in_traffic?.text ?? element?.duration?.text ?? null;
+}
+
+// The one place every public function below actually calls Google — cached
+// and tiered, so all four call sites get both behaviors uniformly instead
+// of each needing its own copy of this logic.
+async function distanceMatrixLookup(
+  origin: string,
+  destination: string,
+  eventDate?: string,
+  eventTime?: string | null,
+  timezone: string = 'America/New_York',
+): Promise<string | null> {
+  if (!PLACES_KEY || !origin || !destination) return null;
+  const { departure, useAdvanced } = resolveDeparture(eventDate, eventTime, timezone);
+  const key = driveTimeCacheKey(origin, destination, departure, useAdvanced);
+  const cached = getCachedDuration(key);
+  if (cached) return cached;
+  try {
+    const departureParam = useAdvanced ? `&departure_time=${departure}` : '';
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&mode=driving${departureParam}&key=${PLACES_KEY}`
+    );
+    const json = await res.json();
+    const duration = bestDuration(json.rows?.[0]?.elements?.[0]);
+    if (duration) setCachedDuration(key, duration);
+    else console.warn('[drivetime] no duration in Distance Matrix response:', json.status, json.rows?.[0]?.elements?.[0]?.status);
+    return duration;
+  } catch (err) {
+    console.warn('[drivetime] distance matrix request failed:', err);
+    return null;
+  }
+}
+
+// Resolve a venue name / address to "lat,lng" using Google Geocoding.
+// Cached with a long TTL — a venue's address is effectively static, so
+// there's no reason to pay for the same geocode twice in one app session.
+const geocodeCache = new Map<string, { latLng: string | null; expiresAt: number }>();
+const GEOCODE_TTL_MS = 24 * 60 * 60 * 1000;
+
 export async function geocodeAddress(query: string): Promise<string | null> {
   if (!PLACES_KEY || !query) return null;
+  const cached = geocodeCache.get(query);
+  if (cached && Date.now() < cached.expiresAt) return cached.latLng;
   try {
     const res = await fetch(
       `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${PLACES_KEY}`
     );
     const json = await res.json();
     const loc = json.results?.[0]?.geometry?.location;
-    return loc ? `${loc.lat},${loc.lng}` : null;
+    const latLng = loc ? `${loc.lat},${loc.lng}` : null;
+    geocodeCache.set(query, { latLng, expiresAt: Date.now() + GEOCODE_TTL_MS });
+    return latLng;
   } catch {
     return null;
   }
@@ -66,13 +168,6 @@ export function parseDurationText(durationText: string): number | null {
   return hours * 60 + mins;
 }
 
-// Prefers the traffic-adjusted duration Google returns when departure_time
-// is set; falls back to the plain duration if traffic data isn't available
-// for this route (happens occasionally, e.g. transit-only areas).
-function bestDuration(element: any): string | null {
-  return element?.duration_in_traffic?.text ?? element?.duration?.text ?? null;
-}
-
 // Single destination: "lat,lng" or address string. Pass the event's own
 // date/time so Google predicts traffic for then, not for right now.
 export async function fetchDriveTime(
@@ -81,22 +176,10 @@ export async function fetchDriveTime(
   eventTime?: string | null,
   timezone: string = 'America/New_York',
 ): Promise<string | null> {
-  if (!PLACES_KEY || !destination) return null;
+  if (!destination) return null;
   const origin = await getUserOrigin();
   if (!origin) return null;
-  try {
-    const departure = toDepartureTimestamp(eventDate, eventTime, timezone);
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${encodeURIComponent(destination)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
-    );
-    const json = await res.json();
-    const duration = bestDuration(json.rows?.[0]?.elements?.[0]);
-    if (!duration) console.warn('[drivetime] no duration in Distance Matrix response:', json.status, json.rows?.[0]?.elements?.[0]?.status);
-    return duration;
-  } catch (err) {
-    console.warn('[drivetime] fetchDriveTime request failed:', err);
-    return null;
-  }
+  return distanceMatrixLookup(origin, destination, eventDate, eventTime, timezone);
 }
 
 // Single point-to-point drive time between two address strings (for inter-game travel)
@@ -107,17 +190,8 @@ export async function fetchDriveTimeBetween(
   eventTime?: string | null,
   timezone: string = 'America/New_York',
 ): Promise<string | null> {
-  if (!PLACES_KEY || !originAddress || !destinationAddress) return null;
-  try {
-    const departure = toDepartureTimestamp(eventDate, eventTime, timezone);
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(originAddress)}&destinations=${encodeURIComponent(destinationAddress)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
-    );
-    const json = await res.json();
-    return bestDuration(json.rows?.[0]?.elements?.[0]);
-  } catch {
-    return null;
-  }
+  if (!originAddress || !destinationAddress) return null;
+  return distanceMatrixLookup(originAddress, destinationAddress, eventDate, eventTime, timezone);
 }
 
 // Parallel calls using a saved home address string as origin (for Weekend Outlook)
@@ -131,17 +205,8 @@ export async function fetchDriveTimesFromAddress(
   if (!origin) return {};
   const results = await Promise.all(
     items.map(async d => {
-      try {
-        const departure = toDepartureTimestamp(d.eventDate, d.eventTime, timezone);
-        const res = await fetch(
-          `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${encodeURIComponent(d.location)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
-        );
-        const json = await res.json();
-        const text = bestDuration(json.rows?.[0]?.elements?.[0]);
-        return text ? { id: d.id, t: text } : null;
-      } catch {
-        return null;
-      }
+      const text = await distanceMatrixLookup(origin, d.location, d.eventDate, d.eventTime, timezone);
+      return text ? { id: d.id, t: text } : null;
     })
   );
   const map: Record<string, string> = {};
@@ -159,17 +224,8 @@ export async function fetchDriveTimes(
   if (!origin) return {};
   const results = await Promise.all(
     items.map(async d => {
-      try {
-        const departure = toDepartureTimestamp(d.eventDate, d.eventTime, timezone);
-        const res = await fetch(
-          `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origin}&destinations=${encodeURIComponent(d.location)}&mode=driving&departure_time=${departure}&key=${PLACES_KEY}`
-        );
-        const json = await res.json();
-        const text = bestDuration(json.rows?.[0]?.elements?.[0]);
-        return text ? { id: d.id, t: text } : null;
-      } catch {
-        return null;
-      }
+      const text = await distanceMatrixLookup(origin, d.location, d.eventDate, d.eventTime, timezone);
+      return text ? { id: d.id, t: text } : null;
     })
   );
   const map: Record<string, string> = {};

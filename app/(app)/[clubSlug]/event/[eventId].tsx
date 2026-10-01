@@ -45,12 +45,16 @@ import CreatePollModal from '../../../../components/home/CreatePollModal';
 const PLACES_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY ?? '';
 
 function LocationMap({
-  lat, lng, address, eventDate, eventTime, onPress, onDriveTime,
+  lat, lng, address, eventDate, eventTime, onPress, onDriveTime, showDriveTime = true,
 }: {
   lat: number | null;
   lng: number | null;
   address: string | null;
   eventDate?: string;
+  // Only away games get a drive-time lookup — training and home games are
+  // at the team's usual local venue, which families already know how to
+  // get to. The map itself still renders either way.
+  showDriveTime?: boolean;
   eventTime?: string | null;
   onPress: () => void;
   onDriveTime?: (t: string) => void;
@@ -63,7 +67,7 @@ function LocationMap({
   const [imgLoaded, setImgLoaded]     = useState(false);
 
   useEffect(() => {
-    if (!PLACES_KEY) return;
+    if (!PLACES_KEY || !showDriveTime) return;
     const dest = lat != null && lng != null ? `${lat},${lng}` : (address ?? '');
     fetchDriveTime(dest, eventDate, eventTime, timezone).then(t => {
       if (t) { setDrivingTime(t); onDriveTime?.(t); }
@@ -1833,6 +1837,7 @@ export default function EventDetailScreen() {
                 eventTime={event.event_time}
                 onPress={openMaps}
                 onDriveTime={setDriveTime}
+                showDriveTime={event.type === 'game' && event.home_away === 'away'}
               />
             )}
 

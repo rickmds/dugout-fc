@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
-import { toLocalDateStr, todayLocalStr } from '../../../../lib/localDate';
+import { todayLocalStr } from '../../../../lib/localDate';
 import { withTimeout, TIMEOUT } from '../../../../lib/withTimeout';
 import { computeArriveBy } from '../../../../lib/eventTime';
 import { useTeam } from '../../../../hooks/useTeam';
@@ -374,12 +374,19 @@ export default function ScheduleScreen() {
       setWeatherMap(wMap);
     }
 
-    // Drive time: bulk call for upcoming events within 14 days that have a location
-    const today = new Date();
-    const cutoff = toLocalDateStr(new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000));
-    const driveEvs = upcomingEvs.filter(e =>
-      e.event_date <= cutoff && (e.lat != null || e.address || e.location)
-    );
+    // Drive time: only away games, and only the next 3 of them with a
+    // location — this used to be every event (training included) within a
+    // 14-day window, refetched fresh (no caching existed) on every single
+    // tab focus, which was the dominant driver behind a real, large
+    // Distance Matrix API bill. Training and home games are at the team's
+    // usual local venue, which families already know how to get to, so
+    // there's nothing to look up for those. Capping to a small, fixed
+    // count of away games bounds the worst case regardless of how busy the
+    // schedule is; drivetime.ts's own caching now also means a repeat
+    // visit within the cache window costs nothing further.
+    const driveEvs = upcomingEvs
+      .filter(e => e.type === 'game' && e.home_away === 'away' && (e.lat != null || e.address || e.location))
+      .slice(0, 3);
     if (driveEvs.length > 0) {
       const items = driveEvs.map(e => ({
         id: e.id,
@@ -447,7 +454,10 @@ export default function ScheduleScreen() {
     setRefreshing(false);
   }
 
-  async function fetchRsvpData(evs: Event[], playersByTeam: Map<string, { id: string; full_name: string }[]>) {
+  // Only ever reads its own parameters (plus stable setState functions) —
+  // safe to stabilize with an empty dep array, which is what lets
+  // handleRsvp below depend on it without defeating its own memoization.
+  const fetchRsvpData = useCallback(async (evs: Event[], playersByTeam: Map<string, { id: string; full_name: string }[]>) => {
     const eventIds = evs.map((e) => e.id);
     const playerIds = [...playersByTeam.values()].flat().map((p) => p.id);
 
@@ -478,9 +488,15 @@ export default function ScheduleScreen() {
       (mine[row.event_id] ??= {})[row.player_id] = row.status as MyRsvp;
     }
     setMyRsvpsByPlayer(mine);
-  }
+  }, []);
 
-  async function handleRsvp(eventId: string, playerId: string, status: 'attending' | 'not_attending') {
+  // useCallback (not a plain function) so EventCard's memo() — which
+  // receives this as onRsvp — can actually skip re-rendering cards whose
+  // own data didn't change. Previously a fresh identity on every render
+  // defeated memo() for every visible card whenever anything else on the
+  // screen re-rendered (weather/drive-time/RSVP-count loading in after
+  // first paint, in particular).
+  const handleRsvp = useCallback(async (eventId: string, playerId: string, status: 'attending' | 'not_attending') => {
     const ev = events.find((e) => e.id === eventId);
     if (ev?.rsvp_lock_at && new Date(ev.rsvp_lock_at) <= new Date()) {
       Alert.alert('RSVP closed', 'The RSVP window for this event has closed. Contact your coach if you need to make a change.');
@@ -519,7 +535,7 @@ export default function ScheduleScreen() {
     } finally {
       setRsvpSavingId(null);
     }
-  }
+  }, [events, myRsvpsByPlayer, profile?.id, myPlayersByTeam, fetchRsvpData]);
 
   function openCreateEvent() {
     router.push(`/(app)/${clubSlug}/create-event` as any);
@@ -548,7 +564,9 @@ export default function ScheduleScreen() {
   // reported against. Resolving the correct club up front and navigating
   // directly to it means ClubSlugGuard never sees a mismatch in the first
   // place, because the right route is the very first one that mounts.
-  function navigateToEvent(eventId: string, eventTeamId: string) {
+  // useCallback for the same reason as handleRsvp above — this is also
+  // handed to every EventCard as onPress.
+  const navigateToEvent = useCallback((eventId: string, eventTeamId: string) => {
     const eventTeam = allTeams.find((t) => t.id === eventTeamId);
     if (eventTeam?.club?.slug && eventTeam.club.slug !== clubSlug) {
       selectTeam(eventTeamId);
@@ -556,7 +574,7 @@ export default function ScheduleScreen() {
     } else {
       router.push(`/(app)/${clubSlug}/event/${eventId}` as any);
     }
-  }
+  }, [allTeams, clubSlug, selectTeam, router]);
 
   // ── Shared event card renderer — thin wrapper narrowing each map down to
   // just this item's own slice before handing off to the memoized
@@ -589,7 +607,7 @@ export default function ScheduleScreen() {
         primaryColor={primaryColor}
         rgba={rgba}
         onRsvp={handleRsvp}
-        onPress={() => navigateToEvent(item.id, item.team_id)}
+        onPress={navigateToEvent}
       />
     );
   }
@@ -1286,7 +1304,12 @@ type EventCardProps = {
   primaryColor: string;
   rgba: (alpha: number) => string;
   onRsvp: (eventId: string, playerId: string, status: 'attending' | 'not_attending') => void;
-  onPress: () => void;
+  // Takes the ids, not a zero-arg callback — same reason onRsvp does: the
+  // id-closing wrapper is built here, inside the memoized card, instead of
+  // at the call site in renderCard (which runs once per item per render
+  // and would otherwise hand every card a fresh onPress identity no matter
+  // how stable navigateToEvent itself is).
+  onPress: (eventId: string, teamId: string) => void;
 };
 
 const EventCard = memo(function EventCardImpl({
@@ -1316,7 +1339,7 @@ const EventCard = memo(function EventCardImpl({
   return (
     <TouchableOpacity
       style={[styles.eventCard, (isPast || isCancelled) && styles.eventCardPast]}
-      onPress={onPress}
+      onPress={() => onPress(item.id, item.team_id)}
       activeOpacity={0.75}
     >
       <View style={[styles.typeStripe, {
