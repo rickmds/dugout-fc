@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { TrendingUp, Calendar, Target, Footprints, Clock } from 'lucide-react';
+import Link from 'next/link';
+import { TrendingUp, Calendar, Target, Footprints, Clock, Shirt } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -14,6 +15,7 @@ type SeasonStats = {
   gamesPlayed: number; gamesStarted: number; totalGames: number;
   goals: number; assists: number; yellowCards: number; redCards: number; minutesPlayed: number | null;
 };
+type TeamHistoryRow = { team_id: string; team_name: string; started_at: string; ended_at: string | null };
 
 function fmtDate(iso: string) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -27,7 +29,8 @@ export default function PlayerOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<SeasonStats | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [registeredAt, setRegisteredAt] = useState<string | null>(null);
+  const [registrationCount, setRegistrationCount] = useState(0);
+  const [teamHistory, setTeamHistory] = useState<TeamHistoryRow[]>([]);
 
   const load = useCallback(async () => {
     if (!playerId) return;
@@ -37,13 +40,17 @@ export default function PlayerOverviewPage() {
     if (!playerRow) { setLoading(false); return; }
     const teamId = playerRow.team_id;
 
-    const [eventsRes, rsvpRes, attRes, lineupRes, statsRes, regRes] = await Promise.all([
+    const [eventsRes, rsvpRes, attRes, lineupRes, statsRes, regRes, historyRes] = await Promise.all([
       supabase.from('events').select('id,title,type,event_date').eq('team_id', teamId).not('cancelled_before_start', 'is', true).order('event_date', { ascending: false }).limit(500),
       supabase.from('event_rsvps').select('event_id,status').eq('player_id', playerId),
       supabase.from('event_attendance').select('event_id,status').eq('player_id', playerId),
       supabase.from('lineup_positions').select('lineup_id, lineups(event_id, events(type))').eq('player_id', playerId),
       supabase.from('event_player_stats').select('goals,assists,yellow_cards,red_cards,minutes_played').eq('player_id', playerId),
-      supabase.from('registration_submissions').select('created_at').eq('roster_player_id', playerId).maybeSingle(),
+      // Players with multiple registration submissions (re-registering each
+      // season) are the normal case this tab needs to handle — a single-row
+      // .maybeSingle() here previously just silently mis-reported for them.
+      supabase.from('registration_submissions').select('id', { count: 'exact', head: true }).eq('roster_player_id', playerId),
+      supabase.from('player_team_history').select('team_id, started_at, ended_at, teams(name)').eq('player_id', playerId).order('started_at', { ascending: false }),
     ]);
 
     const events = (eventsRes.data ?? []) as EventRow[];
@@ -97,7 +104,10 @@ export default function PlayerOverviewPage() {
       rsvp: (rsvpMap.get(e.id) ?? 'pending') as HistoryRow['rsvp'],
       actual: (attMap.get(e.id) ?? null) as HistoryRow['actual'],
     })));
-    setRegisteredAt(regRes.data?.created_at ?? null);
+    setRegistrationCount(regRes.count ?? 0);
+    setTeamHistory(((historyRes.data ?? []) as unknown as { team_id: string; started_at: string; ended_at: string | null; teams: { name: string } | null }[]).map((h) => ({
+      team_id: h.team_id, started_at: h.started_at, ended_at: h.ended_at, team_name: h.teams?.name ?? 'Unknown team',
+    })));
     setLoading(false);
   }, [playerId]);
 
@@ -150,12 +160,37 @@ export default function PlayerOverviewPage() {
             {stats!.redCards > 0 && <StatPill icon={<div style={{ width: 9, height: 12, background: '#DC2626', borderRadius: 2 }} />} label="Red" value={stats!.redCards} />}
           </div>
         )}
-        {registeredAt && (
+        {registrationCount > 0 && (
           <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '14px' }}>
-            Joined the roster via registration on {fmtDate(registeredAt.slice(0, 10))}
+            <Link href={`/dashboard/players/${playerId}/registrations`} style={{ color: '#94A3B8', textDecoration: 'underline' }}>
+              {registrationCount} registration{registrationCount !== 1 ? 's' : ''} on file — view history
+            </Link>
           </div>
         )}
       </div>
+
+      {/* Team history */}
+      {teamHistory.length > 0 && (
+        <div style={card}>
+          <div style={sectionTitle}>Team history</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {teamHistory.map((t, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 0', borderBottom: i < teamHistory.length - 1 ? '1px solid #F8FAFC' : 'none' }}>
+                <Shirt size={13} color="#CBD5E1" style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{t.team_name}</div>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>
+                    {fmtDate(t.started_at.slice(0, 10))} – {t.ended_at ? fmtDate(t.ended_at.slice(0, 10)) : 'Present'}
+                  </div>
+                </div>
+                {!t.ended_at && (
+                  <span style={{ fontSize: '10.5px', fontWeight: '700', color: '#16A34A', background: '#F0FDF4', borderRadius: '20px', padding: '3px 9px', flexShrink: 0 }}>Current</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent events */}
       <div style={card}>

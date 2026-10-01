@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Mail, Send, AlertCircle, Clock, Check, RotateCcw, Plus, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { Mail, Send, AlertCircle, Clock, Check, RotateCcw, Plus, Trash2, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 
@@ -47,6 +48,11 @@ export default function GuardiansSafetyPage() {
   const [medicalNotes, setMedicalNotes] = useState<string | null>(null);
   const [safetyLoading, setSafetyLoading] = useState(true);
 
+  // profile_id -> how many players that guardian has (within this caller's
+  // own club scope — see get_players_for_guardian's RLS). "View family" only
+  // shows once a guardian actually has more than one.
+  const [familyCounts, setFamilyCounts] = useState<Map<string, number>>(new Map());
+
   const load = useCallback(async () => {
     if (!playerId) return;
 
@@ -59,7 +65,20 @@ export default function GuardiansSafetyPage() {
 
     setInviteLoading(true);
     supabase.from('invites').select('id,token,email,guardian_name,phone,relationship,accepted_at,accepted_by,created_at').eq('player_id', playerId).order('created_at')
-      .then(({ data }) => { setInvites((data ?? []) as Invite[]); setInviteLoading(false); });
+      .then(async ({ data }) => {
+        const rows = (data ?? []) as Invite[];
+        setInvites(rows);
+        setInviteLoading(false);
+
+        const guardianIds = [...new Set(rows.map((i) => i.accepted_by).filter((id): id is string => !!id))];
+        if (!guardianIds.length) return;
+        const counts = new Map<string, number>();
+        await Promise.all(guardianIds.map(async (id) => {
+          const { data: players } = await supabase.rpc('get_players_for_guardian', { p_profile_id: id });
+          counts.set(id, (players ?? []).length);
+        }));
+        setFamilyCounts(counts);
+      });
 
     setSafetyLoading(true);
     Promise.all([
@@ -231,10 +250,18 @@ export default function GuardiansSafetyPage() {
                             <span style={{ fontSize: '12px', color: '#374151', wordBreak: 'break-all' }}>{inv.email}</span>
                           </div>
                           {inv.phone && <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '3px' }}>📞 {inv.phone}</div>}
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '5px', padding: '2px 7px', borderRadius: '20px', background: inv.accepted_at ? '#F0FDF4' : '#FFFBEB' }}>
-                            {inv.accepted_at
-                              ? <><Check size={10} color="#16A34A" strokeWidth={2.5} /><span style={{ fontSize: '10.5px', color: '#16A34A', fontWeight: '700' }}>Joined the app</span></>
-                              : <><Clock size={10} color="#D97706" /><span style={{ fontSize: '10.5px', color: '#D97706', fontWeight: '700' }}>Invite pending</span></>}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '5px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 7px', borderRadius: '20px', background: inv.accepted_at ? '#F0FDF4' : '#FFFBEB' }}>
+                              {inv.accepted_at
+                                ? <><Check size={10} color="#16A34A" strokeWidth={2.5} /><span style={{ fontSize: '10.5px', color: '#16A34A', fontWeight: '700' }}>Joined the app</span></>
+                                : <><Clock size={10} color="#D97706" /><span style={{ fontSize: '10.5px', color: '#D97706', fontWeight: '700' }}>Invite pending</span></>}
+                            </div>
+                            {inv.accepted_by && (familyCounts.get(inv.accepted_by) ?? 0) > 1 && (
+                              <Link href={`/dashboard/families/${inv.accepted_by}`}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', fontWeight: '700', color: primary, textDecoration: 'none' }}>
+                                <Users size={10} /> View family ({familyCounts.get(inv.accepted_by)})
+                              </Link>
+                            )}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>

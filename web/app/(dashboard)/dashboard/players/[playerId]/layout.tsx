@@ -10,6 +10,11 @@ import { positionStyle, hex2rgb, initials } from '@/lib/playerDisplay';
 import EditDetailsModal from '@/components/dashboard/player-profile/EditDetailsModal';
 import { PLAYER_CARD_ENABLED } from '@/lib/featureFlags';
 
+// Scoped to one demo profile while the feature is still being tested —
+// remove this check (and go back to the flag/role gate alone) once
+// PLAYER_CARD_ENABLED is ready to flip on for everyone.
+const CARD_TAB_DEMO_PLAYER_ID = 'fc1954fc-4b70-474d-9ca0-f24cc8080d21'; // Wave Breheny
+
 export type PlayerMeta = {
   id: string;
   full_name: string;
@@ -71,11 +76,12 @@ export default function PlayerProfileLayout({ children }: { children: React.Reac
   const TABS = [
     { label: 'Overview',           suffix: '' },
     { label: 'Development',        suffix: '/development' },
+    { label: 'Registrations',      suffix: '/registrations' },
     { label: 'Shoutouts',          suffix: '/shoutouts' },
     { label: 'Guardians & Safety', suffix: '/guardians' },
     { label: 'Financials',         suffix: '/financials' },
     { label: 'Documents',          suffix: '/documents' },
-    ...(PLAYER_CARD_ENABLED || profile?.role === 'app_admin' ? [{ label: 'Player Card', suffix: '/card' }] : []),
+    ...((PLAYER_CARD_ENABLED || profile?.role === 'app_admin') && playerId === CARD_TAB_DEMO_PLAYER_ID ? [{ label: 'Player Card', suffix: '/card' }] : []),
   ];
 
   return (
