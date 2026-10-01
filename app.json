@@ -3,7 +3,7 @@
     "newArchEnabled": true,
     "name": "Pulse FC",
     "slug": "dugout-fc",
-    "version": "1.5",
+    "version": "1.5.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -78,7 +78,13 @@
         }
       ],
       "expo-sharing",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Used to save a player's trading card to your Photos."
+        }
+      ]
     ],
     "extra": {
       "router": {},
