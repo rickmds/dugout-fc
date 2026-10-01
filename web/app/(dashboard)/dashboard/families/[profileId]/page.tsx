@@ -14,7 +14,7 @@ type FamilyPlayer = {
   photo_url: string | null; team_id: string; team_name: string;
   owed: number; waiversSigned: number; waiversTotal: number; activeRegistrations: number;
 };
-type Guardian = { full_name: string | null; email: string | null; phone: string | null };
+type Guardian = { profile_id: string; full_name: string | null; email: string | null; phone: string | null; playerNames: string[] };
 
 export default function FamilyPage() {
   const { profileId } = useParams<{ profileId: string }>();
@@ -23,7 +23,7 @@ export default function FamilyPage() {
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const { r, g, b } = hex2rgb(primary);
 
-  const [guardian, setGuardian] = useState<Guardian | null>(null);
+  const [guardians, setGuardians] = useState<Guardian[]>([]);
   const [players, setPlayers] = useState<FamilyPlayer[]>([]);
   const [attendanceByPlayer, setAttendanceByPlayer] = useState<Map<string, number | null>>(new Map());
   const [outstandingTotal, setOutstandingTotal] = useState(0);
@@ -33,28 +33,61 @@ export default function FamilyPage() {
     if (!profileId) return;
     setLoading(true);
 
-    const [{ data: profileRow }, { data: playerRows }] = await Promise.all([
-      supabase.from('profiles').select('full_name').eq('id', profileId).maybeSingle(),
-      supabase.rpc('get_players_for_guardian', { p_profile_id: profileId }),
-    ]);
+    const { data: playerRows } = await supabase.rpc('get_players_for_guardian', { p_profile_id: profileId });
 
     const rows = (playerRows ?? []) as { id: string; full_name: string; jersey_number: number | null; position: string | null; photo_url: string | null; team_id: string }[];
     if (!rows.length) { setLoading(false); return; }
 
     const playerIds = rows.map((p) => p.id);
     const teamIds = [...new Set(rows.map((p) => p.team_id))];
-    const [{ data: teams }, { data: invite }, { data: fees }, { data: waiverAssignments }, { data: waiverSignatures }, { data: regSubs }] = await Promise.all([
+    const [{ data: teams }, { data: playerProfileLinks }, { data: guardianLinks }, { data: fees }, { data: waiverAssignments }, { data: waiverSignatures }, { data: regSubs }] = await Promise.all([
       supabase.from('teams').select('id,name').in('id', teamIds),
-      // Any one accepted invite for this guardian gives us a real contact
-      // email/phone — invites are per-child, but the same guardian's
-      // contact info is the same across all of them.
-      supabase.from('invites').select('email,phone').eq('accepted_by', profileId).limit(1).maybeSingle(),
+      // Every guardian touching ANY of these kids, not just the one we
+      // navigated here from — both the legacy single-FK column and the
+      // multi-guardian join table.
+      supabase.from('players').select('id,profile_id').in('id', playerIds),
+      supabase.from('player_guardians').select('player_id,profile_id').in('player_id', playerIds),
       supabase.from('player_fees').select('player_id,amount_due,amount_paid,discount,status').in('player_id', playerIds),
       supabase.from('waiver_assignments').select('waiver_id,team_id').in('team_id', teamIds),
       supabase.from('waiver_signatures').select('waiver_id,player_id').in('player_id', playerIds),
       supabase.from('registration_submissions').select('roster_player_id,form_id').in('roster_player_id', playerIds),
     ]);
     const teamNameById = new Map((teams ?? []).map((t) => [t.id, t.name]));
+    const playerNameById = new Map(rows.map((p) => [p.id, p.full_name]));
+
+    // Which players each guardian is linked to — usually all of them, but
+    // not guaranteed (e.g. a step-parent only on one kid's account).
+    const playersByGuardian = new Map<string, Set<string>>();
+    for (const p of playerProfileLinks ?? []) {
+      if (!p.profile_id) continue;
+      const set = playersByGuardian.get(p.profile_id) ?? new Set<string>();
+      set.add(p.id);
+      playersByGuardian.set(p.profile_id, set);
+    }
+    for (const g2 of guardianLinks ?? []) {
+      const set = playersByGuardian.get(g2.profile_id) ?? new Set<string>();
+      set.add(g2.player_id);
+      playersByGuardian.set(g2.profile_id, set);
+    }
+    const guardianIds = [...playersByGuardian.keys()];
+
+    const [{ data: profiles }, { data: invites }] = await Promise.all([
+      supabase.from('profiles').select('id,full_name').in('id', guardianIds),
+      supabase.from('invites').select('accepted_by,email,phone').in('accepted_by', guardianIds).not('accepted_by', 'is', null),
+    ]);
+    const guardianNameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+    const contactByGuardian = new Map<string, { email: string | null; phone: string | null }>();
+    for (const inv of invites ?? []) {
+      if (!inv.accepted_by || contactByGuardian.has(inv.accepted_by)) continue;
+      contactByGuardian.set(inv.accepted_by, { email: inv.email, phone: inv.phone });
+    }
+    setGuardians(guardianIds.map((id) => ({
+      profile_id: id,
+      full_name: guardianNameById.get(id) ?? null,
+      email: contactByGuardian.get(id)?.email ?? null,
+      phone: contactByGuardian.get(id)?.phone ?? null,
+      playerNames: [...(playersByGuardian.get(id) ?? [])].map((pid) => playerNameById.get(pid) ?? '').filter(Boolean),
+    })).sort((a, b) => (a.profile_id === profileId ? -1 : b.profile_id === profileId ? 1 : 0)));
 
     // Fees owed, per player — the combined total below is just a sum of this.
     const owedByPlayer = new Map<string, number>();
@@ -92,7 +125,6 @@ export default function FamilyPage() {
       activeRegByPlayer.set(s.roster_player_id, (activeRegByPlayer.get(s.roster_player_id) ?? 0) + 1);
     }
 
-    setGuardian({ full_name: profileRow?.full_name ?? null, email: invite?.email ?? null, phone: invite?.phone ?? null });
     setPlayers(rows.map((p) => {
       const teamAssignments = assignmentsByTeam.get(p.team_id) ?? new Set<string>();
       const signed = signedByPlayer.get(p.id) ?? new Set<string>();
@@ -165,20 +197,39 @@ export default function FamilyPage() {
             <Users size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '19px', fontWeight: '800', color: '#0F172A' }}>{guardian?.full_name ?? 'Guardian'}&apos;s Family</div>
-            <div style={{ display: 'flex', gap: '14px', marginTop: '4px', flexWrap: 'wrap' }}>
-              {guardian?.email && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', color: '#64748B' }}>
-                  <Mail size={12} /> {guardian.email}
-                </span>
-              )}
-              {guardian?.phone && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', color: '#64748B' }}>
-                  <Phone size={12} /> {guardian.phone}
-                </span>
-              )}
+            <div style={{ fontSize: '19px', fontWeight: '800', color: '#0F172A' }}>{guardians[0]?.full_name ?? 'Guardian'}&apos;s Family</div>
+            <div style={{ fontSize: '12.5px', color: '#94A3B8', marginTop: '3px' }}>
+              {players.length} player{players.length !== 1 ? 's' : ''} · {guardians.length} guardian{guardians.length !== 1 ? 's' : ''} on file
             </div>
           </div>
+        </div>
+
+        {/* Every guardian touching any of these kids — not just the one
+            this page was reached from. */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '16px' }}>
+          {guardians.map((g2) => (
+            <div key={g2.profile_id} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', background: '#F8FAFC', minWidth: '220px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{g2.full_name ?? 'Unknown guardian'}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
+                {g2.email && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B' }}>
+                    <Mail size={11} /> {g2.email}
+                  </span>
+                )}
+                {g2.phone && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B' }}>
+                    <Phone size={11} /> {g2.phone}
+                  </span>
+                )}
+                {!g2.email && !g2.phone && (
+                  <span style={{ fontSize: '12px', color: '#CBD5E1' }}>No contact info on file</span>
+                )}
+              </div>
+              {g2.playerNames.length < players.length && (
+                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Linked to: {g2.playerNames.join(', ')}</div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 

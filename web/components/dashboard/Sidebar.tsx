@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import {
-  LayoutDashboard, Users, UserCog, CalendarDays, MapPin,
+  LayoutDashboard, Users, UsersRound, UserCog, CalendarDays, MapPin,
   ClipboardList, BarChart2, Settings, LogOut,
   Layers, DollarSign, Target, LayoutGrid,
   FileText, Mail, Megaphone, FileLock2, Award, ChevronRight, ChevronDown, Plus, ShieldCheck, Trophy, Medal, AlertTriangle, AlertOctagon,
@@ -37,6 +37,7 @@ const CLUB_NAV: NavEntry[] = [
   { section: 'Club' },
   { href: '/dashboard/teams',         icon: Layers,        label: 'Teams' },
   { href: '/dashboard/players',       icon: Users,         label: 'Players' },
+  { href: '/dashboard/families',      icon: UsersRound,    label: 'Families' },
   { href: '/dashboard/staff',         icon: UserCog,       label: 'Staff' },
   { href: '/dashboard/fields',        icon: MapPin,        label: 'Fields' },
   { section: 'Schedule' },
