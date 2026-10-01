@@ -256,13 +256,13 @@ export default function GuardiansSafetyPage() {
                                 ? <><Check size={10} color="#16A34A" strokeWidth={2.5} /><span style={{ fontSize: '10.5px', color: '#16A34A', fontWeight: '700' }}>Joined the app</span></>
                                 : <><Clock size={10} color="#D97706" /><span style={{ fontSize: '10.5px', color: '#D97706', fontWeight: '700' }}>Invite pending</span></>}
                             </div>
-                            {inv.accepted_by && (familyCounts.get(inv.accepted_by) ?? 0) > 1 && (
-                              <Link href={`/dashboard/families/${inv.accepted_by}`}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', fontWeight: '700', color: primary, textDecoration: 'none' }}>
-                                <Users size={10} /> View family ({familyCounts.get(inv.accepted_by)})
-                              </Link>
-                            )}
                           </div>
+                          {inv.accepted_by && (familyCounts.get(inv.accepted_by) ?? 0) > 1 && (
+                            <Link href={`/dashboard/families/${inv.accepted_by}`}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '7px 12px', borderRadius: '9px', background: `${primary}15`, border: `1.5px solid ${primary}40`, fontSize: '12.5px', fontWeight: '700', color: primary, textDecoration: 'none' }}>
+                              <Users size={13} /> View family ({familyCounts.get(inv.accepted_by)} players)
+                            </Link>
+                          )}
                         </div>
                         <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
                           <button onClick={() => { setInviteEditForm({ email: inv.email, guardian_name: inv.guardian_name ?? '', phone: inv.phone ?? '', relationship: inv.relationship ?? '' }); setEditingInviteId(inv.id); }}
