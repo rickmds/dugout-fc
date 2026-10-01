@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronLeft, Hash, Pencil, AlertTriangle, Lock } from 'lucide-react';
+import { ChevronLeft, Hash, Pencil, AlertTriangle, Lock, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { positionStyle, hex2rgb, initials } from '@/lib/playerDisplay';
@@ -30,6 +30,7 @@ export type PlayerMeta = {
   notes: string | null;
   team_name: string | null;
   age_group: string | null;
+  profile_id?: string | null;
 };
 
 const PLAYER_SELECT = 'id,full_name,jersey_number,position,secondary_position,preferred_foot,date_of_birth,photo_url,team_id,is_private,is_injured,notes,teams(name,age_group)';
@@ -51,6 +52,10 @@ export default function PlayerProfileLayout({ children }: { children: React.Reac
   const [player, setPlayer] = useState<PlayerMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [showEdit, setShowEdit] = useState(false);
+  // Set once we know this player has a guardian with more than one kid —
+  // surfaced right in the header so "go see the family" doesn't require
+  // first clicking into the Guardians & Safety tab to discover it exists.
+  const [familyLink, setFamilyLink] = useState<{ profileId: string; count: number } | null>(null);
 
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const base = `/dashboard/players/${playerId}`;
@@ -59,12 +64,23 @@ export default function PlayerProfileLayout({ children }: { children: React.Reac
   const load = useCallback(async () => {
     if (!playerId) return;
     setLoading(true);
-    const { data } = await supabase.from('players').select(PLAYER_SELECT).eq('id', playerId).single();
+    const { data } = await supabase.from('players').select(`${PLAYER_SELECT},profile_id`).eq('id', playerId).single();
     if (data) {
       const t = data.teams as unknown as { name: string; age_group: string | null } | null;
       setPlayer({ ...data, team_name: t?.name ?? null, age_group: t?.age_group ?? null });
     }
     setLoading(false);
+
+    // Reset while the family check below re-runs for a newly-loaded player,
+    // so a stale link from the previous player can't briefly show.
+    setFamilyLink(null);
+    const { data: guardianLinks } = await supabase.from('player_guardians').select('profile_id').eq('player_id', playerId);
+    const guardianIds = [...new Set([data?.profile_id, ...(guardianLinks ?? []).map((g) => g.profile_id)].filter((id): id is string => !!id))];
+    for (const id of guardianIds) {
+      const { data: siblings } = await supabase.rpc('get_players_for_guardian', { p_profile_id: id });
+      const count = (siblings ?? []).length;
+      if (count > 1) { setFamilyLink({ profileId: id, count }); break; }
+    }
   }, [playerId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; load() sets state from a real network call, not derivable at render time
@@ -143,10 +159,18 @@ export default function PlayerProfileLayout({ children }: { children: React.Reac
               </div>
             </div>
 
-            <button onClick={() => setShowEdit(true)} disabled={!player}
-              style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', fontSize: '13px', fontWeight: '700', color: '#374151', cursor: player ? 'pointer' : 'default', opacity: player ? 1 : 0.5 }}>
-              <Pencil size={13} /> Edit
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+              {familyLink && (
+                <Link href={`/dashboard/families/${familyLink.profileId}`}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: `${primary}15`, border: `1.5px solid ${primary}40`, borderRadius: '10px', fontSize: '13px', fontWeight: '700', color: primary, textDecoration: 'none' }}>
+                  <Users size={13} /> Family ({familyLink.count})
+                </Link>
+              )}
+              <button onClick={() => setShowEdit(true)} disabled={!player}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '10px', fontSize: '13px', fontWeight: '700', color: '#374151', cursor: player ? 'pointer' : 'default', opacity: player ? 1 : 0.5 }}>
+                <Pencil size={13} /> Edit
+              </button>
+            </div>
           </div>
 
           {player?.notes && (
