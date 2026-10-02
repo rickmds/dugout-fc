@@ -956,9 +956,13 @@ export default function HomeScreen() {
                 });
               const trainingHistory = history.filter((e) => e.type !== 'game');
               const gameHistory     = history.filter((e) => e.type === 'game');
-              const cResult = whoopStreak(history);
-              const tResult = whoopStreak(trainingHistory);
-              const gResult = whoopStreak(gameHistory);
+              // whoopStreak walks forward through time (oldest -> newest) to
+              // correctly detect "saved" and "re-earned" transitions, but
+              // history/trainingHistory/gameHistory are newest-first (for
+              // display in the Recent Sessions list) — reverse just for this call.
+              const cResult = whoopStreak([...history].reverse());
+              const tResult = whoopStreak([...trainingHistory].reverse());
+              const gResult = whoopStreak([...gameHistory].reverse());
               statsByPlayer[p.id] = {
                 combinedStreak: cResult.streak, combinedAtRisk: cResult.atRisk,
                 trainingStreak: tResult.streak, trainingAtRisk: tResult.atRisk,
