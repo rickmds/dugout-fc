@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Plus, Bell, BellOff, Megaphone, ChevronDown, Trash2, Pin, Mail, Send, Sparkles, RefreshCw, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 
 type Announcement = {
   id: string;
@@ -44,7 +45,8 @@ function formatFull(iso: string): string {
 }
 
 export default function AnnouncementsPage() {
-  const { profile, club, teams } = useDashboard();
+  const { profile, club, teams, hasFeature } = useDashboard();
+  const [showBroadcastUpgrade, setShowBroadcastUpgrade] = useState(false);
   const [items, setItems]           = useState<Announcement[]>([]);
   const [loading, setLoading]       = useState(true);
   const [composeMode, setComposeMode] = useState(false);
@@ -405,7 +407,7 @@ export default function AnnouncementsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
                   <label style={{ ...labelStyle, margin: 0 }}>Send to</label>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => setForm((f) => ({ ...f, team_ids: teams.map((t) => t.id) }))} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '2px 9px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>All</button>
+                    <button onClick={() => hasFeature('club_announcements') ? setForm((f) => ({ ...f, team_ids: teams.map((t) => t.id) })) : setShowBroadcastUpgrade(true)} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '2px 9px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>All</button>
                     <button onClick={() => setForm((f) => ({ ...f, team_ids: [] }))} style={{ background: 'none', border: '1px solid #E2E8F0', borderRadius: '6px', padding: '2px 9px', fontSize: '11px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>None</button>
                   </div>
                 </div>
@@ -564,6 +566,14 @@ export default function AnnouncementsPage() {
               <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '13px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               <button onClick={() => handleDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
             </div>
+          </div>
+        </div>
+      )}
+      {showBroadcastUpgrade && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowBroadcastUpgrade(false); }}>
+          <div style={{ width: 420 }}>
+            <UpgradePrompt feature="Club-wide Announcement Broadcasts" description="Post one announcement to every team in your club at once, instead of selecting teams one by one." requiredPlan="Starter" />
           </div>
         </div>
       )}

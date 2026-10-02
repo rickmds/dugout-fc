@@ -86,29 +86,35 @@ export type PlanFeatureRow = {
   label: string;
   description: string;
   min_plan_id: string | null;
-  enforced_as: 'fees' | 'branding' | null;
+  is_enforced: boolean;
   sort_order: number;
   is_active: boolean;
 };
 
+// The one generic rule every enforced catalog feature uses: a plan has the
+// feature once its sort_order is at or above the catalog entry's
+// min_plan's sort_order (cumulative upward, same rule the drag-and-drop
+// board visualizes) — looked up by the catalog's own `key`, not a
+// hardcoded field name, so adding another enforced feature never needs a
+// new column or a new case here.
+export function planHasCatalogFeature(key: string, planId: string, plansById: Record<string, Plan>, catalog: PlanFeatureRow[]): boolean {
+  const entry = catalog.find(f => f.key === key && f.is_active);
+  const minId = entry?.min_plan_id;
+  if (!minId) return false;
+  const minSort = plansById[minId]?.sortOrder;
+  const planSort = plansById[planId]?.sortOrder;
+  return minSort != null && planSort != null && planSort >= minSort;
+}
+
 // Fills in limits.fees/limits.branding on every plan in plansById from the
-// feature catalog — a plan has the feature once its sort_order is at or
-// above the catalog entry's min_plan's sort_order (cumulative upward,
-// same rule the drag-and-drop board visualizes). Mutates in place since
-// this always runs right after building plansById, before it's handed to
-// a consumer.
+// feature catalog — the only two PlanLimits flags still driven this way
+// (every other enforced feature is looked up directly by key via
+// useDashboard().hasFeature(), not added to PlanLimits). Mutates in place
+// since this always runs right after building plansById.
 export function applyCatalogGates(plansById: Record<string, Plan>, catalog: PlanFeatureRow[]): void {
-  const feesEntry = catalog.find(f => f.enforced_as === 'fees' && f.is_active);
-  const brandingEntry = catalog.find(f => f.enforced_as === 'branding' && f.is_active);
-  const hasTier = (entry: PlanFeatureRow | undefined, plan: Plan) => {
-    const minId = entry?.min_plan_id;
-    if (!minId) return false;
-    const minSort = plansById[minId]?.sortOrder;
-    return minSort != null && plan.sortOrder >= minSort;
-  };
   for (const plan of Object.values(plansById)) {
-    plan.limits.fees = hasTier(feesEntry, plan);
-    plan.limits.branding = hasTier(brandingEntry, plan);
+    plan.limits.fees = planHasCatalogFeature('fee_collection', plan.id, plansById, catalog);
+    plan.limits.branding = planHasCatalogFeature('custom_branding', plan.id, plansById, catalog);
   }
 }
 

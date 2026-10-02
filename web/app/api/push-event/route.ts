@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { requireRole } from '@/lib/apiAuth';
 import { sendWebPush } from '@/lib/webPush';
 import { sendExpoPush } from '@/lib/expoPush';
+import { clubHasFeature } from '@/lib/planFeatures';
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ['org_admin', 'coach', 'app_admin']);
@@ -24,10 +25,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   const clubSlug = teamRow.clubs?.slug ?? '';
+  const resolvedType = type ?? 'general';
+
+  // "Automatic change alerts" is specifically about time/location/cancel
+  // changes to an event already on the schedule — a brand-new event being
+  // added is ordinary scheduling, not a premium feature, so it's the one
+  // type that's never gated here.
+  if (resolvedType !== 'new_event' && !(await clubHasFeature(supabase, teamRow.club_id, 'change_alerts'))) {
+    return NextResponse.json({ sent: 0, gated: true });
+  }
 
   // Merge type + club_slug into push data so the mobile app can deep-link
-  const pushData = { ...(data ?? {}), type: type ?? 'general', club_slug: clubSlug };
-  const resolvedType = type ?? 'general';
+  const pushData = { ...(data ?? {}), type: resolvedType, club_slug: clubSlug };
 
   // Resolve team members (excluding the sender)
   const { data: members } = await supabase

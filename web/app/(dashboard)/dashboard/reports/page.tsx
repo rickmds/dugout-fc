@@ -5,6 +5,7 @@ import { BarChart2, ChevronDown, ChevronRight, Download, Users, AlertTriangle, X
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 
 type PlayerStat = {
   id: string;
@@ -71,7 +72,8 @@ function pctBg(pct: number): string {
 }
 
 export default function ReportsPage() {
-  const { club, teams } = useDashboard();
+  const { club, teams, hasFeature } = useDashboard();
+  const [showExportUpgrade, setShowExportUpgrade] = useState(false);
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const router = useRouter();
 
@@ -496,6 +498,14 @@ export default function ReportsPage() {
     );
   };
 
+  if (!hasFeature('club_attendance_reporting')) {
+    return (
+      <div style={{ padding: '48px 36px', maxWidth: '560px' }}>
+        <UpgradePrompt feature="Club-wide Attendance & RSVP Reporting" description="See attendance and RSVP trends across every team in your club in one place — not just one team at a time." requiredPlan="Starter" />
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -507,11 +517,19 @@ export default function ReportsPage() {
           <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Attendance Reports</h1>
           <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#94A3B8' }}>RSVP intent vs coach-marked actual attendance</p>
         </div>
-        <button onClick={exportCSV} disabled={!playerStats.length}
+        <button onClick={() => hasFeature('advanced_reports_export') ? exportCSV() : setShowExportUpgrade(true)} disabled={!playerStats.length}
           style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 18px', background: '#fff', border: '1.5px solid #E2E8F0', borderRadius: '9px', fontSize: '13px', fontWeight: '700', color: '#374151', cursor: playerStats.length ? 'pointer' : 'not-allowed', opacity: playerStats.length ? 1 : 0.5, fontFamily: 'inherit' }}>
           <Download size={14} /> Export CSV
         </button>
       </div>
+      {showExportUpgrade && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowExportUpgrade(false); }}>
+          <div style={{ width: 420 }}>
+            <UpgradePrompt feature="Advanced Season Reports & Export" description="Export your full club's attendance and RSVP data as CSV for your own records or league reporting." requiredPlan="Club" />
+          </div>
+        </div>
+      )}
 
       <div style={{ padding: '20px 32px' }}>
 

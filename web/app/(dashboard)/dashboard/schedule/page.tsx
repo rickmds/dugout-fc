@@ -15,6 +15,7 @@ import { sendTeamEmail } from '@/lib/emailTeam';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { zonedTimeToUtc } from '@/lib/timezone';
 import AIScheduleImport from '@/components/dashboard/AIScheduleImport';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
 import GuestCalloutSection from '@/components/dashboard/GuestCalloutSection';
@@ -227,12 +228,13 @@ function generateRecurringDates(startIso: string, recurrence: 'daily' | 'weekly'
 }
 
 export default function SchedulePage() {
-  const { profile, club, teams, selectedTeamId } = useDashboard();
+  const { profile, club, teams, selectedTeamId, hasFeature } = useDashboard();
   const searchParams = useSearchParams();
   const [events, setEvents]         = useState<Event[]>([]);
   const [loading, setLoading]       = useState(true);
   const [showModal, setShowModal]   = useState(false);
   const [showAI, setShowAI]         = useState(false);
+  const [showAIUpgrade, setShowAIUpgrade] = useState(false);
   const [editId, setEditId]         = useState<string | null>(null);
   // Snapshot of an event's parent-relevant fields at the moment its edit
   // dialog opens, so handleSave can email an old-vs-new diff instead of
@@ -944,7 +946,7 @@ export default function SchedulePage() {
             </div>
           )}
 
-          <button onClick={() => setShowAI(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '13px', padding: '9px 14px', borderRadius: '6px', border: '1.5px solid #E2E8F0', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => hasFeature('ai_schedule_import') ? setShowAI(true) : setShowAIUpgrade(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '13px', padding: '9px 14px', borderRadius: '6px', border: '1.5px solid #E2E8F0', cursor: 'pointer', fontFamily: 'inherit' }}>
             <Sparkles size={14} color="#8B5CF6" /> AI Import
           </button>
           <button onClick={openCreate} style={{ background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1833,6 +1835,14 @@ export default function SchedulePage() {
       </div>{/* end padding wrapper */}
 
       {showAI && <AIScheduleImport onClose={() => setShowAI(false)} onDone={() => loadEvents()} />}
+      {showAIUpgrade && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAIUpgrade(false); }}>
+          <div style={{ width: 420 }}>
+            <UpgradePrompt feature="AI Schedule Import" description="Upload any PDF, image, or spreadsheet of your season schedule and let AI create every event automatically." requiredPlan="Team Pro" />
+          </div>
+        </div>
+      )}
 
       {deleteConfirm && (() => {
         const ev = events.find((e) => e.id === deleteConfirm.id);

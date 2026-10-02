@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { type PlanId, type PlanLimits, type PlanRow, type PlanFeatureRow, type Plan, planFromRow, applyCatalogGates, FALLBACK_PLAN_LIMITS } from '@/lib/plans';
+import { type PlanId, type PlanLimits, type PlanRow, type PlanFeatureRow, type Plan, planFromRow, applyCatalogGates, planHasCatalogFeature, FALLBACK_PLAN_LIMITS } from '@/lib/plans';
 
 export type Profile = {
   id: string;
@@ -74,6 +74,10 @@ type DashboardCtx = {
   plan: PlanId;
   limits: PlanLimits;
   canUse: (feature: keyof PlanLimits) => boolean;
+  // Generic catalog lookup for any plan_features key — covers features
+  // that aren't worth a dedicated PlanLimits field (most of them). canUse
+  // stays for the original 4 structural flags; new gates should use this.
+  hasFeature: (key: string) => boolean;
 };
 
 const CLUB_SELECT = 'id, name, slug, website, contact_email, tagline, primary_color, secondary_color, home_kit_color, away_kit_color, training_kit_color, logo_url, currency, country, tryouts_active, latitude, longitude, timezone, stripe_fee_handling, allow_partial_payments, stripe_connect_account_id, stripe_connect_onboarded, late_fee_enabled, late_fee_type, late_fee_amount, late_fee_grace_days, hardship_fund_enabled, suspended_at, ncsa_partner';
@@ -135,6 +139,11 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading]             = useState(true);
   const [plan, setPlan]                   = useState<PlanId>('free');
   const [planLimitsById, setPlanLimitsById] = useState<Record<string, PlanLimits>>({});
+  // Kept around (not just derived into planLimitsById) so hasFeature() can
+  // look up any catalog key generically, not just the 2 baked into
+  // PlanLimits — see planHasCatalogFeature in lib/plans.
+  const [plansForGating, setPlansForGating] = useState<Record<string, Plan>>({});
+  const [catalog, setCatalog]             = useState<PlanFeatureRow[]>([]);
 
   // The club currently being viewed — starts as the home club, but can be
   // switched to any club in myClubs. Tracked outside `club` state itself
@@ -177,10 +186,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       if (planRows) {
         const plansById: Record<string, Plan> = {};
         for (const row of planRows as PlanRow[]) plansById[row.id] = planFromRow(row);
-        applyCatalogGates(plansById, (featureRows ?? []) as PlanFeatureRow[]);
+        const features = (featureRows ?? []) as PlanFeatureRow[];
+        applyCatalogGates(plansById, features);
         const byId: Record<string, PlanLimits> = {};
         for (const id of Object.keys(plansById)) byId[id] = plansById[id].limits;
         setPlanLimitsById(byId);
+        setPlansForGating(plansById);
+        setCatalog(features);
       }
       const allClubIds = [...new Set([
         ...(prof.club_id ? [prof.club_id] : []),
@@ -315,9 +327,12 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     const val = limits[feature];
     return typeof val === 'boolean' ? val : (val as number) > 0;
   }
+  function hasFeature(key: string): boolean {
+    return planHasCatalogFeature(key, plan, plansForGating, catalog);
+  }
 
   return (
-    <Ctx.Provider value={{ profile, club, myClubs, switchClub, teams, selectedTeamId, setSelectedTeamId, loading, reload: load, signOut, plan, limits, canUse }}>
+    <Ctx.Provider value={{ profile, club, myClubs, switchClub, teams, selectedTeamId, setSelectedTeamId, loading, reload: load, signOut, plan, limits, canUse, hasFeature }}>
       {children}
     </Ctx.Provider>
   );

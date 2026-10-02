@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { LayoutDashboard, FileText, Users, BarChart3, Settings } from 'lucide-react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 import OverviewTab      from './_components/OverviewTab';
 import FormsTab         from './_components/FormsTab';
 import SubmissionsTab   from './_components/SubmissionsTab';
@@ -19,10 +20,18 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function RegistrationsPage() {
-  const { profile } = useDashboard();
+  const { profile, hasFeature } = useDashboard();
   const [tab, setTab]         = useState<Tab>('overview');
   const [showSettings, setShowSettings] = useState(false);
   const isCoachOnly = profile?.role === 'coach';
+
+  if (!hasFeature('public_registration_forms')) {
+    return (
+      <div style={{ padding: '48px 36px', maxWidth: '560px' }}>
+        <UpgradePrompt feature="Public Registration Forms" description="Build a public sign-up form for a season or program, share one link with families, and track every submission in one place." requiredPlan="Club" />
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100vh', background: '#F8FAFC' }}>

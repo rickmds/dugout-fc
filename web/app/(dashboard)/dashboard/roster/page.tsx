@@ -6,6 +6,7 @@ import { Plus, Search, Mail, User, X, ChevronDown, Trash2, Sparkles } from 'luci
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import AIRosterImport from '@/components/dashboard/AIRosterImport';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 
 type Player = {
   id: string;
@@ -67,7 +68,7 @@ function positionGroups(players: Player[]): PosGroup[] {
 
 export default function RosterPage() {
   const router = useRouter();
-  const { profile, club, teams, selectedTeamId } = useDashboard();
+  const { profile, club, teams, selectedTeamId, hasFeature } = useDashboard();
   const searchParams = useSearchParams();
   const [players, setPlayers]         = useState<Player[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -79,6 +80,7 @@ export default function RosterPage() {
   // Add player modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAI, setShowAI]             = useState(false);
+  const [showAIUpgrade, setShowAIUpgrade] = useState(false);
   const [form, setForm]                 = useState<FormState>(emptyForm(selectedTeamId ?? teams[0]?.id ?? ''));
   const [saving, setSaving]             = useState(false);
 
@@ -180,7 +182,7 @@ export default function RosterPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => setShowAI(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '14px', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid #E2E8F0', cursor: 'pointer' }}>
+            <button onClick={() => hasFeature('ai_roster_import') ? setShowAI(true) : setShowAIUpgrade(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '14px', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid #E2E8F0', cursor: 'pointer' }}>
               <Sparkles size={15} color="#8B5CF6" /> AI Import
             </button>
             <button onClick={() => { setForm(emptyForm(teamFilter || (teams[0]?.id ?? ''))); setShowAddModal(true); }}
@@ -362,6 +364,14 @@ export default function RosterPage() {
       )}
 
       {showAI && <AIRosterImport onClose={() => setShowAI(false)} onDone={() => loadPlayers()} />}
+      {showAIUpgrade && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAIUpgrade(false); }}>
+          <div style={{ width: 420 }}>
+            <UpgradePrompt feature="AI Roster Import" description="Upload a spreadsheet in any format and let AI map the columns and import your whole roster automatically." requiredPlan="Team Pro" />
+          </div>
+        </div>
+      )}
 
       {/* ── Delete confirm ─────────────────────────────────────────────────── */}
       {deleteModal && (

@@ -2146,7 +2146,7 @@ function FeatureBoard({ plansList, catalog, onCatalogChanged }: {
                     }}>
                     <span style={{ lineHeight: 1.35 }}>
                       {f.label}
-                      {f.enforced_as && <span style={{ display: 'block', fontSize: 9, fontWeight: 700, color: '#7c3aed', marginTop: 2, letterSpacing: '0.04em' }}>ENFORCED</span>}
+                      {f.is_enforced && <span style={{ display: 'block', fontSize: 9, fontWeight: 700, color: '#7c3aed', marginTop: 2, letterSpacing: '0.04em' }}>ENFORCED</span>}
                     </span>
                     <button onClick={() => toggleRetired(f.id, f.is_active)} title={f.is_active ? 'Retire this feature' : 'Restore this feature'}
                       style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 13, padding: 0, flexShrink: 0, lineHeight: 1 }}>
