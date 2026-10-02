@@ -8,7 +8,8 @@ import {
   AlertTriangle, UserX, UserRoundX, MailWarning, ChevronDown,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { PLAN_PRICING } from '@/lib/plans';
+import { type Plan, type PlanRow, planFromRow } from '@/lib/plans';
+import { type PaymentRail, type RailFeeConfig, DEFAULT_RAIL_FEE_CONFIG } from '@/lib/feeCalculator';
 import { COUNTRIES } from '@/lib/countries';
 import type { User } from '@supabase/supabase-js';
 
@@ -113,9 +114,9 @@ const PLAN_META: Record<string, { label: string; color: string; bg: string }> = 
   trialing: { label: 'Trial',    color: '#d97706', bg: '#FFFBEB' },
 };
 
-const planMonthly = (plan: string | null): number => {
+const planMonthly = (plan: string | null, plansById: Record<string, Plan>): number => {
   if (!plan || plan === 'free' || plan === 'trialing') return 0;
-  return (PLAN_PRICING as Record<string, { monthly: number }>)[plan]?.monthly ?? 0;
+  return plansById[plan]?.pricing.monthly ?? 0;
 };
 
 function effectivePlanKey(plan: string | null, status: string | null): string {
@@ -301,6 +302,17 @@ function App({ user }: { user: User }) {
   const [sort, setSort]         = useState<'newest' | 'members' | 'teams' | 'score' | 'last active'>('newest');
   const [acting, setActing]     = useState<string | null>(null);
   const [showBroadcast, setShowBroadcast] = useState(false);
+  const [view, setView]         = useState<'clubs' | 'billing'>('clubs');
+  const [plansById, setPlansById] = useState<Record<string, Plan>>({});
+
+  const loadPlans = useCallback(async () => {
+    const { data } = await supabase.from('plans').select('*').order('sort_order');
+    const byId: Record<string, Plan> = {};
+    for (const row of (data ?? []) as PlanRow[]) byId[row.id] = planFromRow(row);
+    setPlansById(byId);
+  }, []);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; sets state from a real network call, not derivable at render time
+  useEffect(() => { loadPlans(); }, [loadPlans]);
 
   const clubNameRef   = useRef<Record<string, string>>({});
   const teamToClubRef = useRef<Record<string, string>>({});
@@ -638,6 +650,14 @@ function App({ user }: { user: User }) {
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 2, background: 'rgba(255,255,255,0.06)', border: `1px solid ${C.headerBorder}`, borderRadius: 8, padding: 2 }}>
+            {([{ k: 'clubs', label: 'Clubs' }, { k: 'billing', label: 'Billing' }] as const).map(({ k, label }) => (
+              <button key={k} onClick={() => { setView(k); setSelected(null); }}
+                style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', background: view === k ? C.green : 'transparent', color: view === k ? '#04140A' : C.headerMuted }}>
+                {label}
+              </button>
+            ))}
+          </div>
           <button onClick={() => setShowBroadcast(true)} className="sa-hbtn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: '#04140A', background: `linear-gradient(135deg, #4ADE80, ${C.green})`, border: 'none', borderRadius: 7, padding: '7px 14px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(34,197,94,0.3)' }}>
             <Mail size={13} /> Broadcast
           </button>
@@ -653,6 +673,11 @@ function App({ user }: { user: User }) {
         </div>
       </header>
 
+      {view === 'billing' ? (
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <BillingControlCenter plansById={plansById} onPlansChanged={loadPlans} />
+        </div>
+      ) : (
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Sidebar */}
         <div style={{ width: 320, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0, background: C.cardBg }}>
@@ -688,14 +713,15 @@ function App({ user }: { user: User }) {
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {selected ? (
-            <ClubDetailView club={selected} acting={acting === selected.id}
+            <ClubDetailView club={selected} acting={acting === selected.id} plansById={plansById}
               onClose={() => setSelected(null)} onSuspend={() => handleSuspend(selected)}
               onMarkContacted={() => handleMarkContacted(selected.id)} onDelete={handleDelete} />
           ) : (
-            <PlatformOverview stats={stats} recentMembers={recentMembers} clubs={clubs} loading={loading} activityFeed={activityFeed} liveConnected={liveConnected} devices={devices} flags={flags} onDeleteFlag={handleDeleteFlag} onRemindFlag={handleRemindPaymentMisconfig} />
+            <PlatformOverview stats={stats} recentMembers={recentMembers} clubs={clubs} loading={loading} activityFeed={activityFeed} liveConnected={liveConnected} devices={devices} flags={flags} onDeleteFlag={handleDeleteFlag} onRemindFlag={handleRemindPaymentMisconfig} plansById={plansById} />
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -925,13 +951,13 @@ function ActivityFeed({ items, liveConnected }: { items: ActivityItem[]; liveCon
 }
 
 // ── Income calculator ──────────────────────────────────────────────────────────
-function IncomeCalculator({ clubs }: { clubs: Club[] }) {
+function IncomeCalculator({ clubs, plansById }: { clubs: Club[]; plansById: Record<string, Plan> }) {
   const paidPlans = ['team_pro', 'starter', 'club', 'academy'] as const;
   const [projPlan, setProjPlan] = useState<typeof paidPlans[number]>('starter');
   const [projClubs, setProjClubs] = useState(1);
-  const currentMRR = clubs.filter(c => c.sub_status === 'active' && c.plan && paidPlans.includes(c.plan as typeof paidPlans[number])).reduce((sum, c) => sum + planMonthly(c.plan), 0);
+  const currentMRR = clubs.filter(c => c.sub_status === 'active' && c.plan && paidPlans.includes(c.plan as typeof paidPlans[number])).reduce((sum, c) => sum + planMonthly(c.plan, plansById), 0);
   const freeCount = clubs.filter(c => ['free', 'trialing'].includes(effectivePlanKey(c.plan, c.sub_status))).length;
-  const projPrice = PLAN_PRICING[projPlan].monthly;
+  const projPrice = plansById[projPlan]?.pricing.monthly ?? 0;
   const projMRR = projClubs * projPrice;
   return (
     <div style={{ ...card, padding: 20 }}>
@@ -956,7 +982,7 @@ function IncomeCalculator({ clubs }: { clubs: Club[] }) {
             style={{ width: 48, background: C.cardBg, border: `1.5px solid ${C.border}`, borderRadius: 6, padding: '4px 8px', color: C.textDark, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none' }} />
           <span style={{ fontSize: 12, color: C.textLight }}>club{projClubs !== 1 ? 's' : ''} upgrade to</span>
           <select value={projPlan} onChange={e => setProjPlan(e.target.value as typeof paidPlans[number])} style={{ background: C.cardBg, border: `1.5px solid ${C.border}`, borderRadius: 6, padding: '4px 10px', color: C.textDark, fontSize: 12, outline: 'none', cursor: 'pointer' }}>
-            {paidPlans.map(p => <option key={p} value={p}>{PLAN_META[p].label} — ${PLAN_PRICING[p].monthly}/mo</option>)}
+            {paidPlans.map(p => <option key={p} value={p}>{PLAN_META[p].label} — ${plansById[p]?.pricing.monthly ?? 0}/mo</option>)}
           </select>
         </div>
         <div style={{ display: 'flex', gap: 20 }}>
@@ -985,30 +1011,29 @@ function PaymentVolumeWidget() {
   useEffect(() => {
     async function load() {
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-      const { data: { session } } = await supabase.auth.getSession();
-      const [rowsRes, pctRes] = await Promise.all([
-        supabase
-          .from('fee_payments')
-          .select('amount, created_at, method, payment_rail, player_fees!inner(teams!inner(clubs!inner(id, name, stripe_connect_onboarded)))'),
-        fetch('/api/admin/platform-fee-pct', { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } })
-          .then(r => r.ok ? r.json() : { pct: 0 })
-          .catch(() => ({ pct: 0 })),
-      ]);
-      const rows = rowsRes.data;
+      const { data: rows } = await supabase
+        .from('fee_payments')
+        .select('amount, created_at, method, payment_rail, platform_fee_collected, player_fees!inner(teams!inner(clubs!inner(id, name, stripe_connect_onboarded)))');
 
       if (!rows) { setLoading(false); return; }
 
-      const pFeePct = (pctRes.pct ?? 0) / 100;
+      // Sums the real, per-payment platform_fee_collected column (recorded
+      // at confirm time from the actual rail-based fee breakdown) rather
+      // than re-estimating with a single global percentage — Pulse's real
+      // cut varies by rail and by any per-club override, so there is no
+      // one rate that could reproduce it after the fact. Payments from
+      // before this column existed (pre rail-based fee model) show as 0
+      // here rather than an inflated guess.
       const byClubMap: Record<string, { name: string; amount: number }> = {};
       let total = 0, thisMonth = 0, platformFees = 0;
       let achCount = 0, cardCount = 0, achVolume = 0, cardVolume = 0;
 
-      for (const r of rows as unknown as { amount: number; created_at: string; method: string | null; payment_rail: 'card' | 'ach' | null; player_fees: { teams: { clubs: { id: string; name: string; stripe_connect_onboarded: boolean | null } | null } | null } | null }[]) {
+      for (const r of rows as unknown as { amount: number; created_at: string; method: string | null; payment_rail: 'card' | 'ach' | null; platform_fee_collected: number | null; player_fees: { teams: { clubs: { id: string; name: string; stripe_connect_onboarded: boolean | null } | null } | null } | null }[]) {
         const club = r.player_fees?.teams?.clubs;
         const amt  = Number(r.amount ?? 0);
         total += amt;
         if (r.created_at >= monthStart) thisMonth += amt;
-        platformFees += amt * pFeePct;
+        platformFees += Number(r.platform_fee_collected ?? 0);
         if (club?.id) {
           byClubMap[club.id] = { name: club.name, amount: (byClubMap[club.id]?.amount ?? 0) + amt };
         }
@@ -1309,11 +1334,12 @@ function HealthFlagsCard({ flags, onDeleteFlag, onRemindFlag }: { flags: Flags |
   );
 }
 
-function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, liveConnected, devices, flags, onDeleteFlag, onRemindFlag }: {
+function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, liveConnected, devices, flags, onDeleteFlag, onRemindFlag, plansById }: {
   stats: Stats | null; recentMembers: RecentMember[]; clubs: Club[]; loading: boolean;
   activityFeed: ActivityItem[]; liveConnected: boolean; devices: DeviceStats | null; flags: Flags | null;
   onDeleteFlag: (kind: 'orphaned_staff' | 'stale_invite' | 'unclaimed_player', ids: string[]) => Promise<void>;
   onRemindFlag: (clubId: string) => Promise<void>;
+  plansById: Record<string, Plan>;
 }) {
   if (loading || !stats) return <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><Spinner /></div>;
   const topClubs   = [...clubs].sort((a, b) => b.member_count - a.member_count).slice(0, 6);
@@ -1377,7 +1403,7 @@ function PlatformOverview({ stats, recentMembers, clubs, loading, activityFeed, 
 
       {/* Income + Health */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <IncomeCalculator clubs={clubs} />
+        <IncomeCalculator clubs={clubs} plansById={plansById} />
         <div style={{ ...card, padding: 20 }}>
           <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 16 }}>Health breakdown</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1509,9 +1535,474 @@ function TeamRosterRow({ team, players }: { team: TeamRow; players: PlayerWithGu
   );
 }
 
+// ── Club billing panel ────────────────────────────────────────────────────────
+type ClubSubRow = {
+  id: string; plan: string | null; status: string | null; trial_ends_at: string | null;
+  billing_cycle: 'monthly' | 'annual'; custom_monthly_price_cents: number | null; custom_annual_price_cents: number | null;
+};
+type ClubFeeOverrideRow = {
+  card_charge_rate_pct: number | null; card_charge_fixed: number | null; card_charge_cap: number | null;
+  ach_charge_rate_pct: number | null; ach_charge_fixed: number | null; ach_charge_cap: number | null;
+  note: string | null;
+};
+const EMPTY_OVERRIDE: ClubFeeOverrideRow = { card_charge_rate_pct: null, card_charge_fixed: null, card_charge_cap: null, ach_charge_rate_pct: null, ach_charge_fixed: null, ach_charge_cap: null, note: null };
+
+function ClubBillingPanel({ clubId, plansById }: { clubId: string; plansById: Record<string, Plan> }) {
+  const [sub, setSub]                 = useState<ClubSubRow | null>(null);
+  const [override, setOverride]       = useState<ClubFeeOverrideRow>(EMPTY_OVERRIDE);
+  const [hasOverride, setHasOverride] = useState(false);
+  const [rails, setRails]             = useState<Record<PaymentRail, RailFeeConfig>>(DEFAULT_RAIL_FEE_CONFIG);
+  const [loading, setLoading]         = useState(true);
+  const [savingSub, setSavingSub]           = useState(false);
+  const [savingOverride, setSavingOverride] = useState(false);
+  const [subSaved, setSubSaved]             = useState(false);
+  const [overrideSaved, setOverrideSaved]   = useState(false);
+
+  const [planId, setPlanId]             = useState('free');
+  const [trialEndsAt, setTrialEndsAt]   = useState('');
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [customMonthly, setCustomMonthly] = useState('');
+  const [customAnnual, setCustomAnnual]   = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      const [{ data: subRow }, { data: overrideRow }, { data: railRows }] = await Promise.all([
+        supabase.from('subscriptions').select('id, plan, status, trial_ends_at, billing_cycle, custom_monthly_price_cents, custom_annual_price_cents').eq('club_id', clubId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('club_fee_overrides').select('card_charge_rate_pct, card_charge_fixed, card_charge_cap, ach_charge_rate_pct, ach_charge_fixed, ach_charge_cap, note').eq('club_id', clubId).maybeSingle(),
+        supabase.from('platform_fee_rails').select('rail, charge_rate_pct, charge_fixed, charge_cap, cost_rate_pct, cost_fixed, cost_cap'),
+      ]);
+      if (cancelled) return;
+      const s = subRow as ClubSubRow | null;
+      setSub(s);
+      setPlanId(s?.plan ?? 'free');
+      setTrialEndsAt(s?.trial_ends_at ? s.trial_ends_at.slice(0, 10) : '');
+      setBillingCycle(s?.billing_cycle ?? 'monthly');
+      setCustomMonthly(s?.custom_monthly_price_cents != null ? String(s.custom_monthly_price_cents / 100) : '');
+      setCustomAnnual(s?.custom_annual_price_cents != null ? String(s.custom_annual_price_cents / 100) : '');
+
+      if (overrideRow) { setOverride(overrideRow as ClubFeeOverrideRow); setHasOverride(true); }
+      else { setOverride(EMPTY_OVERRIDE); setHasOverride(false); }
+
+      const base = { ...DEFAULT_RAIL_FEE_CONFIG };
+      for (const row of (railRows ?? []) as { rail: PaymentRail; charge_rate_pct: number; charge_fixed: number; charge_cap: number | null; cost_rate_pct: number; cost_fixed: number; cost_cap: number | null }[]) {
+        base[row.rail] = { chargeRatePct: row.charge_rate_pct, chargeFixed: row.charge_fixed, chargeCap: row.charge_cap, costRatePct: row.cost_rate_pct, costFixed: row.cost_fixed, costCap: row.cost_cap };
+      }
+      setRails(base);
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [clubId]);
+
+  async function saveSubscription() {
+    setSavingSub(true);
+    const payload = {
+      club_id: clubId,
+      plan: planId,
+      status: sub?.status ?? 'active',
+      trial_ends_at: trialEndsAt ? new Date(trialEndsAt).toISOString() : null,
+      billing_cycle: billingCycle,
+      custom_monthly_price_cents: customMonthly.trim() ? Math.round(parseFloat(customMonthly) * 100) : null,
+      custom_annual_price_cents: customAnnual.trim() ? Math.round(parseFloat(customAnnual) * 100) : null,
+    };
+    if (sub?.id) {
+      await supabase.from('subscriptions').update(payload).eq('id', sub.id);
+    } else {
+      const { data } = await supabase.from('subscriptions').insert(payload).select('id').single();
+      if (data) setSub({ id: data.id, plan: planId, status: 'active', trial_ends_at: payload.trial_ends_at, billing_cycle: billingCycle, custom_monthly_price_cents: payload.custom_monthly_price_cents, custom_annual_price_cents: payload.custom_annual_price_cents });
+    }
+    setSavingSub(false);
+    setSubSaved(true);
+    setTimeout(() => setSubSaved(false), 2000);
+  }
+
+  async function saveOverride() {
+    setSavingOverride(true);
+    await supabase.from('club_fee_overrides').upsert({ club_id: clubId, ...override, updated_at: new Date().toISOString() });
+    setHasOverride(true);
+    setSavingOverride(false);
+    setOverrideSaved(true);
+    setTimeout(() => setOverrideSaved(false), 2000);
+  }
+
+  async function clearOverride() {
+    setSavingOverride(true);
+    await supabase.from('club_fee_overrides').delete().eq('club_id', clubId);
+    setOverride(EMPTY_OVERRIDE);
+    setHasOverride(false);
+    setSavingOverride(false);
+  }
+
+  const sc = { ...card, overflow: 'hidden' as const, marginBottom: 16 };
+  const plansList = Object.values(plansById).sort((a, b) => a.sortOrder - b.sortOrder);
+  const inputStyle = { background: C.inputBg, border: `1.5px solid ${C.border}`, borderRadius: 7, padding: '7px 10px', color: C.textDark, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const, width: '100%' };
+  const labelStyle = { fontSize: 11, color: C.textLight, fontWeight: 600, marginBottom: 4, display: 'block' as const };
+
+  if (loading) return <div style={{ ...sc, padding: 24, display: 'flex', justifyContent: 'center' }}><Spinner /></div>;
+
+  return (
+    <>
+      <div style={sc}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Subscription</div>
+          <div style={{ fontSize: 11, color: '#16a34a' }}>{subSaved ? '✓ Saved' : ''}</div>
+        </div>
+        <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+          <div>
+            <label style={labelStyle}>Plan</label>
+            <select value={planId} onChange={e => setPlanId(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+              {plansList.map(p => <option key={p.id} value={p.id}>{p.pricing.label} — ${p.pricing.monthly}/mo</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Billing cycle</label>
+            <select value={billingCycle} onChange={e => setBillingCycle(e.target.value as 'monthly' | 'annual')} style={{ ...inputStyle, cursor: 'pointer' }}>
+              <option value="monthly">Monthly</option>
+              <option value="annual">Annual</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Trial ends</label>
+            <input type="date" value={trialEndsAt} onChange={e => setTrialEndsAt(e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Custom monthly price ($, blank = plan default)</label>
+            <input type="number" min={0} step="0.01" placeholder={String(plansById[planId]?.pricing.monthly ?? 0)} value={customMonthly} onChange={e => setCustomMonthly(e.target.value)} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Custom annual price ($, blank = plan default)</label>
+            <input type="number" min={0} step="0.01" placeholder={String(plansById[planId]?.pricing.annual ?? 0)} value={customAnnual} onChange={e => setCustomAnnual(e.target.value)} style={inputStyle} />
+          </div>
+        </div>
+        <div style={{ padding: '0 20px 16px' }}>
+          <button onClick={saveSubscription} disabled={savingSub} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.green, color: '#fff', fontSize: 13, fontWeight: 700, cursor: savingSub ? 'default' : 'pointer', opacity: savingSub ? 0.6 : 1 }}>
+            {savingSub ? 'Saving…' : 'Save subscription'}
+          </button>
+        </div>
+      </div>
+
+      <div style={sc}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Payment processing rate</div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Comp or negotiate this club&apos;s rate — leave a field blank to use the platform default.</div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: overrideSaved ? '#16a34a' : hasOverride ? '#7c3aed' : C.textMuted, flexShrink: 0, marginLeft: 12 }}>{overrideSaved ? '✓ Saved' : hasOverride ? 'Overridden' : 'Using platform default'}</div>
+        </div>
+        <div style={{ padding: '16px 20px' }}>
+          {(['card', 'ach'] as const).map(rail => (
+            <div key={rail} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, textTransform: 'uppercase', marginBottom: 8 }}>
+                {rail === 'card' ? 'Card' : 'ACH'}{' '}
+                <span style={{ fontWeight: 400, color: C.textMuted, textTransform: 'none' }}>
+                  — platform default {(rails[rail].chargeRatePct * 100).toFixed(2)}% + ${rails[rail].chargeFixed.toFixed(2)}{rails[rail].chargeCap != null ? `, capped $${rails[rail].chargeCap.toFixed(2)}` : ''}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+                <div>
+                  <label style={labelStyle}>Rate %</label>
+                  <input type="number" min={0} step="0.01" placeholder={(rails[rail].chargeRatePct * 100).toFixed(2)}
+                    value={rail === 'card' ? (override.card_charge_rate_pct != null ? String(override.card_charge_rate_pct * 100) : '') : (override.ach_charge_rate_pct != null ? String(override.ach_charge_rate_pct * 100) : '')}
+                    onChange={e => { const v = e.target.value === '' ? null : parseFloat(e.target.value) / 100; setOverride(prev => rail === 'card' ? { ...prev, card_charge_rate_pct: v } : { ...prev, ach_charge_rate_pct: v }); }}
+                    style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Fixed $</label>
+                  <input type="number" min={0} step="0.01" placeholder={rails[rail].chargeFixed.toFixed(2)}
+                    value={rail === 'card' ? (override.card_charge_fixed ?? '') : (override.ach_charge_fixed ?? '')}
+                    onChange={e => { const v = e.target.value === '' ? null : parseFloat(e.target.value); setOverride(prev => rail === 'card' ? { ...prev, card_charge_fixed: v } : { ...prev, ach_charge_fixed: v }); }}
+                    style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Cap $ (blank = {rails[rail].chargeCap != null ? `$${rails[rail].chargeCap.toFixed(2)}` : 'uncapped'})</label>
+                  <input type="number" min={0} step="0.01" placeholder={rails[rail].chargeCap != null ? rails[rail].chargeCap.toFixed(2) : 'uncapped'}
+                    value={rail === 'card' ? (override.card_charge_cap ?? '') : (override.ach_charge_cap ?? '')}
+                    onChange={e => { const v = e.target.value === '' ? null : parseFloat(e.target.value); setOverride(prev => rail === 'card' ? { ...prev, card_charge_cap: v } : { ...prev, ach_charge_cap: v }); }}
+                    style={inputStyle} />
+                </div>
+              </div>
+            </div>
+          ))}
+          <div>
+            <label style={labelStyle}>Note</label>
+            <input type="text" placeholder="e.g. negotiated rate per Aug 2026 call" value={override.note ?? ''} onChange={e => setOverride(prev => ({ ...prev, note: e.target.value || null }))} style={inputStyle} />
+          </div>
+        </div>
+        <div style={{ padding: '0 20px 16px', display: 'flex', gap: 8 }}>
+          <button onClick={saveOverride} disabled={savingOverride} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 700, cursor: savingOverride ? 'default' : 'pointer', opacity: savingOverride ? 0.6 : 1 }}>
+            {savingOverride ? 'Saving…' : 'Save rate override'}
+          </button>
+          {hasOverride && (
+            <button onClick={clearOverride} disabled={savingOverride} style={{ padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.cardBg, color: C.textMid, fontSize: 13, fontWeight: 600, cursor: savingOverride ? 'default' : 'pointer' }}>
+              Clear override
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Billing control center (global) ─────────────────────────────────────────────
+function PlanEditorRow({ plan, editing, onEdit, onCancel, onSaved }: {
+  plan: Plan; editing: boolean; onEdit: () => void; onCancel: () => void; onSaved: () => void;
+}) {
+  const [label, setLabel]             = useState(plan.pricing.label);
+  const [description, setDescription] = useState(plan.pricing.description);
+  const [monthly, setMonthly]         = useState(String(plan.pricing.monthly));
+  const [annual, setAnnual]           = useState(String(plan.pricing.annual));
+  const [maxTeams, setMaxTeams]       = useState(plan.limits.maxTeams === Infinity ? '' : String(plan.limits.maxTeams));
+  const [maxPlayers, setMaxPlayers]   = useState(plan.limits.maxPlayers === Infinity ? '' : String(plan.limits.maxPlayers));
+  const [teamLimitLabel, setTeamLimitLabel]     = useState(plan.pricing.teamLimit);
+  const [playerLimitLabel, setPlayerLimitLabel] = useState(plan.pricing.playerLimit);
+  const [ai, setAi]             = useState(plan.limits.ai);
+  const [fees, setFees]         = useState(plan.limits.fees);
+  const [branding, setBranding] = useState(plan.limits.branding);
+  const [tryouts, setTryouts]   = useState(plan.limits.tryouts);
+  const [features, setFeatures] = useState(plan.features.join('\n'));
+  const [highlight, setHighlight] = useState(plan.pricing.highlight);
+  const [isActive, setIsActive]   = useState(plan.isActive);
+  const [saving, setSaving]       = useState(false);
+
+  useEffect(() => {
+    if (!editing) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-syncs the edit form to the latest saved plan every time this row is reopened, since the component stays mounted across edit/cancel cycles
+    setLabel(plan.pricing.label); setDescription(plan.pricing.description);
+    setMonthly(String(plan.pricing.monthly)); setAnnual(String(plan.pricing.annual));
+    setMaxTeams(plan.limits.maxTeams === Infinity ? '' : String(plan.limits.maxTeams));
+    setMaxPlayers(plan.limits.maxPlayers === Infinity ? '' : String(plan.limits.maxPlayers));
+    setTeamLimitLabel(plan.pricing.teamLimit); setPlayerLimitLabel(plan.pricing.playerLimit);
+    setAi(plan.limits.ai); setFees(plan.limits.fees); setBranding(plan.limits.branding); setTryouts(plan.limits.tryouts);
+    setFeatures(plan.features.join('\n')); setHighlight(plan.pricing.highlight); setIsActive(plan.isActive);
+  }, [editing, plan]);
+
+  async function save() {
+    setSaving(true);
+    await supabase.from('plans').update({
+      label, description,
+      monthly_price_cents: Math.round((parseFloat(monthly) || 0) * 100),
+      annual_price_cents: Math.round((parseFloat(annual) || 0) * 100),
+      max_teams: maxTeams.trim() === '' ? null : parseInt(maxTeams, 10),
+      max_players: maxPlayers.trim() === '' ? null : parseInt(maxPlayers, 10),
+      team_limit_label: teamLimitLabel, player_limit_label: playerLimitLabel,
+      ai_enabled: ai, fees_enabled: fees, branding_enabled: branding, tryouts_enabled: tryouts,
+      features: features.split('\n').map(f => f.trim()).filter(Boolean),
+      highlight, is_active: isActive,
+      updated_at: new Date().toISOString(),
+    }).eq('id', plan.id);
+    setSaving(false);
+    onSaved();
+  }
+
+  const inputStyle = { background: C.inputBg, border: `1.5px solid ${C.border}`, borderRadius: 7, padding: '7px 10px', color: C.textDark, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const, width: '100%' };
+  const labelStyle = { fontSize: 11, color: C.textLight, fontWeight: 600, marginBottom: 4, display: 'block' as const };
+
+  if (!editing) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ width: 90, flexShrink: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>{plan.pricing.label}</div>
+          {!plan.isActive && <div style={{ fontSize: 10, color: C.textMuted }}>inactive</div>}
+        </div>
+        <div style={{ fontSize: 13, color: C.textMid, width: 150, flexShrink: 0 }}>${plan.pricing.monthly}/mo · ${plan.pricing.annual}/yr</div>
+        <div style={{ fontSize: 12, color: C.textLight, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.pricing.teamLimit} · {plan.pricing.playerLimit} · {plan.features.length} features</div>
+        <button onClick={onEdit} style={{ fontSize: 12, fontWeight: 600, color: C.green, background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 12px', cursor: 'pointer', flexShrink: 0 }}>Edit</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '14px 0', borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+        <div><label style={labelStyle}>Label</label><input value={label} onChange={e => setLabel(e.target.value)} style={inputStyle} /></div>
+        <div><label style={labelStyle}>Monthly $</label><input type="number" step="0.01" value={monthly} onChange={e => setMonthly(e.target.value)} style={inputStyle} /></div>
+        <div><label style={labelStyle}>Annual $</label><input type="number" step="0.01" value={annual} onChange={e => setAnnual(e.target.value)} style={inputStyle} /></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingTop: 20 }}>
+          <label style={{ fontSize: 12, color: C.textMid, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}><input type="checkbox" checked={highlight} onChange={e => setHighlight(e.target.checked)} /> Highlight</label>
+          <label style={{ fontSize: 12, color: C.textMid, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}><input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} /> Active</label>
+        </div>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <label style={labelStyle}>Description</label>
+        <input value={description} onChange={e => setDescription(e.target.value)} style={inputStyle} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+        <div><label style={labelStyle}>Max teams (blank = unlimited)</label><input type="number" min={0} value={maxTeams} onChange={e => setMaxTeams(e.target.value)} style={inputStyle} /></div>
+        <div><label style={labelStyle}>Max players (blank = unlimited)</label><input type="number" min={0} value={maxPlayers} onChange={e => setMaxPlayers(e.target.value)} style={inputStyle} /></div>
+        <div><label style={labelStyle}>Team limit label</label><input value={teamLimitLabel} onChange={e => setTeamLimitLabel(e.target.value)} style={inputStyle} /></div>
+        <div><label style={labelStyle}>Player limit label</label><input value={playerLimitLabel} onChange={e => setPlayerLimitLabel(e.target.value)} style={inputStyle} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+        {([{ k: 'ai', v: ai, set: setAi, label: 'AI features' }, { k: 'fees', v: fees, set: setFees, label: 'Fee collection' }, { k: 'branding', v: branding, set: setBranding, label: 'Custom branding' }, { k: 'tryouts', v: tryouts, set: setTryouts, label: 'Tryouts' }] as const).map(f => (
+          <label key={f.k} style={{ fontSize: 12, color: C.textMid, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+            <input type="checkbox" checked={f.v} onChange={e => f.set(e.target.checked)} /> {f.label}
+          </label>
+        ))}
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={labelStyle}>Features (one per line — shown on the pricing page)</label>
+        <textarea value={features} onChange={e => setFeatures(e.target.value)} rows={4} style={{ ...inputStyle, resize: 'vertical' as const, lineHeight: 1.6 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={save} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.green, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save plan'}</button>
+        <button onClick={onCancel} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.cardBg, color: C.textMid, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function BillingControlCenter({ plansById, onPlansChanged }: { plansById: Record<string, Plan>; onPlansChanged: () => void }) {
+  const [rails, setRails]                 = useState<Record<PaymentRail, RailFeeConfig>>(DEFAULT_RAIL_FEE_CONFIG);
+  const [defaultTrialDays, setDefaultTrialDays] = useState('14');
+  const [loading, setLoading]             = useState(true);
+  const [savingRails, setSavingRails]     = useState(false);
+  const [railsSaved, setRailsSaved]       = useState(false);
+  const [savingTrial, setSavingTrial]     = useState(false);
+  const [trialSaved, setTrialSaved]       = useState(false);
+  const [editingPlan, setEditingPlan]     = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [{ data: railRows }, { data: settingRow }] = await Promise.all([
+      supabase.from('platform_fee_rails').select('rail, charge_rate_pct, charge_fixed, charge_cap, cost_rate_pct, cost_fixed, cost_cap'),
+      supabase.from('platform_settings').select('value').eq('key', 'default_trial_days').maybeSingle(),
+    ]);
+    const base = { ...DEFAULT_RAIL_FEE_CONFIG };
+    for (const row of (railRows ?? []) as { rail: PaymentRail; charge_rate_pct: number; charge_fixed: number; charge_cap: number | null; cost_rate_pct: number; cost_fixed: number; cost_cap: number | null }[]) {
+      base[row.rail] = { chargeRatePct: row.charge_rate_pct, chargeFixed: row.charge_fixed, chargeCap: row.charge_cap, costRatePct: row.cost_rate_pct, costFixed: row.cost_fixed, costCap: row.cost_cap };
+    }
+    setRails(base);
+    setDefaultTrialDays(String((settingRow?.value as number | undefined) ?? 14));
+    setLoading(false);
+  }, []);
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; sets state from a real network call, not derivable at render time
+  useEffect(() => { load(); }, [load]);
+
+  async function saveRail(rail: PaymentRail) {
+    setSavingRails(true);
+    const cfg = rails[rail];
+    await supabase.from('platform_fee_rails').update({
+      charge_rate_pct: cfg.chargeRatePct, charge_fixed: cfg.chargeFixed, charge_cap: cfg.chargeCap,
+      cost_rate_pct: cfg.costRatePct, cost_fixed: cfg.costFixed, cost_cap: cfg.costCap,
+      updated_at: new Date().toISOString(),
+    }).eq('rail', rail);
+    setSavingRails(false);
+    setRailsSaved(true);
+    setTimeout(() => setRailsSaved(false), 2000);
+  }
+
+  async function saveTrialDays() {
+    setSavingTrial(true);
+    const days = Math.max(0, parseInt(defaultTrialDays, 10) || 0);
+    await supabase.from('platform_settings').upsert({ key: 'default_trial_days', value: days, updated_at: new Date().toISOString() });
+    setSavingTrial(false);
+    setTrialSaved(true);
+    setTimeout(() => setTrialSaved(false), 2000);
+  }
+
+  const sc = { ...card, overflow: 'hidden' as const, marginBottom: 16 };
+  const inputStyle = { background: C.inputBg, border: `1.5px solid ${C.border}`, borderRadius: 7, padding: '7px 10px', color: C.textDark, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const, width: '100%' };
+  const labelStyle = { fontSize: 11, color: C.textLight, fontWeight: 600, marginBottom: 4, display: 'block' as const };
+  const plansList = Object.values(plansById).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><Spinner /></div>;
+
+  return (
+    <div style={{ padding: 32, maxWidth: 1180 }}>
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 24, fontWeight: 900, color: C.textDark, margin: 0, letterSpacing: -0.6 }}>Billing</h2>
+        <p style={{ fontSize: 13, color: C.textLight, margin: '4px 0 0' }}>Platform economics and plan definitions — editable here instead of a code deploy. Nothing here charges a club; it&apos;s config only.</p>
+      </div>
+
+      <div style={sc}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Payment processing economics</div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>What every club is charged, and Pulse&apos;s real underlying processor cost, per rail. Internal only — never shown to a club.</div>
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', flexShrink: 0, marginLeft: 12 }}>{railsSaved ? '✓ Saved' : ''}</div>
+        </div>
+        <div style={{ padding: '16px 20px' }}>
+          {(['card', 'ach'] as const).map(rail => {
+            const cfg = rails[rail];
+            const margin = cfg.chargeRatePct - cfg.costRatePct;
+            return (
+              <div key={rail} style={{ marginBottom: 20, paddingBottom: 20, borderBottom: rail === 'card' ? `1px solid ${C.border}` : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark, textTransform: 'uppercase' }}>{rail === 'card' ? 'Card' : 'ACH'}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: margin >= 0 ? '#16a34a' : '#dc2626', background: margin >= 0 ? '#F0FDF4' : '#FFF5F5', borderRadius: 5, padding: '2px 8px' }}>
+                    {(margin * 100).toFixed(2)}pt rate margin
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Charged to club</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div><label style={labelStyle}>Rate %</label><input type="number" step="0.01" value={(cfg.chargeRatePct * 100).toFixed(3)} onChange={e => setRails(prev => ({ ...prev, [rail]: { ...prev[rail], chargeRatePct: (parseFloat(e.target.value) || 0) / 100 } }))} style={inputStyle} /></div>
+                      <div><label style={labelStyle}>Fixed $</label><input type="number" step="0.01" value={cfg.chargeFixed} onChange={e => setRails(prev => ({ ...prev, [rail]: { ...prev[rail], chargeFixed: parseFloat(e.target.value) || 0 } }))} style={inputStyle} /></div>
+                      <div><label style={labelStyle}>Cap $ (blank = uncapped)</label><input type="number" step="0.01" value={cfg.chargeCap ?? ''} onChange={e => setRails(prev => ({ ...prev, [rail]: { ...prev[rail], chargeCap: e.target.value === '' ? null : parseFloat(e.target.value) } }))} style={inputStyle} /></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Pulse&apos;s real cost</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div><label style={labelStyle}>Rate %</label><input type="number" step="0.01" value={(cfg.costRatePct * 100).toFixed(3)} onChange={e => setRails(prev => ({ ...prev, [rail]: { ...prev[rail], costRatePct: (parseFloat(e.target.value) || 0) / 100 } }))} style={inputStyle} /></div>
+                      <div><label style={labelStyle}>Fixed $</label><input type="number" step="0.01" value={cfg.costFixed} onChange={e => setRails(prev => ({ ...prev, [rail]: { ...prev[rail], costFixed: parseFloat(e.target.value) || 0 } }))} style={inputStyle} /></div>
+                      <div><label style={labelStyle}>Cap $ (blank = uncapped)</label><input type="number" step="0.01" value={cfg.costCap ?? ''} onChange={e => setRails(prev => ({ ...prev, [rail]: { ...prev[rail], costCap: e.target.value === '' ? null : parseFloat(e.target.value) } }))} style={inputStyle} /></div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                    <button onClick={() => saveRail(rail)} disabled={savingRails} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.green, color: '#fff', fontSize: 13, fontWeight: 700, cursor: savingRails ? 'default' : 'pointer', opacity: savingRails ? 0.6 : 1 }}>
+                      {savingRails ? 'Saving…' : `Save ${rail === 'card' ? 'card' : 'ACH'} rates`}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={sc}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Default trial length</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Reference for a new club&apos;s trial end date — doesn&apos;t retroactively change existing clubs.</div>
+        </div>
+        <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Days</label>
+            <input type="number" min={0} value={defaultTrialDays} onChange={e => setDefaultTrialDays(e.target.value)} style={{ ...inputStyle, width: 100 }} />
+          </div>
+          <button onClick={saveTrialDays} disabled={savingTrial} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.green, color: '#fff', fontSize: 13, fontWeight: 700, cursor: savingTrial ? 'default' : 'pointer', opacity: savingTrial ? 0.6 : 1 }}>
+            {savingTrial ? 'Saving…' : 'Save'}
+          </button>
+          {trialSaved && <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>}
+        </div>
+      </div>
+
+      <div style={sc}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Plans</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Pricing, limits, and what&apos;s included — shown on the public pricing page and enforced in the dashboard.</div>
+        </div>
+        <div style={{ padding: '4px 20px 4px' }}>
+          {plansList.map(p => (
+            <PlanEditorRow key={p.id} plan={p} editing={editingPlan === p.id}
+              onEdit={() => setEditingPlan(p.id)} onCancel={() => setEditingPlan(null)}
+              onSaved={() => { setEditingPlan(null); onPlansChanged(); }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Club detail ────────────────────────────────────────────────────────────────
-function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onDelete }: {
-  club: Club; acting: boolean;
+function ClubDetailView({ club, acting, plansById, onClose, onSuspend, onMarkContacted, onDelete }: {
+  club: Club; acting: boolean; plansById: Record<string, Plan>;
   onClose: () => void; onSuspend: () => void; onMarkContacted: () => void; onDelete: () => void;
 }) {
   const [teams, setTeams]                 = useState<TeamRow[]>([]);
@@ -1640,6 +2131,8 @@ function ClubDetailView({ club, acting, onClose, onSuspend, onMarkContacted, onD
 
       {/* Activation funnel */}
       <ActivationFunnel club={club} />
+
+      <ClubBillingPanel clubId={club.id} plansById={plansById} />
 
       {detailLoading ? <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spinner /></div> : (
         <>

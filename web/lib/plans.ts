@@ -1,103 +1,88 @@
-export type PlanId = 'free' | 'team_pro' | 'starter' | 'club' | 'academy';
+// Plan definitions live in the `plans` table (Command Center > Billing) —
+// this file only holds the shared shape + the DB-row mapper, so every
+// consumer (DashboardContext, super-admin, pricing page) agrees on it.
+// There used to be a hardcoded PLAN_LIMITS/PLAN_PRICING/PLAN_FEATURES here;
+// editing a plan no longer requires a code deploy.
+
+export type PlanId = string;
 
 export interface PlanLimits {
-  maxPlayers: number;       // per team
+  maxPlayers: number;       // per team — Infinity = unlimited
   maxTeams: number;
   ai: boolean;
   fees: boolean;
-  branding: boolean;        // custom logo + colours
+  branding: boolean;
   tryouts: boolean;
 }
 
-export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
-  free:      { maxPlayers: Infinity, maxTeams: Infinity,  ai: true,  fees: true,  branding: true,  tryouts: true  },
-  team_pro:  { maxPlayers: Infinity, maxTeams: 1,        ai: true,  fees: true,  branding: true,  tryouts: false },
-  starter:   { maxPlayers: Infinity, maxTeams: 25,       ai: true,  fees: true,  branding: true,  tryouts: false },
-  club:      { maxPlayers: Infinity, maxTeams: 60,       ai: true,  fees: true,  branding: true,  tryouts: true  },
-  academy:   { maxPlayers: Infinity, maxTeams: Infinity, ai: true,  fees: true,  branding: true,  tryouts: true  },
-};
-
 export interface PlanPricing {
-  monthly: number;
-  annual: number;           // 10 months price (2 months free)
+  monthly: number;          // dollars
+  annual: number;           // dollars (10 months price, by convention)
   label: string;
   description: string;
   teamLimit: string;
   playerLimit: string;
-  highlight?: boolean;
+  highlight: boolean;
 }
 
-export const PLAN_PRICING: Record<Exclude<PlanId, 'free'>, PlanPricing> = {
-  team_pro: {
-    monthly: 9.99,
-    annual: 99.90,
-    label: 'Team Pro',
-    description: 'For single coaches and parent managers',
-    teamLimit: '1 team',
-    playerLimit: 'Unlimited players',
-  },
-  starter: {
-    monthly: 49,
-    annual: 490,
-    label: 'Starter',
-    description: 'For small clubs with a handful of teams',
-    teamLimit: 'Up to 25 teams',
-    playerLimit: 'Unlimited players',
-    highlight: true,
-  },
-  club: {
-    monthly: 99,
-    annual: 990,
-    label: 'Club',
-    description: 'For established clubs that run tryouts',
-    teamLimit: 'Up to 60 teams',
-    playerLimit: 'Unlimited players',
-  },
-  academy: {
-    monthly: 179,
-    annual: 1790,
-    label: 'Academy',
-    description: 'For large academies with unlimited scale',
-    teamLimit: 'Unlimited teams',
-    playerLimit: 'Unlimited players',
-  },
+export interface Plan {
+  id: PlanId;
+  limits: PlanLimits;
+  pricing: PlanPricing;
+  features: string[];
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export type PlanRow = {
+  id: string;
+  label: string;
+  description: string;
+  monthly_price_cents: number;
+  annual_price_cents: number;
+  max_teams: number | null;
+  max_players: number | null;
+  ai_enabled: boolean;
+  fees_enabled: boolean;
+  branding_enabled: boolean;
+  tryouts_enabled: boolean;
+  team_limit_label: string;
+  player_limit_label: string;
+  features: string[];
+  highlight: boolean;
+  sort_order: number;
+  is_active: boolean;
 };
 
-export const FREE_PLAN_FEATURES = [
-  'Schedule, roster & RSVP',
-  'Team, group & 1:1 chat',
-  'Manual lineup builder',
-  '1 team, up to 12 players',
-];
+export function planFromRow(row: PlanRow): Plan {
+  return {
+    id: row.id,
+    limits: {
+      maxPlayers: row.max_players ?? Infinity,
+      maxTeams: row.max_teams ?? Infinity,
+      ai: row.ai_enabled,
+      fees: row.fees_enabled,
+      branding: row.branding_enabled,
+      tryouts: row.tryouts_enabled,
+    },
+    pricing: {
+      monthly: row.monthly_price_cents / 100,
+      annual: row.annual_price_cents / 100,
+      label: row.label,
+      description: row.description,
+      teamLimit: row.team_limit_label,
+      playerLimit: row.player_limit_label,
+      highlight: row.highlight,
+    },
+    features: row.features,
+    isActive: row.is_active,
+    sortOrder: row.sort_order,
+  };
+}
 
-export const PLAN_FEATURES: Record<Exclude<PlanId, 'free'>, string[]> = {
-  team_pro: [
-    'Everything in Free',
-    'Unlimited players',
-    'Custom club branding',
-    'AI schedule import',
-    'AI roster import',
-    'AI lineup suggester',
-    'AI substitution planner',
-    'Fee collection & tracking',
-  ],
-  starter: [
-    'Everything in Team Pro',
-    'Up to 25 teams',
-    'Multi-team dashboard',
-  ],
-  club: [
-    'Everything in Starter',
-    'Up to 60 teams',
-    'Full tryout management',
-    'Tryout registration forms',
-    'Offer letters & acceptance tracking',
-  ],
-  academy: [
-    'Everything in Club',
-    'Unlimited teams',
-    'Dedicated onboarding call',
-    'Custom subdomain',
-    'Early access to new features',
-  ],
+// Used only before the real plans table has loaded, or if a club's plan id
+// doesn't match any row — deliberately matches the old hardcoded 'free'
+// tier (the most restrictive real plan), never a silent "everything on."
+export const FALLBACK_PLAN_LIMITS: PlanLimits = {
+  maxPlayers: Infinity, maxTeams: Infinity, ai: true, fees: true, branding: true, tryouts: true,
 };

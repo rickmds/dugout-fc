@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { type PlanId, PLAN_LIMITS, type PlanLimits } from '@/lib/plans';
+import { type PlanId, type PlanLimits, type PlanRow, planFromRow, FALLBACK_PLAN_LIMITS } from '@/lib/plans';
 
 export type Profile = {
   id: string;
@@ -134,6 +134,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [loading, setLoading]             = useState(true);
   const [plan, setPlan]                   = useState<PlanId>('free');
+  const [planLimitsById, setPlanLimitsById] = useState<Record<string, PlanLimits>>({});
 
   // The club currently being viewed — starts as the home club, but can be
   // switched to any club in myClubs. Tracked outside `club` state itself
@@ -168,7 +169,15 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const prof = p as Profile;
       setProfile(prof);
 
-      const { data: adminRows } = await supabase.from('club_admins').select('club_id').eq('profile_id', prof.id);
+      const [{ data: adminRows }, { data: planRows }] = await Promise.all([
+        supabase.from('club_admins').select('club_id').eq('profile_id', prof.id),
+        supabase.from('plans').select('*'),
+      ]);
+      if (planRows) {
+        const byId: Record<string, PlanLimits> = {};
+        for (const row of planRows as PlanRow[]) byId[row.id] = planFromRow(row).limits;
+        setPlanLimitsById(byId);
+      }
       const allClubIds = [...new Set([
         ...(prof.club_id ? [prof.club_id] : []),
         ...(adminRows ?? []).map(r => r.club_id as string),
@@ -297,7 +306,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     router.push('/login');
   }
 
-  const limits = PLAN_LIMITS[plan];
+  const limits = planLimitsById[plan] ?? FALLBACK_PLAN_LIMITS;
   function canUse(feature: keyof PlanLimits): boolean {
     const val = limits[feature];
     return typeof val === 'boolean' ? val : (val as number) > 0;

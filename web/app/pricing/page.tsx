@@ -3,6 +3,12 @@ import { ArrowRight } from 'lucide-react';
 import NavBar from '@/components/NavBar';
 import PricingCards, { type PricingTier } from '@/components/pricing/PricingCards';
 import FaqAccordion from '@/components/pricing/FaqAccordion';
+import { supabase } from '@/lib/supabase';
+import type { PlanRow } from '@/lib/plans';
+
+// Shorter than the 3600s other static marketing pages use — a price edited
+// in Command Center should show up here within minutes, not up to an hour.
+export const revalidate = 300;
 
 const PRIMARY = '#22c55e';
 
@@ -160,7 +166,31 @@ const FAQS = [
   },
 ];
 
-export default function PricingPage() {
+// Only the price + limit-label fields come from the plans table (Command
+// Center > Billing) — a price change there should show up here without a
+// deploy. The rest (icon, badge, cta, roi, hand-written feature bullets) is
+// marketing copy that lives with this page on purpose, not billing config.
+async function loadLiveTiers(): Promise<PricingTier[]> {
+  const { data } = await supabase.from('plans').select('*').eq('is_active', true);
+  const rows = (data ?? []) as PlanRow[];
+  const byId: Record<string, PlanRow> = {};
+  for (const row of rows) byId[row.id] = row;
+
+  return TIERS.map(tier => {
+    const row = byId[tier.id];
+    if (!row) return tier;
+    return {
+      ...tier,
+      monthly: row.monthly_price_cents / 100,
+      annual: row.annual_price_cents / 100,
+      teamLimit: row.team_limit_label,
+      playerLimit: row.player_limit_label,
+    };
+  });
+}
+
+export default async function PricingPage() {
+  const liveTiers = await loadLiveTiers();
   return (
     <div className="min-h-screen bg-[#080808] text-[#f0f0f0]"
       style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
@@ -187,7 +217,7 @@ export default function PricingPage() {
       </div>
 
       {/* Billing toggle + pricing cards — the only part of this page that needs client state */}
-      <PricingCards tiers={TIERS} />
+      <PricingCards tiers={liveTiers} />
 
       {/* Value props strip */}
       <div style={{ borderTop: '1px solid #111', borderBottom: '1px solid #111', background: '#060606', padding: '32px 24px' }}>

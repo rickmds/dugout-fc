@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { calculateFee, LEGACY_BLENDED_FEE_MODEL } from '@/lib/feeCalculator';
+import { resolveRailFeeConfig } from '@/lib/resolveFeeConfig';
 
 // Stripe's native surcharge API (preview) — needs a payment method actually
 // attached to tell us the card's funding type (credit vs debit; debit can
@@ -15,7 +16,7 @@ type FeeForCheck = {
   id: string; payee_type: 'club' | 'coach'; fee_model_version: string;
   teams: {
     clubs: {
-      stripe_fee_handling: string | null; currency: string | null;
+      id: string; stripe_fee_handling: string | null; currency: string | null;
       stripe_connect_account_id: string | null; stripe_connect_onboarded: boolean | null;
     } | null;
   } | null;
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     .from('player_fees')
     .select(`
       id, payee_type, fee_model_version,
-      teams!inner(clubs!inner(stripe_fee_handling, currency, stripe_connect_account_id, stripe_connect_onboarded))
+      teams!inner(clubs!inner(id, stripe_fee_handling, currency, stripe_connect_account_id, stripe_connect_onboarded))
     `)
     .eq('payment_token', payment_token)
     .single<FeeForCheck>();
@@ -88,7 +89,8 @@ export async function POST(req: NextRequest) {
   const surcharge = eligibility?.amount_details?.surcharge;
   const eligible  = surcharge?.status === 'available';
 
-  const ourSurchargeMinor = Math.round(calculateFee(baseAmountDollars, 'card').feeCharged * 100);
+  const railConfig = await resolveRailFeeConfig(supabase, club?.id ?? null);
+  const ourSurchargeMinor = Math.round(calculateFee(baseAmountDollars, 'card', railConfig).feeCharged * 100);
   const finalSurchargeMinor = eligible
     ? Math.min(ourSurchargeMinor, surcharge?.maximum_amount ?? ourSurchargeMinor)
     : 0; // debit card, or otherwise ineligible — payer only owes the base amount, same as absorb

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { STRIPE_FIXED_FEE_MINOR } from '@/lib/countries';
 import { calculateFee, LEGACY_BLENDED_FEE_MODEL, type PaymentRail } from '@/lib/feeCalculator';
+import { resolveRailFeeConfig } from '@/lib/resolveFeeConfig';
 
 type FeeForCheckout = {
   id: string; payment_token: string; description: string; amount_due: number; amount_paid: number; discount: number; status: string;
@@ -105,7 +106,8 @@ export async function POST(req: NextRequest) {
     const requestedRail: PaymentRail = requestedRailRaw === 'card' ? 'card' : 'ach';
     rail = requestedRail === 'ach' && currency === 'usd' ? 'ach' : 'card';
 
-    const breakdown      = calculateFee(feeBase, rail);
+    const railConfig     = await resolveRailFeeConfig(supabase, club?.id ?? null);
+    const breakdown      = calculateFee(feeBase, rail, railConfig);
     feeChargedDollars    = breakdown.feeCharged;
     platformCostDollars  = breakdown.platformCost;
     feeChargedMinor      = Math.round(feeChargedDollars * 100);
