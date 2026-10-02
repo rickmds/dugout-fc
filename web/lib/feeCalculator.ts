@@ -104,3 +104,51 @@ export function calculateFee(
     totalCharge: round2(grossAmount + feeCharged),
   };
 }
+
+// Only the charge side ever varies by club — Pulse's real processor cost
+// (below) doesn't. A null field means "inherit the platform default" for
+// that one field, same as club_fee_overrides' nullable columns.
+export interface ClubRailOverride {
+  chargeRatePct: number | null;
+  chargeFixed: number | null;
+  chargeCap: number | null;
+}
+
+// The one place that merges a platform default with a per-club override —
+// used both for the real charge path (resolveFeeConfig.ts, server-side) and
+// for a live "what would this actually charge" preview in Command Center,
+// so the preview an admin edits against can never drift from what a real
+// payment would do.
+export function mergeClubOverride(base: RailFeeConfig, override: ClubRailOverride | null | undefined): RailFeeConfig {
+  if (!override) return base;
+  return {
+    ...base,
+    chargeRatePct: override.chargeRatePct ?? base.chargeRatePct,
+    chargeFixed: override.chargeFixed ?? base.chargeFixed,
+    chargeCap: override.chargeCap ?? base.chargeCap,
+  };
+}
+
+// Checkpoint amounts spanning realistic fee sizes — a small training fee
+// through a large tryout/registration fee — used to confirm a rate config
+// can never net Pulse a loss, not just "profitable on average." A rate cut
+// below cost mostly bites at the extremes (a tiny payment where the fixed
+// cost dominates, or a huge one where the rate dominates), not the middle.
+export const MARGIN_CHECK_AMOUNTS = [1, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
+export interface WorstCaseMargin {
+  amount: number;
+  margin: number;
+}
+
+// The single worst (lowest-margin) checkpoint for a given rail config —
+// negative means this config would lose Pulse money on at least one
+// realistic payment size.
+export function worstCaseMargin(rail: PaymentRail, config: RailFeeConfig): WorstCaseMargin {
+  let worst: WorstCaseMargin = { amount: MARGIN_CHECK_AMOUNTS[0], margin: Infinity };
+  for (const amount of MARGIN_CHECK_AMOUNTS) {
+    const { netMargin } = calculateFee(amount, rail, { card: config, ach: config });
+    if (netMargin < worst.margin) worst = { amount, margin: netMargin };
+  }
+  return worst;
+}

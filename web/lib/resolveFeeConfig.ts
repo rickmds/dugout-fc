@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_RAIL_FEE_CONFIG, type PaymentRail, type RailFeeConfig } from '@/lib/feeCalculator';
+import { DEFAULT_RAIL_FEE_CONFIG, mergeClubOverride, type PaymentRail, type RailFeeConfig } from '@/lib/feeCalculator';
 
 type FeeRailRow = {
   rail: PaymentRail;
@@ -53,17 +53,8 @@ export async function resolveRailFeeConfig(
     };
   }
 
-  // Every field is "null = inherit the platform default" — including cap,
-  // so a club can't accidentally end up uncapped just because an admin left
-  // that one field blank while overriding the rate.
-  if (override) {
-    if (override.card_charge_rate_pct != null) base.card.chargeRatePct = override.card_charge_rate_pct;
-    if (override.card_charge_fixed != null) base.card.chargeFixed = override.card_charge_fixed;
-    if (override.card_charge_cap != null) base.card.chargeCap = override.card_charge_cap;
-    if (override.ach_charge_rate_pct != null) base.ach.chargeRatePct = override.ach_charge_rate_pct;
-    if (override.ach_charge_fixed != null) base.ach.chargeFixed = override.ach_charge_fixed;
-    if (override.ach_charge_cap != null) base.ach.chargeCap = override.ach_charge_cap;
-  }
-
-  return base;
+  return {
+    card: mergeClubOverride(base.card, override ? { chargeRatePct: override.card_charge_rate_pct, chargeFixed: override.card_charge_fixed, chargeCap: override.card_charge_cap } : null),
+    ach: mergeClubOverride(base.ach, override ? { chargeRatePct: override.ach_charge_rate_pct, chargeFixed: override.ach_charge_fixed, chargeCap: override.ach_charge_cap } : null),
+  };
 }

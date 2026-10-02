@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { type Plan, type PlanRow, planFromRow } from '@/lib/plans';
-import { type PaymentRail, type RailFeeConfig, DEFAULT_RAIL_FEE_CONFIG } from '@/lib/feeCalculator';
+import { type PaymentRail, type RailFeeConfig, DEFAULT_RAIL_FEE_CONFIG, calculateFee, mergeClubOverride, worstCaseMargin } from '@/lib/feeCalculator';
 import { COUNTRIES } from '@/lib/countries';
 import type { User } from '@supabase/supabase-js';
 
@@ -1547,6 +1547,47 @@ type ClubFeeOverrideRow = {
 };
 const EMPTY_OVERRIDE: ClubFeeOverrideRow = { card_charge_rate_pct: null, card_charge_fixed: null, card_charge_cap: null, ach_charge_rate_pct: null, ach_charge_fixed: null, ach_charge_cap: null, note: null };
 
+const fmtUsd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+// Plain-English "what actually happens" readout for a rate config — a
+// safety banner (worst case across realistic payment sizes) plus a few
+// concrete dollar examples, so you don't have to do rate*amount+fixed math
+// in your head to know whether a number is safe. Shared by the global rail
+// editor and the per-club override panel, since both can accidentally set
+// a money-losing rate.
+function RailMarginPreview({ rail, config }: { rail: PaymentRail; config: RailFeeConfig }) {
+  const worst = worstCaseMargin(rail, config);
+  const previewAmounts = [25, 100, 500];
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, marginBottom: 10,
+        background: worst.margin < 0 ? '#FFF5F5' : '#F0FDF4', border: `1px solid ${worst.margin < 0 ? '#FECACA' : '#86EFAC'}`,
+      }}>
+        <span style={{ fontSize: 15, lineHeight: 1 }}>{worst.margin < 0 ? '⚠️' : '✓'}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: worst.margin < 0 ? '#dc2626' : '#15803d' }}>
+          {worst.margin < 0
+            ? `Loses ${fmtUsd(Math.abs(worst.margin))} on a ${fmtUsd(worst.amount)} payment — fix before saving`
+            : `Always profitable — worst case keeps ${fmtUsd(worst.margin)} on a ${fmtUsd(worst.amount)} payment`}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        {previewAmounts.map(amount => {
+          const b = calculateFee(amount, rail, { card: config, ach: config });
+          return (
+            <div key={amount} style={{ background: C.pageBg, borderRadius: 8, padding: '8px 10px', border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 10, color: C.textMuted, marginBottom: 4 }}>On a {fmtUsd(amount)} payment</div>
+              <div style={{ fontSize: 11, color: C.textMid }}>Club pays <strong>{fmtUsd(b.feeCharged)}</strong></div>
+              <div style={{ fontSize: 11, color: C.textMid }}>Costs Pulse <strong>{fmtUsd(b.platformCost)}</strong></div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: b.netMargin >= 0 ? '#16a34a' : '#dc2626' }}>You keep {fmtUsd(b.netMargin)}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ClubBillingPanel({ clubId, plansById }: { clubId: string; plansById: Record<string, Plan> }) {
   const [sub, setSub]                 = useState<ClubSubRow | null>(null);
   const [override, setOverride]       = useState<ClubFeeOverrideRow>(EMPTY_OVERRIDE);
@@ -1639,6 +1680,9 @@ function ClubBillingPanel({ clubId, plansById }: { clubId: string; plansById: Re
   const plansList = Object.values(plansById).sort((a, b) => a.sortOrder - b.sortOrder);
   const inputStyle = { background: C.inputBg, border: `1.5px solid ${C.border}`, borderRadius: 7, padding: '7px 10px', color: C.textDark, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const, width: '100%' };
   const labelStyle = { fontSize: 11, color: C.textLight, fontWeight: 600, marginBottom: 4, display: 'block' as const };
+  const overrideUnsafe = (['card', 'ach'] as const).some(rail => worstCaseMargin(rail, mergeClubOverride(rails[rail], rail === 'card'
+    ? { chargeRatePct: override.card_charge_rate_pct, chargeFixed: override.card_charge_fixed, chargeCap: override.card_charge_cap }
+    : { chargeRatePct: override.ach_charge_rate_pct, chargeFixed: override.ach_charge_fixed, chargeCap: override.ach_charge_cap })).margin < 0);
 
   if (loading) return <div style={{ ...sc, padding: 24, display: 'flex', justifyContent: 'center' }}><Spinner /></div>;
 
@@ -1723,6 +1767,9 @@ function ClubBillingPanel({ clubId, plansById }: { clubId: string; plansById: Re
                     style={inputStyle} />
                 </div>
               </div>
+              <RailMarginPreview rail={rail} config={mergeClubOverride(rails[rail], rail === 'card'
+                ? { chargeRatePct: override.card_charge_rate_pct, chargeFixed: override.card_charge_fixed, chargeCap: override.card_charge_cap }
+                : { chargeRatePct: override.ach_charge_rate_pct, chargeFixed: override.ach_charge_fixed, chargeCap: override.ach_charge_cap })} />
             </div>
           ))}
           <div>
@@ -1730,10 +1777,12 @@ function ClubBillingPanel({ clubId, plansById }: { clubId: string; plansById: Re
             <input type="text" placeholder="e.g. negotiated rate per Aug 2026 call" value={override.note ?? ''} onChange={e => setOverride(prev => ({ ...prev, note: e.target.value || null }))} style={inputStyle} />
           </div>
         </div>
-        <div style={{ padding: '0 20px 16px', display: 'flex', gap: 8 }}>
-          <button onClick={saveOverride} disabled={savingOverride} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 700, cursor: savingOverride ? 'default' : 'pointer', opacity: savingOverride ? 0.6 : 1 }}>
+        <div style={{ padding: '0 20px 16px', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={saveOverride} disabled={savingOverride || overrideUnsafe} title={overrideUnsafe ? 'Fix the rate above — this would lose Pulse money on at least one payment size' : undefined}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: overrideUnsafe ? C.borderDark : '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 700, cursor: (savingOverride || overrideUnsafe) ? 'default' : 'pointer', opacity: savingOverride ? 0.6 : 1 }}>
             {savingOverride ? 'Saving…' : 'Save rate override'}
           </button>
+          {overrideUnsafe && <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>Can&apos;t save a rate that loses money</span>}
           {hasOverride && (
             <button onClick={clearOverride} disabled={savingOverride} style={{ padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.cardBg, color: C.textMid, fontSize: 13, fontWeight: 600, cursor: savingOverride ? 'default' : 'pointer' }}>
               Clear override
@@ -1928,15 +1977,10 @@ function BillingControlCenter({ plansById, onPlansChanged }: { plansById: Record
         <div style={{ padding: '16px 20px' }}>
           {(['card', 'ach'] as const).map(rail => {
             const cfg = rails[rail];
-            const margin = cfg.chargeRatePct - cfg.costRatePct;
+            const unsafe = worstCaseMargin(rail, cfg).margin < 0;
             return (
               <div key={rail} style={{ marginBottom: 20, paddingBottom: 20, borderBottom: rail === 'card' ? `1px solid ${C.border}` : 'none' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark, textTransform: 'uppercase' }}>{rail === 'card' ? 'Card' : 'ACH'}</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: margin >= 0 ? '#16a34a' : '#dc2626', background: margin >= 0 ? '#F0FDF4' : '#FFF5F5', borderRadius: 5, padding: '2px 8px' }}>
-                    {(margin * 100).toFixed(2)}pt rate margin
-                  </div>
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark, textTransform: 'uppercase', marginBottom: 10 }}>{rail === 'card' ? 'Card' : 'ACH'}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', marginBottom: 8 }}>Charged to club</div>
@@ -1954,12 +1998,15 @@ function BillingControlCenter({ plansById, onPlansChanged }: { plansById: Record
                       <div><label style={labelStyle}>Cap $ (blank = uncapped)</label><input type="number" step="0.01" value={cfg.costCap ?? ''} onChange={e => setRails(prev => ({ ...prev, [rail]: { ...prev[rail], costCap: e.target.value === '' ? null : parseFloat(e.target.value) } }))} style={inputStyle} /></div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                    <button onClick={() => saveRail(rail)} disabled={savingRails} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.green, color: '#fff', fontSize: 13, fontWeight: 700, cursor: savingRails ? 'default' : 'pointer', opacity: savingRails ? 0.6 : 1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 6 }}>
+                    <button onClick={() => saveRail(rail)} disabled={savingRails || unsafe} title={unsafe ? 'Fix the rate above — this would lose Pulse money on at least one payment size' : undefined}
+                      style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: unsafe ? C.borderDark : C.green, color: '#fff', fontSize: 13, fontWeight: 700, cursor: (savingRails || unsafe) ? 'default' : 'pointer', opacity: savingRails ? 0.6 : 1 }}>
                       {savingRails ? 'Saving…' : `Save ${rail === 'card' ? 'card' : 'ACH'} rates`}
                     </button>
+                    {unsafe && <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>Loses money — can&apos;t save</span>}
                   </div>
                 </div>
+                <RailMarginPreview rail={rail} config={cfg} />
               </div>
             );
           })}
