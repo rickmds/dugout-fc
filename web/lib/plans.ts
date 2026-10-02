@@ -1,8 +1,9 @@
-// Plan definitions live in the `plans` table (Command Center > Billing) —
-// this file only holds the shared shape + the DB-row mapper, so every
-// consumer (DashboardContext, super-admin, pricing page) agrees on it.
-// There used to be a hardcoded PLAN_LIMITS/PLAN_PRICING/PLAN_FEATURES here;
-// editing a plan no longer requires a code deploy.
+// Plan definitions live in the `plans` table, and what each plan includes
+// lives in the `plan_features` catalog (Command Center > Billing) — this
+// file only holds the shared shapes + mappers, so every consumer
+// (DashboardContext, super-admin, pricing page) agrees on them. Editing a
+// plan or dragging a feature to a different tier no longer requires a
+// code deploy.
 
 export type PlanId = string;
 
@@ -29,7 +30,6 @@ export interface Plan {
   id: PlanId;
   limits: PlanLimits;
   pricing: PlanPricing;
-  features: string[];
   isActive: boolean;
   sortOrder: number;
 }
@@ -43,17 +43,18 @@ export type PlanRow = {
   max_teams: number | null;
   max_players: number | null;
   ai_enabled: boolean;
-  fees_enabled: boolean;
-  branding_enabled: boolean;
   tryouts_enabled: boolean;
   team_limit_label: string;
   player_limit_label: string;
-  features: string[];
   highlight: boolean;
   sort_order: number;
   is_active: boolean;
 };
 
+// `fees`/`branding` default false here — only `max*`/`ai`/`tryouts` come
+// straight off the plans row. The other two are the only PlanLimits flags
+// actually driven by plan_features rather than a `plans` column; call
+// applyCatalogGates() after fetching the catalog to fill them in.
 export function planFromRow(row: PlanRow): Plan {
   return {
     id: row.id,
@@ -61,8 +62,8 @@ export function planFromRow(row: PlanRow): Plan {
       maxPlayers: row.max_players ?? Infinity,
       maxTeams: row.max_teams ?? Infinity,
       ai: row.ai_enabled,
-      fees: row.fees_enabled,
-      branding: row.branding_enabled,
+      fees: false,
+      branding: false,
       tryouts: row.tryouts_enabled,
     },
     pricing: {
@@ -74,10 +75,41 @@ export function planFromRow(row: PlanRow): Plan {
       playerLimit: row.player_limit_label,
       highlight: row.highlight,
     },
-    features: row.features,
     isActive: row.is_active,
     sortOrder: row.sort_order,
   };
+}
+
+export type PlanFeatureRow = {
+  id: string;
+  key: string;
+  label: string;
+  description: string;
+  min_plan_id: string | null;
+  enforced_as: 'fees' | 'branding' | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+// Fills in limits.fees/limits.branding on every plan in plansById from the
+// feature catalog — a plan has the feature once its sort_order is at or
+// above the catalog entry's min_plan's sort_order (cumulative upward,
+// same rule the drag-and-drop board visualizes). Mutates in place since
+// this always runs right after building plansById, before it's handed to
+// a consumer.
+export function applyCatalogGates(plansById: Record<string, Plan>, catalog: PlanFeatureRow[]): void {
+  const feesEntry = catalog.find(f => f.enforced_as === 'fees' && f.is_active);
+  const brandingEntry = catalog.find(f => f.enforced_as === 'branding' && f.is_active);
+  const hasTier = (entry: PlanFeatureRow | undefined, plan: Plan) => {
+    const minId = entry?.min_plan_id;
+    if (!minId) return false;
+    const minSort = plansById[minId]?.sortOrder;
+    return minSort != null && plan.sortOrder >= minSort;
+  };
+  for (const plan of Object.values(plansById)) {
+    plan.limits.fees = hasTier(feesEntry, plan);
+    plan.limits.branding = hasTier(brandingEntry, plan);
+  }
 }
 
 // Used only before the real plans table has loaded, or if a club's plan id

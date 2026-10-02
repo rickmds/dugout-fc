@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { type PlanId, type PlanLimits, type PlanRow, planFromRow, FALLBACK_PLAN_LIMITS } from '@/lib/plans';
+import { type PlanId, type PlanLimits, type PlanRow, type PlanFeatureRow, type Plan, planFromRow, applyCatalogGates, FALLBACK_PLAN_LIMITS } from '@/lib/plans';
 
 export type Profile = {
   id: string;
@@ -169,13 +169,17 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       const prof = p as Profile;
       setProfile(prof);
 
-      const [{ data: adminRows }, { data: planRows }] = await Promise.all([
+      const [{ data: adminRows }, { data: planRows }, { data: featureRows }] = await Promise.all([
         supabase.from('club_admins').select('club_id').eq('profile_id', prof.id),
         supabase.from('plans').select('*'),
+        supabase.from('plan_features').select('*'),
       ]);
       if (planRows) {
+        const plansById: Record<string, Plan> = {};
+        for (const row of planRows as PlanRow[]) plansById[row.id] = planFromRow(row);
+        applyCatalogGates(plansById, (featureRows ?? []) as PlanFeatureRow[]);
         const byId: Record<string, PlanLimits> = {};
-        for (const row of planRows as PlanRow[]) byId[row.id] = planFromRow(row).limits;
+        for (const id of Object.keys(plansById)) byId[id] = plansById[id].limits;
         setPlanLimitsById(byId);
       }
       const allClubIds = [...new Set([

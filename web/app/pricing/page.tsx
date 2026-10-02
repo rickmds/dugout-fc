@@ -4,7 +4,7 @@ import NavBar from '@/components/NavBar';
 import PricingCards, { type PricingTier } from '@/components/pricing/PricingCards';
 import FaqAccordion from '@/components/pricing/FaqAccordion';
 import { supabase } from '@/lib/supabase';
-import type { PlanRow } from '@/lib/plans';
+import type { PlanRow, PlanFeatureRow } from '@/lib/plans';
 
 // Shorter than the 3600s other static marketing pages use — a price edited
 // in Command Center should show up here within minutes, not up to an hour.
@@ -12,6 +12,10 @@ export const revalidate = 300;
 
 const PRIMARY = '#22c55e';
 
+// `features` is always overwritten by loadLiveTiers() below from the
+// plan_features catalog (Command Center > Billing > Feature board) —
+// everything else here (icon, badge, cta, roi) is marketing presentation
+// that isn't catalog-managed, so it stays local to this page.
 const TIERS: PricingTier[] = [
   {
     id: 'free',
@@ -27,13 +31,7 @@ const TIERS: PricingTier[] = [
     cta: 'Get started free',
     ctaHref: '/onboarding',
     roi: null,
-    features: [
-      'Schedule, roster & RSVP',
-      'Team, group & 1:1 chat',
-      'Manual lineup builder',
-      '1 team, up to 12 players',
-      'Pulse FC branding',
-    ],
+    features: [],
   },
   {
     id: 'team_pro',
@@ -49,21 +47,7 @@ const TIERS: PricingTier[] = [
     cta: 'Start Team Pro',
     ctaHref: '/onboarding',
     roi: null,
-    features: [
-      'Everything in Free',
-      'Unlimited players',
-      'Custom club branding',
-      'AI schedule import (PDF, image, spreadsheet)',
-      'AI roster import (any spreadsheet format)',
-      'AI lineup suggester',
-      'Match tracker & equal play time',
-      'Game scores + season W/L/D record',
-      'Automatic change alerts (time/location/cancel → instant push)',
-      'Video recordings library',
-      'Guest player management',
-      'Player attendance history & streaks',
-      'Fee collection & tracking',
-    ],
+    features: [],
   },
   {
     id: 'starter',
@@ -79,15 +63,7 @@ const TIERS: PricingTier[] = [
     cta: 'Start Starter',
     ctaHref: '/onboarding',
     roi: null,
-    features: [
-      'Everything in Team Pro',
-      'Up to 25 teams across your club',
-      'Unified multi-team dashboard',
-      'Club-wide attendance & RSVP reporting',
-      'AI tools active across every team',
-      'Unlimited coaches and staff logins',
-      'Club-wide announcement broadcasts',
-    ],
+    features: [],
   },
   {
     id: 'club',
@@ -103,17 +79,7 @@ const TIERS: PricingTier[] = [
     cta: 'Start Club',
     ctaHref: '/onboarding',
     roi: 'Keep 1 family = paid for itself. Keep 3 = +$3,600 net.',
-    features: [
-      'Everything in Starter',
-      'Up to 60 teams',
-      'Full tryout management system',
-      'Public registration forms',
-      'Player ranking & drag-and-drop team builder',
-      'Offer letters with accept/decline tracking',
-      'Waitlist & decline email templates',
-      'Club-wide guest activity dashboard',
-      'Advanced season reports & export',
-    ],
+    features: [],
   },
   {
     id: 'academy',
@@ -129,15 +95,21 @@ const TIERS: PricingTier[] = [
     cta: 'Contact us',
     ctaHref: 'mailto:support@pulse-fc.app?subject=Academy Plan',
     roi: null,
-    features: [
-      'Everything in Club',
-      'Unlimited teams',
-      'Dedicated onboarding call',
-      'Custom subdomain',
-      'Early access to new features',
-    ],
+    features: [],
   },
 ];
+
+// Every tier gets these regardless of catalog state (not feature-gated —
+// they're the baseline product). Free and Club additionally get one
+// hand-written bullet that doesn't fit the catalog's "minimum tier and up"
+// model: Free's lack of custom branding, and tryouts (which stays its own
+// flexible per-plan checkbox, not catalog-managed, since the real
+// tryouts_enabled data isn't simply cumulative by tier).
+const BASELINE_FEATURES = ['Schedule, roster & RSVP', 'Team, group & 1:1 chat', 'Manual lineup builder'];
+const TIER_EXTRA_FEATURES: Record<string, string[]> = {
+  free: ['Pulse FC branding'],
+  club: ['Full tryout management system'],
+};
 
 const FAQS = [
   {
@@ -166,25 +138,34 @@ const FAQS = [
   },
 ];
 
-// Only the price + limit-label fields come from the plans table (Command
-// Center > Billing) — a price change there should show up here without a
-// deploy. The rest (icon, badge, cta, roi, hand-written feature bullets) is
-// marketing copy that lives with this page on purpose, not billing config.
+// Price, limit labels, and the feature list come from the plans table +
+// plan_features catalog (Command Center > Billing) — editing either there
+// shows up here without a deploy. The rest (icon, badge, cta, roi, the
+// handful of bullets in TIER_EXTRA_FEATURES) is marketing presentation
+// that lives with this page on purpose, not billing config.
 async function loadLiveTiers(): Promise<PricingTier[]> {
-  const { data } = await supabase.from('plans').select('*').eq('is_active', true);
-  const rows = (data ?? []) as PlanRow[];
+  const [{ data: planRows }, { data: featureRows }] = await Promise.all([
+    supabase.from('plans').select('*').eq('is_active', true),
+    supabase.from('plan_features').select('*').eq('is_active', true).order('sort_order'),
+  ]);
+  const rows = (planRows ?? []) as PlanRow[];
   const byId: Record<string, PlanRow> = {};
   for (const row of rows) byId[row.id] = row;
+  const catalog = (featureRows ?? []) as PlanFeatureRow[];
 
   return TIERS.map(tier => {
     const row = byId[tier.id];
     if (!row) return tier;
+    const catalogFeatures = catalog
+      .filter(f => f.min_plan_id && (byId[f.min_plan_id]?.sort_order ?? Infinity) <= row.sort_order)
+      .map(f => f.label);
     return {
       ...tier,
       monthly: row.monthly_price_cents / 100,
       annual: row.annual_price_cents / 100,
       teamLimit: row.team_limit_label,
       playerLimit: row.player_limit_label,
+      features: [...BASELINE_FEATURES, ...(TIER_EXTRA_FEATURES[tier.id] ?? []), ...catalogFeatures],
     };
   });
 }

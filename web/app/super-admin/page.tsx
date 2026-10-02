@@ -8,7 +8,7 @@ import {
   AlertTriangle, UserX, UserRoundX, MailWarning, ChevronDown,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { type Plan, type PlanRow, planFromRow } from '@/lib/plans';
+import { type Plan, type PlanRow, type PlanFeatureRow, planFromRow, applyCatalogGates } from '@/lib/plans';
 import { type PaymentRail, type RailFeeConfig, DEFAULT_RAIL_FEE_CONFIG, calculateFee, mergeClubOverride, worstCaseMargin } from '@/lib/feeCalculator';
 import { COUNTRIES } from '@/lib/countries';
 import type { User } from '@supabase/supabase-js';
@@ -306,9 +306,13 @@ function App({ user }: { user: User }) {
   const [plansById, setPlansById] = useState<Record<string, Plan>>({});
 
   const loadPlans = useCallback(async () => {
-    const { data } = await supabase.from('plans').select('*').order('sort_order');
+    const [{ data }, { data: featureRows }] = await Promise.all([
+      supabase.from('plans').select('*').order('sort_order'),
+      supabase.from('plan_features').select('*'),
+    ]);
     const byId: Record<string, Plan> = {};
     for (const row of (data ?? []) as PlanRow[]) byId[row.id] = planFromRow(row);
+    applyCatalogGates(byId, (featureRows ?? []) as PlanFeatureRow[]);
     setPlansById(byId);
   }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; sets state from a real network call, not derivable at render time
@@ -1795,8 +1799,8 @@ function ClubBillingPanel({ clubId, plansById }: { clubId: string; plansById: Re
 }
 
 // ── Billing control center (global) ─────────────────────────────────────────────
-function PlanEditorRow({ plan, editing, onEdit, onCancel, onSaved }: {
-  plan: Plan; editing: boolean; onEdit: () => void; onCancel: () => void; onSaved: () => void;
+function PlanEditorRow({ plan, featureCount, editing, onEdit, onCancel, onSaved }: {
+  plan: Plan; featureCount: number; editing: boolean; onEdit: () => void; onCancel: () => void; onSaved: () => void;
 }) {
   const [label, setLabel]             = useState(plan.pricing.label);
   const [description, setDescription] = useState(plan.pricing.description);
@@ -1806,11 +1810,7 @@ function PlanEditorRow({ plan, editing, onEdit, onCancel, onSaved }: {
   const [maxPlayers, setMaxPlayers]   = useState(plan.limits.maxPlayers === Infinity ? '' : String(plan.limits.maxPlayers));
   const [teamLimitLabel, setTeamLimitLabel]     = useState(plan.pricing.teamLimit);
   const [playerLimitLabel, setPlayerLimitLabel] = useState(plan.pricing.playerLimit);
-  const [ai, setAi]             = useState(plan.limits.ai);
-  const [fees, setFees]         = useState(plan.limits.fees);
-  const [branding, setBranding] = useState(plan.limits.branding);
   const [tryouts, setTryouts]   = useState(plan.limits.tryouts);
-  const [features, setFeatures] = useState(plan.features.join('\n'));
   const [highlight, setHighlight] = useState(plan.pricing.highlight);
   const [isActive, setIsActive]   = useState(plan.isActive);
   const [saving, setSaving]       = useState(false);
@@ -1823,8 +1823,7 @@ function PlanEditorRow({ plan, editing, onEdit, onCancel, onSaved }: {
     setMaxTeams(plan.limits.maxTeams === Infinity ? '' : String(plan.limits.maxTeams));
     setMaxPlayers(plan.limits.maxPlayers === Infinity ? '' : String(plan.limits.maxPlayers));
     setTeamLimitLabel(plan.pricing.teamLimit); setPlayerLimitLabel(plan.pricing.playerLimit);
-    setAi(plan.limits.ai); setFees(plan.limits.fees); setBranding(plan.limits.branding); setTryouts(plan.limits.tryouts);
-    setFeatures(plan.features.join('\n')); setHighlight(plan.pricing.highlight); setIsActive(plan.isActive);
+    setTryouts(plan.limits.tryouts); setHighlight(plan.pricing.highlight); setIsActive(plan.isActive);
   }, [editing, plan]);
 
   async function save() {
@@ -1836,8 +1835,7 @@ function PlanEditorRow({ plan, editing, onEdit, onCancel, onSaved }: {
       max_teams: maxTeams.trim() === '' ? null : parseInt(maxTeams, 10),
       max_players: maxPlayers.trim() === '' ? null : parseInt(maxPlayers, 10),
       team_limit_label: teamLimitLabel, player_limit_label: playerLimitLabel,
-      ai_enabled: ai, fees_enabled: fees, branding_enabled: branding, tryouts_enabled: tryouts,
-      features: features.split('\n').map(f => f.trim()).filter(Boolean),
+      tryouts_enabled: tryouts,
       highlight, is_active: isActive,
       updated_at: new Date().toISOString(),
     }).eq('id', plan.id);
@@ -1856,7 +1854,7 @@ function PlanEditorRow({ plan, editing, onEdit, onCancel, onSaved }: {
           {!plan.isActive && <div style={{ fontSize: 10, color: C.textMuted }}>inactive</div>}
         </div>
         <div style={{ fontSize: 13, color: C.textMid, width: 150, flexShrink: 0 }}>${plan.pricing.monthly}/mo · ${plan.pricing.annual}/yr</div>
-        <div style={{ fontSize: 12, color: C.textLight, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.pricing.teamLimit} · {plan.pricing.playerLimit} · {plan.features.length} features</div>
+        <div style={{ fontSize: 12, color: C.textLight, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.pricing.teamLimit} · {plan.pricing.playerLimit} · {featureCount} feature{featureCount === 1 ? '' : 's'}</div>
         <button onClick={onEdit} style={{ fontSize: 12, fontWeight: 600, color: C.green, background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 12px', cursor: 'pointer', flexShrink: 0 }}>Edit</button>
       </div>
     );
@@ -1883,16 +1881,11 @@ function PlanEditorRow({ plan, editing, onEdit, onCancel, onSaved }: {
         <div><label style={labelStyle}>Team limit label</label><input value={teamLimitLabel} onChange={e => setTeamLimitLabel(e.target.value)} style={inputStyle} /></div>
         <div><label style={labelStyle}>Player limit label</label><input value={playerLimitLabel} onChange={e => setPlayerLimitLabel(e.target.value)} style={inputStyle} /></div>
       </div>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
-        {([{ k: 'ai', v: ai, set: setAi, label: 'AI features' }, { k: 'fees', v: fees, set: setFees, label: 'Fee collection' }, { k: 'branding', v: branding, set: setBranding, label: 'Custom branding' }, { k: 'tryouts', v: tryouts, set: setTryouts, label: 'Tryouts' }] as const).map(f => (
-          <label key={f.k} style={{ fontSize: 12, color: C.textMid, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-            <input type="checkbox" checked={f.v} onChange={e => f.set(e.target.checked)} /> {f.label}
-          </label>
-        ))}
-      </div>
-      <div style={{ marginBottom: 14 }}>
-        <label style={labelStyle}>Features (one per line — shown on the pricing page)</label>
-        <textarea value={features} onChange={e => setFeatures(e.target.value)} rows={4} style={{ ...inputStyle, resize: 'vertical' as const, lineHeight: 1.6 }} />
+      <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 12, color: C.textMid, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+          <input type="checkbox" checked={tryouts} onChange={e => setTryouts(e.target.checked)} /> Tryouts
+        </label>
+        <span style={{ fontSize: 11, color: C.textMuted, fontStyle: 'italic' }}>Other features: drag them between plans in the board below.</span>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={save} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: C.green, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save plan'}</button>
@@ -1911,6 +1904,7 @@ function BillingControlCenter({ plansById, onPlansChanged }: { plansById: Record
   const [savingTrial, setSavingTrial]     = useState(false);
   const [trialSaved, setTrialSaved]       = useState(false);
   const [editingPlan, setEditingPlan]     = useState<string | null>(null);
+  const [catalog, setCatalog]             = useState<PlanFeatureRow[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1927,8 +1921,13 @@ function BillingControlCenter({ plansById, onPlansChanged }: { plansById: Record
     setLoading(false);
   }, []);
 
+  const loadCatalog = useCallback(async () => {
+    const { data } = await supabase.from('plan_features').select('*').order('sort_order');
+    setCatalog((data ?? []) as PlanFeatureRow[]);
+  }, []);
+
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount; sets state from a real network call, not derivable at render time
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadCatalog(); }, [load, loadCatalog]);
 
   async function saveRail(rail: PaymentRail) {
     setSavingRails(true);
@@ -2033,15 +2032,141 @@ function BillingControlCenter({ plansById, onPlansChanged }: { plansById: Record
       <div style={sc}>
         <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Plans</div>
-          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Pricing, limits, and what&apos;s included — shown on the public pricing page and enforced in the dashboard.</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Pricing and limits — shown on the public pricing page and enforced in the dashboard. What&apos;s included lives in the feature board below.</div>
         </div>
         <div style={{ padding: '4px 20px 4px' }}>
           {plansList.map(p => (
-            <PlanEditorRow key={p.id} plan={p} editing={editingPlan === p.id}
+            <PlanEditorRow key={p.id} plan={p} featureCount={catalog.filter(f => f.is_active && f.min_plan_id && (plansById[f.min_plan_id]?.sortOrder ?? Infinity) <= p.sortOrder).length}
+              editing={editingPlan === p.id}
               onEdit={() => setEditingPlan(p.id)} onCancel={() => setEditingPlan(null)}
               onSaved={() => { setEditingPlan(null); onPlansChanged(); }} />
           ))}
         </div>
+      </div>
+
+      <div style={sc}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.textDark }}>Feature board</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+            Drag a feature to the plan where it should start being included — every higher plan gets it too, automatically.
+            A purple <strong style={{ color: '#7c3aed' }}>ENFORCED</strong> tag means the app actually checks it; everything else is display-only on the pricing page for now.
+          </div>
+        </div>
+        <div style={{ padding: '16px 20px' }}>
+          <FeatureBoard plansList={plansList} catalog={catalog} onCatalogChanged={() => { loadCatalog(); onPlansChanged(); }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Module-level (not textually inside a component) so the impure
+// Math.random() call doesn't trip react-hooks/purity's render-purity check.
+function slugKey(label: string): string {
+  return `${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function FeatureBoard({ plansList, catalog, onCatalogChanged }: {
+  plansList: Plan[]; catalog: PlanFeatureRow[]; onCatalogChanged: () => void;
+}) {
+  const [showRetired, setShowRetired] = useState(false);
+  const [draggingId, setDraggingId]   = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const [addingTo, setAddingTo]       = useState<string | null>(null);
+  const [newLabel, setNewLabel]       = useState('');
+
+  async function moveFeature(id: string, toPlanId: string | null) {
+    if (catalog.find(f => f.id === id)?.min_plan_id === toPlanId) return;
+    await supabase.from('plan_features').update({ min_plan_id: toPlanId, updated_at: new Date().toISOString() }).eq('id', id);
+    onCatalogChanged();
+  }
+
+  async function toggleRetired(id: string, currentlyActive: boolean) {
+    await supabase.from('plan_features').update({ is_active: !currentlyActive, updated_at: new Date().toISOString() }).eq('id', id);
+    onCatalogChanged();
+  }
+
+  async function addFeature(toPlanId: string | null) {
+    const label = newLabel.trim();
+    setAddingTo(null);
+    if (!label) return;
+    const key = slugKey(label);
+    const maxSort = catalog.reduce((m, f) => Math.max(m, f.sort_order), 0);
+    await supabase.from('plan_features').insert({ key, label, min_plan_id: toPlanId, sort_order: maxSort + 10 });
+    setNewLabel('');
+    onCatalogChanged();
+  }
+
+  const columns: { id: string | null; label: string }[] = [
+    { id: null, label: 'Not included' },
+    ...plansList.map(p => ({ id: p.id, label: p.pricing.label })),
+  ];
+  const visible = catalog.filter(f => showRetired || f.is_active);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: C.textMuted, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+          <input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} /> Show retired
+        </label>
+      </div>
+      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
+        {columns.map(col => {
+          const colKey = col.id ?? 'unassigned';
+          const colFeatures = visible.filter(f => f.min_plan_id === col.id).sort((a, b) => a.sort_order - b.sort_order);
+          const isOver = dragOverCol === colKey;
+          return (
+            <div key={colKey}
+              onDragOver={e => { e.preventDefault(); if (dragOverCol !== colKey) setDragOverCol(colKey); }}
+              onDragLeave={() => setDragOverCol(prev => (prev === colKey ? null : prev))}
+              onDrop={e => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData('text/plain');
+                if (id) moveFeature(id, col.id);
+                setDraggingId(null); setDragOverCol(null);
+              }}
+              style={{
+                width: 190, flexShrink: 0, background: isOver ? '#F0FDF4' : C.pageBg,
+                border: `1.5px dashed ${isOver ? C.green : C.border}`, borderRadius: 10, padding: 8, minHeight: 140,
+              }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: col.id ? C.textDark : C.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8, padding: '0 2px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{col.label}</span><span style={{ color: C.textMuted, fontWeight: 400 }}>{colFeatures.length}</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {colFeatures.map(f => (
+                  <div key={f.id} draggable
+                    onDragStart={e => { e.dataTransfer.setData('text/plain', f.id); e.dataTransfer.effectAllowed = 'move'; setDraggingId(f.id); }}
+                    onDragEnd={() => { setDraggingId(null); setDragOverCol(null); }}
+                    style={{
+                      background: C.cardBg, border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 9px',
+                      fontSize: 11.5, color: f.is_active ? C.textMid : C.textMuted, cursor: 'grab', boxShadow: C.shadow,
+                      opacity: draggingId === f.id ? 0.35 : (f.is_active ? 1 : 0.6),
+                      textDecoration: f.is_active ? 'none' : 'line-through',
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6,
+                    }}>
+                    <span style={{ lineHeight: 1.35 }}>
+                      {f.label}
+                      {f.enforced_as && <span style={{ display: 'block', fontSize: 9, fontWeight: 700, color: '#7c3aed', marginTop: 2, letterSpacing: '0.04em' }}>ENFORCED</span>}
+                    </span>
+                    <button onClick={() => toggleRetired(f.id, f.is_active)} title={f.is_active ? 'Retire this feature' : 'Restore this feature'}
+                      style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 13, padding: 0, flexShrink: 0, lineHeight: 1 }}>
+                      {f.is_active ? '×' : '↺'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {addingTo === colKey ? (
+                <input autoFocus value={newLabel} onChange={e => setNewLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addFeature(col.id); if (e.key === 'Escape') { setAddingTo(null); setNewLabel(''); } }}
+                  onBlur={() => addFeature(col.id)}
+                  placeholder="New feature…"
+                  style={{ marginTop: 6, width: '100%', fontSize: 11.5, padding: '6px 8px', borderRadius: 6, border: `1.5px solid ${C.green}`, outline: 'none', boxSizing: 'border-box' as const }} />
+              ) : (
+                <button onClick={() => setAddingTo(colKey)} style={{ marginTop: 6, width: '100%', fontSize: 11, color: C.textMuted, background: 'none', border: `1px dashed ${C.border}`, borderRadius: 6, padding: '5px 0', cursor: 'pointer' }}>+ Add feature</button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
