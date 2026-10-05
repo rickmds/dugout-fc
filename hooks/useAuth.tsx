@@ -107,16 +107,35 @@ async function clearCache() {
 // race and got treated as "couldn't confirm," which is what used to force
 // people into a full re-login far more often than any actual sign-out did.
 const SESSION_TIMEOUT_MS = 8000;
+// `supabase.auth.getSession()` single-flights concurrent callers through
+// auth-js's internal refreshingDeferred when the cached token has expired
+// (the routine cold-launch case) — a second top-level call doesn't start an
+// independent request, it just awaits the same in-flight refresh attempt 1
+// kicked off. Calling getSession() again on timeout was therefore never a
+// real second try: both "attempts" raced the exact same network round trip,
+// so the user got the appearance of a retry with none of the benefit, and
+// on marginal cold-launch LTE (real TCP+TLS handshake, not just a slow
+// response) the combined 16s budget still wasn't always enough — the
+// abandoned call would go on to succeed a few seconds after we'd already
+// shown "Couldn't connect," which is exactly why Retry always worked
+// instantly (the session was already warm by the time the user tapped it).
+// Fix: hold the one real promise and keep waiting on *it*, with a longer
+// total budget, instead of discarding it and racing a redundant call.
 async function getSessionWithRetry() {
-  const first = await withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
+  const sessionPromise = supabase.auth.getSession();
+  const first = await withTimeout(sessionPromise, SESSION_TIMEOUT_MS);
   if (first !== TIMEOUT) return first;
-  const second = await withTimeout(supabase.auth.getSession(), SESSION_TIMEOUT_MS);
+  const second = await withTimeout(sessionPromise, SESSION_TIMEOUT_MS * 1.5);
   return second !== TIMEOUT ? second : null;
 }
 async function fetchProfileAndClubWithRetry(userId: string) {
   const first = await withTimeout(fetchProfileAndClub(userId), SESSION_TIMEOUT_MS);
   if (first !== TIMEOUT) return first;
-  const second = await withTimeout(fetchProfileAndClub(userId), SESSION_TIMEOUT_MS);
+  // Unlike getSession() above, this is a plain table query with no
+  // client-level single-flighting, so a genuine second attempt is worth
+  // making — just given a little more room than the first in case the
+  // connection is merely slow rather than actually stuck.
+  const second = await withTimeout(fetchProfileAndClub(userId), SESSION_TIMEOUT_MS * 1.5);
   return second !== TIMEOUT ? second : { profile: null, club: null, error: true as const };
 }
 
@@ -138,7 +157,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkSession = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, sessionCheckFailed: false }));
-    const result = await getSessionWithRetry();
+    // withTimeout only protects against a stalled request — a genuinely
+    // rejected promise (a malformed refresh token, a real network error,
+    // an internal auth-js exception) propagates straight through
+    // Promise.race instead of losing the race, and with no catch here
+    // that left `loading` stuck true forever: every path that resets it
+    // sits downstream of this call. Same recoverable "couldn't confirm"
+    // treatment as a timeout, not a crash with no way back except a
+    // force-quit.
+    let result: Awaited<ReturnType<typeof getSessionWithRetry>>;
+    try {
+      result = await getSessionWithRetry();
+    } catch (err) {
+      console.warn('checkSession: getSessionWithRetry threw', err);
+      if (mountedRef.current) {
+        setState({ session: null, user: null, profile: null, club: null, loading: false, sessionCheckFailed: true });
+      }
+      return;
+    }
     if (!mountedRef.current) return;
 
     if (!result) {
@@ -162,8 +198,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setState({ session, user: session.user, profile: cached.profile, club: cached.club, loading: false, sessionCheckFailed: false });
       }
 
-      // Revalidate in background (or full load if no cache)
-      const { profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id);
+      // Revalidate in background (or full load if no cache) — same
+      // reject-vs-timeout gap as getSessionWithRetry above: a genuine
+      // throw here (not just a stall) would otherwise leave `loading`
+      // stuck true whenever there's no cache to have already cleared it
+      // at the readCache branch above.
+      let profile: Profile | null, club: Club | null, error: boolean;
+      try {
+        ({ profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id));
+      } catch (err) {
+        console.warn('checkSession: fetchProfileAndClubWithRetry threw', err);
+        profile = null; club = null; error = true;
+      }
       if (mountedRef.current) {
         if (error) {
           if (cached) {
@@ -214,8 +260,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Same stall risk as the mount-time fetch above — an unprotected
         // call here left session/profile/club stuck at their pre-login
         // values (still null right after signing in), so a screen gated on
-        // any of them just sat on its own loading state indefinitely.
-        const { profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id);
+        // any of them just sat on its own loading state indefinitely. Also
+        // guards the same reject-vs-timeout gap as checkSession: a genuine
+        // throw (not just a stall) here used to propagate out of this
+        // listener uncaught, leaving loading stuck true with no recovery.
+        let profile: Profile | null, club: Club | null, error: boolean;
+        try {
+          ({ profile, club, error } = await fetchProfileAndClubWithRetry(session.user.id));
+        } catch (err) {
+          console.warn('onAuthStateChange: fetchProfileAndClubWithRetry threw', err);
+          profile = null; club = null; error = true;
+        }
         if (mountedRef.current) {
           if (error) {
             // Same distinction as the mount-time path above: only safe to

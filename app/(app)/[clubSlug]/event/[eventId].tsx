@@ -211,6 +211,8 @@ type EventDetail = {
   score_home: number | null;
   score_away: number | null;
   opponent_raw_name: string | null;
+  external_source: string | null;
+  external_id: string | null;
 };
 
 type Player = {
@@ -472,7 +474,7 @@ export default function EventDetailScreen() {
     setLoading(true);
 
     const { data: eventRow } = await supabase.from('events')
-      .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away,tournament_id,round_label,score_home,score_away,opponent_raw_name,tournaments(name,start_date)')
+      .select('id,team_id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,notes,coach_notes,video_url,rsvp_lock_at,cancelled_at,cancellation_reason,home_away,tournament_id,round_label,score_home,score_away,opponent_raw_name,external_source,external_id,tournaments(name,start_date)')
       .eq('id', eventId).single();
 
     // Only realign the active team when we genuinely got here via a
@@ -923,6 +925,20 @@ export default function EventDetailScreen() {
     const coaches = (ncsaLookupResult ?? []).map((c, i) => ({ key: `coach:${i}`, email: c.email, cell: c.cell }));
     const officials = ncsaOfficialsResult.map((o, i) => ({ key: `official:${i}`, email: o.email, cell: o.cell }));
     return [...coaches, ...officials].filter((c) => ncsaSelected.has(c.key));
+  }
+
+  // Lets a coach identify which game an email is about at a glance instead
+  // of writing their own subject from scratch — NCSA's own game code when
+  // this event is NCSA-synced (most games this contact lookup applies to),
+  // the matchup, and the date, all already loaded for this screen.
+  function ncsaEmailSubject(): string {
+    const parts: string[] = [];
+    if (event?.external_source === 'ncsa' && event.external_id) parts.push(`Game #${event.external_id}`);
+    parts.push(`${team?.name ?? 'Our team'} vs ${event?.opponent_raw_name ?? 'Opponent'}`);
+    if (event?.event_date) {
+      parts.push(new Date(`${event.event_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    }
+    return parts.join(' — ');
   }
 
   async function copyNcsaEmails() {
@@ -3254,7 +3270,7 @@ export default function EventDetailScreen() {
                           </View>
                         )}
                         {c.email && (
-                          <TouchableOpacity onPress={() => Linking.openURL(`mailto:${c.email}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: (c.cell || c.homephone) ? 6 : 0 }}>
+                          <TouchableOpacity onPress={() => Linking.openURL(`mailto:${c.email}?subject=${encodeURIComponent(ncsaEmailSubject())}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: (c.cell || c.homephone) ? 6 : 0 }}>
                             <Ionicons name="mail-outline" size={14} color={primaryColor} />
                             <Text style={{ fontSize: 13.5, color: primaryColor, fontWeight: '600' }}>{c.email}</Text>
                           </TouchableOpacity>
@@ -3343,7 +3359,7 @@ export default function EventDetailScreen() {
                             </View>
                           )}
                           {o.email && (
-                            <TouchableOpacity onPress={() => Linking.openURL(`mailto:${o.email}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: (o.cell || o.home) ? 6 : 0 }}>
+                            <TouchableOpacity onPress={() => Linking.openURL(`mailto:${o.email}?subject=${encodeURIComponent(ncsaEmailSubject())}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: (o.cell || o.home) ? 6 : 0 }}>
                               <Ionicons name="mail-outline" size={14} color={primaryColor} />
                               <Text style={{ fontSize: 13.5, color: primaryColor, fontWeight: '600' }}>{o.email}</Text>
                             </TouchableOpacity>
