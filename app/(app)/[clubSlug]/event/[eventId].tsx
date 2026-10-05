@@ -4006,12 +4006,18 @@ function getStyles(colors: ThemeColors) {
     borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 20,
   },
   ncsaResultScroll: { maxHeight: 340 },
-  ncsaCopyRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  ncsaCopyRow: { flexDirection: 'row', gap: 6, marginTop: 16 },
   ncsaCopyBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+    // minWidth: 0 overrides Yoga's default of "never shrink below content
+    // size" for a flex item — without it, 3 buttons' unwrapped label text
+    // pushes the whole row wider than the screen instead of each button
+    // actually sharing a third of it, which is what let the longest
+    // label ("Copy N numbers") spill off the edge once a 3rd button made
+    // the split tighter than 2 buttons ever were.
+    flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
   },
-  ncsaCopyBtnText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  ncsaCopyBtnText: { fontSize: 11.5, fontWeight: '700', color: colors.textSecondary, textAlign: 'center', flexShrink: 1 },
   ncsaPhoneRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   ncsaPhoneText: { flex: 1, fontSize: 13.5, color: colors.text, fontWeight: '600' },
   ncsaPhoneBtnGroup: { flexDirection: 'row', gap: 6 },
