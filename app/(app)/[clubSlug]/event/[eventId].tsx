@@ -957,6 +957,18 @@ export default function EventDetailScreen() {
     setTimeout(() => setNcsaCopyFeedback((prev) => (prev === 'cells' ? null : prev)), 1500);
   }
 
+  // One email to everyone currently checked, same pre-filled subject as
+  // the single-contact links above — a mailto: comma-separated recipient
+  // list is standard and every mail client supports it; this is only ever
+  // a handful of people (one event's worth of opposing coaches/officials),
+  // nowhere near the URL-length limits that would matter for a real bulk
+  // send.
+  function emailNcsaSelected() {
+    const emails = selectedNcsaContacts().map((c) => c.email).filter(Boolean) as string[];
+    if (!emails.length) return;
+    Linking.openURL(`mailto:${emails.join(',')}?subject=${encodeURIComponent(ncsaEmailSubject())}`);
+  }
+
   async function resolveAndSetGuests(raw: any[]) {
     const playerGuestIds = raw.filter(g => g.role === 'player' && g.player_id).map(g => g.player_id as string);
     const playerInfoMap = new Map<string, { profile_id: string | null; team_name: string | null; team_id: string | null }>();
@@ -3296,6 +3308,12 @@ export default function EventDetailScreen() {
                           <TouchableOpacity style={[styles.ncsaCopyBtn, !selectedEmails && { opacity: 0.4 }]} onPress={copyNcsaEmails} disabled={!selectedEmails}>
                             <Ionicons name={ncsaCopyFeedback === 'emails' ? 'checkmark' : 'copy-outline'} size={13} color={colors.textSecondary} />
                             <Text style={styles.ncsaCopyBtnText}>{ncsaCopyFeedback === 'emails' ? 'Copied' : `Copy ${selectedEmails} email${selectedEmails === 1 ? '' : 's'}`}</Text>
+                          </TouchableOpacity>
+                        )}
+                        {anyEmail && (
+                          <TouchableOpacity style={[styles.ncsaCopyBtn, !selectedEmails && { opacity: 0.4 }]} onPress={emailNcsaSelected} disabled={!selectedEmails}>
+                            <Ionicons name="mail-outline" size={13} color={colors.textSecondary} />
+                            <Text style={styles.ncsaCopyBtnText}>{`Email ${selectedEmails}`}</Text>
                           </TouchableOpacity>
                         )}
                         {anyCell && (
