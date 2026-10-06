@@ -9,6 +9,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { TeamProvider, useActiveTeam } from '../hooks/TeamContext';
 import { ThemeProvider, useTheme } from '../hooks/useTheme';
+import { PlanProvider } from '../hooks/usePlan';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { routeNotificationTap } from '../lib/notificationRouting';
 import { formatCurrency } from '../lib/formatCurrency';
@@ -205,40 +206,40 @@ function AppShell() {
 function SplashVideo({ ready, onFinished }: { ready: boolean; onFinished: () => void }) {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const finishedRef = useRef(false);
-  const [videoEnded, setVideoEnded] = useState(false);
+  const mountedAtRef = useRef(Date.now());
   const player = useVideoPlayer(require('../assets/Splash.mp4'), (p) => {
     p.loop = false;
     p.muted = true;
     p.play();
   });
 
+  // Fade out as soon as auth is ready, not when the ~5s video finishes —
+  // this used to wait for BOTH, which meant a fast cold start (session
+  // restored from cache, the common return-visit case — often resolves in
+  // well under a second) still sat through nearly the full video every
+  // single launch for no reason. `ready` already guarantees the
+  // destination is settled before any fade starts, so there's no flash of
+  // the spinner/login screen to avoid by waiting longer than that — the
+  // MIN_PRESENT_MS floor below exists only so a genuinely-instant `ready`
+  // doesn't read as a broken single-frame flicker, not to protect against
+  // a flash. useAuth's own timeout budget bounds `loading` (and so
+  // `ready`) to resolve either way — success or a Retry screen — so this
+  // never hangs indefinitely waiting on `ready` either.
+  const MIN_PRESENT_MS = 1200;
   useEffect(() => {
-    const sub = player.addListener('playToEnd', () => setVideoEnded(true));
-    // Safety net: the splash video is ~5s. If playback never completes for any
-    // reason (codec/autoplay differences on some devices), don't leave the app
-    // stuck behind a permanent full-screen black overlay.
-    const fallback = setTimeout(() => setVideoEnded(true), 7000);
-    return () => {
-      sub.remove();
-      clearTimeout(fallback);
-    };
-  }, [player]);
-
-  // Don't start fading until auth (session/profile/club) has actually
-  // resolved too — otherwise the video ends, the fade reveals the app
-  // underneath mid-navigation, and whoever's watching sees a flash of the
-  // loading spinner (or even the login screen) before it settles on Home.
-  // useAuth's own retry logic bounds `loading` to flip false within ~10s
-  // regardless of network conditions, so this never hangs indefinitely.
-  useEffect(() => {
-    if (!videoEnded || !ready || finishedRef.current) return;
-    finishedRef.current = true;
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 400,
-      useNativeDriver: true,
-    }).start(() => onFinished());
-  }, [videoEnded, ready]);
+    if (!ready || finishedRef.current) return;
+    const wait = Math.max(0, MIN_PRESENT_MS - (Date.now() - mountedAtRef.current));
+    const t = setTimeout(() => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => onFinished());
+    }, wait);
+    return () => clearTimeout(t);
+  }, [ready]);
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.overlay, { opacity: fadeAnim }]}>
@@ -257,7 +258,9 @@ export default function RootLayout() {
     <AuthProvider>
       <ThemeProvider>
         <TeamProvider>
-          <RootLayoutInner />
+          <PlanProvider>
+            <RootLayoutInner />
+          </PlanProvider>
         </TeamProvider>
       </ThemeProvider>
     </AuthProvider>

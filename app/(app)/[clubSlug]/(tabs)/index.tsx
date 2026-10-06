@@ -27,6 +27,7 @@ import { computeArriveBy } from '../../../../lib/eventTime';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useClub } from '../../../../hooks/useClub';
+import { usePlan } from '../../../../hooks/usePlan';
 import { useTheme } from '../../../../hooks/useTheme';
 import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { positionColor } from '../../../../constants/positions';
@@ -340,6 +341,7 @@ export default function HomeScreen() {
   const { profile, club, refreshProfile, signOut } = useAuth();
   const { team, allTeams, loading: teamLoading, selectTeam, teamsWithUnreadChat } = useTeam();
   const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
+  const { hasFeature } = usePlan();
   const { colors } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
   const fmt = (n: number) => formatCurrency(n, club?.currency);
@@ -870,8 +872,12 @@ export default function HomeScreen() {
         }
         await Promise.all(rsvpFetches);
 
-        // Attendance streak + season stats — players only, one entry per guarded player
-        if (!isCoach) {
+        // Attendance streak + season stats — players only, one entry per
+        // guarded player. Plan-gated: leaving seasonStatsByPlayer at its
+        // default empty state (rather than popping an upgrade alert) is
+        // the right degrade for a passive glanceable feature, not an
+        // action someone deliberately triggers.
+        if (!isCoach && hasFeature('attendance_streaks')) {
           const { data: pastEvtsData } = await supabase
             .from('events')
             .select('id, type, event_date, title')

@@ -16,6 +16,8 @@ import { useClub } from '../../../../hooks/useClub';
 import { useActiveTeam } from '../../../../hooks/TeamContext';
 import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
+import UpgradeScreen from '../../../../components/ui/UpgradeScreen';
+import { usePlan } from '../../../../hooks/usePlan';
 
 type GuestRow = {
   id: string;
@@ -52,6 +54,7 @@ export default function GuestActivityScreen() {
   const { primaryColor, rgba } = useClub();
   const { colors } = useTheme();
   const st = useMemo(() => getSt(colors), [colors]);
+  const { hasFeature } = usePlan();
 
   const [guests, setGuests] = useState<GuestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +72,18 @@ export default function GuestActivityScreen() {
       load();
     }, [activeClubId])
   );
+
+  if (!hasFeature('guest_activity_dashboard')) {
+    return (
+      <UpgradeScreen
+        title="Guest Activity"
+        feature="Club-wide Guest Activity Dashboard"
+        requiredPlan="Team Pro"
+        description="See every guest player and coach request across your whole club in one place, instead of checking each event individually."
+        onBack={() => router.back()}
+      />
+    );
+  }
 
   async function load() {
     if (!activeClubId) return;

@@ -197,6 +197,60 @@ export type Database = {
           },
         ]
       }
+      club_fee_overrides: {
+        Row: {
+          ach_charge_cap: number | null
+          ach_charge_fixed: number | null
+          ach_charge_rate_pct: number | null
+          card_charge_cap: number | null
+          card_charge_fixed: number | null
+          card_charge_rate_pct: number | null
+          club_id: string
+          note: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          ach_charge_cap?: number | null
+          ach_charge_fixed?: number | null
+          ach_charge_rate_pct?: number | null
+          card_charge_cap?: number | null
+          card_charge_fixed?: number | null
+          card_charge_rate_pct?: number | null
+          club_id: string
+          note?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          ach_charge_cap?: number | null
+          ach_charge_fixed?: number | null
+          ach_charge_rate_pct?: number | null
+          card_charge_cap?: number | null
+          card_charge_fixed?: number | null
+          card_charge_rate_pct?: number | null
+          club_id?: string
+          note?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_fee_overrides_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: true
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "club_fee_overrides_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       club_ncsa_admin_credentials: {
         Row: {
           club_id: string
@@ -2562,6 +2616,224 @@ export type Database = {
           },
         ]
       }
+      plan_features: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          is_active: boolean
+          is_enforced: boolean
+          key: string
+          label: string
+          min_plan_id: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          id?: string
+          is_active?: boolean
+          is_enforced?: boolean
+          key: string
+          label: string
+          min_plan_id?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          is_active?: boolean
+          is_enforced?: boolean
+          key?: string
+          label?: string
+          min_plan_id?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_features_min_plan_id_fkey"
+            columns: ["min_plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plans: {
+        Row: {
+          ai_enabled: boolean
+          annual_price_cents: number
+          created_at: string
+          description: string
+          highlight: boolean
+          id: string
+          is_active: boolean
+          label: string
+          max_players: number | null
+          max_teams: number | null
+          monthly_price_cents: number
+          player_limit_label: string
+          sort_order: number
+          team_limit_label: string
+          tryouts_enabled: boolean
+          updated_at: string
+        }
+        Insert: {
+          ai_enabled?: boolean
+          annual_price_cents?: number
+          created_at?: string
+          description?: string
+          highlight?: boolean
+          id: string
+          is_active?: boolean
+          label: string
+          max_players?: number | null
+          max_teams?: number | null
+          monthly_price_cents?: number
+          player_limit_label?: string
+          sort_order?: number
+          team_limit_label?: string
+          tryouts_enabled?: boolean
+          updated_at?: string
+        }
+        Update: {
+          ai_enabled?: boolean
+          annual_price_cents?: number
+          created_at?: string
+          description?: string
+          highlight?: boolean
+          id?: string
+          is_active?: boolean
+          label?: string
+          max_players?: number | null
+          max_teams?: number | null
+          monthly_price_cents?: number
+          player_limit_label?: string
+          sort_order?: number
+          team_limit_label?: string
+          tryouts_enabled?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_fee_rails: {
+        Row: {
+          charge_cap: number | null
+          charge_fixed: number
+          charge_rate_pct: number
+          cost_cap: number | null
+          cost_fixed: number
+          cost_rate_pct: number
+          rail: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          charge_cap?: number | null
+          charge_fixed: number
+          charge_rate_pct: number
+          cost_cap?: number | null
+          cost_fixed: number
+          cost_rate_pct: number
+          rail: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          charge_cap?: number | null
+          charge_fixed?: number
+          charge_rate_pct?: number
+          cost_cap?: number | null
+          cost_fixed?: number
+          cost_rate_pct?: number
+          rail?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_fee_rails_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_card_bonuses: {
+        Row: {
+          bonus_def: number
+          bonus_dri: number
+          bonus_pac: number
+          bonus_pas: number
+          bonus_phy: number
+          bonus_sho: number
+          player_id: string
+          updated_at: string
+        }
+        Insert: {
+          bonus_def?: number
+          bonus_dri?: number
+          bonus_pac?: number
+          bonus_pas?: number
+          bonus_phy?: number
+          bonus_sho?: number
+          player_id: string
+          updated_at?: string
+        }
+        Update: {
+          bonus_def?: number
+          bonus_dri?: number
+          bonus_pac?: number
+          bonus_pas?: number
+          bonus_phy?: number
+          bonus_sho?: number
+          player_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_card_bonuses_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: true
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_development_notes: {
         Row: {
           coach_id: string
@@ -2610,6 +2882,61 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_documents: {
+        Row: {
+          doc_type: string
+          file_name: string
+          id: string
+          player_id: string
+          storage_path: string
+          team_id: string
+          uploaded_at: string
+          uploaded_by: string
+        }
+        Insert: {
+          doc_type?: string
+          file_name: string
+          id?: string
+          player_id: string
+          storage_path: string
+          team_id: string
+          uploaded_at?: string
+          uploaded_by: string
+        }
+        Update: {
+          doc_type?: string
+          file_name?: string
+          id?: string
+          player_id?: string
+          storage_path?: string
+          team_id?: string
+          uploaded_at?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_documents_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_documents_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -3172,8 +3499,51 @@ export type Database = {
           },
         ]
       }
+      player_team_history: {
+        Row: {
+          ended_at: string | null
+          id: string
+          player_id: string
+          started_at: string
+          team_id: string
+        }
+        Insert: {
+          ended_at?: string | null
+          id?: string
+          player_id: string
+          started_at?: string
+          team_id: string
+        }
+        Update: {
+          ended_at?: string | null
+          id?: string
+          player_id?: string
+          started_at?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_team_history_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_team_history_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       players: {
         Row: {
+          card_photo_offset_x: number
+          card_photo_offset_y: number
+          card_photo_url: string | null
+          country_code: string | null
           created_at: string | null
           date_of_birth: string | null
           full_name: string
@@ -3190,6 +3560,10 @@ export type Database = {
           team_id: string
         }
         Insert: {
+          card_photo_offset_x?: number
+          card_photo_offset_y?: number
+          card_photo_url?: string | null
+          country_code?: string | null
           created_at?: string | null
           date_of_birth?: string | null
           full_name: string
@@ -3206,6 +3580,10 @@ export type Database = {
           team_id: string
         }
         Update: {
+          card_photo_offset_x?: number
+          card_photo_offset_y?: number
+          card_photo_url?: string | null
+          country_code?: string | null
           created_at?: string | null
           date_of_birth?: string | null
           full_name?: string
@@ -4179,8 +4557,11 @@ export type Database = {
       }
       subscriptions: {
         Row: {
+          billing_cycle: string
           club_id: string
           created_at: string | null
+          custom_annual_price_cents: number | null
+          custom_monthly_price_cents: number | null
           id: string
           plan: string | null
           status: string | null
@@ -4189,8 +4570,11 @@ export type Database = {
           trial_ends_at: string | null
         }
         Insert: {
+          billing_cycle?: string
           club_id: string
           created_at?: string | null
+          custom_annual_price_cents?: number | null
+          custom_monthly_price_cents?: number | null
           id?: string
           plan?: string | null
           status?: string | null
@@ -4199,8 +4583,11 @@ export type Database = {
           trial_ends_at?: string | null
         }
         Update: {
+          billing_cycle?: string
           club_id?: string
           created_at?: string | null
+          custom_annual_price_cents?: number | null
+          custom_monthly_price_cents?: number | null
           id?: string
           plan?: string | null
           status?: string | null
@@ -5088,6 +5475,7 @@ export type Database = {
       }
       tryout_fields: {
         Row: {
+          abbreviation: string | null
           address: string | null
           club_id: string
           created_at: string | null
@@ -5121,6 +5509,7 @@ export type Database = {
           surface_type: string | null
         }
         Insert: {
+          abbreviation?: string | null
           address?: string | null
           club_id: string
           created_at?: string | null
@@ -5154,6 +5543,7 @@ export type Database = {
           surface_type?: string | null
         }
         Update: {
+          abbreviation?: string | null
           address?: string | null
           club_id?: string
           created_at?: string | null
@@ -6174,6 +6564,14 @@ export type Database = {
         Args: { p_ids: string[]; p_start_pos: number }
         Returns: undefined
       }
+      can_access_player_document: {
+        Args: { p_object_name: string }
+        Returns: boolean
+      }
+      can_manage_player_document: {
+        Args: { p_object_name: string }
+        Returns: boolean
+      }
       can_manage_player_photo: {
         Args: { p_object_name: string }
         Returns: boolean
@@ -6453,6 +6851,10 @@ export type Database = {
       get_my_guarded_players: {
         Args: never
         Returns: {
+          card_photo_offset_x: number
+          card_photo_offset_y: number
+          card_photo_url: string | null
+          country_code: string | null
           created_at: string | null
           date_of_birth: string | null
           full_name: string
@@ -6475,6 +6877,22 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      get_player_card: {
+        Args: { p_player_id: string }
+        Returns: {
+          def: number
+          dri: number
+          overall: number
+          pac: number
+          pas: number
+          phy: number
+          sho: number
+          skill_points_available: number
+          tier_key: string
+          tier_label: string
+          xp: number
+        }[]
+      }
       get_player_guardian_info: {
         Args: { p_player_id: string }
         Returns: {
@@ -6483,6 +6901,35 @@ export type Database = {
           full_name: string
           profile_id: string
         }[]
+      }
+      get_players_for_guardian: {
+        Args: { p_profile_id: string }
+        Returns: {
+          card_photo_offset_x: number
+          card_photo_offset_y: number
+          card_photo_url: string | null
+          country_code: string | null
+          created_at: string | null
+          date_of_birth: string | null
+          full_name: string
+          id: string
+          is_injured: boolean
+          is_private: boolean
+          jersey_number: number | null
+          notes: string | null
+          photo_url: string | null
+          position: string | null
+          preferred_foot: string | null
+          profile_id: string | null
+          secondary_position: string | null
+          team_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "players"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       get_poll_nonresponders: {
         Args: { p_poll_id: string }
@@ -6583,11 +7030,38 @@ export type Database = {
         Returns: undefined
       }
       owns_registration_form: { Args: { p_form_id: string }; Returns: boolean }
+      player_card_tier: {
+        Args: { p_xp: number }
+        Returns: {
+          tier_floor: number
+          tier_key: string
+          tier_label: string
+        }[]
+      }
       revoke_guardian_access: {
         Args: { p_player_id: string; p_profile_id: string }
         Returns: Json
       }
       rsvp_not_locked: { Args: { p_event_id: string }; Returns: boolean }
+      spend_player_skill_point: {
+        Args: { p_player_id: string; p_stat: string }
+        Returns: {
+          bonus_def: number
+          bonus_dri: number
+          bonus_pac: number
+          bonus_pas: number
+          bonus_phy: number
+          bonus_sho: number
+          player_id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "player_card_bonuses"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       submit_registration: {
         Args: {
           p_amount_due: number

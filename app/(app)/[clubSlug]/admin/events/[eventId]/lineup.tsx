@@ -22,6 +22,8 @@ import { FormationSelector } from '../../../../../../components/lineup/Formation
 import { PULSE_COLORS, ThemeColors } from '../../../../../../constants/colors';
 import { useClub } from '../../../../../../hooks/useClub';
 import { useTheme } from '../../../../../../hooks/useTheme';
+import { usePlan } from '../../../../../../hooks/usePlan';
+import { showUpgradePrompt } from '../../../../../../lib/showUpgradePrompt';
 import ClubHeader from '../../../../../../components/ui/ClubHeader';
 import type { PositionSlot } from '../../../../../../constants/formations';
 
@@ -289,6 +291,7 @@ export default function LineupScreen() {
   const { profile } = useAuth();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { hasFeature } = usePlan();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
   // Pitch dimensions — computed from actual header height so nothing overflows
@@ -598,6 +601,10 @@ export default function LineupScreen() {
   }
 
   async function handleAiSuggest() {
+    if (!hasFeature('ai_lineup_suggester')) {
+      showUpgradePrompt('AI Lineup Suggester', 'Team Pro', 'Let AI suggest a starting lineup based on confirmed RSVPs and player positions.');
+      return;
+    }
     if (!lineup.selectedFormationId || !event) {
       Alert.alert('Select a formation first', 'Choose a formation before using AI suggest.');
       return;

@@ -21,6 +21,8 @@ import { sendTeamPush } from '../../../lib/push';
 import { sendTeamEmail } from '../../../lib/emailTeam';
 import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
 import { useClub } from '../../../hooks/useClub';
+import { usePlan } from '../../../hooks/usePlan';
+import { showUpgradePrompt } from '../../../lib/showUpgradePrompt';
 import { useTheme } from '../../../hooks/useTheme';
 import ClubHeader, { headerBtnStyle } from '../../../components/ui/ClubHeader';
 import { DateTimeSheet } from '../../../components/ui/DateTimeSheet';
@@ -239,6 +241,8 @@ function ValueText({ v, color }: { v: string; color?: string }) {
 
 export default function CreateEventScreen() {
   const { primaryColor, secondaryColor, onSecondary, rgba, timezone, clubName, logoUrl } = useClub();
+  const { hasFeature } = usePlan();
+  const canUseVideoLibrary = hasFeature('video_library');
   const router = useRouter();
   const { clubSlug, duplicateFrom, tournamentId } = useLocalSearchParams<{ clubSlug: string; duplicateFrom?: string; tournamentId?: string }>();
   const { team } = useTeam();
@@ -907,22 +911,33 @@ export default function CreateEventScreen() {
             </View>
 
             <RowDivider />
-            <View style={styles.notesRow}>
-              <Ionicons name="videocam-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Video link</Text>
-                <TextInput
-                  style={[styles.notesInput, { minHeight: 0 }]}
-                  value={videoUrl}
-                  onChangeText={setVideoUrl}
-                  placeholder="Veo, YouTube, Hudl URL…"
-                  placeholderTextColor={colors.muted}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                  returnKeyType="done"
-                />
+            {canUseVideoLibrary ? (
+              <View style={styles.notesRow}>
+                <Ionicons name="videocam-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Video link</Text>
+                  <TextInput
+                    style={[styles.notesInput, { minHeight: 0 }]}
+                    value={videoUrl}
+                    onChangeText={setVideoUrl}
+                    placeholder="Veo, YouTube, Hudl URL…"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="none"
+                    keyboardType="url"
+                    returnKeyType="done"
+                  />
+                </View>
               </View>
-            </View>
+            ) : (
+              <TouchableOpacity style={styles.notesRow} activeOpacity={0.7}
+                onPress={() => showUpgradePrompt('Video Recordings Library', 'Team Pro', 'Attach a Veo, YouTube, or Hudl link to this event for parents to watch later.')}>
+                <Ionicons name="videocam-outline" size={17} color={colors.muted} style={styles.fieldIcon} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Video link</Text>
+                  <Text style={{ color: colors.muted, fontSize: 15 }}>Team Pro feature — tap to learn more</Text>
+                </View>
+              </TouchableOpacity>
+            )}
 
             {/* A dated tournament game's RSVP lives at the tournament level —
                 these controls no longer do anything for it. */}

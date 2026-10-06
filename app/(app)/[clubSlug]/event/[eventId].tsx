@@ -24,6 +24,8 @@ import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
+import { usePlan } from '../../../../hooks/usePlan';
+import { showUpgradePrompt } from '../../../../lib/showUpgradePrompt';
 import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { useMapApp } from '../../../../hooks/useMapApp';
@@ -351,6 +353,7 @@ function rsvpDeadlineLabel(lockAt: string): string {
 
 export default function EventDetailScreen() {
   const { primaryColor, rgba, homeKitColor, awayKitColor, trainingKitColor, clubName, logoUrl } = useClub();
+  const { hasFeature } = usePlan();
   const { eventId, clubSlug, section, fromNotification } = useLocalSearchParams<{ eventId: string; clubSlug: string; section?: string; fromNotification?: string }>();
   const { team, allTeams, selectTeam, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
@@ -800,6 +803,10 @@ export default function EventDetailScreen() {
 
   async function openMatchTracker() {
     if (!event) return;
+    if (!hasFeature('match_tracker')) {
+      showUpgradePrompt('Match Tracker', 'Team Pro', 'Live match tracking, substitution timing, and equal playing-time calculations.');
+      return;
+    }
     const { data: lineup } = await supabase
       .from('lineups').select('id').eq('event_id', event.id).limit(1).maybeSingle();
     if (!lineup) {
@@ -1083,6 +1090,7 @@ export default function EventDetailScreen() {
 
   async function handleAddGuestPlayer(p: GuestPlayerResult) {
     if (!eventId || !profile || !team || !event) return;
+    if (!hasFeature('guest_management')) { showUpgradePrompt('Guest Player Management', 'Team Pro', 'Invite a player from another team to guest play for this event.'); return; }
     if (guests.some(g => g.player_id === p.id)) {
       Alert.alert('Already invited', `${p.full_name} has already been invited.`); return;
     }
@@ -1121,6 +1129,7 @@ export default function EventDetailScreen() {
 
   async function handleAddGuestCoach(c: CoachResult) {
     if (!eventId || !profile || !team || !event) return;
+    if (!hasFeature('guest_management')) { showUpgradePrompt('Guest Coach Management', 'Team Pro', 'Invite a coach from another team to guest coach this event.'); return; }
     if (guests.some(g => g.profile_id === c.id)) {
       Alert.alert('Already invited', `${c.full_name} has already been invited.`); return;
     }
@@ -1294,6 +1303,7 @@ export default function EventDetailScreen() {
 
   async function sendRequest() {
     if (!profile || !team || !event || requestTargetIds.length === 0) return;
+    if (!hasFeature('guest_management')) { showUpgradePrompt('Guest Player Management', 'Team Pro', 'Broadcast an open-spot call out to other teams in your club.'); return; }
     setRequestSending(true);
     const targetTeams = requestTeams.filter(t => requestTargetIds.includes(t.id));
 
