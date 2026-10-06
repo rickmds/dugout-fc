@@ -80,7 +80,7 @@ async function syncFields(supabase: SB, clubId: string, fields: NcsaField[]) {
     if (existing?.ncsa_dismissed) continue;
 
     const payload = {
-      club_id: clubId, name: f.name, surface_type: mapSurfaceType(f.surface), has_lights: f.hasLights,
+      club_id: clubId, name: f.name, abbreviation: f.abbreviation, surface_type: mapSurfaceType(f.surface), has_lights: f.hasLights,
       external_source: 'ncsa', external_id: f.fieldId, last_synced_at: new Date().toISOString(),
     };
     if (existing) {
@@ -88,6 +88,63 @@ async function syncFields(supabase: SB, clubId: string, fields: NcsaField[]) {
     } else {
       await supabase.from('tryout_fields').insert(payload);
     }
+  }
+}
+
+function normalizeFieldKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// NCSA's field directory (fieldList.cfm, parsed into syncFields above)
+// has no address cell at all — only name/abbreviation/city/lights/
+// surface. But the schedule sync (sync-ncsa-schedule) already captures a
+// real street address for every game, home or away, straight onto
+// events.address. This was the exact gap the original tryout_fields_ncsa_
+// sync migration's comment anticipated ("auto-populate the Fields
+// directory from venue data it already scrapes onto events") but never
+// actually wired up — closing it here by cross-referencing an NCSA-synced
+// field against this club's own recent home games by name, instead of
+// adding a new (paid) geocoding call for data already sitting in the
+// database. Only ever fills a currently-null address on a row this sync
+// owns — never overwrites a value an admin already entered by hand.
+async function backfillFieldAddresses(supabase: SB, clubId: string) {
+  const { data: fieldRows } = await supabase
+    .from('tryout_fields')
+    .select('id, name, abbreviation')
+    .eq('club_id', clubId).eq('external_source', 'ncsa').is('address', null);
+  const missing = (fieldRows ?? []) as { id: string; name: string; abbreviation: string | null }[];
+  if (!missing.length) return;
+
+  const { data: teamRows } = await supabase.from('teams').select('id').eq('club_id', clubId);
+  const teamIds = ((teamRows ?? []) as { id: string }[]).map((t) => t.id);
+  if (!teamIds.length) return;
+
+  const { data: homeEvents } = await supabase
+    .from('events').select('location, address')
+    .in('team_id', teamIds).eq('home_away', 'home')
+    .not('address', 'is', null).not('location', 'is', null)
+    .order('event_date', { ascending: false }).limit(500);
+
+  const addressByKey = new Map<string, string>();
+  for (const ev of (homeEvents ?? []) as { location: string; address: string }[]) {
+    const key = normalizeFieldKey(ev.location);
+    if (!addressByKey.has(key)) addressByKey.set(key, ev.address);
+  }
+
+  function findMatch(key: string): string | undefined {
+    const exact = addressByKey.get(key);
+    if (exact) return exact;
+    // Too short to safely substring-match (an abbreviation like "F1"
+    // would match almost anything) — same caution findClubCandidates in
+    // ncsaClub.ts uses for club-name matching: don't guess on a weak key.
+    if (key.length < 4) return undefined;
+    const candidates = [...addressByKey.entries()].filter(([k]) => k.length >= 4 && (k.includes(key) || key.includes(k)));
+    return candidates.length === 1 ? candidates[0][1] : undefined;
+  }
+
+  for (const f of missing) {
+    const match = findMatch(normalizeFieldKey(f.name)) ?? (f.abbreviation ? findMatch(normalizeFieldKey(f.abbreviation)) : undefined);
+    if (match) await supabase.from('tryout_fields').update({ address: match }).eq('id', f.id);
   }
 }
 
@@ -232,6 +289,10 @@ async function syncClub(supabase: SB, clubId: string): Promise<{ error?: string 
   );
 
   await syncFields(supabase, clubId, parseFieldListReport(fieldListHtml));
+  // Depends on sync-ncsa-schedule's events.address already being fresh —
+  // true by construction, since that cron runs 20 minutes before this one
+  // (see 20260925000015_ncsa_reports_cron.sql).
+  await backfillFieldAddresses(supabase, clubId);
   await syncFines(supabase, clubId, parseFinesReport(finesHtml), teamByRawName);
   await syncConflicts(supabase, clubId, parseConflictReport(overlapHtml), parseConflictReport(gapHtml));
   await syncDiscipline(supabase, clubId, parseCautionEjectReport(cautionEjectHtml), teamByRawName);
