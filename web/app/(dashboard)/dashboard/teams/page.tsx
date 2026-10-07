@@ -9,6 +9,8 @@ import {
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
+import { planLimitMessage } from '@/lib/planLimitError';
 
 function teamColor(name: string): string {
   const palette = ['#3B82F6','#8B5CF6','#EC4899','#F59E0B','#10B981','#06B6D4','#EF4444','#6366F1'];
@@ -49,7 +51,7 @@ const emptyForm = (): TeamForm => ({ name: '', age_group: '', gender: '', season
 type SortField = 'name' | 'age_group' | 'player_count' | 'coach_count';
 
 export default function TeamsPage() {
-  const { club, reload } = useDashboard();
+  const { club, reload, limits } = useDashboard();
   const router = useRouter();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
@@ -75,6 +77,7 @@ export default function TeamsPage() {
 
   // Season rollover
   const [rollover, setRollover]     = useState<RolloverModal | null>(null);
+  const [showTeamLimitModal, setShowTeamLimitModal] = useState(false);
 
   const loadTeams = useCallback(async () => {
     if (!club) return;
@@ -137,6 +140,10 @@ export default function TeamsPage() {
 
   // ── Create / Edit ───────────────────────────────────────────────────────────
   function openCreate() {
+    if (limits.maxTeams !== Infinity && teams.length >= limits.maxTeams) {
+      setShowTeamLimitModal(true);
+      return;
+    }
     setForm(emptyForm());
     setFormError('');
     setFormModal({ mode: 'create' });
@@ -161,7 +168,7 @@ export default function TeamsPage() {
         gender: form.gender || null,
         season: form.season.trim() || null,
       });
-      if (error) { setFormError(error.message); setFormSaving(false); return; }
+      if (error) { setFormError(planLimitMessage(error) ?? error.message); setFormSaving(false); return; }
     } else {
       const { error } = await supabase.from('teams').update({
         name: form.name.trim(),
@@ -215,7 +222,7 @@ export default function TeamsPage() {
         .single();
 
       if (teamErr || !newTeam) {
-        alert(`Could not create new season team: ${teamErr?.message ?? 'Unknown error'}`);
+        alert(planLimitMessage(teamErr) ?? `Could not create new season team: ${teamErr?.message ?? 'Unknown error'}`);
         setRollover((r) => r ? { ...r, saving: false } : null);
         return;
       }
@@ -279,7 +286,7 @@ export default function TeamsPage() {
       reload();
       loadTeams();
     } catch (e) {
-      alert(`Rollover failed: ${e instanceof Error ? e.message : String(e)}`);
+      alert(planLimitMessage(e) ?? `Rollover failed: ${e instanceof Error ? e.message : String(e)}`);
       setRollover((r) => r ? { ...r, saving: false } : null);
     }
   }
@@ -822,6 +829,15 @@ export default function TeamsPage() {
               <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               <button onClick={() => confirmDelete(deleteConfirm.id)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showTeamLimitModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowTeamLimitModal(false); }}>
+          <div style={{ width: 420 }}>
+            <UpgradePrompt feature="More Teams" description={`Your plan allows up to ${limits.maxTeams === Infinity ? 'unlimited' : limits.maxTeams} team${limits.maxTeams === 1 ? '' : 's'}. Upgrade to add more.`} requiredPlan="Starter" />
           </div>
         </div>
       )}

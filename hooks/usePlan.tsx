@@ -10,16 +10,24 @@ import { useTeam } from './useTeam';
 // web/lib/plans.ts directly: the two apps are separate TS projects with
 // separate bundlers, not set up to share code across that boundary.
 type PlanFeatureRow = { key: string; min_plan_id: string | null; is_active: boolean };
+type PlanRow = { id: string; sort_order: number; max_teams: number | null; max_players: number | null };
+
+interface PlanLimits {
+  maxTeams: number;
+  maxPlayers: number;
+}
 
 interface PlanContextValue {
   /** false while data is still loading or the club has no matching plan row — fails closed, same as web's FALLBACK_PLAN_LIMITS. */
   hasFeature: (key: string) => boolean;
+  /** Infinity while loading or unresolved — fails open, same as web's FALLBACK_PLAN_LIMITS; the teams_plan_limit/players_plan_limit DB trigger is the real enforcement either way. */
+  limits: PlanLimits;
 }
 
 const PlanContext = createContext<PlanContextValue | null>(null);
 
 export function PlanProvider({ children }: { children: ReactNode }) {
-  const [sortOrderByPlanId, setSortOrderByPlanId] = useState<Record<string, number>>({});
+  const [plansById, setPlansById] = useState<Record<string, PlanRow>>({});
   const [catalog, setCatalog] = useState<PlanFeatureRow[]>([]);
   const [planByClubId, setPlanByClubId] = useState<Record<string, string>>({});
 
@@ -34,13 +42,13 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      supabase.from('plans').select('id, sort_order'),
+      supabase.from('plans').select('id, sort_order, max_teams, max_players'),
       supabase.from('plan_features').select('key, min_plan_id, is_active'),
     ]).then(([{ data: planRows }, { data: featureRows }]) => {
       if (cancelled) return;
-      const sortById: Record<string, number> = {};
-      for (const p of (planRows ?? []) as { id: string; sort_order: number }[]) sortById[p.id] = p.sort_order;
-      setSortOrderByPlanId(sortById);
+      const byId: Record<string, PlanRow> = {};
+      for (const p of (planRows ?? []) as PlanRow[]) byId[p.id] = p;
+      setPlansById(byId);
       setCatalog((featureRows ?? []) as PlanFeatureRow[]);
     });
     return () => { cancelled = true; };
@@ -64,13 +72,20 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     const planId = planByClubId[activeClubId] ?? 'free';
     const entry = catalog.find((f) => f.key === key && f.is_active);
     if (!entry?.min_plan_id) return false;
-    const minSort = sortOrderByPlanId[entry.min_plan_id];
-    const planSort = sortOrderByPlanId[planId];
+    const minSort = plansById[entry.min_plan_id]?.sort_order;
+    const planSort = plansById[planId]?.sort_order;
     return minSort != null && planSort != null && planSort >= minSort;
-  }, [activeClubId, planByClubId, catalog, sortOrderByPlanId]);
+  }, [activeClubId, planByClubId, catalog, plansById]);
+
+  const planId = activeClubId ? (planByClubId[activeClubId] ?? 'free') : 'free';
+  const planRow = plansById[planId];
+  const limits: PlanLimits = {
+    maxTeams: planRow?.max_teams ?? Infinity,
+    maxPlayers: planRow?.max_players ?? Infinity,
+  };
 
   return (
-    <PlanContext.Provider value={{ hasFeature }}>
+    <PlanContext.Provider value={{ hasFeature, limits }}>
       {children}
     </PlanContext.Provider>
   );

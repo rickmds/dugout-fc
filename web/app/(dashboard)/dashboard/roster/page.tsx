@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import AIRosterImport from '@/components/dashboard/AIRosterImport';
 import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
+import { planLimitMessage } from '@/lib/planLimitError';
 
 type Player = {
   id: string;
@@ -68,7 +69,7 @@ function positionGroups(players: Player[]): PosGroup[] {
 
 export default function RosterPage() {
   const router = useRouter();
-  const { profile, club, teams, selectedTeamId, hasFeature } = useDashboard();
+  const { profile, club, teams, selectedTeamId, hasFeature, limits } = useDashboard();
   const searchParams = useSearchParams();
   const [players, setPlayers]         = useState<Player[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -81,6 +82,7 @@ export default function RosterPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showAI, setShowAI]             = useState(false);
   const [showAIUpgrade, setShowAIUpgrade] = useState(false);
+  const [showPlayerLimitModal, setShowPlayerLimitModal] = useState(false);
   const [form, setForm]                 = useState<FormState>(emptyForm(selectedTeamId ?? teams[0]?.id ?? ''));
   const [saving, setSaving]             = useState(false);
 
@@ -105,6 +107,24 @@ export default function RosterPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount/filter-change; loadPlayers sets loading/players from a real network call, not derivable at render time
   useEffect(() => { loadPlayers(); }, [loadPlayers]);
 
+  // Proactive check so the limit shows up before the form, not after a
+  // failed save — the trigger in the DB is still the real enforcement,
+  // this is just the friendly front door to it.
+  async function openAddPlayerModal() {
+    if (limits.maxPlayers !== Infinity) {
+      const { count } = await supabase
+        .from('players')
+        .select('id', { count: 'exact', head: true })
+        .in('team_id', teams.map((t) => t.id));
+      if ((count ?? 0) >= limits.maxPlayers) {
+        setShowPlayerLimitModal(true);
+        return;
+      }
+    }
+    setForm(emptyForm(teamFilter || (teams[0]?.id ?? '')));
+    setShowAddModal(true);
+  }
+
   async function handleAddPlayer() {
     if (!form.full_name.trim()) return;
     setSaving(true);
@@ -116,7 +136,7 @@ export default function RosterPage() {
         team_id: form.team_id,
       };
       const { data, error } = await supabase.from('players').insert(payload).select('id').single();
-      if (error) { alert(`Could not add player: ${error.message}`); return; }
+      if (error) { alert(planLimitMessage(error) ?? `Could not add player: ${error.message}`); return; }
       if (form.parent_email.trim() && (data as { id: string } | null)?.id) {
         const { data: inviteRow } = await supabase.from('invites').insert({
           team_id: form.team_id,
@@ -185,7 +205,7 @@ export default function RosterPage() {
             <button onClick={() => hasFeature('ai_roster_import') ? setShowAI(true) : setShowAIUpgrade(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', color: '#374151', fontWeight: '600', fontSize: '14px', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid #E2E8F0', cursor: 'pointer' }}>
               <Sparkles size={15} color="#8B5CF6" /> AI Import
             </button>
-            <button onClick={() => { setForm(emptyForm(teamFilter || (teams[0]?.id ?? ''))); setShowAddModal(true); }}
+            <button onClick={openAddPlayerModal}
               style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', fontWeight: '700', fontSize: '14px', padding: '10px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer' }}>
               <Plus size={16} /> Add Player
             </button>
@@ -242,7 +262,7 @@ export default function RosterPage() {
             <User size={40} color="#CBD5E1" style={{ marginBottom: '12px' }} />
             <div style={{ fontSize: '16px', fontWeight: '600', color: '#64748B', marginBottom: '4px' }}>{search ? 'No players match' : 'No players yet'}</div>
             {!search && (
-              <button onClick={() => { setForm(emptyForm(teamFilter || (teams[0]?.id ?? ''))); setShowAddModal(true); }}
+              <button onClick={openAddPlayerModal}
                 style={{ marginTop: '16px', background: primary, color: '#fff', fontWeight: '700', fontSize: '13px', padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>
                 + Add First Player
               </button>
@@ -369,6 +389,14 @@ export default function RosterPage() {
           onClick={e => { if (e.target === e.currentTarget) setShowAIUpgrade(false); }}>
           <div style={{ width: 420 }}>
             <UpgradePrompt feature="AI Roster Import" description="Upload a spreadsheet in any format and let AI map the columns and import your whole roster automatically." requiredPlan="Team Pro" />
+          </div>
+        </div>
+      )}
+      {showPlayerLimitModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowPlayerLimitModal(false); }}>
+          <div style={{ width: 420 }}>
+            <UpgradePrompt feature="More Players" description={`Your plan allows up to ${limits.maxPlayers} players across your club. Upgrade to add more.`} requiredPlan="Team Pro" />
           </div>
         </div>
       )}

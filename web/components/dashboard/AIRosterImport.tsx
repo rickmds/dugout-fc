@@ -9,6 +9,7 @@ import {
 } from '@/lib/parseAllClient';
 import { useDashboard } from './DashboardContext';
 import type { Team } from './DashboardContext';
+import { planLimitMessage } from '@/lib/planLimitError';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +88,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
   const [warnings, setWarnings]   = useState<string[]>([]);
   const [procStep, setProcStep]   = useState(0);
   const [doneStats, setDoneStats] = useState<DoneStats | null>(null);
+  const [limitHitMessage, setLimitHitMessage] = useState<string | null>(null);
   const [dragOver, setDragOver]   = useState(false);
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
   const [warningsOpen, setWarningsOpen]   = useState(false);
@@ -233,15 +235,22 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
 
   async function handleImport() {
     setPhase('importing');
+    setLimitHitMessage(null);
     const stats: DoneStats = { players: 0, teams: 0, invites: 0 };
+    let limitHit = false;
 
     if (mode === 'single') {
       const toImport = players.filter((p) => p.selected);
       for (const p of toImport) {
-        const { data: pd } = await supabase.from('players').insert({
+        const { data: pd, error } = await supabase.from('players').insert({
           team_id: p.teamId, full_name: p.full_name,
           jersey_number: p.jersey_number, position: p.position, date_of_birth: p.date_of_birth,
         }).select('id').single<{ id: string }>();
+        if (error) {
+          const msg = planLimitMessage(error);
+          if (msg) { limitHit = true; setLimitHitMessage(msg); break; }
+          continue;
+        }
         if (!pd) continue;
         stats.players++;
         if (p.parent_email?.trim()) {
@@ -270,12 +279,16 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
 
         // Create the team if it's new and user selected any of its players
         if (!resolvedTeamId && profile?.club_id) {
-          const { data: newTeam } = await supabase.from('teams').insert({
+          const { data: newTeam, error: teamError } = await supabase.from('teams').insert({
             club_id: profile.club_id,
             name: rt.parsedName,
             age_group: rt.age_group,
             season: rt.season,
           }).select('id').single<{ id: string }>();
+          if (teamError) {
+            const msg = planLimitMessage(teamError);
+            if (msg) { limitHit = true; setLimitHitMessage(msg); break; }
+          }
           resolvedTeamId = newTeam?.id ?? null;
           if (resolvedTeamId) stats.teams++;
         }
@@ -283,10 +296,15 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
         if (!resolvedTeamId) continue;
 
         for (const p of toImport) {
-          const { data: pd } = await supabase.from('players').insert({
+          const { data: pd, error } = await supabase.from('players').insert({
             team_id: resolvedTeamId, full_name: p.full_name,
             jersey_number: p.jersey_number, position: p.position, date_of_birth: p.date_of_birth,
           }).select('id').single<{ id: string }>();
+          if (error) {
+            const msg = planLimitMessage(error);
+            if (msg) { limitHit = true; setLimitHitMessage(msg); break; }
+            continue;
+          }
           if (!pd) continue;
           stats.players++;
           if (p.parent_email?.trim()) {
@@ -304,6 +322,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
             stats.invites++;
           }
         }
+        if (limitHit) break;
       }
     }
 
@@ -549,6 +568,7 @@ export default function AIRosterImport({ onClose, onDone }: { onClose: () => voi
                 <StatLine color="#22C55E" label={`${doneStats.players} player${doneStats.players !== 1 ? 's' : ''} added to roster`} />
                 {doneStats.teams > 0 && <StatLine color="#8B5CF6" label={`${doneStats.teams} new team${doneStats.teams !== 1 ? 's' : ''} created`} />}
                 {doneStats.invites > 0 && <StatLine color="#60A5FA" label={`${doneStats.invites} parent invite${doneStats.invites !== 1 ? 's' : ''} queued`} />}
+                {limitHitMessage && <StatLine color="#F59E0B" label={`Stopped early — ${limitHitMessage}`} />}
               </div>
               <button onClick={() => { onDone(); onClose(); }} style={{ background: primary, color: '#fff', fontWeight: '700', fontSize: '14px', padding: '12px 28px', borderRadius: '10px', border: 'none', cursor: 'pointer' }}>
                 View Roster

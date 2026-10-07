@@ -5,6 +5,7 @@ import { X, Upload, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toParseAllPayload, streamParseAll } from '@/lib/parseAllClient';
 import { useDashboard } from './DashboardContext';
+import { planLimitMessage } from '@/lib/planLimitError';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -202,13 +203,20 @@ function Step1({ primary, createdTeams, setCreatedTeams, onDone, onSkip }: {
     if (existingTeams.length > 0 && createdTeams.length > 0) { onDone(); setSaving(false); return; }
 
     const created: CreatedTeam[] = [];
+    let limitMsg: string | null = null;
     for (const r of toCreate) {
-      const { data } = await supabase.from('teams').insert({ club_id: club.id, name: r.name.trim(), age_group: r.age_group.trim() || null }).select('id').single();
+      const { data, error } = await supabase.from('teams').insert({ club_id: club.id, name: r.name.trim(), age_group: r.age_group.trim() || null }).select('id').single();
+      if (error) {
+        limitMsg = planLimitMessage(error);
+        if (limitMsg) break;
+        continue;
+      }
       if (data) created.push({ localId: r.id, dbId: (data as { id: string }).id, name: r.name.trim() });
     }
     setCreatedTeams(created);
     reload();
     setSaving(false);
+    if (limitMsg) alert(`Created ${created.length} of ${toCreate.length} teams — ${limitMsg}`);
     onDone();
   }
 
@@ -416,15 +424,24 @@ function Step3({ primary, createdTeams, onDone, onSkip }: {
     if (!valid.length) { onDone([]); return; }
     setSaving(true);
     const teamDbId = (localId: string) => allTeams.find((t) => t.localId === localId)?.dbId ?? localId;
+    let addedCount = 0;
+    let limitMsg: string | null = null;
     for (const p of valid) {
       const tId = teamDbId(p.local_team_id);
       if (!tId) continue;
-      const { data: pd } = await supabase.from('players').insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: p.jersey_number ? parseInt(p.jersey_number) : null, position: p.position || null }).select('id').single();
+      const { data: pd, error } = await supabase.from('players').insert({ team_id: tId, full_name: p.full_name.trim(), jersey_number: p.jersey_number ? parseInt(p.jersey_number) : null, position: p.position || null }).select('id').single();
+      if (error) {
+        limitMsg = planLimitMessage(error);
+        if (limitMsg) break;
+        continue;
+      }
+      addedCount++;
       if (pd && p.parent_email.trim()) {
         await supabase.from('invites').insert({ team_id: tId, club_id: profile?.club_id, player_id: (pd as { id: string }).id, email: p.parent_email.trim(), created_by: profile?.id }).select().single();
       }
     }
     setSaving(false);
+    if (limitMsg) alert(`Added ${addedCount} of ${valid.length} players — ${limitMsg}`);
     onDone(valid);
   }
 

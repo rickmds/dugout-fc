@@ -19,6 +19,7 @@ import { useClub } from '../../../../hooks/useClub';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useTheme } from '../../../../hooks/useTheme';
+import { planLimitMessage } from '../../../../lib/planLimitError';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -369,9 +370,12 @@ export default function ClubImportScreen() {
             teams: prev.teams.filter((t) => !done.has(t.name)),
             players: prev.players.filter((p) => !done.has(p.assignedTeamName)),
           } : prev);
+          const limitMsg = planLimitMessage(teamErr);
           Alert.alert(
             'Import interrupted',
-            `${stats.teams} of ${total} teams were created before the error on "${pt.name}".\n\nThe completed teams have been removed from the list — tap Import to continue with the remaining ones.`,
+            limitMsg
+              ? `${stats.teams} of ${total} teams were created before stopping on "${pt.name}".\n\n${limitMsg}`
+              : `${stats.teams} of ${total} teams were created before the error on "${pt.name}".\n\nThe completed teams have been removed from the list — tap Import to continue with the remaining ones.`,
           );
           setPhase('review');
           return;
@@ -392,7 +396,7 @@ export default function ClubImportScreen() {
         // the coach saw flagged as a duplicate (and didn't explicitly
         // remove) still got inserted as a second, separate player row.
         if (existingNamesByTeam[pt.name]?.has(normalizeName(p.full_name))) continue;
-        const { data: playerData } = await supabase
+        const { data: playerData, error: playerErr } = await supabase
           .from('players')
           .insert({
             team_id: teamId, full_name: p.full_name.trim(),
@@ -401,6 +405,22 @@ export default function ClubImportScreen() {
           })
           .select('id')
           .single();
+
+        if (playerErr) {
+          const limitMsg = planLimitMessage(playerErr);
+          if (limitMsg) {
+            const done = importedTeamNames.current;
+            setParseResult((prev) => prev ? {
+              ...prev,
+              teams: prev.teams.filter((t) => !done.has(t.name)),
+              players: prev.players.filter((p2) => !done.has(p2.assignedTeamName)),
+            } : prev);
+            Alert.alert('Import stopped', `${stats.players} player${stats.players !== 1 ? 's' : ''} were added before stopping.\n\n${limitMsg}`);
+            setPhase('review');
+            return;
+          }
+          continue;
+        }
         stats.players++;
         if (!playerData) continue;
 

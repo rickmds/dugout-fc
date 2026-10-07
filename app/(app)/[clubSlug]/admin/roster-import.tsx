@@ -20,6 +20,7 @@ import { useClub } from '../../../../hooks/useClub';
 import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
+import { planLimitMessage } from '../../../../lib/planLimitError';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ type DoneStats = {
   invitesSent: number;
   noEmail: number;
   emailFailed: number;
+  limitHitMessage: string | null;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -147,10 +149,10 @@ export default function RosterImportScreen() {
     if (toImport.length === 0) return;
     setPhase('importing');
 
-    const stats: DoneStats = { added: 0, invitesSent: 0, noEmail: 0, emailFailed: 0 };
+    const stats: DoneStats = { added: 0, invitesSent: 0, noEmail: 0, emailFailed: 0, limitHitMessage: null };
 
     for (const p of toImport) {
-      const { data: playerData } = await supabase
+      const { data: playerData, error: playerError } = await supabase
         .from('players')
         .insert({
           team_id: team.id,
@@ -161,6 +163,11 @@ export default function RosterImportScreen() {
         .select('id')
         .single();
 
+      if (playerError) {
+        const msg = planLimitMessage(playerError);
+        if (msg) { stats.limitHitMessage = msg; break; }
+        continue;
+      }
       if (!playerData) continue;
       stats.added++;
 
@@ -438,6 +445,13 @@ export default function RosterImportScreen() {
                   <Text style={st.statText}>
                     <Text style={st.statBold}>{doneStats.noEmail}</Text> player{doneStats.noEmail !== 1 ? 's' : ''} have no parent email — invite from the roster when ready
                   </Text>
+                </View>
+              )}
+
+              {doneStats.limitHitMessage && (
+                <View style={st.statRow}>
+                  <View style={[st.statDot, { backgroundColor: '#F59E0B' }]} />
+                  <Text style={st.statText}>Stopped early — {doneStats.limitHitMessage}</Text>
                 </View>
               )}
 

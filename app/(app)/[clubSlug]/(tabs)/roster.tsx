@@ -33,6 +33,9 @@ import ClubBadge from '../../../../components/ui/ClubBadge';
 import ClubHeader, { headerBtnStyle, headerBtnTextStyle } from '../../../../components/ui/ClubHeader';
 import RosterSkeleton from '../../../../components/roster/RosterSkeleton';
 import { formatPhone } from '../../../../lib/formatPhone';
+import { usePlan } from '../../../../hooks/usePlan';
+import { showUpgradePrompt } from '../../../../lib/showUpgradePrompt';
+import { planLimitMessage } from '../../../../lib/planLimitError';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -273,6 +276,7 @@ export default function RosterScreen() {
   const st = useMemo(() => getSt(colors), [colors]);
   const { team, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
+  const { limits } = usePlan();
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
 
@@ -410,6 +414,25 @@ export default function RosterScreen() {
     setAddStep('picker');
   }
 
+  // Proactive check so the limit shows up before the form, not after a
+  // failed save — the teams_plan_limit/players_plan_limit DB trigger is
+  // the real enforcement, this is just the friendly front door to it.
+  async function selectPlayerStep() {
+    if (limits.maxPlayers !== Infinity && team?.club_id) {
+      const { data: clubTeams } = await supabase.from('teams').select('id').eq('club_id', team.club_id);
+      const teamIds = (clubTeams ?? []).map((t) => t.id);
+      const { count } = await supabase
+        .from('players')
+        .select('id', { count: 'exact', head: true })
+        .in('team_id', teamIds.length ? teamIds : [team.id]);
+      if ((count ?? 0) >= limits.maxPlayers) {
+        showUpgradePrompt('More Players', 'Team Pro', `Your plan allows up to ${limits.maxPlayers} players across your club. Upgrade to add more.`);
+        return;
+      }
+    }
+    setAddStep('player');
+  }
+
   async function handleAddPlayer() {
     if (!name.trim() || !team || !profile) return;
 
@@ -445,7 +468,8 @@ export default function RosterScreen() {
 
     if (playerError || !playerData?.id) {
       setSaving(false);
-      Alert.alert('Error', 'Could not add player. Please try again.');
+      const limitMsg = planLimitMessage(playerError);
+      Alert.alert('Error', limitMsg ?? 'Could not add player. Please try again.');
       return;
     }
 
@@ -684,7 +708,7 @@ export default function RosterScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity style={st.pickerCard} onPress={() => setAddStep('player')} activeOpacity={0.78}>
+                <TouchableOpacity style={st.pickerCard} onPress={selectPlayerStep} activeOpacity={0.78}>
                   <View style={[st.pickerIconWrap, { backgroundColor: rgba(0.10), borderColor: rgba(0.22) }]}>
                     <Ionicons name="football-outline" size={22} color={primaryColor} />
                   </View>
