@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Save, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Save, Plus, Trash2, ExternalLink, Copy, Check } from 'lucide-react';
 
 type Question = {
   id: string;
@@ -364,6 +364,7 @@ export default function TryoutFormConfigPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [activeSection, setActiveSection] = useState<'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success'>('header');
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Raw text for the 4 comma-separated option fields, kept separate from
   // config[key] (the parsed string[]). The input's value must mirror this,
@@ -436,7 +437,15 @@ export default function TryoutFormConfigPage() {
     </div>
   );
 
-  const publicUrl = club ? `${typeof window !== 'undefined' ? window.location.origin : 'https://pulse-fc.app'}/tryout-registration?club=${(club as { slug?: string }).slug ?? ''}` : '';
+  const publicUrl = club ? `${typeof window !== 'undefined' ? window.location.origin : 'https://pulse-fc.app'}/t/${(club as { slug?: string }).slug ?? ''}` : '';
+
+  function copyLink() {
+    if (!publicUrl) return;
+    navigator.clipboard.writeText(publicUrl).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1800);
+    });
+  }
 
   type SectionId = 'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success';
 
@@ -462,6 +471,12 @@ export default function TryoutFormConfigPage() {
           <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Registration Form</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {publicUrl && (
+            <button onClick={copyLink}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: linkCopied ? '#16A34A' : '#64748B', fontWeight: '600', padding: '7px 14px', border: `1px solid ${linkCopied ? '#16A34A' : '#E2E8F0'}`, borderRadius: '6px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              {linkCopied ? <Check size={12} /> : <Copy size={12} />} {linkCopied ? 'Copied!' : 'Copy link'}
+            </button>
+          )}
           {publicUrl && (
             <a href={publicUrl} target="_blank" rel="noreferrer"
               style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B', textDecoration: 'none', fontWeight: '600', padding: '7px 14px', border: '1px solid #E2E8F0', borderRadius: '6px', background: '#fff' }}>
