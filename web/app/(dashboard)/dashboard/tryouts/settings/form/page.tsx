@@ -363,7 +363,11 @@ export default function TryoutFormConfigPage() {
   const [config, setConfig] = useState<FormConfig>(MAROONS_DEFAULT);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [activeSection, setActiveSection] = useState<'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'responses'|'success'>('header');
+  const [activeSection, setActiveSection] = useState<'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success'>('header');
+  // Responses is the default landing tab — once a form exists, checking
+  // who's registered is the day-to-day reason to be on this page; editing
+  // the 9 setup steps is occasional, not the common case.
+  const [activeTab, setActiveTab] = useState<'responses' | 'setup'>('responses');
   const [linkCopied, setLinkCopied] = useState(false);
   const [responseCount, setResponseCount] = useState<number | null>(null);
   const [responseData, setResponseData] = useState<{ headers: string[]; rows: (string | number)[][] } | null>(null);
@@ -388,8 +392,8 @@ export default function TryoutFormConfigPage() {
     if (!club) return;
     supabase.from('tryout_form_config').select('*').eq('club_id', club.id).single()
       .then(({ data }) => {
+        const merged: FormConfig = data?.config_json ? { ...MAROONS_DEFAULT, ...data.config_json } : MAROONS_DEFAULT;
         if (data?.config_json) {
-          const merged: FormConfig = { ...MAROONS_DEFAULT, ...data.config_json };
           setConfig(merged);
           setRawOptionText({
             gradeOptions: merged.gradeOptions.join(', '),
@@ -398,9 +402,15 @@ export default function TryoutFormConfigPage() {
             jerseySizeOptions: merged.jerseySizeOptions.join(', '),
           });
         }
+        // Responses is the default tab, so load it eagerly right after
+        // config resolves — passed explicitly rather than read back off
+        // `config` state, since that setConfig above hasn't landed yet
+        // in this same tick.
+        loadResponses(merged.questions);
       });
     supabase.from('tryout_players').select('id', { count: 'exact', head: true }).eq('club_id', club.id)
       .then(({ count }) => setResponseCount(count ?? 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadResponses is a plain function redefined each render; its real reactive input (club) is already listed here
   }, [club]);
 
   async function handleSave() {
@@ -462,7 +472,12 @@ export default function TryoutFormConfigPage() {
   // answer under two headers; team/status/offer_status are the admin's
   // own decisions, not something a family answered, so those live on
   // the Player Pool page instead, not here.
-  async function loadResponses() {
+  // Takes `questions` explicitly rather than reading config.questions off
+  // component state — called once eagerly right after the config fetch
+  // resolves (see the useEffect above), before that state update has
+  // actually landed, so reading `config` here would see last render's
+  // (possibly still-default) value instead of what was just fetched.
+  async function loadResponses(questions: Question[]) {
     if (!club) return;
     setLoadingResponses(true);
     const { data } = await supabase
@@ -477,14 +492,14 @@ export default function TryoutFormConfigPage() {
       ['parent_name', 'Parent / Guardian'], ['email_primary', 'Email'], ['phone', 'Phone'],
       ['town', 'Town / City'], ['referral_source', 'How did you hear about us?'],
     ];
-    const headers = [...builtIn.map(([, label]) => label), ...config.questions.map(q => q.label), 'Submitted'];
+    const headers = [...builtIn.map(([, label]) => label), ...questions.map(q => q.label), 'Submitted'];
 
     const cellText = (v: unknown): string => Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v));
 
     const rows: string[][] = (data ?? []).map(p => {
       const builtInVals = builtIn.map(([key]) => cellText((p as Record<string, unknown>)[key]));
       const responses = (p.custom_responses ?? {}) as Record<string, unknown>;
-      const customVals = config.questions.map(q => cellText(responses[q.id]));
+      const customVals = questions.map(q => cellText(responses[q.id]));
       return [...builtInVals, ...customVals, new Date(p.created_at).toLocaleString('en-US')];
     });
 
@@ -507,7 +522,7 @@ export default function TryoutFormConfigPage() {
         : responseData.rows)
     : [];
 
-  type SectionId = 'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'responses'|'success';
+  type SectionId = 'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success';
 
   const SECTIONS: { id: SectionId; num: number; label: string; icon: string; desc: string }[] = [
     { id: 'header',    num: 1, label: 'Header & welcome',  icon: 'H₁', desc: 'Title, subtitle, and intro message' },
@@ -525,32 +540,114 @@ export default function TryoutFormConfigPage() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
       {/* Sticky header */}
-      <div style={{ padding: '14px 24px', background: '#fff', borderBottom: `3px solid ${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '2px' }}>Tryout Setup</div>
-          <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Registration Form</h1>
+      <div style={{ background: '#fff', borderBottom: `3px solid ${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}`, flexShrink: 0 }}>
+        <div style={{ padding: '14px 24px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '2px' }}>Tryout Setup</div>
+            <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Registration Form</h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {publicUrl && (
+              <button onClick={copyLink}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: linkCopied ? '#16A34A' : '#64748B', fontWeight: '600', padding: '7px 14px', border: `1px solid ${linkCopied ? '#16A34A' : '#E2E8F0'}`, borderRadius: '6px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {linkCopied ? <Check size={12} /> : <Copy size={12} />} {linkCopied ? 'Copied!' : 'Copy link'}
+              </button>
+            )}
+            {publicUrl && (
+              <a href={publicUrl} target="_blank" rel="noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B', textDecoration: 'none', fontWeight: '600', padding: '7px 14px', border: '1px solid #E2E8F0', borderRadius: '6px', background: '#fff' }}>
+                <ExternalLink size={12} /> Preview form
+              </a>
+            )}
+            {activeTab === 'setup' && (
+              <button onClick={handleSave} disabled={saving}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
+                <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save changes'}
+              </button>
+            )}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {publicUrl && (
-            <button onClick={copyLink}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: linkCopied ? '#16A34A' : '#64748B', fontWeight: '600', padding: '7px 14px', border: `1px solid ${linkCopied ? '#16A34A' : '#E2E8F0'}`, borderRadius: '6px', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
-              {linkCopied ? <Check size={12} /> : <Copy size={12} />} {linkCopied ? 'Copied!' : 'Copy link'}
-            </button>
-          )}
-          {publicUrl && (
-            <a href={publicUrl} target="_blank" rel="noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B', textDecoration: 'none', fontWeight: '600', padding: '7px 14px', border: '1px solid #E2E8F0', borderRadius: '6px', background: '#fff' }}>
-              <ExternalLink size={12} /> Preview form
-            </a>
-          )}
-          <button onClick={handleSave} disabled={saving}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: saved ? '#16A34A' : '#22C55E', color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
-            <Save size={14} />{saved ? '✓ Saved!' : saving ? 'Saving…' : 'Save changes'}
-          </button>
+
+        {/* Top-level tabs — Responses is the default/common case once a
+            form exists; Form Setup is the occasional one-time config. */}
+        <div style={{ display: 'flex', gap: '4px', padding: '14px 24px 0' }}>
+          {([
+            { id: 'responses' as const, label: 'Responses', badge: responseCount },
+            { id: 'setup' as const, label: 'Form Setup', badge: null },
+          ]).map(t => {
+            const active = activeTab === t.id;
+            const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
+            return (
+              <button key={t.id} onClick={() => setActiveTab(t.id)}
+                style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 4px', border: 'none', borderBottom: active ? `2px solid ${primary}` : '2px solid transparent', background: 'none', cursor: 'pointer', marginRight: '22px', fontSize: '13.5px', fontWeight: active ? '700' : '600', color: active ? '#0D1117' : '#64748B' }}>
+                {t.label}
+                {t.badge !== null && <span style={{ fontSize: '11px', background: active ? `${primary}18` : '#F1F5F9', color: active ? primary : '#94A3B8', borderRadius: '10px', padding: '1px 8px', fontWeight: '700' }}>{t.badge}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Body: left nav + right panel */}
+      {activeTab === 'responses' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px', background: '#F0F2F5' }}>
+          {hint('One column per question on the form, one row per family — everything they answered, for quickly finding something without leaving the dashboard.')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <div style={{ position: 'relative', flex: 1, maxWidth: '360px' }}>
+              <Search size={14} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input placeholder="Search any answer…" value={responseSearch} onChange={e => setResponseSearch(e.target.value)}
+                style={{ ...inp, paddingLeft: '32px' }} />
+            </div>
+            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: '600' }}>
+              {responseData ? `${filteredResponseRows.length} of ${responseData.rows.length}` : ''}
+            </div>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => loadResponses(config.questions)} disabled={loadingResponses}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '12.5px', fontWeight: '600', color: '#374151', cursor: loadingResponses ? 'default' : 'pointer', opacity: loadingResponses ? 0.6 : 1 }}>
+              {loadingResponses ? 'Refreshing…' : 'Refresh'}
+            </button>
+            <button onClick={exportResponsesCSV} disabled={!responseData || !responseData.rows.length}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '12.5px', fontWeight: '600', color: '#374151', cursor: responseData?.rows.length ? 'pointer' : 'default', opacity: responseData?.rows.length ? 1 : 0.5 }}>
+              <Download size={13} /> Export CSV
+            </button>
+          </div>
+
+          {loadingResponses && !responseData && (
+            <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8' }}>Loading responses…</div>
+          )}
+
+          {responseData && responseData.rows.length === 0 && (
+            <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+              No one has registered yet — once families start submitting the form, their answers show up here.
+            </div>
+          )}
+
+          {responseData && responseData.rows.length > 0 && (
+            <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
+              <table style={{ borderCollapse: 'collapse', fontSize: '12.5px', width: 'max-content', minWidth: '100%' }}>
+                <thead>
+                  <tr>
+                    {responseData.headers.map((h, i) => (
+                      <th key={i} style={{ position: 'sticky', top: 0, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '9px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredResponseRows.map((row, ri) => (
+                    <tr key={ri} style={{ borderBottom: ri < filteredResponseRows.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                      {row.map((cell, ci) => (
+                        <td key={ci} style={{ padding: '9px 14px', color: '#0F172A', whiteSpace: 'nowrap', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(cell)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Body: left nav + right panel (Form Setup tab only) */}
+      {activeTab === 'setup' && (
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
         {/* Left section list */}
@@ -576,24 +673,6 @@ export default function TryoutFormConfigPage() {
               </button>
             );
           })}
-
-          <div style={{ height: '1px', background: '#E2E8F0', margin: '12px 4px' }} />
-          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '10px' }}>Results</div>
-          <button onClick={() => { setActiveSection('responses'); if (!responseData) loadResponses(); }}
-            style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%', padding: '10px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', marginBottom: '2px',
-              background: activeSection === 'responses' ? `${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}12` : 'transparent',
-              borderLeft: activeSection === 'responses' ? `2px solid ${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}` : '2px solid transparent',
-            }}>
-            <div style={{ width: '22px', height: '22px', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px',
-              background: activeSection === 'responses' ? (club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E') : '#F1F5F9',
-              color: activeSection === 'responses' ? '#fff' : '#64748B' }}>
-              📋
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '13px', fontWeight: activeSection === 'responses' ? '700' : '500', color: activeSection === 'responses' ? '#0D1117' : '#374151', lineHeight: '1.3' }}>Responses</div>
-              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px' }}>{responseCount === null ? 'Everyone registered' : `${responseCount} registered`}</div>
-            </div>
-          </button>
         </div>
 
         {/* Right editing panel */}
@@ -756,62 +835,9 @@ export default function TryoutFormConfigPage() {
             </div>
           )}
 
-          {activeSection === 'responses' && (
-            <div>
-              {hint('One column per question on the form, one row per family — everything they answered, for quickly finding something without leaving the dashboard.')}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                <div style={{ position: 'relative', flex: 1, maxWidth: '360px' }}>
-                  <Search size={14} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input placeholder="Search any answer…" value={responseSearch} onChange={e => setResponseSearch(e.target.value)}
-                    style={{ ...inp, paddingLeft: '32px' }} />
-                </div>
-                <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: '600' }}>
-                  {responseData ? `${filteredResponseRows.length} of ${responseData.rows.length}` : ''}
-                </div>
-                <div style={{ flex: 1 }} />
-                <button onClick={exportResponsesCSV} disabled={!responseData || !responseData.rows.length}
-                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '12.5px', fontWeight: '600', color: '#374151', cursor: responseData?.rows.length ? 'pointer' : 'default', opacity: responseData?.rows.length ? 1 : 0.5 }}>
-                  <Download size={13} /> Export CSV
-                </button>
-              </div>
-
-              {loadingResponses && (
-                <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8' }}>Loading responses…</div>
-              )}
-
-              {!loadingResponses && responseData && responseData.rows.length === 0 && (
-                <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                  No one has registered yet — once families start submitting the form, their answers show up here.
-                </div>
-              )}
-
-              {!loadingResponses && responseData && responseData.rows.length > 0 && (
-                <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
-                  <table style={{ borderCollapse: 'collapse', fontSize: '12.5px', width: 'max-content', minWidth: '100%' }}>
-                    <thead>
-                      <tr>
-                        {responseData.headers.map((h, i) => (
-                          <th key={i} style={{ position: 'sticky', top: 0, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '9px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', whiteSpace: 'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredResponseRows.map((row, ri) => (
-                        <tr key={ri} style={{ borderBottom: ri < filteredResponseRows.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                          {row.map((cell, ci) => (
-                            <td key={ci} style={{ padding: '9px 14px', color: '#0F172A', whiteSpace: 'nowrap', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(cell)}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
         </div>
       </div>
+      )}
     </div>
   );
 }
