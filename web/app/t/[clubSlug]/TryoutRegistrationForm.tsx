@@ -432,6 +432,14 @@ export default function TryoutRegistrationForm({ clubSlug }: { clubSlug: string 
         club_id: clubId, player_id: playerId,
         team: 'Unassigned', status: 'Unassigned', offer_status: 'NotSent',
       });
+      // Best-effort — their registration is already saved regardless of
+      // whether this email actually goes out, so a failure here must
+      // never block the success screen or surface as an error to them.
+      fetch('/api/tryout/confirm-registration', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: playerId, club_id: clubId }),
+      }).catch((e) => console.warn('confirm-registration email failed', e));
     }
     setSubmitting(false); setSubmitted(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
-import { Plus, Printer, Search, X, Edit2, Trash2, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Printer, Search, X, Edit2, Trash2, Upload, Download, CheckCircle2, AlertCircle } from 'lucide-react';
 
 type Player = {
   id: string; first_name: string; last_name: string; date_of_birth: string | null;
@@ -34,6 +34,7 @@ export default function PlayerPoolPage() {
   const [showAdd, setShowAdd]   = useState(false);
   const [editP, setEditP]       = useState<Player | null>(null);
   const [delId, setDelId]       = useState<string | null>(null);
+  const [exporting, setExporting]           = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [printGroups, setPrintGroups]       = useState<Set<string>>(new Set());
   const [printExcludeNTR, setPrintExcludeNTR] = useState(true);
@@ -140,6 +141,70 @@ export default function PlayerPoolPage() {
     if (search) { const q = search.toLowerCase(); if (!`${p.first_name} ${p.last_name}`.toLowerCase().includes(q) && !(p.email_primary ?? '').toLowerCase().includes(q)) return false; }
     return true;
   });
+
+  // Full spreadsheet-style export — unlike the table above (a working
+  // view scoped to ranking/evaluation columns), this pulls every stored
+  // field plus one column per custom registration question, the same
+  // shape a Google Form's response sheet gives you. Runs its own fetch
+  // rather than reusing `players`/`rankings`/`assigns` state, since those
+  // are intentionally narrower selects for the table's own needs.
+  async function exportFullCSV() {
+    if (!club) return;
+    setExporting(true);
+    try {
+      const [{ data: full }, { data: asgn }, { data: fc }] = await Promise.all([
+        supabase.from('tryout_players').select('*').eq('club_id', club.id).order('last_name'),
+        supabase.from('tryout_assignments').select('player_id,team,status,offer_status').eq('club_id', club.id),
+        supabase.from('tryout_form_config').select('config_json').eq('club_id', club.id).single(),
+      ]);
+      const rows = (full ?? []) as Record<string, unknown>[];
+      if (!rows.length) { setExporting(false); return; }
+
+      const asgnByPlayer = new Map(((asgn ?? []) as { player_id: string; team: string | null; status: string; offer_status: string }[]).map(a => [a.player_id, a]));
+      const questions = ((fc?.config_json as { questions?: { id: string; label: string }[] } | null)?.questions ?? []);
+
+      const builtIn: [string, string][] = [
+        ['first_name', 'First name'], ['last_name', 'Last name'], ['date_of_birth', 'Date of birth'],
+        ['grade', 'Grade'], ['gender', 'Gender'], ['positions', 'Positions'],
+        ['parent_name', 'Parent / Guardian'], ['email_primary', 'Email'], ['email_secondary', 'Additional email'],
+        ['phone', 'Phone'], ['town', 'Town / City'], ['current_team', 'Current team'],
+        ['referral_source', 'How they heard about us'], ['season_label', 'Season'], ['source', 'Source'],
+        ['school_attending', 'School'], ['jersey_size', 'Jersey size'], ['shorts_size', 'Shorts size'],
+        ['medical_notes', 'Medical notes'], ['emergency_contact_name', 'Emergency contact'],
+        ['emergency_contact_phone', 'Emergency contact phone'], ['notes', 'Internal notes'],
+        ['created_at', 'Submitted at'],
+      ];
+
+      const headers = [
+        ...builtIn.map(([, label]) => label), 'Team', 'Status', 'Offer status',
+        ...questions.map(q => q.label),
+      ];
+
+      const csvRows = rows.map(p => {
+        const a = asgnByPlayer.get(p.id as string);
+        const builtInVals = builtIn.map(([key]) => {
+          const v = p[key];
+          if (Array.isArray(v)) return v.join(', ');
+          if (key === 'created_at' && typeof v === 'string') return new Date(v).toLocaleString('en-US');
+          return v ?? '';
+        });
+        const responses = (p.custom_responses ?? {}) as Record<string, unknown>;
+        const customVals = questions.map(q => {
+          const v = responses[q.id];
+          return Array.isArray(v) ? v.join(', ') : (v ?? '');
+        });
+        return [...builtInVals, a?.team ?? 'Unassigned', a?.status ?? 'Unassigned', a?.offer_status ?? 'NotSent', ...customVals];
+      });
+
+      const csv = [headers.join(','), ...csvRows.map(r => r.map(v => JSON.stringify(v ?? '')).join(','))].join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `${club.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-tryout-registrations-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function updateRank(pid: string, field: 'coach_rank' | 'tryout_rank', val: string) {
     const num = val === '' ? null : parseInt(val);
@@ -311,6 +376,7 @@ export default function PlayerPoolPage() {
             <select value={season} onChange={e => setSeason(e.target.value)} style={{ padding: '7px 11px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', background: '#fff', outline: 'none', cursor: 'pointer' }}>
               {seasonOptions().map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <button onClick={exportFullCSV} disabled={exporting} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 13px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', cursor: exporting ? 'default' : 'pointer', color: '#374151', fontWeight: '600', opacity: exporting ? 0.6 : 1 }}><Download size={14} /> {exporting ? 'Exporting…' : 'Export CSV'}</button>
             <button onClick={openPrintModal} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 13px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', cursor: 'pointer', color: '#374151', fontWeight: '600' }}><Printer size={14} /> Print Forms</button>
             <button onClick={() => { setShowImport(true); setImportParsed(false); setImportText(''); setImportRows([]); }} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 13px', borderRadius: '8px', border: '1px solid #6366F1', background: '#EEF2FF', fontSize: '13px', cursor: 'pointer', color: '#4338CA', fontWeight: '700' }}><Upload size={14} /> Import Rankings</button>
             <button onClick={() => { setEditP(null); setShowAdd(true); }} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', background: '#22C55E', color: '#fff', border: 'none', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}><Plus size={14} /> Add Player</button>
