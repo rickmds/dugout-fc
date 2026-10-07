@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Save, Plus, Trash2, ExternalLink, Copy, Check, Search, Download } from 'lucide-react';
+import { Save, Plus, Trash2, ExternalLink, Copy, Check, Search, Download, Edit2, X } from 'lucide-react';
 
 type Question = {
   id: string;
@@ -37,6 +37,16 @@ type FormConfig = {
 };
 
 function genId() { return Math.random().toString(36).slice(2, 9); }
+
+// One row of the Responses table. Carries the raw first/last/DOB
+// alongside the already-formatted display cells so duplicate detection
+// can match on the real values rather than re-parsing formatted text.
+type ResponseRow = {
+  id: string;
+  name: string;
+  cells: string[];
+  isDuplicate: boolean;
+};
 
 const MAROONS_DEFAULT: FormConfig = {
   formTitle: '{{clubName}} Tryout Registration',
@@ -370,9 +380,12 @@ export default function TryoutFormConfigPage() {
   const [activeTab, setActiveTab] = useState<'responses' | 'setup'>('responses');
   const [linkCopied, setLinkCopied] = useState(false);
   const [responseCount, setResponseCount] = useState<number | null>(null);
-  const [responseData, setResponseData] = useState<{ headers: string[]; rows: (string | number)[][] } | null>(null);
+  const [responseData, setResponseData] = useState<{ headers: string[]; rows: ResponseRow[] } | null>(null);
   const [loadingResponses, setLoadingResponses] = useState(false);
   const [responseSearch, setResponseSearch] = useState('');
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [deletingPlayer, setDeletingPlayer] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Raw text for the 4 comma-separated option fields, kept separate from
   // config[key] (the parsed string[]). The input's value must mirror this,
@@ -482,7 +495,7 @@ export default function TryoutFormConfigPage() {
     setLoadingResponses(true);
     const { data } = await supabase
       .from('tryout_players')
-      .select('first_name,last_name,gender,date_of_birth,grade,positions,parent_name,email_primary,phone,town,referral_source,custom_responses,created_at')
+      .select('id,first_name,last_name,gender,date_of_birth,grade,positions,parent_name,email_primary,phone,town,referral_source,custom_responses,created_at')
       .eq('club_id', club.id)
       .order('created_at', { ascending: false });
 
@@ -496,11 +509,30 @@ export default function TryoutFormConfigPage() {
 
     const cellText = (v: unknown): string => Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v));
 
-    const rows: string[][] = (data ?? []).map(p => {
-      const builtInVals = builtIn.map(([key]) => cellText((p as Record<string, unknown>)[key]));
+    const people = (data ?? []) as { id: string; first_name: string; last_name: string; date_of_birth: string | null; custom_responses: unknown; created_at: string }[];
+
+    // Duplicate = same name + same DOB, not same email — a parent can
+    // register more than one kid with the same email, so email would
+    // false-positive on siblings; requiring a real (non-null) DOB on both
+    // sides avoids flagging unrelated kids who both just left it blank.
+    const dupCounts = new Map<string, number>();
+    for (const p of people) {
+      if (!p.date_of_birth) continue;
+      const key = `${p.first_name.trim().toLowerCase()}|${p.last_name.trim().toLowerCase()}|${p.date_of_birth}`;
+      dupCounts.set(key, (dupCounts.get(key) ?? 0) + 1);
+    }
+
+    const rows: ResponseRow[] = people.map(p => {
+      const builtInVals = builtIn.map(([key]) => cellText((p as unknown as Record<string, unknown>)[key]));
       const responses = (p.custom_responses ?? {}) as Record<string, unknown>;
       const customVals = questions.map(q => cellText(responses[q.id]));
-      return [...builtInVals, ...customVals, new Date(p.created_at).toLocaleString('en-US')];
+      const key = p.date_of_birth ? `${p.first_name.trim().toLowerCase()}|${p.last_name.trim().toLowerCase()}|${p.date_of_birth}` : null;
+      return {
+        id: p.id,
+        name: `${p.first_name} ${p.last_name}`,
+        cells: [...builtInVals, ...customVals, new Date(p.created_at).toLocaleString('en-US')],
+        isDuplicate: !!key && (dupCounts.get(key) ?? 0) > 1,
+      };
     });
 
     setResponseData({ headers, rows });
@@ -509,16 +541,26 @@ export default function TryoutFormConfigPage() {
 
   function exportResponsesCSV() {
     if (!responseData || !club) return;
-    const csv = [responseData.headers.join(','), ...responseData.rows.map(r => r.map(v => JSON.stringify(v ?? '')).join(','))].join('\n');
+    const csv = [responseData.headers.join(','), ...responseData.rows.map(r => r.cells.map(v => JSON.stringify(v ?? '')).join(','))].join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     a.download = `${club.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-tryout-responses-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
   }
 
+  async function deleteResponse() {
+    if (!deletingPlayer) return;
+    setDeleting(true);
+    await supabase.from('tryout_players').delete().eq('id', deletingPlayer.id);
+    setDeleting(false);
+    setDeletingPlayer(null);
+    loadResponses(config.questions);
+    setResponseCount(c => (c ?? 1) - 1);
+  }
+
   const filteredResponseRows = responseData
     ? (responseSearch.trim()
-        ? responseData.rows.filter(r => r.some(cell => String(cell).toLowerCase().includes(responseSearch.toLowerCase())))
+        ? responseData.rows.filter(r => r.cells.some(cell => cell.toLowerCase().includes(responseSearch.toLowerCase())))
         : responseData.rows)
     : [];
 
@@ -621,11 +663,19 @@ export default function TryoutFormConfigPage() {
             </div>
           )}
 
+          {responseData && responseData.rows.some(r => r.isDuplicate) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px', fontSize: '12.5px', color: '#92400E' }}>
+              <span>⚠</span>
+              <span><strong>{responseData.rows.filter(r => r.isDuplicate).length} possible duplicate{responseData.rows.filter(r => r.isDuplicate).length !== 1 ? 's' : ''}</strong> — same first name, last name, and date of birth as another entry (highlighted below). Most likely a double-submit, but check before deleting.</span>
+            </div>
+          )}
+
           {responseData && responseData.rows.length > 0 && (
             <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
               <table style={{ borderCollapse: 'collapse', fontSize: '12.5px', width: 'max-content', minWidth: '100%' }}>
                 <thead>
                   <tr>
+                    <th style={{ position: 'sticky', top: 0, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '9px 10px', width: '64px' }} />
                     {responseData.headers.map((h, i) => (
                       <th key={i} style={{ position: 'sticky', top: 0, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '9px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
@@ -633,9 +683,16 @@ export default function TryoutFormConfigPage() {
                 </thead>
                 <tbody>
                   {filteredResponseRows.map((row, ri) => (
-                    <tr key={ri} style={{ borderBottom: ri < filteredResponseRows.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                      {row.map((cell, ci) => (
-                        <td key={ci} style={{ padding: '9px 14px', color: '#0F172A', whiteSpace: 'nowrap', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(cell)}</td>
+                    <tr key={row.id} style={{ borderBottom: ri < filteredResponseRows.length - 1 ? '1px solid #F1F5F9' : 'none', background: row.isDuplicate ? '#FFFBEB' : undefined }}>
+                      <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                        <button onClick={() => setEditingPlayerId(row.id)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: '#64748B' }}><Edit2 size={13} /></button>
+                        <button onClick={() => setDeletingPlayer({ id: row.id, name: row.name })} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: '#EF4444' }}><Trash2 size={13} /></button>
+                      </td>
+                      {row.cells.map((cell, ci) => (
+                        <td key={ci} style={{ padding: '9px 14px', color: '#0F172A', whiteSpace: 'nowrap', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {ci === 0 && row.isDuplicate && <span title="Possible duplicate" style={{ marginRight: '6px' }}>⚠</span>}
+                          {cell}
+                        </td>
                       ))}
                     </tr>
                   ))}
@@ -643,6 +700,31 @@ export default function TryoutFormConfigPage() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {editingPlayerId && (
+        <ResponseEditModal
+          playerId={editingPlayerId}
+          questions={config.questions}
+          primary={club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}
+          onClose={() => setEditingPlayerId(null)}
+          onSaved={() => { setEditingPlayerId(null); loadResponses(config.questions); }}
+        />
+      )}
+
+      {deletingPlayer && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => !deleting && setDeletingPlayer(null)}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '380px', padding: '24px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A', marginBottom: '8px' }}>Delete this registration?</div>
+            <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '22px', lineHeight: '1.6' }}>
+              <strong style={{ color: '#0F172A' }}>{deletingPlayer.name}</strong>&apos;s registration and all their answers will be permanently deleted. This can&apos;t be undone.
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setDeletingPlayer(null)} disabled={deleting} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13.5px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={deleteResponse} disabled={deleting} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: 'none', background: '#EF4444', color: '#fff', fontSize: '13.5px', fontWeight: '700', cursor: 'pointer', opacity: deleting ? 0.7 : 1 }}>{deleting ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -838,6 +920,173 @@ export default function TryoutFormConfigPage() {
         </div>
       </div>
       )}
+    </div>
+  );
+}
+
+// Fetches the real row fresh on open rather than working off the
+// already-flattened display strings in the Responses table — editing
+// needs the actual typed values back (an array for positions/multiselect,
+// a real date for date inputs), not a joined string reverse-parsed out of
+// what's shown on screen.
+type EditablePlayer = {
+  first_name: string; last_name: string; gender: string | null; date_of_birth: string | null;
+  grade: string | null; positions: string[] | null; parent_name: string | null;
+  email_primary: string | null; phone: string | null; town: string | null;
+  referral_source: string | null; custom_responses: Record<string, unknown> | null;
+};
+
+function ResponseEditModal({ playerId, questions, primary, onClose, onSaved }: {
+  playerId: string; questions: Question[]; primary: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<EditablePlayer | null>(null);
+  const [positionsText, setPositionsText] = useState('');
+
+  useEffect(() => {
+    supabase.from('tryout_players')
+      .select('first_name,last_name,gender,date_of_birth,grade,positions,parent_name,email_primary,phone,town,referral_source,custom_responses')
+      .eq('id', playerId).single()
+      .then(({ data }) => {
+        if (data) {
+          setForm(data as EditablePlayer);
+          setPositionsText((data.positions ?? []).join(', '));
+        }
+        setLoading(false);
+      });
+  }, [playerId]);
+
+  function setCustom(id: string, val: string | string[]) {
+    setForm(f => f ? { ...f, custom_responses: { ...(f.custom_responses ?? {}), [id]: val } } : f);
+  }
+
+  async function save() {
+    if (!form) return;
+    setSaving(true);
+    const positions = positionsText.split(',').map(s => s.trim()).filter(Boolean);
+    await supabase.from('tryout_players').update({
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      gender: form.gender || null,
+      date_of_birth: form.date_of_birth || null,
+      grade: form.grade || null,
+      positions: positions.length ? positions : null,
+      parent_name: form.parent_name?.trim() || null,
+      email_primary: form.email_primary?.trim() || null,
+      phone: form.phone?.trim() || null,
+      town: form.town?.trim() || null,
+      referral_source: form.referral_source || null,
+      custom_responses: form.custom_responses ?? {},
+    }).eq('id', playerId);
+    setSaving(false);
+    onSaved();
+  }
+
+  const fieldSt: React.CSSProperties = { padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box', fontFamily: 'inherit' };
+  const labelSt: React.CSSProperties = { fontSize: '11.5px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: '5px' };
+
+  function renderCustomField(q: Question) {
+    const val = form?.custom_responses?.[q.id];
+    if (q.type === 'checkbox') {
+      const checked = !!val;
+      return (
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13.5px', color: '#0F172A' }}>
+          <input type="checkbox" checked={checked} onChange={e => setCustom(q.id, e.target.checked ? 'true' : '')} />
+          {checked ? 'Yes' : 'No'}
+        </label>
+      );
+    }
+    if (q.type === 'multiselect') {
+      const sel = (Array.isArray(val) ? val : []) as string[];
+      return (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {q.options.map(opt => {
+            const on = sel.includes(opt);
+            return (
+              <button key={opt} type="button"
+                onClick={() => setCustom(q.id, on ? sel.filter(v => v !== opt) : [...sel, opt])}
+                style={{ padding: '6px 12px', borderRadius: '7px', border: `1.5px solid ${on ? primary : '#E2E8F0'}`, background: on ? `${primary}15` : '#fff', color: on ? primary : '#374151', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+    if (q.type === 'select' || q.type === 'radio') {
+      return (
+        <select value={(val as string) ?? ''} onChange={e => setCustom(q.id, e.target.value)} style={fieldSt}>
+          <option value="">Select…</option>
+          {q.options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    }
+    if (q.type === 'date') {
+      return <input type="date" value={(val as string) ?? ''} onChange={e => setCustom(q.id, e.target.value)} style={fieldSt} />;
+    }
+    if (q.type === 'textarea') {
+      return <textarea value={(val as string) ?? ''} onChange={e => setCustom(q.id, e.target.value)} rows={3} style={{ ...fieldSt, resize: 'vertical' as const }} />;
+    }
+    return <input value={(val as string) ?? ''} onChange={e => setCustom(q.id, e.target.value)} style={fieldSt} />;
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => !saving && onClose()}>
+      <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '560px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Edit registration</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#64748B" /></button>
+        </div>
+
+        {loading && <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8' }}>Loading…</div>}
+
+        {!loading && form && (
+          <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div><span style={labelSt}>First name</span><input value={form.first_name} onChange={e => setForm(f => f && { ...f, first_name: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>Last name</span><input value={form.last_name} onChange={e => setForm(f => f && { ...f, last_name: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>Gender</span>
+                <select value={form.gender ?? ''} onChange={e => setForm(f => f && { ...f, gender: e.target.value })} style={fieldSt}>
+                  <option value="">Select…</option><option value="Male">Male</option><option value="Female">Female</option>
+                </select>
+              </div>
+              <div><span style={labelSt}>Date of birth</span><input type="date" value={form.date_of_birth ?? ''} onChange={e => setForm(f => f && { ...f, date_of_birth: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>Grade</span><input value={form.grade ?? ''} onChange={e => setForm(f => f && { ...f, grade: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>Preferred position(s)</span><input value={positionsText} onChange={e => setPositionsText(e.target.value)} placeholder="GK, Forward" style={fieldSt} /></div>
+            </div>
+
+            <div style={{ height: '1px', background: '#F1F5F9' }} />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ gridColumn: '1/-1' }}><span style={labelSt}>Parent / Guardian</span><input value={form.parent_name ?? ''} onChange={e => setForm(f => f && { ...f, parent_name: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>Email</span><input type="email" value={form.email_primary ?? ''} onChange={e => setForm(f => f && { ...f, email_primary: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>Phone</span><input value={form.phone ?? ''} onChange={e => setForm(f => f && { ...f, phone: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>Town / City</span><input value={form.town ?? ''} onChange={e => setForm(f => f && { ...f, town: e.target.value })} style={fieldSt} /></div>
+              <div><span style={labelSt}>How did you hear about us?</span><input value={form.referral_source ?? ''} onChange={e => setForm(f => f && { ...f, referral_source: e.target.value })} style={fieldSt} /></div>
+            </div>
+
+            {questions.length > 0 && (
+              <>
+                <div style={{ height: '1px', background: '#F1F5F9' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {questions.map(q => (
+                    <div key={q.id}>
+                      <span style={labelSt}>{q.label}</span>
+                      {renderCustomField(q)}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={{ padding: '16px 22px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', flexShrink: 0 }}>
+          <button onClick={onClose} disabled={saving} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13.5px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={save} disabled={saving || loading} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: 'none', background: primary, color: '#fff', fontSize: '13.5px', fontWeight: '700', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
     </div>
   );
 }
