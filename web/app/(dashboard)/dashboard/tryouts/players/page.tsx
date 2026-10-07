@@ -664,12 +664,26 @@ export default function PlayerPoolPage() {
 function PlayerModal({ club, player, season: _season, seasonYear, onClose, onSaved }: { club: ClubT; player: Player | null; season: string; seasonYear: number; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({ first_name: player?.first_name ?? '', last_name: player?.last_name ?? '', date_of_birth: player?.date_of_birth ?? '', grade: player?.grade ?? '', gender: player?.gender ?? 'Male', email_primary: player?.email_primary ?? '', positions: player?.positions?.join(', ') ?? '', final_age_group: player?.final_age_group ?? '' });
   const [saving, setSaving] = useState(false);
+  // first name, last name, and DOB are required here too, matching the
+  // public registration form — this is the other path a tryout_players
+  // row can be created from (an admin adding someone directly), and
+  // duplicate detection on the Responses tab keys off exactly these
+  // three fields, so a record missing DOB can never be matched against.
+  const [errors, setErrors] = useState<{ first_name?: boolean; last_name?: boolean; date_of_birth?: boolean }>({});
   const autoAg = form.date_of_birth ? calcAgeGroup(form.date_of_birth, seasonYear) : '';
-  const inp: React.CSSProperties = { padding: '8px 11px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' };
+  const inp = (hasError?: boolean): React.CSSProperties => ({ padding: '8px 11px', borderRadius: '8px', border: `1px solid ${hasError ? '#EF4444' : '#E2E8F0'}`, fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', width: '100%', boxSizing: 'border-box' });
   const lbl = (t: string) => <label style={{ fontSize: '11.5px', fontWeight: '600', color: '#374151', display: 'block', marginBottom: '4px' }}>{t}</label>;
 
   async function save() {
-    if (!form.first_name.trim() || !club) return; setSaving(true);
+    if (!club) return;
+    const errs = {
+      first_name: !form.first_name.trim(),
+      last_name: !form.last_name.trim(),
+      date_of_birth: !form.date_of_birth,
+    };
+    setErrors(errs);
+    if (errs.first_name || errs.last_name || errs.date_of_birth) return;
+    setSaving(true);
     const payload = { club_id: club.id, first_name: form.first_name.trim(), last_name: form.last_name.trim(), date_of_birth: form.date_of_birth || null, grade: form.grade || null, gender: form.gender, email_primary: form.email_primary || null, positions: form.positions ? form.positions.split(',').map(s => s.trim()).filter(Boolean) : [], final_age_group: form.final_age_group || autoAg || null };
     if (player) { await supabase.from('tryout_players').update(payload).eq('id', player.id); }
     else {
@@ -687,18 +701,18 @@ function PlayerModal({ club, player, season: _season, seasonYear, onClose, onSav
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#64748B" /></button>
         </div>
         <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div>{lbl('First name *')}<input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} style={inp} /></div>
-          <div>{lbl('Last name')}<input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} style={inp} /></div>
-          <div>{lbl('Date of birth')}<input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value, final_age_group: '' }))} style={inp} /></div>
-          <div>{lbl(`Age group${autoAg ? ` (auto: ${autoAg})` : ''}`)}<input value={form.final_age_group} onChange={e => setForm(f => ({ ...f, final_age_group: e.target.value }))} placeholder={autoAg || 'e.g. U10'} style={inp} /></div>
-          <div>{lbl('Gender')}<select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} style={inp}><option>Male</option><option>Female</option></select></div>
-          <div>{lbl('Grade')}<input value={form.grade} onChange={e => setForm(f => ({ ...f, grade: e.target.value }))} placeholder="3rd" style={inp} /></div>
-          <div style={{ gridColumn: '1/-1' }}>{lbl('Email')}<input type="email" value={form.email_primary} onChange={e => setForm(f => ({ ...f, email_primary: e.target.value }))} style={inp} /></div>
-          <div style={{ gridColumn: '1/-1' }}>{lbl('Positions (comma-separated)')}<input value={form.positions} onChange={e => setForm(f => ({ ...f, positions: e.target.value }))} placeholder="GK, CB, CM" style={inp} /></div>
+          <div>{lbl('First name *')}<input value={form.first_name} onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} style={inp(errors.first_name)} />{errors.first_name && <div style={{ fontSize: '11px', color: '#EF4444', marginTop: '3px' }}>Required</div>}</div>
+          <div>{lbl('Last name *')}<input value={form.last_name} onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} style={inp(errors.last_name)} />{errors.last_name && <div style={{ fontSize: '11px', color: '#EF4444', marginTop: '3px' }}>Required</div>}</div>
+          <div>{lbl('Date of birth *')}<input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value, final_age_group: '' }))} style={inp(errors.date_of_birth)} />{errors.date_of_birth && <div style={{ fontSize: '11px', color: '#EF4444', marginTop: '3px' }}>Required — also used to catch duplicate registrations</div>}</div>
+          <div>{lbl(`Age group${autoAg ? ` (auto: ${autoAg})` : ''}`)}<input value={form.final_age_group} onChange={e => setForm(f => ({ ...f, final_age_group: e.target.value }))} placeholder={autoAg || 'e.g. U10'} style={inp()} /></div>
+          <div>{lbl('Gender')}<select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} style={inp()}><option>Male</option><option>Female</option></select></div>
+          <div>{lbl('Grade')}<input value={form.grade} onChange={e => setForm(f => ({ ...f, grade: e.target.value }))} placeholder="3rd" style={inp()} /></div>
+          <div style={{ gridColumn: '1/-1' }}>{lbl('Email')}<input type="email" value={form.email_primary} onChange={e => setForm(f => ({ ...f, email_primary: e.target.value }))} style={inp()} /></div>
+          <div style={{ gridColumn: '1/-1' }}>{lbl('Positions (comma-separated)')}<input value={form.positions} onChange={e => setForm(f => ({ ...f, positions: e.target.value }))} placeholder="GK, CB, CM" style={inp()} /></div>
         </div>
         <div style={{ padding: '14px 22px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end', gap: '10px', flexShrink: 0 }}>
           <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13.5px', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={save} disabled={saving || !form.first_name.trim()} style={{ padding: '9px 18px', borderRadius: '9px', background: '#22C55E', color: '#fff', border: 'none', fontSize: '13.5px', fontWeight: '600', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
+          <button onClick={save} disabled={saving} style={{ padding: '9px 18px', borderRadius: '9px', background: '#22C55E', color: '#fff', border: 'none', fontSize: '13.5px', fontWeight: '600', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>

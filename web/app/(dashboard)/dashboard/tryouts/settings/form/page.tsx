@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Save, Plus, Trash2, ExternalLink, Copy, Check, Search, Download, Edit2, X } from 'lucide-react';
+import { Save, Plus, Trash2, ExternalLink, Copy, Check, Search, Download, Edit2, X, Merge } from 'lucide-react';
 
 type Question = {
   id: string;
@@ -46,6 +46,7 @@ type ResponseRow = {
   name: string;
   cells: string[];
   isDuplicate: boolean;
+  dupKey: string | null;
 };
 
 const MAROONS_DEFAULT: FormConfig = {
@@ -385,6 +386,7 @@ export default function TryoutFormConfigPage() {
   const [responseSearch, setResponseSearch] = useState('');
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [deletingPlayer, setDeletingPlayer] = useState<{ id: string; name: string } | null>(null);
+  const [mergingIds, setMergingIds] = useState<string[] | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   // Raw text for the 4 comma-separated option fields, kept separate from
@@ -527,11 +529,13 @@ export default function TryoutFormConfigPage() {
       const responses = (p.custom_responses ?? {}) as Record<string, unknown>;
       const customVals = questions.map(q => cellText(responses[q.id]));
       const key = p.date_of_birth ? `${p.first_name.trim().toLowerCase()}|${p.last_name.trim().toLowerCase()}|${p.date_of_birth}` : null;
+      const isDup = !!key && (dupCounts.get(key) ?? 0) > 1;
       return {
         id: p.id,
         name: `${p.first_name} ${p.last_name}`,
         cells: [...builtInVals, ...customVals, new Date(p.created_at).toLocaleString('en-US')],
-        isDuplicate: !!key && (dupCounts.get(key) ?? 0) > 1,
+        isDuplicate: isDup,
+        dupKey: isDup ? key : null,
       };
     });
 
@@ -687,6 +691,9 @@ export default function TryoutFormConfigPage() {
                       <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                         <button onClick={() => setEditingPlayerId(row.id)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: '#64748B' }}><Edit2 size={13} /></button>
                         <button onClick={() => setDeletingPlayer({ id: row.id, name: row.name })} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: '#EF4444' }}><Trash2 size={13} /></button>
+                        {row.isDuplicate && (
+                          <button onClick={() => setMergingIds(responseData.rows.filter(r => r.dupKey === row.dupKey).map(r => r.id))} title="Merge duplicates" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '3px', color: '#D97706' }}><Merge size={13} /></button>
+                        )}
                       </td>
                       {row.cells.map((cell, ci) => (
                         <td key={ci} style={{ padding: '9px 14px', color: '#0F172A', whiteSpace: 'nowrap', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -726,6 +733,16 @@ export default function TryoutFormConfigPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {mergingIds && (
+        <MergeModal
+          playerIds={mergingIds}
+          questions={config.questions}
+          primary={club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}
+          onClose={() => setMergingIds(null)}
+          onMerged={() => { setMergingIds(null); loadResponses(config.questions); setResponseCount(c => (c ?? mergingIds.length) - (mergingIds.length - 1)); }}
+        />
       )}
 
       {/* Body: left nav + right panel (Form Setup tab only) */}
@@ -1085,6 +1102,192 @@ function ResponseEditModal({ playerId, questions, primary, onClose, onSaved }: {
         <div style={{ padding: '16px 22px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', flexShrink: 0 }}>
           <button onClick={onClose} disabled={saving} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13.5px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
           <button onClick={save} disabled={saving || loading} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: 'none', background: primary, color: '#fff', fontSize: '13.5px', fontWeight: '700', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type MergeContext = { team: string; offerStatus: string; rank: number | null };
+type MergeField = { key: string; label: string; isCustom: boolean; values: { playerId: string; raw: unknown; display: string }[]; differs: boolean };
+
+function MergeModal({ playerIds, questions, primary, onClose, onMerged }: {
+  playerIds: string[]; questions: Question[]; primary: string; onClose: () => void; onMerged: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [merging, setMerging] = useState(false);
+  const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [context, setContext] = useState<Map<string, MergeContext>>(new Map());
+  const [primaryId, setPrimaryId] = useState<string | null>(null);
+  const [choices, setChoices] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: players }, { data: assignments }, { data: rankings }] = await Promise.all([
+        supabase.from('tryout_players').select('*').in('id', playerIds),
+        supabase.from('tryout_assignments').select('player_id,team,status,offer_status').in('player_id', playerIds),
+        supabase.from('tryout_rankings').select('player_id,coach_rank,tryout_rank').in('player_id', playerIds),
+      ]);
+      const recs = (players ?? []) as Record<string, unknown>[];
+      setRecords(recs);
+
+      const ctx = new Map<string, MergeContext>();
+      for (const a of (assignments ?? []) as { player_id: string; team: string | null; offer_status: string }[]) {
+        ctx.set(a.player_id, { team: a.team ?? 'Unassigned', offerStatus: a.offer_status, rank: null });
+      }
+      for (const r of (rankings ?? []) as { player_id: string; coach_rank: number | null; tryout_rank: number | null }[]) {
+        const existing = ctx.get(r.player_id) ?? { team: 'Unassigned', offerStatus: 'NotSent', rank: null };
+        existing.rank = r.tryout_rank ?? r.coach_rank ?? null;
+        ctx.set(r.player_id, existing);
+      }
+      setContext(ctx);
+
+      // Default survivor: whichever record already has real admin work
+      // attached (a team, a sent/accepted offer, or a rank) — losing that
+      // silently would be worse than losing a field value, since every
+      // field below can still be cherry-picked from the other record
+      // regardless of which one survives.
+      const scored = recs.map(r => {
+        const id = r.id as string;
+        const c = ctx.get(id);
+        const score = (c && c.team !== 'Unassigned' ? 2 : 0) + (c && c.offerStatus !== 'NotSent' ? 2 : 0) + (c?.rank != null ? 1 : 0);
+        return { id, score, created_at: r.created_at as string };
+      }).sort((a, b) => b.score - a.score || (a.created_at < b.created_at ? -1 : 1));
+      setPrimaryId(scored[0]?.id ?? (recs[0]?.id as string) ?? null);
+      setLoading(false);
+    })();
+  }, [playerIds]);
+
+  const cellText = (v: unknown): string => Array.isArray(v) ? v.join(', ') : (v == null || v === '' ? '—' : String(v));
+
+  const builtIn: [string, string][] = [
+    ['first_name', 'First name'], ['last_name', 'Last name'], ['gender', 'Gender'],
+    ['date_of_birth', 'Date of birth'], ['grade', 'Grade'], ['positions', 'Preferred position(s)'],
+    ['parent_name', 'Parent / Guardian'], ['email_primary', 'Email'], ['phone', 'Phone'],
+    ['town', 'Town / City'], ['referral_source', 'How did you hear about us?'],
+  ];
+
+  const fields: MergeField[] = records.length ? [
+    ...builtIn.map(([key, label]) => {
+      const values = records.map(r => ({ playerId: r.id as string, raw: r[key], display: cellText(r[key]) }));
+      return { key, label, isCustom: false, values, differs: new Set(values.map(v => v.display)).size > 1 };
+    }),
+    ...questions.map(q => {
+      const values = records.map(r => {
+        const cr = (r.custom_responses ?? {}) as Record<string, unknown>;
+        return { playerId: r.id as string, raw: cr[q.id], display: cellText(cr[q.id]) };
+      });
+      return { key: q.id, label: q.label, isCustom: true, values, differs: new Set(values.map(v => v.display)).size > 1 };
+    }),
+  ] : [];
+
+  const conflicts = fields.filter(f => f.differs);
+
+  function choiceFor(f: MergeField): string {
+    return choices[f.key] ?? primaryId ?? f.values[0]?.playerId;
+  }
+
+  async function doMerge() {
+    if (!primaryId) return;
+    setMerging(true);
+    const primaryRecord = records.find(r => r.id === primaryId);
+    const updatePayload: Record<string, unknown> = {};
+    // Start from the surviving record's own custom_responses so any
+    // answer to a since-removed question (not shown or pickable here)
+    // is preserved rather than silently dropped, then overlay the
+    // fields this modal actually lets the admin choose between.
+    const customPayload: Record<string, unknown> = { ...((primaryRecord?.custom_responses as Record<string, unknown>) ?? {}) };
+    for (const f of fields) {
+      const chosenId = choiceFor(f);
+      const chosen = f.values.find(v => v.playerId === chosenId);
+      if (!chosen) continue;
+      if (f.isCustom) customPayload[f.key] = chosen.raw;
+      else updatePayload[f.key] = chosen.raw;
+    }
+    updatePayload.custom_responses = customPayload;
+
+    await supabase.from('tryout_players').update(updatePayload).eq('id', primaryId);
+    const toDelete = playerIds.filter(id => id !== primaryId);
+    if (toDelete.length) await supabase.from('tryout_players').delete().in('id', toDelete);
+    setMerging(false);
+    onMerged();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: '24px' }} onClick={() => !merging && onClose()}>
+      <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '680px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>Merge duplicate registrations</div>
+            <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>Pick which entry to keep, resolve anything that&apos;s different, then the others are deleted.</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={16} color="#64748B" /></button>
+        </div>
+
+        {loading && <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8' }}>Loading…</div>}
+
+        {!loading && (
+          <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+            <div>
+              <div style={{ fontSize: '11.5px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '8px' }}>Which one survives?</div>
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${records.length}, 1fr)`, gap: '10px' }}>
+                {records.map(r => {
+                  const id = r.id as string;
+                  const c = context.get(id);
+                  const isPrimary = primaryId === id;
+                  return (
+                    <button key={id} onClick={() => setPrimaryId(id)}
+                      style={{ textAlign: 'left', padding: '12px 14px', borderRadius: '10px', border: `1.5px solid ${isPrimary ? primary : '#E2E8F0'}`, background: isPrimary ? `${primary}0c` : '#fff', cursor: 'pointer' }}>
+                      <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0F172A', marginBottom: '4px' }}>
+                        {isPrimary && '✓ '}Submitted {new Date(r.created_at as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: '#64748B', lineHeight: '1.6' }}>
+                        Team: {c?.team ?? 'Unassigned'}<br />
+                        Offer: {c?.offerStatus ?? 'NotSent'}<br />
+                        Rank: {c?.rank ?? '—'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {conflicts.length === 0 ? (
+              <div style={{ fontSize: '13px', color: '#64748B', background: '#F8FAFC', borderRadius: '8px', padding: '14px' }}>
+                Every field matches — nothing to resolve. Confirm which one to keep above, then merge.
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: '11.5px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '8px' }}>
+                  {conflicts.length} field{conflicts.length !== 1 ? 's' : ''} don&apos;t match — pick which to keep
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {conflicts.map(f => (
+                    <div key={f.key} style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '10px 12px' }}>
+                      <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0F172A', marginBottom: '7px' }}>{f.label}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${f.values.length}, 1fr)`, gap: '8px' }}>
+                        {f.values.map(v => {
+                          const selected = choiceFor(f) === v.playerId;
+                          return (
+                            <button key={v.playerId} onClick={() => setChoices(c => ({ ...c, [f.key]: v.playerId }))}
+                              style={{ textAlign: 'left', padding: '8px 10px', borderRadius: '8px', border: `1.5px solid ${selected ? primary : '#E2E8F0'}`, background: selected ? `${primary}0c` : '#FCFCFD', cursor: 'pointer', fontSize: '12.5px', color: '#0F172A' }}>
+                              {v.display}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ padding: '16px 22px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', flexShrink: 0 }}>
+          <button onClick={onClose} disabled={merging} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13.5px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={doMerge} disabled={merging || loading || !primaryId} style={{ flex: 1, padding: '10px', borderRadius: '9px', border: 'none', background: primary, color: '#fff', fontSize: '13.5px', fontWeight: '700', cursor: 'pointer', opacity: merging ? 0.7 : 1 }}>{merging ? 'Merging…' : `Merge into one`}</button>
         </div>
       </div>
     </div>
