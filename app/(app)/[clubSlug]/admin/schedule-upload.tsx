@@ -248,21 +248,30 @@ export default function ScheduleUploadScreen() {
 
     if ((file.size ?? 0) > 20 * 1024 * 1024) { Alert.alert('File too large', 'Maximum 20 MB.'); return; }
     const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-    await parseSchedule(base64, file.mimeType ?? 'text/plain');
+    await parseSchedule([{ file_base64: base64, file_type: file.mimeType ?? 'text/plain' }]);
   }
 
   async function pickImage() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo access in Settings.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9, base64: true });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    if (!asset.base64) { Alert.alert('Error', "Couldn't read that photo — try picking it again or use a different one."); return; }
-    const ext = asset.uri.split('.').pop() ?? 'jpg';
-    await parseSchedule(asset.base64, ext === 'png' ? 'image/png' : 'image/jpeg');
+    // A long schedule often doesn't fit in one screenshot — up to 6 photos
+    // get sent together so the AI can read them as one continuous document.
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9, base64: true,
+      allowsMultipleSelection: true, selectionLimit: 6,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const files: { file_base64: string; file_type: string }[] = [];
+    for (const asset of result.assets) {
+      if (!asset.base64) continue;
+      const ext = asset.uri.split('.').pop() ?? 'jpg';
+      files.push({ file_base64: asset.base64, file_type: ext === 'png' ? 'image/png' : 'image/jpeg' });
+    }
+    if (!files.length) { Alert.alert('Error', "Couldn't read those photos — try picking them again or use different ones."); return; }
+    await parseSchedule(files);
   }
 
-  async function parseSchedule(file_base64: string, file_type: string) {
+  async function parseSchedule(files: { file_base64: string; file_type: string }[]) {
     setPhase('processing');
 
     // 40s timeout on the AI parse — without one, a slow/flaky connection
@@ -271,17 +280,19 @@ export default function ScheduleUploadScreen() {
     const AI_PARSE_TIMEOUT_MS = 40_000;
     const [invokeResult, existingRes] = await Promise.all([
       withTimeout(
-        supabase.functions.invoke('parse-schedule', { body: { file_base64, file_type, context: tournamentId ? 'tournament' : undefined } }),
+        supabase.functions.invoke('parse-schedule', { body: { files, context: tournamentId ? 'tournament' : undefined } }),
         AI_PARSE_TIMEOUT_MS
       ),
       // Scoped to the same context being imported into — a tournament game
       // on the same date as an unrelated team event (or a second same-day
       // pool-play game) must not false-positive as a duplicate of it.
+      // event_time is part of the match: two games on the same day at
+      // different times are two different games, not a duplicate.
       team
         ? (tournamentId
-            ? supabase.from('events').select('event_date, type').eq('team_id', team.id).eq('tournament_id', tournamentId)
-            : supabase.from('events').select('event_date, type').eq('team_id', team.id).is('tournament_id', null))
-        : Promise.resolve({ data: [] as { event_date: string; type: string }[] }),
+            ? supabase.from('events').select('event_date, type, event_time').eq('team_id', team.id).eq('tournament_id', tournamentId)
+            : supabase.from('events').select('event_date, type, event_time').eq('team_id', team.id).is('tournament_id', null))
+        : Promise.resolve({ data: [] as { event_date: string; type: string; event_time: string | null }[] }),
     ]);
 
     if (invokeResult === TIMEOUT) {
@@ -301,9 +312,11 @@ export default function ScheduleUploadScreen() {
       return;
     }
 
-    // Build a set of existing date+type keys for duplicate detection
+    // Build a set of existing date+type+time keys for duplicate detection.
+    // event_time comes back from Postgres as "HH:MM:SS" — sliced to
+    // "HH:MM" to match the AI-parsed side's normalized format below.
     const existingKeys = new Set(
-      ((existingRes as any).data ?? []).map((e: { event_date: string; type: string }) => `${e.event_date}_${e.type}`)
+      ((existingRes as any).data ?? []).map((e: { event_date: string; type: string; event_time: string | null }) => `${e.event_date}_${e.type}_${(e.event_time ?? '').slice(0, 5)}`)
     );
 
     // Fetched fresh here (rather than trusting state set by the mount-time
@@ -318,7 +331,11 @@ export default function ScheduleUploadScreen() {
 
     const parsed: ParsedEvent[] = (invokeRes.data.events ?? []).map((e: any, i: number) => {
       const type = (['game', 'training', 'other'].includes(e.type) ? e.type : 'other') as EventType;
-      const key = e.date ? `${e.date}_${type}` : null;
+      // Same normalization as the import step below (parseFlexibleTime +
+      // toTimeString) so "2:30 PM" and "14:30" key the same way, and two
+      // games on the same day at different times never collide.
+      const normalizedTime = e.time ? (() => { const p = parseFlexibleTime(e.time); return p ? toTimeString(p) : ''; })() : '';
+      const key = e.date ? `${e.date}_${type}_${normalizedTime}` : null;
       const isDuplicate = !!key && existingKeys.has(key);
       // Only checked against the DB before, so two rows the AI parsed
       // twice from the same upload (same date+type) both came back

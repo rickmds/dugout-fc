@@ -13,26 +13,37 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), { status: 500, headers: CORS });
   }
 
-  const { file_base64, file_type, context } = await req.json();
-  if (!file_base64 || !file_type) {
-    return new Response(JSON.stringify({ error: 'file_base64 and file_type required' }), { status: 400, headers: CORS });
+  const { files, context } = await req.json();
+  if (!Array.isArray(files) || files.length === 0) {
+    return new Response(JSON.stringify({ error: 'files (non-empty array) required' }), { status: 400, headers: CORS });
   }
   const isTournament = context === 'tournament';
 
-  // Build content array based on file type
+  // Build content array — one block per file, so e.g. several screenshots
+  // that together cover a long schedule all land in the same Claude message.
   const userContent: unknown[] = [];
 
-  if (file_type.startsWith('image/')) {
-    const validImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    const mediaType = validImageTypes.includes(file_type) ? file_type : 'image/jpeg';
-    userContent.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: file_base64 } });
-  } else if (file_type === 'application/pdf') {
-    userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: file_base64 } });
-  } else {
-    // CSV / plain text — decode base64 to raw text
-    const raw = atob(file_base64);
-    userContent.push({ type: 'text', text: `Schedule data:\n\n${raw}` });
+  for (const { file_base64, file_type } of files) {
+    if (!file_base64 || !file_type) continue;
+    if (file_type.startsWith('image/')) {
+      const validImageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      const mediaType = validImageTypes.includes(file_type) ? file_type : 'image/jpeg';
+      userContent.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: file_base64 } });
+    } else if (file_type === 'application/pdf') {
+      userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: file_base64 } });
+    } else {
+      // CSV / plain text — decode base64 to raw text
+      const raw = atob(file_base64);
+      userContent.push({ type: 'text', text: `Schedule data:\n\n${raw}` });
+    }
   }
+  if (userContent.length === 0) {
+    return new Response(JSON.stringify({ error: 'no readable files provided' }), { status: 400, headers: CORS });
+  }
+
+  const multiFilePreamble = files.length > 1
+    ? `You were given ${files.length} files/images above — together they make up ONE schedule (e.g. multiple screenshots needed to capture a long list, or multiple pages of a bracket). Combine them into a single unified list of events. If the same game appears in more than one file because the screenshots overlap, include it only once.\n\n`
+    : '';
 
   const tournamentPreamble = isTournament
     ? `This is a TOURNAMENT schedule (weekend pool play / bracket, or a single knockout round) — not a regular season schedule. Expect: multiple games in one or two days, a court/field NUMBER rather than a full street address, and opponents that may only be knowable after pool play (e.g. "Winner of Pool A", "TBD"). Extract round_label for every game.\n\n`
@@ -44,7 +55,7 @@ serve(async (req) => {
 
   userContent.push({
     type: 'text',
-    text: `${tournamentPreamble}Extract all soccer schedule events from this document. Return ONLY a valid JSON object — no markdown, no explanation.
+    text: `${multiFilePreamble}${tournamentPreamble}Extract all soccer schedule events from this document. Return ONLY a valid JSON object — no markdown, no explanation.
 
 Required structure:
 {
