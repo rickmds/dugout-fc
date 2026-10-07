@@ -21,8 +21,12 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-type FormQuestion = { id: string; label: string };
-type FormConfigJson = { questions?: FormQuestion[]; seasonLabel?: string; locationText?: string };
+type FormQuestion = { id: string; label: string; fieldKey?: string };
+type FormConfigJson = {
+  questions?: FormQuestion[]; seasonLabel?: string;
+  locationText?: string; sessionScheduleText?: string;
+  importantInfoText?: string; offerTimelineText?: string; contactText?: string;
+};
 
 // Triggered by the public registration form right after a successful
 // submit (no auth — same "anonymous public POST" shape as /api/contact).
@@ -51,37 +55,32 @@ export async function POST(req: NextRequest) {
   const clubColor = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
   const config = (fc?.config_json ?? null) as FormConfigJson | null;
 
-  const rows: { label: string; value: string }[] = [];
-  rows.push({ label: 'Player', value: `${player.first_name} ${player.last_name}` });
-  if (player.date_of_birth) {
-    rows.push({ label: 'Date of birth', value: new Date(`${player.date_of_birth}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) });
-  }
-  if (player.grade) rows.push({ label: 'Grade', value: player.grade });
-  if (player.gender) rows.push({ label: 'Gender', value: player.gender });
-  if (player.positions?.length) rows.push({ label: 'Preferred position(s)', value: player.positions.join(', ') });
-  rows.push({ label: 'Parent / Guardian', value: player.parent_name ?? '' });
-  if (player.email_primary) rows.push({ label: 'Email', value: player.email_primary });
-  if (player.email_secondary) rows.push({ label: 'Additional email', value: player.email_secondary });
-  if (player.phone) rows.push({ label: 'Phone', value: player.phone });
-  if (player.town) rows.push({ label: 'Town / City', value: player.town });
-  if (player.current_team) rows.push({ label: 'Current team', value: player.current_team });
-  if (player.referral_source) rows.push({ label: 'How they heard about us', value: player.referral_source });
-
-  // Custom questions, in the club's own question order, labeled with
-  // each question's current text (same "label is live, not frozen at
-  // submission time" behavior as the Google-Forms-style export).
+  // "When" prefers the specific date/session the family actually picked
+  // (the "which tryout date" custom question, if the club uses one) over
+  // the club's general schedule blurb — more specific beats more generic.
   const responses = (player.custom_responses ?? {}) as Record<string, unknown>;
-  for (const q of config?.questions ?? []) {
-    const val = responses[q.id];
-    if (val == null || val === '' || (Array.isArray(val) && val.length === 0)) continue;
-    rows.push({ label: q.label, value: Array.isArray(val) ? val.join(', ') : String(val) });
-  }
+  const tryoutDateQ = (config?.questions ?? []).find(q => q.fieldKey === 'tryout_date');
+  const pickedDate = tryoutDateQ ? responses[tryoutDateQ.id] : undefined;
+  const whenValue = (typeof pickedDate === 'string' && pickedDate.trim()) ? pickedDate : (config?.sessionScheduleText ?? '');
 
-  const rowsHtml = rows.map(r => `
+  const details: { icon: string; label: string; value: string }[] = [];
+  if (whenValue) details.push({ icon: '📅', label: 'When', value: whenValue });
+  if (config?.locationText) details.push({ icon: '📍', label: 'Where', value: config.locationText });
+  if (config?.importantInfoText) details.push({ icon: '🎒', label: 'What to bring', value: config.importantInfoText });
+  if (config?.offerTimelineText) details.push({ icon: '📬', label: "What's next", value: config.offerTimelineText });
+  if (config?.contactText) details.push({ icon: '📞', label: 'Questions?', value: config.contactText });
+
+  const detailsHtml = details.length ? details.map(d => `
     <tr>
-      <td style="padding:11px 18px;border-bottom:1px solid #F1F5F9;font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.04em;width:38%;vertical-align:top;">${esc(r.label)}</td>
-      <td style="padding:11px 18px;border-bottom:1px solid #F1F5F9;font-size:14px;color:#0F172A;font-weight:600;">${esc(r.value)}</td>
-    </tr>`).join('');
+      <td style="padding:14px 18px;border-bottom:1px solid #F1F5F9;width:34px;vertical-align:top;font-size:17px;">${d.icon}</td>
+      <td style="padding:14px 18px 14px 0;border-bottom:1px solid #F1F5F9;">
+        <div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px;">${esc(d.label)}</div>
+        <div style="font-size:14px;color:#0F172A;font-weight:600;line-height:1.55;white-space:pre-line;">${esc(d.value)}</div>
+      </td>
+    </tr>`).join('') : `
+    <tr><td style="padding:16px 18px;" colspan="2">
+      <div style="font-size:14px;color:#64748B;">We'll follow up soon with the session date, time, and everything else you need to know.</div>
+    </td></tr>`;
 
   const seasonSuffix = config?.seasonLabel ? ` ${esc(config.seasonLabel)}` : '';
 
@@ -100,19 +99,20 @@ export async function POST(req: NextRequest) {
         </td></tr>
 
         <tr><td style="background:#fff;border:1px solid #E2E8F0;border-top:none;border-radius:0 0 18px 18px;overflow:hidden;">
-          <div style="padding:26px 32px 6px;">
-            <p style="margin:0;font-size:15px;color:#334155;line-height:1.6;">
-              Thanks — we've got ${esc(player.first_name)}'s registration. Here's what was submitted:
+          <div style="padding:28px 32px 8px;">
+            <div style="font-size:18px;font-weight:800;color:#0F172A;letter-spacing:-0.01em;margin-bottom:6px;">You're registered! ⚽</div>
+            <p style="margin:0;font-size:14.5px;color:#334155;line-height:1.6;">
+              We've got ${esc(player.first_name)}'s tryout registration for ${esc(clubName)}. Here's what to know before the big day:
             </p>
           </div>
           <div style="padding:16px 14px 6px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #F1F5F9;border-radius:10px;overflow:hidden;">
-              ${rowsHtml}
+              ${detailsHtml}
             </table>
           </div>
           <div style="padding:20px 32px 30px;">
             <p style="margin:0;font-size:13px;color:#64748B;line-height:1.65;">
-              ${config?.locationText ? `${esc(config.locationText)}<br/><br/>` : ''}If anything above needs correcting, just reply to this email.
+              Questions, or need to update anything? Just reply to this email.
             </p>
           </div>
         </td></tr>
