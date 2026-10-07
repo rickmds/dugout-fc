@@ -429,9 +429,18 @@ function TryoutFormContent() {
   const f = config;
   const resolvedTitle = f?.formTitle ? fill(f.formTitle, clubName) : `${clubName} Tryout Registration`;
   const allQuestions = (f?.questions ?? []).map(q => fillQ(q, clubName));
-  const firstQuestion = allQuestions[0] ?? null;
+  // Pinned by fieldKey, not array position — an admin reordering custom
+  // questions in the settings editor (move up/down) must not relocate
+  // these two to wherever they land in the list. "Which tryout date"
+  // belongs above Step 1 (it's the first thing to commit to); "Additional
+  // Parent / Guardian Email" belongs with the Parent/Guardian step, not
+  // floating alone above Player Information.
+  const firstQuestion = allQuestions.find(q => q.fieldKey === 'tryout_date') ?? null;
+  const secondaryEmailQuestion = allQuestions.find(q => q.fieldKey === 'email_secondary') ?? null;
   // Separate agreement checkboxes from remaining questions so they go at the very end
-  const midQuestions = allQuestions.slice(1).filter(q => q.type !== 'checkbox');
+  const midQuestions = allQuestions.filter(q =>
+    q.id !== firstQuestion?.id && q.id !== secondaryEmailQuestion?.id && q.type !== 'checkbox'
+  );
   const agreements = allQuestions.filter(q => q.type === 'checkbox');
 
   return (
@@ -568,6 +577,9 @@ function TryoutFormContent() {
                     <Input value={town} onChange={setTown} />
                   </Field>
                 </FieldRow>
+                {secondaryEmailQuestion && (
+                  <QuestionField q={secondaryEmailQuestion} value={customResponses[secondaryEmailQuestion.id]} onChange={setCustom} error={errors[secondaryEmailQuestion.id]} color={clubColor} />
+                )}
               </div>
             </SectionCard>
 
