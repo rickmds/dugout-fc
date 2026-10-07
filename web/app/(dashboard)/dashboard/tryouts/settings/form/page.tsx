@@ -365,11 +365,34 @@ export default function TryoutFormConfigPage() {
   const [saved, setSaved] = useState(false);
   const [activeSection, setActiveSection] = useState<'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success'>('header');
 
+  // Raw text for the 4 comma-separated option fields, kept separate from
+  // config[key] (the parsed string[]). The input's value must mirror this,
+  // not a `.join(', ')` of the parsed array — reconstructing the string
+  // from the array on every keystroke snaps a just-typed trailing comma
+  // (or consecutive commas) back out before a second item can be typed,
+  // since split(',').filter(Boolean) has already dropped the empty token
+  // it produces.
+  const [rawOptionText, setRawOptionText] = useState<Record<string, string>>({
+    gradeOptions: MAROONS_DEFAULT.gradeOptions.join(', '),
+    positionOptions: MAROONS_DEFAULT.positionOptions.join(', '),
+    referralOptions: MAROONS_DEFAULT.referralOptions.join(', '),
+    jerseySizeOptions: MAROONS_DEFAULT.jerseySizeOptions.join(', '),
+  });
+
   useEffect(() => {
     if (!club) return;
     supabase.from('tryout_form_config').select('*').eq('club_id', club.id).single()
       .then(({ data }) => {
-        if (data?.config_json) setConfig({ ...MAROONS_DEFAULT, ...data.config_json });
+        if (data?.config_json) {
+          const merged: FormConfig = { ...MAROONS_DEFAULT, ...data.config_json };
+          setConfig(merged);
+          setRawOptionText({
+            gradeOptions: merged.gradeOptions.join(', '),
+            positionOptions: merged.positionOptions.join(', '),
+            referralOptions: merged.referralOptions.join(', '),
+            jerseySizeOptions: merged.jerseySizeOptions.join(', '),
+          });
+        }
       });
   }, [club]);
 
@@ -561,8 +584,12 @@ export default function TryoutFormConfigPage() {
                     {lbl(label, 'Comma-separated list')}
                     <input
                       placeholder={placeholder}
-                      value={(config[key] as string[]).join(', ')}
-                      onChange={e => setConfig(c => ({ ...c, [key]: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))}
+                      value={rawOptionText[key] ?? ''}
+                      onChange={e => {
+                        const raw = e.target.value;
+                        setRawOptionText(r => ({ ...r, [key]: raw }));
+                        setConfig(c => ({ ...c, [key]: raw.split(',').map(s => s.trim()).filter(Boolean) }));
+                      }}
                       style={inp}
                     />
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
