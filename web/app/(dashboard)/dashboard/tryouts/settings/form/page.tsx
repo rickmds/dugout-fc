@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
-import { Save, Plus, Trash2, ExternalLink, Copy, Check } from 'lucide-react';
+import { Save, Plus, Trash2, ExternalLink, Copy, Check, Search, Download } from 'lucide-react';
 
 type Question = {
   id: string;
@@ -363,8 +363,12 @@ export default function TryoutFormConfigPage() {
   const [config, setConfig] = useState<FormConfig>(MAROONS_DEFAULT);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [activeSection, setActiveSection] = useState<'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success'>('header');
+  const [activeSection, setActiveSection] = useState<'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'responses'|'success'>('header');
   const [linkCopied, setLinkCopied] = useState(false);
+  const [responseCount, setResponseCount] = useState<number | null>(null);
+  const [responseData, setResponseData] = useState<{ headers: string[]; rows: (string | number)[][] } | null>(null);
+  const [loadingResponses, setLoadingResponses] = useState(false);
+  const [responseSearch, setResponseSearch] = useState('');
 
   // Raw text for the 4 comma-separated option fields, kept separate from
   // config[key] (the parsed string[]). The input's value must mirror this,
@@ -395,6 +399,8 @@ export default function TryoutFormConfigPage() {
           });
         }
       });
+    supabase.from('tryout_players').select('id', { count: 'exact', head: true }).eq('club_id', club.id)
+      .then(({ count }) => setResponseCount(count ?? 0));
   }, [club]);
 
   async function handleSave() {
@@ -447,7 +453,61 @@ export default function TryoutFormConfigPage() {
     });
   }
 
-  type SectionId = 'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'success';
+  // One column per thing this form actually asks — the built-in Step
+  // 1/2 fields plus every custom question, in the order they're asked —
+  // not the full tryout_players row. A handful of that table's columns
+  // (current team, the second guardian email, which tryout date) are
+  // only ever filled in THROUGH a custom question, so including them
+  // again as a separate built-in column would just duplicate the same
+  // answer under two headers; team/status/offer_status are the admin's
+  // own decisions, not something a family answered, so those live on
+  // the Player Pool page instead, not here.
+  async function loadResponses() {
+    if (!club) return;
+    setLoadingResponses(true);
+    const { data } = await supabase
+      .from('tryout_players')
+      .select('first_name,last_name,gender,date_of_birth,grade,positions,parent_name,email_primary,phone,town,referral_source,custom_responses,created_at')
+      .eq('club_id', club.id)
+      .order('created_at', { ascending: false });
+
+    const builtIn: [string, string][] = [
+      ['first_name', 'First name'], ['last_name', 'Last name'], ['gender', 'Gender'],
+      ['date_of_birth', 'Date of birth'], ['grade', 'Grade'], ['positions', 'Preferred position(s)'],
+      ['parent_name', 'Parent / Guardian'], ['email_primary', 'Email'], ['phone', 'Phone'],
+      ['town', 'Town / City'], ['referral_source', 'How did you hear about us?'],
+    ];
+    const headers = [...builtIn.map(([, label]) => label), ...config.questions.map(q => q.label), 'Submitted'];
+
+    const cellText = (v: unknown): string => Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v));
+
+    const rows: string[][] = (data ?? []).map(p => {
+      const builtInVals = builtIn.map(([key]) => cellText((p as Record<string, unknown>)[key]));
+      const responses = (p.custom_responses ?? {}) as Record<string, unknown>;
+      const customVals = config.questions.map(q => cellText(responses[q.id]));
+      return [...builtInVals, ...customVals, new Date(p.created_at).toLocaleString('en-US')];
+    });
+
+    setResponseData({ headers, rows });
+    setLoadingResponses(false);
+  }
+
+  function exportResponsesCSV() {
+    if (!responseData || !club) return;
+    const csv = [responseData.headers.join(','), ...responseData.rows.map(r => r.map(v => JSON.stringify(v ?? '')).join(','))].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `${club.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-tryout-responses-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  }
+
+  const filteredResponseRows = responseData
+    ? (responseSearch.trim()
+        ? responseData.rows.filter(r => r.some(cell => String(cell).toLowerCase().includes(responseSearch.toLowerCase())))
+        : responseData.rows)
+    : [];
+
+  type SectionId = 'header'|'location'|'schedule'|'offers'|'info'|'contacts'|'options'|'questions'|'responses'|'success';
 
   const SECTIONS: { id: SectionId; num: number; label: string; icon: string; desc: string }[] = [
     { id: 'header',    num: 1, label: 'Header & welcome',  icon: 'H₁', desc: 'Title, subtitle, and intro message' },
@@ -516,6 +576,24 @@ export default function TryoutFormConfigPage() {
               </button>
             );
           })}
+
+          <div style={{ height: '1px', background: '#E2E8F0', margin: '12px 4px' }} />
+          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', letterSpacing: '1.5px', textTransform: 'uppercase', padding: '0 8px', marginBottom: '10px' }}>Results</div>
+          <button onClick={() => { setActiveSection('responses'); if (!responseData) loadResponses(); }}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%', padding: '10px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', marginBottom: '2px',
+              background: activeSection === 'responses' ? `${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}12` : 'transparent',
+              borderLeft: activeSection === 'responses' ? `2px solid ${club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E'}` : '2px solid transparent',
+            }}>
+            <div style={{ width: '22px', height: '22px', borderRadius: '6px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px',
+              background: activeSection === 'responses' ? (club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E') : '#F1F5F9',
+              color: activeSection === 'responses' ? '#fff' : '#64748B' }}>
+              📋
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '13px', fontWeight: activeSection === 'responses' ? '700' : '500', color: activeSection === 'responses' ? '#0D1117' : '#374151', lineHeight: '1.3' }}>Responses</div>
+              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '1px' }}>{responseCount === null ? 'Everyone registered' : `${responseCount} registered`}</div>
+            </div>
+          </button>
         </div>
 
         {/* Right editing panel */}
@@ -675,6 +753,60 @@ export default function TryoutFormConfigPage() {
                 <div>{lbl('Success heading', 'e.g. Registration Complete!')}<input value={config.successTitle} onChange={e => setConfig(c => ({ ...c, successTitle: e.target.value }))} style={inp} /></div>
                 <div>{lbl('Success message', 'e.g. Thank you! Offer letters will be sent on June 1st.')}<textarea value={config.successBody} onChange={e => setConfig(c => ({ ...c, successBody: e.target.value }))} rows={4} style={ta} /></div>
               </div>
+            </div>
+          )}
+
+          {activeSection === 'responses' && (
+            <div>
+              {hint('One column per question on the form, one row per family — everything they answered, for quickly finding something without leaving the dashboard.')}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ position: 'relative', flex: 1, maxWidth: '360px' }}>
+                  <Search size={14} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input placeholder="Search any answer…" value={responseSearch} onChange={e => setResponseSearch(e.target.value)}
+                    style={{ ...inp, paddingLeft: '32px' }} />
+                </div>
+                <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: '600' }}>
+                  {responseData ? `${filteredResponseRows.length} of ${responseData.rows.length}` : ''}
+                </div>
+                <div style={{ flex: 1 }} />
+                <button onClick={exportResponsesCSV} disabled={!responseData || !responseData.rows.length}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '12.5px', fontWeight: '600', color: '#374151', cursor: responseData?.rows.length ? 'pointer' : 'default', opacity: responseData?.rows.length ? 1 : 0.5 }}>
+                  <Download size={13} /> Export CSV
+                </button>
+              </div>
+
+              {loadingResponses && (
+                <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8' }}>Loading responses…</div>
+              )}
+
+              {!loadingResponses && responseData && responseData.rows.length === 0 && (
+                <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', color: '#94A3B8', background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                  No one has registered yet — once families start submitting the form, their answers show up here.
+                </div>
+              )}
+
+              {!loadingResponses && responseData && responseData.rows.length > 0 && (
+                <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
+                  <table style={{ borderCollapse: 'collapse', fontSize: '12.5px', width: 'max-content', minWidth: '100%' }}>
+                    <thead>
+                      <tr>
+                        {responseData.headers.map((h, i) => (
+                          <th key={i} style={{ position: 'sticky', top: 0, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '9px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredResponseRows.map((row, ri) => (
+                        <tr key={ri} style={{ borderBottom: ri < filteredResponseRows.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                          {row.map((cell, ci) => (
+                            <td key={ci} style={{ padding: '9px 14px', color: '#0F172A', whiteSpace: 'nowrap', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(cell)}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
