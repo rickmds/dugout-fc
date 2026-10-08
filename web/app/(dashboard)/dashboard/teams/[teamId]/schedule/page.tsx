@@ -27,6 +27,7 @@ type Event = {
   field_type: string | null; field_notes: string | null; field_id: string | null;
   uniform: string | null; notes: string | null; coach_notes: string | null;
   require_rsvp: boolean; rsvp_lock_at: string | null; team_id: string;
+  recurrence_id: string | null;
   attending: number; not_attending: number; total: number;
 };
 
@@ -148,6 +149,91 @@ function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTim
   // and every comparison below silently falls through to 48.
   const diff = Math.round((new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`).getTime() - new Date(rsvpLockAt).getTime()) / 3600000);
   if (diff <= 0) return 0; if (diff <= 12) return 12; if (diff <= 24) return 24; return 48;
+}
+
+// ── Recurrence ─────────────────────────────────────────────────────────────────
+// Ported from the mobile app's create-event.tsx (the one place this already
+// existed) — same "flat expansion" design the events.recurrence_id column
+// was built for: one real row per occurrence sharing a recurrence_id,
+// generated up front, not a stored rule expanded at read time.
+
+type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly';
+type MonthlyMode = 'date' | 'weekday';
+
+const WEEKDAY_CHIPS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+function toDbDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function ordinalWeekdayLabel(d: Date): string {
+  const nth = Math.ceil(d.getDate() / 7);
+  const ordinals = ['1st', '2nd', '3rd', '4th', '5th'];
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return `${ordinals[nth - 1] ?? `${nth}th`} ${days[d.getDay()]}`;
+}
+
+function generateRecurringDates(
+  start: Date,
+  recurrence: RecurrenceType,
+  weekDays: number[],
+  monthlyMode: MonthlyMode,
+  endMode: 'never' | 'date',
+  endDate: Date,
+): string[] {
+  if (recurrence === 'none') return [];
+
+  const limit = endMode === 'never'
+    ? new Date(start.getFullYear(), start.getMonth() + 6, start.getDate())
+    : endDate;
+
+  const dates: string[] = [];
+  const cursor = new Date(start);
+  cursor.setDate(cursor.getDate() + 1); // skip start date (already the first event)
+
+  if (recurrence === 'daily') {
+    while (cursor <= limit && dates.length < 365) {
+      dates.push(toDbDate(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  } else if (recurrence === 'weekly') {
+    const days = weekDays.length > 0 ? weekDays : [start.getDay()];
+    while (cursor <= limit && dates.length < 365) {
+      if (days.includes(cursor.getDay())) dates.push(toDbDate(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  } else if (recurrence === 'monthly') {
+    if (monthlyMode === 'date') {
+      const dayNum = start.getDate();
+      cursor.setDate(1);
+      cursor.setMonth(cursor.getMonth() + 1);
+      while (dates.length < 12) {
+        const candidate = new Date(cursor.getFullYear(), cursor.getMonth(), dayNum);
+        if (candidate > limit) break;
+        if (candidate.getMonth() === cursor.getMonth()) dates.push(toDbDate(candidate));
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    } else {
+      const nth = Math.ceil(start.getDate() / 7);
+      const weekday = start.getDay();
+      cursor.setDate(1);
+      cursor.setMonth(cursor.getMonth() + 1);
+      while (dates.length < 12) {
+        const firstOfMonth = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+        const firstDay = firstOfMonth.getDay();
+        const offset = (weekday - firstDay + 7) % 7 + (nth - 1) * 7;
+        const candidate = new Date(cursor.getFullYear(), cursor.getMonth(), 1 + offset);
+        if (candidate > limit) break;
+        if (candidate.getMonth() === cursor.getMonth()) dates.push(toDbDate(candidate));
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
+  }
+
+  return dates;
 }
 
 function emptyForm(teamId: string): FormState {
@@ -285,6 +371,20 @@ export default function TeamSchedulePage() {
   const [form,       setForm]       = useState<FormState>(emptyForm(teamId));
   const [saving,     setSaving]     = useState(false);
   const [delTitle,   setDelTitle]   = useState('');
+  const [delRecurrenceId, setDelRecurrenceId] = useState<string | null>(null);
+  const [delScope,   setDelScope]   = useState<'this' | 'future'>('this');
+
+  // Recurrence — create-mode only, same as mobile's create-event.tsx
+  // (editing a single occurrence never re-exposes a "repeat" setup; the
+  // delete dialog's this/future scope below is how an existing series
+  // gets managed afterward).
+  const [recurrence,   setRecurrence]   = useState<RecurrenceType>('none');
+  const [weekDays,     setWeekDays]     = useState<number[]>(() => [new Date().getDay()]);
+  const [monthlyMode,  setMonthlyMode]  = useState<MonthlyMode>('date');
+  const [endMode,      setEndMode]      = useState<'never' | 'date'>('never');
+  const [endDate,      setEndDate]      = useState<string>(() => {
+    const d = new Date(); d.setMonth(d.getMonth() + 3); return toDbDate(d);
+  });
 
   // RSVP panel
   const [selectedEvent,       setSelectedEvent]       = useState<Event | null>(null);
@@ -323,7 +423,7 @@ export default function TeamSchedulePage() {
     setLoading(true);
     const { data: evs } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,field_id,uniform,notes,coach_notes,require_rsvp,rsvp_lock_at,team_id')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,field_id,uniform,notes,coach_notes,require_rsvp,rsvp_lock_at,team_id,recurrence_id')
       .eq('team_id', teamId)
       .order('event_date', { ascending: tab === 'upcoming' })
       .order('event_time', { ascending: true });
@@ -454,6 +554,10 @@ export default function TeamSchedulePage() {
   function openCreate() {
     setForm(emptyForm(teamId));
     setEditId(null);
+    setRecurrence('none');
+    setWeekDays([new Date().getDay()]);
+    setMonthlyMode('date');
+    setEndMode('never');
     dialogRef.current?.showModal();
   }
 
@@ -481,6 +585,7 @@ export default function TeamSchedulePage() {
       uniform: ev.uniform ?? null, duration: ev.duration_minutes ?? null,
     };
     setEditId(ev.id);
+    setRecurrence('none'); // editing a single occurrence never re-exposes "repeat" setup
     dialogRef.current?.showModal();
   }
 
@@ -492,13 +597,18 @@ export default function TeamSchedulePage() {
       const savedTitle = form.type === 'game'
         ? `${form.homeAway === 'home' ? 'vs' : '@'} ${form.title.trim()}`
         : form.title.trim();
-      const lockAt = (() => {
+      // Pulled out so a recurring series can recompute this per occurrence
+      // date below — baking in just form.event_date's own lock time and
+      // reusing it for every other date in the series would silently lock
+      // every later occurrence's RSVPs at the wrong moment.
+      const computeLockAt = (dateStr: string): string | null => {
         if (!form.require_rsvp || !eventTime) return null;
         const t = eventTime.substring(0, 5); // normalise to HH:MM regardless of DB format
-        const dt = new Date(`${form.event_date}T${t}:00`);
+        const dt = new Date(`${dateStr}T${t}:00`);
         dt.setHours(dt.getHours() - form.rsvp_lock_hours);
         return dt.toISOString();
-      })();
+      };
+      const lockAt = computeLockAt(form.event_date);
       const payload = {
         title: savedTitle, type: form.type, team_id: teamId,
         event_date: form.event_date, event_time: eventTime,
@@ -544,7 +654,7 @@ export default function TeamSchedulePage() {
             });
           }
         }
-      } else {
+      } else if (recurrence === 'none') {
         const { data, error } = await supabase.from('events').insert(payload).select('id').single<{ id: string }>();
         if (error) throw error;
         if (form.push_notify && data?.id) {
@@ -567,6 +677,49 @@ export default function TeamSchedulePage() {
             primaryColor: club?.primary_color ?? null,
           });
         }
+      } else {
+        // Recurring series — one real row per occurrence sharing a
+        // recurrence_id, same flat-expansion design as mobile's
+        // create-event.tsx (the schema's events.recurrence_id column was
+        // already built for exactly this). One combined notification for
+        // the whole series, not one per occurrence.
+        const startDate = new Date(`${form.event_date}T00:00:00`);
+        const recurDates = generateRecurringDates(startDate, recurrence, weekDays, monthlyMode, endMode, new Date(`${endDate}T00:00:00`));
+        const allDates = [form.event_date, ...recurDates];
+        const recurrenceId = crypto.randomUUID();
+
+        const rows = allDates.map(d => ({ ...payload, event_date: d, recurrence_id: recurrenceId, rsvp_lock_at: computeLockAt(d) }));
+
+        let firstId: string | null = null;
+        const failedDates: string[] = [];
+        for (let i = 0; i < rows.length; i += 50) {
+          const batch = rows.slice(i, i + 50);
+          const { data, error } = await supabase.from('events').insert(batch).select('id');
+          if (error) { failedDates.push(...batch.map(r => r.event_date)); continue; }
+          if (i === 0 && data?.[0]) firstId = data[0].id as string;
+        }
+        if (failedDates.length === rows.length) throw new Error('Could not save any occurrence — check your connection and try again.');
+        if (failedDates.length > 0) {
+          alert(`${rows.length - failedDates.length} of ${rows.length} occurrences were created. ${failedDates.length} failed: ${failedDates.slice(0, 5).join(', ')}${failedDates.length > 5 ? ', …' : ''}.`);
+        }
+
+        if (form.push_notify && firstId) {
+          const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
+          const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+          try {
+            await sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'new_event', title: `New ${TYPE_LABELS[form.type]} — ${teamName}`, body: `${savedTitle} — ${rows.length} dates starting ${label}`, data: { event_id: firstId } });
+          } catch { /* non-critical */ }
+          sendTeamEmail({
+            teamIds: [teamId],
+            subject: `New ${TYPE_LABELS[form.type]} — ${savedTitle}`,
+            body: `${savedTitle} was just added to ${teamName}'s schedule — ${rows.length} occurrences starting ${label}${form.hasTime ? ' at ' + fmtTime(form.event_time) : ''}${form.location.trim() ? ' · ' + form.location.trim() : ''}.`,
+            fromName: profile?.full_name ?? club?.name ?? 'Coach',
+            teamName,
+            clubName: club?.name ?? null,
+            logoUrl: club?.logo_url ?? null,
+            primaryColor: club?.primary_color ?? null,
+          });
+        }
       }
       dialogRef.current?.close();
       load();
@@ -580,16 +733,28 @@ export default function TeamSchedulePage() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, scope: 'this' | 'future' = 'this') {
     const ev = events.find((e) => e.id === id);
-    await supabase.from('events').delete().eq('id', id);
+    let deletedCount = 1;
+    if (scope === 'future' && ev?.recurrence_id) {
+      const { data: deleted } = await supabase.from('events')
+        .delete()
+        .eq('recurrence_id', ev.recurrence_id)
+        .gte('event_date', ev.event_date)
+        .select('id');
+      deletedCount = deleted?.length ?? 1;
+    } else {
+      await supabase.from('events').delete().eq('id', id);
+    }
     if (selectedEvent?.id === id) setSelectedEvent(null);
     delDialogRef.current?.close();
     load();
     if (ev && teamId) {
       // "deleted", not "cancelled" — this page has no soft-cancel, only a
       // hard, unrecoverable delete; the push text shouldn't claim otherwise.
-      const bodyText = `${ev.title} has been deleted`;
+      const bodyText = scope === 'future' && deletedCount > 1
+        ? `${ev.title} and ${deletedCount - 1} future occurrence${deletedCount - 1 !== 1 ? 's' : ''} have been deleted`
+        : `${ev.title} has been deleted`;
       const teamLabel = teams.find((t) => t.id === teamId)?.name;
       sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: teamLabel ? `🗑️ Event deleted — ${teamLabel}` : '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
       sendTeamEmail({
@@ -678,7 +843,7 @@ export default function TeamSchedulePage() {
                           selected={selectedEvent?.id === ev.id}
                           onSelect={() => setSelectedEvent(selectedEvent?.id === ev.id ? null : ev)}
                           onEdit={() => openEdit(ev)}
-                          onDelete={() => { setDelTitle(ev.title); setEditId(ev.id); delDialogRef.current?.showModal(); }}
+                          onDelete={() => { setDelTitle(ev.title); setEditId(ev.id); setDelRecurrenceId(ev.recurrence_id); setDelScope('this'); delDialogRef.current?.showModal(); }}
                         />
                       ))}
                     </div>
@@ -930,7 +1095,7 @@ export default function TeamSchedulePage() {
           <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', margin: 0 }}>{editId ? 'Edit Event' : 'New Event'}</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
             {editId && (
-              <button onClick={() => { dialogRef.current?.close(); setDelTitle(form.type === 'game' ? `${form.homeAway === 'home' ? 'vs' : '@'} ${form.title}` : form.title); delDialogRef.current?.showModal(); }}
+              <button onClick={() => { dialogRef.current?.close(); setDelTitle(form.type === 'game' ? `${form.homeAway === 'home' ? 'vs' : '@'} ${form.title}` : form.title); setDelRecurrenceId(events.find(e => e.id === editId)?.recurrence_id ?? null); setDelScope('this'); delDialogRef.current?.showModal(); }}
                 style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', borderRadius: '8px', border: '1px solid #FEE2E2', background: '#FFF5F5', cursor: 'pointer', fontSize: '12px', color: '#EF4444', fontWeight: '600', fontFamily: 'inherit' }}>
                 <Trash2 size={12} /> Delete
               </button>
@@ -1020,6 +1185,88 @@ export default function TeamSchedulePage() {
                 </div>
               </div>
             </div>
+
+            {/* Create-mode only — editing a single occurrence never
+                re-exposes "repeat" setup; an existing series is managed
+                afterward via the delete dialog's this/future scope. */}
+            {!editId && (
+              <>
+                <div style={sectionStyle}>REPEAT</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(['none', 'daily', 'weekly', 'monthly'] as RecurrenceType[]).map(r => (
+                      <button key={r} onClick={() => setRecurrence(r)}
+                        style={{ flex: 1, padding: '9px 0', borderRadius: '8px', border: `2px solid ${recurrence === r ? primary : '#E2E8F0'}`, background: recurrence === r ? `${primary}18` : '#fff', color: recurrence === r ? primary : '#64748B', fontWeight: recurrence === r ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {r.charAt(0).toUpperCase() + r.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+
+                  {recurrence === 'weekly' && (
+                    <div>
+                      <label style={labelStyle}>On these days</label>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {WEEKDAY_CHIPS.map((d, i) => {
+                          const active = weekDays.includes(i);
+                          return (
+                            <button key={d} onClick={() => setWeekDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}
+                              style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: `2px solid ${active ? primary : '#E2E8F0'}`, background: active ? primary : '#fff', color: active ? '#fff' : '#64748B', fontWeight: '700', fontSize: '12.5px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {recurrence === 'monthly' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {([
+                        { mode: 'date' as MonthlyMode, label: `On the ${new Date(`${form.event_date}T00:00:00`).getDate()}th of each month` },
+                        { mode: 'weekday' as MonthlyMode, label: `On the ${ordinalWeekdayLabel(new Date(`${form.event_date}T00:00:00`))} of each month` },
+                      ]).map(({ mode, label }) => (
+                        <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${monthlyMode === mode ? primary : '#E2E8F0'}`, background: monthlyMode === mode ? `${primary}0c` : '#fff', cursor: 'pointer', fontSize: '13px', color: '#0F172A' }}>
+                          <input type="radio" name="monthlyMode" checked={monthlyMode === mode} onChange={() => setMonthlyMode(mode)} />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {recurrence !== 'none' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: endMode === 'date' ? '1fr 1fr' : '1fr', gap: '12px' }}>
+                      <div>
+                        <label style={labelStyle}>Ends</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {([{ key: 'never' as const, label: 'Never' }, { key: 'date' as const, label: 'On date' }]).map(opt => (
+                            <button key={opt.key} onClick={() => setEndMode(opt.key)}
+                              style={{ flex: 1, padding: '9px 0', borderRadius: '8px', border: `2px solid ${endMode === opt.key ? primary : '#E2E8F0'}`, background: endMode === opt.key ? `${primary}18` : '#fff', color: endMode === opt.key ? primary : '#64748B', fontWeight: endMode === opt.key ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {endMode === 'date' && (
+                        <div>
+                          <label style={labelStyle}>End date</label>
+                          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {recurrence !== 'none' && (() => {
+                    const total = generateRecurringDates(new Date(`${form.event_date}T00:00:00`), recurrence, weekDays, monthlyMode, endMode, new Date(`${endDate}T00:00:00`)).length + 1;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '8px', background: `${primary}0f`, color: primary, fontSize: '13px', fontWeight: '600' }}>
+                        <CalendarDays size={14} />
+                        You are creating {total} event{total !== 1 ? 's' : ''}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </>
+            )}
 
             <div style={sectionStyle}>LOCATION</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
@@ -1146,12 +1393,25 @@ export default function TeamSchedulePage() {
         style={{ padding: '24px', margin: 'auto', border: 'none', borderRadius: '20px', width: 'calc(100vw - 48px)', maxWidth: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', background: '#fff' }}>
         <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}><Trash2 size={20} color="#EF4444" /></div>
         <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>Delete event?</div>
-        <div style={{ fontSize: '14px', color: '#64748B', marginBottom: '24px', lineHeight: '1.5' }}>
+        <div style={{ fontSize: '14px', color: '#64748B', marginBottom: delRecurrenceId ? '16px' : '24px', lineHeight: '1.5' }}>
           <strong style={{ color: '#0F172A' }}>{delTitle}</strong> will be permanently deleted including all RSVPs.
         </div>
+        {delRecurrenceId && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+            {([
+              { key: 'this' as const, label: 'Just this event' },
+              { key: 'future' as const, label: 'This and all future occurrences' },
+            ]).map(opt => (
+              <label key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '10px 12px', borderRadius: '8px', border: `1.5px solid ${delScope === opt.key ? '#EF4444' : '#E2E8F0'}`, background: delScope === opt.key ? '#FFF5F5' : '#fff', cursor: 'pointer', fontSize: '13.5px', color: '#0F172A' }}>
+                <input type="radio" name="delScope" checked={delScope === opt.key} onChange={() => setDelScope(opt.key)} />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={() => delDialogRef.current?.close()} style={{ flex: 1, padding: '11px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '14px', fontWeight: '600', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button onClick={() => editId && handleDelete(editId)} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
+          <button onClick={() => editId && handleDelete(editId, delRecurrenceId ? delScope : 'this')} style={{ flex: 1, padding: '11px', background: '#EF4444', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Delete</button>
         </div>
       </dialog>
 
