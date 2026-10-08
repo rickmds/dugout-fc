@@ -36,10 +36,22 @@ type ColDef = { id: string; label: string; color: string; teamId?: string; locke
 type PrevPlayer = { id: string; first_name: string; last_name: string; date_of_birth: string | null; email_primary: string | null };
 type GhostCard  = { name: string; prevTeam: string };
 
+// Only meaningful for the generic "YYYY-YY" shape — a free-text label
+// like "HS Winter/Spring 27" has no parseable year to decrement.
 function prevSeasonLabel(s: string): string {
   const [start] = s.split('-');
   const y = parseInt(start, 10);
   return `${y - 1}-${String(y).slice(-2)}`;
+}
+
+// Prefers whichever real season label this club actually used right
+// before the current one (seasonOpts is already ordered newest-first by
+// created_at) over the YYYY-YY guess above, so "auto-populate returning
+// players" still works for a club whose season labels are free text.
+function resolvePrevSeason(season: string, seasonOpts: string[]): string {
+  const i = seasonOpts.indexOf(season);
+  if (i >= 0 && i + 1 < seasonOpts.length) return seasonOpts[i + 1];
+  return prevSeasonLabel(season);
 }
 
 function fmtDob(dob: string | null) {
@@ -52,7 +64,15 @@ export default function TeamBuilderPage() {
   const clubCtx = club as ClubCtx;
   const primary = clubCtx?.primary_color && clubCtx.primary_color !== '#000000' ? clubCtx.primary_color : '#1E293B';
 
-  const [season, setSeason]       = useState(() => seasonOptions()[1] ?? '2026-27');
+  // Real season labels are free text (whatever an admin typed into
+  // Registration Form settings, e.g. "HS Winter/Spring 27") — nothing
+  // ties them to the generic "2026-27" shape seasonOptions() guesses at.
+  // Filtering strictly by that guessed format meant a club whose real
+  // tryout_players rows used any other label saw an empty board no
+  // matter which hardcoded option was picked. Starts empty and gets set
+  // for real once the actual labels in use are fetched below.
+  const [season, setSeason]       = useState('');
+  const [seasonOpts, setSeasonOpts] = useState<string[]>([]);
   const [players, setPlayers]     = useState<Player[]>([]);
   const [rankings, setRankings]   = useState<Map<string, Ranking>>(new Map());
   const [assigns, setAssigns]     = useState<Map<string, Assignment>>(new Map());
@@ -91,7 +111,7 @@ export default function TeamBuilderPage() {
 
   async function load() {
     if (!club) return;
-    const prevSeason = prevSeasonLabel(season);
+    const prevSeason = resolvePrevSeason(season, seasonOpts);
     const [{ data: ps }, { data: rnk }, { data: asgn }, { data: ts }, { data: cs }, { data: prevPs }] = await Promise.all([
       supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,grade,gender,final_age_group,positions,maroons_status,email_primary,maybe_flag').eq('club_id', club.id).eq('season_label', season),
       supabase.from('tryout_rankings').select('player_id,tryout_rank,coach_rank,tryout_status').eq('club_id', club.id),
@@ -149,6 +169,17 @@ export default function TeamBuilderPage() {
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club, season]);
+
+  useEffect(() => {
+    if (!club) return;
+    supabase.from('tryout_players').select('season_label').eq('club_id', club.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        const labels = Array.from(new Set((data ?? []).map(r => r.season_label).filter((s): s is string => !!s)));
+        setSeasonOpts(labels);
+        setSeason(prev => prev || labels[0] || seasonOptions()[1] || '2026-27');
+      });
+  }, [club]);
 
   const agTabs = AGE_GROUPS.filter(ag => players.some(p => getAg(p) === ag));
   if (agTabs.length > 0 && !filterAg) setFilterAg(agTabs[0]);
@@ -454,7 +485,9 @@ export default function TeamBuilderPage() {
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <select value={season} onChange={e => setSeason(e.target.value)}
               style={{ padding: '6px 10px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.2)', fontSize: '12.5px', color: '#fff', background: 'rgba(255,255,255,0.12)', outline: 'none', cursor: 'pointer' }}>
-              {seasonOptions().map(s => <option key={s} value={s} style={{ color: '#0F172A' }}>{s}</option>)}
+              {/* Real season labels first (whatever admins actually typed into Registration Form settings), the generic YYYY-YY guesses only as a fallback for a season nobody's registered for yet */}
+              {seasonOpts.map(s => <option key={s} value={s} style={{ color: '#0F172A' }}>{s}</option>)}
+              {seasonOptions().filter(s => !seasonOpts.includes(s)).map(s => <option key={s} value={s} style={{ color: '#0F172A' }}>{s}</option>)}
             </select>
             <div style={{ display: 'flex', gap: '4px' }}>
               {['All','Male','Female'].map(g => (
@@ -550,9 +583,9 @@ export default function TeamBuilderPage() {
           <button
             onClick={autoPopulate}
             disabled={prevPopulating || autoPopulateCount === 0}
-            title={autoPopulateCount > 0 ? `Pre-fill ${autoPopulateCount} unassigned players from ${prevSeasonLabel(season)}` : `All returning players already placed`}
+            title={autoPopulateCount > 0 ? `Pre-fill ${autoPopulateCount} unassigned players from ${resolvePrevSeason(season, seasonOpts)}` : `All returning players already placed`}
             style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '7px', border: `1px solid ${autoPopulateCount > 0 ? '#86EFAC' : '#E2E8F0'}`, background: autoPopulateCount > 0 ? '#F0FDF4' : '#F8FAFC', color: autoPopulateCount > 0 ? '#15803D' : '#94A3B8', fontSize: '12.5px', fontWeight: '700', cursor: autoPopulateCount > 0 ? 'pointer' : 'default', flexShrink: 0, opacity: prevPopulating ? 0.6 : 1 }}>
-            ↩ {prevSeasonLabel(season)}
+            ↩ {resolvePrevSeason(season, seasonOpts)}
             {autoPopulateCount > 0 && (
               <span style={{ background: '#22C55E', color: '#fff', borderRadius: '10px', padding: '0 6px', fontSize: '11px', fontWeight: '800' }}>{autoPopulateCount}</span>
             )}
