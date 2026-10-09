@@ -59,7 +59,7 @@ export default function TryoutFinancesPage() {
 
   async function load() {
     if (!club) return;
-    const [{ data: ps }, { data: asgn }, { data: ts }, { data: exps }, { data: insts }] = await Promise.all([
+    const [{ data: ps }, { data: asgn }, { data: ts }, { data: exps }, { data: insts }, { data: proj }] = await Promise.all([
       supabase.from('tryout_players').select('id').eq('club_id', club.id),
       supabase.from('tryout_assignments').select('player_id,offer_status').eq('club_id', club.id),
       supabase.from('tryout_teams').select('id,name,color').eq('club_id', club.id).eq('is_active', true),
@@ -68,13 +68,24 @@ export default function TryoutFinancesPage() {
         .select('id, assignment_id, label, amount, due_date, paid_at, payment_token, charge_attempts, last_charge_error, tryout_assignments!inner(id, team, autopay_consent, club_id, tryout_players(full_name))')
         .eq('tryout_assignments.club_id', club.id)
         .order('due_date', { ascending: true }),
+      supabase.from('tryout_finance_projections').select('reg_fee,season_fee').eq('club_id', club.id).eq('season_label', season).maybeSingle(),
     ]);
     setPlayers((ps ?? []) as Player[]);
     setAssigns((asgn ?? []) as Assignment[]);
     setTeams((ts ?? []) as TryoutTeam[]);
     setExpenses((exps ?? []) as Expense[]);
     setInstallments((insts ?? []) as unknown as InstallmentRow[]);
+    setRegFee(proj?.reg_fee != null ? Number(proj.reg_fee) : REG_FEE_DEFAULT);
+    setSeasonFee(proj?.season_fee != null ? Number(proj.season_fee) : SEASONAL_FEE_DEFAULT);
     setLoading(false);
+  }
+
+  async function saveProjections(nextRegFee: number, nextSeasonFee: number) {
+    if (!club) return;
+    await supabase.from('tryout_finance_projections').upsert({
+      club_id: club.id, season_label: season, reg_fee: nextRegFee, season_fee: nextSeasonFee,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'club_id,season_label' });
   }
 
   function copyPayLink(inst: InstallmentRow) {
@@ -154,11 +165,11 @@ export default function TryoutFinancesPage() {
           <span style={{ fontSize: '11px', fontWeight: '800', color: '#6366F1', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Fee Config</span>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151' }}>
             Tryout Reg Fee {currencySymbol}
-            <input type="number" value={regFee} onChange={e => setRegFee(Number(e.target.value))} style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', outline: 'none' }} />
+            <input type="number" value={regFee} onChange={e => setRegFee(Number(e.target.value))} onBlur={() => saveProjections(regFee, seasonFee)} style={{ width: '80px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', outline: 'none' }} />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151' }}>
             Seasonal Tuition {currencySymbol}
-            <input type="number" value={seasonFee} onChange={e => setSeasonFee(Number(e.target.value))} style={{ width: '90px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', outline: 'none' }} />
+            <input type="number" value={seasonFee} onChange={e => setSeasonFee(Number(e.target.value))} onBlur={() => saveProjections(regFee, seasonFee)} style={{ width: '90px', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px', outline: 'none' }} />
           </label>
           <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>{players.length} registered · {placed} placed · {accepted} accepted</span>
         </div>

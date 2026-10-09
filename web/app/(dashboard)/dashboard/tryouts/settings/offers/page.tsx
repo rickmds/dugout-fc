@@ -18,6 +18,10 @@ type OfferSettings = {
   // instead of the built-in emergency-contact/medical/waiver form — empty
   // string means "not configured, use the built-in form" (stored as null).
   post_acceptance_form_id: string;
+  // Staff notification toggles — accepts are high-volume and rarely
+  // actionable; declines are rare and mean a roster spot just opened.
+  notify_staff_on_accept: boolean;
+  notify_staff_on_decline: boolean;
 };
 
 type EmailTemplate = {
@@ -49,6 +53,8 @@ const BLANK: OfferSettings = {
   payment_link: '',
   club_website_url: '', uniform_shop_url: '',
   post_acceptance_form_id: '',
+  notify_staff_on_accept: false,
+  notify_staff_on_decline: true,
 };
 
 // Toggling a chip claims that age group for `currentId`, stealing it from
@@ -1015,6 +1021,22 @@ ${editable ? `<script>
                     {lbl('Offer response deadline')}
                     <input type="datetime-local" value={settings.offer_deadline ? settings.offer_deadline.slice(0, 16) : ''} onChange={e => set({ offer_deadline: e.target.value })} style={inp} />
                     <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>Token: <code style={{ background: '#F1F5F9', padding: '1px 4px', borderRadius: '3px' }}>{'{{offer_deadline}}'}</code></div>
+                  </div>
+                </div>
+                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '20px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '700', color: '#374151', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Staff notifications</div>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', marginBottom: '12px' }}>When a family responds to an offer, who on staff hears about it.</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={settings.notify_staff_on_accept} onChange={e => set({ notify_staff_on_accept: e.target.checked })} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                      <span style={{ fontSize: '13px', color: '#0F172A' }}>Notify staff when an offer is <strong>accepted</strong></span>
+                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>(off by default — high volume, not usually actionable)</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={settings.notify_staff_on_decline} onChange={e => set({ notify_staff_on_decline: e.target.checked })} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                      <span style={{ fontSize: '13px', color: '#0F172A' }}>Notify staff when an offer is <strong>declined</strong></span>
+                      <span style={{ fontSize: '11px', color: '#94A3B8' }}>(on by default — a roster spot just opened up)</span>
+                    </label>
                   </div>
                 </div>
                 <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '20px' }}>

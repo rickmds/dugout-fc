@@ -27,7 +27,7 @@ type Player = {
   email_primary: string | null; maybe_flag: boolean | null;
 };
 type Ranking = { player_id: string; tryout_rank: number | null; coach_rank: number | null; tryout_status: string | null };
-type Assignment = { player_id: string; team: string | null; status: string; offer_status: string; declined_reason: string | null };
+type Assignment = { player_id: string; team: string | null; status: string; offer_status: string; declined_reason: string | null; waitlist_position: number | null };
 type TryoutTeam = { id: string; name: string; color: string; age_group: string | null; gender: string | null; format: string | null; roster_locked: boolean; head_coach_id: string | null; roster_size: number | null };
 type CoachMap = Record<string, string>;
 type ClubCtx = { id: string; name: string | null; primary_color: string | null; secondary_color?: string | null; logo_url?: string | null } | null;
@@ -98,6 +98,7 @@ export default function TeamBuilderPage() {
   const [prevTeamMap, setPrevTeamMap]     = useState<Map<string, string>>(new Map());
   const [ghostsByTeam, setGhostsByTeam]   = useState<Map<string, GhostCard[]>>(new Map());
   const [prevPopulating, setPrevPopulating] = useState(false);
+  const [offerDeadline, setOfferDeadline] = useState<string | null>(null);
 
   function toggleField(f: string) {
     setCardFields(prev => {
@@ -113,14 +114,16 @@ export default function TeamBuilderPage() {
   async function load() {
     if (!club) return;
     const prevSeason = resolvePrevSeason(season, seasonOpts);
-    const [{ data: ps }, { data: rnk }, { data: asgn }, { data: ts }, { data: cs }, { data: prevPs }] = await Promise.all([
+    const [{ data: ps }, { data: rnk }, { data: asgn }, { data: ts }, { data: cs }, { data: prevPs }, { data: offerSettings }] = await Promise.all([
       supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,grade,gender,final_age_group,positions,maroons_status,email_primary,maybe_flag').eq('club_id', club.id).eq('season_label', season),
       supabase.from('tryout_rankings').select('player_id,tryout_rank,coach_rank,tryout_status').eq('club_id', club.id),
-      supabase.from('tryout_assignments').select('player_id,team,status,offer_status,declined_reason').eq('club_id', club.id),
+      supabase.from('tryout_assignments').select('player_id,team,status,offer_status,declined_reason,waitlist_position').eq('club_id', club.id),
       supabase.from('tryout_teams').select('*').eq('club_id', club.id).eq('is_active', true).order('sort_order').order('name'),
       supabase.from('tryout_coaches').select('id,full_name').eq('club_id', club.id),
       supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,email_primary').eq('club_id', club.id).eq('season_label', prevSeason),
+      supabase.from('tryout_offer_settings').select('offer_deadline').eq('club_id', club.id).maybeSingle(),
     ]);
+    setOfferDeadline(offerSettings?.offer_deadline ?? null);
 
     const currPlayers = (ps ?? []) as Player[];
     const allPrevPs   = (prevPs ?? []) as PrevPlayer[];
@@ -282,7 +285,7 @@ export default function TeamBuilderPage() {
     else { const t = teams.find(t => t.id === destination.droppableId); newTeam = t?.name ?? 'Unassigned'; }
     setAssigns(prev => {
       const next = new Map(prev);
-      const ex = next.get(draggableId) ?? { player_id: draggableId, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
+      const ex = next.get(draggableId) ?? { player_id: draggableId, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null };
       next.set(draggableId, { ...ex, team: newTeam });
       return next;
     });
@@ -311,7 +314,7 @@ export default function TeamBuilderPage() {
     setSendId(pid);
     try {
       const res = await fetch('/api/tryout/send-waitlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: pid, club_id: club.id }) });
-      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null }; next.set(pid, { ...ex, status: 'Waitlist' }); return next; });
+      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null }; next.set(pid, { ...ex, status: 'Waitlist' }); return next; });
     } finally { setSendId(null); }
   }
 
@@ -320,7 +323,7 @@ export default function TeamBuilderPage() {
     setSendId(pid);
     try {
       const res = await fetch('/api/tryout/send-decline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: pid, club_id: club.id }) });
-      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null }; next.set(pid, { ...ex, status: 'Rejected' }); return next; });
+      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null }; next.set(pid, { ...ex, status: 'Rejected' }); return next; });
     } finally { setSendId(null); }
   }
 
@@ -361,23 +364,74 @@ export default function TeamBuilderPage() {
     });
   }
 
+  async function compactWaitlist(team: string) {
+    if (!club) return;
+    const { data: remaining } = await supabase.from('tryout_assignments')
+      .select('player_id,waitlist_position').eq('club_id', club.id).eq('team', team).eq('status', 'Waitlist')
+      .not('waitlist_position', 'is', null).order('waitlist_position', { ascending: true });
+    for (const row of remaining ?? []) {
+      await supabase.from('tryout_assignments').update({ waitlist_position: (row.waitlist_position as number) - 1 })
+        .eq('club_id', club.id).eq('player_id', row.player_id as string);
+    }
+  }
+
+  // Toggle a team-column candidate onto / off that team's ordered waitlist
+  // (separate from the generic pool-level "Waitlist" email — this one is
+  // scoped to the specific team and feeds advanceWaitlistForTeam).
+  async function toggleTeamWaitlist(pid: string) {
+    if (!club) return;
+    const a = assigns.get(pid);
+    const team = a?.team ?? null;
+    if (!team || ['Unassigned', 'Cut', 'Declined'].includes(team)) return;
+    if (a?.status === 'Waitlist') {
+      setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid); if (ex) next.set(pid, { ...ex, status: 'Unassigned', waitlist_position: null }); return next; });
+      await supabase.from('tryout_assignments').update({ status: 'Unassigned', waitlist_position: null }).eq('club_id', club.id).eq('player_id', pid);
+      await compactWaitlist(team);
+      load();
+    } else {
+      const { data: maxRow } = await supabase.from('tryout_assignments')
+        .select('waitlist_position').eq('club_id', club.id).eq('team', team).eq('status', 'Waitlist')
+        .not('waitlist_position', 'is', null).order('waitlist_position', { ascending: false }).limit(1).maybeSingle();
+      const nextPos = ((maxRow?.waitlist_position as number | undefined) ?? 0) + 1;
+      setAssigns(prev => {
+        const next = new Map(prev);
+        const ex = next.get(pid) ?? { player_id: pid, team, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null };
+        next.set(pid, { ...ex, status: 'Waitlist', waitlist_position: nextPos });
+        return next;
+      });
+      await supabase.from('tryout_assignments').upsert({ club_id: club.id, player_id: pid, status: 'Waitlist', waitlist_position: nextPos }, { onConflict: 'club_id,player_id' });
+    }
+  }
+
+  async function advanceWaitlist(team: string | null) {
+    if (!club || !team) return;
+    const res = await fetch('/api/tryout/advance-waitlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ club_id: club.id, team }) });
+    if (res.ok) {
+      const { promoted } = await res.json();
+      if (promoted) load();
+    }
+  }
+
   async function setOfferStatus(pid: string, newStatus: string) {
     if (!club) return;
+    const prevTeam = assigns.get(pid)?.team ?? null;
     setAssigns(prev => {
       const next = new Map(prev);
-      const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
+      const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null };
       next.set(pid, { ...ex, offer_status: newStatus });
       return next;
     });
     await supabase.from('tryout_assignments').upsert({ club_id: club.id, player_id: pid, offer_status: newStatus }, { onConflict: 'club_id,player_id' });
     setOverridePopup(null);
+    // A roster spot just opened — auto-offer the next player waitlisted for this team.
+    if (newStatus === 'Declined') await advanceWaitlist(prevTeam);
   }
 
   async function setReason(pid: string, reason: string) {
     if (!club) return;
     setAssigns(prev => {
       const next = new Map(prev);
-      const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
+      const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null };
       next.set(pid, { ...ex, declined_reason: reason || null });
       return next;
     });
@@ -387,10 +441,13 @@ export default function TeamBuilderPage() {
   async function bulkSetOfferStatus(colId: string, newStatus: string) {
     if (!club) return;
     const ids = getColIds(colId);
+    // Only players not already Declined actually free a new spot each.
+    const newlyDeclined = newStatus === 'Declined' ? ids.filter(pid => assigns.get(pid)?.offer_status !== 'Declined') : [];
+    const team = teams.find(t => t.id === colId)?.name ?? null;
     setAssigns(prev => {
       const next = new Map(prev);
       ids.forEach(pid => {
-        const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
+        const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null };
         next.set(pid, { ...ex, offer_status: newStatus });
       });
       return next;
@@ -402,11 +459,27 @@ export default function TeamBuilderPage() {
       );
     }
     setColMenu(null);
+    // Each newly-declined team member opens a spot — advance the waitlist once per spot.
+    for (let i = 0; i < newlyDeclined.length; i++) await advanceWaitlist(team);
   }
 
   async function sendAllOffersInCol(colId: string, colLabel: string) {
     setColMenu(null);
     setSendOfferModal({ colId, colLabel });
+  }
+
+  // Bulk sibling of sendWaitlistEmail/sendDeclineEmail — offers have had a
+  // "send to all" since the beginning, but notifying a whole column of
+  // waitlisted/cut players meant one click per player.
+  async function notifyAllInCol(colId: string, kind: 'waitlist' | 'decline') {
+    if (!club) return;
+    setColMenu(null);
+    const skipStatus = kind === 'waitlist' ? 'Waitlist' : 'Rejected';
+    const ids = getColIds(colId).filter(pid => assigns.get(pid)?.status !== skipStatus);
+    if (ids.length === 0) return;
+    const url = kind === 'waitlist' ? '/api/tryout/send-bulk-waitlist' : '/api/tryout/send-bulk-decline';
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_ids: ids, club_id: club.id }) });
+    if (res.ok) load();
   }
 
   function exportColCSV(colId: string, label: string) {
@@ -868,7 +941,17 @@ export default function TeamBuilderPage() {
                                             </button>
                                           )}
                                           {cardFields.has('offer_status') && a?.status === 'Waitlist' && !isAccepted && !isDeclinedOffer && (
-                                            <span style={{ fontSize: '10.5px', fontWeight: '700', background: '#F1F5F9', color: '#64748B', borderRadius: '5px', padding: '1px 7px' }}>Waitlist</span>
+                                            isTeam ? (
+                                              <button
+                                                onMouseDown={e => e.stopPropagation()}
+                                                onClick={e => { e.stopPropagation(); toggleTeamWaitlist(pid); }}
+                                                title="Click to remove from this team's waitlist"
+                                                style={{ fontSize: '10.5px', fontWeight: '700', background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', borderRadius: '5px', padding: '1px 7px', cursor: 'pointer' }}>
+                                                Waitlist{a?.waitlist_position != null ? ` #${a.waitlist_position}` : ''} ✕
+                                              </button>
+                                            ) : (
+                                              <span style={{ fontSize: '10.5px', fontWeight: '700', background: '#F1F5F9', color: '#64748B', borderRadius: '5px', padding: '1px 7px' }}>Waitlist</span>
+                                            )
                                           )}
                                           {cardFields.has('offer_status') && a?.status === 'Rejected' && (
                                             <span style={{ fontSize: '10.5px', fontWeight: '700', background: '#F1F5F9', color: '#64748B', borderRadius: '5px', padding: '1px 7px' }}>Notified — Not Selected</span>
@@ -893,7 +976,7 @@ export default function TeamBuilderPage() {
                                               {sendingId === pid ? '…' : <><Mail size={9} style={{ display: 'inline', marginRight: '2px', verticalAlign: '-1px' }} />Notify</>}
                                             </button>
                                           )}
-                                          {cardFields.has('offer_status') && isTeam && !isAccepted && !isDeclinedOffer && (
+                                          {cardFields.has('offer_status') && isTeam && !isAccepted && !isDeclinedOffer && a?.status !== 'Waitlist' && (
                                             <button
                                               onMouseDown={e => e.stopPropagation()}
                                               onClick={e => { e.stopPropagation(); sendOffer(pid); }}
@@ -908,6 +991,15 @@ export default function TeamBuilderPage() {
                                                 : <><Send size={8} />{sendingId === pid ? '…' : 'Send Offer'}</>}
                                             </button>
                                           )}
+                                          {cardFields.has('offer_status') && isTeam && !isAccepted && !isDeclinedOffer && a?.status !== 'Waitlist' && (!a?.offer_status || a.offer_status === 'NotSent') && (
+                                            <button
+                                              onMouseDown={e => e.stopPropagation()}
+                                              onClick={e => { e.stopPropagation(); toggleTeamWaitlist(pid); }}
+                                              title="Line this player up on this team's waitlist instead of offering now"
+                                              style={{ fontSize: '10px', fontWeight: '700', background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '5px', padding: '1px 7px', cursor: 'pointer' }}>
+                                              🕓 Line up
+                                            </button>
+                                          )}
                                           {cardFields.has('offer_status') && isTeam && a?.offer_status === 'Sent' && (
                                             <button
                                               onMouseDown={e => e.stopPropagation()}
@@ -917,6 +1009,12 @@ export default function TeamBuilderPage() {
                                               style={{ fontSize: '10px', fontWeight: '700', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', borderRadius: '5px', padding: '1px 7px', cursor: 'pointer' }}>
                                               {sendingId === pid ? '…' : '🔔 Remind'}
                                             </button>
+                                          )}
+                                          {cardFields.has('offer_status') && isTeam && a?.offer_status === 'Sent' && offerDeadline && new Date(offerDeadline) < new Date() && (
+                                            <span title={`No response — deadline was ${new Date(offerDeadline).toLocaleDateString()}`}
+                                              style={{ fontSize: '10px', fontWeight: '800', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', borderRadius: '5px', padding: '1px 7px' }}>
+                                              ⏰ Overdue
+                                            </span>
                                           )}
                                           {cardFields.has('offer_status') && isTeam && !isAccepted && !isDeclinedOffer && (
                                             <>
@@ -1044,7 +1142,7 @@ export default function TeamBuilderPage() {
             setAssigns(prev => {
               const next = new Map(prev);
               pids.forEach(pid => {
-                const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
+                const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null, waitlist_position: null };
                 next.set(pid, { ...ex, offer_status: 'Sent' });
               });
               return next;
@@ -1119,6 +1217,18 @@ export default function TeamBuilderPage() {
               style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', fontSize: '13px', color: '#2563EB', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}>
               <Mail size={13} /> Send offers to all
             </button>
+            {colMenu.colId === 'pool' && (
+              <button onClick={() => notifyAllInCol(colMenu.colId, 'waitlist')}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', fontSize: '13px', color: '#475569', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}>
+                <Mail size={13} /> Notify all — waitlist
+              </button>
+            )}
+            {colMenu.colId === 'cut' && (
+              <button onClick={() => notifyAllInCol(colMenu.colId, 'decline')}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', fontSize: '13px', color: '#475569', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}>
+                <Mail size={13} /> Notify all — not selected
+              </button>
+            )}
             <button onClick={() => exportColCSV(colMenu.colId, colMenu.colLabel)}
               style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '9px 14px', background: 'none', border: 'none', borderTop: '1px solid #F1F5F9', fontSize: '13px', color: '#374151', fontWeight: '600', cursor: 'pointer', textAlign: 'left' }}>
               <Download size={13} /> Export CSV

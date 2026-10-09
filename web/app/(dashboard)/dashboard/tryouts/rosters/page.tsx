@@ -5,12 +5,16 @@ import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { FlipBoard } from '@/components/FlipBoard';
 import { seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
-import { Lock, Send, ChevronDown, ChevronUp, Users, UserPlus, CheckCircle2 } from 'lucide-react';
+import { Lock, Send, ChevronDown, ChevronUp, Users, UserPlus, CheckCircle2, DollarSign } from 'lucide-react';
 
 type Player = { id: string; first_name: string; last_name: string; date_of_birth: string | null; grade: string | null; gender: string | null; final_age_group: string | null; positions: string[] | null; email_primary: string | null; parent_name: string | null };
-type Assignment = { player_id: string; team: string | null; status: string; offer_status: string; registration_status: string; promoted_player_id: string | null };
+type Assignment = { id: string; player_id: string; team: string | null; status: string; offer_status: string; registration_status: string; promoted_player_id: string | null };
 type TryoutTeam = { id: string; name: string; color: string; age_group: string | null; gender: string | null; format: string | null; roster_locked: boolean; head_coach_id: string | null };
 type CoachMap = Record<string, string>;
+type Installment = { id: string; assignment_id: string; label: string; amount: number; due_date: string | null; paid_at: string | null; payment_method: string | null };
+
+const MANUAL_METHODS = ['cash', 'bank_transfer', 'cheque', 'other'] as const;
+const METHOD_LABELS: Record<string, string> = { cash: 'Cash', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other', stripe: 'Card' };
 
 export default function TryoutRostersPage() {
   const { club, profile } = useDashboard();
@@ -26,20 +30,55 @@ export default function TryoutRostersPage() {
   const [expanded, setExpanded]     = useState<Set<string>>(new Set());
   const [sending, setSending]       = useState<Record<string, boolean>>({});
   const [promoting, setPromoting]   = useState<Record<string, boolean>>({});
+  const [installments, setInstallments] = useState<Map<string, Installment[]>>(new Map());
+  const [payModal, setPayModal]     = useState<{ installment: Installment; playerName: string } | null>(null);
 
   async function load() {
     if (!club) return;
     const [{ data: ps }, { data: asgn }, { data: ts }, { data: cs }] = await Promise.all([
       supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,grade,gender,final_age_group,positions,email_primary,parent_name').eq('club_id', club.id),
-      supabase.from('tryout_assignments').select('player_id,team,status,offer_status,registration_status,promoted_player_id').eq('club_id', club.id),
+      supabase.from('tryout_assignments').select('id,player_id,team,status,offer_status,registration_status,promoted_player_id').eq('club_id', club.id),
       supabase.from('tryout_teams').select('*').eq('club_id', club.id).eq('is_active', true).order('sort_order').order('name'),
       supabase.from('tryout_coaches').select('id,full_name').eq('club_id', club.id),
     ]);
     setPlayers((ps ?? []) as Player[]);
-    setAssigns(new Map(((asgn ?? []) as Assignment[]).map(a => [a.player_id, a])));
+    const assignRows = (asgn ?? []) as Assignment[];
+    setAssigns(new Map(assignRows.map(a => [a.player_id, a])));
     setTeams((ts ?? []) as TryoutTeam[]);
     setCoaches(Object.fromEntries(((cs ?? []) as { id: string; full_name: string }[]).map(c => [c.id, c.full_name])));
+
+    const assignmentIds = assignRows.map(a => a.id);
+    if (assignmentIds.length > 0) {
+      const { data: insts } = await supabase.from('tryout_installments')
+        .select('id,assignment_id,label,amount,due_date,paid_at,payment_method')
+        .in('assignment_id', assignmentIds)
+        .order('due_date', { ascending: true });
+      const map = new Map<string, Installment[]>();
+      for (const row of (insts ?? []) as Installment[]) {
+        const list = map.get(row.assignment_id) ?? [];
+        list.push(row);
+        map.set(row.assignment_id, list);
+      }
+      setInstallments(map);
+    } else {
+      setInstallments(new Map());
+    }
     setLoading(false);
+  }
+
+  function installmentsForPlayer(pid: string): Installment[] {
+    const aid = assigns.get(pid)?.id;
+    return aid ? (installments.get(aid) ?? []) : [];
+  }
+
+  async function recordManualPayment(installment: Installment, method: string, reference: string) {
+    await supabase.from('tryout_installments').update({
+      paid_at: new Date().toISOString(),
+      payment_method: method,
+      reference: reference.trim() || null,
+    }).eq('id', installment.id);
+    setPayModal(null);
+    await load();
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- fetch-on-mount effect; load is a plain function whose real reactive inputs are already listed here
   useEffect(() => { load(); }, [club]);
@@ -418,6 +457,31 @@ export default function TryoutRostersPage() {
                                           <CheckCircle2 size={10} /> On Roster
                                         </span>
                                       )}
+                                      {os === 'Accepted' && (() => {
+                                        const insts = installmentsForPlayer(p.id);
+                                        if (insts.length === 0) return null;
+                                        const paidCount = insts.filter(i => i.paid_at).length;
+                                        const allPaid = paidCount === insts.length;
+                                        const nextUnpaid = insts.find(i => !i.paid_at);
+                                        return (
+                                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '6px' }}>
+                                            <span style={{
+                                              fontSize: '10.5px', fontWeight: '700', borderRadius: '20px', padding: '3px 9px', whiteSpace: 'nowrap',
+                                              background: allPaid ? '#ECFDF5' : '#FEF3C7', color: allPaid ? '#047857' : '#92400E',
+                                              border: `1px solid ${allPaid ? '#A7F3D0' : '#FDE68A'}`,
+                                            }}>
+                                              {allPaid ? '✓ Paid' : `${paidCount}/${insts.length} paid`}
+                                            </span>
+                                            {nextUnpaid && (
+                                              <button onClick={() => setPayModal({ installment: nextUnpaid, playerName: `${p.first_name} ${p.last_name}` })}
+                                                title="Record a cash/check/bank-transfer payment"
+                                                style={{ fontSize: '10px', fontWeight: '700', background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', borderRadius: '20px', padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <DollarSign size={9} /> Record
+                                              </button>
+                                            )}
+                                          </span>
+                                        );
+                                      })()}
                                       {os === 'NotSent' && !team.roster_locked && (
                                         <button onClick={() => sendOffer(p.id)} disabled={sending[p.id]}
                                           style={{ fontSize: '11px', fontWeight: '700', background: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE', borderRadius: '20px', padding: '3px 12px', cursor: 'pointer' }}>
@@ -442,6 +506,60 @@ export default function TryoutRostersPage() {
             </div>
           );
         })}
+      </div>
+
+      {payModal && (
+        <RecordPaymentModal
+          installment={payModal.installment}
+          playerName={payModal.playerName}
+          onClose={() => setPayModal(null)}
+          onSave={recordManualPayment}
+        />
+      )}
+    </div>
+  );
+}
+
+function RecordPaymentModal({ installment, playerName, onClose, onSave }: {
+  installment: Installment; playerName: string; onClose: () => void;
+  onSave: (installment: Installment, method: string, reference: string) => Promise<void>;
+}) {
+  const [method, setMethod] = useState<string>('cash');
+  const [reference, setReference] = useState('');
+  const [saving, setSaving] = useState(false);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: '12px', padding: '24px', width: '360px', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
+        <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A', marginBottom: '4px' }}>Record a manual payment</div>
+        <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '18px' }}>{playerName} — {installment.label} (${installment.amount})</div>
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Method</div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {MANUAL_METHODS.map(m => (
+              <button key={m} onClick={() => setMethod(m)} style={{
+                fontSize: '12px', fontWeight: '700', padding: '6px 11px', borderRadius: '7px', cursor: 'pointer',
+                border: `1px solid ${method === m ? '#1D4ED8' : '#E2E8F0'}`,
+                background: method === m ? '#EFF6FF' : '#fff', color: method === m ? '#1D4ED8' : '#475569',
+              }}>
+                {METHOD_LABELS[m]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Reference (optional)</div>
+          <input value={reference} onChange={e => setReference(e.target.value)} placeholder="Check #, confirmation code, etc."
+            style={{ width: '100%', padding: '8px 10px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', boxSizing: 'border-box' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button onClick={onClose} style={{ fontSize: '13px', fontWeight: '600', color: '#64748B', background: 'none', border: 'none', cursor: 'pointer', padding: '8px 12px' }}>Cancel</button>
+          <button
+            onClick={async () => { setSaving(true); await onSave(installment, method, reference); setSaving(false); }}
+            disabled={saving}
+            style={{ fontSize: '13px', fontWeight: '700', color: '#fff', background: '#15803D', border: 'none', borderRadius: '7px', padding: '8px 16px', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+            {saving ? 'Saving…' : 'Mark as Paid'}
+          </button>
+        </div>
       </div>
     </div>
   );

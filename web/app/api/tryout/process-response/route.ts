@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase';
 import { checkRateLimit } from '@/lib/rateLimit';
-
-const supabaseAdmin = () =>
-  createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+import { advanceWaitlistForTeam } from '@/lib/tryoutWaitlist';
+import { notifyClubStaff } from '@/lib/notifyClubStaff';
 
 // When a club has configured a Registration Hub form as its post-acceptance
 // registration (tryout_offer_settings.post_acceptance_form_id), send
@@ -74,6 +73,9 @@ export async function POST(req: NextRequest) {
   }
 
   const newStatus = action === 'accept' ? 'Accepted' : 'Declined';
+  const teamName = (a as { team: string | null }).team;
+  const clubId = (a as { club_id: string }).club_id;
+
   await sb.from('tryout_assignments').update({
     offer_status: newStatus,
     status: newStatus,
@@ -81,8 +83,35 @@ export async function POST(req: NextRequest) {
   }).eq('id', (a as { id: string }).id);
 
   const player = (a as { tryout_players: Record<string, string> }).tryout_players;
-  const clubId = (a as { club_id: string }).club_id;
   const { data: club } = await sb.from('clubs').select('name, logo_url, primary_color').eq('id', clubId).single();
+
+  // A decline frees a roster spot on a real team — auto-offer the next
+  // player in that team's ordered waitlist, if anyone's waiting.
+  let promotedName: string | null = null;
+  if (action === 'decline') {
+    const { promoted } = await advanceWaitlistForTeam(sb, clubId, teamName);
+    promotedName = promoted?.name ?? null;
+  }
+
+  const { data: offerSettings } = await sb
+    .from('tryout_offer_settings')
+    .select('notify_staff_on_accept, notify_staff_on_decline')
+    .eq('club_id', clubId)
+    .single();
+  const shouldNotify = action === 'accept' ? offerSettings?.notify_staff_on_accept : offerSettings?.notify_staff_on_decline;
+  if (shouldNotify) {
+    const playerName = player?.full_name ?? 'A tryout player';
+    let body = `${playerName} ${action === 'accept' ? 'accepted' : 'declined'} their offer for ${teamName ?? 'their team'}.`;
+    if (promotedName) body += ` ${promotedName} has been automatically offered the open spot (waitlist #1).`;
+    await notifyClubStaff(sb, { id: clubId, name: club?.name, primary_color: club?.primary_color }, {
+      type: 'tryout_offer_response',
+      title: `Offer ${action === 'accept' ? 'accepted' : 'declined'} — ${teamName ?? ''}`,
+      body,
+      emailSubject: `Tryouts: ${teamName ?? 'offer'} ${action === 'accept' ? 'accepted' : 'declined'}`,
+      emailBody: body,
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     action,
