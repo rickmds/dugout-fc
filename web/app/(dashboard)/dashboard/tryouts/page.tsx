@@ -5,7 +5,7 @@ import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { FlipBoard } from '@/components/FlipBoard';
 import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
-import { Users, Target, CheckCircle, XCircle, Clock, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Users, Target, CheckCircle, XCircle, Clock, AlertTriangle, ArrowRight, Shield, UserX, Scale } from 'lucide-react';
 
 type Player = { id: string; date_of_birth: string | null; gender: string | null; final_age_group: string | null };
 type Assignment = { player_id: string; team: string | null; status: string; offer_status: string };
@@ -83,8 +83,27 @@ export default function TryoutOverviewPage() {
   const totalPlaced = players.filter(p => { const t = assigns.get(p.id)?.team; return t && !['Unassigned','Cut','Declined',null].includes(t); }).length;
   const totalAccepted = players.filter(p => assigns.get(p.id)?.offer_status === 'Accepted').length;
   const totalCut = players.filter(p => assigns.get(p.id)?.team === 'Cut').length;
+  const totalDeclined = players.filter(p => assigns.get(p.id)?.team === 'Declined').length;
   const totalPool = players.filter(p => { const t = assigns.get(p.id)?.team; return !t || t === 'Unassigned'; }).length;
+  const activeTeams = teams.length;
   const ntrCount = [...rankings.values()].filter(r => r.tryout_status === 'NTR').length;
+
+  // Roster health: within each age_group+gender bracket that has 2+ teams,
+  // flag a spread of 5+ players between the fullest and emptiest team.
+  const bracketMap = new Map<string, { ag: string; gender: string; teams: { id: string; name: string; color: string; count: number }[] }>();
+  for (const t of teams) {
+    if (!t.age_group || !t.gender) continue;
+    const key = `${t.age_group}|${t.gender}`;
+    if (!bracketMap.has(key)) bracketMap.set(key, { ag: t.age_group, gender: t.gender, teams: [] });
+    const count = players.filter(p => assigns.get(p.id)?.team === t.name).length;
+    bracketMap.get(key)!.teams.push({ id: t.id, name: t.name, color: t.color, count });
+  }
+  const brackets = [...bracketMap.values()].filter(b => b.teams.length >= 2).map(b => {
+    const counts = b.teams.map(t => t.count);
+    const spread = Math.max(...counts) - Math.min(...counts);
+    return { ...b, spread, flagged: spread >= 5 };
+  });
+  const flaggedBrackets = brackets.filter(b => b.flagged);
 
   // Auto-detect current phase
   const unrankedCount = players.filter(p => !rankings.get(p.id)?.tryout_rank).length;
@@ -200,11 +219,13 @@ export default function TryoutOverviewPage() {
         )}
 
         {/* Top stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '24px' }}>
           <StatCard label="Total Players" val={totalPlayers} icon={<Users size={20} color="#6366F1" />} color="#6366F1" />
+          <StatCard label="Active Teams" val={activeTeams} icon={<Shield size={20} color="#0EA5E9" />} color="#0EA5E9" />
           <StatCard label="In Pool" val={totalPool} icon={<Clock size={20} color="#94A3B8" />} color="#94A3B8" />
           <StatCard label="Placed in Teams" val={totalPlaced} icon={<Target size={20} color="#3B82F6" />} color="#3B82F6" />
           <StatCard label="Accepted Offers" val={totalAccepted} icon={<CheckCircle size={20} color="#22C55E" />} color="#22C55E" />
+          <StatCard label="Declined" val={totalDeclined} icon={<UserX size={20} color="#F59E0B" />} color="#F59E0B" />
           <StatCard label="Cut" val={totalCut} icon={<XCircle size={20} color="#EF4444" />} color="#EF4444" />
         </div>
 
@@ -261,6 +282,43 @@ export default function TryoutOverviewPage() {
             </table>
           </div>
         </div>
+
+        {/* Roster health — balance check within each age/gender bracket */}
+        {brackets.length > 0 && (
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '24px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Scale size={16} color="#64748B" />
+              <span style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A' }}>Roster Health</span>
+              <span style={{ fontSize: '11px', color: '#94A3B8' }}>— balance checked within each age/gender bracket, flagged only if the spread is 5+ players</span>
+            </div>
+            {flaggedBrackets.length === 0 ? (
+              <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle size={16} color="#22C55E" />
+                <span style={{ fontSize: '13px', color: '#15803D', fontWeight: '600' }}>All brackets balanced — no team is carrying a 5+ player advantage over another in the same bracket.</span>
+              </div>
+            ) : (
+              <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {flaggedBrackets.map(b => (
+                  <div key={`${b.ag}-${b.gender}`} style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderLeft: '4px solid #EF4444', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <AlertTriangle size={16} color="#DC2626" />
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#0F172A' }}>{b.ag} · {b.gender === 'Female' ? '♀ Female' : '♂ Male'}</span>
+                      <span style={{ fontSize: '12px', color: '#B91C1C', fontWeight: '600' }}>{b.spread}-player spread</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {b.teams.sort((x, y) => y.count - x.count).map(t => (
+                        <span key={t.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11.5px', fontWeight: '700', color: '#0F172A', background: '#fff', border: '1px solid #FECACA', borderRadius: '6px', padding: '3px 9px' }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: t.color, display: 'inline-block', flexShrink: 0 }} />
+                          {t.name} · {t.count}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Team acceptance tracker */}
         {teamAcceptance.length > 0 && (
