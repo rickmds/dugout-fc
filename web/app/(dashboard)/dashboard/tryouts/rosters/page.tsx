@@ -5,15 +5,15 @@ import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { supabase } from '@/lib/supabase';
 import { FlipBoard } from '@/components/FlipBoard';
 import { seasonOptions, AGE_GROUPS } from '@/lib/ageGroup';
-import { Lock, Send, ChevronDown, ChevronUp, Users } from 'lucide-react';
+import { Lock, Send, ChevronDown, ChevronUp, Users, UserPlus, CheckCircle2 } from 'lucide-react';
 
-type Player = { id: string; first_name: string; last_name: string; date_of_birth: string | null; grade: string | null; gender: string | null; final_age_group: string | null; positions: string[] | null; email_primary: string | null };
-type Assignment = { player_id: string; team: string | null; status: string; offer_status: string; registration_status: string };
+type Player = { id: string; first_name: string; last_name: string; date_of_birth: string | null; grade: string | null; gender: string | null; final_age_group: string | null; positions: string[] | null; email_primary: string | null; parent_name: string | null };
+type Assignment = { player_id: string; team: string | null; status: string; offer_status: string; registration_status: string; promoted_player_id: string | null };
 type TryoutTeam = { id: string; name: string; color: string; age_group: string | null; gender: string | null; format: string | null; roster_locked: boolean; head_coach_id: string | null };
 type CoachMap = Record<string, string>;
 
 export default function TryoutRostersPage() {
-  const { club } = useDashboard();
+  const { club, profile } = useDashboard();
   const [season, setSeason]         = useState(() => seasonOptions()[1] ?? '2026-27');
   const [players, setPlayers]       = useState<Player[]>([]);
   const [assigns, setAssigns]       = useState<Map<string, Assignment>>(new Map());
@@ -25,12 +25,13 @@ export default function TryoutRostersPage() {
   const [filterTeam, setFilterTeam] = useState('All');
   const [expanded, setExpanded]     = useState<Set<string>>(new Set());
   const [sending, setSending]       = useState<Record<string, boolean>>({});
+  const [promoting, setPromoting]   = useState<Record<string, boolean>>({});
 
   async function load() {
     if (!club) return;
     const [{ data: ps }, { data: asgn }, { data: ts }, { data: cs }] = await Promise.all([
-      supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,grade,gender,final_age_group,positions,email_primary').eq('club_id', club.id),
-      supabase.from('tryout_assignments').select('player_id,team,status,offer_status,registration_status').eq('club_id', club.id),
+      supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,grade,gender,final_age_group,positions,email_primary,parent_name').eq('club_id', club.id),
+      supabase.from('tryout_assignments').select('player_id,team,status,offer_status,registration_status,promoted_player_id').eq('club_id', club.id),
       supabase.from('tryout_teams').select('*').eq('club_id', club.id).eq('is_active', true).order('sort_order').order('name'),
       supabase.from('tryout_coaches').select('id,full_name').eq('club_id', club.id),
     ]);
@@ -72,6 +73,60 @@ export default function TryoutRostersPage() {
     for (const pid of playerIds) {
       const os = assigns.get(pid)?.offer_status;
       if (!os || os === 'NotSent') await sendOffer(pid);
+    }
+  }
+
+  // Nothing in this app has ever created a real teams/players row from
+  // tryout data before — accepting an offer only ever updated status
+  // fields. This is the actual bridge: find-or-create the real team for
+  // this tryout team's name/age-group/season, then create a real player
+  // row (and a parent invite, matching how every other roster-add flow
+  // in the app already works) for each accepted candidate who hasn't
+  // been promoted yet. promoted_player_id makes repeat clicks safe —
+  // already-promoted players are simply skipped, not duplicated.
+  async function promoteTeam(team: TryoutTeam, candidates: Player[]) {
+    if (!club || candidates.length === 0) return;
+    setPromoting(prev => ({ ...prev, [team.id]: true }));
+    try {
+      const { data: existingTeam } = await supabase.from('teams')
+        .select('id').eq('club_id', club.id).eq('name', team.name).eq('season', season).maybeSingle();
+
+      let realTeamId = existingTeam?.id as string | undefined;
+      if (!realTeamId) {
+        const { data: newTeam, error } = await supabase.from('teams')
+          .insert({ club_id: club.id, name: team.name, age_group: team.age_group, season })
+          .select('id').single();
+        if (error || !newTeam) { alert(`Could not create the real team: ${error?.message ?? 'unknown error'}`); return; }
+        realTeamId = newTeam.id;
+      }
+
+      let promotedCount = 0;
+      for (const p of candidates) {
+        const { data: newPlayer, error } = await supabase.from('players').insert({
+          team_id: realTeamId,
+          full_name: `${p.first_name} ${p.last_name}`,
+          position: p.positions?.[0] ?? null,
+          date_of_birth: p.date_of_birth,
+        }).select('id').single();
+        if (error || !newPlayer) continue;
+
+        await supabase.from('tryout_assignments').update({ promoted_player_id: newPlayer.id }).eq('player_id', p.id).eq('club_id', club.id);
+
+        if (p.email_primary?.trim()) {
+          await supabase.from('invites').insert({
+            team_id: realTeamId, club_id: club.id, player_id: newPlayer.id,
+            email: p.email_primary.trim(), guardian_name: p.parent_name?.trim() || null, created_by: profile?.id,
+          });
+        }
+        promotedCount++;
+      }
+
+      await load();
+      if (promotedCount < candidates.length) {
+        alert(`${promotedCount} of ${candidates.length} players were added to the roster. The rest failed — try again.`);
+      }
+    } finally {
+      setPromoting(prev => ({ ...prev, [team.id]: false }));
     }
   }
 
@@ -256,6 +311,8 @@ export default function TryoutRostersPage() {
                         const coachName = team.head_coach_id ? coaches[team.head_coach_id] : null;
                         const isOpen   = expanded.has(team.id);
                         const unsent   = tp.filter(p => { const os = assigns.get(p.id)?.offer_status; return !os || os === 'NotSent'; });
+                        const notPromoted = tp.filter(p => assigns.get(p.id)?.offer_status === 'Accepted' && !assigns.get(p.id)?.promoted_player_id);
+                        const promotedCount = tp.filter(p => !!assigns.get(p.id)?.promoted_player_id).length;
 
                         return (
                           <div key={team.id} style={{ background: '#fff', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.06)' }}>
@@ -292,6 +349,7 @@ export default function TryoutRostersPage() {
                                 <span>·</span>
                                 <span>✓ {accepted}/{tp.length} ACCEPTED</span>
                                 {tbd > 0 && <><span>·</span><span style={{ color: '#FDE68A', fontWeight: '700' }}>{tbd} TBD</span></>}
+                                {promotedCount > 0 && <><span>·</span><span style={{ color: '#4ADE80', fontWeight: '700' }}>{promotedCount} on roster</span></>}
                                 {coachName && <><span>·</span><span>Coach {coachName}</span></>}
                               </div>
 
@@ -302,15 +360,23 @@ export default function TryoutRostersPage() {
                             </div>
 
                             {/* Action bar */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: isOpen ? '1px solid #F1F5F9' : 'none' }}>
-                              {unsent.length > 0 && !team.roster_locked ? (
-                                <button onClick={() => sendAllForTeam(unsent.map(p => p.id))}
-                                  style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '700', background: '#1D4ED8', color: '#fff', border: 'none', borderRadius: '7px', padding: '6px 14px', cursor: 'pointer', boxShadow: '0 1px 4px rgba(29,78,216,0.3)' }}>
-                                  <Send size={11} /> Send {unsent.length} Offer{unsent.length !== 1 ? 's' : ''}
-                                </button>
-                              ) : <div />}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: isOpen ? '1px solid #F1F5F9' : 'none', gap: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {unsent.length > 0 && !team.roster_locked && (
+                                  <button onClick={() => sendAllForTeam(unsent.map(p => p.id))}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '700', background: '#1D4ED8', color: '#fff', border: 'none', borderRadius: '7px', padding: '6px 14px', cursor: 'pointer', boxShadow: '0 1px 4px rgba(29,78,216,0.3)' }}>
+                                    <Send size={11} /> Send {unsent.length} Offer{unsent.length !== 1 ? 's' : ''}
+                                  </button>
+                                )}
+                                {notPromoted.length > 0 && (
+                                  <button onClick={() => promoteTeam(team, notPromoted)} disabled={!!promoting[team.id]}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: '700', background: '#15803D', color: '#fff', border: 'none', borderRadius: '7px', padding: '6px 14px', cursor: promoting[team.id] ? 'default' : 'pointer', boxShadow: '0 1px 4px rgba(21,128,61,0.3)', opacity: promoting[team.id] ? 0.7 : 1 }}>
+                                    <UserPlus size={11} /> {promoting[team.id] ? 'Adding…' : `Add ${notPromoted.length} to Roster`}
+                                  </button>
+                                )}
+                              </div>
                               <button onClick={() => toggleExpanded(team.id)}
-                                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: '600', color: '#64748B', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: '600', color: '#64748B', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
                                 {isOpen ? <><ChevronUp size={13} />Hide</> : <><ChevronDown size={13} />Show Players</>}
                               </button>
                             </div>
@@ -341,7 +407,15 @@ export default function TryoutRostersPage() {
                                             ? { background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }
                                             : { background: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }),
                                         }}>
-                                          {assigns.get(p.id)?.registration_status === 'Submitted' ? '✓ Registered' : 'Registration pending'}
+                                          {/* Paperwork (emergency contact, medical, kit size), not roster
+                                              membership — kept distinct from the "On Roster" badge below so
+                                              the two don't get conflated the way "Registered" alone did. */}
+                                          {assigns.get(p.id)?.registration_status === 'Submitted' ? '✓ Paperwork done' : 'Paperwork pending'}
+                                        </span>
+                                      )}
+                                      {assigns.get(p.id)?.promoted_player_id && (
+                                        <span style={{ fontSize: '10.5px', fontWeight: '700', borderRadius: '20px', padding: '3px 9px', whiteSpace: 'nowrap', marginLeft: '6px', background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                          <CheckCircle2 size={10} /> On Roster
                                         </span>
                                       )}
                                       {os === 'NotSent' && !team.roster_locked && (

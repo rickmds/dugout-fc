@@ -10,8 +10,8 @@ import { calcAgeGroup, seasonLabelToYear, seasonOptions, AGE_GROUPS } from '@/li
 import { Lock, Unlock, Plus, X, Edit2, Trash2, Mail, Search, Send, CheckCircle2, HelpCircle, Copy, Check, MoreHorizontal, Download, Columns } from 'lucide-react';
 
 const TEAM_PALETTE = ['#3B82F6','#22C55E','#EF4444','#F59E0B','#6366F1','#EC4899','#14B8A6','#8B5CF6','#F97316','#06B6D4'];
-type NewTeamForm = { name: string; color: string; age_group: string; gender: string; format: string };
-const blankTeam = (ag: string, gender: string): NewTeamForm => ({ name: '', color: TEAM_PALETTE[0], age_group: ag, gender, format: '11v11' });
+type NewTeamForm = { name: string; color: string; age_group: string; gender: string; format: string; roster_size: string };
+const blankTeam = (ag: string, gender: string): NewTeamForm => ({ name: '', color: TEAM_PALETTE[0], age_group: ag, gender, format: '11v11', roster_size: '' });
 
 // Standard format by age group
 const AG_FORMAT: Record<string, string> = {
@@ -27,8 +27,8 @@ type Player = {
   email_primary: string | null; maybe_flag: boolean | null;
 };
 type Ranking = { player_id: string; tryout_rank: number | null; coach_rank: number | null; tryout_status: string | null };
-type Assignment = { player_id: string; team: string | null; status: string; offer_status: string };
-type TryoutTeam = { id: string; name: string; color: string; age_group: string | null; gender: string | null; format: string | null; roster_locked: boolean; head_coach_id: string | null };
+type Assignment = { player_id: string; team: string | null; status: string; offer_status: string; declined_reason: string | null };
+type TryoutTeam = { id: string; name: string; color: string; age_group: string | null; gender: string | null; format: string | null; roster_locked: boolean; head_coach_id: string | null; roster_size: number | null };
 type CoachMap = Record<string, string>;
 type ClubCtx = { id: string; name: string | null; primary_color: string | null; secondary_color?: string | null; logo_url?: string | null } | null;
 
@@ -88,6 +88,7 @@ export default function TeamBuilderPage() {
   const [editTeam, setEditTeam]   = useState<TryoutTeam | null>(null);
   const [delTeamId, setDelTeamId] = useState<string | null>(null);
   const [highlightNTR, setHighlightNTR] = useState(false);
+  const [reasonEditing, setReasonEditing] = useState<Set<string>>(new Set());
   const [emailModal, setEmailModal] = useState<{ title: string; rows: { name: string; email: string }[] } | null>(null);
   const [overridePopup, setOverridePopup] = useState<{ pid: string; x: number; y: number } | null>(null);
   const [colMenu, setColMenu] = useState<{ colId: string; colLabel: string; x: number; y: number } | null>(null);
@@ -115,7 +116,7 @@ export default function TeamBuilderPage() {
     const [{ data: ps }, { data: rnk }, { data: asgn }, { data: ts }, { data: cs }, { data: prevPs }] = await Promise.all([
       supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,grade,gender,final_age_group,positions,maroons_status,email_primary,maybe_flag').eq('club_id', club.id).eq('season_label', season),
       supabase.from('tryout_rankings').select('player_id,tryout_rank,coach_rank,tryout_status').eq('club_id', club.id),
-      supabase.from('tryout_assignments').select('player_id,team,status,offer_status').eq('club_id', club.id),
+      supabase.from('tryout_assignments').select('player_id,team,status,offer_status,declined_reason').eq('club_id', club.id),
       supabase.from('tryout_teams').select('*').eq('club_id', club.id).eq('is_active', true).order('sort_order').order('name'),
       supabase.from('tryout_coaches').select('id,full_name').eq('club_id', club.id),
       supabase.from('tryout_players').select('id,first_name,last_name,date_of_birth,email_primary').eq('club_id', club.id).eq('season_label', prevSeason),
@@ -281,7 +282,7 @@ export default function TeamBuilderPage() {
     else { const t = teams.find(t => t.id === destination.droppableId); newTeam = t?.name ?? 'Unassigned'; }
     setAssigns(prev => {
       const next = new Map(prev);
-      const ex = next.get(draggableId) ?? { player_id: draggableId, team: null, status: 'Unassigned', offer_status: 'NotSent' };
+      const ex = next.get(draggableId) ?? { player_id: draggableId, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
       next.set(draggableId, { ...ex, team: newTeam });
       return next;
     });
@@ -310,7 +311,7 @@ export default function TeamBuilderPage() {
     setSendId(pid);
     try {
       const res = await fetch('/api/tryout/send-waitlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: pid, club_id: club.id }) });
-      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' }; next.set(pid, { ...ex, status: 'Waitlist' }); return next; });
+      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null }; next.set(pid, { ...ex, status: 'Waitlist' }); return next; });
     } finally { setSendId(null); }
   }
 
@@ -319,7 +320,7 @@ export default function TeamBuilderPage() {
     setSendId(pid);
     try {
       const res = await fetch('/api/tryout/send-decline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: pid, club_id: club.id }) });
-      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' }; next.set(pid, { ...ex, status: 'Rejected' }); return next; });
+      if (res.ok) setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null }; next.set(pid, { ...ex, status: 'Rejected' }); return next; });
     } finally { setSendId(null); }
   }
 
@@ -364,12 +365,23 @@ export default function TeamBuilderPage() {
     if (!club) return;
     setAssigns(prev => {
       const next = new Map(prev);
-      const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' };
+      const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
       next.set(pid, { ...ex, offer_status: newStatus });
       return next;
     });
     await supabase.from('tryout_assignments').upsert({ club_id: club.id, player_id: pid, offer_status: newStatus }, { onConflict: 'club_id,player_id' });
     setOverridePopup(null);
+  }
+
+  async function setReason(pid: string, reason: string) {
+    if (!club) return;
+    setAssigns(prev => {
+      const next = new Map(prev);
+      const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
+      next.set(pid, { ...ex, declined_reason: reason || null });
+      return next;
+    });
+    await supabase.from('tryout_assignments').upsert({ club_id: club.id, player_id: pid, declined_reason: reason || null }, { onConflict: 'club_id,player_id' });
   }
 
   async function bulkSetOfferStatus(colId: string, newStatus: string) {
@@ -378,7 +390,7 @@ export default function TeamBuilderPage() {
     setAssigns(prev => {
       const next = new Map(prev);
       ids.forEach(pid => {
-        const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' };
+        const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
         next.set(pid, { ...ex, offer_status: newStatus });
       });
       return next;
@@ -654,7 +666,12 @@ export default function TeamBuilderPage() {
                   <div style={{ borderRadius: '10px 10px 0 0', background: col.color, flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 12px 6px' }}>
                       <span style={{ fontSize: '13px', fontWeight: '800', color: '#fff', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
-                      <span style={{ fontSize: '11px', fontWeight: '800', background: 'rgba(255,255,255,0.25)', color: '#fff', borderRadius: '10px', padding: '1px 7px', flexShrink: 0 }}>{ids.length}</span>
+                      <span style={{
+                        fontSize: '11px', fontWeight: '800', color: '#fff', borderRadius: '10px', padding: '1px 7px', flexShrink: 0,
+                        background: team?.roster_size && ids.length >= team.roster_size ? 'rgba(74,222,128,0.4)' : 'rgba(255,255,255,0.25)',
+                      }}>
+                        {team?.roster_size ? `${ids.length}/${team.roster_size}` : ids.length}
+                      </span>
                       {team && (
                         <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
                           <HeaderBtn onClick={() => toggleLock(team)} title={team.roster_locked ? 'Unlock' : 'Lock'}>
@@ -922,6 +939,35 @@ export default function TeamBuilderPage() {
                                         </div>
                                       </div>
                                     </div>
+
+                                    {/* Why they didn't make it — only matters once they're off
+                                        the team path, so Cut/Declined only; reused from the
+                                        declined_reason column tryout_assignments already has
+                                        rather than adding a separate cut_reason. */}
+                                    {isSpecial && (
+                                      reasonEditing.has(pid) ? (
+                                        <div onMouseDown={e => e.stopPropagation()} style={{ display: 'flex', gap: '4px', marginTop: '6px' }}>
+                                          <input
+                                            autoFocus
+                                            defaultValue={a?.declined_reason ?? ''}
+                                            placeholder="e.g. not technical enough, picked another club…"
+                                            onKeyDown={e => {
+                                              if (e.key === 'Enter') { setReason(pid, (e.target as HTMLInputElement).value); setReasonEditing(s => { const n = new Set(s); n.delete(pid); return n; }); }
+                                              if (e.key === 'Escape') setReasonEditing(s => { const n = new Set(s); n.delete(pid); return n; });
+                                            }}
+                                            onBlur={e => { setReason(pid, e.target.value); setReasonEditing(s => { const n = new Set(s); n.delete(pid); return n; }); }}
+                                            style={{ flex: 1, fontSize: '10.5px', padding: '4px 7px', borderRadius: '5px', border: '1px solid #CBD5E1', outline: 'none', fontFamily: 'inherit' }}
+                                          />
+                                        </div>
+                                      ) : (
+                                        <button
+                                          onMouseDown={e => e.stopPropagation()}
+                                          onClick={e => { e.stopPropagation(); setReasonEditing(s => new Set(s).add(pid)); }}
+                                          style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0 0', fontSize: '10.5px', color: a?.declined_reason ? '#475569' : '#CBD5E1', fontStyle: a?.declined_reason ? 'normal' : 'italic', fontFamily: 'inherit' }}>
+                                          {a?.declined_reason || 'set reason ▾'}
+                                        </button>
+                                      )
+                                    )}
                                   </div>
                                 );
 
@@ -998,7 +1044,7 @@ export default function TeamBuilderPage() {
             setAssigns(prev => {
               const next = new Map(prev);
               pids.forEach(pid => {
-                const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' };
+                const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent', declined_reason: null };
                 next.set(pid, { ...ex, offer_status: 'Sent' });
               });
               return next;
@@ -1489,7 +1535,7 @@ function AddTeamModal({ club, team, defaultAg, defaultGender, usedColors, onClos
   const nextColor = TEAM_PALETTE.find(c => !usedColors.includes(c)) ?? TEAM_PALETTE[0];
   const [form, setForm] = useState<NewTeamForm>(
     team
-      ? { name: team.name, color: team.color, age_group: team.age_group ?? defaultAg, gender: team.gender ?? defaultGender, format: team.format ?? '11v11' }
+      ? { name: team.name, color: team.color, age_group: team.age_group ?? defaultAg, gender: team.gender ?? defaultGender, format: team.format ?? '11v11', roster_size: team.roster_size != null ? String(team.roster_size) : '' }
       : blankTeam(defaultAg, defaultGender)
   );
   const [color, setColor] = useState(team ? team.color : nextColor);
@@ -1501,7 +1547,7 @@ function AddTeamModal({ club, team, defaultAg, defaultGender, usedColors, onClos
   async function save() {
     if (!club || !form.name.trim()) return;
     setSaving(true);
-    const payload = { club_id: club.id, name: form.name.trim(), color, age_group: form.age_group || null, gender: form.gender || null, format: form.format || null, is_active: true, sort_order: 0, roster_locked: false };
+    const payload = { club_id: club.id, name: form.name.trim(), color, age_group: form.age_group || null, gender: form.gender || null, format: form.format || null, roster_size: form.roster_size.trim() ? parseInt(form.roster_size, 10) : null, is_active: true, sort_order: 0, roster_locked: false };
     if (team) await supabase.from('tryout_teams').update(payload).eq('id', team.id);
     else       await supabase.from('tryout_teams').insert(payload);
     setSaving(false); onSaved(); onClose();
@@ -1546,6 +1592,11 @@ function AddTeamModal({ club, team, defaultAg, defaultGender, usedColors, onClos
                 <option value="11v11">11v11</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            {lbl('Roster target (optional)')}
+            <input type="number" min={0} value={form.roster_size} onChange={e => setForm(f => ({ ...f, roster_size: e.target.value }))} placeholder="e.g. 16" style={{ ...inp, maxWidth: '120px' }} />
           </div>
 
           <div>

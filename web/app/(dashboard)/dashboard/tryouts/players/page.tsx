@@ -19,6 +19,7 @@ const STATUS_STYLES: Record<string, { bg: string; color: string }> = {
   Unassigned: { bg: '#F1F5F9', color: '#64748B' }, Offer: { bg: '#EFF6FF', color: '#2563EB' },
   Waitlist: { bg: '#FFF7ED', color: '#C2410C' }, Accepted: { bg: '#F0FDF4', color: '#16A34A' },
   Declined: { bg: '#FEF2F2', color: '#DC2626' }, Cut: { bg: '#F1F5F9', color: '#475569' },
+  NoShow: { bg: '#FEF3C7', color: '#92400E' },
 };
 
 export default function PlayerPoolPage() {
@@ -215,6 +216,16 @@ export default function PlayerPoolPage() {
 
   async function updateStatus(pid: string, status: string) {
     if (!club) return;
+    // "Cut" was already offered as an option here but isn't a real value
+    // of tryout_assignments.status (the DB check constraint doesn't
+    // allow it — Team Builder's own Cut List instead sets it on the
+    // `team` column) — selecting it previously just failed silently
+    // against the constraint. Route it to where it actually belongs.
+    if (status === 'Cut') {
+      setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' }; next.set(pid, { ...ex, team: 'Cut' }); return next; });
+      await supabase.from('tryout_assignments').upsert({ club_id: club.id, player_id: pid, team: 'Cut' }, { onConflict: 'club_id,player_id' });
+      return;
+    }
     setAssigns(prev => { const next = new Map(prev); const ex = next.get(pid) ?? { player_id: pid, team: null, status: 'Unassigned', offer_status: 'NotSent' }; next.set(pid, { ...ex, status }); return next; });
     await supabase.from('tryout_assignments').upsert({ club_id: club.id, player_id: pid, status }, { onConflict: 'club_id,player_id' });
   }
@@ -426,7 +437,8 @@ export default function PlayerPoolPage() {
             <tbody>
               {filtered.map((p, i) => {
                 const ag = getAg(p); const r = rankings.get(p.id); const a = assigns.get(p.id);
-                const status = a?.status ?? 'Unassigned'; const team = a?.team;
+                const team = a?.team;
+                const status = team === 'Cut' ? 'Cut' : (a?.status ?? 'Unassigned');
                 const ss = STATUS_STYLES[status] ?? STATUS_STYLES.Unassigned;
                 const base = i % 2 === 0 ? '#fff' : '#FAFAFA';
                 return <tr key={p.id}
