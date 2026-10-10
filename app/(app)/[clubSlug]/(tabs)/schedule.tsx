@@ -941,7 +941,13 @@ export default function ScheduleScreen() {
                           </View>
                         )}
                       </View>
-                    ) : null}
+                    ) : (
+                      // Played already but no score logged yet — leaving
+                      // this column blank made a finished game look
+                      // unfinished, the exact ambiguity a result badge
+                      // exists to resolve for every other row.
+                      <Text style={[styles.tournamentGameBadge, { color: colors.muted }]}>Final</Text>
+                    )}
                   </View>
 
                   {/* Inline per-game RSVP — a guardian's entry RSVP for the
