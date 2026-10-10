@@ -817,12 +817,20 @@ export default function ScheduleScreen() {
   // the list could disagree with each other.
   function renderTournamentCard({ tournament, games, gameCount, dateRange, wins, losses, draws }: TournamentMarker, compact: boolean) {
     const hasRecord = gameCount > 0;
-    // Soonest-upcoming first (what a parent actually wants to see next),
-    // padded out with the most recent past games for context if there
-    // aren't enough upcoming ones to fill the cap.
+    // Which games make the cut when there are more than the cap: prioritize
+    // upcoming ones (what a parent actually wants to see next), padded out
+    // with the most recent past games for context if there aren't enough
+    // upcoming ones to fill it. But `games` itself is already chronological
+    // (built from the globally date-sorted `events` list) — selecting via
+    // two separate buckets and concatenating them used to also become the
+    // DISPLAY order, so a game finishing mid-tournament would visually jump
+    // to the bottom of its own card the moment it wasn't "upcoming" anymore.
+    // Keep the selection heuristic for *which* games show, but always
+    // render them back in their original chronological order.
     const upcomingGames = games.filter((g) => isUpcoming(g));
     const recentPastGames = games.filter((g) => !isUpcoming(g)).slice().reverse();
-    const visibleGames = [...upcomingGames, ...recentPastGames].slice(0, TOURNAMENT_GAMES_CAP);
+    const selectedIds = new Set([...upcomingGames, ...recentPastGames].slice(0, TOURNAMENT_GAMES_CAP).map((g) => g.id));
+    const visibleGames = games.filter((g) => selectedIds.has(g.id));
     const overflowCount = gameCount - visibleGames.length;
     const openTournament = () => router.push(`/(app)/${clubSlug}/tournament/${tournament.id}` as any);
 
