@@ -33,6 +33,8 @@ import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../.
 import { fetchDriveTimes } from '../../../../lib/drivetime';
 import { getGameResult, RESULT_COLORS, formatTournamentDateRange, formatGameCountdown } from '../../../../lib/tournaments';
 import { getCalendarSyncUrls } from '../../../../lib/calendarSync';
+import { useMapApp } from '../../../../hooks/useMapApp';
+import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
 
 type EventType = 'game' | 'training' | 'other';
 type Tab = 'upcoming' | 'past' | 'calendar';
@@ -201,6 +203,7 @@ export default function ScheduleScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const mapApp = useMapApp();
 
   const [events, setEvents] = useState<Event[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -887,50 +890,123 @@ export default function ScheduleScreen() {
           <View style={styles.tournamentGamesList}>
             {visibleGames.map((g) => {
               const result = !isUpcoming(g) ? getGameResult(g) : null;
+              const gameWeather = weatherMap[g.id];
+              const myPlayers = myPlayersByTeam.get(g.team_id) ?? [];
+              const isMultiPlayer = myPlayers.length > 1;
+              const showRsvp = !isCoach && myPlayers.length > 0 && isUpcoming(g) && !g.cancelled_at;
               return (
                 <TouchableOpacity
                   key={g.id}
-                  style={styles.tournamentGameRow}
+                  style={[styles.tournamentGameRow, { flexDirection: 'column', alignItems: 'stretch' }]}
                   onPress={() => navigateToEvent(g.id, g.team_id)}
                   activeOpacity={0.7}
                 >
-                  {g.round_label ? (
-                    <View style={styles.tournamentGameStage}>
-                      <Text style={styles.tournamentGameStageText} numberOfLines={1}>{g.round_label.toUpperCase()}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {g.round_label ? (
+                      <View style={styles.tournamentGameStage}>
+                        <Text style={styles.tournamentGameStageText} numberOfLines={1}>{g.round_label.toUpperCase()}</Text>
+                      </View>
+                    ) : null}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tournamentGameTitle} numberOfLines={1}>{g.title}</Text>
+                      <Text style={styles.tournamentGameMeta} numberOfLines={1}>
+                        {new Date(g.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        {g.event_time ? ` · ${formatTime(g.event_time)}` : ''}
+                      </Text>
+                      {/* Own line, truncated independently — on one shared
+                          line with date/time, a real field name ("Horseshoe
+                          Lake Park - Field 3") routinely got cut off before
+                          it said anything useful, the one piece of info a
+                          parent/coach actually needs to find the right pitch.
+                          A directions tap sits right next to it so finding
+                          the field doesn't require opening the full event. */}
+                      {g.location ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={[styles.tournamentGameMeta, { flex: 1 }]} numberOfLines={1}>{g.location}</Text>
+                          <TouchableOpacity
+                            onPress={() => mapApp.open({ query: g.address ?? g.location ?? '', lat: g.lat, lng: g.lng })}
+                            style={styles.tournamentDirectionsBtn}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Ionicons name="navigate-outline" size={13} color={primaryColor} />
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
                     </View>
-                  ) : null}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tournamentGameTitle} numberOfLines={1}>{g.title}</Text>
-                    <Text style={styles.tournamentGameMeta} numberOfLines={1}>
-                      {new Date(g.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      {g.event_time ? ` · ${formatTime(g.event_time)}` : ''}
-                    </Text>
-                    {/* Own line, truncated independently — on one shared
-                        line with date/time, a real field name ("Horseshoe
-                        Lake Park - Field 3") routinely got cut off before
-                        it said anything useful, the one piece of info a
-                        parent/coach actually needs to find the right pitch. */}
-                    {g.location ? (
-                      <Text style={styles.tournamentGameMeta} numberOfLines={1}>{g.location}</Text>
+                    {g.cancelled_at ? (
+                      <Text style={[styles.tournamentGameBadge, { color: '#ef4444' }]}>Cancelled</Text>
+                    ) : result ? (
+                      <Text style={[styles.tournamentGameBadge, { color: RESULT_COLORS[result.label] }]}>
+                        {result.label} {result.ourScore}–{result.oppScore}
+                      </Text>
+                    ) : isUpcoming(g) ? (
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={[styles.tournamentGameBadge, { color: primaryColor }]}>
+                          {formatGameCountdown(g.event_date)}
+                        </Text>
+                        <View style={styles.tournamentGameRsvpRow}>
+                          <Ionicons name="checkmark-circle" size={11} color={PULSE_COLORS.rsvp.attending} />
+                          <Text style={styles.tournamentGameRsvpText}>{rsvpCounts[g.id]?.attending ?? 0}</Text>
+                        </View>
+                        {gameWeather && (
+                          <View style={styles.tournamentGameWeather}>
+                            <Text style={{ fontSize: 11 }}>{gameWeather.icon}</Text>
+                            <Text style={styles.tournamentGameWeatherText}>{gameWeather.temp_f}°F</Text>
+                          </View>
+                        )}
+                      </View>
                     ) : null}
                   </View>
-                  {g.cancelled_at ? (
-                    <Text style={[styles.tournamentGameBadge, { color: '#ef4444' }]}>Cancelled</Text>
-                  ) : result ? (
-                    <Text style={[styles.tournamentGameBadge, { color: RESULT_COLORS[result.label] }]}>
-                      {result.label} {result.ourScore}–{result.oppScore}
-                    </Text>
-                  ) : isUpcoming(g) ? (
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[styles.tournamentGameBadge, { color: primaryColor }]}>
-                        {formatGameCountdown(g.event_date)}
-                      </Text>
-                      <View style={styles.tournamentGameRsvpRow}>
-                        <Ionicons name="checkmark-circle" size={11} color={PULSE_COLORS.rsvp.attending} />
-                        <Text style={styles.tournamentGameRsvpText}>{rsvpCounts[g.id]?.attending ?? 0}</Text>
-                      </View>
+
+                  {/* Inline per-game RSVP — a guardian's entry RSVP for the
+                      whole tournament carries over as each game's default,
+                      but every game stays independently changeable (e.g. a
+                      kid can make 3 of 4 pool-play games but not the 4th).
+                      That was previously only reachable by opening each
+                      game's own event page one at a time. */}
+                  {showRsvp && (
+                    <View style={styles.tournamentRsvpRow}>
+                      {myPlayers.map((p) => {
+                        const status = myRsvpsByPlayer[g.id]?.[p.id] ?? null;
+                        const rsvpLoading = rsvpSavingId === p.id;
+                        return (
+                          <View key={p.id} style={isMultiPlayer ? styles.tournamentRsvpChildRow : undefined}>
+                            {isMultiPlayer && (
+                              <Text style={styles.tournamentRsvpChildName} numberOfLines={1}>{p.full_name.split(' ')[0]}</Text>
+                            )}
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              <TouchableOpacity
+                                style={[styles.tournamentRsvpBtn, status === 'attending' && styles.tournamentRsvpBtnGoing]}
+                                onPress={() => handleRsvp(g.id, p.id, 'attending')}
+                                disabled={rsvpLoading}
+                              >
+                                {rsvpLoading
+                                  ? <ActivityIndicator size="small" color={status === 'attending' ? '#000' : colors.muted} />
+                                  : <>
+                                      <Ionicons name="checkmark-circle-outline" size={12} color={status === 'attending' ? '#000' : colors.muted} />
+                                      <Text style={[styles.tournamentRsvpBtnText, status === 'attending' && { color: '#000' }]}>Going</Text>
+                                    </>
+                                }
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.tournamentRsvpBtn, status === 'not_attending' && styles.tournamentRsvpBtnNotGoing]}
+                                onPress={() => handleRsvp(g.id, p.id, 'not_attending')}
+                                disabled={rsvpLoading}
+                              >
+                                {rsvpLoading
+                                  ? <ActivityIndicator size="small" color={status === 'not_attending' ? '#fff' : colors.muted} />
+                                  : <>
+                                      <Ionicons name="close-circle-outline" size={12} color={status === 'not_attending' ? '#fff' : colors.muted} />
+                                      <Text style={[styles.tournamentRsvpBtnText, status === 'not_attending' && { color: '#fff' }]}>Can't go</Text>
+                                    </>
+                                }
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })}
                     </View>
-                  ) : null}
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -1291,6 +1367,12 @@ export default function ScheduleScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
+
+      <MapPickerModal
+        visible={mapApp.showPicker}
+        onConfirm={mapApp.confirm}
+        onDismiss={mapApp.dismiss}
+      />
     </View>
   );
 }
@@ -1737,6 +1819,20 @@ function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
   tournamentGameBadge: { fontSize: 11.5, fontWeight: '800' },
   tournamentGameRsvpRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
   tournamentGameRsvpText: { fontSize: 10.5, fontWeight: '700', color: PULSE_COLORS.rsvp.attending },
+  tournamentGameWeather: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  tournamentGameWeatherText: { fontSize: 10.5, fontWeight: '600', color: colors.textSecondary },
+  tournamentDirectionsBtn: { marginLeft: 4, padding: 2 },
+  tournamentRsvpRow: { flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' },
+  tournamentRsvpChildRow: { gap: 3 },
+  tournamentRsvpChildName: { fontSize: 10.5, fontWeight: '700', color: colors.textSecondary },
+  tournamentRsvpBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 9, paddingVertical: 6, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt,
+  },
+  tournamentRsvpBtnGoing: { backgroundColor: PULSE_COLORS.rsvp.attending, borderColor: PULSE_COLORS.rsvp.attending },
+  tournamentRsvpBtnNotGoing: { backgroundColor: PULSE_COLORS.rsvp.not_attending, borderColor: PULSE_COLORS.rsvp.not_attending },
+  tournamentRsvpBtnText: { fontSize: 10.5, fontWeight: '700', color: colors.textSecondary },
   tournamentMoreRow: { paddingTop: 8, alignItems: 'center' },
   tournamentMoreText: { fontSize: 12.5, fontWeight: '700' },
   tournamentNoGames: { fontSize: 12.5, color: colors.muted, marginTop: 14, fontStyle: 'italic' },
