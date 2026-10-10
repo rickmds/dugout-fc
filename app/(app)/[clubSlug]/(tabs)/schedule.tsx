@@ -33,8 +33,6 @@ import { fetchEventWeather, isWeatherForecastable, type WeatherData } from '../.
 import { fetchDriveTimes } from '../../../../lib/drivetime';
 import { getGameResult, RESULT_COLORS, formatTournamentDateRange, formatGameCountdown } from '../../../../lib/tournaments';
 import { getCalendarSyncUrls } from '../../../../lib/calendarSync';
-import { useMapApp } from '../../../../hooks/useMapApp';
-import { MapPickerModal } from '../../../../components/ui/MapPickerModal';
 
 type EventType = 'game' | 'training' | 'other';
 type Tab = 'upcoming' | 'past' | 'calendar';
@@ -203,7 +201,6 @@ export default function ScheduleScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
-  const mapApp = useMapApp();
 
   const [events, setEvents] = useState<Event[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -917,20 +914,9 @@ export default function ScheduleScreen() {
                           line with date/time, a real field name ("Horseshoe
                           Lake Park - Field 3") routinely got cut off before
                           it said anything useful, the one piece of info a
-                          parent/coach actually needs to find the right pitch.
-                          A directions tap sits right next to it so finding
-                          the field doesn't require opening the full event. */}
+                          parent/coach actually needs to find the right pitch. */}
                       {g.location ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Text style={[styles.tournamentGameMeta, { flex: 1 }]} numberOfLines={1}>{g.location}</Text>
-                          <TouchableOpacity
-                            onPress={() => mapApp.open({ query: g.address ?? g.location ?? '', lat: g.lat, lng: g.lng })}
-                            style={styles.tournamentDirectionsBtn}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Ionicons name="navigate-outline" size={13} color={primaryColor} />
-                          </TouchableOpacity>
-                        </View>
+                        <Text style={styles.tournamentGameMeta} numberOfLines={1}>{g.location}</Text>
                       ) : null}
                     </View>
                     {g.cancelled_at ? (
@@ -1367,12 +1353,6 @@ export default function ScheduleScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
-
-      <MapPickerModal
-        visible={mapApp.showPicker}
-        onConfirm={mapApp.confirm}
-        onDismiss={mapApp.dismiss}
-      />
     </View>
   );
 }
@@ -1821,7 +1801,6 @@ function getStyles(colors: ThemeColors, overlay: (alpha: number) => string) {
   tournamentGameRsvpText: { fontSize: 10.5, fontWeight: '700', color: PULSE_COLORS.rsvp.attending },
   tournamentGameWeather: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
   tournamentGameWeatherText: { fontSize: 10.5, fontWeight: '600', color: colors.textSecondary },
-  tournamentDirectionsBtn: { marginLeft: 4, padding: 2 },
   tournamentRsvpRow: { flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' },
   tournamentRsvpChildRow: { gap: 3 },
   tournamentRsvpChildName: { fontSize: 10.5, fontWeight: '700', color: colors.textSecondary },
