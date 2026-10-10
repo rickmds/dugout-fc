@@ -904,8 +904,15 @@ export default function ScheduleScreen() {
                     <Text style={styles.tournamentGameMeta} numberOfLines={1}>
                       {new Date(g.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                       {g.event_time ? ` · ${formatTime(g.event_time)}` : ''}
-                      {g.location ? ` · ${g.location}` : ''}
                     </Text>
+                    {/* Own line, truncated independently — on one shared
+                        line with date/time, a real field name ("Horseshoe
+                        Lake Park - Field 3") routinely got cut off before
+                        it said anything useful, the one piece of info a
+                        parent/coach actually needs to find the right pitch. */}
+                    {g.location ? (
+                      <Text style={styles.tournamentGameMeta} numberOfLines={1}>{g.location}</Text>
+                    ) : null}
                   </View>
                   {g.cancelled_at ? (
                     <Text style={[styles.tournamentGameBadge, { color: '#ef4444' }]}>Cancelled</Text>
