@@ -262,6 +262,14 @@ export default function CreateEventScreen() {
   // knockout tournament's next round date is genuinely unknown until
   // scheduled, so the normal free date picker stays for that case.
   const [tournamentDateRange, setTournamentDateRange] = useState<{ start: string; end: string } | null>(null);
+  // A tournament's location is only ever filled in when there's one real
+  // shared venue (a weekend/showcase event) — a season-long bracket like
+  // State Cup or NCSA has no single place to put there, since each round
+  // is a real home or away game at a different field. Used as the signal
+  // for "no actual home field to be away from" instead of treating every
+  // tournament_id the same way.
+  const [tournamentLocation, setTournamentLocation] = useState<string | null>(null);
+  const isNeutralSiteTournament = !!tournamentId && !!tournamentLocation;
 
   // Date & time
   const [date, setDate] = useState(() => {
@@ -336,11 +344,12 @@ export default function CreateEventScreen() {
     if (!tournamentId) return;
     supabase
       .from('tournaments')
-      .select('start_date,end_date')
+      .select('start_date,end_date,location')
       .eq('id', tournamentId)
       .single()
       .then(({ data }) => {
         if (data?.start_date) setTournamentDateRange({ start: data.start_date, end: data.end_date ?? data.start_date });
+        setTournamentLocation(data?.location ?? null);
       });
   }, [tournamentId]);
 
@@ -446,12 +455,13 @@ export default function CreateEventScreen() {
       }
     }
 
-    // Tournament games are at a neutral venue — there's no "our home field"
-    // to be away from, so the Home/Away tile is hidden and every tournament
-    // game's title is prefixed "vs" rather than deriving it from homeAway
-    // state that the coach never actually saw or set.
+    // A neutral-site tournament game is at a shared venue — there's no "our
+    // home field" to be away from, so the Home/Away tile is hidden and
+    // every game's title is prefixed "vs" rather than deriving it from
+    // homeAway state the coach never actually saw or set. A bracket
+    // tournament (no single location) keeps the normal vs/@ logic.
     const savedTitle = eventType === 'game'
-      ? `${(tournamentId || homeAway === 'home') ? 'vs' : '@'} ${title.trim()}`
+      ? `${(isNeutralSiteTournament || homeAway === 'home') ? 'vs' : '@'} ${title.trim()}`
       : title.trim();
 
     const base = {
@@ -469,7 +479,7 @@ export default function CreateEventScreen() {
       field_type: fieldType ?? null,
       field_notes: fieldNotes.trim() || null,
       uniform: uniform ?? null,
-      home_away: (eventType === 'game' && !tournamentId) ? homeAway : null,
+      home_away: (eventType === 'game' && !isNeutralSiteTournament) ? homeAway : null,
       notes: playerNotes.trim() || null,
       coach_notes: coachNotes.trim() || null,
       video_url: videoUrl.trim() || null,
@@ -617,9 +627,12 @@ export default function CreateEventScreen() {
                 })}
               </View>
             )}
-            {/* A tournament game is at a neutral venue — no "our home field"
-                to be away from — so this tile is meaningless there. */}
-            {eventType === 'game' && !tournamentId && (
+            {/* A neutral-site tournament game (a real shared venue, like a
+                weekend showcase) has no "our home field" to be away from,
+                so this tile is meaningless there. A bracket tournament
+                (State Cup, NCSA) has no single venue — each round is a
+                real home or away game — so it keeps the tile. */}
+            {eventType === 'game' && !isNeutralSiteTournament && (
               <>
                 <RowDivider />
                 <View style={styles.homeAwayRow}>

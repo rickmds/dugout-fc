@@ -186,6 +186,12 @@ export default function ScheduleUploadScreen() {
   // centralize RSVP at the tournament level, so the per-event RSVP lock
   // settings below no longer apply. Undated (knockout) imports are unaffected.
   const [tournamentStartDate, setTournamentStartDate] = useState<string | null>(null);
+  // Only set when the tournament has one real shared venue (a weekend
+  // showcase) — a bracket tournament (State Cup, NCSA) has no single
+  // location since each round is a real home/away game at a different
+  // field. Tells parse-schedule whether to force every title to "vs" or
+  // keep the normal home/away-based vs/@ distinction.
+  const [tournamentLocation, setTournamentLocation] = useState<string | null>(null);
   const processingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -204,8 +210,12 @@ export default function ScheduleUploadScreen() {
   // network round-trip at button-press time.
   useEffect(() => {
     if (!tournamentId) return;
-    supabase.from('tournaments').select('name,start_date').eq('id', tournamentId).single()
-      .then(({ data }) => { setTournamentName(data?.name ?? null); setTournamentStartDate(data?.start_date ?? null); });
+    supabase.from('tournaments').select('name,start_date,location').eq('id', tournamentId).single()
+      .then(({ data }) => {
+        setTournamentName(data?.name ?? null);
+        setTournamentStartDate(data?.start_date ?? null);
+        setTournamentLocation(data?.location ?? null);
+      });
   }, [tournamentId]);
 
   const isDatedTournamentImport = !!tournamentId && !!tournamentStartDate;
@@ -280,7 +290,7 @@ export default function ScheduleUploadScreen() {
     const AI_PARSE_TIMEOUT_MS = 40_000;
     const [invokeResult, existingRes] = await Promise.all([
       withTimeout(
-        supabase.functions.invoke('parse-schedule', { body: { files, context: tournamentId ? 'tournament' : undefined } }),
+        supabase.functions.invoke('parse-schedule', { body: { files, context: tournamentId ? 'tournament' : undefined, isNeutralSite: !!tournamentLocation } }),
         AI_PARSE_TIMEOUT_MS
       ),
       // Scoped to the same context being imported into — a tournament game

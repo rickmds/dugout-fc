@@ -13,11 +13,19 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not set' }), { status: 500, headers: CORS });
   }
 
-  const { files, context } = await req.json();
+  const { files, context, isNeutralSite } = await req.json();
   if (!Array.isArray(files) || files.length === 0) {
     return new Response(JSON.stringify({ error: 'files (non-empty array) required' }), { status: 400, headers: CORS });
   }
   const isTournament = context === 'tournament';
+  // A weekend/showcase tournament has one real shared venue and no "our
+  // home field" to be away from — every game there reads "vs". A bracket
+  // tournament (State Cup, NCSA) has no single venue; each round is a real
+  // home or away game at a real field, same as a normal season game, and
+  // should keep a real home_away + vs/@ distinction. The caller (which
+  // already knows the target tournament's own `location`) tells us which
+  // kind this is — isTournament alone doesn't distinguish them.
+  const isNeutralSiteTournament = isTournament && !!isNeutralSite;
 
   // Build content array — one block per file, so e.g. several screenshots
   // that together cover a long schedule all land in the same Claude message.
@@ -80,9 +88,12 @@ Required structure:
 Field rules:
 - date: YYYY-MM-DD. null if you cannot determine it confidently. If year is absent, assume the next upcoming year.
 - time: 24-hour HH:MM (24-hour format). null if not specified.
-- title: Always "vs [Cleaned Opponent]", for both home AND away games — do not use "@" for away games. home_away (below) is the field that carries the home/away distinction; the title prefix stays "vs" either way so every game reads consistently. For training use "Training" or "Practice". For other events use a brief label. Do NOT append "(Home)" or "(Away)" to the title.${isTournament ? ' If the document itself gives a placeholder for a not-yet-determined opponent (e.g. "Winner of Pool A"), use that verbatim as "vs Winner of Pool A". Never use round/stage wording ("Pool Play", "Group A", "Round of 16", etc.) as the opponent or title — that belongs in round_label only. If no opponent is identifiable at all, leave title null, set uncertain: true, and explain why in uncertainty_reason — do not invent placeholder text like "vs TBD".' : ''}
+- title: ${isNeutralSiteTournament
+      ? 'Always "vs [Cleaned Opponent]", for both home AND away games — do not use "@" for away games. This is a neutral-site tournament with no designated home team, so the title prefix stays "vs" regardless of which side of the bracket the schedule lists first.'
+      : 'For home games use "vs [Cleaned Opponent]". For away games use "@ [Cleaned Opponent]".'
+    } For training use "Training" or "Practice". For other events use a brief label. Do NOT append "(Home)" or "(Away)" to the title.${isTournament ? ' If the document itself gives a placeholder for a not-yet-determined opponent (e.g. "Winner of Pool A"), use that verbatim as "vs Winner of Pool A". Never use round/stage wording ("Pool Play", "Group A", "Round of 16", etc.) as the opponent or title — that belongs in round_label only. If no opponent is identifiable at all, leave title null, set uncertain: true, and explain why in uncertainty_reason — do not invent placeholder text like "vs TBD".' : ''}
 - Cleaned Opponent: strip division codes, season codes, coach names, and club suffixes from team names. E.g. "FairLawnAllSports-B12A-Rake" → "Fair Lawn All Sports", "Tenafly-B12A-Schwartzberg" → "Tenafly", "CougarSC-B12A-Kolodiy" → "Cougar SC", "Montclair-B12A-Brown" → "Montclair". Make it human-readable.
-- home_away: "home" if the team this schedule belongs to is the Home Team column, "away" if they are the Visitor Team. To identify which team the schedule is for: find the team name that recurs consistently across rows (appearing in Home Team for some rows and Visitor Team for others — it is the same club throughout). null if not applicable (training, other${isTournament ? ', or a neutral-site tournament game with no designated home team' : ''}).
+- home_away: "home" if the team this schedule belongs to is the Home Team column, "away" if they are the Visitor Team. To identify which team the schedule is for: find the team name that recurs consistently across rows (appearing in Home Team for some rows and Visitor Team for others — it is the same club throughout). null if not applicable (training, other${isNeutralSiteTournament ? ', or a neutral-site tournament game with no designated home team' : ''}).
 - type: "game" if there is a home team vs visitor team structure, "training" for practice/training/conditioning, "other" for everything else.
 - location: field or venue name only — no address.${isTournament ? ' For a tournament, this is often just a court/field number (e.g. "Field 3", "Court 12") rather than a named venue — use whatever the document gives.' : ''} null if not specified.
 - address: join any separate address component columns (Address, City, State, Zipcode) into one string like "230 Main St, Springfield, NJ 07081". If already combined, use as-is. null if no address present.
