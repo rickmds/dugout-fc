@@ -19,6 +19,13 @@ type BatchMeta = {
   teams: { name: string } | null;
 };
 
+// A roster player the coach hasn't started an evaluation for yet — no
+// player_evaluations row exists at all (that row is only created once a
+// coach opens the eval form on mobile and saves a draft). Shown
+// separately from real EvalRow cards below so a freshly-created batch
+// reads as "14 players, 0 started" instead of a bare "no evaluations yet".
+type NotStartedPlayer = { id: string; full_name: string; jersey_number: number | null; photo_url: string | null };
+
 const AREAS = ['technical', 'tactical', 'physical', 'mental'] as const;
 
 export default function BatchReviewPage() {
@@ -30,6 +37,7 @@ export default function BatchReviewPage() {
 
   const [batch,     setBatch]     = useState<BatchMeta | null>(null);
   const [evals,     setEvals]     = useState<EvalRow[]>([]);
+  const [notStarted, setNotStarted] = useState<NotStartedPlayer[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [selected,  setSelected]  = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -42,8 +50,23 @@ export default function BatchReviewPage() {
       supabase.from('evaluation_batches').select('*, teams(name)').eq('id', batchId).single(),
       supabase.from('player_evaluations').select('*, players(full_name, jersey_number, photo_url)').eq('batch_id', batchId).order('players(full_name)'),
     ]);
-    if (bRes.data) setBatch(bRes.data as BatchMeta);
-    setEvals((eRes.data ?? []) as EvalRow[]);
+    const batchRow = bRes.data as BatchMeta | null;
+    const evalRows = (eRes.data ?? []) as EvalRow[];
+    setBatch(batchRow);
+    setEvals(evalRows);
+
+    if (batchRow?.team_id) {
+      const { data: roster } = await supabase
+        .from('players')
+        .select('id, full_name, jersey_number, photo_url')
+        .eq('team_id', batchRow.team_id)
+        .order('full_name');
+      const coveredIds = new Set(evalRows.map(e => e.player_id));
+      setNotStarted(((roster ?? []) as NotStartedPlayer[]).filter(p => !coveredIds.has(p.id)));
+    } else {
+      setNotStarted([]);
+    }
+
     setLoading(false);
   }, [batchId]);
 
@@ -151,7 +174,8 @@ export default function BatchReviewPage() {
             {batch?.teams?.name ?? '—'} · {batch?.period_label} {batch?.season_label}
           </h1>
           <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '1px' }}>
-            {readyCount} of {evals.length} reports ready · {publishedCount} published
+            {readyCount} of {evals.length + notStarted.length} reports ready · {publishedCount} published
+            {notStarted.length > 0 && ` · ${notStarted.length} not started`}
           </div>
         </div>
 
@@ -179,11 +203,13 @@ export default function BatchReviewPage() {
 
       {/* List */}
       <div style={{ padding: '20px 32px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {evals.length === 0 ? (
+        {evals.length === 0 && notStarted.length === 0 ? (
           <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E2E8F0', padding: '40px', textAlign: 'center' }}>
-            <div style={{ fontSize: '14px', color: '#64748B' }}>No evaluations in this batch yet.</div>
+            <div style={{ fontSize: '14px', color: '#64748B' }}>No players on this team&apos;s roster yet.</div>
           </div>
-        ) : evals.map((ev) => {
+        ) : (
+          <>
+        {evals.map((ev) => {
           const isSelected = selected === ev.id;
           const ready = ev.status !== 'draft';
           const badgeStyle = ev.status === 'published'
@@ -226,6 +252,30 @@ export default function BatchReviewPage() {
             </div>
           );
         })}
+
+        {notStarted.map(p => (
+          <div
+            key={p.id}
+            style={{ background: '#fff', borderRadius: '14px', border: '1px dashed #E2E8F0', padding: '14px 18px', display: 'flex', alignItems: 'center', gap: '12px', opacity: 0.75 }}
+          >
+            <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '800', color: '#94A3B8', flexShrink: 0, overflow: 'hidden' }}>
+              {p.photo_url
+                ? <img src={p.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : (p.full_name?.[0] ?? '?')}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: '#475569' }}>
+                {p.full_name}
+                {p.jersey_number != null && <span style={{ fontSize: '12px', color: '#94A3B8', marginLeft: '6px' }}>#{p.jersey_number}</span>}
+              </div>
+            </div>
+            <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '6px', background: '#F1F5F9', color: '#94A3B8', whiteSpace: 'nowrap' }}>
+              Not Started
+            </span>
+          </div>
+        ))}
+          </>
+        )}
       </div>
 
       {/* Slide-over panel */}
