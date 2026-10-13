@@ -379,9 +379,20 @@ export default function EvaluationsPage() {
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }} />
               </div>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>
-                  Teams {newTeamIds.size > 0 && `(${newTeamIds.size} selected)`}
-                </label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Teams {newTeamIds.size > 0 && `(${newTeamIds.size} selected)`}
+                  </label>
+                  {teamOptions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setNewTeamIds(newTeamIds.size === teamOptions.length ? new Set() : new Set(teamOptions.map(t => t.id)))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700', color: primary, padding: 0 }}
+                    >
+                      {newTeamIds.size === teamOptions.length ? 'Clear all' : 'Select all'}
+                    </button>
+                  )}
+                </div>
                 {teamOptions.length === 0 ? (
                   <div style={{ fontSize: '13px', color: '#94A3B8' }}>No teams found for this club.</div>
                 ) : (
