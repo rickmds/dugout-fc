@@ -13,9 +13,16 @@ type BatchRow = {
   status: 'in_progress' | 'submitted' | 'approved';
   total_players: number;
   completed_count: number;
-  teams: { name: string; age_group: string | null } | null;
+  teams: { name: string; age_group: string | null; gender: string | null } | null;
   coach: { full_name: string | null } | null;
 };
+
+const AGE_GROUPS = ['U6','U7','U8','U9','U10','U11','U12','U13','U14','U15','U16','U17','U18','U19','Senior'];
+const GENDERS = [
+  { value: 'boys',  label: 'Boys'  },
+  { value: 'girls', label: 'Girls' },
+  { value: 'mixed', label: 'Mixed' },
+];
 
 export default function EvaluationPeriodPage() {
   const { periodId } = useParams<{ periodId: string }>();
@@ -26,13 +33,16 @@ export default function EvaluationPeriodPage() {
   const [period,  setPeriod]  = useState<PeriodMeta | null>(null);
   const [batches, setBatches] = useState<BatchRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterAge, setFilterAge]       = useState('All');
+  const [filterGender, setFilterGender] = useState('All');
+  const [filterCoach, setFilterCoach]   = useState('All');
 
   const load = useCallback(async () => {
     setLoading(true);
     const [pRes, bRes] = await Promise.all([
       supabase.from('evaluation_periods').select('id,season_label,period_label').eq('id', periodId).single(),
       supabase.from('evaluation_batches')
-        .select('id,status,total_players,completed_count,teams(name,age_group),coach:profiles!evaluation_batches_coach_id_fkey(full_name)')
+        .select('id,status,total_players,completed_count,teams(name,age_group,gender),coach:profiles!evaluation_batches_coach_id_fkey(full_name)')
         .eq('period_id', periodId)
         .order('created_at', { ascending: true }),
     ]);
@@ -46,6 +56,15 @@ export default function EvaluationPeriodPage() {
 
   const totalPlayers   = batches.reduce((s, b) => s + b.total_players, 0);
   const completedCount = batches.reduce((s, b) => s + b.completed_count, 0);
+
+  const coachOptionsPresent = [...new Set(batches.filter(b => b.coach?.full_name).map(b => b.coach!.full_name as string))].sort();
+  const filteredBatches = batches.filter(b => {
+    if (filterAge !== 'All' && (b.teams?.age_group ?? '') !== filterAge) return false;
+    if (filterGender !== 'All' && (b.teams?.gender ?? '') !== filterGender) return false;
+    if (filterCoach === 'Unassigned' && b.coach?.full_name) return false;
+    if (filterCoach !== 'All' && filterCoach !== 'Unassigned' && b.coach?.full_name !== filterCoach) return false;
+    return true;
+  });
 
   if (loading) {
     return (
@@ -74,13 +93,48 @@ export default function EvaluationPeriodPage() {
       </div>
 
       <div style={{ padding: '24px 32px' }}>
+        {batches.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            <select value={filterAge} onChange={e => setFilterAge(e.target.value)}
+              style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#374151', outline: 'none', fontFamily: 'inherit', background: '#fff' }}>
+              <option value="All">All ages</option>
+              {AGE_GROUPS.filter(ag => batches.some(b => b.teams?.age_group === ag)).map(ag => <option key={ag} value={ag}>{ag}</option>)}
+            </select>
+            <select value={filterGender} onChange={e => setFilterGender(e.target.value)}
+              style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#374151', outline: 'none', fontFamily: 'inherit', background: '#fff' }}>
+              <option value="All">All genders</option>
+              {GENDERS.filter(g => batches.some(b => b.teams?.gender === g.value)).map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+            {coachOptionsPresent.length > 0 && (
+              <select value={filterCoach} onChange={e => setFilterCoach(e.target.value)}
+                style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '12.5px', color: '#374151', outline: 'none', fontFamily: 'inherit', background: '#fff' }}>
+                <option value="All">All coaches</option>
+                <option value="Unassigned">Unassigned</option>
+                {coachOptionsPresent.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+            )}
+            {(filterAge !== 'All' || filterGender !== 'All' || filterCoach !== 'All') && (
+              <button
+                onClick={() => { setFilterAge('All'); setFilterGender('All'); setFilterCoach('All'); }}
+                style={{ padding: '7px 12px', borderRadius: '8px', border: 'none', background: 'none', fontSize: '12.5px', fontWeight: '700', color: primary, cursor: 'pointer' }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+
         {batches.length === 0 ? (
           <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center' }}>
             <div style={{ fontSize: '14px', color: '#64748B' }}>No teams in this period yet.</div>
           </div>
+        ) : filteredBatches.length === 0 ? (
+          <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center' }}>
+            <div style={{ fontSize: '14px', color: '#64748B' }}>No teams match these filters.</div>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {batches.map(b => (
+            {filteredBatches.map(b => (
               <div
                 key={b.id}
                 onClick={() => router.push(`/dashboard/evaluations/${b.id}`)}
