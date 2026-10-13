@@ -29,6 +29,7 @@ export type EvalRow = {
   report_data:  ReportData | null;
   final_text:   string | null;
   published_at: string | null;
+  scheduled_publish_at: string | null;
   players: { full_name: string; jersey_number: number | null; photo_url: string | null } | null;
 };
 
@@ -107,10 +108,23 @@ export function StatChip({ val, label, color }: { val: string; label: string; co
   );
 }
 
-export function EvaluationReportPanel({ ev, primary, clubLogoUrl, clubName, onClose, onPrev, onNext, hasPrev, hasNext }: {
+// All five admin-action props are optional — the player Development tab
+// renders this same panel read-only with none of them set, so it must
+// stay fully functional with just the display props above.
+export type EvaluationReportPanelActions = {
+  onMarkGood?: () => void;
+  onReleaseNow?: () => void;
+  onSchedule?: () => void;
+  actionBusy?: boolean;
+};
+
+export function EvaluationReportPanel({
+  ev, primary, clubLogoUrl, clubName, onClose, onPrev, onNext, hasPrev, hasNext,
+  onMarkGood, onReleaseNow, onSchedule, actionBusy,
+}: {
   ev: EvalRow; primary: string; clubLogoUrl: string | null; clubName: string;
   onClose: () => void; onPrev: () => void; onNext: () => void; hasPrev: boolean; hasNext: boolean;
-}) {
+} & EvaluationReportPanelActions) {
   const rd         = ev.report_data;
   const playerName = ev.players?.full_name ?? '';
   const lastName   = playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? '';
@@ -139,6 +153,35 @@ export function EvaluationReportPanel({ ev, primary, clubLogoUrl, clubName, onCl
             <X size={14} color="#64748B" />
           </button>
         </div>
+
+        {/* Admin actions — only rendered when the caller wired them up */}
+        {(onMarkGood || onReleaseNow || onSchedule) && (
+          <div style={{ position: 'sticky', top: '53px', zIndex: 9, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            {ev.status === 'submitted' && onMarkGood && (
+              <button onClick={onMarkGood} disabled={actionBusy} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
+                ✓ Mark Good
+              </button>
+            )}
+            {ev.status === 'approved' && (
+              <>
+                {onReleaseNow && (
+                  <button onClick={onReleaseNow} disabled={actionBusy} style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', background: primary, color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
+                    Release Now
+                  </button>
+                )}
+                {onSchedule && (
+                  <button onClick={onSchedule} disabled={actionBusy} style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', color: '#374151', fontSize: '12.5px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
+                    Schedule…
+                  </button>
+                )}
+                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#22C55E', marginLeft: '2px' }}>✓ Reviewed</span>
+              </>
+            )}
+            {ev.status === 'published' && (
+              <span style={{ fontSize: '12px', fontWeight: '700', color: primary }}>✓ Published to family</span>
+            )}
+          </div>
+        )}
 
         {/* Report card */}
         <div style={{ padding: '16px', flex: 1 }}>

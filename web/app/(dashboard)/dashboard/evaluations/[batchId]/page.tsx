@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle, Star } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Star, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { sendProfilesEmail } from '@/lib/emailProfiles';
+import { notifyEvaluationsPublished } from '@/lib/evaluationRelease';
 import { EvaluationReportPanel, type EvalRow } from '@/components/dashboard/evaluation/EvaluationReport';
 
 type BatchMeta = {
@@ -32,7 +32,9 @@ export default function BatchReviewPage() {
   const [evals,     setEvals]     = useState<EvalRow[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [selected,  setSelected]  = useState<string | null>(null);
-  const [approving, setApproving] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [scheduleFor, setScheduleFor] = useState<{ ids: string[] } | null>(null);
+  const [scheduleAt, setScheduleAt] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,43 +50,75 @@ export default function BatchReviewPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
-  async function approveAll() {
-    if (!isAdmin || !batch) return;
-    setApproving(true);
+  async function notifyFor(evalIds: string[]) {
+    if (!batch) return;
+    const playerIds = evals.filter(e => evalIds.includes(e.id)).map(e => e.player_id).filter(Boolean);
+    await notifyEvaluationsPublished({
+      playerIds,
+      periodLabel: batch.period_label,
+      teamName: batch.teams?.name ?? '',
+      fromName: profile?.full_name ?? null,
+      clubName: club?.name ?? null,
+      clubLogoUrl: club?.logo_url ?? null,
+      clubPrimaryColor: club?.primary_color ?? null,
+    });
+  }
+
+  async function markGood(evalIds: string[]) {
+    if (!isAdmin || !profile) return;
+    setActionBusy(true);
     const now = new Date().toISOString();
-    await supabase.from('player_evaluations').update({ status: 'published', approved_by: profile!.id, approved_at: now, published_at: now }).eq('batch_id', batchId).eq('status', 'submitted');
-    await supabase.from('evaluation_batches').update({ status: 'approved', approved_by: profile!.id, approved_at: now }).eq('id', batchId);
+    await supabase.from('player_evaluations')
+      .update({ status: 'approved', approved_by: profile.id, approved_at: now })
+      .in('id', evalIds)
+      .eq('status', 'submitted');
+    await load();
+    setActionBusy(false);
+  }
 
-    // Notify players — get profile_ids for all players in this batch
-    const playerIds = evals.map((e) => e.player_id).filter(Boolean);
-    if (playerIds.length) {
-      const { data: players } = await supabase.from('players').select('profile_id').in('id', playerIds);
-      const profileIds = (players ?? []).map(p => p.profile_id).filter(Boolean) as string[];
-      if (profileIds.length) {
-        const evalBody = `Your ${batch.period_label} report from your coach is now available.`;
-        supabase.functions.invoke('send-push', {
-          body: {
-            profile_ids: profileIds,
-            title: '📊 Your evaluation is ready',
-            body: evalBody,
-            data: { type: 'evaluation_published' },
-          },
-        }).catch(() => {});
-        sendProfilesEmail({
-          profileIds,
-          subject: '📊 Your evaluation is ready',
-          body: evalBody,
-          fromName: profile?.full_name ?? club?.name ?? 'Coach',
-          teamName: batch.teams?.name ?? '',
-          clubName: club?.name ?? null,
-          logoUrl: club?.logo_url ?? null,
-          primaryColor: club?.primary_color ?? null,
-        });
-      }
+  async function releaseNow(evalIds: string[]) {
+    if (!isAdmin) return;
+    setActionBusy(true);
+    const now = new Date().toISOString();
+    await supabase.from('player_evaluations')
+      .update({ status: 'published', published_at: now, scheduled_publish_at: null })
+      .in('id', evalIds)
+      .eq('status', 'approved');
+    await notifyFor(evalIds);
+    await maybeCloseOutBatch();
+    await load();
+    setActionBusy(false);
+  }
+
+  async function confirmSchedule() {
+    if (!scheduleFor || !scheduleAt) return;
+    setActionBusy(true);
+    await supabase.from('player_evaluations')
+      .update({ scheduled_publish_at: new Date(scheduleAt).toISOString() })
+      .in('id', scheduleFor.ids)
+      .eq('status', 'approved');
+    setScheduleFor(null);
+    setScheduleAt('');
+    await load();
+    setActionBusy(false);
+  }
+
+  // A batch moves to 'approved' once every eval in it has at least been
+  // reviewed (approved or published) — mirrors the old approveAll()'s
+  // batch-level bookkeeping, just no longer tied to publishing happening
+  // in the same step.
+  async function maybeCloseOutBatch() {
+    if (!batch || !profile) return;
+    const { count } = await supabase.from('player_evaluations')
+      .select('id', { count: 'exact', head: true })
+      .eq('batch_id', batchId)
+      .in('status', ['draft', 'submitted']);
+    if (count === 0) {
+      await supabase.from('evaluation_batches')
+        .update({ status: 'approved', approved_by: profile.id, approved_at: new Date().toISOString() })
+        .eq('id', batchId)
+        .eq('status', 'submitted');
     }
-
-    setApproving(false);
-    router.push('/dashboard/evaluations');
   }
 
   const selectedIdx = evals.findIndex(e => e.id === selected);
@@ -98,34 +132,48 @@ export default function BatchReviewPage() {
     );
   }
 
-  const readyCount = evals.filter(e => e.status !== 'draft').length;
-  const canApprove = isAdmin && batch?.status === 'submitted' && readyCount > 0;
+  const readyCount     = evals.filter(e => e.status !== 'draft').length;
+  const submittedIds   = evals.filter(e => e.status === 'submitted').map(e => e.id);
+  const approvedIds    = evals.filter(e => e.status === 'approved').map(e => e.id);
+  const publishedCount = evals.filter(e => e.status === 'published').length;
 
   return (
     <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
 
       {/* Header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '16px 32px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '16px 32px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <button onClick={() => router.push('/dashboard/evaluations')} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', fontSize: '13px', fontWeight: '600', padding: '4px' }}>
           <ArrowLeft size={15} /> Back
         </button>
         <div style={{ width: '1px', height: '20px', background: '#E2E8F0' }} />
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: '160px' }}>
           <h1 style={{ fontSize: '18px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-0.3px' }}>
             {batch?.teams?.name ?? '—'} · {batch?.period_label} {batch?.season_label}
           </h1>
-          <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '1px' }}>{readyCount} of {evals.length} reports ready</div>
+          <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '1px' }}>
+            {readyCount} of {evals.length} reports ready · {publishedCount} published
+          </div>
         </div>
-        {canApprove && (
-          <button onClick={approveAll} disabled={approving} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', borderRadius: '10px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: approving ? 'not-allowed' : 'pointer', opacity: approving ? 0.7 : 1 }}>
-            <CheckCircle size={14} />
-            {approving ? 'Approving…' : `Approve All & Publish (${readyCount})`}
-          </button>
-        )}
-        {batch?.status === 'approved' && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '6px 14px', borderRadius: '8px', background: 'rgba(34,197,94,0.1)', color: '#22C55E', fontSize: '13px', fontWeight: '700' }}>
-            <CheckCircle size={13} /> Approved & Published
-          </span>
+
+        {isAdmin && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {submittedIds.length > 0 && (
+              <button onClick={() => markGood(submittedIds)} disabled={actionBusy} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', borderRadius: '10px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '13px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
+                <CheckCircle size={14} />
+                Mark All Good ({submittedIds.length})
+              </button>
+            )}
+            {approvedIds.length > 0 && (
+              <>
+                <button onClick={() => releaseNow(approvedIds)} disabled={actionBusy} style={{ padding: '9px 16px', borderRadius: '10px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
+                  Release All Approved ({approvedIds.length})
+                </button>
+                <button onClick={() => setScheduleFor({ ids: approvedIds })} disabled={actionBusy} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '9px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', background: '#fff', color: '#374151', fontSize: '13px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
+                  <Clock size={14} /> Schedule…
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
 
@@ -138,6 +186,13 @@ export default function BatchReviewPage() {
         ) : evals.map((ev) => {
           const isSelected = selected === ev.id;
           const ready = ev.status !== 'draft';
+          const badgeStyle = ev.status === 'published'
+            ? { background: 'rgba(34,197,94,0.12)', color: '#15803D', label: 'Published' }
+            : ev.status === 'approved'
+            ? { background: 'rgba(34,197,94,0.1)', color: '#22C55E', label: ev.scheduled_publish_at ? `Scheduled ${new Date(ev.scheduled_publish_at).toLocaleDateString()}` : 'Reviewed — Good' }
+            : ready
+            ? { background: 'rgba(59,130,246,0.1)', color: '#3B82F6', label: 'Submitted' }
+            : { background: 'rgba(252,165,165,0.2)', color: '#EF4444', label: 'Draft' };
           return (
             <div
               key={ev.id}
@@ -164,8 +219,8 @@ export default function BatchReviewPage() {
                     ))}
                   </div>
                 </div>
-                <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '6px', background: ready ? 'rgba(34,197,94,0.1)' : 'rgba(252,165,165,0.2)', color: ready ? '#22C55E' : '#EF4444' }}>
-                  {ready ? (ev.status === 'published' ? 'Published' : 'Ready') : 'Draft'}
+                <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 9px', borderRadius: '6px', background: badgeStyle.background, color: badgeStyle.color, whiteSpace: 'nowrap' }}>
+                  {badgeStyle.label}
                 </span>
               </div>
             </div>
@@ -185,7 +240,35 @@ export default function BatchReviewPage() {
           onNext={() => selectedIdx < evals.length - 1 && setSelected(evals[selectedIdx + 1].id)}
           hasPrev={selectedIdx > 0}
           hasNext={selectedIdx < evals.length - 1}
+          actionBusy={actionBusy}
+          onMarkGood={isAdmin ? () => markGood([selectedEv.id]) : undefined}
+          onReleaseNow={isAdmin ? () => releaseNow([selectedEv.id]) : undefined}
+          onSchedule={isAdmin ? () => setScheduleFor({ ids: [selectedEv.id] }) : undefined}
         />
+      )}
+
+      {/* Schedule modal */}
+      {scheduleFor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600, padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: '24px' }}>
+            <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A', marginBottom: '4px' }}>Schedule release</div>
+            <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '16px' }}>
+              {scheduleFor.ids.length} report{scheduleFor.ids.length !== 1 ? 's' : ''} will go out to families at this time.
+            </div>
+            <input
+              type="datetime-local"
+              value={scheduleAt}
+              onChange={e => setScheduleAt(e.target.value)}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '18px' }}>
+              <button onClick={() => { setScheduleFor(null); setScheduleAt(''); }} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={confirmSchedule} disabled={actionBusy || !scheduleAt} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: actionBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !scheduleAt ? 0.5 : 1 }}>
+                {actionBusy ? 'Scheduling…' : 'Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

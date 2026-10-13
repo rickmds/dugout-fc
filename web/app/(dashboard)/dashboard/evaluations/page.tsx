@@ -2,13 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Award, CheckCircle, Clock, ChevronRight, AlertCircle, Users, Plus, X } from 'lucide-react';
+import { Award, CheckCircle, ChevronRight, Users, Plus, X, Folder } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { StatusChip, ProgressBar } from '@/components/dashboard/evaluation/EvalStatusUI';
 
 type BatchRow = {
   id: string;
   team_id: string;
+  period_id: string | null;
   coach_id: string;
   season_label: string;
   period_label: string;
@@ -22,41 +24,12 @@ type BatchRow = {
   coach: { full_name: string | null } | null;
 };
 
-const STATUS_CONFIG = {
-  in_progress: { label: 'In Progress', color: '#F59E0B', bg: 'rgba(245,158,11,0.1)', icon: Clock },
-  submitted:   { label: 'Awaiting Approval', color: '#3B82F6', bg: 'rgba(59,130,246,0.1)', icon: AlertCircle },
-  approved:    { label: 'Approved', color: '#22C55E', bg: 'rgba(34,197,94,0.1)', icon: CheckCircle },
+type PeriodRow = {
+  id: string;
+  season_label: string;
+  period_label: string;
+  created_at: string;
 };
-
-function StatusChip({ status }: { status: BatchRow['status'] }) {
-  const cfg = STATUS_CONFIG[status];
-  const Icon = cfg.icon;
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '5px',
-      padding: '2px 8px', borderRadius: '4px',
-      background: cfg.bg, color: cfg.color,
-      fontSize: '11px', fontWeight: '700',
-    }}>
-      <Icon size={11} />
-      {cfg.label}
-    </span>
-  );
-}
-
-function ProgressBar({ completed, total, primary }: { completed: number; total: number; primary: string }) {
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <div style={{ flex: 1, height: '5px', borderRadius: '99px', background: '#E2E8F0', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', borderRadius: '99px', background: pct === 100 ? '#22C55E' : primary, transition: 'width 0.3s' }} />
-      </div>
-      <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#64748B', whiteSpace: 'nowrap' }}>
-        {completed}/{total}
-      </span>
-    </div>
-  );
-}
 
 export default function EvaluationsPage() {
   const { profile, club } = useDashboard();
@@ -65,94 +38,141 @@ export default function EvaluationsPage() {
   const isAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
 
   const [batches,  setBatches]  = useState<BatchRow[]>([]);
+  const [periods,  setPeriods]  = useState<PeriodRow[]>([]);
   const [loading,  setLoading]  = useState(true);
 
-  // ── New Batch modal ──────────────────────────────────────────────────────
+  // ── New Period modal ─────────────────────────────────────────────────────
   const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
-  const [showNewBatch, setShowNewBatch] = useState(false);
-  const [newTeamId, setNewTeamId]     = useState('');
+  const [showNewPeriod, setShowNewPeriod] = useState(false);
+  const [newTeamIds, setNewTeamIds]   = useState<Set<string>>(new Set());
   const [newSeason, setNewSeason]     = useState('');
   const [newPeriod, setNewPeriod]     = useState('');
-  const [creatingBatch, setCreatingBatch] = useState(false);
-  const [newBatchError, setNewBatchError] = useState('');
+  const [creating, setCreating]       = useState(false);
+  const [newError, setNewError]       = useState('');
 
   const load = useCallback(async () => {
     if (!club) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('evaluation_batches')
-      .select('*, teams(name,age_group), coach:profiles!evaluation_batches_coach_id_fkey(full_name)')
-      .eq('club_id', club.id)
-      .order('created_at', { ascending: false });
-
-    setBatches((data ?? []) as BatchRow[]);
+    const [bRes, pRes] = await Promise.all([
+      supabase
+        .from('evaluation_batches')
+        .select('*, teams(name,age_group), coach:profiles!evaluation_batches_coach_id_fkey(full_name)')
+        .eq('club_id', club.id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('evaluation_periods')
+        .select('id,season_label,period_label,created_at')
+        .eq('club_id', club.id)
+        .order('created_at', { ascending: false }),
+    ]);
+    setBatches((bRes.data ?? []) as BatchRow[]);
+    setPeriods((pRes.data ?? []) as PeriodRow[]);
     setLoading(false);
   }, [club]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { load(); }, [load]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => {
     if (!club) return;
     supabase.from('teams').select('id, name').eq('club_id', club.id).order('name')
       .then(({ data }) => setTeamOptions((data ?? []) as { id: string; name: string }[]));
   }, [club]);
 
-  function openNewBatch() {
-    setNewTeamId(teamOptions[0]?.id ?? '');
+  function openNewPeriod() {
+    setNewTeamIds(new Set());
     setNewSeason('');
     setNewPeriod('');
-    setNewBatchError('');
-    setShowNewBatch(true);
+    setNewError('');
+    setShowNewPeriod(true);
   }
 
-  async function createBatch() {
-    if (!club || !profile || !newTeamId || !newSeason.trim() || !newPeriod.trim()) return;
-    setCreatingBatch(true);
-    setNewBatchError('');
-    try {
-      const { count } = await supabase
-        .from('players')
-        .select('id', { count: 'exact', head: true })
-        .eq('team_id', newTeamId);
+  function toggleTeam(id: string) {
+    setNewTeamIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
-      const { data, error } = await supabase
-        .from('evaluation_batches')
-        .insert({
+  async function createPeriod() {
+    if (!club || !profile || newTeamIds.size === 0 || !newSeason.trim() || !newPeriod.trim()) return;
+    setCreating(true);
+    setNewError('');
+    try {
+      const { data: periodRow, error: periodErr } = await supabase
+        .from('evaluation_periods')
+        .insert({ club_id: club.id, season_label: newSeason.trim(), period_label: newPeriod.trim(), created_by: profile.id })
+        .select('id')
+        .single();
+      if (periodErr || !periodRow) {
+        setNewError('Could not create the evaluation period. Please try again.');
+        return;
+      }
+
+      const teamIds = [...newTeamIds];
+      const { data: playerCounts } = await supabase
+        .from('players')
+        .select('team_id')
+        .in('team_id', teamIds);
+      const countByTeam = new Map<string, number>();
+      for (const row of playerCounts ?? []) {
+        countByTeam.set(row.team_id, (countByTeam.get(row.team_id) ?? 0) + 1);
+      }
+
+      const { error: batchErr } = await supabase.from('evaluation_batches').insert(
+        teamIds.map(teamId => ({
           club_id: club.id,
-          team_id: newTeamId,
+          team_id: teamId,
+          period_id: periodRow.id,
           coach_id: profile.id,
           season_label: newSeason.trim(),
           period_label: newPeriod.trim(),
-          total_players: count ?? 0,
+          total_players: countByTeam.get(teamId) ?? 0,
           completed_count: 0,
-          status: 'in_progress',
-        })
-        .select('id')
-        .single();
-
-      if (error || !data) {
-        setNewBatchError('Could not create batch. Please try again.');
+          status: 'in_progress' as const,
+        }))
+      );
+      if (batchErr) {
+        setNewError('Period created, but could not set up all teams. Please try again.');
         return;
       }
-      setShowNewBatch(false);
-      router.push(`/dashboard/evaluations/${data.id}`);
+
+      setShowNewPeriod(false);
+      router.push(`/dashboard/evaluations/periods/${periodRow.id}`);
     } finally {
-      setCreatingBatch(false);
+      setCreating(false);
     }
   }
 
-  // Summary stats
+  // Summary stats — across every batch regardless of whether it belongs to a period
   const submitted = batches.filter(b => b.status === 'submitted').length;
   const inProgress = batches.filter(b => b.status === 'in_progress').length;
   const approved = batches.filter(b => b.status === 'approved').length;
   const totalEvals = batches.reduce((s, b) => s + b.total_players, 0);
   const completedEvals = batches.reduce((s, b) => s + b.completed_count, 0);
 
-  // Pending approval first, then in_progress, then approved; within groups by date desc
-  const sorted = [...batches].sort((a, b) => {
-    const order = { submitted: 0, in_progress: 1, approved: 2 };
+  const standaloneBatches = batches.filter(b => !b.period_id);
+  const periodStatusOrder = { submitted: 0, in_progress: 1, approved: 2 } as const;
+
+  type PeriodCard = { period: PeriodRow; teamBatches: BatchRow[] };
+  const periodCards: PeriodCard[] = periods
+    .map(p => ({ period: p, teamBatches: batches.filter(b => b.period_id === p.id) }))
+    .filter(pc => pc.teamBatches.length > 0);
+
+  function periodWorstStatus(teamBatches: BatchRow[]): keyof typeof periodStatusOrder {
+    return teamBatches.reduce((worst, b) => periodStatusOrder[b.status] < periodStatusOrder[worst] ? b.status : worst, 'approved' as BatchRow['status']);
+  }
+
+  const sortedPeriodCards = [...periodCards].sort((a, b) => {
+    const oa = periodStatusOrder[periodWorstStatus(a.teamBatches)];
+    const ob = periodStatusOrder[periodWorstStatus(b.teamBatches)];
+    if (oa !== ob) return oa - ob;
+    return new Date(b.period.created_at).getTime() - new Date(a.period.created_at).getTime();
+  });
+
+  const sortedStandalone = [...standaloneBatches].sort((a, b) => {
+    const order = periodStatusOrder;
     if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
@@ -181,10 +201,10 @@ export default function EvaluationsPage() {
         {isAdmin && (
           <button
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '6px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
-            onClick={openNewBatch}
+            onClick={openNewPeriod}
           >
             <Plus size={14} />
-            New Batch
+            New Evaluation Period
           </button>
         )}
       </div>
@@ -206,7 +226,6 @@ export default function EvaluationsPage() {
           ))}
         </div>
 
-        {/* Batches */}
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {[1,2,3].map(i => (
@@ -214,19 +233,55 @@ export default function EvaluationsPage() {
             ))}
             <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
           </div>
-        ) : sorted.length === 0 ? (
+        ) : sortedPeriodCards.length === 0 && sortedStandalone.length === 0 ? (
           <div style={{ background: '#fff', borderRadius: '8px', border: '1px solid #E2E8F0', padding: '56px 32px', textAlign: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
               <Award size={22} color="#94A3B8" />
             </div>
-            <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No evaluation batches yet</div>
+            <div style={{ fontSize: '15px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>No evaluations yet</div>
             <div style={{ fontSize: '13px', color: '#64748B' }}>
-              Coaches start a batch from the mobile app. Submitted batches appear here for approval.
+              Start an evaluation period across your teams, or a coach can start one from the mobile app.
             </div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {sorted.map(batch => (
+            {/* Period cards — club-wide rounds spanning multiple teams */}
+            {sortedPeriodCards.map(({ period, teamBatches }) => {
+              const total = teamBatches.reduce((s, b) => s + b.total_players, 0);
+              const completed = teamBatches.reduce((s, b) => s + b.completed_count, 0);
+              const worst = periodWorstStatus(teamBatches);
+              return (
+                <div
+                  key={period.id}
+                  onClick={() => router.push(`/dashboard/evaluations/periods/${period.id}`)}
+                  style={{
+                    background: '#fff', borderRadius: '8px', border: `1px solid ${worst === 'submitted' ? 'rgba(59,130,246,0.25)' : '#E2E8F0'}`,
+                    padding: '16px 20px', boxShadow: worst === 'submitted' ? '0 0 0 3px rgba(59,130,246,0.06)' : '0 1px 2px rgba(0,0,0,0.06)',
+                    cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: '12px',
+                  }}
+                >
+                  <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: `${primary}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Folder size={17} color={primary} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>{period.period_label} · {period.season_label}</span>
+                      <StatusChip status={worst} />
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: '600', marginBottom: '10px' }}>
+                      {teamBatches.length} team{teamBatches.length !== 1 ? 's' : ''}
+                    </div>
+                    <div style={{ maxWidth: '280px' }}>
+                      <ProgressBar completed={completed} total={total} primary={primary} />
+                    </div>
+                  </div>
+                  <ChevronRight size={16} color="#CBD5E1" style={{ marginTop: '6px', flexShrink: 0 }} />
+                </div>
+              );
+            })}
+
+            {/* Standalone batches — started directly (e.g. from the mobile app) without a period */}
+            {sortedStandalone.map(batch => (
               <div
                 key={batch.id}
                 onClick={() => router.push(`/dashboard/evaluations/${batch.id}`)}
@@ -239,7 +294,6 @@ export default function EvaluationsPage() {
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = batch.status === 'submitted' ? '0 0 0 3px rgba(59,130,246,0.06)' : '0 1px 2px rgba(0,0,0,0.06)'}
               >
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                  {/* Left: team + period */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
                       <span style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>
@@ -268,7 +322,6 @@ export default function EvaluationsPage() {
                     </div>
                   </div>
 
-                  {/* Right: dates + chevron */}
                   <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                     {batch.submitted_at && (
                       <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>
@@ -289,7 +342,6 @@ export default function EvaluationsPage() {
                   </div>
                 </div>
 
-                {/* Approve CTA for submitted batches */}
                 {isAdmin && batch.status === 'submitted' && (
                   <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'flex-end' }}>
                     <button
@@ -307,29 +359,15 @@ export default function EvaluationsPage() {
         )}
       </div>
 
-      {/* ── New Batch modal ──────────────────────────────────────────────── */}
-      {showNewBatch && (
+      {/* ── New Evaluation Period modal ──────────────────────────────────── */}
+      {showNewPeriod && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: '20px' }}>
-          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>New Evaluation Batch</div>
-              <button onClick={() => setShowNewBatch(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
+              <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>New Evaluation Period</div>
+              <button onClick={() => setShowNewPeriod(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}><X size={17} color="#94A3B8" /></button>
             </div>
-            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Team</label>
-                {teamOptions.length === 0 ? (
-                  <div style={{ fontSize: '13px', color: '#94A3B8' }}>No teams found for this club.</div>
-                ) : (
-                  <select
-                    value={newTeamId}
-                    onChange={e => setNewTeamId(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }}
-                  >
-                    {teamOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                )}
-              </div>
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '60vh', overflowY: 'auto' }}>
               <div>
                 <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>Season</label>
                 <input value={newSeason} onChange={e => setNewSeason(e.target.value)} placeholder="e.g. 2026-27"
@@ -340,16 +378,36 @@ export default function EvaluationsPage() {
                 <input value={newPeriod} onChange={e => setNewPeriod(e.target.value)} placeholder="e.g. Fall mid-season"
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }} />
               </div>
-              {newBatchError && <div style={{ fontSize: '12.5px', color: '#EF4444', fontWeight: '600' }}>{newBatchError}</div>}
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '5px' }}>
+                  Teams {newTeamIds.size > 0 && `(${newTeamIds.size} selected)`}
+                </label>
+                {teamOptions.length === 0 ? (
+                  <div style={{ fontSize: '13px', color: '#94A3B8' }}>No teams found for this club.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '6px' }}>
+                    {teamOptions.map(t => {
+                      const checked = newTeamIds.has(t.id);
+                      return (
+                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? `${primary}10` : 'transparent' }}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleTeam(t.id)} style={{ width: '15px', height: '15px', cursor: 'pointer' }} />
+                          <span style={{ fontSize: '13px', color: '#0F172A', fontWeight: checked ? '700' : '500' }}>{t.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {newError && <div style={{ fontSize: '12.5px', color: '#EF4444', fontWeight: '600' }}>{newError}</div>}
             </div>
             <div style={{ padding: '14px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowNewBatch(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={() => setShowNewPeriod(false)} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
               <button
-                onClick={createBatch}
-                disabled={creatingBatch || !newTeamId || !newSeason.trim() || !newPeriod.trim()}
-                style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: creatingBatch ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!newTeamId || !newSeason.trim() || !newPeriod.trim()) ? 0.5 : 1 }}
+                onClick={createPeriod}
+                disabled={creating || newTeamIds.size === 0 || !newSeason.trim() || !newPeriod.trim()}
+                style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: primary, fontSize: '13px', fontWeight: '700', color: '#fff', cursor: creating ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (newTeamIds.size === 0 || !newSeason.trim() || !newPeriod.trim()) ? 0.5 : 1 }}
               >
-                {creatingBatch ? 'Creating…' : 'Create Batch'}
+                {creating ? 'Creating…' : 'Create Period'}
               </button>
             </div>
           </div>
