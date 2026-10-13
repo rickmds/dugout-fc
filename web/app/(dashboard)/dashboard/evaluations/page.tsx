@@ -31,6 +31,26 @@ type PeriodRow = {
   created_at: string;
 };
 
+type TeamOption = {
+  id: string;
+  name: string;
+  age_group: string | null;
+  gender: string | null;
+  // The one real team_members(role='coach') link for this team, if any —
+  // sparse in practice (most teams have none recorded that way), used
+  // only as a starting suggestion for the per-team coach picker below,
+  // never assumed correct on its own.
+  linkedCoachId: string | null;
+  linkedCoachName: string | null;
+};
+
+const AGE_GROUPS = ['U6','U7','U8','U9','U10','U11','U12','U13','U14','U15','U16','U17','U18','U19','Senior'];
+const GENDERS = [
+  { value: 'boys',  label: 'Boys'  },
+  { value: 'girls', label: 'Girls' },
+  { value: 'mixed', label: 'Mixed' },
+];
+
 export default function EvaluationsPage() {
   const { profile, club } = useDashboard();
   const router = useRouter();
@@ -42,13 +62,20 @@ export default function EvaluationsPage() {
   const [loading,  setLoading]  = useState(true);
 
   // ── New Period modal ─────────────────────────────────────────────────────
-  const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
+  const [teamOptions, setTeamOptions] = useState<TeamOption[]>([]);
+  const [coachPool, setCoachPool]     = useState<{ id: string; full_name: string | null; role: string }[]>([]);
   const [showNewPeriod, setShowNewPeriod] = useState(false);
   const [newTeamIds, setNewTeamIds]   = useState<Set<string>>(new Set());
+  const [teamCoachPicks, setTeamCoachPicks] = useState<Record<string, string>>({});
   const [newSeason, setNewSeason]     = useState('');
   const [newPeriod, setNewPeriod]     = useState('');
   const [creating, setCreating]       = useState(false);
   const [newError, setNewError]       = useState('');
+
+  // ── Team list filters (age / gender / coach) ────────────────────────────
+  const [filterAge, setFilterAge]       = useState('All');
+  const [filterGender, setFilterGender] = useState('All');
+  const [filterCoach, setFilterCoach]   = useState('All');
 
   const load = useCallback(async () => {
     if (!club) return;
@@ -75,15 +102,46 @@ export default function EvaluationsPage() {
 
   useEffect(() => {
     if (!club) return;
-    supabase.from('teams').select('id, name').eq('club_id', club.id).order('name')
-      .then(({ data }) => setTeamOptions((data ?? []) as { id: string; name: string }[]));
+    (async () => {
+      const [teamsRes, membersRes, poolRes] = await Promise.all([
+        supabase.from('teams').select('id, name, age_group, gender').eq('club_id', club.id).order('name'),
+        // Sparse in practice — most teams have no team_members row with
+        // role='coach' at all. Treated purely as a starting suggestion,
+        // never shown or saved without the admin confirming it in the
+        // per-team picker below.
+        supabase.from('team_members').select('team_id, profile_id, profiles(full_name)').eq('role', 'coach'),
+        // Admins show up here too (not just role='coach') — real club
+        // data confirms a DOC can genuinely be a team's actual coach, so
+        // excluding admins from the picker would make correct choices
+        // impossible to enter, not just wrong ones impossible to avoid.
+        supabase.from('profiles').select('id, full_name, role').eq('club_id', club.id).in('role', ['coach', 'org_admin', 'app_admin']),
+      ]);
+
+      const coachByTeam = new Map<string, { id: string; name: string | null }>();
+      for (const m of (membersRes.data ?? []) as unknown as { team_id: string; profile_id: string; profiles: { full_name: string | null } | { full_name: string | null }[] | null }[]) {
+        const prof = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
+        if (!coachByTeam.has(m.team_id)) coachByTeam.set(m.team_id, { id: m.profile_id, name: prof?.full_name ?? null });
+      }
+
+      const teams = ((teamsRes.data ?? []) as { id: string; name: string; age_group: string | null; gender: string | null }[]).map(t => ({
+        ...t,
+        linkedCoachId: coachByTeam.get(t.id)?.id ?? null,
+        linkedCoachName: coachByTeam.get(t.id)?.name ?? null,
+      }));
+      setTeamOptions(teams);
+      setCoachPool((poolRes.data ?? []) as { id: string; full_name: string | null; role: string }[]);
+    })();
   }, [club]);
 
   function openNewPeriod() {
     setNewTeamIds(new Set());
+    setTeamCoachPicks(Object.fromEntries(teamOptions.filter(t => t.linkedCoachId).map(t => [t.id, t.linkedCoachId as string])));
     setNewSeason('');
     setNewPeriod('');
     setNewError('');
+    setFilterAge('All');
+    setFilterGender('All');
+    setFilterCoach('All');
     setShowNewPeriod(true);
   }
 
@@ -125,7 +183,11 @@ export default function EvaluationsPage() {
           club_id: club.id,
           team_id: teamId,
           period_id: periodRow.id,
-          coach_id: profile.id,
+          // Falls back to whoever's creating the period only when no
+          // coach was picked for this specific team — every row needs
+          // some non-null coach_id, but an explicit per-team pick always
+          // wins over that fallback.
+          coach_id: teamCoachPicks[teamId] || profile.id,
           season_label: newSeason.trim(),
           period_label: newPeriod.trim(),
           total_players: countByTeam.get(teamId) ?? 0,
@@ -144,6 +206,26 @@ export default function EvaluationsPage() {
       setCreating(false);
     }
   }
+
+  // ── Team list: filter, then group by age for the New Period modal ──────
+  const coachOptionsPresent = [...new Set(teamOptions.filter(t => t.linkedCoachName).map(t => t.linkedCoachName as string))].sort();
+  const filteredTeamOptions = teamOptions.filter(t => {
+    if (filterAge !== 'All' && (t.age_group ?? '') !== filterAge) return false;
+    if (filterGender !== 'All' && (t.gender ?? '') !== filterGender) return false;
+    if (filterCoach === 'Unassigned' && t.linkedCoachName) return false;
+    if (filterCoach !== 'All' && filterCoach !== 'Unassigned' && t.linkedCoachName !== filterCoach) return false;
+    return true;
+  });
+  const teamsByAgeGroup = new Map<string, TeamOption[]>();
+  for (const t of filteredTeamOptions) {
+    const key = t.age_group || 'Other';
+    if (!teamsByAgeGroup.has(key)) teamsByAgeGroup.set(key, []);
+    teamsByAgeGroup.get(key)!.push(t);
+  }
+  const orderedAgeGroupKeys = [
+    ...AGE_GROUPS.filter(ag => teamsByAgeGroup.has(ag)),
+    ...[...teamsByAgeGroup.keys()].filter(k => !AGE_GROUPS.includes(k)).sort(),
+  ];
 
   // Summary stats — across every batch regardless of whether it belongs to a period
   const submitted = batches.filter(b => b.status === 'submitted').length;
@@ -379,33 +461,95 @@ export default function EvaluationsPage() {
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }} />
               </div>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                   <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     Teams {newTeamIds.size > 0 && `(${newTeamIds.size} selected)`}
                   </label>
-                  {teamOptions.length > 0 && (
+                  {filteredTeamOptions.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => setNewTeamIds(newTeamIds.size === teamOptions.length ? new Set() : new Set(teamOptions.map(t => t.id)))}
+                      onClick={() => {
+                        const filteredIds = new Set(filteredTeamOptions.map(t => t.id));
+                        const allFilteredSelected = filteredTeamOptions.every(t => newTeamIds.has(t.id));
+                        setNewTeamIds(prev => {
+                          const next = new Set(prev);
+                          if (allFilteredSelected) { for (const id of filteredIds) next.delete(id); }
+                          else { for (const id of filteredIds) next.add(id); }
+                          return next;
+                        });
+                      }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11.5px', fontWeight: '700', color: primary, padding: 0 }}
                     >
-                      {newTeamIds.size === teamOptions.length ? 'Clear all' : 'Select all'}
+                      {filteredTeamOptions.every(t => newTeamIds.has(t.id)) ? 'Clear shown' : 'Select shown'}
                     </button>
                   )}
                 </div>
+
+                {/* Filters */}
+                {teamOptions.length > 0 && (
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                    <select value={filterAge} onChange={e => setFilterAge(e.target.value)}
+                      style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '12px', color: '#374151', outline: 'none', fontFamily: 'inherit' }}>
+                      <option value="All">All ages</option>
+                      {AGE_GROUPS.filter(ag => teamOptions.some(t => t.age_group === ag)).map(ag => <option key={ag} value={ag}>{ag}</option>)}
+                    </select>
+                    <select value={filterGender} onChange={e => setFilterGender(e.target.value)}
+                      style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '12px', color: '#374151', outline: 'none', fontFamily: 'inherit' }}>
+                      <option value="All">All genders</option>
+                      {GENDERS.filter(g => teamOptions.some(t => t.gender === g.value)).map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                    </select>
+                    {coachOptionsPresent.length > 0 && (
+                      <select value={filterCoach} onChange={e => setFilterCoach(e.target.value)}
+                        style={{ padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '12px', color: '#374151', outline: 'none', fontFamily: 'inherit' }}>
+                        <option value="All">All coaches</option>
+                        <option value="Unassigned">Unassigned</option>
+                        {coachOptionsPresent.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                )}
+
                 {teamOptions.length === 0 ? (
                   <div style={{ fontSize: '13px', color: '#94A3B8' }}>No teams found for this club.</div>
+                ) : filteredTeamOptions.length === 0 ? (
+                  <div style={{ fontSize: '13px', color: '#94A3B8' }}>No teams match these filters.</div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '6px' }}>
-                    {teamOptions.map(t => {
-                      const checked = newTeamIds.has(t.id);
-                      return (
-                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', borderRadius: '6px', cursor: 'pointer', background: checked ? `${primary}10` : 'transparent' }}>
-                          <input type="checkbox" checked={checked} onChange={() => toggleTeam(t.id)} style={{ width: '15px', height: '15px', cursor: 'pointer' }} />
-                          <span style={{ fontSize: '13px', color: '#0F172A', fontWeight: checked ? '700' : '500' }}>{t.name}</span>
-                        </label>
-                      );
-                    })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '8px', maxHeight: '320px', overflowY: 'auto' }}>
+                    {orderedAgeGroupKeys.map(ageKey => (
+                      <div key={ageKey}>
+                        <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '2px 6px', marginBottom: '2px' }}>{ageKey}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {teamsByAgeGroup.get(ageKey)!.map(t => {
+                            const checked = newTeamIds.has(t.id);
+                            return (
+                              <div key={t.id} style={{ borderRadius: '6px', background: checked ? `${primary}10` : 'transparent' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 8px', cursor: 'pointer' }}>
+                                  <input type="checkbox" checked={checked} onChange={() => toggleTeam(t.id)} style={{ width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }} />
+                                  <span style={{ fontSize: '13px', color: '#0F172A', fontWeight: checked ? '700' : '500', flex: 1 }}>
+                                    {t.name}
+                                    {t.gender && <span style={{ fontSize: '11px', color: '#94A3B8', marginLeft: '6px', fontWeight: '500' }}>{GENDERS.find(g => g.value === t.gender)?.label}</span>}
+                                  </span>
+                                </label>
+                                {checked && (
+                                  <div style={{ padding: '0 8px 8px 31px' }}>
+                                    <select
+                                      value={teamCoachPicks[t.id] ?? ''}
+                                      onChange={e => setTeamCoachPicks(prev => ({ ...prev, [t.id]: e.target.value }))}
+                                      style={{ width: '100%', padding: '5px 8px', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '12px', color: '#374151', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const }}
+                                    >
+                                      <option value="">— Select coach —</option>
+                                      {coachPool.map(c => (
+                                        <option key={c.id} value={c.id}>{c.full_name ?? 'Unnamed'}{c.role !== 'coach' ? ' (Admin)' : ''}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
