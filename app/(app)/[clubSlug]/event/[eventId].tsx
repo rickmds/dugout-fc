@@ -1798,7 +1798,7 @@ export default function EventDetailScreen() {
               <View style={styles.metaTextBlock}>
                 <Text style={styles.metaPrimary}>{formatDay(event.event_date)}</Text>
                 {event.event_time && (
-                  <Text style={styles.metaSecondary}>
+                  <Text style={styles.metaPrimary}>
                     {formatTime(event.event_time)}
                     {event.duration_minutes
                       ? ` – ${computeEndTime(event.event_time, event.duration_minutes)}`
@@ -1818,7 +1818,7 @@ export default function EventDetailScreen() {
                   </View>
                   <View style={styles.metaTextBlock}>
                     <Text style={styles.metaLabel}>Arrive by</Text>
-                    <Text style={styles.metaPrimary}>
+                    <Text style={styles.metaSecondary}>
                       {computeArriveBy(event.event_time, event.arrival_buffer_minutes)}
                     </Text>
                   </View>
