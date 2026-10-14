@@ -8,7 +8,7 @@
 import { X } from 'lucide-react';
 
 export type ReportData = {
-  bio:   { position: string; birth_year: string; school: string };
+  bio:   { position: string; birth_year: string };
   stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
@@ -212,12 +212,11 @@ export function EvaluationReportPanel({
             </div>
 
             {/* Profile */}
-            {(rd?.bio?.birth_year || rd?.bio?.school) && (
+            {rd?.bio?.birth_year && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>PROFILE</div>
                 <div style={{ display: 'flex', gap: '24px' }}>
-                  {rd.bio.birth_year && <StatChip val={rd.bio.birth_year} label="BIRTH YEAR" color="#0f172a" />}
-                  {rd.bio.school     && <StatChip val={rd.bio.school}     label="SCHOOL"     color="#0f172a" />}
+                  <StatChip val={rd.bio.birth_year} label="BIRTH YEAR" color="#0f172a" />
                 </div>
               </div>
             )}

@@ -39,7 +39,6 @@ type ReportData = {
   bio: {
     position: string;
     birth_year: string;
-    school: string;
   };
   stats: {
     rsvp_pct: string;
@@ -60,7 +59,7 @@ type ReportData = {
 };
 
 const EMPTY_REPORT: ReportData = {
-  bio:   { position: '', birth_year: '', school: '' },
+  bio:   { position: '', birth_year: '' },
   stats: { rsvp_pct: '', practice_pct: '', game_pct: '', games_played: '', minutes_played: '', goals: '', assists: '', yellow_cards: '', secondary_foot: '' },
   super_strengths:      ['', '', ''],
   areas_of_development: ['', '', ''],
@@ -508,7 +507,6 @@ export default function EvaluationFormScreen() {
         body: JSON.stringify({
           player_name:          playerName,
           position:             rd.bio.position || '',
-          school:               rd.bio.school || '',
           season_label:         seasonLabel,
           period_label:         periodLabel,
           rating_technical:     form.rating_technical,
@@ -601,7 +599,6 @@ export default function EvaluationFormScreen() {
               items={[
                 { k: 'position',   label: 'POSITION',   value: rd.bio.position,   placeholder: 'CM, ST, GK…' },
                 { k: 'birth_year', label: 'BIRTH YEAR', value: rd.bio.birth_year, placeholder: '2009' },
-                { k: 'school',     label: 'SCHOOL',     value: rd.bio.school,     placeholder: 'School name' },
               ]}
               onChange={(k, v) => setBio(k as keyof ReportData['bio'], v)}
             />
@@ -819,7 +816,7 @@ export default function EvaluationFormScreen() {
               const hasOutcome    = rd?.outcome_goals?.some(Boolean);
               const hasPerf       = rd?.performance_goals?.some(Boolean);
               const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
-              const hasBioStats   = rd?.bio?.birth_year || rd?.bio?.school;
+              const hasBioStats   = rd?.bio?.birth_year;
               const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
               const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
                 || (rd?.stats?.goals        && rd.stats.goals        !== '0')
@@ -858,7 +855,6 @@ export default function EvaluationFormScreen() {
                       <Text style={pvSt.statBlockLabel}>PROFILE</Text>
                       <View style={pvSt.statRow}>
                         {rd!.bio.birth_year ? <PvStatChip label="BIRTH YEAR" value={rd!.bio.birth_year} color="#0f172a" /> : null}
-                        {rd!.bio.school     ? <PvStatChip label="SCHOOL"     value={rd!.bio.school}     color="#0f172a" /> : null}
                       </View>
                     </View>
                   ) : null}

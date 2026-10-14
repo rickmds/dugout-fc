@@ -12,7 +12,6 @@ State the specific strengths and the main development priority plainly. No throa
 type Body = {
   player_name: string;
   position: string;
-  school: string;
   season_label: string;
   period_label: string;
   rating_technical: number;
@@ -36,7 +35,6 @@ export async function POST(req: NextRequest) {
 
     const prompt = `Player: ${body.player_name}
 Position: ${body.position || 'Not listed'}
-School: ${body.school || 'Not listed'}
 Season/Period: ${body.period_label} — ${body.season_label}
 
 Ratings — Technical: ${body.rating_technical}/5, Tactical: ${body.rating_tactical}/5, Physical: ${body.rating_physical}/5, Mental: ${body.rating_mental}/5
