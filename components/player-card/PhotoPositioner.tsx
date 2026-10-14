@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Animated, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,25 +10,14 @@ import { ThemeColors } from '../../constants/colors';
 // card uses contentFit:"contain"). This never re-encodes the image; it just
 // stores where within the frame to show it. Same raw PanResponder/Animated
 // approach as ImageEditor though — no new gesture library needed.
-//
-// Two distinct modes, not one generic one, because they solve different
-// problems: "contain" (the Player Card) never crops — it just lets a
-// tall/narrow cutout be dragged partly out of frame on purpose, so the
-// drag is a raw pixel translate of the whole (uncropped) image. "cover"
-// (the evaluation report's big hero photo) always fills its box and always
-// crops — there the drag has to mean "which part of the crop is visible,"
-// which is exactly what contentPosition (RN's equivalent of CSS
-// object-position) is for. Reusing one offset model for both would mean
-// either the card loses its intentional out-of-frame crop, or the report
-// photo gets letterboxed instead of filling the space.
 
 const BOX_W = 260;
-const CONTAIN_ASPECT = 0.92; // must match PlayerCard's photo-slot aspect ratio
-// How far (as a fraction of the box's own size) a drag can push the image
-// in "contain" mode — generous enough to let a tall/narrow cutout (e.g. a
-// full-body photo) be pushed mostly out of frame on purpose, cropping down
-// to just the top half.
-const CONTAIN_MAX_OFFSET = 0.6;
+const PHOTO_ASPECT = 0.92; // must match PlayerCard's photo-slot aspect ratio
+const BOX_H = BOX_W / PHOTO_ASPECT;
+// How far (as a fraction of the box's own size) a drag can push the image —
+// generous enough to let a tall/narrow cutout (e.g. a full-body photo) be
+// pushed mostly out of frame on purpose, cropping down to just the top half.
+const MAX_OFFSET = 0.6;
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -43,14 +32,6 @@ type Props = {
   onCancel: () => void;
   colors: ThemeColors;
   primaryColor?: string;
-  /** 'contain' (default) = Player Card behavior, never crops. 'cover' =
-   * always fills the box and crops, dragged via contentPosition. */
-  mode?: 'contain' | 'cover';
-  /** Box aspect ratio (width / height) the frame is drawn at — must match
-   * whatever the photo actually renders inside, or the preview lies. */
-  aspectRatio?: number;
-  title?: string;
-  subtitle?: string;
 };
 
 export default function PhotoPositioner({
@@ -62,27 +43,15 @@ export default function PhotoPositioner({
   onCancel,
   colors,
   primaryColor = '#22C55E',
-  mode = 'contain',
-  aspectRatio = CONTAIN_ASPECT,
-  title = 'Position the photo',
-  subtitle = "Drag to move it within the frame — this is exactly how it'll sit on the card.",
 }: Props) {
   const insets = useSafeAreaInsets();
-  const BOX_H = BOX_W / aspectRatio;
-  const isCover = mode === 'cover';
-  const maxOffset = isCover ? 1 : CONTAIN_MAX_OFFSET;
   const offsetX = useRef(initialOffsetX);
   const offsetY = useRef(initialOffsetY);
   const dragStartX = useRef(initialOffsetX);
   const dragStartY = useRef(initialOffsetY);
-  // Only used in "contain" mode (raw pixel translate of the Image).
   const pan = useRef(
     new Animated.ValueXY({ x: initialOffsetX * BOX_W, y: initialOffsetY * BOX_H })
   ).current;
-  // Only used in "cover" mode (re-rendered as a contentPosition percentage
-  // on every move — can't be an Animated transform since it changes which
-  // pixels are drawn, not just where the view sits).
-  const [coverOffset, setCoverOffset] = useState({ x: initialOffsetX, y: initialOffsetY });
 
   const panResponder = useRef(
     PanResponder.create({
@@ -93,22 +62,11 @@ export default function PhotoPositioner({
         dragStartY.current = offsetY.current;
       },
       onPanResponderMove: (_evt, gesture) => {
-        if (isCover) {
-          // Inverted sign vs. "contain": dragging the photo right should
-          // reveal more of its own left side, which means moving the
-          // object-position anchor LEFT (toward 0%), not right.
-          const nx = clamp(dragStartX.current - gesture.dx / BOX_W, -maxOffset, maxOffset);
-          const ny = clamp(dragStartY.current - gesture.dy / BOX_H, -maxOffset, maxOffset);
-          offsetX.current = nx;
-          offsetY.current = ny;
-          setCoverOffset({ x: nx, y: ny });
-        } else {
-          const nx = clamp(dragStartX.current + gesture.dx / BOX_W, -maxOffset, maxOffset);
-          const ny = clamp(dragStartY.current + gesture.dy / BOX_H, -maxOffset, maxOffset);
-          offsetX.current = nx;
-          offsetY.current = ny;
-          pan.setValue({ x: nx * BOX_W, y: ny * BOX_H });
-        }
+        const nx = clamp(dragStartX.current + gesture.dx / BOX_W, -MAX_OFFSET, MAX_OFFSET);
+        const ny = clamp(dragStartY.current + gesture.dy / BOX_H, -MAX_OFFSET, MAX_OFFSET);
+        offsetX.current = nx;
+        offsetY.current = ny;
+        pan.setValue({ x: nx * BOX_W, y: ny * BOX_H });
       },
     })
   ).current;
@@ -117,17 +75,16 @@ export default function PhotoPositioner({
     offsetX.current = 0;
     offsetY.current = 0;
     pan.setValue({ x: 0, y: 0 });
-    setCoverOffset({ x: 0, y: 0 });
   }
-
-  const contentPosition = { left: `${50 + coverOffset.x * 50}%`, top: `${50 + coverOffset.y * 50}%` } as const;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onCancel}>
       <View style={styles.backdrop}>
         <View style={[styles.sheet, { backgroundColor: colors.surface, paddingBottom: insets.bottom + 16 }]}>
-          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-          <Text style={[styles.sub, { color: colors.muted }]}>{subtitle}</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Position the photo</Text>
+          <Text style={[styles.sub, { color: colors.muted }]}>
+            Drag to move it within the frame — this is exactly how it'll sit on the card.
+          </Text>
 
           <View
             style={[
@@ -135,18 +92,12 @@ export default function PhotoPositioner({
               { width: BOX_W, height: BOX_H, borderColor: colors.border, backgroundColor: colors.background },
             ]}
           >
-            {isCover ? (
-              <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers}>
-                <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition={contentPosition} />
-              </View>
-            ) : (
-              <Animated.View
-                style={[StyleSheet.absoluteFill, { transform: pan.getTranslateTransform() }]}
-                {...panResponder.panHandlers}
-              >
-                <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="contain" />
-              </Animated.View>
-            )}
+            <Animated.View
+              style={[StyleSheet.absoluteFill, { transform: pan.getTranslateTransform() }]}
+              {...panResponder.panHandlers}
+            >
+              <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="contain" />
+            </Animated.View>
           </View>
 
           <View style={styles.btnRow}>

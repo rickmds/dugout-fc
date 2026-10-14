@@ -20,6 +20,7 @@ import { PULSE_COLORS, ThemeColors } from '../../../../../constants/colors';
 import { useClub } from '../../../../../hooks/useClub';
 import { useTheme } from '../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
+import { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from '../../../../../components/player-card/EvalPhotoEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,17 +51,11 @@ type EvalDetail = {
   report_data:  ReportData | null;
   final_text:   string | null;
   published_at: string | null;
-  report_photo_url:      string | null;
-  report_photo_offset_x: number;
-  report_photo_offset_y: number;
+  report_photo_url: string | null;
   players: { full_name: string; jersey_number: number | null; photo_url: string | null; card_photo_url: string | null } | null;
 };
 
 const SCREEN_W = Dimensions.get('window').width;
-// Width of the big cover-fit hero photo column — must match
-// evaluation-form.tsx's EVAL_PHOTO_WIDTH_PCT so the coach's positioner
-// preview matches what players/parents actually see here.
-const EVAL_PHOTO_WIDTH_PCT = '36%';
 const CARD_W   = SCREEN_W - 32;
 
 // ─── Section header ───────────────────────────────────────────────────────────
@@ -284,9 +279,9 @@ export default function EvalDetailScreen() {
           .band-date { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.6); letter-spacing: 0.5px; }
           .hero { padding: 22px 0 16px 22px; border-bottom: 1px solid #f1f5f9; position: relative; overflow: hidden; }
           .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
-          .hero-row { display: flex; align-items: stretch; gap: 16px; position: relative; }
+          .hero-row { display: flex; gap: 16px; position: relative; }
           .hero-left { flex: 1; min-width: 0; padding-right: 22px; }
-          .hero-photo-col { width: 34%; flex-shrink: 0; overflow: hidden; }
+          .hero-photo-col { width: ${EVAL_PHOTO_WIDTH_PCT}; aspect-ratio: ${EVAL_PHOTO_ASPECT}; flex-shrink: 0; overflow: hidden; }
           .hero-photo-col img { display: block; width: 100%; height: 100%; object-fit: cover; }
           .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
           .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
@@ -347,7 +342,7 @@ export default function EvalDetailScreen() {
                   </div>
                 </div>` : ''}
               </div>
-              ${photoDataUri ? `<div class="hero-photo-col"><img src="${photoDataUri}" style="object-position: ${50 + (ev.report_photo_offset_x ?? 0) * 50}% ${50 + (ev.report_photo_offset_y ?? 0) * 50}%;" /></div>` : ''}
+              ${photoDataUri ? `<div class="hero-photo-col"><img src="${photoDataUri}" /></div>` : ''}
             </div>
           </div>
           ${rd?.stats?.games_played || rd?.stats?.trainings_attended ? `
@@ -522,12 +517,11 @@ export default function EvalDetailScreen() {
             </View>
 
             {effectivePhotoUrl && (
-              <View style={{ width: EVAL_PHOTO_WIDTH_PCT, overflow: 'hidden' }}>
+              <View style={{ width: EVAL_PHOTO_WIDTH_PCT, aspectRatio: EVAL_PHOTO_ASPECT, overflow: 'hidden' }}>
                 <Image
                   source={{ uri: effectivePhotoUrl }}
                   style={{ width: '100%', height: '100%' }}
                   contentFit="cover"
-                  contentPosition={{ left: `${50 + (ev.report_photo_offset_x ?? 0) * 50}%`, top: `${50 + (ev.report_photo_offset_y ?? 0) * 50}%` }}
                 />
               </View>
             )}

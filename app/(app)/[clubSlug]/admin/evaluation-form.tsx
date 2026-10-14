@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -27,16 +26,7 @@ import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
-import PhotoPositioner from '../../../../components/player-card/PhotoPositioner';
-
-// Big cover-fit hero photo (not the small corner avatar) — width as a
-// fraction of the report card's own width, height left to stretch to
-// whatever the hero+stat-block content needs. EVAL_PHOTO_ASPECT is only
-// used to draw a representative frame in the positioner preview modal
-// (the live render's box isn't a fixed aspect ratio, since its height is
-// content-driven) — picked to match the reference mockup's proportions.
-const EVAL_PHOTO_WIDTH_PCT = '36%';
-const EVAL_PHOTO_ASPECT = 0.48;
+import EvalPhotoEditor, { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from '../../../../components/player-card/EvalPhotoEditor';
 
 const API_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -313,11 +303,12 @@ export default function EvaluationFormScreen() {
 
   // Report-specific hero photo — defaults to the player's card photo
   // (playerPhotoUrl above), optionally overridden just for this report.
-  const [reportPhotoUrl,        setReportPhotoUrl]        = useState<string | null>(null);
-  const [reportPhotoOffsetX,    setReportPhotoOffsetX]    = useState(0);
-  const [reportPhotoOffsetY,    setReportPhotoOffsetY]    = useState(0);
-  const [uploadingReportPhoto,  setUploadingReportPhoto]  = useState(false);
-  const [photoPositionerVisible, setPhotoPositionerVisible] = useState(false);
+  // Stored pre-cropped (via EvalPhotoEditor) to the hero box's exact
+  // aspect ratio, so every rendering surface can just display it with a
+  // plain cover fit — no offset/position metadata to keep in sync.
+  const [reportPhotoUrl,       setReportPhotoUrl]       = useState<string | null>(null);
+  const [uploadingReportPhoto, setUploadingReportPhoto] = useState(false);
+  const [photoEditorUri,       setPhotoEditorUri]       = useState<string | null>(null);
   const effectiveReportPhotoUrl = reportPhotoUrl ?? playerPhotoUrl;
 
   useEffect(() => { load(); }, [playerId, batchId, evalId]);
@@ -361,7 +352,7 @@ export default function EvaluationFormScreen() {
     if (evalId) {
       const { data } = await supabase
         .from('player_evaluations')
-        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status,report_photo_url,report_photo_offset_x,report_photo_offset_y')
+        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status,report_photo_url')
         .eq('id', evalId)
         .single();
       if (data) {
@@ -377,8 +368,6 @@ export default function EvaluationFormScreen() {
           status:       data.status as 'draft' | 'submitted',
         });
         setReportPhotoUrl((data as any).report_photo_url ?? null);
-        setReportPhotoOffsetX((data as any).report_photo_offset_x ?? 0);
-        setReportPhotoOffsetY((data as any).report_photo_offset_y ?? 0);
         setLoading(false);
         return;
       }
@@ -652,9 +641,9 @@ export default function EvaluationFormScreen() {
   // Uploaded to a path keyed by (playerId, batchId) rather than evalId — a
   // brand-new draft has no player_evaluations row yet, but (batch_id,
   // player_id) is already unique, so this path is stable before the first
-  // save. The URL/offset themselves aren't written to the DB here either —
-  // they ride along in the normal save() payload below, same as every
-  // other form field, so an uploaded-but-unsaved photo doesn't half-persist.
+  // save. The URL itself isn't written to the DB here either — it rides
+  // along in the normal save() payload below, same as every other form
+  // field, so an uploaded-but-unsaved photo doesn't half-persist.
 
   async function handlePickReportPhoto() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -664,16 +653,19 @@ export default function EvaluationFormScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
     if (result.canceled || !result.assets[0]) return;
+    setPhotoEditorUri(result.assets[0].uri);
+  }
 
+  function handleRepositionReportPhoto() {
+    if (effectiveReportPhotoUrl) setPhotoEditorUri(effectiveReportPhotoUrl);
+  }
+
+  async function handlePhotoEditorSave(croppedUri: string) {
+    setPhotoEditorUri(null);
     setUploadingReportPhoto(true);
     try {
-      const manipulated = await ImageManipulator.manipulateAsync(
-        result.assets[0].uri,
-        [{ resize: { width: 700 } }],
-        { format: ImageManipulator.SaveFormat.PNG, compress: 1 }
-      );
       const path = `players/${playerId}-eval-${batchId}.png`;
-      const response = await fetch(manipulated.uri);
+      const response = await fetch(croppedUri);
       const arrayBuffer = await response.arrayBuffer();
       const { error: uploadError } = await supabase.storage.from('avatars').upload(path, arrayBuffer, {
         contentType: 'image/png',
@@ -684,11 +676,7 @@ export default function EvaluationFormScreen() {
         return;
       }
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
-      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
-      setReportPhotoUrl(publicUrl);
-      setReportPhotoOffsetX(0);
-      setReportPhotoOffsetY(0);
-      setPhotoPositionerVisible(true);
+      setReportPhotoUrl(`${urlData.publicUrl}?t=${Date.now()}`);
     } catch (e) {
       Alert.alert('Upload failed', String(e));
     } finally {
@@ -696,16 +684,8 @@ export default function EvaluationFormScreen() {
     }
   }
 
-  function handleSaveReportPhotoPosition(offsetX: number, offsetY: number) {
-    setPhotoPositionerVisible(false);
-    setReportPhotoOffsetX(offsetX);
-    setReportPhotoOffsetY(offsetY);
-  }
-
   function handleResetReportPhoto() {
     setReportPhotoUrl(null);
-    setReportPhotoOffsetX(0);
-    setReportPhotoOffsetY(0);
   }
 
   // ─── Save ─────────────────────────────────────────────────────────────────
@@ -725,8 +705,6 @@ export default function EvaluationFormScreen() {
       status: (submitNow ? 'submitted' : 'draft') as 'submitted' | 'draft',
       ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
       report_photo_url: reportPhotoUrl,
-      report_photo_offset_x: reportPhotoOffsetX,
-      report_photo_offset_y: reportPhotoOffsetY,
     };
 
     if (isEdit) {
@@ -799,7 +777,7 @@ export default function EvaluationFormScreen() {
                 </TouchableOpacity>
                 {!!effectiveReportPhotoUrl && (
                   <TouchableOpacity
-                    onPress={() => setPhotoPositionerVisible(true)}
+                    onPress={handleRepositionReportPhoto}
                     style={[st.reportPhotoBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
                   >
                     <Ionicons name="move-outline" size={14} color={colors.text} />
@@ -1122,12 +1100,11 @@ export default function EvaluationFormScreen() {
                     </View>
 
                     {effectiveReportPhotoUrl && (
-                      <View style={{ width: EVAL_PHOTO_WIDTH_PCT, overflow: 'hidden' }}>
+                      <View style={{ width: EVAL_PHOTO_WIDTH_PCT, aspectRatio: EVAL_PHOTO_ASPECT, overflow: 'hidden' }}>
                         <Image
                           source={{ uri: effectiveReportPhotoUrl }}
                           style={{ width: '100%', height: '100%' }}
                           contentFit="cover"
-                          contentPosition={{ left: `${50 + reportPhotoOffsetX * 50}%`, top: `${50 + reportPhotoOffsetY * 50}%` }}
                         />
                       </View>
                     )}
@@ -1273,20 +1250,17 @@ export default function EvaluationFormScreen() {
         </View>
       </Modal>
 
-      {!!effectiveReportPhotoUrl && (
-        <PhotoPositioner
-          visible={photoPositionerVisible}
-          uri={effectiveReportPhotoUrl}
-          initialOffsetX={reportPhotoOffsetX}
-          initialOffsetY={reportPhotoOffsetY}
-          onSave={handleSaveReportPhotoPosition}
-          onCancel={() => setPhotoPositionerVisible(false)}
-          colors={colors}
+      {!!photoEditorUri && (
+        <EvalPhotoEditor
+          visible={!!photoEditorUri}
+          uri={photoEditorUri}
+          playerName={playerName}
+          position={rd?.bio?.position}
+          jerseyNumber={jerseyNumber}
           primaryColor={primary}
-          mode="cover"
-          aspectRatio={EVAL_PHOTO_ASPECT}
-          title="Position the report photo"
-          subtitle="Drag to choose what shows in the hero — this is exactly how it'll sit on the report."
+          colors={colors}
+          onSave={handlePhotoEditorSave}
+          onCancel={() => setPhotoEditorUri(null)}
         />
       )}
     </View>

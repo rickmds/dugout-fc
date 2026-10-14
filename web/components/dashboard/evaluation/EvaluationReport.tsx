@@ -30,9 +30,7 @@ export type EvalRow = {
   final_text:   string | null;
   published_at: string | null;
   scheduled_publish_at: string | null;
-  report_photo_url:      string | null;
-  report_photo_offset_x: number | null;
-  report_photo_offset_y: number | null;
+  report_photo_url: string | null;
   players: { full_name: string; jersey_number: number | null; photo_url: string | null; card_photo_url: string | null } | null;
 };
 
@@ -204,10 +202,11 @@ export function EvaluationReportPanel({
               <div style={{ fontSize: '9px', fontWeight: '700', color: 'rgba(255,255,255,0.65)' }}>{pubDate}</div>
             </div>
 
-            {/* Hero — a big cover-fit photo on the right spans the hero +
-                PROFILE + ATTENDANCE blocks; height is content-driven
-                (flex stretch), not fixed. */}
-            <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #f1f5f9' }}>
+            {/* Hero — a big cover-fit photo on the right, fixed to the same
+                aspect ratio the coach positioned it against in the editor
+                (EVAL_PHOTO_ASPECT in mobile's EvalPhotoEditor.tsx) rather
+                than stretched to match the text column's height. */}
+            <div style={{ display: 'flex', borderBottom: '1px solid #f1f5f9' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ padding: '18px 20px 12px', position: 'relative', overflow: 'hidden' }}>
                   <div style={{ position: 'absolute', fontSize: '80px', fontWeight: '900', letterSpacing: '-5px', top: '-10px', left: '14px', color: `${primary}28`, lineHeight: 1, pointerEvents: 'none' }}>{lastName}</div>
@@ -245,16 +244,9 @@ export function EvaluationReportPanel({
               </div>
 
               {photoUrl && (
-                <div style={{ width: '34%', flexShrink: 0, overflow: 'hidden' }}>
+                <div style={{ width: '36%', aspectRatio: 0.48, flexShrink: 0, overflow: 'hidden' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-                  <img
-                    src={photoUrl}
-                    alt={playerName}
-                    style={{
-                      width: '100%', height: '100%', display: 'block', objectFit: 'cover',
-                      objectPosition: `${50 + (ev.report_photo_offset_x ?? 0) * 50}% ${50 + (ev.report_photo_offset_y ?? 0) * 50}%`,
-                    }}
-                  />
+                  <img src={photoUrl} alt={playerName} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
                 </div>
               )}
             </div>
