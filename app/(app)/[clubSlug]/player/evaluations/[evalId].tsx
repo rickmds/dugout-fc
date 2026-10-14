@@ -50,7 +50,7 @@ type EvalDetail = {
   report_data:  ReportData | null;
   final_text:   string | null;
   published_at: string | null;
-  players: { full_name: string; jersey_number: number | null } | null;
+  players: { full_name: string; jersey_number: number | null; photo_url: string | null; card_photo_url: string | null } | null;
 };
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -164,6 +164,7 @@ export default function EvalDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
   const logoBase64Ref = useRef<string | null>(null);
+  const photoBase64Ref = useRef<string | null>(null);
 
   // Pre-fetch logo as base64 so share is instant
   useEffect(() => {
@@ -178,12 +179,26 @@ export default function EvalDetailScreen() {
     })();
   }, [clubLogoUrl]);
 
+  // Pre-fetch player photo as base64 so share is instant
+  useEffect(() => {
+    const photoUrl = ev?.players?.card_photo_url ?? ev?.players?.photo_url;
+    if (!photoUrl) return;
+    (async () => {
+      try {
+        const tmp = FileSystem.cacheDirectory! + 'report-photo-cached.jpg';
+        await FileSystem.downloadAsync(photoUrl, tmp);
+        const b64 = await FileSystem.readAsStringAsync(tmp, { encoding: FileSystem.EncodingType.Base64 });
+        photoBase64Ref.current = `data:image/jpeg;base64,${b64}`;
+      } catch { /* photo optional */ }
+    })();
+  }, [ev?.players?.card_photo_url, ev?.players?.photo_url]);
+
   useEffect(() => {
     async function load() {
       setLoading(true);
       const { data } = await supabase
         .from('player_evaluations')
-        .select('*, players(full_name,jersey_number)')
+        .select('*, players(full_name,jersey_number,photo_url,card_photo_url)')
         .eq('id', evalId)
         .single();
       if (data) setEv(data as EvalDetail);
@@ -205,6 +220,7 @@ export default function EvalDetailScreen() {
         : '';
 
       const logoDataUri = logoBase64Ref.current ?? '';
+      const photoDataUri = photoBase64Ref.current ?? '';
 
       // Radar SVG
       const axes  = [
@@ -260,6 +276,8 @@ export default function EvalDetailScreen() {
           .band-date { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.6); letter-spacing: 0.5px; }
           .hero { padding: 22px 22px 16px; border-bottom: 1px solid #f1f5f9; position: relative; overflow: hidden; }
           .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
+          .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; position: relative; }
+          .hero-photo { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.15); flex-shrink: 0; z-index: 2; }
           .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
           .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
           .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
@@ -293,11 +311,16 @@ export default function EvalDetailScreen() {
           </div>
           <div class="hero">
             <div class="hero-wm">${playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? ''}</div>
-            <div class="player-name">${playerName}</div>
-            <div class="pills">
-              ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position}</span>` : ''}
-              ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
-              <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
+            <div class="hero-top">
+              <div>
+                <div class="player-name">${playerName}</div>
+                <div class="pills">
+                  ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position}</span>` : ''}
+                  ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
+                  <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
+                </div>
+              </div>
+              ${photoDataUri ? `<img class="hero-photo" src="${photoDataUri}" />` : ''}
             </div>
           </div>
           ${rd?.bio?.age_group ? `
@@ -439,23 +462,32 @@ export default function EvalDetailScreen() {
                 {lastName}
               </Text>
             ) : null}
-            <View style={st.heroContent}>
-              <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
-              <View style={[st.pillRow, { zIndex: 2 }]}>
-                {rd?.bio?.position ? (
-                  <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
-                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
-                  </View>
-                ) : null}
-                {ev.players?.jersey_number != null && (
+            <View style={[st.heroContent, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
+                <View style={[st.pillRow, { zIndex: 2 }]}>
+                  {rd?.bio?.position ? (
+                    <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
+                      <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
+                    </View>
+                  ) : null}
+                  {ev.players?.jersey_number != null && (
+                    <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                      <Text style={[st.pillText, { color: '#475569' }]}>#{ev.players.jersey_number}</Text>
+                    </View>
+                  )}
                   <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
-                    <Text style={[st.pillText, { color: '#475569' }]}>#{ev.players.jersey_number}</Text>
+                    <Text style={[st.pillText, { color: '#64748b' }]}>{ev.period_label} · {ev.season_label}</Text>
                   </View>
-                )}
-                <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
-                  <Text style={[st.pillText, { color: '#64748b' }]}>{ev.period_label} · {ev.season_label}</Text>
                 </View>
               </View>
+              {(ev.players?.card_photo_url || ev.players?.photo_url) && (
+                <Image
+                  source={{ uri: (ev.players.card_photo_url ?? ev.players.photo_url) as string }}
+                  style={[st.heroPhoto, { zIndex: 2 }]}
+                  contentFit="cover"
+                />
+              )}
             </View>
           </View>
 
@@ -638,6 +670,7 @@ function getSt(colors: ThemeColors) {
   heroSection:   { overflow: 'hidden', paddingBottom: 4 },
   heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
   heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
+  heroPhoto:     { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f1f5f9' },
   playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
   pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },

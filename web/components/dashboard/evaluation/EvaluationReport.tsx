@@ -30,7 +30,7 @@ export type EvalRow = {
   final_text:   string | null;
   published_at: string | null;
   scheduled_publish_at: string | null;
-  players: { full_name: string; jersey_number: number | null; photo_url: string | null } | null;
+  players: { full_name: string; jersey_number: number | null; photo_url: string | null; card_photo_url: string | null } | null;
 };
 
 const RADAR_COLORS = ['#3B82F6', '#F59E0B', '#22C55E', '#8B5CF6'];
@@ -129,6 +129,7 @@ export function EvaluationReportPanel({
   const playerName = ev.players?.full_name ?? '';
   const lastName   = playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? '';
   const jerseyNum  = ev.players?.jersey_number;
+  const photoUrl   = ev.players?.card_photo_url ?? ev.players?.photo_url ?? null;
   const pubDate    = ev.published_at
     ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : '';
@@ -203,11 +204,19 @@ export function EvaluationReportPanel({
             {/* Hero */}
             <div style={{ padding: '18px 20px 12px', borderBottom: '1px solid #f1f5f9', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', fontSize: '80px', fontWeight: '900', letterSpacing: '-5px', top: '-10px', left: '14px', color: `${primary}28`, lineHeight: 1, pointerEvents: 'none' }}>{lastName}</div>
-              <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '8px', position: 'relative' }}>{playerName}</div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative' }}>
-                {rd?.bio?.position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}44`, background: `${primary}22`, fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.position}</span>}
-                {jerseyNum != null && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>#{jerseyNum}</span>}
-                <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>{ev.period_label} · {ev.season_label}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', position: 'relative' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '8px' }}>{playerName}</div>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {rd?.bio?.position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}44`, background: `${primary}22`, fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.position}</span>}
+                    {jerseyNum != null && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>#{jerseyNum}</span>}
+                    <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>{ev.period_label} · {ev.season_label}</span>
+                  </div>
+                </div>
+                {photoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up
+                  <img src={photoUrl} alt={playerName} style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 2px 6px rgba(0,0,0,0.15)', flexShrink: 0, zIndex: 2 }} />
+                )}
               </div>
             </div>
 

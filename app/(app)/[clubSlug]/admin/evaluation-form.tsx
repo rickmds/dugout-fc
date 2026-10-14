@@ -296,6 +296,7 @@ export default function EvaluationFormScreen() {
   const [idpGenerating, setIdpGenerating] = useState<Record<number, boolean>>({});
   const [saving,        setSaving]        = useState(false);
   const [jerseyNumber,  setJerseyNumber]  = useState<number | null>(null);
+  const [playerPhotoUrl, setPlayerPhotoUrl] = useState<string | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
 
   useEffect(() => { load(); }, [playerId, batchId, evalId]);
@@ -303,7 +304,7 @@ export default function EvaluationFormScreen() {
   async function load() {
     setLoading(true);
     const [pRes, bRes] = await Promise.all([
-      supabase.from('players').select('full_name,position,jersey_number,date_of_birth').eq('id', playerId).single(),
+      supabase.from('players').select('full_name,position,jersey_number,date_of_birth,photo_url,card_photo_url').eq('id', playerId).single(),
       supabase.from('evaluation_batches').select('season_label,period_label,team_id').eq('id', batchId).single(),
     ]);
 
@@ -314,6 +315,11 @@ export default function EvaluationFormScreen() {
       setPlayerName(pRes.data.full_name);
       setJerseyNumber((pRes.data as any).jersey_number ?? null);
       prefillPosition = pRes.data.position ?? '';
+      // Same card_photo_url-wins-over-photo_url fallback used everywhere
+      // else a player's photo shows up (Home tab, player profile) — the
+      // trading-card photo is the one a coach/parent already thinks of
+      // as "the" player photo when one's been set.
+      setPlayerPhotoUrl((pRes.data as any).card_photo_url ?? (pRes.data as any).photo_url ?? null);
     }
     if (bRes.data) {
       setSeasonLabel(bRes.data.season_label);
@@ -943,13 +949,18 @@ export default function EvaluationFormScreen() {
                   {/* Player hero */}
                   <View style={{ overflow: 'hidden', paddingBottom: 4 }}>
                     {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} ellipsizeMode="clip">{lastName}</Text> : null}
-                    <View style={pvSt.heroContent}>
-                      <Text style={pvSt.playerName}>{playerName}</Text>
-                      <View style={pvSt.pillRow}>
-                        {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
-                        {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
-                        <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
+                    <View style={[pvSt.heroContent, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={pvSt.playerName}>{playerName}</Text>
+                        <View style={pvSt.pillRow}>
+                          {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
+                          {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
+                          <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
+                        </View>
                       </View>
+                      {playerPhotoUrl && (
+                        <Image source={{ uri: playerPhotoUrl }} style={pvSt.heroPhoto} contentFit="cover" />
+                      )}
                     </View>
                   </View>
 
@@ -1165,6 +1176,7 @@ function getPvSt(colors: ThemeColors) {
 
   heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
   heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
+  heroPhoto:     { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f1f5f9' },
   playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
   pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
