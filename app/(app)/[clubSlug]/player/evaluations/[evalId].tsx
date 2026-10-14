@@ -31,7 +31,7 @@ type IdpRow = {
 
 type ReportData = {
   bio:   { position: string; birth_year: string };
-  stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
+  stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; trainings_attended: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
   outcome_goals:        [string, string];
@@ -316,11 +316,12 @@ export default function EvalDetailScreen() {
               ${rd.stats.game_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.game_pct}</div><div class="stat-sub">GAMES</div></div>` : ''}
             </div>
           </div>` : ''}
-          ${rd?.stats?.games_played ? `
+          ${rd?.stats?.games_played || rd?.stats?.trainings_attended ? `
           <div class="stat-block">
             <div class="stat-label">SEASON</div>
             <div class="stat-row">
               ${rd.stats.games_played                               ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.games_played}</div><div class="stat-sub">PLAYED</div></div>` : ''}
+              ${rd.stats.trainings_attended                         ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.trainings_attended}</div><div class="stat-sub">TRAININGS</div></div>` : ''}
               ${rd.stats.goals    && rd.stats.goals    !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.goals}</div><div class="stat-sub">GOALS</div></div>` : ''}
               ${rd.stats.assists  && rd.stats.assists  !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.assists}</div><div class="stat-sub">ASSISTS</div></div>` : ''}
               ${rd.stats.minutes_played                             ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.stats.minutes_played}</div><div class="stat-sub">MINUTES</div></div>` : ''}
@@ -395,7 +396,7 @@ export default function EvalDetailScreen() {
   const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
   const hasBioStats   = rd?.bio?.birth_year;
   const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
-  const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
+  const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.trainings_attended || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
     || (rd?.stats?.goals         && rd.stats.goals        !== '0')
     || (rd?.stats?.assists       && rd.stats.assists      !== '0')
     || (rd?.stats?.yellow_cards  && rd.stats.yellow_cards !== '0');
@@ -485,7 +486,8 @@ export default function EvalDetailScreen() {
             <View style={st.statBlock}>
               <Text style={st.statBlockLabel}>SEASON</Text>
               <View style={st.statRow}>
-                {rd!.stats.games_played                                     ? <StatChip label="PLAYED"  value={rd!.stats.games_played}   color={primary} /> : null}
+                {rd!.stats.games_played                                     ? <StatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
+                {rd!.stats.trainings_attended                               ? <StatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
                 {rd!.stats.goals        && rd!.stats.goals    !== '0'       ? <StatChip label="GOALS"   value={rd!.stats.goals}          color={primary} /> : null}
                 {rd!.stats.assists      && rd!.stats.assists  !== '0'       ? <StatChip label="ASSISTS" value={rd!.stats.assists}        color={primary} /> : null}
               </View>

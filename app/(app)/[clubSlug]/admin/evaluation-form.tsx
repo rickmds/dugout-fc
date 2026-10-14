@@ -45,6 +45,7 @@ type ReportData = {
     practice_pct: string;
     game_pct: string;
     games_played: string;
+    trainings_attended: string;
     minutes_played: string;
     goals: string;
     assists: string;
@@ -60,7 +61,7 @@ type ReportData = {
 
 const EMPTY_REPORT: ReportData = {
   bio:   { position: '', birth_year: '' },
-  stats: { rsvp_pct: '', practice_pct: '', game_pct: '', games_played: '', minutes_played: '', goals: '', assists: '', yellow_cards: '', secondary_foot: '' },
+  stats: { rsvp_pct: '', practice_pct: '', game_pct: '', games_played: '', trainings_attended: '', minutes_played: '', goals: '', assists: '', yellow_cards: '', secondary_foot: '' },
   super_strengths:      ['', '', ''],
   areas_of_development: ['', '', ''],
   outcome_goals:        ['', ''],
@@ -291,6 +292,7 @@ export default function EvaluationFormScreen() {
   });
   const [loading,       setLoading]       = useState(true);
   const [generating,    setGenerating]    = useState(false);
+  const [idpGenerating, setIdpGenerating] = useState<Record<number, boolean>>({});
   const [saving,        setSaving]        = useState(false);
   const [jerseyNumber,  setJerseyNumber]  = useState<number | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -412,6 +414,7 @@ export default function EvaluationFormScreen() {
         practice_pct:  pct(attendedTrain, trainEvents),
         game_pct:      pct(attendedGames, gameEvents),
         games_played:  gamesPlayed > 0 ? String(gamesPlayed) : '',
+        trainings_attended: attendedTrain > 0 ? String(attendedTrain) : '',
         minutes_played:totalMins > 0 ? String(totalMins) : '',
         goals:         totalGoals > 0 ? String(totalGoals) : '',
         assists:       totalAssists > 0 ? String(totalAssists) : '',
@@ -489,6 +492,61 @@ export default function EvaluationFormScreen() {
     }));
   }
 
+  // Coach writes the performance goal; AI fills in the measurable and the
+  // 3 action items from it — the two parts of an IDP row that are mostly
+  // mechanical once the goal itself (the part that needs real coaching
+  // judgment) is set.
+  async function generateIdpSuggestion(rowIdx: number) {
+    const row = form.report_data.idp[rowIdx];
+    if (!row.goal.trim()) {
+      Alert.alert('Add a goal first', 'Write the performance goal above, then AI can suggest the measurable and action plan.');
+      return;
+    }
+    setIdpGenerating(prev => ({ ...prev, [rowIdx]: true }));
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not signed in');
+
+      const res = await fetch(`${API_BASE}/api/ai/generate-idp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          player_name:          playerName,
+          position:             form.report_data.bio.position || '',
+          rating_technical:     form.rating_technical,
+          rating_tactical:      form.rating_tactical,
+          rating_physical:      form.rating_physical,
+          rating_mental:        form.rating_mental,
+          areas_of_development: form.report_data.areas_of_development,
+          goal:                 row.goal,
+        }),
+      });
+      const json = await res.json();
+      if (json.measurables || json.action_items) {
+        setForm(prev => ({
+          ...prev,
+          report_data: {
+            ...prev.report_data,
+            idp: prev.report_data.idp.map((r, i) => i === rowIdx ? {
+              ...r,
+              measurables: json.measurables ?? r.measurables,
+              action_items: (json.action_items ?? r.action_items) as [string, string, string],
+            } : r),
+          },
+        }));
+      } else {
+        Alert.alert('Error', json.error ?? 'No response from AI. Try again.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Could not generate suggestions. Try again.');
+    } finally {
+      setIdpGenerating(prev => ({ ...prev, [rowIdx]: false }));
+    }
+  }
+
   // ─── AI Summary ───────────────────────────────────────────────────────────
 
   async function generateAI() {
@@ -515,13 +573,28 @@ export default function EvaluationFormScreen() {
           rating_mental:        form.rating_mental,
           super_strengths:      rd.super_strengths,
           areas_of_development: rd.areas_of_development,
+          outcome_goals:        rd.outcome_goals,
           performance_goals:    rd.performance_goals,
         }),
       });
       const json = await res.json();
-      const text: string = json.text ?? '';
-      if (text) {
-        setForm(prev => ({ ...prev, ai_draft: text, final_text: text }));
+      if (json.summary) {
+        // AI polishes whatever the coach typed in the four bullet
+        // sections (same length/order, blanks stay blank — see the
+        // endpoint's own system prompt) and writes the summary from
+        // that polished version in the same call.
+        setForm(prev => ({
+          ...prev,
+          ai_draft: json.summary,
+          final_text: json.summary,
+          report_data: {
+            ...prev.report_data,
+            super_strengths:      json.super_strengths      ?? prev.report_data.super_strengths,
+            areas_of_development: json.areas_of_development ?? prev.report_data.areas_of_development,
+            outcome_goals:        json.outcome_goals        ?? prev.report_data.outcome_goals,
+            performance_goals:    json.performance_goals    ?? prev.report_data.performance_goals,
+          },
+        }));
       } else {
         Alert.alert('Error', json.error ?? 'No response from AI. Try again.');
       }
@@ -612,6 +685,7 @@ export default function EvaluationFormScreen() {
                 { k: 'practice_pct',  label: 'PRACTICE ATTEND.', value: rd.stats.practice_pct,  placeholder: '88%' },
                 { k: 'game_pct',      label: 'GAME ATTEND.',     value: rd.stats.game_pct,       placeholder: '100%' },
                 { k: 'games_played',  label: 'GAMES PLAYED',     value: rd.stats.games_played,   placeholder: '13' },
+                { k: 'trainings_attended', label: 'TRAININGS ATTENDED', value: rd.stats.trainings_attended, placeholder: '24' },
                 { k: 'minutes_played',label: 'MINUTES PLAYED',   value: rd.stats.minutes_played, placeholder: '870' },
                 { k: 'goals',         label: 'GOALS',            value: rd.stats.goals,          placeholder: '7' },
                 { k: 'assists',       label: 'ASSISTS',          value: rd.stats.assists,        placeholder: '4' },
@@ -702,6 +776,20 @@ export default function EvaluationFormScreen() {
                     textAlignVertical="top"
                   />
 
+                  <TouchableOpacity
+                    onPress={() => generateIdpSuggestion(rowIdx)}
+                    disabled={!!idpGenerating[rowIdx]}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 8, marginBottom: 4, opacity: idpGenerating[rowIdx] ? 0.6 : 1 }}
+                    activeOpacity={0.7}
+                  >
+                    {idpGenerating[rowIdx]
+                      ? <ActivityIndicator size="small" color="#A855F7" />
+                      : <Ionicons name="sparkles-outline" size={14} color="#A855F7" />}
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#A855F7' }}>
+                      {idpGenerating[rowIdx] ? 'Suggesting…' : 'AI Suggest measurable + action plan'}
+                    </Text>
+                  </TouchableOpacity>
+
                   <Text style={idp.fieldLabel}>MEASURABLES</Text>
                   <TextInput style={idp.area} multiline value={row.measurables}
                     onChangeText={v => setIdpField(rowIdx, 'measurables', v)}
@@ -752,6 +840,9 @@ export default function EvaluationFormScreen() {
               {generating ? 'Generating…' : form.ai_draft ? 'Regenerate Coach Summary' : 'Generate Coach Summary'}
             </Text>
           </TouchableOpacity>
+          <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center', marginTop: -8, marginBottom: 4 }}>
+            Also tightens the wording in Super Strengths, Development, Outcome Goals, and Perf. Goals above
+          </Text>
 
           {/* ── COACH SUMMARY ────────────────────────── */}
           <SectionCard title="COACH'S SUMMARY" color="#EC4899" icon="create-outline">
@@ -818,7 +909,7 @@ export default function EvaluationFormScreen() {
               const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
               const hasBioStats   = rd?.bio?.birth_year;
               const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
-              const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
+              const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.trainings_attended || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
                 || (rd?.stats?.goals        && rd.stats.goals        !== '0')
                 || (rd?.stats?.assists      && rd.stats.assists      !== '0')
                 || (rd?.stats?.yellow_cards && rd.stats.yellow_cards !== '0');
@@ -876,7 +967,8 @@ export default function EvaluationFormScreen() {
                     <View style={pvSt.statBlock}>
                       <Text style={pvSt.statBlockLabel}>SEASON</Text>
                       <View style={pvSt.statRow}>
-                        {rd!.stats.games_played                                     ? <PvStatChip label="PLAYED"  value={rd!.stats.games_played}   color={primary} /> : null}
+                        {rd!.stats.games_played                                     ? <PvStatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
+                        {rd!.stats.trainings_attended                               ? <PvStatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
                         {rd!.stats.goals    && rd!.stats.goals    !== '0'           ? <PvStatChip label="GOALS"   value={rd!.stats.goals}          color={primary} /> : null}
                         {rd!.stats.assists  && rd!.stats.assists  !== '0'           ? <PvStatChip label="ASSISTS" value={rd!.stats.assists}        color={primary} /> : null}
                       </View>

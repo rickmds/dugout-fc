@@ -9,7 +9,7 @@ import { X } from 'lucide-react';
 
 export type ReportData = {
   bio:   { position: string; birth_year: string };
-  stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
+  stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; trainings_attended: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
   outcome_goals:        [string, string];
@@ -234,11 +234,12 @@ export function EvaluationReportPanel({
             )}
 
             {/* Season */}
-            {rd?.stats?.games_played && (
+            {(rd?.stats?.games_played || rd?.stats?.trainings_attended) && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>SEASON</div>
                 <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                  {rd.stats.games_played                           && <StatChip val={rd.stats.games_played}   label="PLAYED"   color={primary} />}
+                  {rd.stats.games_played                           && <StatChip val={rd.stats.games_played}   label="PLAYED"    color={primary} />}
+                  {rd.stats.trainings_attended                     && <StatChip val={rd.stats.trainings_attended} label="TRAININGS" color={primary} />}
                   {rd.stats.goals   && rd.stats.goals   !== '0'   && <StatChip val={rd.stats.goals}          label="GOALS"    color={primary} />}
                   {rd.stats.assists && rd.stats.assists !== '0'   && <StatChip val={rd.stats.assists}        label="ASSISTS"  color={primary} />}
                   {rd.stats.minutes_played                         && <StatChip val={rd.stats.minutes_played} label="MINUTES"  color="#0f172a" />}
