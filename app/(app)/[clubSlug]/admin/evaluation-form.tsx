@@ -929,7 +929,7 @@ export default function EvaluationFormScreen() {
 
                   {/* Player hero */}
                   <View style={{ overflow: 'hidden', paddingBottom: 4 }}>
-                    {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1}>{lastName}</Text> : null}
+                    {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} ellipsizeMode="clip">{lastName}</Text> : null}
                     <View style={pvSt.heroContent}>
                       <Text style={pvSt.playerName}>{playerName}</Text>
                       <View style={pvSt.pillRow}>
@@ -1161,7 +1161,12 @@ function getPvSt(colors: ThemeColors) {
 
   statBlock:     { borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: 8, paddingBottom: 14, paddingHorizontal: 16, gap: 12 },
   statBlockLabel:{ fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 1.5 },
-  statRow:       { flexDirection: 'row', justifyContent: 'space-around' },
+  // flex-start + a fixed gap, not space-around — a row with fewer chips
+  // than usual (a stat left blank, school dropped from PROFILE down to
+  // just birth year) used to center the lone survivor in the middle of
+  // the row with awkward empty space on both sides instead of just
+  // sitting left-aligned like a normal line of chips.
+  statRow:       { flexDirection: 'row', justifyContent: 'flex-start', gap: 28 },
 
   twoCol:        { flexDirection: 'row', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 },
   colDiv:        { width: 1, backgroundColor: '#f1f5f9', marginHorizontal: 14, marginVertical: 4 },

@@ -267,7 +267,7 @@ export default function EvalDetailScreen() {
           .pill-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
           .stat-block { padding: 10px 22px 14px; border-top: 1px solid #e2e8f0; }
           .stat-label { font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 1.5px; margin-bottom: 10px; }
-          .stat-row { display: flex; justify-content: space-around; }
+          .stat-row { display: flex; justify-content: flex-start; gap: 28px; }
           .stat-chip { text-align: center; min-width: 60px; }
           .stat-val { font-size: 15px; font-weight: 900; }
           .stat-sub { font-size: 8px; font-weight: 700; color: #94a3b8; letter-spacing: 0.5px; margin-top: 2px; }
@@ -435,7 +435,7 @@ export default function EvalDetailScreen() {
           {/* ── Player hero ── */}
           <View style={st.heroSection}>
             {lastName ? (
-              <Text style={[st.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} adjustsFontSizeToFit={false}>
+              <Text style={[st.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} adjustsFontSizeToFit={false} ellipsizeMode="clip">
                 {lastName}
               </Text>
             ) : null}
@@ -647,7 +647,11 @@ function getSt(colors: ThemeColors) {
   statsStrip:     { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 11, paddingHorizontal: 16, justifyContent: 'space-around' },
   statBlock:      { borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: 8, paddingBottom: 14, paddingHorizontal: 16, gap: 12 },
   statBlockLabel: { fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 1.5 },
-  statRow:        { flexDirection: 'row', justifyContent: 'space-around' },
+  // flex-start + a fixed gap, not space-around — a row with fewer chips
+  // than usual (a stat left blank, school dropped from PROFILE down to
+  // just birth year) used to center the lone survivor in the middle of
+  // the row with awkward empty space on both sides.
+  statRow:        { flexDirection: 'row', justifyContent: 'flex-start', gap: 28 },
 
   // Radar chart
   radarWrap: { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
