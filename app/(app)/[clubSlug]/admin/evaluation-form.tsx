@@ -14,6 +14,8 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -25,6 +27,16 @@ import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
+import PhotoPositioner from '../../../../components/player-card/PhotoPositioner';
+
+// Big cover-fit hero photo (not the small corner avatar) — width as a
+// fraction of the report card's own width, height left to stretch to
+// whatever the hero+stat-block content needs. EVAL_PHOTO_ASPECT is only
+// used to draw a representative frame in the positioner preview modal
+// (the live render's box isn't a fixed aspect ratio, since its height is
+// content-driven) — picked to match the reference mockup's proportions.
+const EVAL_PHOTO_WIDTH_PCT = '36%';
+const EVAL_PHOTO_ASPECT = 0.48;
 
 const API_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -299,6 +311,15 @@ export default function EvaluationFormScreen() {
   const [playerPhotoUrl, setPlayerPhotoUrl] = useState<string | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
 
+  // Report-specific hero photo — defaults to the player's card photo
+  // (playerPhotoUrl above), optionally overridden just for this report.
+  const [reportPhotoUrl,        setReportPhotoUrl]        = useState<string | null>(null);
+  const [reportPhotoOffsetX,    setReportPhotoOffsetX]    = useState(0);
+  const [reportPhotoOffsetY,    setReportPhotoOffsetY]    = useState(0);
+  const [uploadingReportPhoto,  setUploadingReportPhoto]  = useState(false);
+  const [photoPositionerVisible, setPhotoPositionerVisible] = useState(false);
+  const effectiveReportPhotoUrl = reportPhotoUrl ?? playerPhotoUrl;
+
   useEffect(() => { load(); }, [playerId, batchId, evalId]);
 
   async function load() {
@@ -340,7 +361,7 @@ export default function EvaluationFormScreen() {
     if (evalId) {
       const { data } = await supabase
         .from('player_evaluations')
-        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status')
+        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status,report_photo_url,report_photo_offset_x,report_photo_offset_y')
         .eq('id', evalId)
         .single();
       if (data) {
@@ -355,6 +376,9 @@ export default function EvaluationFormScreen() {
           final_text:   data.final_text ?? '',
           status:       data.status as 'draft' | 'submitted',
         });
+        setReportPhotoUrl((data as any).report_photo_url ?? null);
+        setReportPhotoOffsetX((data as any).report_photo_offset_x ?? 0);
+        setReportPhotoOffsetY((data as any).report_photo_offset_y ?? 0);
         setLoading(false);
         return;
       }
@@ -624,6 +648,66 @@ export default function EvaluationFormScreen() {
     }
   }
 
+  // ─── Report photo ─────────────────────────────────────────────────────────
+  // Uploaded to a path keyed by (playerId, batchId) rather than evalId — a
+  // brand-new draft has no player_evaluations row yet, but (batch_id,
+  // player_id) is already unique, so this path is stable before the first
+  // save. The URL/offset themselves aren't written to the DB here either —
+  // they ride along in the normal save() payload below, same as every
+  // other form field, so an uploaded-but-unsaved photo doesn't half-persist.
+
+  async function handlePickReportPhoto() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
+    if (result.canceled || !result.assets[0]) return;
+
+    setUploadingReportPhoto(true);
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 700 } }],
+        { format: ImageManipulator.SaveFormat.PNG, compress: 1 }
+      );
+      const path = `players/${playerId}-eval-${batchId}.png`;
+      const response = await fetch(manipulated.uri);
+      const arrayBuffer = await response.arrayBuffer();
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, arrayBuffer, {
+        contentType: 'image/png',
+        upsert: true,
+      });
+      if (uploadError) {
+        Alert.alert('Upload failed', uploadError.message);
+        return;
+      }
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+      setReportPhotoUrl(publicUrl);
+      setReportPhotoOffsetX(0);
+      setReportPhotoOffsetY(0);
+      setPhotoPositionerVisible(true);
+    } catch (e) {
+      Alert.alert('Upload failed', String(e));
+    } finally {
+      setUploadingReportPhoto(false);
+    }
+  }
+
+  function handleSaveReportPhotoPosition(offsetX: number, offsetY: number) {
+    setPhotoPositionerVisible(false);
+    setReportPhotoOffsetX(offsetX);
+    setReportPhotoOffsetY(offsetY);
+  }
+
+  function handleResetReportPhoto() {
+    setReportPhotoUrl(null);
+    setReportPhotoOffsetX(0);
+    setReportPhotoOffsetY(0);
+  }
+
   // ─── Save ─────────────────────────────────────────────────────────────────
 
   async function save(submitNow = false) {
@@ -640,6 +724,9 @@ export default function EvaluationFormScreen() {
       ai_draft: form.ai_draft, final_text: form.final_text,
       status: (submitNow ? 'submitted' : 'draft') as 'submitted' | 'draft',
       ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
+      report_photo_url: reportPhotoUrl,
+      report_photo_offset_x: reportPhotoOffsetX,
+      report_photo_offset_y: reportPhotoOffsetY,
     };
 
     if (isEdit) {
@@ -684,6 +771,53 @@ export default function EvaluationFormScreen() {
             <Ionicons name="ribbon-outline" size={14} color="#A855F7" />
             <Text style={st.periodText}>{periodLabel} · {seasonLabel}</Text>
           </View>
+
+          {/* ── REPORT PHOTO ──────────────────────────── */}
+          <SectionCard title="REPORT PHOTO" color="#EC4899" icon="image-outline" note="Defaults to the player's card photo — upload a different one just for this report">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {effectiveReportPhotoUrl ? (
+                <Image source={{ uri: effectiveReportPhotoUrl }} style={st.reportPhotoThumb} contentFit="cover" />
+              ) : (
+                <View style={[st.reportPhotoThumb, { alignItems: 'center', justifyContent: 'center' }]}>
+                  <Ionicons name="person-outline" size={22} color={colors.muted} />
+                </View>
+              )}
+              <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={handlePickReportPhoto}
+                  disabled={uploadingReportPhoto}
+                  style={[st.reportPhotoBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                >
+                  {uploadingReportPhoto ? (
+                    <ActivityIndicator size="small" color={colors.text} />
+                  ) : (
+                    <Ionicons name="image-outline" size={14} color={colors.text} />
+                  )}
+                  <Text style={[st.reportPhotoBtnText, { color: colors.text }]}>
+                    {reportPhotoUrl ? 'Change photo' : 'Upload photo'}
+                  </Text>
+                </TouchableOpacity>
+                {!!effectiveReportPhotoUrl && (
+                  <TouchableOpacity
+                    onPress={() => setPhotoPositionerVisible(true)}
+                    style={[st.reportPhotoBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                  >
+                    <Ionicons name="move-outline" size={14} color={colors.text} />
+                    <Text style={[st.reportPhotoBtnText, { color: colors.text }]}>Reposition</Text>
+                  </TouchableOpacity>
+                )}
+                {!!reportPhotoUrl && (
+                  <TouchableOpacity
+                    onPress={handleResetReportPhoto}
+                    style={[st.reportPhotoBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
+                  >
+                    <Ionicons name="refresh-outline" size={14} color={colors.text} />
+                    <Text style={[st.reportPhotoBtnText, { color: colors.text }]}>Use default</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </SectionCard>
 
           {/* ── PLAYER PROFILE ─────────────────────── */}
           <SectionCard title="PLAYER PROFILE" color={primary} icon="person-outline">
@@ -946,45 +1080,58 @@ export default function EvaluationFormScreen() {
                     <Text style={pvSt.previewBadge}>PREVIEW</Text>
                   </View>
 
-                  {/* Player hero */}
-                  <View style={{ overflow: 'hidden', paddingBottom: 4 }}>
-                    {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} ellipsizeMode="clip">{lastName}</Text> : null}
-                    <View style={[pvSt.heroContent, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={pvSt.playerName}>{playerName}</Text>
-                        <View style={pvSt.pillRow}>
-                          {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
-                          {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
-                          <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
+                  {/* Player hero — big cover photo on the right spans the hero
+                      + PROFILE + ATTENDANCE blocks; height is content-driven
+                      (flex stretch), not fixed, so it fills however tall
+                      that left column turns out to be. */}
+                  <View style={{ flexDirection: 'row' }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <View style={{ overflow: 'hidden', paddingBottom: 4 }}>
+                        {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} ellipsizeMode="clip">{lastName}</Text> : null}
+                        <View style={pvSt.heroContent}>
+                          <Text style={pvSt.playerName}>{playerName}</Text>
+                          <View style={pvSt.pillRow}>
+                            {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
+                            {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
+                            <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
+                          </View>
                         </View>
                       </View>
-                      {playerPhotoUrl && (
-                        <Image source={{ uri: playerPhotoUrl }} style={pvSt.heroPhoto} contentFit="cover" />
-                      )}
+
+                      {/* Bio strip */}
+                      {hasBioStats ? (
+                        <View style={pvSt.statBlock}>
+                          <Text style={pvSt.statBlockLabel}>PROFILE</Text>
+                          <View style={pvSt.statRow}>
+                            {rd!.bio.age_group ? <PvStatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
+                          </View>
+                        </View>
+                      ) : null}
+
+                      {/* Attendance strip */}
+                      {hasAttendance ? (
+                        <View style={pvSt.statBlock}>
+                          <Text style={pvSt.statBlockLabel}>ATTENDANCE</Text>
+                          <View style={pvSt.statRow}>
+                            {rd!.stats.rsvp_pct     ? <PvStatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
+                            {rd!.stats.practice_pct ? <PvStatChip label="PRACTICE" value={rd!.stats.practice_pct} color={primary} /> : null}
+                            {rd!.stats.game_pct     ? <PvStatChip label="GAMES"    value={rd!.stats.game_pct}     color={primary} /> : null}
+                          </View>
+                        </View>
+                      ) : null}
                     </View>
+
+                    {effectiveReportPhotoUrl && (
+                      <View style={{ width: EVAL_PHOTO_WIDTH_PCT, overflow: 'hidden' }}>
+                        <Image
+                          source={{ uri: effectiveReportPhotoUrl }}
+                          style={{ width: '100%', height: '100%' }}
+                          contentFit="cover"
+                          contentPosition={{ left: `${50 + reportPhotoOffsetX * 50}%`, top: `${50 + reportPhotoOffsetY * 50}%` }}
+                        />
+                      </View>
+                    )}
                   </View>
-
-                  {/* Bio strip */}
-                  {hasBioStats ? (
-                    <View style={pvSt.statBlock}>
-                      <Text style={pvSt.statBlockLabel}>PROFILE</Text>
-                      <View style={pvSt.statRow}>
-                        {rd!.bio.age_group ? <PvStatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
-                      </View>
-                    </View>
-                  ) : null}
-
-                  {/* Attendance strip */}
-                  {hasAttendance ? (
-                    <View style={pvSt.statBlock}>
-                      <Text style={pvSt.statBlockLabel}>ATTENDANCE</Text>
-                      <View style={pvSt.statRow}>
-                        {rd!.stats.rsvp_pct     ? <PvStatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
-                        {rd!.stats.practice_pct ? <PvStatChip label="PRACTICE" value={rd!.stats.practice_pct} color={primary} /> : null}
-                        {rd!.stats.game_pct     ? <PvStatChip label="GAMES"    value={rd!.stats.game_pct}     color={primary} /> : null}
-                      </View>
-                    </View>
-                  ) : null}
 
                   {/* Season stats */}
                   {hasPerfStats ? (
@@ -1125,6 +1272,23 @@ export default function EvaluationFormScreen() {
 
         </View>
       </Modal>
+
+      {!!effectiveReportPhotoUrl && (
+        <PhotoPositioner
+          visible={photoPositionerVisible}
+          uri={effectiveReportPhotoUrl}
+          initialOffsetX={reportPhotoOffsetX}
+          initialOffsetY={reportPhotoOffsetY}
+          onSave={handleSaveReportPhotoPosition}
+          onCancel={() => setPhotoPositionerVisible(false)}
+          colors={colors}
+          primaryColor={primary}
+          mode="cover"
+          aspectRatio={EVAL_PHOTO_ASPECT}
+          title="Position the report photo"
+          subtitle="Drag to choose what shows in the hero — this is exactly how it'll sit on the report."
+        />
+      )}
     </View>
   );
 }
@@ -1146,6 +1310,10 @@ function getSt(colors: ThemeColors) {
     actions: { flexDirection: 'row', gap: 10 },
     btn:     { flex: 1, padding: 15, borderRadius: 14, alignItems: 'center', borderWidth: 1, justifyContent: 'center' },
     btnText: { fontSize: 15, fontWeight: '800', color: colors.text },
+
+    reportPhotoThumb:   { width: 56, height: 56, borderRadius: 10, backgroundColor: colors.border },
+    reportPhotoBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
+    reportPhotoBtnText: { fontSize: 12.5, fontWeight: '700' },
   });
 }
 
@@ -1176,7 +1344,6 @@ function getPvSt(colors: ThemeColors) {
 
   heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
   heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
-  heroPhoto:     { width: 64, height: 64, borderRadius: 32, backgroundColor: '#f1f5f9' },
   playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
   pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },

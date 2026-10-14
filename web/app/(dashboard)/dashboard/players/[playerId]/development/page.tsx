@@ -53,7 +53,7 @@ export default function DevelopmentPage() {
 
     setEvalsLoading(true);
     supabase.from('player_evaluations')
-      .select('id,player_id,season_label,period_label,status,rating_technical,rating_tactical,rating_physical,rating_mental,report_data,final_text,published_at,scheduled_publish_at,created_at,players(full_name,jersey_number,photo_url,card_photo_url)')
+      .select('id,player_id,season_label,period_label,status,rating_technical,rating_tactical,rating_physical,rating_mental,report_data,final_text,published_at,scheduled_publish_at,created_at,report_photo_url,report_photo_offset_x,report_photo_offset_y,players(full_name,jersey_number,photo_url,card_photo_url)')
       .eq('player_id', playerId)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setEvals((data ?? []) as unknown as EvalRow[]); setEvalsLoading(false); });

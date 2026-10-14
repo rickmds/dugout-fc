@@ -525,6 +525,7 @@ export type Database = {
           completed_count: number | null
           created_at: string | null
           id: string
+          period_id: string | null
           period_label: string
           season_label: string
           status: string | null
@@ -540,6 +541,7 @@ export type Database = {
           completed_count?: number | null
           created_at?: string | null
           id?: string
+          period_id?: string | null
           period_label: string
           season_label: string
           status?: string | null
@@ -555,6 +557,7 @@ export type Database = {
           completed_count?: number | null
           created_at?: string | null
           id?: string
+          period_id?: string | null
           period_label?: string
           season_label?: string
           status?: string | null
@@ -585,10 +588,59 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "evaluation_batches_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "evaluation_periods"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "evaluation_batches_team_id_fkey"
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      evaluation_periods: {
+        Row: {
+          club_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          period_label: string
+          season_label: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          period_label: string
+          season_label: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          period_label?: string
+          season_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "evaluation_periods_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "evaluation_periods_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -2998,6 +3050,10 @@ export type Database = {
           rating_tactical: number | null
           rating_technical: number | null
           report_data: Json | null
+          report_photo_offset_x: number
+          report_photo_offset_y: number
+          report_photo_url: string | null
+          scheduled_publish_at: string | null
           season_label: string
           status: string | null
           submitted_at: string | null
@@ -3024,6 +3080,10 @@ export type Database = {
           rating_tactical?: number | null
           rating_technical?: number | null
           report_data?: Json | null
+          report_photo_offset_x?: number
+          report_photo_offset_y?: number
+          report_photo_url?: string | null
+          scheduled_publish_at?: string | null
           season_label: string
           status?: string | null
           submitted_at?: string | null
@@ -3050,6 +3110,10 @@ export type Database = {
           rating_tactical?: number | null
           rating_technical?: number | null
           report_data?: Json | null
+          report_photo_offset_x?: number
+          report_photo_offset_y?: number
+          report_photo_url?: string | null
+          scheduled_publish_at?: string | null
           season_label?: string
           status?: string | null
           submitted_at?: string | null
@@ -5175,6 +5239,7 @@ export type Database = {
           offer_status: string | null
           offer_token: string | null
           player_id: string
+          promoted_player_id: string | null
           registration_status: string
           registration_submitted_at: string | null
           reminder_count: number | null
@@ -5183,6 +5248,7 @@ export type Database = {
           stripe_customer_id: string | null
           stripe_payment_method_id: string | null
           team: string | null
+          waitlist_position: number | null
         }
         Insert: {
           agreement_signed_name?: string | null
@@ -5197,6 +5263,7 @@ export type Database = {
           offer_status?: string | null
           offer_token?: string | null
           player_id: string
+          promoted_player_id?: string | null
           registration_status?: string
           registration_submitted_at?: string | null
           reminder_count?: number | null
@@ -5205,6 +5272,7 @@ export type Database = {
           stripe_customer_id?: string | null
           stripe_payment_method_id?: string | null
           team?: string | null
+          waitlist_position?: number | null
         }
         Update: {
           agreement_signed_name?: string | null
@@ -5219,6 +5287,7 @@ export type Database = {
           offer_status?: string | null
           offer_token?: string | null
           player_id?: string
+          promoted_player_id?: string | null
           registration_status?: string
           registration_submitted_at?: string | null
           reminder_count?: number | null
@@ -5227,6 +5296,7 @@ export type Database = {
           stripe_customer_id?: string | null
           stripe_payment_method_id?: string | null
           team?: string | null
+          waitlist_position?: number | null
         }
         Relationships: [
           {
@@ -5241,6 +5311,13 @@ export type Database = {
             columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "tryout_players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_assignments_promoted_player_id_fkey"
+            columns: ["promoted_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -5586,6 +5663,44 @@ export type Database = {
           },
         ]
       }
+      tryout_finance_projections: {
+        Row: {
+          club_id: string
+          created_at: string
+          id: string
+          reg_fee: number | null
+          season_fee: number | null
+          season_label: string
+          updated_at: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          id?: string
+          reg_fee?: number | null
+          season_fee?: number | null
+          season_label: string
+          updated_at?: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          id?: string
+          reg_fee?: number | null
+          season_fee?: number | null
+          season_label?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tryout_finance_projections_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tryout_form_config: {
         Row: {
           club_id: string
@@ -5825,6 +5940,8 @@ export type Database = {
           email_subject: string | null
           from_name: string | null
           id: string
+          notify_staff_on_accept: boolean
+          notify_staff_on_decline: boolean
           offer_deadline: string | null
           payment_due_date: string | null
           payment_link: string | null
@@ -5844,6 +5961,8 @@ export type Database = {
           email_subject?: string | null
           from_name?: string | null
           id?: string
+          notify_staff_on_accept?: boolean
+          notify_staff_on_decline?: boolean
           offer_deadline?: string | null
           payment_due_date?: string | null
           payment_link?: string | null
@@ -5863,6 +5982,8 @@ export type Database = {
           email_subject?: string | null
           from_name?: string | null
           id?: string
+          notify_staff_on_accept?: boolean
+          notify_staff_on_decline?: boolean
           offer_deadline?: string | null
           payment_due_date?: string | null
           payment_link?: string | null
@@ -6158,6 +6279,7 @@ export type Database = {
           logo_url: string | null
           name: string
           roster_locked: boolean | null
+          roster_size: number | null
           season_fee: string | null
           sort_order: number | null
           tier: string | null
@@ -6176,6 +6298,7 @@ export type Database = {
           logo_url?: string | null
           name: string
           roster_locked?: boolean | null
+          roster_size?: number | null
           season_fee?: string | null
           sort_order?: number | null
           tier?: string | null
@@ -6194,6 +6317,7 @@ export type Database = {
           logo_url?: string | null
           name?: string
           roster_locked?: boolean | null
+          roster_size?: number | null
           season_fee?: string | null
           sort_order?: number | null
           tier?: string | null
