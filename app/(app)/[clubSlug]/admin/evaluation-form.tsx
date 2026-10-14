@@ -18,6 +18,7 @@ import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
+import { calcAgeGroup, seasonLabelToYear } from '../../../../lib/ageGroup';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
 import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
@@ -38,7 +39,7 @@ type IdpRow = {
 type ReportData = {
   bio: {
     position: string;
-    birth_year: string;
+    age_group: string;
   };
   stats: {
     rsvp_pct: string;
@@ -60,7 +61,7 @@ type ReportData = {
 };
 
 const EMPTY_REPORT: ReportData = {
-  bio:   { position: '', birth_year: '' },
+  bio:   { position: '', age_group: '' },
   stats: { rsvp_pct: '', practice_pct: '', game_pct: '', games_played: '', trainings_attended: '', minutes_played: '', goals: '', assists: '', yellow_cards: '', secondary_foot: '' },
   super_strengths:      ['', '', ''],
   areas_of_development: ['', '', ''],
@@ -302,11 +303,12 @@ export default function EvaluationFormScreen() {
   async function load() {
     setLoading(true);
     const [pRes, bRes] = await Promise.all([
-      supabase.from('players').select('full_name,position,jersey_number').eq('id', playerId).single(),
+      supabase.from('players').select('full_name,position,jersey_number,date_of_birth').eq('id', playerId).single(),
       supabase.from('evaluation_batches').select('season_label,period_label,team_id').eq('id', batchId).single(),
     ]);
 
     let prefillPosition = '';
+    let prefillAgeGroup = '';
     let teamId = '';
     if (pRes.data) {
       setPlayerName(pRes.data.full_name);
@@ -317,6 +319,16 @@ export default function EvaluationFormScreen() {
       setSeasonLabel(bRes.data.season_label);
       setPeriodLabel(bRes.data.period_label);
       teamId = (bRes.data as any).team_id ?? '';
+    }
+    // US Soccer classifies age groups by an Aug 1 – Jul 31 birth-year
+    // cutoff (changed 2024-25) — computed from the player's real DOB
+    // against the batch's own season, not left for the coach to type
+    // (and not shown as a raw birth year, which isn't how groups are
+    // classified anymore).
+    const dob = (pRes.data as any)?.date_of_birth as string | null | undefined;
+    if (dob && bRes.data?.season_label) {
+      prefillAgeGroup = calcAgeGroup(dob, seasonLabelToYear(bRes.data.season_label));
+      if (prefillAgeGroup === 'Unknown') prefillAgeGroup = '';
     }
 
     if (evalId) {
@@ -352,6 +364,7 @@ export default function EvaluationFormScreen() {
         bio: {
           ...prev.report_data.bio,
           position: prefillPosition,
+          age_group: prefillAgeGroup,
         },
         stats: {
           ...prev.report_data.stats,
@@ -671,7 +684,7 @@ export default function EvaluationFormScreen() {
             <GridInputs
               items={[
                 { k: 'position',   label: 'POSITION',   value: rd.bio.position,   placeholder: 'CM, ST, GK…' },
-                { k: 'birth_year', label: 'BIRTH YEAR', value: rd.bio.birth_year, placeholder: '2009' },
+                { k: 'age_group',  label: 'AGE GROUP',  value: rd.bio.age_group,  placeholder: 'U12' },
               ]}
               onChange={(k, v) => setBio(k as keyof ReportData['bio'], v)}
             />
@@ -907,7 +920,7 @@ export default function EvaluationFormScreen() {
               const hasOutcome    = rd?.outcome_goals?.some(Boolean);
               const hasPerf       = rd?.performance_goals?.some(Boolean);
               const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
-              const hasBioStats   = rd?.bio?.birth_year;
+              const hasBioStats   = rd?.bio?.age_group;
               const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
               const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.trainings_attended || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
                 || (rd?.stats?.goals        && rd.stats.goals        !== '0')
@@ -945,7 +958,7 @@ export default function EvaluationFormScreen() {
                     <View style={pvSt.statBlock}>
                       <Text style={pvSt.statBlockLabel}>PROFILE</Text>
                       <View style={pvSt.statRow}>
-                        {rd!.bio.birth_year ? <PvStatChip label="BIRTH YEAR" value={rd!.bio.birth_year} color="#0f172a" /> : null}
+                        {rd!.bio.age_group ? <PvStatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
                       </View>
                     </View>
                   ) : null}

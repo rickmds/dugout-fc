@@ -30,7 +30,7 @@ type IdpRow = {
 };
 
 type ReportData = {
-  bio:   { position: string; birth_year: string };
+  bio:   { position: string; age_group: string };
   stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; trainings_attended: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
@@ -300,11 +300,11 @@ export default function EvalDetailScreen() {
               <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
             </div>
           </div>
-          ${rd?.bio?.birth_year ? `
+          ${rd?.bio?.age_group ? `
           <div class="stat-block">
             <div class="stat-label">PROFILE</div>
             <div class="stat-row">
-              <div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.birth_year}</div><div class="stat-sub">BIRTH YEAR</div></div>
+              <div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.age_group}</div><div class="stat-sub">AGE GROUP</div></div>
             </div>
           </div>` : ''}
           ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct ? `
@@ -394,7 +394,7 @@ export default function EvalDetailScreen() {
   const hasOutcome    = rd?.outcome_goals?.some(Boolean);
   const hasPerf       = rd?.performance_goals?.some(Boolean);
   const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
-  const hasBioStats   = rd?.bio?.birth_year;
+  const hasBioStats   = rd?.bio?.age_group;
   const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
   const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.trainings_attended || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
     || (rd?.stats?.goals         && rd.stats.goals        !== '0')
@@ -464,7 +464,7 @@ export default function EvalDetailScreen() {
             <View style={st.statBlock}>
               <Text style={st.statBlockLabel}>PROFILE</Text>
               <View style={st.statRow}>
-                {rd!.bio.birth_year ? <StatChip label="BIRTH YEAR" value={rd!.bio.birth_year} color="#0f172a" /> : null}
+                {rd!.bio.age_group ? <StatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
               </View>
             </View>
           )}
