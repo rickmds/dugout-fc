@@ -12,10 +12,10 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // one button they already know ("Generate Coach Summary").
 const SYSTEM = `You are a youth soccer coach preparing a player development report.
 
-You will be given a player's raw notes across four bullet sections (Super Strengths, Areas of Development, Outcome Goals, Performance Goals) and a set of ratings. Do two things:
+You will be given a player's raw notes as four JSON arrays (super_strengths, areas_of_development, outcome_goals, performance_goals) and a set of ratings. Do two things:
 
-1. Rewrite each non-empty bullet to be clearer and more specific, in a direct coach's voice — no filler phrases, no forced enthusiasm. Fix grammar and tighten wording. Do NOT change what a bullet means, do NOT invent new bullets, and do NOT fill in a bullet that was left blank — an empty input stays an empty output in that exact array position.
-2. Write a personal summary paragraph, under 100 words, stating the specific strengths and the main development priority plainly from the (polished) points above. No headers, no bullet points, no markdown, no throat-clearing, no padded closing line.
+1. Rewrite every non-empty bullet in each array — do not just lightly touch it up, actually sharpen it into a specific, direct coach's line, max 12 words. Fix grammar, cut filler words, replace vague phrasing ("works hard", "needs to improve") with something concrete and specific to this player's position and ratings. Only leave a bullet nearly as-is if it is already that sharp. Never change what a bullet actually means, never invent a new bullet, and never fill in a bullet that was an empty string — an empty string stays an empty string in that exact array position.
+2. Write a personal summary paragraph, under 100 words, stating the specific strengths and the main development priority plainly from the (now-polished) points above. No headers, no bullet points, no markdown, no throat-clearing, no padded closing line.
 
 Output ONLY a valid JSON object, no markdown fences, no explanation, in exactly this shape:
 {
@@ -25,7 +25,7 @@ Output ONLY a valid JSON object, no markdown fences, no explanation, in exactly 
   "outcome_goals": ["...", "..."],
   "performance_goals": ["...", "..."]
 }
-Every array must have the same number of items as the input, in the same order, with blanks staying blank.`;
+Every array must have exactly the same number of items as the matching input array, in the same order.`;
 
 type Body = {
   player_name: string;
@@ -49,26 +49,16 @@ export async function POST(req: NextRequest) {
   try {
     const body: Body = await req.json();
 
-    const list = (items: string[]) =>
-      items.map((s, i) => `${i + 1}. ${s || '(blank)'}`).join('\n');
-
     const prompt = `Player: ${body.player_name}
 Position: ${body.position || 'Not listed'}
 Season/Period: ${body.period_label} — ${body.season_label}
 
 Ratings — Technical: ${body.rating_technical}/5, Tactical: ${body.rating_tactical}/5, Physical: ${body.rating_physical}/5, Mental: ${body.rating_mental}/5
 
-Super Strengths:
-${list(body.super_strengths)}
-
-Areas of Development:
-${list(body.areas_of_development)}
-
-Outcome Goals:
-${list(body.outcome_goals)}
-
-Performance Goals this season:
-${list(body.performance_goals)}
+super_strengths: ${JSON.stringify(body.super_strengths)}
+areas_of_development: ${JSON.stringify(body.areas_of_development)}
+outcome_goals: ${JSON.stringify(body.outcome_goals)}
+performance_goals: ${JSON.stringify(body.performance_goals)}
 
 Return the JSON now.`;
 
