@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -666,9 +667,20 @@ export default function EvaluationFormScreen() {
     setUploadingReportPhoto(true);
     try {
       const path = `players/${playerId}-eval-${batchId}.png`;
-      const response = await fetch(croppedUri);
-      const arrayBuffer = await response.arrayBuffer();
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, arrayBuffer, {
+      // Read the captured file directly rather than fetch(uri).arrayBuffer()
+      // — that pattern is proven for expo-image-manipulator's output
+      // elsewhere in this app, but react-native-view-shot's tmpfile is a
+      // different library with its own URI scheme, and reading it via
+      // FileSystem (the same approach already used to read other local
+      // files in this app, e.g. the PDF logo/photo pre-fetch) sidesteps
+      // any doubt about whether fetch() resolves it the same way.
+      const base64 = await FileSystem.readAsStringAsync(croppedUri, { encoding: FileSystem.EncodingType.Base64 });
+      if (!base64) throw new Error('Captured photo was empty');
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, bytes.buffer, {
         contentType: 'image/png',
         upsert: true,
       });
@@ -1101,7 +1113,7 @@ export default function EvaluationFormScreen() {
                     </View>
 
                     {effectiveReportPhotoUrl && (
-                      <EvalPhotoFrame uri={effectiveReportPhotoUrl} fallbackUri={playerPhotoUrl} primaryColor={primary} />
+                      <EvalPhotoFrame uri={effectiveReportPhotoUrl} primaryColor={primary} />
                     )}
                   </View>
 

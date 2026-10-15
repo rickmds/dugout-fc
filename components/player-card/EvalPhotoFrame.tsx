@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, View, ViewStyle } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from './EvalPhotoEditor';
 
 // The evaluation report's hero photo, shared by the coach's live preview
@@ -15,9 +16,13 @@ import { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from './EvalPhotoEditor';
 // with CSS gradients instead, since they're not React Native.
 type Props = {
   uri: string;
-  /** Shown instead if `uri` fails to load (e.g. a report photo saved
-   * before a bug fix, or storage hiccup) — otherwise a broken photo
-   * renders as just the bare backdrop gradient with nothing on it. */
+  /** Shown instead if `uri` fails to load — pass this ONLY in read-only
+   * viewing contexts (player view, web dashboard, PDF), where a broken
+   * saved photo degrading to the card photo is better than showing
+   * nothing. Deliberately omitted from the coach's own editing preview —
+   * masking a just-uploaded photo's load failure there would make a real
+   * upload problem look like "nothing happened," instead of showing the
+   * visible error below so the coach knows to retry. */
   fallbackUri?: string | null;
   primaryColor: string;
   style?: ViewStyle;
@@ -25,8 +30,14 @@ type Props = {
 
 export default function EvalPhotoFrame({ uri, fallbackUri, primaryColor, style }: Props) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => { setFailed(false); }, [uri]);
-  const effectiveUri = failed && fallbackUri && fallbackUri !== uri ? fallbackUri : uri;
+  const [trackedUri, setTrackedUri] = useState(uri);
+  if (uri !== trackedUri) {
+    setTrackedUri(uri);
+    setFailed(false);
+  }
+  const usingFallback = failed && !!fallbackUri && fallbackUri !== uri;
+  const effectiveUri  = usingFallback ? (fallbackUri as string) : uri;
+  const showError     = failed && !usingFallback;
 
   return (
     <View style={[{ width: EVAL_PHOTO_WIDTH_PCT, aspectRatio: EVAL_PHOTO_ASPECT, overflow: 'hidden' }, style]}>
@@ -41,6 +52,14 @@ export default function EvalPhotoFrame({ uri, fallbackUri, primaryColor, style }
         contentFit="cover"
         onError={() => setFailed(true)}
       />
+      {showError && (
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', padding: 8 }]}>
+          <Ionicons name="image-outline" size={18} color="#94a3b8" />
+          <Text style={{ fontSize: 9, fontWeight: '700', color: '#94a3b8', textAlign: 'center', marginTop: 4 }}>
+            Couldn't load photo
+          </Text>
+        </View>
+      )}
       <LinearGradient
         colors={['#ffffff', '#ffffff00']}
         start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
