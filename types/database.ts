@@ -3050,7 +3050,6 @@ export type Database = {
           rating_tactical: number | null
           rating_technical: number | null
           report_data: Json | null
-          report_photo_url: string | null
           scheduled_publish_at: string | null
           season_label: string
           status: string | null
@@ -3078,7 +3077,6 @@ export type Database = {
           rating_tactical?: number | null
           rating_technical?: number | null
           report_data?: Json | null
-          report_photo_url?: string | null
           scheduled_publish_at?: string | null
           season_label: string
           status?: string | null
@@ -3106,7 +3104,6 @@ export type Database = {
           rating_tactical?: number | null
           rating_technical?: number | null
           report_data?: Json | null
-          report_photo_url?: string | null
           scheduled_publish_at?: string | null
           season_label?: string
           status?: string | null

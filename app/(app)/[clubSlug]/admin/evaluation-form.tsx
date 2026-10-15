@@ -14,8 +14,6 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -27,8 +25,6 @@ import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
-import EvalPhotoEditor from '../../../../components/player-card/EvalPhotoEditor';
-import EvalPhotoFrame from '../../../../components/player-card/EvalPhotoFrame';
 
 const API_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -300,25 +296,14 @@ export default function EvaluationFormScreen() {
   const [idpGenerating, setIdpGenerating] = useState<Record<number, boolean>>({});
   const [saving,        setSaving]        = useState(false);
   const [jerseyNumber,  setJerseyNumber]  = useState<number | null>(null);
-  const [playerPhotoUrl, setPlayerPhotoUrl] = useState<string | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
-
-  // Report-specific hero photo — defaults to the player's card photo
-  // (playerPhotoUrl above), optionally overridden just for this report.
-  // Stored pre-cropped (via EvalPhotoEditor) to the hero box's exact
-  // aspect ratio, so every rendering surface can just display it with a
-  // plain cover fit — no offset/position metadata to keep in sync.
-  const [reportPhotoUrl,       setReportPhotoUrl]       = useState<string | null>(null);
-  const [uploadingReportPhoto, setUploadingReportPhoto] = useState(false);
-  const [photoEditorUri,       setPhotoEditorUri]       = useState<string | null>(null);
-  const effectiveReportPhotoUrl = reportPhotoUrl ?? playerPhotoUrl;
 
   useEffect(() => { load(); }, [playerId, batchId, evalId]);
 
   async function load() {
     setLoading(true);
     const [pRes, bRes] = await Promise.all([
-      supabase.from('players').select('full_name,position,jersey_number,date_of_birth,photo_url,card_photo_url').eq('id', playerId).single(),
+      supabase.from('players').select('full_name,position,jersey_number,date_of_birth').eq('id', playerId).single(),
       supabase.from('evaluation_batches').select('season_label,period_label,team_id').eq('id', batchId).single(),
     ]);
 
@@ -329,11 +314,6 @@ export default function EvaluationFormScreen() {
       setPlayerName(pRes.data.full_name);
       setJerseyNumber((pRes.data as any).jersey_number ?? null);
       prefillPosition = pRes.data.position ?? '';
-      // Same card_photo_url-wins-over-photo_url fallback used everywhere
-      // else a player's photo shows up (Home tab, player profile) — the
-      // trading-card photo is the one a coach/parent already thinks of
-      // as "the" player photo when one's been set.
-      setPlayerPhotoUrl((pRes.data as any).card_photo_url ?? (pRes.data as any).photo_url ?? null);
     }
     if (bRes.data) {
       setSeasonLabel(bRes.data.season_label);
@@ -354,7 +334,7 @@ export default function EvaluationFormScreen() {
     if (evalId) {
       const { data } = await supabase
         .from('player_evaluations')
-        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status,report_photo_url')
+        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status')
         .eq('id', evalId)
         .single();
       if (data) {
@@ -369,7 +349,6 @@ export default function EvaluationFormScreen() {
           final_text:   data.final_text ?? '',
           status:       data.status as 'draft' | 'submitted',
         });
-        setReportPhotoUrl((data as any).report_photo_url ?? null);
         setLoading(false);
         return;
       }
@@ -639,68 +618,6 @@ export default function EvaluationFormScreen() {
     }
   }
 
-  // ─── Report photo ─────────────────────────────────────────────────────────
-  // Uploaded to a path keyed by (playerId, batchId) rather than evalId — a
-  // brand-new draft has no player_evaluations row yet, but (batch_id,
-  // player_id) is already unique, so this path is stable before the first
-  // save. The URL itself isn't written to the DB here either — it rides
-  // along in the normal save() payload below, same as every other form
-  // field, so an uploaded-but-unsaved photo doesn't half-persist.
-
-  async function handlePickReportPhoto() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo access in Settings.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
-    if (result.canceled || !result.assets[0]) return;
-    setPhotoEditorUri(result.assets[0].uri);
-  }
-
-  function handleRepositionReportPhoto() {
-    if (effectiveReportPhotoUrl) setPhotoEditorUri(effectiveReportPhotoUrl);
-  }
-
-  async function handlePhotoEditorSave(croppedUri: string) {
-    setPhotoEditorUri(null);
-    setUploadingReportPhoto(true);
-    try {
-      const path = `players/${playerId}-eval-${batchId}.png`;
-      // Read the captured file directly rather than fetch(uri).arrayBuffer()
-      // — that pattern is proven for expo-image-manipulator's output
-      // elsewhere in this app, but react-native-view-shot's tmpfile is a
-      // different library with its own URI scheme, and reading it via
-      // FileSystem (the same approach already used to read other local
-      // files in this app, e.g. the PDF logo/photo pre-fetch) sidesteps
-      // any doubt about whether fetch() resolves it the same way.
-      const base64 = await FileSystem.readAsStringAsync(croppedUri, { encoding: FileSystem.EncodingType.Base64 });
-      if (!base64) throw new Error('Captured photo was empty');
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, bytes.buffer, {
-        contentType: 'image/png',
-        upsert: true,
-      });
-      if (uploadError) {
-        Alert.alert('Upload failed', uploadError.message);
-        return;
-      }
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
-      setReportPhotoUrl(`${urlData.publicUrl}?t=${Date.now()}`);
-    } catch (e) {
-      Alert.alert('Upload failed', String(e));
-    } finally {
-      setUploadingReportPhoto(false);
-    }
-  }
-
-  function handleResetReportPhoto() {
-    setReportPhotoUrl(null);
-  }
-
   // ─── Save ─────────────────────────────────────────────────────────────────
 
   async function save(submitNow = false) {
@@ -717,7 +634,6 @@ export default function EvaluationFormScreen() {
       ai_draft: form.ai_draft, final_text: form.final_text,
       status: (submitNow ? 'submitted' : 'draft') as 'submitted' | 'draft',
       ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
-      report_photo_url: reportPhotoUrl,
     };
 
     if (isEdit) {
@@ -762,53 +678,6 @@ export default function EvaluationFormScreen() {
             <Ionicons name="ribbon-outline" size={14} color="#A855F7" />
             <Text style={st.periodText}>{periodLabel} · {seasonLabel}</Text>
           </View>
-
-          {/* ── REPORT PHOTO ──────────────────────────── */}
-          <SectionCard title="REPORT PHOTO" color="#EC4899" icon="image-outline" note="Defaults to the player's card photo — upload a different one just for this report">
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              {effectiveReportPhotoUrl ? (
-                <Image source={{ uri: effectiveReportPhotoUrl }} style={st.reportPhotoThumb} contentFit="cover" />
-              ) : (
-                <View style={[st.reportPhotoThumb, { alignItems: 'center', justifyContent: 'center' }]}>
-                  <Ionicons name="person-outline" size={22} color={colors.muted} />
-                </View>
-              )}
-              <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                <TouchableOpacity
-                  onPress={handlePickReportPhoto}
-                  disabled={uploadingReportPhoto}
-                  style={[st.reportPhotoBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
-                >
-                  {uploadingReportPhoto ? (
-                    <ActivityIndicator size="small" color={colors.text} />
-                  ) : (
-                    <Ionicons name="image-outline" size={14} color={colors.text} />
-                  )}
-                  <Text style={[st.reportPhotoBtnText, { color: colors.text }]}>
-                    {reportPhotoUrl ? 'Change photo' : 'Upload photo'}
-                  </Text>
-                </TouchableOpacity>
-                {!!effectiveReportPhotoUrl && (
-                  <TouchableOpacity
-                    onPress={handleRepositionReportPhoto}
-                    style={[st.reportPhotoBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
-                  >
-                    <Ionicons name="move-outline" size={14} color={colors.text} />
-                    <Text style={[st.reportPhotoBtnText, { color: colors.text }]}>Reposition</Text>
-                  </TouchableOpacity>
-                )}
-                {!!reportPhotoUrl && (
-                  <TouchableOpacity
-                    onPress={handleResetReportPhoto}
-                    style={[st.reportPhotoBtn, { borderColor: colors.border, backgroundColor: colors.background }]}
-                  >
-                    <Ionicons name="refresh-outline" size={14} color={colors.text} />
-                    <Text style={[st.reportPhotoBtnText, { color: colors.text }]}>Use default</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </SectionCard>
 
           {/* ── PLAYER PROFILE ─────────────────────── */}
           <SectionCard title="PLAYER PROFILE" color={primary} icon="person-outline">
@@ -1071,51 +940,40 @@ export default function EvaluationFormScreen() {
                     <Text style={pvSt.previewBadge}>PREVIEW</Text>
                   </View>
 
-                  {/* Player hero — big cover photo on the right spans the hero
-                      + PROFILE + ATTENDANCE blocks; height is content-driven
-                      (flex stretch), not fixed, so it fills however tall
-                      that left column turns out to be. */}
-                  <View style={{ flexDirection: 'row' }}>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <View style={{ overflow: 'hidden', paddingBottom: 4 }}>
-                        {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} ellipsizeMode="clip">{lastName}</Text> : null}
-                        <View style={pvSt.heroContent}>
-                          <Text style={pvSt.playerName}>{playerName}</Text>
-                          <View style={pvSt.pillRow}>
-                            {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
-                            {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
-                            <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
-                          </View>
-                        </View>
+                  {/* Player hero */}
+                  <View style={{ overflow: 'hidden', paddingBottom: 4 }}>
+                    {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} ellipsizeMode="clip">{lastName}</Text> : null}
+                    <View style={pvSt.heroContent}>
+                      <Text style={pvSt.playerName}>{playerName}</Text>
+                      <View style={pvSt.pillRow}>
+                        {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
+                        {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
+                        <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
                       </View>
-
-                      {/* Bio strip */}
-                      {hasBioStats ? (
-                        <View style={pvSt.statBlock}>
-                          <Text style={pvSt.statBlockLabel}>PROFILE</Text>
-                          <View style={pvSt.statRow}>
-                            {rd!.bio.age_group ? <PvStatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
-                          </View>
-                        </View>
-                      ) : null}
-
-                      {/* Attendance strip */}
-                      {hasAttendance ? (
-                        <View style={pvSt.statBlock}>
-                          <Text style={pvSt.statBlockLabel}>ATTENDANCE</Text>
-                          <View style={pvSt.statRow}>
-                            {rd!.stats.rsvp_pct     ? <PvStatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
-                            {rd!.stats.practice_pct ? <PvStatChip label="PRACTICE" value={rd!.stats.practice_pct} color={primary} /> : null}
-                            {rd!.stats.game_pct     ? <PvStatChip label="GAMES"    value={rd!.stats.game_pct}     color={primary} /> : null}
-                          </View>
-                        </View>
-                      ) : null}
                     </View>
-
-                    {effectiveReportPhotoUrl && (
-                      <EvalPhotoFrame uri={effectiveReportPhotoUrl} primaryColor={primary} />
-                    )}
                   </View>
+
+                  {/* Bio strip */}
+                  {hasBioStats ? (
+                    <View style={pvSt.statBlock}>
+                      <Text style={pvSt.statBlockLabel}>PROFILE</Text>
+                      <View style={pvSt.statRow}>
+                        {rd!.bio.age_group ? <PvStatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* Attendance strip */}
+                  {hasAttendance ? (
+                    <View style={pvSt.statBlock}>
+                      <Text style={pvSt.statBlockLabel}>ATTENDANCE</Text>
+                      <View style={pvSt.statRow}>
+                        {rd!.stats.rsvp_pct     ? <PvStatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
+                        {rd!.stats.practice_pct ? <PvStatChip label="PRACTICE" value={rd!.stats.practice_pct} color={primary} /> : null}
+                        {rd!.stats.game_pct     ? <PvStatChip label="GAMES"    value={rd!.stats.game_pct}     color={primary} /> : null}
+                      </View>
+                    </View>
+                  ) : null}
 
                   {/* Season stats */}
                   {hasPerfStats ? (
@@ -1256,20 +1114,6 @@ export default function EvaluationFormScreen() {
 
         </View>
       </Modal>
-
-      {!!photoEditorUri && (
-        <EvalPhotoEditor
-          visible={!!photoEditorUri}
-          uri={photoEditorUri}
-          playerName={playerName}
-          position={rd?.bio?.position}
-          jerseyNumber={jerseyNumber}
-          primaryColor={primary}
-          colors={colors}
-          onSave={handlePhotoEditorSave}
-          onCancel={() => setPhotoEditorUri(null)}
-        />
-      )}
     </View>
   );
 }
@@ -1291,10 +1135,6 @@ function getSt(colors: ThemeColors) {
     actions: { flexDirection: 'row', gap: 10 },
     btn:     { flex: 1, padding: 15, borderRadius: 14, alignItems: 'center', borderWidth: 1, justifyContent: 'center' },
     btnText: { fontSize: 15, fontWeight: '800', color: colors.text },
-
-    reportPhotoThumb:   { width: 56, height: 56, borderRadius: 10, backgroundColor: colors.border },
-    reportPhotoBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
-    reportPhotoBtnText: { fontSize: 12.5, fontWeight: '700' },
   });
 }
 

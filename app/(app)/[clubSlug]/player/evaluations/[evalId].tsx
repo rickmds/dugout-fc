@@ -20,8 +20,6 @@ import { PULSE_COLORS, ThemeColors } from '../../../../../constants/colors';
 import { useClub } from '../../../../../hooks/useClub';
 import { useTheme } from '../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
-import { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from '../../../../../components/player-card/EvalPhotoEditor';
-import EvalPhotoFrame from '../../../../../components/player-card/EvalPhotoFrame';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,8 +50,7 @@ type EvalDetail = {
   report_data:  ReportData | null;
   final_text:   string | null;
   published_at: string | null;
-  report_photo_url: string | null;
-  players: { full_name: string; jersey_number: number | null; photo_url: string | null; card_photo_url: string | null } | null;
+  players: { full_name: string; jersey_number: number | null } | null;
 };
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -167,7 +164,6 @@ export default function EvalDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [sharing, setSharing] = useState(false);
   const logoBase64Ref = useRef<string | null>(null);
-  const photoBase64Ref = useRef<string | null>(null);
 
   // Pre-fetch logo as base64 so share is instant
   useEffect(() => {
@@ -182,35 +178,12 @@ export default function EvalDetailScreen() {
     })();
   }, [clubLogoUrl]);
 
-  // Pre-fetch the hero photo (report override, else the card photo) as
-  // base64 so share is instant. Falls back to the card/profile photo if
-  // the report override 404s or otherwise fails — a broken report photo
-  // (e.g. saved before a bug fix) shouldn't mean no photo at all in the PDF.
-  useEffect(() => {
-    const reportUrl  = ev?.report_photo_url ?? null;
-    const fallbackUrl = ev?.players?.card_photo_url ?? ev?.players?.photo_url ?? null;
-    const candidates = [reportUrl, fallbackUrl].filter((u, i, arr): u is string => !!u && arr.indexOf(u) === i);
-    if (!candidates.length) return;
-    (async () => {
-      for (const photoUrl of candidates) {
-        try {
-          const tmp = FileSystem.cacheDirectory! + 'report-photo-cached.jpg';
-          const result = await FileSystem.downloadAsync(photoUrl, tmp);
-          if (result.status !== 200) continue;
-          const b64 = await FileSystem.readAsStringAsync(tmp, { encoding: FileSystem.EncodingType.Base64 });
-          photoBase64Ref.current = `data:image/jpeg;base64,${b64}`;
-          return;
-        } catch { /* try the next candidate */ }
-      }
-    })();
-  }, [ev?.report_photo_url, ev?.players?.card_photo_url, ev?.players?.photo_url]);
-
   useEffect(() => {
     async function load() {
       setLoading(true);
       const { data } = await supabase
         .from('player_evaluations')
-        .select('*, players(full_name,jersey_number,photo_url,card_photo_url)')
+        .select('*, players(full_name,jersey_number)')
         .eq('id', evalId)
         .single();
       if (data) setEv(data as EvalDetail);
@@ -232,7 +205,6 @@ export default function EvalDetailScreen() {
         : '';
 
       const logoDataUri = logoBase64Ref.current ?? '';
-      const photoDataUri = photoBase64Ref.current ?? '';
 
       // Radar SVG
       const axes  = [
@@ -286,21 +258,14 @@ export default function EvalDetailScreen() {
           .report-type { font-size: 8px; font-weight: 700; color: rgba(255,255,255,0.6); letter-spacing: 2px; margin-bottom: 2px; }
           .club-name { font-size: 15px; font-weight: 900; color: #fff; }
           .band-date { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.6); letter-spacing: 0.5px; }
-          .hero { padding: 22px 0 16px 22px; border-bottom: 1px solid #f1f5f9; position: relative; overflow: hidden; }
+          .hero { padding: 22px 22px 16px; border-bottom: 1px solid #f1f5f9; position: relative; overflow: hidden; }
           .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
-          .hero-row { display: flex; gap: 16px; position: relative; }
-          .hero-left { flex: 1; min-width: 0; padding-right: 22px; }
-          .hero-photo-col { width: ${EVAL_PHOTO_WIDTH_PCT}; aspect-ratio: ${EVAL_PHOTO_ASPECT}; flex-shrink: 0; overflow: hidden; position: relative; background: linear-gradient(180deg, ${primary}1a, #ffffff); }
-          .hero-photo-col img { display: block; width: 100%; height: 100%; object-fit: cover; position: relative; }
-          .hero-photo-fade-left { position: absolute; left: 0; top: 0; bottom: 0; width: 30%; background: linear-gradient(90deg, #ffffff, rgba(255,255,255,0)); pointer-events: none; }
-          .hero-photo-fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; background: linear-gradient(180deg, rgba(255,255,255,0), #ffffff); pointer-events: none; }
           .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
           .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
           .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
           .pill-primary { background: ${primary}22; border-color: ${primary}44; color: ${primary}; }
           .pill-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
           .stat-block { padding: 10px 22px 14px; border-top: 1px solid #e2e8f0; }
-          .stat-block-nested { padding: 10px 0 14px; border-top: 1px solid #e2e8f0; }
           .stat-label { font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 1.5px; margin-bottom: 10px; }
           .stat-row { display: flex; justify-content: flex-start; gap: 28px; }
           .stat-chip { text-align: center; min-width: 60px; }
@@ -328,34 +293,29 @@ export default function EvalDetailScreen() {
           </div>
           <div class="hero">
             <div class="hero-wm">${playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? ''}</div>
-            <div class="hero-row">
-              <div class="hero-left">
-                <div class="player-name">${playerName}</div>
-                <div class="pills">
-                  ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position}</span>` : ''}
-                  ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
-                  <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
-                </div>
-                ${rd?.bio?.age_group ? `
-                <div class="stat-block-nested">
-                  <div class="stat-label">PROFILE</div>
-                  <div class="stat-row">
-                    <div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.age_group}</div><div class="stat-sub">AGE GROUP</div></div>
-                  </div>
-                </div>` : ''}
-                ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct ? `
-                <div class="stat-block-nested">
-                  <div class="stat-label">ATTENDANCE</div>
-                  <div class="stat-row">
-                    ${rd.stats.rsvp_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.rsvp_pct}</div><div class="stat-sub">RSVP</div></div>` : ''}
-                    ${rd.stats.practice_pct ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.practice_pct}</div><div class="stat-sub">PRACTICE</div></div>` : ''}
-                    ${rd.stats.game_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.game_pct}</div><div class="stat-sub">GAMES</div></div>` : ''}
-                  </div>
-                </div>` : ''}
-              </div>
-              ${photoDataUri ? `<div class="hero-photo-col"><img src="${photoDataUri}" /><div class="hero-photo-fade-left"></div><div class="hero-photo-fade-bottom"></div></div>` : ''}
+            <div class="player-name">${playerName}</div>
+            <div class="pills">
+              ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position}</span>` : ''}
+              ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
+              <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
             </div>
           </div>
+          ${rd?.bio?.age_group ? `
+          <div class="stat-block">
+            <div class="stat-label">PROFILE</div>
+            <div class="stat-row">
+              <div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.age_group}</div><div class="stat-sub">AGE GROUP</div></div>
+            </div>
+          </div>` : ''}
+          ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct ? `
+          <div class="stat-block">
+            <div class="stat-label">ATTENDANCE</div>
+            <div class="stat-row">
+              ${rd.stats.rsvp_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.rsvp_pct}</div><div class="stat-sub">RSVP</div></div>` : ''}
+              ${rd.stats.practice_pct ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.practice_pct}</div><div class="stat-sub">PRACTICE</div></div>` : ''}
+              ${rd.stats.game_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.game_pct}</div><div class="stat-sub">GAMES</div></div>` : ''}
+            </div>
+          </div>` : ''}
           ${rd?.stats?.games_played || rd?.stats?.trainings_attended ? `
           <div class="stat-block">
             <div class="stat-label">SEASON</div>
@@ -429,7 +389,6 @@ export default function EvalDetailScreen() {
     : null;
 
   const lastName      = ev.players?.full_name?.split(' ').slice(-1)[0]?.toUpperCase() ?? '';
-  const effectivePhotoUrl = ev.report_photo_url ?? ev.players?.card_photo_url ?? ev.players?.photo_url ?? null;
   const hasStrengths  = rd?.super_strengths?.some(Boolean);
   const hasDev        = rd?.areas_of_development?.some(Boolean);
   const hasOutcome    = rd?.outcome_goals?.some(Boolean);
@@ -473,64 +432,54 @@ export default function EvalDetailScreen() {
             {publishDate && <Text style={st.headerDate}>{publishDate}</Text>}
           </View>
 
-          {/* ── Player hero — big cover photo on the right spans the hero +
-               PROFILE + ATTENDANCE blocks; height is content-driven (flex
-               stretch), not fixed. ── */}
-          <View style={{ flexDirection: 'row' }}>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <View style={st.heroSection}>
-                {lastName ? (
-                  <Text style={[st.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} adjustsFontSizeToFit={false} ellipsizeMode="clip">
-                    {lastName}
-                  </Text>
-                ) : null}
-                <View style={st.heroContent}>
-                  <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
-                  <View style={[st.pillRow, { zIndex: 2 }]}>
-                    {rd?.bio?.position ? (
-                      <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
-                        <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
-                      </View>
-                    ) : null}
-                    {ev.players?.jersey_number != null && (
-                      <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
-                        <Text style={[st.pillText, { color: '#475569' }]}>#{ev.players.jersey_number}</Text>
-                      </View>
-                    )}
-                    <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
-                      <Text style={[st.pillText, { color: '#64748b' }]}>{ev.period_label} · {ev.season_label}</Text>
-                    </View>
+          {/* ── Player hero ── */}
+          <View style={st.heroSection}>
+            {lastName ? (
+              <Text style={[st.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} adjustsFontSizeToFit={false} ellipsizeMode="clip">
+                {lastName}
+              </Text>
+            ) : null}
+            <View style={st.heroContent}>
+              <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
+              <View style={[st.pillRow, { zIndex: 2 }]}>
+                {rd?.bio?.position ? (
+                  <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
+                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
                   </View>
+                ) : null}
+                {ev.players?.jersey_number != null && (
+                  <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                    <Text style={[st.pillText, { color: '#475569' }]}>#{ev.players.jersey_number}</Text>
+                  </View>
+                )}
+                <View style={[st.pill, { backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' }]}>
+                  <Text style={[st.pillText, { color: '#64748b' }]}>{ev.period_label} · {ev.season_label}</Text>
                 </View>
               </View>
-
-              {/* ── Bio stats strip ── */}
-              {hasBioStats && (
-                <View style={st.statBlock}>
-                  <Text style={st.statBlockLabel}>PROFILE</Text>
-                  <View style={st.statRow}>
-                    {rd!.bio.age_group ? <StatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
-                  </View>
-                </View>
-              )}
-
-              {/* ── Attendance strip ── */}
-              {hasAttendance && (
-                <View style={st.statBlock}>
-                  <Text style={st.statBlockLabel}>ATTENDANCE</Text>
-                  <View style={st.statRow}>
-                    {rd!.stats.rsvp_pct     ? <StatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
-                    {rd!.stats.practice_pct ? <StatChip label="PRACTICE"  value={rd!.stats.practice_pct} color={primary} /> : null}
-                    {rd!.stats.game_pct     ? <StatChip label="GAMES"     value={rd!.stats.game_pct}     color={primary} /> : null}
-                  </View>
-                </View>
-              )}
             </View>
-
-            {effectivePhotoUrl && (
-              <EvalPhotoFrame uri={effectivePhotoUrl} fallbackUri={ev.players?.card_photo_url ?? ev.players?.photo_url} primaryColor={primary} />
-            )}
           </View>
+
+          {/* ── Bio stats strip ── */}
+          {hasBioStats && (
+            <View style={st.statBlock}>
+              <Text style={st.statBlockLabel}>PROFILE</Text>
+              <View style={st.statRow}>
+                {rd!.bio.age_group ? <StatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
+              </View>
+            </View>
+          )}
+
+          {/* ── Attendance strip ── */}
+          {hasAttendance && (
+            <View style={st.statBlock}>
+              <Text style={st.statBlockLabel}>ATTENDANCE</Text>
+              <View style={st.statRow}>
+                {rd!.stats.rsvp_pct     ? <StatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
+                {rd!.stats.practice_pct ? <StatChip label="PRACTICE"  value={rd!.stats.practice_pct} color={primary} /> : null}
+                {rd!.stats.game_pct     ? <StatChip label="GAMES"     value={rd!.stats.game_pct}     color={primary} /> : null}
+              </View>
+            </View>
+          )}
 
           {/* ── Season stats — explicit 2 rows of 3 ── */}
           {hasPerfStats && (

@@ -5,7 +5,6 @@
 // duplicating ~150 lines of radar-chart/chip SVG and layout. That page now
 // imports from here too.
 
-import { useState } from 'react';
 import { X } from 'lucide-react';
 
 export type ReportData = {
@@ -31,8 +30,7 @@ export type EvalRow = {
   final_text:   string | null;
   published_at: string | null;
   scheduled_publish_at: string | null;
-  report_photo_url: string | null;
-  players: { full_name: string; jersey_number: number | null; photo_url: string | null; card_photo_url: string | null } | null;
+  players: { full_name: string; jersey_number: number | null; photo_url: string | null } | null;
 };
 
 const RADAR_COLORS = ['#3B82F6', '#F59E0B', '#22C55E', '#8B5CF6'];
@@ -131,20 +129,6 @@ export function EvaluationReportPanel({
   const playerName = ev.players?.full_name ?? '';
   const lastName   = playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? '';
   const jerseyNum  = ev.players?.jersey_number;
-  const fallbackPhotoUrl = ev.players?.card_photo_url ?? ev.players?.photo_url ?? null;
-  const reportPhotoUrl   = ev.report_photo_url ?? null;
-  const [photoFailed, setPhotoFailed] = useState(false);
-  const [trackedPhotoUrl, setTrackedPhotoUrl] = useState(reportPhotoUrl);
-  if (reportPhotoUrl !== trackedPhotoUrl) {
-    setTrackedPhotoUrl(reportPhotoUrl);
-    setPhotoFailed(false);
-  }
-  // Falls back to the card/profile photo if the report override 404s or
-  // otherwise fails to load — a broken saved photo shouldn't mean a blank
-  // box with just the backdrop gradient showing.
-  const photoUrl = (photoFailed && fallbackPhotoUrl && fallbackPhotoUrl !== reportPhotoUrl)
-    ? fallbackPhotoUrl
-    : (reportPhotoUrl ?? fallbackPhotoUrl);
   const pubDate    = ev.published_at
     ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : '';
@@ -216,70 +200,38 @@ export function EvaluationReportPanel({
               <div style={{ fontSize: '9px', fontWeight: '700', color: 'rgba(255,255,255,0.65)' }}>{pubDate}</div>
             </div>
 
-            {/* Hero — a big cover-fit photo on the right, fixed to the same
-                aspect ratio the coach positioned it against in the editor
-                (EVAL_PHOTO_ASPECT in mobile's EvalPhotoEditor.tsx) rather
-                than stretched to match the text column's height. */}
-            <div style={{ display: 'flex', borderBottom: '1px solid #f1f5f9' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ padding: '18px 20px 12px', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', fontSize: '80px', fontWeight: '900', letterSpacing: '-5px', top: '-10px', left: '14px', color: `${primary}28`, lineHeight: 1, pointerEvents: 'none' }}>{lastName}</div>
-                  <div style={{ position: 'relative' }}>
-                    <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '8px' }}>{playerName}</div>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {rd?.bio?.position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}44`, background: `${primary}22`, fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.position}</span>}
-                      {jerseyNum != null && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>#{jerseyNum}</span>}
-                      <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>{ev.period_label} · {ev.season_label}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Profile */}
-                {rd?.bio?.age_group && (
-                  <div style={{ padding: '10px 20px 12px', borderTop: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>PROFILE</div>
-                    <div style={{ display: 'flex', gap: '24px' }}>
-                      <StatChip val={rd.bio.age_group} label="AGE GROUP" color="#0f172a" />
-                    </div>
-                  </div>
-                )}
-
-                {/* Attendance */}
-                {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct) && (
-                  <div style={{ padding: '10px 20px 12px', borderTop: '1px solid #e2e8f0' }}>
-                    <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>ATTENDANCE</div>
-                    <div style={{ display: 'flex', gap: '20px' }}>
-                      {rd.stats.rsvp_pct     && <StatChip val={rd.stats.rsvp_pct}     label="RSVP"     color={primary} />}
-                      {rd.stats.practice_pct && <StatChip val={rd.stats.practice_pct} label="PRACTICE" color={primary} />}
-                      {rd.stats.game_pct     && <StatChip val={rd.stats.game_pct}     label="GAMES"    color={primary} />}
-                    </div>
-                  </div>
-                )}
+            {/* Hero */}
+            <div style={{ padding: '18px 20px 12px', borderBottom: '1px solid #f1f5f9', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', fontSize: '80px', fontWeight: '900', letterSpacing: '-5px', top: '-10px', left: '14px', color: `${primary}28`, lineHeight: 1, pointerEvents: 'none' }}>{lastName}</div>
+              <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '8px', position: 'relative' }}>{playerName}</div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative' }}>
+                {rd?.bio?.position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}44`, background: `${primary}22`, fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.position}</span>}
+                {jerseyNum != null && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>#{jerseyNum}</span>}
+                <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>{ev.period_label} · {ev.season_label}</span>
               </div>
-
-              {photoUrl && (
-                // Backdrop + edge fades — most of these photos are
-                // transparent-background cutouts, and the coach may have
-                // zoomed out past "fully covers" in the mobile editor to
-                // add breathing room; neither is baked into the saved
-                // file, so this treatment is reapplied live here too
-                // (mirrors EvalPhotoFrame.tsx on mobile).
-                <div style={{
-                  width: '36%', aspectRatio: 0.48, flexShrink: 0, overflow: 'hidden', position: 'relative',
-                  background: `linear-gradient(180deg, ${primary}1a, #ffffff)`,
-                }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-                  <img
-                    src={photoUrl}
-                    alt={playerName}
-                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover', position: 'relative' }}
-                    onError={() => setPhotoFailed(true)}
-                  />
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '30%', background: 'linear-gradient(90deg, #ffffff, rgba(255,255,255,0))', pointerEvents: 'none' }} />
-                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '30%', background: 'linear-gradient(180deg, rgba(255,255,255,0), #ffffff)', pointerEvents: 'none' }} />
-                </div>
-              )}
             </div>
+
+            {/* Profile */}
+            {rd?.bio?.age_group && (
+              <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>PROFILE</div>
+                <div style={{ display: 'flex', gap: '24px' }}>
+                  <StatChip val={rd.bio.age_group} label="AGE GROUP" color="#0f172a" />
+                </div>
+              </div>
+            )}
+
+            {/* Attendance */}
+            {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct) && (
+              <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>ATTENDANCE</div>
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  {rd.stats.rsvp_pct     && <StatChip val={rd.stats.rsvp_pct}     label="RSVP"     color={primary} />}
+                  {rd.stats.practice_pct && <StatChip val={rd.stats.practice_pct} label="PRACTICE" color={primary} />}
+                  {rd.stats.game_pct     && <StatChip val={rd.stats.game_pct}     label="GAMES"    color={primary} />}
+                </div>
+              </div>
+            )}
 
             {/* Season */}
             {(rd?.stats?.games_played || rd?.stats?.trainings_attended) && (
