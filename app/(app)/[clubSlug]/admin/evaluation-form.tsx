@@ -442,7 +442,13 @@ export default function EvaluationFormScreen() {
       const totalAssists = gameStat.reduce((s, r) => s + (r.assists ?? 0), 0);
       const totalYellows = gameStat.reduce((s, r) => s + (r.yellow_cards ?? 0), 0);
       const totalMins    = gameStat.reduce((s, r) => s + (r.minutes_played ?? 0), 0);
-      const gamesPlayed  = gameStat.length;
+      // Games played = games attended (same attendance/RSVP source as
+      // game_pct and trainings_attended), not event_player_stats.length —
+      // that table only has a row when a coach has logged detailed
+      // match stats (goals/assists/minutes) for this player, which many
+      // teams never do, so it silently stayed empty even for a player
+      // with a full attendance record.
+      const gamesPlayed  = attendedGames;
 
       const pct = (n: number, d: number) => d > 0 ? `${Math.round((n / d) * 100)}%` : '';
 
@@ -1004,9 +1010,9 @@ export default function EvaluationFormScreen() {
                     <View style={pvSt.heroContent}>
                       <Text style={pvSt.playerName}>{playerName}</Text>
                       <View style={pvSt.pillRow}>
-                        {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
-                        {rd?.bio?.secondary_position ? <View style={[pvSt.pill, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.secondary_position} · 2ND</Text></View> : null}
-                        {rd?.bio?.developmental_position ? <View style={[pvSt.pill, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}><Text style={[pvSt.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · DEV</Text></View> : null}
+                        {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position} · Primary</Text></View> : null}
+                        {rd?.bio?.secondary_position ? <View style={[pvSt.pill, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.secondary_position} · Secondary</Text></View> : null}
+                        {rd?.bio?.developmental_position ? <View style={[pvSt.pill, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}><Text style={[pvSt.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · Developmental</Text></View> : null}
                         {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
                         <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
                       </View>

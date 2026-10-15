@@ -340,9 +340,9 @@ export default function EvalDetailScreen() {
             <div class="hero-wm">${playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? ''}</div>
             <div class="player-name">${playerName}</div>
             <div class="pills">
-              ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position}</span>` : ''}
-              ${rd?.bio?.secondary_position ? `<span class="pill pill-secondary">${rd.bio.secondary_position} · 2ND</span>` : ''}
-              ${rd?.bio?.developmental_position ? `<span class="pill pill-dev">${rd.bio.developmental_position} · DEV</span>` : ''}
+              ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position} · Primary</span>` : ''}
+              ${rd?.bio?.secondary_position ? `<span class="pill pill-secondary">${rd.bio.secondary_position} · Secondary</span>` : ''}
+              ${rd?.bio?.developmental_position ? `<span class="pill pill-dev">${rd.bio.developmental_position} · Developmental</span>` : ''}
               ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
               <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
             </div>
@@ -501,17 +501,17 @@ export default function EvalDetailScreen() {
               <View style={[st.pillRow, { zIndex: 2 }]}>
                 {rd?.bio?.position ? (
                   <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
-                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
+                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.position} · Primary</Text>
                   </View>
                 ) : null}
                 {rd?.bio?.secondary_position ? (
                   <View style={[st.pill, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}>
-                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.secondary_position} · 2ND</Text>
+                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.secondary_position} · Secondary</Text>
                   </View>
                 ) : null}
                 {rd?.bio?.developmental_position ? (
                   <View style={[st.pill, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}>
-                    <Text style={[st.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · DEV</Text>
+                    <Text style={[st.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · Developmental</Text>
                   </View>
                 ) : null}
                 {ev.players?.jersey_number != null && (
