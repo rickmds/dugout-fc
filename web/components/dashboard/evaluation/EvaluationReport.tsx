@@ -224,8 +224,12 @@ export function EvaluationReportPanel({
               <div style={{ position: 'absolute', fontSize: '80px', fontWeight: '900', letterSpacing: '-5px', top: '-10px', left: '14px', color: `${primary}28`, lineHeight: 1, pointerEvents: 'none' }}>{lastName}</div>
               <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '8px', position: 'relative' }}>{playerName}</div>
               {(ev.teams?.name || rd?.bio?.age_group) && (
-                <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginTop: '-6px', marginBottom: '10px', position: 'relative' }}>
-                  {ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', background: primary, borderRadius: '8px',
+                  padding: '5px 10px', marginBottom: '10px', position: 'relative',
+                  fontSize: '11px', fontWeight: '900', color: '#fff', letterSpacing: '0.8px', textTransform: 'uppercase',
+                }}>
+                  ⚽ {ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}
                 </div>
               )}
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', position: 'relative' }}>

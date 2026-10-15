@@ -297,7 +297,7 @@ export default function EvalDetailScreen() {
           .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
           .hero-fade { position: absolute; top: 0; bottom: 0; right: 0; width: 22%; background: linear-gradient(90deg, rgba(255,255,255,0), #ffffff); pointer-events: none; }
           .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
-          .team-subtitle { font-size: 13px; font-weight: 600; color: #64748b; margin-top: -6px; margin-bottom: 10px; position: relative; }
+          .team-badge { display: inline-flex; align-items: center; background: ${primary}; border-radius: 8px; padding: 5px 10px; margin-bottom: 10px; position: relative; font-size: 11px; font-weight: 900; color: #fff; letter-spacing: 0.8px; text-transform: uppercase; }
           .pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; position: relative; }
           .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
           .pill-primary { background: ${primary}22; border-color: ${primary}44; color: ${primary}; }
@@ -344,7 +344,7 @@ export default function EvalDetailScreen() {
           <div class="hero">
             <div class="hero-wm">${playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? ''}</div>
             <div class="player-name">${playerName}</div>
-            ${ev.teams?.name || rd?.bio?.age_group ? `<div class="team-subtitle">${ev.teams?.name ?? ''}${rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</div>` : ''}
+            ${ev.teams?.name || rd?.bio?.age_group ? `<div class="team-badge">⚽ ${ev.teams?.name ?? ''}${rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</div>` : ''}
             <div class="pills">
               ${rd?.bio?.position ? `<div class="pill-stacked pill-primary"><div class="pill-stacked-top">${rd.bio.position}</div><div class="pill-stacked-bottom">Primary</div></div>` : ''}
               ${rd?.bio?.secondary_position ? `<div class="pill-stacked pill-secondary"><div class="pill-stacked-top">${rd.bio.secondary_position}</div><div class="pill-stacked-bottom">Secondary</div></div>` : ''}
@@ -497,7 +497,9 @@ export default function EvalDetailScreen() {
             <View style={st.heroContent}>
               <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
               {(ev.teams?.name || rd?.bio?.age_group) ? (
-                <Text style={st.teamSubtitle}>{ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+                <View style={[st.teamBadge, { backgroundColor: primary }]}>
+                  <Text style={st.teamBadgeText}>⚽ {ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+                </View>
               ) : null}
               <View style={[st.pillRow, { zIndex: 2 }]}>
                 {rd?.bio?.position ? (
@@ -703,7 +705,8 @@ function getSt(colors: ThemeColors) {
   heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
   heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
   playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
-  teamSubtitle:  { fontSize: 13, fontWeight: '600', color: '#64748b', marginTop: -4, marginBottom: 10 },
+  teamBadge:     { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 10 },
+  teamBadgeText: { fontSize: 11, fontWeight: '900', color: '#fff', letterSpacing: 0.8, textTransform: 'uppercase' },
   pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   pillText:      { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },

@@ -1012,7 +1012,9 @@ export default function EvaluationFormScreen() {
                     <View style={pvSt.heroContent}>
                       <Text style={pvSt.playerName}>{playerName}</Text>
                       {(teamName || rd?.bio?.age_group) ? (
-                        <Text style={pvSt.teamSubtitle}>{teamName}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+                        <View style={[pvSt.teamBadge, { backgroundColor: primary }]}>
+                          <Text style={pvSt.teamBadgeText}>⚽ {teamName}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+                        </View>
                       ) : null}
                       <View style={pvSt.pillRow}>
                         {rd?.bio?.position ? (
@@ -1246,7 +1248,8 @@ function getPvSt(colors: ThemeColors) {
   heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
   heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
   playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
-  teamSubtitle:  { fontSize: 13, fontWeight: '600', color: '#64748b', marginTop: -4, marginBottom: 10 },
+  teamBadge:     { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 10 },
+  teamBadgeText: { fontSize: 11, fontWeight: '900', color: '#fff', letterSpacing: 0.8, textTransform: 'uppercase' },
   pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   pillText:      { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
