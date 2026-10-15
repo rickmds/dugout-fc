@@ -229,7 +229,7 @@ export function EvaluationReportPanel({
                   padding: '5px 10px', marginBottom: '10px', position: 'relative',
                   fontSize: '11px', fontWeight: '900', color: '#fff', letterSpacing: '0.8px', textTransform: 'uppercase',
                 }}>
-                  ⚽ {ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}
+                  {ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}
                 </div>
               )}
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', position: 'relative' }}>

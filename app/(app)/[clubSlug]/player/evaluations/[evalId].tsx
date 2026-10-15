@@ -344,7 +344,7 @@ export default function EvalDetailScreen() {
           <div class="hero">
             <div class="hero-wm">${playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? ''}</div>
             <div class="player-name">${playerName}</div>
-            ${ev.teams?.name || rd?.bio?.age_group ? `<div class="team-badge">⚽ ${ev.teams?.name ?? ''}${rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</div>` : ''}
+            ${ev.teams?.name || rd?.bio?.age_group ? `<div class="team-badge">${ev.teams?.name ?? ''}${rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</div>` : ''}
             <div class="pills">
               ${rd?.bio?.position ? `<div class="pill-stacked pill-primary"><div class="pill-stacked-top">${rd.bio.position}</div><div class="pill-stacked-bottom">Primary</div></div>` : ''}
               ${rd?.bio?.secondary_position ? `<div class="pill-stacked pill-secondary"><div class="pill-stacked-top">${rd.bio.secondary_position}</div><div class="pill-stacked-bottom">Secondary</div></div>` : ''}
@@ -498,7 +498,7 @@ export default function EvalDetailScreen() {
               <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
               {(ev.teams?.name || rd?.bio?.age_group) ? (
                 <View style={[st.teamBadge, { backgroundColor: primary }]}>
-                  <Text style={st.teamBadgeText}>⚽ {ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+                  <Text style={st.teamBadgeText}>{ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
                 </View>
               ) : null}
               <View style={[st.pillRow, { zIndex: 2 }]}>

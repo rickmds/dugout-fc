@@ -1013,7 +1013,7 @@ export default function EvaluationFormScreen() {
                       <Text style={pvSt.playerName}>{playerName}</Text>
                       {(teamName || rd?.bio?.age_group) ? (
                         <View style={[pvSt.teamBadge, { backgroundColor: primary }]}>
-                          <Text style={pvSt.teamBadgeText}>⚽ {teamName}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+                          <Text style={pvSt.teamBadgeText}>{teamName}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
                         </View>
                       ) : null}
                       <View style={pvSt.pillRow}>
