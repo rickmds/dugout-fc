@@ -38,6 +38,7 @@ export type EvalRow = {
   published_at: string | null;
   scheduled_publish_at: string | null;
   players: { full_name: string; jersey_number: number | null; photo_url: string | null } | null;
+  teams: { name: string } | null;
 };
 
 const RADAR_COLORS = ['#3B82F6', '#F59E0B', '#22C55E', '#8B5CF6'];
@@ -222,10 +223,30 @@ export function EvaluationReportPanel({
             <div style={{ padding: '18px 20px 12px', borderBottom: '1px solid #f1f5f9', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', fontSize: '80px', fontWeight: '900', letterSpacing: '-5px', top: '-10px', left: '14px', color: `${primary}28`, lineHeight: 1, pointerEvents: 'none' }}>{lastName}</div>
               <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '8px', position: 'relative' }}>{playerName}</div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative' }}>
-                {rd?.bio?.position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}44`, background: `${primary}22`, fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.position} · Primary</span>}
-                {rd?.bio?.secondary_position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}40`, background: 'transparent', fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.secondary_position} · Secondary</span>}
-                {rd?.bio?.developmental_position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #F9731640', background: '#F9731618', fontSize: '11px', fontWeight: '700', color: '#F97316' }}>{rd.bio.developmental_position} · Developmental</span>}
+              {(ev.teams?.name || rd?.bio?.age_group) && (
+                <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', marginTop: '-6px', marginBottom: '10px', position: 'relative' }}>
+                  {ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', position: 'relative' }}>
+                {rd?.bio?.position && (
+                  <div style={{ padding: '6px 12px', borderRadius: '12px', border: `1px solid ${primary}44`, background: `${primary}22`, textAlign: 'center' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '800', letterSpacing: '0.2px', color: primary }}>{rd.bio.position}</div>
+                    <div style={{ fontSize: '8px', fontWeight: '700', letterSpacing: '0.4px', marginTop: '1px', opacity: 0.75, color: primary }}>Primary</div>
+                  </div>
+                )}
+                {rd?.bio?.secondary_position && (
+                  <div style={{ padding: '6px 12px', borderRadius: '12px', border: `1px solid ${primary}40`, background: 'transparent', textAlign: 'center' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '800', letterSpacing: '0.2px', color: primary }}>{rd.bio.secondary_position}</div>
+                    <div style={{ fontSize: '8px', fontWeight: '700', letterSpacing: '0.4px', marginTop: '1px', opacity: 0.75, color: primary }}>Secondary</div>
+                  </div>
+                )}
+                {rd?.bio?.developmental_position && (
+                  <div style={{ padding: '6px 12px', borderRadius: '12px', border: '1px solid #F9731640', background: '#F9731618', textAlign: 'center' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '800', letterSpacing: '0.2px', color: '#F97316' }}>{rd.bio.developmental_position}</div>
+                    <div style={{ fontSize: '8px', fontWeight: '700', letterSpacing: '0.4px', marginTop: '1px', opacity: 0.75, color: '#F97316' }}>Developmental</div>
+                  </div>
+                )}
                 {jerseyNum != null && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>#{jerseyNum}</span>}
                 <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>{ev.period_label} · {ev.season_label}</span>
               </div>
@@ -234,16 +255,6 @@ export function EvaluationReportPanel({
                   of letting it hard-clip mid-letter. */}
               <div style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '22%', background: 'linear-gradient(90deg, rgba(255,255,255,0), #ffffff)', pointerEvents: 'none' }} />
             </div>
-
-            {/* Profile */}
-            {rd?.bio?.age_group && (
-              <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
-                <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>PROFILE</div>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <StatChip val={rd.bio.age_group} label="AGE GROUP" color="#0f172a" />
-                </div>
-              </div>
-            )}
 
             {/* Attendance */}
             {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct) && (

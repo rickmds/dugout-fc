@@ -48,7 +48,7 @@ export default function BatchReviewPage() {
     setLoading(true);
     const [bRes, eRes] = await Promise.all([
       supabase.from('evaluation_batches').select('*, teams(name)').eq('id', batchId).single(),
-      supabase.from('player_evaluations').select('*, players(full_name, jersey_number, photo_url)').eq('batch_id', batchId).order('players(full_name)'),
+      supabase.from('player_evaluations').select('*, players(full_name, jersey_number, photo_url), teams(name)').eq('batch_id', batchId).order('players(full_name)'),
     ]);
     const batchRow = bRes.data as BatchMeta | null;
     const evalRows = (eRes.data ?? []) as EvalRow[];

@@ -52,6 +52,7 @@ type EvalDetail = {
   final_text:   string | null;
   published_at: string | null;
   players: { full_name: string; jersey_number: number | null } | null;
+  teams: { name: string } | null;
 };
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -195,7 +196,7 @@ export default function EvalDetailScreen() {
       setLoading(true);
       const { data } = await supabase
         .from('player_evaluations')
-        .select('*, players(full_name,jersey_number)')
+        .select('*, players(full_name,jersey_number), teams(name)')
         .eq('id', evalId)
         .single();
       if (data) setEv(data as EvalDetail);
@@ -296,12 +297,16 @@ export default function EvalDetailScreen() {
           .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
           .hero-fade { position: absolute; top: 0; bottom: 0; right: 0; width: 22%; background: linear-gradient(90deg, rgba(255,255,255,0), #ffffff); pointer-events: none; }
           .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
-          .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
+          .team-subtitle { font-size: 13px; font-weight: 600; color: #64748b; margin-top: -6px; margin-bottom: 10px; position: relative; }
+          .pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; position: relative; }
           .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
           .pill-primary { background: ${primary}22; border-color: ${primary}44; color: ${primary}; }
           .pill-secondary { background: transparent; border-color: ${primary}40; color: ${primary}; }
           .pill-dev { background: #F9731618; border-color: #F9731640; color: #F97316; }
           .pill-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
+          .pill-stacked { padding: 6px 12px; border-radius: 12px; border: 1px solid; text-align: center; }
+          .pill-stacked-top { font-size: 12px; font-weight: 800; letter-spacing: 0.2px; }
+          .pill-stacked-bottom { font-size: 8px; font-weight: 700; letter-spacing: 0.4px; margin-top: 1px; opacity: 0.75; }
           .stat-block { padding: 10px 22px 14px; border-top: 1px solid #e2e8f0; }
           .stat-label { font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 1.5px; margin-bottom: 10px; }
           .stat-row { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -339,22 +344,16 @@ export default function EvalDetailScreen() {
           <div class="hero">
             <div class="hero-wm">${playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? ''}</div>
             <div class="player-name">${playerName}</div>
+            ${ev.teams?.name || rd?.bio?.age_group ? `<div class="team-subtitle">${ev.teams?.name ?? ''}${rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</div>` : ''}
             <div class="pills">
-              ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position} · Primary</span>` : ''}
-              ${rd?.bio?.secondary_position ? `<span class="pill pill-secondary">${rd.bio.secondary_position} · Secondary</span>` : ''}
-              ${rd?.bio?.developmental_position ? `<span class="pill pill-dev">${rd.bio.developmental_position} · Developmental</span>` : ''}
+              ${rd?.bio?.position ? `<div class="pill-stacked pill-primary"><div class="pill-stacked-top">${rd.bio.position}</div><div class="pill-stacked-bottom">Primary</div></div>` : ''}
+              ${rd?.bio?.secondary_position ? `<div class="pill-stacked pill-secondary"><div class="pill-stacked-top">${rd.bio.secondary_position}</div><div class="pill-stacked-bottom">Secondary</div></div>` : ''}
+              ${rd?.bio?.developmental_position ? `<div class="pill-stacked pill-dev"><div class="pill-stacked-top">${rd.bio.developmental_position}</div><div class="pill-stacked-bottom">Developmental</div></div>` : ''}
               ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
               <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
             </div>
             <div class="hero-fade"></div>
           </div>
-          ${rd?.bio?.age_group ? `
-          <div class="stat-block">
-            <div class="stat-label">PROFILE</div>
-            <div class="stat-row">
-              <div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.age_group}</div><div class="stat-sub">AGE GROUP</div></div>
-            </div>
-          </div>` : ''}
           ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct ? `
           <div class="stat-block">
             <div class="stat-label">ATTENDANCE</div>
@@ -451,7 +450,6 @@ export default function EvalDetailScreen() {
   const hasOutcome    = rd?.outcome_goals?.some(Boolean);
   const hasPerf       = rd?.performance_goals?.some(Boolean);
   const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
-  const hasBioStats   = rd?.bio?.age_group;
   const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
   const hasPerfStats  = rd?.stats?.minutes_played || rd?.stats?.secondary_foot
     || (rd?.stats?.goals         && rd.stats.goals        !== '0')
@@ -498,20 +496,26 @@ export default function EvalDetailScreen() {
             ) : null}
             <View style={st.heroContent}>
               <Text style={st.playerName}>{ev.players?.full_name ?? ''}</Text>
+              {(ev.teams?.name || rd?.bio?.age_group) ? (
+                <Text style={st.teamSubtitle}>{ev.teams?.name ?? ''}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+              ) : null}
               <View style={[st.pillRow, { zIndex: 2 }]}>
                 {rd?.bio?.position ? (
-                  <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
-                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.position} · Primary</Text>
+                  <View style={[st.pillStacked, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
+                    <Text style={[st.pillStackedTop, { color: primary }]}>{rd.bio.position}</Text>
+                    <Text style={[st.pillStackedBottom, { color: primary }]}>Primary</Text>
                   </View>
                 ) : null}
                 {rd?.bio?.secondary_position ? (
-                  <View style={[st.pill, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}>
-                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.secondary_position} · Secondary</Text>
+                  <View style={[st.pillStacked, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}>
+                    <Text style={[st.pillStackedTop, { color: primary }]}>{rd.bio.secondary_position}</Text>
+                    <Text style={[st.pillStackedBottom, { color: primary }]}>Secondary</Text>
                   </View>
                 ) : null}
                 {rd?.bio?.developmental_position ? (
-                  <View style={[st.pill, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}>
-                    <Text style={[st.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · Developmental</Text>
+                  <View style={[st.pillStacked, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}>
+                    <Text style={[st.pillStackedTop, { color: '#F97316' }]}>{rd.bio.developmental_position}</Text>
+                    <Text style={[st.pillStackedBottom, { color: '#F97316' }]}>Developmental</Text>
                   </View>
                 ) : null}
                 {ev.players?.jersey_number != null && (
@@ -534,16 +538,6 @@ export default function EvalDetailScreen() {
               pointerEvents="none"
             />
           </View>
-
-          {/* ── Bio stats strip ── */}
-          {hasBioStats && (
-            <View style={st.statBlock}>
-              <Text style={st.statBlockLabel}>PROFILE</Text>
-              <View style={st.statRow}>
-                {rd!.bio.age_group ? <StatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
-              </View>
-            </View>
-          )}
 
           {/* ── Attendance strip ── */}
           {hasAttendance && (
@@ -709,9 +703,13 @@ function getSt(colors: ThemeColors) {
   heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
   heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
   playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
+  teamSubtitle:  { fontSize: 13, fontWeight: '600', color: '#64748b', marginTop: -4, marginBottom: 10 },
   pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   pillText:      { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  pillStacked:      { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  pillStackedTop:   { fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
+  pillStackedBottom:{ fontSize: 8, fontWeight: '700', letterSpacing: 0.4, marginTop: 1, opacity: 0.75 },
 
   // Stats strips
   statsStrip:     { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 11, paddingHorizontal: 16, justifyContent: 'space-around' },

@@ -316,6 +316,7 @@ export default function EvaluationFormScreen() {
   const [jerseyNumber,  setJerseyNumber]  = useState<number | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [teamId, setTeamId] = useState('');
+  const [teamName, setTeamName] = useState('');
   const [refreshingStats, setRefreshingStats] = useState(false);
 
   useEffect(() => { load(); }, [playerId, batchId, evalId]);
@@ -324,7 +325,7 @@ export default function EvaluationFormScreen() {
     setLoading(true);
     const [pRes, bRes] = await Promise.all([
       supabase.from('players').select('full_name,position,secondary_position,jersey_number,date_of_birth').eq('id', playerId).single(),
-      supabase.from('evaluation_batches').select('season_label,period_label,team_id').eq('id', batchId).single(),
+      supabase.from('evaluation_batches').select('season_label,period_label,team_id,teams(name)').eq('id', batchId).single(),
     ]);
 
     let prefillPosition = '';
@@ -341,6 +342,8 @@ export default function EvaluationFormScreen() {
       setSeasonLabel(bRes.data.season_label);
       setPeriodLabel(bRes.data.period_label);
       teamId = (bRes.data as any).team_id ?? '';
+      const teamsJoin = (bRes.data as any).teams;
+      setTeamName((Array.isArray(teamsJoin) ? teamsJoin[0]?.name : teamsJoin?.name) ?? '');
       setTeamId(teamId);
     }
     // US Soccer classifies age groups by an Aug 1 – Jul 31 birth-year
@@ -984,7 +987,6 @@ export default function EvaluationFormScreen() {
               const hasOutcome    = rd?.outcome_goals?.some(Boolean);
               const hasPerf       = rd?.performance_goals?.some(Boolean);
               const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
-              const hasBioStats   = rd?.bio?.age_group;
               const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
               const hasPerfStats  = rd?.stats?.minutes_played || rd?.stats?.secondary_foot
                 || (rd?.stats?.goals        && rd.stats.goals        !== '0')
@@ -1009,10 +1011,28 @@ export default function EvaluationFormScreen() {
                     {lastName ? <Text style={[pvSt.heroWatermark, { color: `${primary}28` }]} numberOfLines={1} ellipsizeMode="clip">{lastName}</Text> : null}
                     <View style={pvSt.heroContent}>
                       <Text style={pvSt.playerName}>{playerName}</Text>
+                      {(teamName || rd?.bio?.age_group) ? (
+                        <Text style={pvSt.teamSubtitle}>{teamName}{rd?.bio?.age_group ? ` ${rd.bio.age_group}’s` : ''}</Text>
+                      ) : null}
                       <View style={pvSt.pillRow}>
-                        {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position} · Primary</Text></View> : null}
-                        {rd?.bio?.secondary_position ? <View style={[pvSt.pill, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.secondary_position} · Secondary</Text></View> : null}
-                        {rd?.bio?.developmental_position ? <View style={[pvSt.pill, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}><Text style={[pvSt.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · Developmental</Text></View> : null}
+                        {rd?.bio?.position ? (
+                          <View style={[pvSt.pillStacked, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
+                            <Text style={[pvSt.pillStackedTop, { color: primary }]}>{rd.bio.position}</Text>
+                            <Text style={[pvSt.pillStackedBottom, { color: primary }]}>Primary</Text>
+                          </View>
+                        ) : null}
+                        {rd?.bio?.secondary_position ? (
+                          <View style={[pvSt.pillStacked, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}>
+                            <Text style={[pvSt.pillStackedTop, { color: primary }]}>{rd.bio.secondary_position}</Text>
+                            <Text style={[pvSt.pillStackedBottom, { color: primary }]}>Secondary</Text>
+                          </View>
+                        ) : null}
+                        {rd?.bio?.developmental_position ? (
+                          <View style={[pvSt.pillStacked, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}>
+                            <Text style={[pvSt.pillStackedTop, { color: '#F97316' }]}>{rd.bio.developmental_position}</Text>
+                            <Text style={[pvSt.pillStackedBottom, { color: '#F97316' }]}>Developmental</Text>
+                          </View>
+                        ) : null}
                         {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
                         <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
                       </View>
@@ -1028,15 +1048,6 @@ export default function EvaluationFormScreen() {
                     />
                   </View>
 
-                  {/* Bio strip */}
-                  {hasBioStats ? (
-                    <View style={pvSt.statBlock}>
-                      <Text style={pvSt.statBlockLabel}>PROFILE</Text>
-                      <View style={pvSt.statRow}>
-                        {rd!.bio.age_group ? <PvStatChip label="AGE GROUP" value={rd!.bio.age_group} color="#0f172a" /> : null}
-                      </View>
-                    </View>
-                  ) : null}
 
                   {/* Attendance strip */}
                   {hasAttendance ? (
@@ -1235,9 +1246,13 @@ function getPvSt(colors: ThemeColors) {
   heroWatermark: { position: 'absolute', fontSize: 96, fontWeight: '900', letterSpacing: -5, top: -8, left: 10, lineHeight: 96, zIndex: 0 },
   heroContent:   { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, zIndex: 1 },
   playerName:    { fontSize: 30, fontWeight: '900', color: '#0f172a', letterSpacing: -0.8, lineHeight: 32, marginBottom: 8 },
+  teamSubtitle:  { fontSize: 13, fontWeight: '600', color: '#64748b', marginTop: -4, marginBottom: 10 },
   pillRow:       { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   pill:          { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   pillText:      { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  pillStacked:      { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  pillStackedTop:   { fontSize: 12, fontWeight: '800', letterSpacing: 0.2 },
+  pillStackedBottom:{ fontSize: 8, fontWeight: '700', letterSpacing: 0.4, marginTop: 1, opacity: 0.75 },
   pillNeutral:   { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, backgroundColor: '#f1f5f9', borderColor: '#e2e8f0' },
   pillTextNeutral: { fontSize: 11, fontWeight: '700', color: '#475569' },
 
