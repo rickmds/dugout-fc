@@ -14,7 +14,7 @@ export type IdpRow = {
 };
 
 export type ReportData = {
-  bio:   { position: string; age_group: string };
+  bio:   { position: string; secondary_position: string; developmental_position: string; age_group: string };
   stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; trainings_attended: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
@@ -224,6 +224,8 @@ export function EvaluationReportPanel({
               <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.5px', marginBottom: '8px', position: 'relative' }}>{playerName}</div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', position: 'relative' }}>
                 {rd?.bio?.position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}44`, background: `${primary}22`, fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.position}</span>}
+                {rd?.bio?.secondary_position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: `1px solid ${primary}40`, background: 'transparent', fontSize: '11px', fontWeight: '700', color: primary }}>{rd.bio.secondary_position} · 2ND</span>}
+                {rd?.bio?.developmental_position && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #F9731640', background: '#F9731618', fontSize: '11px', fontWeight: '700', color: '#F97316' }}>{rd.bio.developmental_position} · DEV</span>}
                 {jerseyNum != null && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>#{jerseyNum}</span>}
                 <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>{ev.period_label} · {ev.season_label}</span>
               </div>

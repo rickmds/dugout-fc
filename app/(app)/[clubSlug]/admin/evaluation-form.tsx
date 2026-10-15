@@ -40,6 +40,8 @@ type IdpRow = {
 type ReportData = {
   bio: {
     position: string;
+    secondary_position: string;
+    developmental_position: string;
     age_group: string;
   };
   stats: {
@@ -62,7 +64,7 @@ type ReportData = {
 };
 
 const EMPTY_REPORT: ReportData = {
-  bio:   { position: '', age_group: '' },
+  bio:   { position: '', secondary_position: '', developmental_position: '', age_group: '' },
   stats: { rsvp_pct: '', practice_pct: '', game_pct: '', games_played: '', trainings_attended: '', minutes_played: '', goals: '', assists: '', yellow_cards: '', secondary_foot: '' },
   super_strengths:      ['', '', ''],
   areas_of_development: ['', '', ''],
@@ -103,17 +105,20 @@ function mergeReport(raw: Partial<ReportData> | null | undefined): ReportData {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionCard({ title, color, icon, note, children }: {
+function SectionCard({ title, color, icon, note, action, children }: {
   title: string; color: string; icon: keyof typeof Ionicons.glyphMap;
-  note?: string; children: React.ReactNode;
+  note?: string; action?: React.ReactNode; children: React.ReactNode;
 }) {
   const { colors } = useTheme();
   const sc = useMemo(() => getSc(colors), [colors]);
   return (
     <View style={[sc.card, { borderLeftColor: color }]}>
       <View style={sc.head}>
-        <Ionicons name={icon} size={12} color={color} />
-        <Text style={[sc.title, { color }]}>{title}</Text>
+        <View style={sc.headLeft}>
+          <Ionicons name={icon} size={12} color={color} />
+          <Text style={[sc.title, { color }]}>{title}</Text>
+        </View>
+        {action}
       </View>
       {note && <Text style={sc.note}>{note}</Text>}
       {children}
@@ -122,8 +127,9 @@ function SectionCard({ title, color, icon, note, children }: {
 }
 function getSc(colors: ThemeColors) {
   return StyleSheet.create({
-    card:  { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, padding: 16, gap: 12 },
-    head:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    card:     { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, padding: 16, gap: 12 },
+    head:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    headLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     title: { fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
     note:  { fontSize: 11, color: colors.textSecondary, marginTop: -4 },
   });
@@ -309,28 +315,33 @@ export default function EvaluationFormScreen() {
   const [saving,        setSaving]        = useState(false);
   const [jerseyNumber,  setJerseyNumber]  = useState<number | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
+  const [teamId, setTeamId] = useState('');
+  const [refreshingStats, setRefreshingStats] = useState(false);
 
   useEffect(() => { load(); }, [playerId, batchId, evalId]);
 
   async function load() {
     setLoading(true);
     const [pRes, bRes] = await Promise.all([
-      supabase.from('players').select('full_name,position,jersey_number,date_of_birth').eq('id', playerId).single(),
+      supabase.from('players').select('full_name,position,secondary_position,jersey_number,date_of_birth').eq('id', playerId).single(),
       supabase.from('evaluation_batches').select('season_label,period_label,team_id').eq('id', batchId).single(),
     ]);
 
     let prefillPosition = '';
+    let prefillSecondaryPosition = '';
     let prefillAgeGroup = '';
     let teamId = '';
     if (pRes.data) {
       setPlayerName(pRes.data.full_name);
       setJerseyNumber((pRes.data as any).jersey_number ?? null);
       prefillPosition = pRes.data.position ?? '';
+      prefillSecondaryPosition = (pRes.data as any).secondary_position ?? '';
     }
     if (bRes.data) {
       setSeasonLabel(bRes.data.season_label);
       setPeriodLabel(bRes.data.period_label);
       teamId = (bRes.data as any).team_id ?? '';
+      setTeamId(teamId);
     }
     // US Soccer classifies age groups by an Aug 1 – Jul 31 birth-year
     // cutoff (changed 2024-25) — computed from the player's real DOB
@@ -376,6 +387,7 @@ export default function EvaluationFormScreen() {
         bio: {
           ...prev.report_data.bio,
           position: prefillPosition,
+          secondary_position: prefillSecondaryPosition,
           age_group: prefillAgeGroup,
         },
         stats: {
@@ -447,6 +459,26 @@ export default function EvaluationFormScreen() {
       };
     } catch {
       return {};
+    }
+  }
+
+  // Auto-fill only runs once, on a brand-new evaluation's first load — a
+  // draft a coach reopens later (more trainings/games have likely happened
+  // since) keeps whatever was there at that first save. Refresh re-pulls
+  // live numbers on demand instead of the coach re-typing them, and only
+  // touches the fields fetchSeasonStats actually computes — manual notes
+  // like secondary foot are left alone.
+  async function handleRefreshStats() {
+    if (!playerId || !teamId) return;
+    setRefreshingStats(true);
+    try {
+      const autoStats = await fetchSeasonStats(playerId, teamId);
+      setForm(prev => ({
+        ...prev,
+        report_data: { ...prev.report_data, stats: { ...prev.report_data.stats, ...autoStats } },
+      }));
+    } finally {
+      setRefreshingStats(false);
     }
   }
 
@@ -692,18 +724,32 @@ export default function EvaluationFormScreen() {
           </View>
 
           {/* ── PLAYER PROFILE ─────────────────────── */}
-          <SectionCard title="PLAYER PROFILE" color={primary} icon="person-outline">
+          <SectionCard title="PLAYER PROFILE" color={primary} icon="person-outline" note="Secondary and developmental positions are optional — leave blank to show just the one pill">
             <GridInputs
               items={[
-                { k: 'position',   label: 'POSITION',   value: rd.bio.position,   placeholder: 'CM, ST, GK…' },
-                { k: 'age_group',  label: 'AGE GROUP',  value: rd.bio.age_group,  placeholder: 'U12' },
+                { k: 'position',                label: 'POSITION',                value: rd.bio.position,                placeholder: 'CM, ST, GK…' },
+                { k: 'age_group',                label: 'AGE GROUP',               value: rd.bio.age_group,               placeholder: 'U12' },
+                { k: 'secondary_position',       label: 'SECONDARY POSITION',      value: rd.bio.secondary_position,      placeholder: 'Optional — e.g. CB' },
+                { k: 'developmental_position',   label: 'DEVELOPMENTAL POSITION',  value: rd.bio.developmental_position,  placeholder: 'Optional — e.g. CAM' },
               ]}
               onChange={(k, v) => setBio(k as keyof ReportData['bio'], v)}
             />
           </SectionCard>
 
           {/* ── SEASON STATISTICS ─────────────────── */}
-          <SectionCard title="SEASON STATISTICS" color="#3B82F6" icon="stats-chart-outline" note="Auto-filled from season data · edit if needed · leave blank to hide from report">
+          <SectionCard
+            title="SEASON STATISTICS" color="#3B82F6" icon="stats-chart-outline"
+            note="Auto-filled from season data · edit if needed · leave blank to hide from report"
+            action={
+              <TouchableOpacity onPress={handleRefreshStats} disabled={refreshingStats} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                {refreshingStats ? (
+                  <ActivityIndicator size="small" color="#3B82F6" />
+                ) : (
+                  <Ionicons name="refresh-outline" size={16} color="#3B82F6" />
+                )}
+              </TouchableOpacity>
+            }
+          >
             <GridInputs
               items={[
                 { k: 'rsvp_pct',      label: 'OVERALL ATTEND.', value: rd.stats.rsvp_pct,      placeholder: '92%' },
@@ -959,6 +1005,8 @@ export default function EvaluationFormScreen() {
                       <Text style={pvSt.playerName}>{playerName}</Text>
                       <View style={pvSt.pillRow}>
                         {rd?.bio?.position ? <View style={[pvSt.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.position}</Text></View> : null}
+                        {rd?.bio?.secondary_position ? <View style={[pvSt.pill, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}><Text style={[pvSt.pillText, { color: primary }]}>{rd.bio.secondary_position} · 2ND</Text></View> : null}
+                        {rd?.bio?.developmental_position ? <View style={[pvSt.pill, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}><Text style={[pvSt.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · DEV</Text></View> : null}
                         {jerseyNumber != null ? <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>#{jerseyNumber}</Text></View> : null}
                         <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
                       </View>

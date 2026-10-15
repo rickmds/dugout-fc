@@ -31,7 +31,7 @@ type IdpRow = {
 };
 
 type ReportData = {
-  bio:   { position: string; age_group: string };
+  bio:   { position: string; secondary_position: string; developmental_position: string; age_group: string };
   stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; trainings_attended: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
   super_strengths:      [string, string, string];
   areas_of_development: [string, string, string];
@@ -299,6 +299,8 @@ export default function EvalDetailScreen() {
           .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
           .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
           .pill-primary { background: ${primary}22; border-color: ${primary}44; color: ${primary}; }
+          .pill-secondary { background: transparent; border-color: ${primary}40; color: ${primary}; }
+          .pill-dev { background: #F9731618; border-color: #F9731640; color: #F97316; }
           .pill-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
           .stat-block { padding: 10px 22px 14px; border-top: 1px solid #e2e8f0; }
           .stat-label { font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 1.5px; margin-bottom: 10px; }
@@ -339,6 +341,8 @@ export default function EvalDetailScreen() {
             <div class="player-name">${playerName}</div>
             <div class="pills">
               ${rd?.bio?.position ? `<span class="pill pill-primary">${rd.bio.position}</span>` : ''}
+              ${rd?.bio?.secondary_position ? `<span class="pill pill-secondary">${rd.bio.secondary_position} · 2ND</span>` : ''}
+              ${rd?.bio?.developmental_position ? `<span class="pill pill-dev">${rd.bio.developmental_position} · DEV</span>` : ''}
               ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
               <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
             </div>
@@ -498,6 +502,16 @@ export default function EvalDetailScreen() {
                 {rd?.bio?.position ? (
                   <View style={[st.pill, { backgroundColor: `${primary}18`, borderColor: `${primary}30` }]}>
                     <Text style={[st.pillText, { color: primary }]}>{rd.bio.position}</Text>
+                  </View>
+                ) : null}
+                {rd?.bio?.secondary_position ? (
+                  <View style={[st.pill, { backgroundColor: 'transparent', borderColor: `${primary}40` }]}>
+                    <Text style={[st.pillText, { color: primary }]}>{rd.bio.secondary_position} · 2ND</Text>
+                  </View>
+                ) : null}
+                {rd?.bio?.developmental_position ? (
+                  <View style={[st.pill, { backgroundColor: '#F9731618', borderColor: '#F9731640' }]}>
+                    <Text style={[st.pillText, { color: '#F97316' }]}>{rd.bio.developmental_position} · DEV</Text>
                   </View>
                 ) : null}
                 {ev.players?.jersey_number != null && (
