@@ -1101,7 +1101,7 @@ export default function EvaluationFormScreen() {
                     </View>
 
                     {effectiveReportPhotoUrl && (
-                      <EvalPhotoFrame uri={effectiveReportPhotoUrl} primaryColor={primary} />
+                      <EvalPhotoFrame uri={effectiveReportPhotoUrl} fallbackUri={playerPhotoUrl} primaryColor={primary} />
                     )}
                   </View>
 

@@ -5,6 +5,7 @@
 // duplicating ~150 lines of radar-chart/chip SVG and layout. That page now
 // imports from here too.
 
+import { useState } from 'react';
 import { X } from 'lucide-react';
 
 export type ReportData = {
@@ -130,7 +131,20 @@ export function EvaluationReportPanel({
   const playerName = ev.players?.full_name ?? '';
   const lastName   = playerName.split(' ').slice(-1)[0]?.toUpperCase() ?? '';
   const jerseyNum  = ev.players?.jersey_number;
-  const photoUrl   = ev.report_photo_url ?? ev.players?.card_photo_url ?? ev.players?.photo_url ?? null;
+  const fallbackPhotoUrl = ev.players?.card_photo_url ?? ev.players?.photo_url ?? null;
+  const reportPhotoUrl   = ev.report_photo_url ?? null;
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [trackedPhotoUrl, setTrackedPhotoUrl] = useState(reportPhotoUrl);
+  if (reportPhotoUrl !== trackedPhotoUrl) {
+    setTrackedPhotoUrl(reportPhotoUrl);
+    setPhotoFailed(false);
+  }
+  // Falls back to the card/profile photo if the report override 404s or
+  // otherwise fails to load — a broken saved photo shouldn't mean a blank
+  // box with just the backdrop gradient showing.
+  const photoUrl = (photoFailed && fallbackPhotoUrl && fallbackPhotoUrl !== reportPhotoUrl)
+    ? fallbackPhotoUrl
+    : (reportPhotoUrl ?? fallbackPhotoUrl);
   const pubDate    = ev.published_at
     ? new Date(ev.published_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : '';
@@ -255,7 +269,12 @@ export function EvaluationReportPanel({
                   background: `linear-gradient(180deg, ${primary}1a, #ffffff)`,
                 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-                  <img src={photoUrl} alt={playerName} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover', position: 'relative' }} />
+                  <img
+                    src={photoUrl}
+                    alt={playerName}
+                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover', position: 'relative' }}
+                    onError={() => setPhotoFailed(true)}
+                  />
                   <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '30%', background: 'linear-gradient(90deg, #ffffff, rgba(255,255,255,0))', pointerEvents: 'none' }} />
                   <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '30%', background: 'linear-gradient(180deg, rgba(255,255,255,0), #ffffff)', pointerEvents: 'none' }} />
                 </div>

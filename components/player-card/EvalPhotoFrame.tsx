@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,11 +15,19 @@ import { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from './EvalPhotoEditor';
 // with CSS gradients instead, since they're not React Native.
 type Props = {
   uri: string;
+  /** Shown instead if `uri` fails to load (e.g. a report photo saved
+   * before a bug fix, or storage hiccup) — otherwise a broken photo
+   * renders as just the bare backdrop gradient with nothing on it. */
+  fallbackUri?: string | null;
   primaryColor: string;
   style?: ViewStyle;
 };
 
-export default function EvalPhotoFrame({ uri, primaryColor, style }: Props) {
+export default function EvalPhotoFrame({ uri, fallbackUri, primaryColor, style }: Props) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [uri]);
+  const effectiveUri = failed && fallbackUri && fallbackUri !== uri ? fallbackUri : uri;
+
   return (
     <View style={[{ width: EVAL_PHOTO_WIDTH_PCT, aspectRatio: EVAL_PHOTO_ASPECT, overflow: 'hidden' }, style]}>
       <LinearGradient
@@ -26,7 +35,12 @@ export default function EvalPhotoFrame({ uri, primaryColor, style }: Props) {
         start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+      <Image
+        source={{ uri: effectiveUri }}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        onError={() => setFailed(true)}
+      />
       <LinearGradient
         colors={['#ffffff', '#ffffff00']}
         start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}

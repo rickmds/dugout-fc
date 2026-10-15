@@ -183,17 +183,25 @@ export default function EvalDetailScreen() {
   }, [clubLogoUrl]);
 
   // Pre-fetch the hero photo (report override, else the card photo) as
-  // base64 so share is instant
+  // base64 so share is instant. Falls back to the card/profile photo if
+  // the report override 404s or otherwise fails — a broken report photo
+  // (e.g. saved before a bug fix) shouldn't mean no photo at all in the PDF.
   useEffect(() => {
-    const photoUrl = ev?.report_photo_url ?? ev?.players?.card_photo_url ?? ev?.players?.photo_url;
-    if (!photoUrl) return;
+    const reportUrl  = ev?.report_photo_url ?? null;
+    const fallbackUrl = ev?.players?.card_photo_url ?? ev?.players?.photo_url ?? null;
+    const candidates = [reportUrl, fallbackUrl].filter((u, i, arr): u is string => !!u && arr.indexOf(u) === i);
+    if (!candidates.length) return;
     (async () => {
-      try {
-        const tmp = FileSystem.cacheDirectory! + 'report-photo-cached.jpg';
-        await FileSystem.downloadAsync(photoUrl, tmp);
-        const b64 = await FileSystem.readAsStringAsync(tmp, { encoding: FileSystem.EncodingType.Base64 });
-        photoBase64Ref.current = `data:image/jpeg;base64,${b64}`;
-      } catch { /* photo optional */ }
+      for (const photoUrl of candidates) {
+        try {
+          const tmp = FileSystem.cacheDirectory! + 'report-photo-cached.jpg';
+          const result = await FileSystem.downloadAsync(photoUrl, tmp);
+          if (result.status !== 200) continue;
+          const b64 = await FileSystem.readAsStringAsync(tmp, { encoding: FileSystem.EncodingType.Base64 });
+          photoBase64Ref.current = `data:image/jpeg;base64,${b64}`;
+          return;
+        } catch { /* try the next candidate */ }
+      }
     })();
   }, [ev?.report_photo_url, ev?.players?.card_photo_url, ev?.players?.photo_url]);
 
@@ -520,7 +528,7 @@ export default function EvalDetailScreen() {
             </View>
 
             {effectivePhotoUrl && (
-              <EvalPhotoFrame uri={effectivePhotoUrl} primaryColor={primary} />
+              <EvalPhotoFrame uri={effectivePhotoUrl} fallbackUri={ev.players?.card_photo_url ?? ev.players?.photo_url} primaryColor={primary} />
             )}
           </View>
 
