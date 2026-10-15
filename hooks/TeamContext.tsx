@@ -4,7 +4,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { uniqueChannelName } from '../lib/realtime';
+import { withTimeout, TIMEOUT } from '../lib/withTimeout';
 import type { Database } from '../types/database';
+
+// fetchTeams' queries had no timeout at all — unlike useAuth.tsx's session
+// restore and Home's fetchData, which both bound their network calls and
+// give the user a Retry affordance when one stalls. If any of fetchTeams'
+// queries genuinely stalled (not rejected — stalled, the realistic
+// one-bar-LTE failure mode) on a cold launch, `loading` never flipped to
+// false and app/index.tsx's `session && teamsLoading` gate kept the user on
+// a bare spinner forever, with no error and no retry button — worse than
+// the sessionCheckFailed screen right before it in the same cold-start
+// path, which at least offers Retry. 10s matches Home's own critical-path
+// budget.
+const TEAMS_TIMEOUT_MS = 10000;
 
 type TeamRow = Database['public']['Tables']['teams']['Row'];
 type ClubRow = Database['public']['Tables']['clubs']['Row'];
@@ -30,6 +43,13 @@ interface TeamContextValue {
   team: Team | null;
   allTeams: Team[];
   loading: boolean;
+  /** A fetch genuinely stalled past TEAMS_TIMEOUT_MS (not a rejected query
+   * — those keep whatever's already in state, see fetchTeams). Distinct
+   * from "loaded successfully with zero teams" the same way useAuth's
+   * sessionCheckFailed is distinct from "confirmed signed out" — lets
+   * app/index.tsx offer the same Retry affordance instead of a permanent
+   * spinner or a false "you have no teams" state. */
+  teamsLoadError: boolean;
   selectTeam: (teamId: string) => Promise<void>;
   refetch: () => Promise<void>;
   /** The current selection read synchronously — unlike `team`, this is
@@ -54,15 +74,27 @@ function normalizeClub(clubs: ClubRow | ClubRow[] | null | undefined): ClubRow |
 // Every team in each given club, tagged 'org_admin' — the club_admins
 // equivalent of the home-club "implicit full access, no team_members row
 // needed" fetch above, for any additional club(s) reached that way.
-// Unlike the primary home/member queries in fetchTeams below, a failure
-// here just means this profile's extra cross-club teams are missing for
-// one refresh cycle (self-corrects on the next successful fetch) rather
-// than bailing the whole team list out — lower stakes, since the primary
-// club's own teams are unaffected either way.
-async function fetchAdminClubTeams(clubIds: string[]): Promise<Team[]> {
+//
+// Returns null (not []) on failure, and the caller bails the same way the
+// primary home/member queries in fetchTeams already do on their own
+// failure. This used to return [] here on the theory that a failure was
+// "lower stakes" and would "self-correct on the next successful fetch" —
+// that was wrong: an admin's OTHER club reached only through this path
+// (home club comes through profile.club_id instead) would silently drop
+// out of allTeams, resolveSelection would then fall through to a team in
+// the (now club-less) remaining list, and that wrong selection becomes
+// sticky — the next successful fetch sees a currently-valid selection and
+// never corrects it. Concretely: an admin of both Club A (home) and Club
+// B (via club_admins) has this query fail for one refresh cycle (e.g. the
+// access-token-refresh race on app foreground — see the AppState
+// listener below) while viewing Club B — every Club B team vanishes from
+// allTeams, the selection silently jumps to a Club A team, and it stays
+// there. Not just cosmetic: saving a form from that state can write Club
+// A's id onto what the user still thinks is a Club B record.
+async function fetchAdminClubTeams(clubIds: string[]): Promise<Team[] | null> {
   if (!clubIds.length) return [];
   const { data, error } = await supabase.from('teams').select('*, clubs(*)').in('club_id', clubIds).order('created_at');
-  if (error) return [];
+  if (error) return null;
   return ((data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin', hasExplicitMembership: false } as Team));
 }
 
@@ -83,6 +115,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [allTeams, setAllTeams]               = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId]   = useState<string | null>(null);
   const [loading, setLoading]                 = useState(true);
+  const [teamsLoadError, setTeamsLoadError]   = useState(false);
 
   // fetchTeams runs more than once per session — on mount, and again on
   // every foreground/AppState transition (iOS can fire these repeatedly
@@ -101,6 +134,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const resolveSelection = useCallback((teams: Team[], saved: string | null) => {
     const current = teams.find((t) => t.id === selectedTeamIdRef.current);
     if (current) return current.id; // already-active selection still valid — leave it alone
+    // A selection that was valid a moment ago and is now missing from
+    // `teams` reads the same, at this point, as "that team got deleted"
+    // — but it's far more often a degraded fetch (see fetchAdminClubTeams
+    // above) silently dropping an entire club's teams for one refresh
+    // cycle. Keep the existing selection rather than falling through to
+    // teams[0] (a different club entirely) on nothing more than "not
+    // found in this possibly-incomplete list". Only a genuinely fresh
+    // session (nothing selected yet) falls through to storage/teams[0].
+    if (selectedTeamIdRef.current) return selectedTeamIdRef.current;
     const fromStorage = teams.find((t) => t.id === saved);
     return fromStorage ? fromStorage.id : (teams[0]?.id ?? null);
   }, []);
@@ -111,6 +153,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    setTeamsLoadError(false);
     let teams: Team[];
 
     // club_admins grants the same implicit "every team in this club, no
@@ -118,11 +161,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // SECOND club — fetched for every profile regardless of profile.role,
     // since a plain coach at their home club can independently be an
     // org_admin of a different club too (not just the reverse).
-    const [adminClubsRes, memberRes, saved] = await Promise.all([
+    const firstWave = await withTimeout(Promise.all([
       supabase.from('club_admins').select('club_id').eq('profile_id', profile.id),
       supabase.from('team_members').select('role, teams(*, clubs(*))').eq('profile_id', profile.id),
       AsyncStorage.getItem(storageKey(profile.id)),
-    ]);
+    ]), TEAMS_TIMEOUT_MS);
+    if (firstWave === TIMEOUT) {
+      setTeamsLoadError(true);
+      setLoading(false);
+      return;
+    }
+    const [adminClubsRes, memberRes, saved] = firstWave;
     // A transient failure here (a network blip, or an access token that
     // expired while the app was asleep and hasn't refreshed yet — see
     // lib/supabase.ts's AppState-driven startAutoRefresh/stopAutoRefresh)
@@ -159,11 +208,21 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       // rather than a new tier since "implicit full access to every team
       // in this club" is exactly what that tier already means everywhere
       // else in the app that reads myRole.
-      const [homeRes, extraAdminTeams] = await Promise.all([
+      const secondWave = await withTimeout(Promise.all([
         supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at'),
         fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id)),
-      ]);
-      if (homeRes.error) {
+      ]), TEAMS_TIMEOUT_MS);
+      if (secondWave === TIMEOUT) {
+        setTeamsLoadError(true);
+        setLoading(false);
+        return;
+      }
+      const [homeRes, extraAdminTeams] = secondWave;
+      // extraAdminTeams === null means fetchAdminClubTeams itself failed —
+      // bail the same as a home-query failure instead of treating it as
+      // "this admin has zero teams at their other club(s) right now" (see
+      // fetchAdminClubTeams's own comment for why that used to be wrong).
+      if (homeRes.error || extraAdminTeams === null) {
         setLoading(false);
         return;
       }
@@ -183,7 +242,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       setAllTeams(teams);
       setSelectedTeamId(resolveSelection(teams, saved));
     } else {
-      const extraAdminTeams = await fetchAdminClubTeams(adminClubIds);
+      const extraAdminTeamsResult = await withTimeout(fetchAdminClubTeams(adminClubIds), TEAMS_TIMEOUT_MS);
+      if (extraAdminTeamsResult === TIMEOUT) {
+        setTeamsLoadError(true);
+        setLoading(false);
+        return;
+      }
+      // null means fetchAdminClubTeams itself failed — bail rather than
+      // treat it as "this profile has zero teams at their other club(s)
+      // right now" (see fetchAdminClubTeams's own comment for why).
+      if (extraAdminTeamsResult === null) {
+        setLoading(false);
+        return;
+      }
+      const extraAdminTeams = extraAdminTeamsResult;
       const explicitMemberIds = new Set(memberTeams.map((t) => t.id));
       const byId = new Map<string, Team>();
       for (const t of [...memberTeams, ...extraAdminTeams]) byId.set(t.id, t);
@@ -211,8 +283,20 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => { fetchTeamsRef.current = fetchTeams; }, [fetchTeams]);
 
   useEffect(() => {
-    function onAppStateChange(next: AppStateStatus) {
-      if (next === 'active') fetchTeamsRef.current();
+    async function onAppStateChange(next: AppStateStatus) {
+      if (next !== 'active') return;
+      // supabase.auth.getSession() silently falls back to the anon key
+      // (HTTP 200, not an error) when it's asked for a session before
+      // lib/supabase.ts's AppState-driven auto-refresh has had a chance to
+      // actually refresh the access token that expired while backgrounded
+      // — which, under RLS, makes a club_admins-gated query (not keyed by
+      // profile.club_id the way the home club is) look like a genuine
+      // "zero rows" success instead of a failure. Waiting for a confirmed
+      // session here closes that window at the source, rather than
+      // relying solely on fetchTeams' own per-query bail-outs to catch it.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      fetchTeamsRef.current();
     }
     const sub = AppState.addEventListener('change', onAppStateChange);
     return () => sub.remove();
@@ -237,7 +321,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // waiting on this provider's own next render — see selectTeam above.
   const getActiveTeamId = useCallback(() => selectedTeamIdRef.current, []);
 
-  const team = allTeams.find((t) => t.id === selectedTeamId) ?? allTeams[0] ?? null;
+  // No `?? allTeams[0]` fallback here on purpose: if selectedTeamId is set
+  // but momentarily not found in allTeams (a degraded fetch mid-flight,
+  // or just this render landing between the two state updates in
+  // fetchTeams), falling through to allTeams[0] can render a DIFFERENT
+  // club's team for that render — exactly the "flips to the wrong club"
+  // symptom this whole file's defensive comments are about. Only use
+  // allTeams[0] when there's definitively no selection yet (first load).
+  const team = allTeams.find((t) => t.id === selectedTeamId)
+    ?? (selectedTeamId ? null : allTeams[0])
+    ?? null;
 
   // Which teams have an unread chat notification, so a switcher can flag
   // them — independent of which team is currently active, so this fetches
@@ -280,8 +373,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // stable via useCallback above, so only `team`/`allTeams`/`loading` need
   // to be in the dependency array.
   const value = useMemo<TeamContextValue>(
-    () => ({ team, allTeams, loading, selectTeam, refetch: fetchTeams, getActiveTeamId, teamsWithUnreadChat }),
-    [team, allTeams, loading, selectTeam, fetchTeams, getActiveTeamId, teamsWithUnreadChat]
+    () => ({ team, allTeams, loading, teamsLoadError, selectTeam, refetch: fetchTeams, getActiveTeamId, teamsWithUnreadChat }),
+    [team, allTeams, loading, teamsLoadError, selectTeam, fetchTeams, getActiveTeamId, teamsWithUnreadChat]
   );
 
   return (
