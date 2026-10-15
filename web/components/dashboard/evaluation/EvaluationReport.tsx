@@ -101,9 +101,9 @@ export function BulletList({ items, primary }: { items: string[]; primary: strin
 
 export function StatChip({ val, label, color }: { val: string; label: string; color: string }) {
   return (
-    <div style={{ textAlign: 'center', minWidth: '56px' }}>
-      <div style={{ fontSize: '15px', fontWeight: '900', color }}>{val}</div>
-      <div style={{ fontSize: '8px', fontWeight: '700', color: '#94a3b8', letterSpacing: '0.5px', marginTop: '2px' }}>{label}</div>
+    <div style={{ textAlign: 'center', minWidth: '66px', background: '#F8FAFC', borderRadius: '10px', padding: '9px 12px' }}>
+      <div style={{ fontSize: '16px', fontWeight: '900', color }}>{val}</div>
+      <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '0.6px', marginTop: '3px' }}>{label}</div>
     </div>
   );
 }
@@ -209,13 +209,17 @@ export function EvaluationReportPanel({
                 {jerseyNum != null && <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>#{jerseyNum}</span>}
                 <span style={{ padding: '3px 10px', borderRadius: '20px', border: '1px solid #e2e8f0', background: '#f1f5f9', fontSize: '11px', fontWeight: '700', color: '#475569' }}>{ev.period_label} · {ev.season_label}</span>
               </div>
+              {/* The watermark surname is wider than the card by design
+                  (common trading-card motif) — fade it at the edge instead
+                  of letting it hard-clip mid-letter. */}
+              <div style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '22%', background: 'linear-gradient(90deg, rgba(255,255,255,0), #ffffff)', pointerEvents: 'none' }} />
             </div>
 
             {/* Profile */}
             {rd?.bio?.age_group && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>PROFILE</div>
-                <div style={{ display: 'flex', gap: '24px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <StatChip val={rd.bio.age_group} label="AGE GROUP" color="#0f172a" />
                 </div>
               </div>
@@ -225,7 +229,7 @@ export function EvaluationReportPanel({
             {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct) && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>ATTENDANCE</div>
-                <div style={{ display: 'flex', gap: '20px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   {rd.stats.rsvp_pct     && <StatChip val={rd.stats.rsvp_pct}     label="RSVP"     color={primary} />}
                   {rd.stats.practice_pct && <StatChip val={rd.stats.practice_pct} label="PRACTICE" color={primary} />}
                   {rd.stats.game_pct     && <StatChip val={rd.stats.game_pct}     label="GAMES"    color={primary} />}
@@ -237,12 +241,13 @@ export function EvaluationReportPanel({
             {(rd?.stats?.games_played || rd?.stats?.trainings_attended) && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>SEASON</div>
-                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   {rd.stats.games_played                           && <StatChip val={rd.stats.games_played}   label="PLAYED"    color={primary} />}
                   {rd.stats.trainings_attended                     && <StatChip val={rd.stats.trainings_attended} label="TRAININGS" color={primary} />}
                   {rd.stats.goals   && rd.stats.goals   !== '0'   && <StatChip val={rd.stats.goals}          label="GOALS"    color={primary} />}
                   {rd.stats.assists && rd.stats.assists !== '0'   && <StatChip val={rd.stats.assists}        label="ASSISTS"  color={primary} />}
                   {rd.stats.minutes_played                         && <StatChip val={rd.stats.minutes_played} label="MINUTES"  color="#0f172a" />}
+                  {rd.stats.yellow_cards && rd.stats.yellow_cards !== '0' && <StatChip val={rd.stats.yellow_cards} label="YELLOWS" color="#D97706" />}
                   {rd.stats.secondary_foot                         && <StatChip val={rd.stats.secondary_foot} label="2ND FOOT" color="#0f172a" />}
                 </div>
               </div>

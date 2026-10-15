@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -227,9 +228,9 @@ function PvBullet({ n, text, color }: { n: number; text: string; color: string }
 
 function PvStatChip({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <View style={{ alignItems: 'center', minWidth: 60 }}>
-      <Text style={{ fontSize: 14, fontWeight: '900', color, letterSpacing: -0.3 }}>{value}</Text>
-      <Text style={{ fontSize: 8, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5, marginTop: 2 }}>{label}</Text>
+    <View style={{ backgroundColor: '#F8FAFC', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, minWidth: 76, alignItems: 'center' }}>
+      <Text style={{ fontSize: 17, fontWeight: '900', color, letterSpacing: -0.3 }}>{value}</Text>
+      <Text style={{ fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 0.6, marginTop: 3 }}>{label}</Text>
     </View>
   );
 }
@@ -951,6 +952,15 @@ export default function EvaluationFormScreen() {
                         <View style={pvSt.pillNeutral}><Text style={pvSt.pillTextNeutral}>{periodLabel} · {seasonLabel}</Text></View>
                       </View>
                     </View>
+                    {/* The watermark surname is wider than the card at this
+                        size by design (common trading-card motif) — fade it
+                        at the edge instead of letting it hard-clip mid-letter. */}
+                    <LinearGradient
+                      colors={['#ffffff00', '#ffffff']}
+                      start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
+                      style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '22%' }}
+                      pointerEvents="none"
+                    />
                   </View>
 
                   {/* Bio strip */}
@@ -984,14 +994,10 @@ export default function EvaluationFormScreen() {
                         {rd!.stats.trainings_attended                               ? <PvStatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
                         {rd!.stats.goals    && rd!.stats.goals    !== '0'           ? <PvStatChip label="GOALS"   value={rd!.stats.goals}          color={primary} /> : null}
                         {rd!.stats.assists  && rd!.stats.assists  !== '0'           ? <PvStatChip label="ASSISTS" value={rd!.stats.assists}        color={primary} /> : null}
+                        {rd!.stats.minutes_played                                   ? <PvStatChip label="MINUTES"  value={rd!.stats.minutes_played} color="#0f172a" /> : null}
+                        {rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0'  ? <PvStatChip label="YELLOWS"  value={rd!.stats.yellow_cards}   color="#D97706" /> : null}
+                        {rd!.stats.secondary_foot                                   ? <PvStatChip label="2ND FOOT" value={rd!.stats.secondary_foot} color="#0f172a" /> : null}
                       </View>
-                      {(rd!.stats.minutes_played || (rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0') || rd!.stats.secondary_foot) ? (
-                        <View style={[pvSt.statRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12 }]}>
-                          {rd!.stats.minutes_played                                   ? <PvStatChip label="MINUTES"  value={rd!.stats.minutes_played} color="#0f172a" /> : null}
-                          {rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0'  ? <PvStatChip label="YELLOWS"  value={rd!.stats.yellow_cards}   color="#D97706" /> : null}
-                          {rd!.stats.secondary_foot                                   ? <PvStatChip label="2ND FOOT" value={rd!.stats.secondary_foot} color="#0f172a" /> : null}
-                        </View>
-                      ) : null}
                     </View>
                   ) : null}
 
@@ -1174,12 +1180,11 @@ function getPvSt(colors: ThemeColors) {
 
   statBlock:     { borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: 8, paddingBottom: 14, paddingHorizontal: 16, gap: 12 },
   statBlockLabel:{ fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 1.5 },
-  // flex-start + a fixed gap, not space-around — a row with fewer chips
-  // than usual (a stat left blank, school dropped from PROFILE down to
-  // just birth year) used to center the lone survivor in the middle of
-  // the row with awkward empty space on both sides instead of just
-  // sitting left-aligned like a normal line of chips.
-  statRow:       { flexDirection: 'row', justifyContent: 'flex-start', gap: 28 },
+  // Tiles wrap instead of being split into fixed rows of 3 — lets each
+  // section's stat count vary (a blank one here, an extra one there)
+  // without needing row-specific layout logic, and fills the width now
+  // that there's no photo competing for it.
+  statRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 
   twoCol:        { flexDirection: 'row', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 },
   colDiv:        { width: 1, backgroundColor: '#f1f5f9', marginHorizontal: 14, marginVertical: 4 },

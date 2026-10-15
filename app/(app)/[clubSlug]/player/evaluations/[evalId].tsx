@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import Svg, { Circle, G, Line, Polygon, Text as SvgText } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -88,9 +89,9 @@ function BulletRow({ n, text, color }: { n: number; text: string; color: string 
 
 function StatChip({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <View style={{ alignItems: 'center', minWidth: 60 }}>
-      <Text style={{ fontSize: 14, fontWeight: '900', color, letterSpacing: -0.3 }}>{value}</Text>
-      <Text style={{ fontSize: 8, fontWeight: '700', color: '#94a3b8', letterSpacing: 0.5, marginTop: 2 }}>{label}</Text>
+    <View style={{ backgroundColor: '#F8FAFC', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, minWidth: 76, alignItems: 'center' }}>
+      <Text style={{ fontSize: 17, fontWeight: '900', color, letterSpacing: -0.3 }}>{value}</Text>
+      <Text style={{ fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 0.6, marginTop: 3 }}>{label}</Text>
     </View>
   );
 }
@@ -260,6 +261,7 @@ export default function EvalDetailScreen() {
           .band-date { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.6); letter-spacing: 0.5px; }
           .hero { padding: 22px 22px 16px; border-bottom: 1px solid #f1f5f9; position: relative; overflow: hidden; }
           .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
+          .hero-fade { position: absolute; top: 0; bottom: 0; right: 0; width: 22%; background: linear-gradient(90deg, rgba(255,255,255,0), #ffffff); pointer-events: none; }
           .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
           .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
           .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
@@ -267,10 +269,10 @@ export default function EvalDetailScreen() {
           .pill-neutral { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
           .stat-block { padding: 10px 22px 14px; border-top: 1px solid #e2e8f0; }
           .stat-label { font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 1.5px; margin-bottom: 10px; }
-          .stat-row { display: flex; justify-content: flex-start; gap: 28px; }
-          .stat-chip { text-align: center; min-width: 60px; }
-          .stat-val { font-size: 15px; font-weight: 900; }
-          .stat-sub { font-size: 8px; font-weight: 700; color: #94a3b8; letter-spacing: 0.5px; margin-top: 2px; }
+          .stat-row { display: flex; flex-wrap: wrap; gap: 10px; }
+          .stat-chip { text-align: center; min-width: 76px; background: #F8FAFC; border-radius: 10px; padding: 10px 14px; }
+          .stat-val { font-size: 17px; font-weight: 900; }
+          .stat-sub { font-size: 8px; font-weight: 800; color: #94a3b8; letter-spacing: 0.6px; margin-top: 3px; }
           .radar-wrap { display: flex; justify-content: center; border-top: 1px solid #f1f5f9; padding: 8px 0; }
           .two-col { display: flex; gap: 0; padding: 18px 22px 12px; border-top: 1px solid #f1f5f9; }
           .col { flex: 1; }
@@ -299,6 +301,7 @@ export default function EvalDetailScreen() {
               ${jerseyNum != null ? `<span class="pill pill-neutral">#${jerseyNum}</span>` : ''}
               <span class="pill pill-neutral">${ev.period_label} · ${ev.season_label}</span>
             </div>
+            <div class="hero-fade"></div>
           </div>
           ${rd?.bio?.age_group ? `
           <div class="stat-block">
@@ -325,6 +328,7 @@ export default function EvalDetailScreen() {
               ${rd.stats.goals    && rd.stats.goals    !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.goals}</div><div class="stat-sub">GOALS</div></div>` : ''}
               ${rd.stats.assists  && rd.stats.assists  !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.assists}</div><div class="stat-sub">ASSISTS</div></div>` : ''}
               ${rd.stats.minutes_played                             ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.stats.minutes_played}</div><div class="stat-sub">MINUTES</div></div>` : ''}
+              ${rd.stats.yellow_cards && rd.stats.yellow_cards !== '0' ? `<div class="stat-chip"><div class="stat-val" style="color:#D97706">${rd.stats.yellow_cards}</div><div class="stat-sub">YELLOWS</div></div>` : ''}
               ${rd.stats.secondary_foot                             ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.stats.secondary_foot}</div><div class="stat-sub">2ND FOOT</div></div>` : ''}
             </div>
           </div>` : ''}
@@ -457,6 +461,15 @@ export default function EvalDetailScreen() {
                 </View>
               </View>
             </View>
+            {/* The watermark surname is wider than the card by design
+                (common trading-card motif) — fade it at the edge instead
+                of letting it hard-clip mid-letter. */}
+            <LinearGradient
+              colors={['#ffffff00', '#ffffff']}
+              start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
+              style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '22%' }}
+              pointerEvents="none"
+            />
           </View>
 
           {/* ── Bio stats strip ── */}
@@ -481,7 +494,7 @@ export default function EvalDetailScreen() {
             </View>
           )}
 
-          {/* ── Season stats — explicit 2 rows of 3 ── */}
+          {/* ── Season stats ── */}
           {hasPerfStats && (
             <View style={st.statBlock}>
               <Text style={st.statBlockLabel}>SEASON</Text>
@@ -490,14 +503,10 @@ export default function EvalDetailScreen() {
                 {rd!.stats.trainings_attended                               ? <StatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
                 {rd!.stats.goals        && rd!.stats.goals    !== '0'       ? <StatChip label="GOALS"   value={rd!.stats.goals}          color={primary} /> : null}
                 {rd!.stats.assists      && rd!.stats.assists  !== '0'       ? <StatChip label="ASSISTS" value={rd!.stats.assists}        color={primary} /> : null}
+                {rd!.stats.minutes_played                                   ? <StatChip label="MINUTES"  value={rd!.stats.minutes_played} color="#0f172a" /> : null}
+                {rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0'  ? <StatChip label="YELLOWS"  value={rd!.stats.yellow_cards}   color="#D97706" /> : null}
+                {rd!.stats.secondary_foot                                   ? <StatChip label="2ND FOOT" value={rd!.stats.secondary_foot} color="#0f172a" /> : null}
               </View>
-              {(rd!.stats.minutes_played || (rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0') || rd!.stats.secondary_foot) ? (
-                <View style={[st.statRow, { borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 12 }]}>
-                  {rd!.stats.minutes_played                                   ? <StatChip label="MINUTES"  value={rd!.stats.minutes_played} color="#0f172a" /> : null}
-                  {rd!.stats.yellow_cards && rd!.stats.yellow_cards !== '0'  ? <StatChip label="YELLOWS"  value={rd!.stats.yellow_cards}   color="#D97706" /> : null}
-                  {rd!.stats.secondary_foot                                   ? <StatChip label="2ND FOOT" value={rd!.stats.secondary_foot} color="#0f172a" /> : null}
-                </View>
-              ) : null}
             </View>
           )}
 
@@ -647,11 +656,10 @@ function getSt(colors: ThemeColors) {
   statsStrip:     { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 11, paddingHorizontal: 16, justifyContent: 'space-around' },
   statBlock:      { borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#e2e8f0', paddingTop: 8, paddingBottom: 14, paddingHorizontal: 16, gap: 12 },
   statBlockLabel: { fontSize: 8, fontWeight: '800', color: '#94a3b8', letterSpacing: 1.5 },
-  // flex-start + a fixed gap, not space-around — a row with fewer chips
-  // than usual (a stat left blank, school dropped from PROFILE down to
-  // just birth year) used to center the lone survivor in the middle of
-  // the row with awkward empty space on both sides.
-  statRow:        { flexDirection: 'row', justifyContent: 'flex-start', gap: 28 },
+  // Tiles wrap instead of being split into fixed rows of 3 — lets each
+  // section's stat count vary without needing row-specific layout logic,
+  // and fills the width now that there's no photo competing for it.
+  statRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 
   // Radar chart
   radarWrap: { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
