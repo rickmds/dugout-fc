@@ -21,6 +21,7 @@ import { useClub } from '../../../../../hooks/useClub';
 import { useTheme } from '../../../../../hooks/useTheme';
 import ClubHeader from '../../../../../components/ui/ClubHeader';
 import { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from '../../../../../components/player-card/EvalPhotoEditor';
+import EvalPhotoFrame from '../../../../../components/player-card/EvalPhotoFrame';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -281,8 +282,10 @@ export default function EvalDetailScreen() {
           .hero-wm { position: absolute; font-size: 96px; font-weight: 900; letter-spacing: -5px; top: -10px; left: 12px; color: ${primary}28; line-height: 1; pointer-events: none; }
           .hero-row { display: flex; gap: 16px; position: relative; }
           .hero-left { flex: 1; min-width: 0; padding-right: 22px; }
-          .hero-photo-col { width: ${EVAL_PHOTO_WIDTH_PCT}; aspect-ratio: ${EVAL_PHOTO_ASPECT}; flex-shrink: 0; overflow: hidden; }
-          .hero-photo-col img { display: block; width: 100%; height: 100%; object-fit: cover; }
+          .hero-photo-col { width: ${EVAL_PHOTO_WIDTH_PCT}; aspect-ratio: ${EVAL_PHOTO_ASPECT}; flex-shrink: 0; overflow: hidden; position: relative; background: linear-gradient(180deg, ${primary}1a, #ffffff); }
+          .hero-photo-col img { display: block; width: 100%; height: 100%; object-fit: cover; position: relative; }
+          .hero-photo-fade-left { position: absolute; left: 0; top: 0; bottom: 0; width: 30%; background: linear-gradient(90deg, #ffffff, rgba(255,255,255,0)); pointer-events: none; }
+          .hero-photo-fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; background: linear-gradient(180deg, rgba(255,255,255,0), #ffffff); pointer-events: none; }
           .player-name { font-size: 30px; font-weight: 900; color: #0f172a; letter-spacing: -0.8px; margin-bottom: 10px; position: relative; }
           .pills { display: flex; gap: 6px; flex-wrap: wrap; position: relative; }
           .pill { padding: 4px 10px; border-radius: 20px; border: 1px solid; font-size: 11px; font-weight: 700; }
@@ -342,7 +345,7 @@ export default function EvalDetailScreen() {
                   </div>
                 </div>` : ''}
               </div>
-              ${photoDataUri ? `<div class="hero-photo-col"><img src="${photoDataUri}" /></div>` : ''}
+              ${photoDataUri ? `<div class="hero-photo-col"><img src="${photoDataUri}" /><div class="hero-photo-fade-left"></div><div class="hero-photo-fade-bottom"></div></div>` : ''}
             </div>
           </div>
           ${rd?.stats?.games_played || rd?.stats?.trainings_attended ? `
@@ -517,13 +520,7 @@ export default function EvalDetailScreen() {
             </View>
 
             {effectivePhotoUrl && (
-              <View style={{ width: EVAL_PHOTO_WIDTH_PCT, aspectRatio: EVAL_PHOTO_ASPECT, overflow: 'hidden' }}>
-                <Image
-                  source={{ uri: effectivePhotoUrl }}
-                  style={{ width: '100%', height: '100%' }}
-                  contentFit="cover"
-                />
-              </View>
+              <EvalPhotoFrame uri={effectivePhotoUrl} primaryColor={primary} />
             )}
           </View>
 

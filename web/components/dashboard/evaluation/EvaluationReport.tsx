@@ -244,9 +244,20 @@ export function EvaluationReportPanel({
               </div>
 
               {photoUrl && (
-                <div style={{ width: '36%', aspectRatio: 0.48, flexShrink: 0, overflow: 'hidden' }}>
+                // Backdrop + edge fades — most of these photos are
+                // transparent-background cutouts, and the coach may have
+                // zoomed out past "fully covers" in the mobile editor to
+                // add breathing room; neither is baked into the saved
+                // file, so this treatment is reapplied live here too
+                // (mirrors EvalPhotoFrame.tsx on mobile).
+                <div style={{
+                  width: '36%', aspectRatio: 0.48, flexShrink: 0, overflow: 'hidden', position: 'relative',
+                  background: `linear-gradient(180deg, ${primary}1a, #ffffff)`,
+                }}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-                  <img src={photoUrl} alt={playerName} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
+                  <img src={photoUrl} alt={playerName} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover', position: 'relative' }} />
+                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '30%', background: 'linear-gradient(90deg, #ffffff, rgba(255,255,255,0))', pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '30%', background: 'linear-gradient(180deg, rgba(255,255,255,0), #ffffff)', pointerEvents: 'none' }} />
                 </div>
               )}
             </div>

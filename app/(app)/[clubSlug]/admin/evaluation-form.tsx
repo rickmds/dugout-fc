@@ -26,7 +26,8 @@ import { PULSE_COLORS, ThemeColors } from '../../../../constants/colors';
 import { useClub } from '../../../../hooks/useClub';
 import { useTheme } from '../../../../hooks/useTheme';
 import ClubHeader from '../../../../components/ui/ClubHeader';
-import EvalPhotoEditor, { EVAL_PHOTO_ASPECT, EVAL_PHOTO_WIDTH_PCT } from '../../../../components/player-card/EvalPhotoEditor';
+import EvalPhotoEditor from '../../../../components/player-card/EvalPhotoEditor';
+import EvalPhotoFrame from '../../../../components/player-card/EvalPhotoFrame';
 
 const API_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -1100,13 +1101,7 @@ export default function EvaluationFormScreen() {
                     </View>
 
                     {effectiveReportPhotoUrl && (
-                      <View style={{ width: EVAL_PHOTO_WIDTH_PCT, aspectRatio: EVAL_PHOTO_ASPECT, overflow: 'hidden' }}>
-                        <Image
-                          source={{ uri: effectiveReportPhotoUrl }}
-                          style={{ width: '100%', height: '100%' }}
-                          contentFit="cover"
-                        />
-                      </View>
+                      <EvalPhotoFrame uri={effectiveReportPhotoUrl} primaryColor={primary} />
                     )}
                   </View>
 

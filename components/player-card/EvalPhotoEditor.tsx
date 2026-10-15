@@ -12,11 +12,12 @@ import {
   Image,
   StyleSheet,
 } from 'react-native';
-import * as ImageManipulator from 'expo-image-manipulator';
+import ViewShot, { ViewShotRef } from 'react-native-view-shot';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemeColors } from '../../constants/colors';
 
-// Pinch/pan/zoom-to-crop, adapted from components/ui/ImageEditor.tsx (same
+// Pinch/pan/zoom, adapted from components/ui/ImageEditor.tsx (same
 // PanResponder approach, no gesture library). Two real differences from
 // that generic square-avatar cropper:
 //
@@ -26,17 +27,22 @@ import { ThemeColors } from '../../constants/colors';
 //    the screen), with the player's real name/pills next to it, so the
 //    coach is positioning the photo in the report's real context ("see the
 //    template behind the image") rather than an isolated square.
-// 2. minScale is clamped to the box's own "cover" scale (never lower) —
-//    unlike ImageEditor, which allows zooming out past cover and can leave
-//    visible gaps around a square avatar. A gap here would show up as a
-//    blank seam right next to the player's name, so it's disallowed by
-//    construction instead of being left as a thing the coach has to avoid.
+// 2. Saving captures the rendered stage (via react-native-view-shot, the
+//    same library the Player Card's "Download card" already uses) instead
+//    of computing a pixel crop with expo-image-manipulator. That matters
+//    because most of these photos are transparent-background cutouts (the
+//    "Copy Subject" trick, same convention as the Player Card photo) —
+//    zooming OUT past "fully covers" is allowed here (unlike the square
+//    avatar case) so the coach can add breathing room around the subject,
+//    and a manipulator crop can't pad a canvas beyond the source image's
+//    own pixels the way capturing a rendered view can.
 export const EVAL_PHOTO_ASPECT = 0.48; // width / height — must match the hero's real photo box everywhere it renders
 export const EVAL_PHOTO_WIDTH_PCT = '36%';
 
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
-const ZOOM_FACTOR = 3; // slider/pinch goes from "fully covers" (0%) to 3x that (100%)
+const ZOOM_OUT_FACTOR = 0.65; // slider/pinch can go this far below "fully covers" (adds breathing room around the subject)
+const ZOOM_IN_FACTOR  = 3;    // ...and this far above it
 const MOCKUP_SIDE_PAD = 24;
 // Vertical budget left for the box after the header, name/pills column's
 // own minimum, the zoom slider, and safe-area insets — tuned so the whole
@@ -72,16 +78,15 @@ export default function EvalPhotoEditor({
   visible, uri, playerName, position, jerseyNumber, primaryColor, colors, onSave, onCancel,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const shotRef = useRef<ViewShotRef>(null);
 
   const [processing, setProcessing] = useState(false);
   const [ready, setReady]           = useState(false);
 
-  const origW    = useRef(1);
-  const origH    = useRef(1);
   const displayW = useRef(PHOTO_COL_W);
   const displayH = useRef(PHOTO_COL_H);
   const minScale = useRef(1);
-  const maxScale = useRef(ZOOM_FACTOR);
+  const maxScale = useRef(ZOOM_IN_FACTOR);
 
   const currentScale = useRef(1);
   const currentTX    = useRef(0);
@@ -118,8 +123,6 @@ export default function EvalPhotoEditor({
       (w, h) => {
         if (!mounted.current || initialized.current) return;
         initialized.current = true;
-        origW.current = w;
-        origH.current = h;
 
         const fitScale = Math.min(PHOTO_COL_W / w, PHOTO_COL_H / h);
         displayW.current = w * fitScale;
@@ -127,11 +130,8 @@ export default function EvalPhotoEditor({
 
         const fillS = Math.max(PHOTO_COL_W / displayW.current, PHOTO_COL_H / displayH.current);
         const startS = Math.max(1, fillS);
-        // Never allow zooming below "fully covers the box" — a square
-        // avatar can get away with gaps around it; a blank seam next to
-        // the player's name can't.
-        minScale.current = startS;
-        maxScale.current = startS * ZOOM_FACTOR;
+        minScale.current = startS * ZOOM_OUT_FACTOR;
+        maxScale.current = startS * ZOOM_IN_FACTOR;
 
         currentScale.current = startS;
         currentTX.current    = 0;
@@ -141,13 +141,19 @@ export default function EvalPhotoEditor({
         isPinching.current   = false;
         initialDist.current  = 0;
 
-        sliderCurX.current   = 0;
-        sliderStartX.current = 0;
+        // Slider starts wherever startS actually lands in the (now
+        // asymmetric) [min, max] range, not at the 0% floor.
+        const logMin  = Math.log(minScale.current);
+        const logMax  = Math.log(maxScale.current);
+        const initPct = (Math.log(startS) - logMin) / (logMax - logMin);
+        const initX   = initPct * TRACK_W;
+        sliderCurX.current   = initX;
+        sliderStartX.current = initX;
 
         aScale.setValue(startS);
         aTX.setValue(0);
         aTY.setValue(0);
-        aSlider.setValue(0);
+        aSlider.setValue(initX);
 
         setReady(true);
       },
@@ -250,8 +256,10 @@ export default function EvalPhotoEditor({
             lastTY.current      = currentTY.current;
             return;
           }
-          // Clamp pan so the (always-covering) image can never reveal a
-          // gap at the box's edges.
+          // Clamped to half the overflow in each axis — when the (now
+          // possibly zoomed-out-past-cover) image is smaller than the box
+          // in an axis, that clamp is 0, which keeps it centered there
+          // instead of letting it be dragged out of frame.
           const s  = currentScale.current;
           const sw = displayW.current * s;
           const sh = displayH.current * s;
@@ -284,58 +292,18 @@ export default function EvalPhotoEditor({
   ).current;
 
   const handleSave = useCallback(async () => {
-    const ow = origW.current;
-    const oh = origH.current;
-    const dw = displayW.current;
-    const dh = displayH.current;
-    if (!ow || !oh || !dw || !dh) return;
-
+    if (!ready || !shotRef.current) return;
     setProcessing(true);
     try {
-      const s  = currentScale.current;
-      const tx = currentTX.current;
-      const ty = currentTY.current;
-
-      const scaledW = dw * s;
-      const scaledH = dh * s;
-      const pxRatio = ow / scaledW;
-
-      const imgLeft = (PHOTO_COL_W - scaledW) / 2 + tx;
-      const imgTop  = (PHOTO_COL_H - scaledH) / 2 + ty;
-
-      const intLeft   = Math.max(imgLeft, 0);
-      const intTop    = Math.max(imgTop, 0);
-      const intRight  = Math.min(imgLeft + scaledW, PHOTO_COL_W);
-      const intBottom = Math.min(imgTop  + scaledH, PHOTO_COL_H);
-
-      if (intRight <= intLeft || intBottom <= intTop) {
-        Alert.alert('No image in frame', 'Move the image into the frame and try again.');
-        setProcessing(false);
-        return;
-      }
-
-      const oX = Math.round(Math.max(0, (intLeft - imgLeft) * pxRatio));
-      const oY = Math.round(Math.max(0, (intTop  - imgTop)  * pxRatio));
-      const cW = Math.round(Math.max(1, Math.min((intRight  - intLeft)  * pxRatio, ow - oX)));
-      const cH = Math.round(Math.max(1, Math.min((intBottom - intTop)   * pxRatio, oh - oY)));
-
-      const { uri: croppedUri } = await ImageManipulator.manipulateAsync(
-        uri,
-        [
-          { crop: { originX: oX, originY: oY, width: cW, height: cH } },
-          { resize: { width: 480 } },
-        ],
-        { format: ImageManipulator.SaveFormat.PNG, compress: 1 },
-      );
-
-      onSave(croppedUri);
+      const capturedUri = await shotRef.current.capture();
+      onSave(capturedUri);
     } catch {
       if (mounted.current) {
         Alert.alert('Error', 'Could not process image. Please try again.');
         setProcessing(false);
       }
     }
-  }, [uri, onSave]);
+  }, [onSave, ready]);
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onCancel}>
@@ -380,23 +348,54 @@ export default function EvalPhotoEditor({
                 </View>
               </View>
 
-              <View style={[styles.stage, { width: PHOTO_COL_W, height: PHOTO_COL_H, backgroundColor: colors.border }]} {...imagePan.panHandlers}>
-                {ready && (
-                  <Animated.Image
-                    source={{ uri }}
-                    style={[
-                      { position: 'absolute', width: displayW.current, height: displayH.current, left: PHOTO_COL_W / 2, top: PHOTO_COL_H / 2, marginLeft: -displayW.current / 2, marginTop: -displayH.current / 2 },
-                      { transform: [{ scale: aScale }, { translateX: aTX }, { translateY: aTY }] },
-                    ]}
-                    resizeMode="cover"
-                  />
-                )}
+              <View style={[styles.stage, { width: PHOTO_COL_W, height: PHOTO_COL_H }]} {...imagePan.panHandlers}>
+                {/* Backdrop — lives behind the captured layer so a
+                    transparent cutout (or breathing room from zooming
+                    out) sits on a soft tint instead of raw transparency.
+                    Not part of the capture — reapplied live at every
+                    surface that displays the saved photo. */}
+                <LinearGradient
+                  colors={[`${primaryColor}1a`, '#ffffff']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
+                />
+
+                <ViewShot ref={shotRef} style={[StyleSheet.absoluteFill, styles.shotClip]} options={{ format: 'png', quality: 1 }}>
+                  {ready && (
+                    <Animated.Image
+                      source={{ uri }}
+                      style={[
+                        { position: 'absolute', width: displayW.current, height: displayH.current, left: PHOTO_COL_W / 2, top: PHOTO_COL_H / 2, marginLeft: -displayW.current / 2, marginTop: -displayH.current / 2 },
+                        { transform: [{ scale: aScale }, { translateX: aTX }, { translateY: aTY }] },
+                      ]}
+                      resizeMode="cover"
+                    />
+                  )}
+                </ViewShot>
+
+                {/* Live-only edge fades so the box doesn't read as a hard
+                    rectangle pasted next to the name — reapplied live at
+                    display time too, not baked into the saved file. */}
+                <LinearGradient
+                  colors={['#ffffff', '#ffffff00']}
+                  start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
+                  style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: PHOTO_COL_W * 0.3 }}
+                  pointerEvents="none"
+                />
+                <LinearGradient
+                  colors={['#ffffff00', '#ffffff']}
+                  start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }}
+                  style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: PHOTO_COL_H * 0.3 }}
+                  pointerEvents="none"
+                />
               </View>
             </View>
           </View>
 
           <Text style={[styles.hint, { color: colors.muted }]}>
-            Drag to reposition · pinch or use the slider to zoom
+            Drag to reposition · pinch or use the slider to zoom in or out
           </Text>
 
           <View style={styles.sliderRow} {...sliderPan.panHandlers}>
@@ -435,6 +434,7 @@ const styles = StyleSheet.create({
   mockPillText: { fontSize: 10, fontWeight: '700' },
 
   stage: { overflow: 'hidden' },
+  shotClip: { overflow: 'hidden' },
 
   hint: { fontSize: 12, textAlign: 'center', paddingHorizontal: 24 },
   sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
