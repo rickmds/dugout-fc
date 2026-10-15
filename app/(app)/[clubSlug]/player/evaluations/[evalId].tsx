@@ -248,6 +248,20 @@ export default function EvalDetailScreen() {
         ).join('');
       }
 
+      function idpRows(rows: IdpRow[], color: string) {
+        return rows.filter(r => r.goal?.trim()).map((row, i) => `
+          <div class="idp-row" style="background:${i % 2 === 0 ? `${color}05` : '#ffffff'}">
+            <div class="idp-cell" style="flex:3">${row.goal}</div>
+            <div class="idp-cell" style="flex:3">${row.measurables}</div>
+            <div class="idp-cell idp-action" style="flex:4">
+              ${row.action_items.filter(Boolean).map(item => `
+                <div class="idp-action-item"><div class="idp-dot"></div><div>${item}</div></div>
+              `).join('')}
+            </div>
+          </div>`
+        ).join('');
+      }
+
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, Helvetica, Arial, sans-serif; }
@@ -278,6 +292,14 @@ export default function EvalDetailScreen() {
           .col { flex: 1; }
           .col-div { width: 1px; background: #f1f5f9; margin: 0 14px; }
           .section-head { border-left: 3px solid ${primary}; padding-left: 10px; margin-bottom: 12px; font-size: 9px; font-weight: 900; color: ${primary}; letter-spacing: 1.2px; }
+          .idp-wrap { padding: 18px 22px 10px; border-top: 1px solid #f1f5f9; }
+          .idp-table-head { display: flex; padding: 7px 0; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; background: ${primary}0C; }
+          .idp-head-cell { font-size: 8px; font-weight: 900; letter-spacing: 1px; padding: 0 6px; color: ${primary}; }
+          .idp-row { display: flex; padding: 9px 0; border-bottom: 1px solid #f1f5f9; }
+          .idp-cell { font-size: 11px; color: #334155; line-height: 1.45; padding: 0 6px; }
+          .idp-action { display: flex; gap: 4px; flex-direction: column; }
+          .idp-action-item { display: flex; align-items: flex-start; gap: 5px; }
+          .idp-dot { width: 4px; height: 4px; border-radius: 2px; background: ${primary}; margin-top: 5px; flex-shrink: 0; }
           .summary { padding: 0 22px 18px; }
           .summary-text { font-size: 13.5px; color: #334155; line-height: 1.65; }
           .footer { border-top: 1px solid ${primary}22; padding: 10px 22px; font-size: 9px; color: ${primary}88; font-weight: 600; letter-spacing: 0.3px; }
@@ -310,21 +332,21 @@ export default function EvalDetailScreen() {
               <div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.age_group}</div><div class="stat-sub">AGE GROUP</div></div>
             </div>
           </div>` : ''}
-          ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct ? `
+          ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended ? `
           <div class="stat-block">
             <div class="stat-label">ATTENDANCE</div>
             <div class="stat-row">
-              ${rd.stats.rsvp_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.rsvp_pct}</div><div class="stat-sub">RSVP</div></div>` : ''}
-              ${rd.stats.practice_pct ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.practice_pct}</div><div class="stat-sub">PRACTICE</div></div>` : ''}
-              ${rd.stats.game_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.game_pct}</div><div class="stat-sub">GAMES</div></div>` : ''}
+              ${rd.stats.rsvp_pct           ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.rsvp_pct}</div><div class="stat-sub">OVERALL</div></div>` : ''}
+              ${rd.stats.practice_pct       ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.practice_pct}</div><div class="stat-sub">PRACTICE</div></div>` : ''}
+              ${rd.stats.trainings_attended ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.trainings_attended}</div><div class="stat-sub">TRAININGS</div></div>` : ''}
+              ${rd.stats.game_pct           ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.game_pct}</div><div class="stat-sub">GAMES</div></div>` : ''}
+              ${rd.stats.games_played       ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.games_played}</div><div class="stat-sub">PLAYED</div></div>` : ''}
             </div>
           </div>` : ''}
-          ${rd?.stats?.games_played || rd?.stats?.trainings_attended ? `
+          ${(rd?.stats?.goals && rd.stats.goals !== '0') || (rd?.stats?.assists && rd.stats.assists !== '0') || rd?.stats?.minutes_played || (rd?.stats?.yellow_cards && rd.stats.yellow_cards !== '0') || rd?.stats?.secondary_foot ? `
           <div class="stat-block">
             <div class="stat-label">SEASON</div>
             <div class="stat-row">
-              ${rd.stats.games_played                               ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.games_played}</div><div class="stat-sub">PLAYED</div></div>` : ''}
-              ${rd.stats.trainings_attended                         ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.trainings_attended}</div><div class="stat-sub">TRAININGS</div></div>` : ''}
               ${rd.stats.goals    && rd.stats.goals    !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.goals}</div><div class="stat-sub">GOALS</div></div>` : ''}
               ${rd.stats.assists  && rd.stats.assists  !== '0'     ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.assists}</div><div class="stat-sub">ASSISTS</div></div>` : ''}
               ${rd.stats.minutes_played                             ? `<div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.stats.minutes_played}</div><div class="stat-sub">MINUTES</div></div>` : ''}
@@ -343,7 +365,17 @@ export default function EvalDetailScreen() {
           <div class="two-col" style="border-top:1px solid #f1f5f9">
             ${rd?.outcome_goals?.some(Boolean) ? `<div class="col"><div class="section-head">OUTCOME GOALS</div>${bullets(rd.outcome_goals, primary)}</div>` : ''}
             ${rd?.outcome_goals?.some(Boolean) && rd?.performance_goals?.some(Boolean) ? '<div class="col-div"></div>' : ''}
-            ${rd?.performance_goals?.some(Boolean) ? `<div class="col"><div class="section-head">PERF. GOALS</div>${bullets(rd.performance_goals, primary)}</div>` : ''}
+            ${rd?.performance_goals?.some(Boolean) ? `<div class="col"><div class="section-head">PERFORMANCE GOALS</div>${bullets(rd.performance_goals, primary)}</div>` : ''}
+          </div>` : ''}
+          ${rd?.idp?.some(r => r.goal?.trim()) ? `
+          <div class="idp-wrap">
+            <div class="section-head">INDIVIDUAL DEVELOPMENT PLAN</div>
+            <div class="idp-table-head">
+              <div class="idp-head-cell" style="flex:3">PERFORMANCE GOAL</div>
+              <div class="idp-head-cell" style="flex:3">MEASURABLES</div>
+              <div class="idp-head-cell" style="flex:4">ACTION PLAN</div>
+            </div>
+            ${idpRows(rd.idp, primary)}
           </div>` : ''}
           ${ev.final_text?.trim() ? `
           <div class="summary" style="border-top:1px solid #f1f5f9;padding-top:18px">
@@ -399,8 +431,8 @@ export default function EvalDetailScreen() {
   const hasPerf       = rd?.performance_goals?.some(Boolean);
   const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
   const hasBioStats   = rd?.bio?.age_group;
-  const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
-  const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.trainings_attended || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
+  const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended;
+  const hasPerfStats  = rd?.stats?.minutes_played || rd?.stats?.secondary_foot
     || (rd?.stats?.goals         && rd.stats.goals        !== '0')
     || (rd?.stats?.assists       && rd.stats.assists      !== '0')
     || (rd?.stats?.yellow_cards  && rd.stats.yellow_cards !== '0');
@@ -487,9 +519,11 @@ export default function EvalDetailScreen() {
             <View style={st.statBlock}>
               <Text style={st.statBlockLabel}>ATTENDANCE</Text>
               <View style={st.statRow}>
-                {rd!.stats.rsvp_pct     ? <StatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
-                {rd!.stats.practice_pct ? <StatChip label="PRACTICE"  value={rd!.stats.practice_pct} color={primary} /> : null}
-                {rd!.stats.game_pct     ? <StatChip label="GAMES"     value={rd!.stats.game_pct}     color={primary} /> : null}
+                {rd!.stats.rsvp_pct           ? <StatChip label="OVERALL"   value={rd!.stats.rsvp_pct}           color={primary} /> : null}
+                {rd!.stats.practice_pct       ? <StatChip label="PRACTICE"  value={rd!.stats.practice_pct}       color={primary} /> : null}
+                {rd!.stats.trainings_attended ? <StatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
+                {rd!.stats.game_pct           ? <StatChip label="GAMES"     value={rd!.stats.game_pct}           color={primary} /> : null}
+                {rd!.stats.games_played       ? <StatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
               </View>
             </View>
           )}
@@ -499,8 +533,6 @@ export default function EvalDetailScreen() {
             <View style={st.statBlock}>
               <Text style={st.statBlockLabel}>SEASON</Text>
               <View style={st.statRow}>
-                {rd!.stats.games_played                                     ? <StatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
-                {rd!.stats.trainings_attended                               ? <StatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
                 {rd!.stats.goals        && rd!.stats.goals    !== '0'       ? <StatChip label="GOALS"   value={rd!.stats.goals}          color={primary} /> : null}
                 {rd!.stats.assists      && rd!.stats.assists  !== '0'       ? <StatChip label="ASSISTS" value={rd!.stats.assists}        color={primary} /> : null}
                 {rd!.stats.minutes_played                                   ? <StatChip label="MINUTES"  value={rd!.stats.minutes_played} color="#0f172a" /> : null}
@@ -556,7 +588,7 @@ export default function EvalDetailScreen() {
                 {hasOutcome && hasPerf && <View style={st.colDivider} />}
                 {hasPerf && (
                   <View style={{ flex: 1 }}>
-                    <SectionHead label="PERF. GOALS" color={primary} />
+                    <SectionHead label="PERFORMANCE GOALS" color={primary} />
                     {rd!.performance_goals.map((s, i) => <BulletRow key={i} n={i + 1} text={s} color={primary} />)}
                   </View>
                 )}

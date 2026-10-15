@@ -7,6 +7,12 @@
 
 import { X } from 'lucide-react';
 
+export type IdpRow = {
+  goal: string;
+  measurables: string;
+  action_items: [string, string, string];
+};
+
 export type ReportData = {
   bio:   { position: string; age_group: string };
   stats: { rsvp_pct: string; practice_pct: string; game_pct: string; games_played: string; trainings_attended: string; minutes_played: string; goals: string; assists: string; yellow_cards: string; secondary_foot: string };
@@ -14,6 +20,7 @@ export type ReportData = {
   areas_of_development: [string, string, string];
   outcome_goals:        [string, string];
   performance_goals:    [string, string];
+  idp?: IdpRow[];
 };
 
 export type EvalRow = {
@@ -226,24 +233,24 @@ export function EvaluationReportPanel({
             )}
 
             {/* Attendance */}
-            {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct) && (
+            {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended) && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>ATTENDANCE</div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  {rd.stats.rsvp_pct     && <StatChip val={rd.stats.rsvp_pct}     label="RSVP"     color={primary} />}
-                  {rd.stats.practice_pct && <StatChip val={rd.stats.practice_pct} label="PRACTICE" color={primary} />}
-                  {rd.stats.game_pct     && <StatChip val={rd.stats.game_pct}     label="GAMES"    color={primary} />}
+                  {rd.stats.rsvp_pct           && <StatChip val={rd.stats.rsvp_pct}           label="OVERALL"   color={primary} />}
+                  {rd.stats.practice_pct       && <StatChip val={rd.stats.practice_pct}       label="PRACTICE"  color={primary} />}
+                  {rd.stats.trainings_attended && <StatChip val={rd.stats.trainings_attended} label="TRAININGS" color={primary} />}
+                  {rd.stats.game_pct           && <StatChip val={rd.stats.game_pct}           label="GAMES"     color={primary} />}
+                  {rd.stats.games_played       && <StatChip val={rd.stats.games_played}       label="PLAYED"    color={primary} />}
                 </div>
               </div>
             )}
 
             {/* Season */}
-            {(rd?.stats?.games_played || rd?.stats?.trainings_attended) && (
+            {((rd?.stats?.goals && rd.stats.goals !== '0') || (rd?.stats?.assists && rd.stats.assists !== '0') || rd?.stats?.minutes_played || (rd?.stats?.yellow_cards && rd.stats.yellow_cards !== '0') || rd?.stats?.secondary_foot) && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>SEASON</div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  {rd.stats.games_played                           && <StatChip val={rd.stats.games_played}   label="PLAYED"    color={primary} />}
-                  {rd.stats.trainings_attended                     && <StatChip val={rd.stats.trainings_attended} label="TRAININGS" color={primary} />}
                   {rd.stats.goals   && rd.stats.goals   !== '0'   && <StatChip val={rd.stats.goals}          label="GOALS"    color={primary} />}
                   {rd.stats.assists && rd.stats.assists !== '0'   && <StatChip val={rd.stats.assists}        label="ASSISTS"  color={primary} />}
                   {rd.stats.minutes_played                         && <StatChip val={rd.stats.minutes_played} label="MINUTES"  color="#0f172a" />}
@@ -289,10 +296,36 @@ export function EvaluationReportPanel({
                 {rd?.outcome_goals?.some(Boolean) && rd?.performance_goals?.some(Boolean) && <div style={{ width: '1px', background: '#f1f5f9', margin: '0 16px' }} />}
                 {rd?.performance_goals?.some(Boolean) && (
                   <div style={{ flex: 1 }}>
-                    <SectionHead label="Perf. Goals" primary={primary} />
+                    <SectionHead label="Performance Goals" primary={primary} />
                     <BulletList items={rd.performance_goals} primary={primary} />
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Individual Development Plan */}
+            {rd?.idp?.some(r => r.goal?.trim()) && (
+              <div style={{ padding: '18px 20px 10px', borderBottom: '1px solid #f1f5f9' }}>
+                <SectionHead label="Individual Development Plan" primary={primary} />
+                <div style={{ display: 'flex', padding: '7px 0', borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', background: `${primary}0C` }}>
+                  <div style={{ flex: 3, fontSize: '8px', fontWeight: '900', letterSpacing: '1px', padding: '0 6px', color: primary }}>PERFORMANCE GOAL</div>
+                  <div style={{ flex: 3, fontSize: '8px', fontWeight: '900', letterSpacing: '1px', padding: '0 6px', color: primary }}>MEASURABLES</div>
+                  <div style={{ flex: 4, fontSize: '8px', fontWeight: '900', letterSpacing: '1px', padding: '0 6px', color: primary }}>ACTION PLAN</div>
+                </div>
+                {rd.idp.filter(r => r.goal?.trim()).map((row, i) => (
+                  <div key={i} style={{ display: 'flex', padding: '9px 0', borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? `${primary}05` : '#ffffff' }}>
+                    <div style={{ flex: 3, fontSize: '11px', color: '#334155', lineHeight: 1.45, padding: '0 6px' }}>{row.goal}</div>
+                    <div style={{ flex: 3, fontSize: '11px', color: '#334155', lineHeight: 1.45, padding: '0 6px' }}>{row.measurables}</div>
+                    <div style={{ flex: 4, display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 6px' }}>
+                      {row.action_items.filter(Boolean).map((item, j) => (
+                        <div key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: '5px' }}>
+                          <div style={{ width: '4px', height: '4px', borderRadius: '2px', background: primary, marginTop: '5px', flexShrink: 0 }} />
+                          <div style={{ fontSize: '11px', color: '#334155', lineHeight: 1.45 }}>{item}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 

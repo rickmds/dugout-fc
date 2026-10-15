@@ -695,11 +695,11 @@ export default function EvaluationFormScreen() {
           <SectionCard title="SEASON STATISTICS" color="#3B82F6" icon="stats-chart-outline" note="Auto-filled from season data · edit if needed · leave blank to hide from report">
             <GridInputs
               items={[
-                { k: 'rsvp_pct',      label: 'RSVP %',          value: rd.stats.rsvp_pct,      placeholder: '92%' },
+                { k: 'rsvp_pct',      label: 'OVERALL ATTEND.', value: rd.stats.rsvp_pct,      placeholder: '92%' },
                 { k: 'practice_pct',  label: 'PRACTICE ATTEND.', value: rd.stats.practice_pct,  placeholder: '88%' },
+                { k: 'trainings_attended', label: 'TRAININGS ATTENDED', value: rd.stats.trainings_attended, placeholder: '24' },
                 { k: 'game_pct',      label: 'GAME ATTEND.',     value: rd.stats.game_pct,       placeholder: '100%' },
                 { k: 'games_played',  label: 'GAMES PLAYED',     value: rd.stats.games_played,   placeholder: '13' },
-                { k: 'trainings_attended', label: 'TRAININGS ATTENDED', value: rd.stats.trainings_attended, placeholder: '24' },
                 { k: 'minutes_played',label: 'MINUTES PLAYED',   value: rd.stats.minutes_played, placeholder: '870' },
                 { k: 'goals',         label: 'GOALS',            value: rd.stats.goals,          placeholder: '7' },
                 { k: 'assists',       label: 'ASSISTS',          value: rd.stats.assists,        placeholder: '4' },
@@ -855,7 +855,7 @@ export default function EvaluationFormScreen() {
             </Text>
           </TouchableOpacity>
           <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center', marginTop: -8, marginBottom: 4 }}>
-            Also tightens the wording in Super Strengths, Development, Outcome Goals, and Perf. Goals above
+            Also tightens the wording in Super Strengths, Development, Outcome Goals, and Performance Goals above
           </Text>
 
           {/* ── COACH SUMMARY ────────────────────────── */}
@@ -922,8 +922,8 @@ export default function EvaluationFormScreen() {
               const hasPerf       = rd?.performance_goals?.some(Boolean);
               const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
               const hasBioStats   = rd?.bio?.age_group;
-              const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
-              const hasPerfStats  = rd?.stats?.games_played || rd?.stats?.trainings_attended || rd?.stats?.minutes_played || rd?.stats?.secondary_foot
+              const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended;
+              const hasPerfStats  = rd?.stats?.minutes_played || rd?.stats?.secondary_foot
                 || (rd?.stats?.goals        && rd.stats.goals        !== '0')
                 || (rd?.stats?.assists      && rd.stats.assists      !== '0')
                 || (rd?.stats?.yellow_cards && rd.stats.yellow_cards !== '0');
@@ -978,9 +978,11 @@ export default function EvaluationFormScreen() {
                     <View style={pvSt.statBlock}>
                       <Text style={pvSt.statBlockLabel}>ATTENDANCE</Text>
                       <View style={pvSt.statRow}>
-                        {rd!.stats.rsvp_pct     ? <PvStatChip label="RSVP"     value={rd!.stats.rsvp_pct}     color={primary} /> : null}
-                        {rd!.stats.practice_pct ? <PvStatChip label="PRACTICE" value={rd!.stats.practice_pct} color={primary} /> : null}
-                        {rd!.stats.game_pct     ? <PvStatChip label="GAMES"    value={rd!.stats.game_pct}     color={primary} /> : null}
+                        {rd!.stats.rsvp_pct           ? <PvStatChip label="OVERALL"   value={rd!.stats.rsvp_pct}           color={primary} /> : null}
+                        {rd!.stats.practice_pct       ? <PvStatChip label="PRACTICE"  value={rd!.stats.practice_pct}       color={primary} /> : null}
+                        {rd!.stats.trainings_attended ? <PvStatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
+                        {rd!.stats.game_pct           ? <PvStatChip label="GAMES"     value={rd!.stats.game_pct}           color={primary} /> : null}
+                        {rd!.stats.games_played       ? <PvStatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
                       </View>
                     </View>
                   ) : null}
@@ -990,8 +992,6 @@ export default function EvaluationFormScreen() {
                     <View style={pvSt.statBlock}>
                       <Text style={pvSt.statBlockLabel}>SEASON</Text>
                       <View style={pvSt.statRow}>
-                        {rd!.stats.games_played                                     ? <PvStatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
-                        {rd!.stats.trainings_attended                               ? <PvStatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
                         {rd!.stats.goals    && rd!.stats.goals    !== '0'           ? <PvStatChip label="GOALS"   value={rd!.stats.goals}          color={primary} /> : null}
                         {rd!.stats.assists  && rd!.stats.assists  !== '0'           ? <PvStatChip label="ASSISTS" value={rd!.stats.assists}        color={primary} /> : null}
                         {rd!.stats.minutes_played                                   ? <PvStatChip label="MINUTES"  value={rd!.stats.minutes_played} color="#0f172a" /> : null}
@@ -1042,7 +1042,7 @@ export default function EvaluationFormScreen() {
                         {hasOutcome && hasPerf ? <View style={pvSt.colDiv} /> : null}
                         {hasPerf ? (
                           <View style={{ flex: 1 }}>
-                            <PvSectionHead label="PERF. GOALS" color={primary} />
+                            <PvSectionHead label="PERFORMANCE GOALS" color={primary} />
                             {rd!.performance_goals.map((s, i) => <PvBullet key={i} n={i + 1} text={s} color={primary} />)}
                           </View>
                         ) : null}
