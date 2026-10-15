@@ -43,9 +43,14 @@ const MOCKUP_SIDE_PAD = 24;
 // editor fits without scrolling on a compact phone.
 const VERTICAL_BUDGET = SCREEN_H - 300;
 
-const MAX_PHOTO_COL_W = SCREEN_W - MOCKUP_SIDE_PAD * 2;
+// The photo column is a fixed 36% of the mockup card's own width, so the
+// mockup itself — not just the photo column — has to fit on screen. Bound
+// PHOTO_COL_W by BOTH: what 36% of a screen-width mockup allows, and what
+// the vertical budget allows: the smaller of the two wins.
+const MAX_MOCKUP_W = SCREEN_W - MOCKUP_SIDE_PAD * 2;
+const MAX_PHOTO_COL_W_FROM_WIDTH  = MAX_MOCKUP_W * 0.36;
 const MAX_PHOTO_COL_W_FROM_HEIGHT = VERTICAL_BUDGET * EVAL_PHOTO_ASPECT;
-const PHOTO_COL_W = Math.max(110, Math.min(MAX_PHOTO_COL_W, MAX_PHOTO_COL_W_FROM_HEIGHT));
+const PHOTO_COL_W = Math.max(90, Math.min(MAX_PHOTO_COL_W_FROM_WIDTH, MAX_PHOTO_COL_W_FROM_HEIGHT));
 const PHOTO_COL_H = PHOTO_COL_W / EVAL_PHOTO_ASPECT;
 const MOCKUP_W = PHOTO_COL_W / 0.36; // the hero's photo column is 36% of the card's width
 
