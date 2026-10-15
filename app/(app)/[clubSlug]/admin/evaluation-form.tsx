@@ -235,6 +235,17 @@ function PvStatChip({ label, value, color }: { label: string; value: string; col
   );
 }
 
+// Traffic-light the attendance percentages themselves instead of always
+// using the club's primary color — an at-a-glance signal (a 60% practice
+// rate should read as a flag, not just another brand-colored number).
+function attendanceColor(pct: string | undefined): string {
+  const n = parseInt(pct ?? '', 10);
+  if (!Number.isFinite(n)) return '#0f172a';
+  if (n >= 90) return '#16A34A';
+  if (n >= 75) return '#D97706';
+  return '#DC2626';
+}
+
 const PV_RC = 150, PV_RCY = 135, PV_MAX_R = 74;
 const PV_AXES = [
   { label: 'TECHNICAL', color: '#3B82F6', angle: -Math.PI / 2, sx: PV_RC, sy: 45,  sA: 'middle' as const, lx: PV_RC, ly: 59,  lA: 'middle' as const },
@@ -922,7 +933,7 @@ export default function EvaluationFormScreen() {
               const hasPerf       = rd?.performance_goals?.some(Boolean);
               const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
               const hasBioStats   = rd?.bio?.age_group;
-              const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended;
+              const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
               const hasPerfStats  = rd?.stats?.minutes_played || rd?.stats?.secondary_foot
                 || (rd?.stats?.goals        && rd.stats.goals        !== '0')
                 || (rd?.stats?.assists      && rd.stats.assists      !== '0')
@@ -978,11 +989,9 @@ export default function EvaluationFormScreen() {
                     <View style={pvSt.statBlock}>
                       <Text style={pvSt.statBlockLabel}>ATTENDANCE</Text>
                       <View style={pvSt.statRow}>
-                        {rd!.stats.rsvp_pct           ? <PvStatChip label="OVERALL"   value={rd!.stats.rsvp_pct}           color={primary} /> : null}
-                        {rd!.stats.practice_pct       ? <PvStatChip label="PRACTICE"  value={rd!.stats.practice_pct}       color={primary} /> : null}
-                        {rd!.stats.trainings_attended ? <PvStatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
-                        {rd!.stats.game_pct           ? <PvStatChip label="GAMES"     value={rd!.stats.game_pct}           color={primary} /> : null}
-                        {rd!.stats.games_played       ? <PvStatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
+                        {rd!.stats.rsvp_pct     ? <PvStatChip label="OVERALL" value={rd!.stats.rsvp_pct} color={attendanceColor(rd!.stats.rsvp_pct)} /> : null}
+                        {rd!.stats.practice_pct ? <PvStatChip label={rd!.stats.trainings_attended ? `${rd!.stats.trainings_attended} TRAININGS` : 'PRACTICE'} value={rd!.stats.practice_pct} color={attendanceColor(rd!.stats.practice_pct)} /> : null}
+                        {rd!.stats.game_pct     ? <PvStatChip label={rd!.stats.games_played ? `${rd!.stats.games_played} GAMES` : 'GAMES'} value={rd!.stats.game_pct} color={attendanceColor(rd!.stats.game_pct)} /> : null}
                       </View>
                     </View>
                   ) : null}

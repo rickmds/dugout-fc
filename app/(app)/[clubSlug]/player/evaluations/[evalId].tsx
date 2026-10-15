@@ -96,6 +96,17 @@ function StatChip({ label, value, color }: { label: string; value: string; color
   );
 }
 
+// Traffic-light the attendance percentages themselves instead of always
+// using the club's primary color — an at-a-glance signal (a 60% practice
+// rate should read as a flag, not just another brand-colored number).
+function attendanceColor(pct: string | undefined): string {
+  const n = parseInt(pct ?? '', 10);
+  if (!Number.isFinite(n)) return '#0f172a';
+  if (n >= 90) return '#16A34A';
+  if (n >= 75) return '#D97706';
+  return '#DC2626';
+}
+
 // ─── Radar chart ─────────────────────────────────────────────────────────────
 
 const SVG_W = 300, SVG_H = 270, RC = 150, RCY = 135, MAX_R = 74;
@@ -248,6 +259,14 @@ export default function EvalDetailScreen() {
         ).join('');
       }
 
+      function attendanceColor(pct: string | undefined): string {
+        const n = parseInt(pct ?? '', 10);
+        if (!Number.isFinite(n)) return '#0f172a';
+        if (n >= 90) return '#16A34A';
+        if (n >= 75) return '#D97706';
+        return '#DC2626';
+      }
+
       function idpRows(rows: IdpRow[], color: string) {
         return rows.filter(r => r.goal?.trim()).map((row, i) => `
           <div class="idp-row" style="background:${i % 2 === 0 ? `${color}05` : '#ffffff'}">
@@ -332,15 +351,13 @@ export default function EvalDetailScreen() {
               <div class="stat-chip"><div class="stat-val" style="color:#0f172a">${rd.bio.age_group}</div><div class="stat-sub">AGE GROUP</div></div>
             </div>
           </div>` : ''}
-          ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended ? `
+          ${rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct ? `
           <div class="stat-block">
             <div class="stat-label">ATTENDANCE</div>
             <div class="stat-row">
-              ${rd.stats.rsvp_pct           ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.rsvp_pct}</div><div class="stat-sub">OVERALL</div></div>` : ''}
-              ${rd.stats.practice_pct       ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.practice_pct}</div><div class="stat-sub">PRACTICE</div></div>` : ''}
-              ${rd.stats.trainings_attended ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.trainings_attended}</div><div class="stat-sub">TRAININGS</div></div>` : ''}
-              ${rd.stats.game_pct           ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.game_pct}</div><div class="stat-sub">GAMES</div></div>` : ''}
-              ${rd.stats.games_played       ? `<div class="stat-chip"><div class="stat-val" style="color:${primary}">${rd.stats.games_played}</div><div class="stat-sub">PLAYED</div></div>` : ''}
+              ${rd.stats.rsvp_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${attendanceColor(rd.stats.rsvp_pct)}">${rd.stats.rsvp_pct}</div><div class="stat-sub">OVERALL</div></div>` : ''}
+              ${rd.stats.practice_pct ? `<div class="stat-chip"><div class="stat-val" style="color:${attendanceColor(rd.stats.practice_pct)}">${rd.stats.practice_pct}</div><div class="stat-sub">${rd.stats.trainings_attended ? `${rd.stats.trainings_attended} TRAININGS` : 'PRACTICE'}</div></div>` : ''}
+              ${rd.stats.game_pct     ? `<div class="stat-chip"><div class="stat-val" style="color:${attendanceColor(rd.stats.game_pct)}">${rd.stats.game_pct}</div><div class="stat-sub">${rd.stats.games_played ? `${rd.stats.games_played} GAMES` : 'GAMES'}</div></div>` : ''}
             </div>
           </div>` : ''}
           ${(rd?.stats?.goals && rd.stats.goals !== '0') || (rd?.stats?.assists && rd.stats.assists !== '0') || rd?.stats?.minutes_played || (rd?.stats?.yellow_cards && rd.stats.yellow_cards !== '0') || rd?.stats?.secondary_foot ? `
@@ -431,7 +448,7 @@ export default function EvalDetailScreen() {
   const hasPerf       = rd?.performance_goals?.some(Boolean);
   const hasIDP        = rd?.idp?.some(r => r.goal?.trim());
   const hasBioStats   = rd?.bio?.age_group;
-  const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended;
+  const hasAttendance = rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct;
   const hasPerfStats  = rd?.stats?.minutes_played || rd?.stats?.secondary_foot
     || (rd?.stats?.goals         && rd.stats.goals        !== '0')
     || (rd?.stats?.assists       && rd.stats.assists      !== '0')
@@ -519,11 +536,9 @@ export default function EvalDetailScreen() {
             <View style={st.statBlock}>
               <Text style={st.statBlockLabel}>ATTENDANCE</Text>
               <View style={st.statRow}>
-                {rd!.stats.rsvp_pct           ? <StatChip label="OVERALL"   value={rd!.stats.rsvp_pct}           color={primary} /> : null}
-                {rd!.stats.practice_pct       ? <StatChip label="PRACTICE"  value={rd!.stats.practice_pct}       color={primary} /> : null}
-                {rd!.stats.trainings_attended ? <StatChip label="TRAININGS" value={rd!.stats.trainings_attended} color={primary} /> : null}
-                {rd!.stats.game_pct           ? <StatChip label="GAMES"     value={rd!.stats.game_pct}           color={primary} /> : null}
-                {rd!.stats.games_played       ? <StatChip label="PLAYED"    value={rd!.stats.games_played}       color={primary} /> : null}
+                {rd!.stats.rsvp_pct     ? <StatChip label="OVERALL" value={rd!.stats.rsvp_pct} color={attendanceColor(rd!.stats.rsvp_pct)} /> : null}
+                {rd!.stats.practice_pct ? <StatChip label={rd!.stats.trainings_attended ? `${rd!.stats.trainings_attended} TRAININGS` : 'PRACTICE'} value={rd!.stats.practice_pct} color={attendanceColor(rd!.stats.practice_pct)} /> : null}
+                {rd!.stats.game_pct     ? <StatChip label={rd!.stats.games_played ? `${rd!.stats.games_played} GAMES` : 'GAMES'} value={rd!.stats.game_pct} color={attendanceColor(rd!.stats.game_pct)} /> : null}
               </View>
             </View>
           )}

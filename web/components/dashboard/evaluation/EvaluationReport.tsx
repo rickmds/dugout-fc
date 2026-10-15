@@ -115,6 +115,17 @@ export function StatChip({ val, label, color }: { val: string; label: string; co
   );
 }
 
+// Traffic-light the attendance percentages themselves instead of always
+// using the club's primary color — an at-a-glance signal (a 60% practice
+// rate should read as a flag, not just another brand-colored number).
+function attendanceColor(pct: string | undefined): string {
+  const n = parseInt(pct ?? '', 10);
+  if (!Number.isFinite(n)) return '#0f172a';
+  if (n >= 90) return '#16A34A';
+  if (n >= 75) return '#D97706';
+  return '#DC2626';
+}
+
 // All five admin-action props are optional — the player Development tab
 // renders this same panel read-only with none of them set, so it must
 // stay fully functional with just the display props above.
@@ -233,15 +244,13 @@ export function EvaluationReportPanel({
             )}
 
             {/* Attendance */}
-            {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct || rd?.stats?.games_played || rd?.stats?.trainings_attended) && (
+            {(rd?.stats?.rsvp_pct || rd?.stats?.practice_pct || rd?.stats?.game_pct) && (
               <div style={{ padding: '10px 20px 12px', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px' }}>ATTENDANCE</div>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  {rd.stats.rsvp_pct           && <StatChip val={rd.stats.rsvp_pct}           label="OVERALL"   color={primary} />}
-                  {rd.stats.practice_pct       && <StatChip val={rd.stats.practice_pct}       label="PRACTICE"  color={primary} />}
-                  {rd.stats.trainings_attended && <StatChip val={rd.stats.trainings_attended} label="TRAININGS" color={primary} />}
-                  {rd.stats.game_pct           && <StatChip val={rd.stats.game_pct}           label="GAMES"     color={primary} />}
-                  {rd.stats.games_played       && <StatChip val={rd.stats.games_played}       label="PLAYED"    color={primary} />}
+                  {rd.stats.rsvp_pct     && <StatChip val={rd.stats.rsvp_pct}     label="OVERALL" color={attendanceColor(rd.stats.rsvp_pct)} />}
+                  {rd.stats.practice_pct && <StatChip val={rd.stats.practice_pct} label={rd.stats.trainings_attended ? `${rd.stats.trainings_attended} TRAININGS` : 'PRACTICE'} color={attendanceColor(rd.stats.practice_pct)} />}
+                  {rd.stats.game_pct     && <StatChip val={rd.stats.game_pct}     label={rd.stats.games_played ? `${rd.stats.games_played} GAMES` : 'GAMES'} color={attendanceColor(rd.stats.game_pct)} />}
                 </div>
               </div>
             )}
