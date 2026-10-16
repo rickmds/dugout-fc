@@ -208,7 +208,14 @@ function SplashVideo({ ready, onFinished }: { ready: boolean; onFinished: () => 
   const finishedRef = useRef(false);
   const mountedAtRef = useRef(Date.now());
   const player = useVideoPlayer(require('../assets/Splash.mp4'), (p) => {
-    p.loop = false;
+    // Looping (not a one-shot play) matters on a slow cold launch: auth's
+    // own timeout budget can legitimately take longer than this ~5s video,
+    // and a one-shot video freezes on its last frame once it ends — motion
+    // continuing is what keeps that wait from reading as "stuck" rather
+    // than genuinely in-progress. The fade-out below is driven entirely by
+    // `ready` + MIN_PRESENT_MS, not by the video's own playback state, so
+    // looping here never delays the common fast-path fade.
+    p.loop = true;
     p.muted = true;
     p.play();
   });
