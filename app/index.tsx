@@ -8,7 +8,7 @@ import { PULSE_COLORS, ThemeColors } from '../constants/colors';
 
 export default function Index() {
   const { session, club, loading, sessionCheckFailed, retrySessionCheck } = useAuth();
-  const { allTeams, loading: teamsLoading, getActiveTeamId } = useTeam();
+  const { allTeams, loading: teamsLoading, teamsLoadError, refetch: retryTeamsFetch, getActiveTeamId } = useTeam();
   const { colors } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -34,6 +34,23 @@ export default function Index() {
         <Text style={styles.retryTitle}>Couldn't connect</Text>
         <Text style={styles.retrySubtitle}>Check your connection and try again.</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={retrySessionCheck} activeOpacity={0.85}>
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Same "couldn't confirm, not confirmed-empty" distinction as
+  // sessionCheckFailed above, one step later in cold start — a stalled
+  // team fetch used to leave the user on the bare spinner above forever,
+  // with no way out short of force-quitting. See TeamContext.tsx's
+  // teamsLoadError for the full reasoning.
+  if (session && teamsLoadError) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.retryTitle}>Couldn't connect</Text>
+        <Text style={styles.retrySubtitle}>Check your connection and try again.</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={retryTeamsFetch} activeOpacity={0.85}>
           <Text style={styles.retryBtnText}>Retry</Text>
         </TouchableOpacity>
       </View>

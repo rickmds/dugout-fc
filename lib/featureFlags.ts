@@ -14,3 +14,10 @@ export const TEAM_PULSE_ENABLED = false;
 // app/(app)/[clubSlug]/admin/events/[eventId]/session-builder.tsx) — still
 // being worked on, hidden from coaches until it's ready.
 export const SESSION_BUILDER_ENABLED = false;
+
+// Player Card ("Card" tab on the player detail screen, plus its Home teaser)
+// — still being tested. Unlike the two flags above, this one isn't a flat
+// kill switch: while false, the tab/teaser show only to app_admin (so
+// testing can continue) and stay hidden from every coach and parent. Flip
+// to true to open it up to everyone once it's ready.
+export const PLAYER_CARD_ENABLED = false;

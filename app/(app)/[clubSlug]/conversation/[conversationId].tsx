@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -42,6 +42,17 @@ type Message = {
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+}
+
+// A real uuid (not just a temp local id) generated client-side so the
+// optimistic message below and the realtime INSERT echo of that same row
+// carry the identical id from the start — see handleSend's comment for why
+// that matters.
+function uuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
 }
 
 type ReactionSummary = { emoji: string; count: number; mine: boolean; profileIds: string[] };
@@ -121,6 +132,12 @@ export default function ConversationScreen() {
   const { profile } = useAuth();
   const { colors } = useTheme();
   const st = useMemo(() => getSt(colors), [colors]);
+  // rgba() itself is a fresh closure every render (see useClub.ts), so it
+  // can't be handed to a memoized row as-is without defeating memo() on
+  // every render — but the STRING it produces only changes when
+  // primaryColor does, and strings compare by value, so precomputing it
+  // here keeps the prop stable across unrelated re-renders.
+  const reactionMineBg = rgba(0.12);
 
   const [title, setTitle]           = useState<string>('Direct Message');
   const [convType, setConvType]     = useState<string | null>(null);
@@ -175,6 +192,17 @@ export default function ConversationScreen() {
   const [viewerMessage, setViewerMessage] = useState<Message | null>(null);
   const listRef    = useRef<FlatList>(null);
   const editRef    = useRef<TextInput>(null);
+  // Mirrors of fast-changing values saveEdit needs — reading them through a
+  // ref (rather than closing over the real state) lets saveEdit itself stay
+  // referentially stable while the user is typing, which matters because
+  // it's passed as a prop into every memoized MessageBubble row below: if
+  // its identity changed on every keystroke (the way a plain `[editText]`
+  // dependency would force), every row in the list would re-render on every
+  // keystroke right along with it, defeating the memoization entirely.
+  const editTextRef = useRef(editText);
+  useEffect(() => { editTextRef.current = editText; }, [editText]);
+  const fetchMessagesRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  useEffect(() => { fetchMessagesRef.current = fetchMessages; });
 
   // FlatList.scrollToEnd() does NOT use the list's real, measured content
   // height — it computes an offset from an internal APPROXIMATION of each
@@ -482,7 +510,7 @@ export default function ConversationScreen() {
     return () => { supabase.removeChannel(channel); };
   }
 
-  function openReactorSheet(groups: { emoji: string; profileIds: string[] }[]) {
+  const openReactorSheet = useCallback((groups: { emoji: string; profileIds: string[] }[]) => {
     setReactorSheet(groups);
     // Anyone who reacted is necessarily a conversation participant, so
     // senderNamesRef (populated once via ensureSenderNames — see its own
@@ -497,7 +525,7 @@ export default function ConversationScreen() {
       for (const id of missing) next[id] = senderNamesRef.current[id] || 'Someone';
       return next;
     });
-  }
+  }, [reactorNames]);
 
   // Applies the change to local state immediately, synchronously with the
   // tap — the realtime INSERT/DELETE handlers above merge their own echo of
@@ -508,7 +536,7 @@ export default function ConversationScreen() {
   // second INSERT instead of a DELETE — which silently failed on the
   // (message_id, profile_id, emoji) unique constraint, looking exactly like
   // the reaction could never be removed.
-  async function toggleReaction(messageId: string, emoji: string) {
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
     if (!profile) return;
     const existing = reactions[messageId]?.find((r) => r.emoji === emoji);
     const removing = !!existing?.mine;
@@ -569,7 +597,7 @@ export default function ConversationScreen() {
         return { ...prev, [messageId]: next };
       });
     }
-  }
+  }, [profile, reactions]);
 
   async function pickImage(source: 'camera' | 'library') {
     const perm = source === 'camera'
@@ -605,12 +633,21 @@ export default function ConversationScreen() {
     setText('');
     setPendingImage(null);
 
-    const tempId = `temp-${Date.now()}`;
+    // Generated here, up front, rather than left for the server's own
+    // gen_random_uuid() default — so this same id is both what the
+    // optimistic bubble below uses AND what gets inserted into the row.
+    // Without that, the realtime INSERT echo for this message arrives
+    // carrying a server-assigned id that doesn't match the temp id the
+    // optimistic bubble was using, its `prev.some(m => m.id === raw.id)`
+    // dedupe check (in subscribe() above) finds no match, and the message
+    // briefly renders twice — exactly until a refetch replaces local state
+    // with the single real row.
+    const messageId = uuid();
     // Shown instantly with the LOCAL file uri — expo-image renders a
     // file:// uri directly, so there's no need to wait on the upload just
     // to preview it. Swapped for the real Storage URL once that lands.
     const optimistic: Message = {
-      id: tempId, body: body || null, created_at: new Date().toISOString(),
+      id: messageId, body: body || null, created_at: new Date().toISOString(),
       sender_id: profile.id, sender_name: profile.full_name ?? null,
       image_url: localImageUri,
     };
@@ -626,14 +663,28 @@ export default function ConversationScreen() {
           // arrayBuffer, not blob — Supabase JS's RN Blob/FormData handling
           // doesn't reliably transmit binary content (see player/[playerId].tsx).
           const arrayBuffer = await response.arrayBuffer();
-          const { error: storageErr } = await supabase.storage
-            .from('chat-images')
-            .upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
+          // Unlike the text-insert below, this upload had no timeout at
+          // all — a stalled multi-hundred-KB upload on one bar of LTE
+          // meant the surrounding try/finally never settled, so `sending`
+          // stayed true forever: both the send and attach buttons
+          // permanently disabled, with no error ever shown explaining why.
+          const uploadResult = await withTimeout(
+            supabase.storage.from('chat-images').upload(path, arrayBuffer, { contentType: 'image/jpeg', upsert: false }),
+            8000
+          );
+          if (uploadResult === TIMEOUT) {
+            setMessages((prev) => prev.filter((m) => m.id !== messageId));
+            setText(body);
+            setPendingImage({ uri: localImageUri });
+            Alert.alert('Could not send photo', 'Check your connection and try again.');
+            return;
+          }
+          const { error: storageErr } = uploadResult;
           if (storageErr) throw storageErr;
           uploadedImageUrl = supabase.storage.from('chat-images').getPublicUrl(path).data.publicUrl;
         } catch (err: any) {
           console.error('[Conversation] photo upload error:', err);
-          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          setMessages((prev) => prev.filter((m) => m.id !== messageId));
           setText(body);
           setPendingImage({ uri: localImageUri });
           Alert.alert('Could not send photo', err?.message || 'Check your connection and try again.');
@@ -643,29 +694,29 @@ export default function ConversationScreen() {
 
       const result = await withTimeout(
         supabase.from('messages').insert({
-          conversation_id: conversationId, sender_id: profile.id,
+          id: messageId, conversation_id: conversationId, sender_id: profile.id,
           body: body || null, image_url: uploadedImageUrl,
-        }).select('id').single(),
+        }),
         8000
       );
 
       if (result === TIMEOUT) {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
         setText(body);
         if (localImageUri) setPendingImage({ uri: localImageUri });
         Alert.alert('Could not send', 'Check your connection and try again.');
         return;
       }
 
-      const { data: inserted, error } = result;
+      const { error } = result;
 
       if (error) {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
         setText(body);
         if (localImageUri) setPendingImage({ uri: localImageUri });
         Alert.alert('Could not send', error.message);
-      } else if (inserted) {
-        setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: (inserted as any).id, image_url: uploadedImageUrl } : m));
+      } else {
+        setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, image_url: uploadedImageUrl } : m));
         const pushBody = body || '📷 Photo';
         if (convType === 'team_group' && convTeamId) {
           sendTeamPush({
@@ -693,9 +744,9 @@ export default function ConversationScreen() {
   // Used to just no-op for anyone who couldn't edit/delete (most people, on
   // most messages) — now opens the reaction sheet for everyone, with
   // Edit/Delete added below the emoji row only when applicable.
-  function onLongPress(msg: Message) {
+  const onLongPress = useCallback((msg: Message) => {
     setReactionSheetMsg(msg);
-  }
+  }, []);
 
   function confirmDelete(msg: Message) {
     Alert.alert('Delete message?', 'This cannot be undone.', [
@@ -713,9 +764,10 @@ export default function ConversationScreen() {
     ]);
   }
 
-  async function saveEdit() {
-    if (!editingId || !editText.trim()) { setEditingId(null); return; }
-    const newBody = editText.trim();
+  const saveEdit = useCallback(async () => {
+    const currentText = editTextRef.current;
+    if (!editingId || !currentText.trim()) { setEditingId(null); return; }
+    const newBody = currentText.trim();
     const hadReactions = !!reactions[editingId]?.length;
     setMessages((prev) => prev.map((m) => m.id === editingId ? { ...m, body: newBody, edited: true } : m));
     // Reactions were given to the OLD content — leaving them on a fully
@@ -729,9 +781,12 @@ export default function ConversationScreen() {
     if (reactionDel?.error) console.error('[Conversation] clear reactions on edit error:', reactionDel.error);
     if (error) {
       Alert.alert('Could not edit', error.message);
-      fetchMessages();
+      fetchMessagesRef.current();
     }
-  }
+  }, [editingId, reactions]);
+
+  // Stable regardless of edit state — safe to hand to every memoized row.
+  const cancelEdit = useCallback(() => setEditingId(null), []);
 
   return (
     <KeyboardAvoidingView
@@ -796,90 +851,29 @@ export default function ConversationScreen() {
             const isEditing = editingId === item.id;
 
             return (
-              <View style={[st.msgWrap, isMe ? st.msgWrapMe : st.msgWrapThem]}>
-                {!isMe && (
-                  <View style={[st.avatar, { opacity: showSender ? 1 : 0 }]}>
-                    <Text style={[st.avatarText, { color: primaryColor }]}>{initials(item.sender_name)}</Text>
-                  </View>
-                )}
-                <View style={st.msgCol}>
-                  {showSender && <Text style={st.senderName}>{item.sender_name ?? 'Unknown'}</Text>}
-
-                  {isEditing ? (
-                    <View style={[st.editWrap, { borderColor: primaryColor }]}>
-                      <TextInput
-                        ref={editRef}
-                        style={st.editInput}
-                        value={editText}
-                        onChangeText={setEditText}
-                        multiline
-                        autoFocus
-                        returnKeyType="done"
-                        blurOnSubmit
-                        onSubmitEditing={saveEdit}
-                      />
-                      <View style={st.editActions}>
-                        <TouchableOpacity onPress={() => setEditingId(null)} style={st.editCancel}>
-                          <Text style={st.editCancelText}>Cancel</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={saveEdit} style={st.editSave}>
-                          <Text style={[st.editSaveText, { color: primaryColor }]}>Save</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    <TouchableWithoutFeedback onLongPress={() => onLongPress(item)}>
-                      <View style={[
-                        st.bubble, isMe ? [st.bubbleMe, { backgroundColor: primaryColor }] : st.bubbleThem,
-                        !!item.image_url && st.bubbleWithImage,
-                      ]}>
-                        {item.image_url && (
-                          <TouchableOpacity
-                            onPress={() => setViewerMessage(item)}
-                            onLongPress={() => onLongPress(item)}
-                            activeOpacity={0.85}
-                          >
-                            <Image source={{ uri: item.image_url }} style={st.bubbleImage} contentFit="cover" />
-                          </TouchableOpacity>
-                        )}
-                        {!!item.body && (
-                          <Text style={[st.bubbleText, isMe && { color: onPrimary }, !!item.image_url && st.bubbleTextWithImage]}>
-                            {linkifyText(item.body).map((seg, i) => seg.type === 'text' ? (
-                              <Text key={i}>{seg.text}</Text>
-                            ) : (
-                              <Text key={i} style={st.linkText} onPress={() => openLinkSegment(seg)} suppressHighlighting>
-                                {seg.text}
-                              </Text>
-                            ))}
-                          </Text>
-                        )}
-                      </View>
-                    </TouchableWithoutFeedback>
-                  )}
-
-                  {!!reactions[item.id]?.length && (
-                    <View style={[st.reactionRow, isMe && { justifyContent: 'flex-end' }]}>
-                      {reactions[item.id].map((r) => (
-                        <TouchableOpacity
-                          key={r.emoji}
-                          style={[st.reactionPill, r.mine && { borderColor: primaryColor, backgroundColor: rgba(0.12) }]}
-                          onPress={() => toggleReaction(item.id, r.emoji)}
-                          onLongPress={() => openReactorSheet([{ emoji: r.emoji, profileIds: r.profileIds }])}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={st.reactionPillEmoji}>{r.emoji}</Text>
-                          <Text style={[st.reactionPillCount, r.mine && { color: primaryColor }]}>{r.count}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-
-                  <View style={[st.timestampRow, isMe && { justifyContent: 'flex-end' }]}>
-                    <Text style={st.timestamp}>{timeLabel(item.created_at)}</Text>
-                    {item.edited && <Text style={st.editedLabel}>edited</Text>}
-                  </View>
-                </View>
-              </View>
+              <MessageBubble
+                item={item}
+                isMe={isMe}
+                showSender={showSender}
+                isEditing={isEditing}
+                // Non-editing rows always see the same stable '' — only the
+                // one row actually being edited ever sees editText change,
+                // so typing doesn't re-render the other ~79 rows.
+                editText={isEditing ? editText : ''}
+                onEditTextChange={setEditText}
+                onSaveEdit={saveEdit}
+                onCancelEdit={cancelEdit}
+                editRef={editRef}
+                onLongPress={onLongPress}
+                onViewImage={setViewerMessage}
+                reactions={reactions[item.id]}
+                onToggleReaction={toggleReaction}
+                onOpenReactorSheet={openReactorSheet}
+                primaryColor={primaryColor}
+                onPrimary={onPrimary}
+                reactionMineBg={reactionMineBg}
+                st={st}
+              />
             );
           }}
         />
@@ -1044,6 +1038,128 @@ export default function ConversationScreen() {
     </KeyboardAvoidingView>
   );
 }
+
+type MessageBubbleProps = {
+  item: Message;
+  isMe: boolean;
+  showSender: boolean;
+  isEditing: boolean;
+  editText: string;
+  onEditTextChange: (text: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  editRef: RefObject<TextInput | null>;
+  onLongPress: (msg: Message) => void;
+  onViewImage: (msg: Message) => void;
+  reactions: ReactionSummary[] | undefined;
+  onToggleReaction: (messageId: string, emoji: string) => void;
+  onOpenReactorSheet: (groups: { emoji: string; profileIds: string[] }[]) => void;
+  primaryColor: string;
+  onPrimary: string;
+  reactionMineBg: string;
+  st: ReturnType<typeof getSt>;
+};
+
+// Extracted out of the FlatList's renderItem and wrapped in memo() so a
+// keystroke in the edit box (which re-renders ConversationScreen on every
+// character) doesn't re-render every other message bubble in the list —
+// only the one row whose own props actually changed. This only works
+// because every prop below is kept referentially stable across unrelated
+// re-renders (see editTextRef/fetchMessagesRef and the useCallback wraps
+// at the call site); a single unstable prop would defeat the memo check
+// for every row regardless of how stable the rest are.
+const MessageBubble = memo(function MessageBubble({
+  item, isMe, showSender, isEditing, editText, onEditTextChange, onSaveEdit, onCancelEdit,
+  editRef, onLongPress, onViewImage, reactions, onToggleReaction, onOpenReactorSheet,
+  primaryColor, onPrimary, reactionMineBg, st,
+}: MessageBubbleProps) {
+  return (
+    <View style={[st.msgWrap, isMe ? st.msgWrapMe : st.msgWrapThem]}>
+      {!isMe && (
+        <View style={[st.avatar, { opacity: showSender ? 1 : 0 }]}>
+          <Text style={[st.avatarText, { color: primaryColor }]}>{initials(item.sender_name)}</Text>
+        </View>
+      )}
+      <View style={st.msgCol}>
+        {showSender && <Text style={st.senderName}>{item.sender_name ?? 'Unknown'}</Text>}
+
+        {isEditing ? (
+          <View style={[st.editWrap, { borderColor: primaryColor }]}>
+            <TextInput
+              ref={editRef}
+              style={st.editInput}
+              value={editText}
+              onChangeText={onEditTextChange}
+              multiline
+              autoFocus
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={onSaveEdit}
+            />
+            <View style={st.editActions}>
+              <TouchableOpacity onPress={onCancelEdit} style={st.editCancel}>
+                <Text style={st.editCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onSaveEdit} style={st.editSave}>
+                <Text style={[st.editSaveText, { color: primaryColor }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableWithoutFeedback onLongPress={() => onLongPress(item)}>
+            <View style={[
+              st.bubble, isMe ? [st.bubbleMe, { backgroundColor: primaryColor }] : st.bubbleThem,
+              !!item.image_url && st.bubbleWithImage,
+            ]}>
+              {item.image_url && (
+                <TouchableOpacity
+                  onPress={() => onViewImage(item)}
+                  onLongPress={() => onLongPress(item)}
+                  activeOpacity={0.85}
+                >
+                  <Image source={{ uri: item.image_url }} style={st.bubbleImage} contentFit="cover" />
+                </TouchableOpacity>
+              )}
+              {!!item.body && (
+                <Text style={[st.bubbleText, isMe && { color: onPrimary }, !!item.image_url && st.bubbleTextWithImage]}>
+                  {linkifyText(item.body).map((seg, i) => seg.type === 'text' ? (
+                    <Text key={i}>{seg.text}</Text>
+                  ) : (
+                    <Text key={i} style={st.linkText} onPress={() => openLinkSegment(seg)} suppressHighlighting>
+                      {seg.text}
+                    </Text>
+                  ))}
+                </Text>
+              )}
+            </View>
+          </TouchableWithoutFeedback>
+        )}
+
+        {!!reactions?.length && (
+          <View style={[st.reactionRow, isMe && { justifyContent: 'flex-end' }]}>
+            {reactions.map((r) => (
+              <TouchableOpacity
+                key={r.emoji}
+                style={[st.reactionPill, r.mine && { borderColor: primaryColor, backgroundColor: reactionMineBg }]}
+                onPress={() => onToggleReaction(item.id, r.emoji)}
+                onLongPress={() => onOpenReactorSheet([{ emoji: r.emoji, profileIds: r.profileIds }])}
+                activeOpacity={0.7}
+              >
+                <Text style={st.reactionPillEmoji}>{r.emoji}</Text>
+                <Text style={[st.reactionPillCount, r.mine && { color: primaryColor }]}>{r.count}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        <View style={[st.timestampRow, isMe && { justifyContent: 'flex-end' }]}>
+          <Text style={st.timestamp}>{timeLabel(item.created_at)}</Text>
+          {item.edited && <Text style={st.editedLabel}>edited</Text>}
+        </View>
+      </View>
+    </View>
+  );
+});
 
 function getSt(colors: ThemeColors) {
   return StyleSheet.create({

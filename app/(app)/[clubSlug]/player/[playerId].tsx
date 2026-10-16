@@ -16,6 +16,14 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+// SDK 56 split expo-media-library into a new class-based API (default
+// export) and this legacy free-function API — the free functions
+// (requestPermissionsAsync/saveToLibraryAsync) now throw at runtime if
+// imported from the main entry point instead of warning, confirmed via a
+// real device error, not just a lint notice.
+import * as MediaLibrary from 'expo-media-library/legacy';
+import ViewShot, { ViewShotRef } from 'react-native-view-shot';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -30,6 +38,12 @@ import { useClub } from '../../../../hooks/useClub';
 import { formatPhone } from '../../../../lib/formatPhone';
 import ClubHeader from '../../../../components/ui/ClubHeader';
 import ImageEditor from '../../../../components/ui/ImageEditor';
+import PlayerCard, { CardTierKey, PlayerCardStats } from '../../../../components/player-card/PlayerCard';
+import SkillPointPanel from '../../../../components/player-card/SkillPointPanel';
+import PhotoPositioner from '../../../../components/player-card/PhotoPositioner';
+import CountryPicker from '../../../../components/player-card/CountryPicker';
+import { flagEmoji } from '../../../../constants/countries';
+import { PLAYER_CARD_ENABLED } from '../../../../lib/featureFlags';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +58,10 @@ type PlayerDetail = {
   date_of_birth: string | null;
   notes: string | null;
   photo_url: string | null;
+  card_photo_url: string | null;
+  card_photo_offset_x: number;
+  card_photo_offset_y: number;
+  country_code: string | null;
   is_private: boolean;
   is_injured: boolean;
   profile_id: string | null;
@@ -157,15 +175,17 @@ const FOOT_LABEL: Record<string, string> = { left: 'Left foot', right: 'Right fo
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function PlayerProfileScreen() {
-  const { primaryColor, rgba } = useClub();
+  const { primaryColor, rgba, logoUrl } = useClub();
   const { colors } = useTheme();
   const st = useMemo(() => getSt(colors), [colors]);
-  const { playerId } = useLocalSearchParams<{ playerId: string }>();
+  const { playerId, tab: initialTab } = useLocalSearchParams<{ playerId: string; tab?: string }>();
   const { team, loading: teamLoading } = useTeam();
   const { profile } = useAuth();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<'player' | 'guardians'>('player');
+  const [activeTab, setActiveTab] = useState<'player' | 'guardians' | 'card'>(
+    initialTab === 'card' || initialTab === 'guardians' ? initialTab : 'player'
+  );
 
   // Player data
   const [player, setPlayer]           = useState<PlayerDetail | null>(null);
@@ -280,7 +300,7 @@ export default function PlayerProfileScreen() {
     // that may not be in the live DB yet — handled gracefully via cast
     const { data, error } = await (supabase as any)
       .from('players')
-      .select('id, team_id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, is_private, is_injured, profile_id, profiles!players_profile_id_fkey(avatar_url)')
+      .select('id, team_id, full_name, jersey_number, position, secondary_position, preferred_foot, date_of_birth, notes, photo_url, card_photo_url, card_photo_offset_x, card_photo_offset_y, country_code, is_private, is_injured, profile_id, profiles!players_profile_id_fkey(avatar_url)')
       .eq('id', playerId)
       .single();
 
@@ -300,6 +320,10 @@ export default function PlayerProfileScreen() {
           date_of_birth: null,
           notes: null,
           photo_url: null,
+          card_photo_url: null,
+          card_photo_offset_x: 0,
+          card_photo_offset_y: 0,
+          country_code: null,
           is_private: false,
           is_injured: false,
           medical_notes: null,
@@ -1028,6 +1052,14 @@ export default function PlayerProfileScreen() {
             <Text style={[st.tabText, activeTab === 'guardians' && st.tabTextActive]}>Guardians</Text>
           </TouchableOpacity>
         )}
+        {(isCoach || isMyPlayer) && (PLAYER_CARD_ENABLED || profile?.role === 'app_admin') && (
+          <TouchableOpacity
+            style={[st.tab, activeTab === 'card' && [st.tabActive, { borderBottomColor: primaryColor }]]}
+            onPress={() => setActiveTab('card')}
+          >
+            <Text style={[st.tabText, activeTab === 'card' && st.tabTextActive]}>Card</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ── Tab content ── */}
@@ -1043,6 +1075,21 @@ export default function PlayerProfileScreen() {
           guardianProfile={guardianProfile}
           onDelete={confirmDelete}
           deleting={deleting}
+        />
+      ) : activeTab === 'card' && (PLAYER_CARD_ENABLED || profile?.role === 'app_admin') ? (
+        <CardTab
+          playerId={player.id}
+          name={player.full_name}
+          position={player.position}
+          cardPhotoUrl={player.card_photo_url}
+          rosterPhotoUrl={player.photo_url}
+          cardPhotoOffsetX={player.card_photo_offset_x}
+          cardPhotoOffsetY={player.card_photo_offset_y}
+          countryCode={player.country_code}
+          crestUrl={logoUrl}
+          interactive={isMyPlayer}
+          colors={colors}
+          primaryColor={primaryColor}
         />
       ) : (
         <GuardiansTab
@@ -1919,6 +1966,372 @@ function PlayerTab({
               </>}
         </TouchableOpacity>
       )}
+
+      <View style={{ height: 48 }} />
+    </ScrollView>
+  );
+}
+
+// ─── Card tab ─────────────────────────────────────────────────────────────────
+// XP, tier, and skill points available are all computed live server-side in
+// get_player_card() from real event_attendance/player_shoutouts rows — this
+// tab never stores or trusts a client-side XP counter. Thresholds mirrored
+// here are display-only (for the progress bar); the source of truth for the
+// actual tier is the RPC's own tier_key/tier_label.
+const cardPhotoBtnStyle = {
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  alignSelf: 'center' as const,
+  gap: 7,
+  borderWidth: 1,
+  borderRadius: 10,
+  paddingVertical: 9,
+  paddingHorizontal: 14,
+};
+
+const CARD_TIER_THRESHOLDS: { key: CardTierKey; min: number; max: number }[] = [
+  { key: 'base', min: 0, max: 400 },
+  { key: 'heroes', min: 400, max: 800 },
+  { key: 'future', min: 800, max: 1300 },
+  { key: 'otw', min: 1300, max: 1900 },
+  { key: 'icon', min: 1900, max: 1900 },
+];
+
+type PlayerCardData = {
+  xp: number;
+  tier_key: CardTierKey;
+  tier_label: string;
+  skill_points_available: number;
+  pac: number; sho: number; pas: number; dri: number; def: number; phy: number;
+  overall: number;
+};
+
+function CardTab({
+  playerId,
+  name,
+  position,
+  cardPhotoUrl,
+  rosterPhotoUrl,
+  cardPhotoOffsetX,
+  cardPhotoOffsetY,
+  countryCode,
+  crestUrl,
+  interactive,
+  colors,
+  primaryColor,
+}: {
+  playerId: string;
+  name: string;
+  position: string | null;
+  cardPhotoUrl: string | null;
+  rosterPhotoUrl: string | null;
+  cardPhotoOffsetX: number;
+  cardPhotoOffsetY: number;
+  countryCode: string | null;
+  crestUrl: string | null;
+  interactive: boolean;
+  colors: ThemeColors;
+  primaryColor: string;
+}) {
+  const st = useMemo(() => getSt(colors), [colors]);
+  const [data, setData] = useState<PlayerCardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [spendingStat, setSpendingStat] = useState<keyof PlayerCardStats | null>(null);
+  const [photo, setPhoto] = useState(cardPhotoUrl);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [offsetX, setOffsetX] = useState(cardPhotoOffsetX);
+  const [offsetY, setOffsetY] = useState(cardPhotoOffsetY);
+  const [positionerVisible, setPositionerVisible] = useState(false);
+  const [country, setCountry] = useState(countryCode);
+  const [countryPickerVisible, setCountryPickerVisible] = useState(false);
+  const [savingCountry, setSavingCountry] = useState(false);
+  // Start expanded only while setup is incomplete (guides a first-time
+  // guardian to set them); once both exist, collapse to a single compact
+  // "Edit card" toggle instead of three buttons sitting under the card
+  // forever.
+  const [editMode, setEditMode] = useState(!(cardPhotoUrl && countryCode));
+  const [downloading, setDownloading] = useState(false);
+  const cardShotRef = useRef<ViewShotRef>(null);
+
+  useEffect(() => {
+    load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerId]);
+
+  // `isInitial` only shows the full-screen spinner on first mount — a
+  // refresh after spending a point (see handleSpend) calls this with no
+  // argument so it just swaps `data` in place once the fresh numbers land,
+  // instead of unmounting the whole card back to a spinner and feeling
+  // like the screen reloaded.
+  async function load(isInitial = false) {
+    if (isInitial) setLoading(true);
+    const { data: rows, error } = await (supabase as any).rpc('get_player_card', { p_player_id: playerId });
+    if (error) {
+      console.error('[CardTab] get_player_card error:', error.message);
+    } else {
+      setData((rows?.[0] as PlayerCardData) ?? null);
+    }
+    if (isInitial) setLoading(false);
+  }
+
+  async function handleSpend(stat: keyof PlayerCardStats) {
+    if (spendingStat) return;
+    setSpendingStat(stat);
+    const { error } = await (supabase as any).rpc('spend_player_skill_point', {
+      p_player_id: playerId,
+      p_stat: stat,
+    });
+    if (error) {
+      Alert.alert('Could not spend point', error.message);
+    } else {
+      await load();
+    }
+    setSpendingStat(null);
+  }
+
+  // Deliberately not the square ImageEditor crop used for the roster photo:
+  // the card looks best with a full-body cutout (e.g. the iPhone "Copy
+  // Subject" sticker trick), which a forced square crop would crush.
+  // PlayerCard renders this with contentFit:"contain" for exactly that
+  // reason — pick an image, resize it to a sane upload size, done.
+  async function handlePickCardPhoto() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] });
+    if (result.canceled || !result.assets[0]) return;
+
+    setUploadingPhoto(true);
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 600 } }],
+        { format: ImageManipulator.SaveFormat.PNG, compress: 1 }
+      );
+      const path = `players/${playerId}-card.png`;
+      const response = await fetch(manipulated.uri);
+      const arrayBuffer = await response.arrayBuffer();
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, arrayBuffer, {
+        contentType: 'image/png',
+        upsert: true,
+      });
+      if (uploadError) {
+        Alert.alert('Upload failed', uploadError.message);
+        return;
+      }
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+      // A new photo makes any saved offset meaningless — reset it so the
+      // old positioning doesn't get silently applied to a different image.
+      const { error: saveError } = await supabase
+        .from('players')
+        .update({ card_photo_url: publicUrl, card_photo_offset_x: 0, card_photo_offset_y: 0 } as any)
+        .eq('id', playerId);
+      if (saveError) {
+        Alert.alert('Could not save photo', saveError.message);
+        return;
+      }
+      setPhoto(publicUrl);
+      setOffsetX(0);
+      setOffsetY(0);
+      setPositionerVisible(true);
+    } catch (e) {
+      Alert.alert('Upload failed', String(e));
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please allow photo access in Settings to save the card.');
+        return;
+      }
+      if (!cardShotRef.current) throw new Error('Could not capture the card');
+      const uri = await cardShotRef.current.capture();
+      await MediaLibrary.saveToLibraryAsync(uri);
+      Alert.alert('Saved', 'The card was saved to your Photos.');
+    } catch (e) {
+      Alert.alert('Could not save card', String(e));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  async function handleSaveCountry(code: string) {
+    setCountryPickerVisible(false);
+    setSavingCountry(true);
+    const { error } = await supabase
+      .from('players')
+      .update({ country_code: code } as any)
+      .eq('id', playerId);
+    setSavingCountry(false);
+    if (error) {
+      Alert.alert('Could not save country', error.message);
+      return;
+    }
+    setCountry(code);
+  }
+
+  async function handleSavePosition(newOffsetX: number, newOffsetY: number) {
+    setPositionerVisible(false);
+    setOffsetX(newOffsetX);
+    setOffsetY(newOffsetY);
+    const { error } = await supabase
+      .from('players')
+      .update({ card_photo_offset_x: newOffsetX, card_photo_offset_y: newOffsetY } as any)
+      .eq('id', playerId);
+    if (error) {
+      console.error('[CardTab] save position error:', error.message);
+    }
+  }
+
+  if (loading || !data) {
+    return (
+      <View style={st.center}>
+        <ActivityIndicator color={colors.muted} />
+      </View>
+    );
+  }
+
+  const tier = CARD_TIER_THRESHOLDS.find((t) => t.key === data.tier_key) ?? CARD_TIER_THRESHOLDS[0];
+  const span = tier.max - tier.min;
+  const xpIntoTier = span > 0 ? data.xp - tier.min : span;
+  const effectivePhotoUrl = photo ?? rosterPhotoUrl;
+
+  return (
+    <ScrollView contentContainerStyle={st.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={{ width: 220, alignSelf: 'center', marginBottom: 12 }}>
+        <ViewShot ref={cardShotRef} options={{ format: 'png', quality: 1 }}>
+          <PlayerCard
+            tier={data.tier_key}
+            overall={data.overall}
+            position={position}
+            name={name}
+            photoUrl={effectivePhotoUrl}
+            photoOffsetX={offsetX}
+            photoOffsetY={offsetY}
+            countryCode={country}
+            crestUrl={crestUrl}
+            stats={{ pac: data.pac, sho: data.sho, pas: data.pas, dri: data.dri, def: data.def, phy: data.phy }}
+            width={220}
+          />
+        </ViewShot>
+      </View>
+
+      <TouchableOpacity
+        onPress={handleDownload}
+        disabled={downloading}
+        style={[cardPhotoBtnStyle, { alignSelf: 'center', marginBottom: 10, borderColor: colors.border, backgroundColor: colors.surface }]}
+      >
+        {downloading ? (
+          <ActivityIndicator size="small" color={colors.text} />
+        ) : (
+          <Ionicons name="download-outline" size={15} color={colors.text} />
+        )}
+        <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Download card</Text>
+      </TouchableOpacity>
+
+      {interactive && !editMode && (
+        <TouchableOpacity
+          onPress={() => setEditMode(true)}
+          style={[cardPhotoBtnStyle, { alignSelf: 'center', borderColor: colors.border, backgroundColor: colors.surface }]}
+        >
+          <Ionicons name="pencil-outline" size={14} color={colors.muted} />
+          <Text style={{ color: colors.muted, fontSize: 12.5, fontWeight: '700' }}>Edit card</Text>
+        </TouchableOpacity>
+      )}
+
+      {interactive && editMode && (
+        <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <TouchableOpacity
+            onPress={handlePickCardPhoto}
+            disabled={uploadingPhoto}
+            style={[cardPhotoBtnStyle, { borderColor: colors.border, backgroundColor: colors.surface }]}
+          >
+            {uploadingPhoto ? (
+              <ActivityIndicator size="small" color={colors.muted} />
+            ) : (
+              <Ionicons name="image-outline" size={15} color={colors.text} />
+            )}
+            <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>
+              {photo ? 'Change card photo' : 'Set a card photo'}
+            </Text>
+          </TouchableOpacity>
+          {!!effectivePhotoUrl && (
+            <TouchableOpacity
+              onPress={() => setPositionerVisible(true)}
+              style={[cardPhotoBtnStyle, { borderColor: colors.border, backgroundColor: colors.surface }]}
+            >
+              <Ionicons name="move-outline" size={15} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Reposition</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => setCountryPickerVisible(true)}
+            disabled={savingCountry}
+            style={[cardPhotoBtnStyle, { borderColor: colors.border, backgroundColor: colors.surface }]}
+          >
+            {savingCountry ? (
+              <ActivityIndicator size="small" color={colors.muted} />
+            ) : country ? (
+              <Text style={{ fontSize: 15 }}>{flagEmoji(country)}</Text>
+            ) : (
+              <Ionicons name="flag-outline" size={15} color={colors.text} />
+            )}
+            <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>
+              {country ? 'Change country' : 'Set country'}
+            </Text>
+          </TouchableOpacity>
+          {!!photo && !!country && (
+            <TouchableOpacity onPress={() => setEditMode(false)} style={[cardPhotoBtnStyle, { borderColor: colors.border }]}>
+              <Ionicons name="checkmark" size={15} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      <CountryPicker
+        visible={countryPickerVisible}
+        onSelect={handleSaveCountry}
+        onCancel={() => setCountryPickerVisible(false)}
+        colors={colors}
+      />
+
+      {!!effectivePhotoUrl && (
+        <PhotoPositioner
+          visible={positionerVisible}
+          uri={effectivePhotoUrl}
+          initialOffsetX={offsetX}
+          initialOffsetY={offsetY}
+          onSave={handleSavePosition}
+          onCancel={() => setPositionerVisible(false)}
+          colors={colors}
+          primaryColor={primaryColor}
+        />
+      )}
+
+      <View style={{ height: 8 }} />
+
+      <SkillPointPanel
+        colors={colors}
+        tierLabel={data.tier_label}
+        xp={data.xp}
+        xpIntoTier={xpIntoTier}
+        xpTierSpan={span}
+        stats={{ pac: data.pac, sho: data.sho, pas: data.pas, dri: data.dri, def: data.def, phy: data.phy }}
+        skillPointsAvailable={data.skill_points_available}
+        interactive={interactive}
+        spendingStat={spendingStat}
+        onSpend={handleSpend}
+      />
 
       <View style={{ height: 48 }} />
     </ScrollView>
