@@ -85,7 +85,7 @@ function emptyForm(teamId: string): FormState {
     title: '', type: 'training', homeAway: 'home', team_id: teamId,
     event_date: new Date().toISOString().split('T')[0],
     event_time: '10:00', hasTime: false,
-    duration_minutes: null, arrival_buffer_minutes: null,
+    duration_minutes: null, arrival_buffer_minutes: 5,
     location: '', address: '', lat: null, lng: null,
     field_type: null, field_notes: '', uniform: null,
     notes: '', coach_notes: '',
@@ -189,6 +189,16 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
   const [deleting,setDeleting]= useState(false);
   const [showDel, setShowDel] = useState(false);
   const isEdit = !!event;
+  // Games default to a 30-min arrival buffer, training to 5 — only for a
+  // genuinely new event (editing always keeps whatever's already saved),
+  // and only until the admin actually picks a value themselves, so
+  // switching type tabs doesn't clobber an intentional choice.
+  const arrivalTouched = useRef(isEdit);
+  function defaultArrivalFor(t: 'game' | 'training' | 'other'): number | null {
+    if (t === 'game') return 30;
+    if (t === 'training') return 5;
+    return null;
+  }
 
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '9px 12px', borderRadius: '9px',
@@ -339,7 +349,10 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
                 <label style={labelStyle}>Type</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {(['game', 'training', 'other'] as const).map(t => (
-                    <button key={t} onClick={() => setForm(f => ({ ...f, type: t }))}
+                    <button key={t} onClick={() => setForm(f => ({
+                        ...f, type: t,
+                        arrival_buffer_minutes: arrivalTouched.current ? f.arrival_buffer_minutes : defaultArrivalFor(t),
+                      }))}
                       style={{ flex: 1, padding: '9px 0', borderRadius: '8px', fontFamily: 'inherit', cursor: 'pointer', fontSize: '13px', fontWeight: form.type === t ? '700' : '500', border: `2px solid ${form.type === t ? TYPE_COLORS[t] : '#E2E8F0'}`, background: form.type === t ? TYPE_BG[t] : '#fff', color: form.type === t ? TYPE_COLORS[t] : '#64748B' }}>
                       {TYPE_LABELS[t]}
                     </button>
@@ -415,7 +428,7 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
                 <div>
                   <label style={labelStyle}>Arrive</label>
                   <div style={{ position: 'relative' }}>
-                    <select value={form.arrival_buffer_minutes ?? ''} onChange={e => setForm(f => ({ ...f, arrival_buffer_minutes: e.target.value ? Number(e.target.value) : null }))}
+                    <select value={form.arrival_buffer_minutes ?? ''} onChange={e => { arrivalTouched.current = true; setForm(f => ({ ...f, arrival_buffer_minutes: e.target.value ? Number(e.target.value) : null })); }}
                       style={{ ...inputStyle, appearance: 'none', paddingRight: '32px', cursor: 'pointer', color: form.arrival_buffer_minutes ? '#0F172A' : '#94A3B8' }}>
                       <option value="">Not set</option>
                       {ARRIVAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

@@ -49,10 +49,14 @@ type ClubEvent = {
 };
 
 type ImportedTeamStat = { teamId: string; name: string; count: number };
-type BulkSettings = { duration: number; arriveEarly: number; rsvpLockHours: number | null };
+type BulkSettings = { duration: number; rsvpLockHours: number | null };
 
 const BULK_DURATION_OPTIONS = [45, 60, 75, 90, 105, 120];
-const BULK_ARRIVE_OPTIONS   = [5, 10, 15, 20, 30, 45, 60];
+// Arrival buffer isn't a bulk-configurable setting — it's always 30 min
+// for a game, 5 for training, applied per-row below based on each event's
+// own type (a single schedule upload mixes both).
+const GAME_ARRIVAL_BUFFER_MINUTES = 30;
+const TRAINING_ARRIVAL_BUFFER_MINUTES = 5;
 // "None" (null) means no RSVP deadline is ever enforced — not "closes
 // immediately" — so a coach who actually wants the deadline to be the
 // event's own start time needs a real, distinct option for that (the same
@@ -118,7 +122,7 @@ export default function ClubScheduleScreen() {
   const [progress, setProgress]   = useState({ current: 0, total: 0, label: '' });
   const [importedStats, setImportedStats] = useState<ImportedTeamStat[]>([]);
   const [notifyState, setNotifyState] = useState<'idle' | 'notifying' | 'done'>('idle');
-  const [bulk, setBulk]     = useState<BulkSettings>({ duration: 90, arriveEarly: 20, rsvpLockHours: 24 });
+  const [bulk, setBulk]     = useState<BulkSettings>({ duration: 90, rsvpLockHours: 24 });
   const [bulkOpen, setBulkOpen] = useState(false);
   const msgTimer   = useRef<ReturnType<typeof setInterval> | null>(null);
   const importedRef = useRef<Set<string>>(new Set());
@@ -358,7 +362,9 @@ export default function ClubScheduleScreen() {
           field_type: e.surface ?? null,
           uniform:    e.homeAway === 'home' ? 'home' : e.homeAway === 'away' ? 'away' : null,
           duration_minutes:       bulk.duration,
-          arrival_buffer_minutes: bulk.arriveEarly,
+          arrival_buffer_minutes: e.type === 'game' ? GAME_ARRIVAL_BUFFER_MINUTES
+                                 : e.type === 'training' ? TRAINING_ARRIVAL_BUFFER_MINUTES
+                                 : null,
           rsvp_lock_at:           rsvpLockAt,
           created_by: profile.id,
         };
@@ -671,7 +677,7 @@ function BulkCard({ bulk, bulkOpen, setBulk, setBulkOpen, primaryColor, rgba }: 
   const { colors } = useTheme();
   const bk = useMemo(() => getBk(colors), [colors]);
   const rsvpSummary = bulk.rsvpLockHours == null ? 'off' : bulk.rsvpLockHours === 0 ? 'at start' : `${bulk.rsvpLockHours} hrs before`;
-  const summary = `${fmtDuration(bulk.duration)} · ${bulk.arriveEarly} min early · RSVP ${rsvpSummary}`;
+  const summary = `${fmtDuration(bulk.duration)} · RSVP ${rsvpSummary}`;
   return (
     <View style={bk.card}>
       <TouchableOpacity style={bk.header} onPress={() => setBulkOpen((o) => !o)} activeOpacity={0.7}>
@@ -694,21 +700,6 @@ function BulkCard({ bulk, bulkOpen, setBulk, setBulkOpen, primaryColor, rgba }: 
               >
                 <Text style={[bk.chipText, bulk.duration === v && { color: primaryColor, fontWeight: '700' }]}>
                   {fmtDuration(v)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={[bk.fieldLabel, { marginTop: 12 }]}>ARRIVE EARLY</Text>
-          <View style={bk.chipRow}>
-            {BULK_ARRIVE_OPTIONS.map((v) => (
-              <TouchableOpacity
-                key={v}
-                style={[bk.chip, bulk.arriveEarly === v && [bk.chipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
-                onPress={() => setBulk((p) => ({ ...p, arriveEarly: v }))}
-              >
-                <Text style={[bk.chipText, bulk.arriveEarly === v && { color: primaryColor, fontWeight: '700' }]}>
-                  {v} min
                 </Text>
               </TouchableOpacity>
             ))}

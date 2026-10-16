@@ -1089,7 +1089,7 @@ function ReviewStep({
   type EventDefaults = { duration: number; arriveEarly: number; rsvpLockHours: number };
   const [bulk, setBulk] = useState<{ game: EventDefaults; training: EventDefaults }>({
     game:     { duration: 90, arriveEarly: 30, rsvpLockHours: 24 },
-    training: { duration: 90, arriveEarly: 15, rsvpLockHours: 2  },
+    training: { duration: 90, arriveEarly: 5,  rsvpLockHours: 2  },
   });
   function updateBulk(type: 'game' | 'training', field: keyof EventDefaults, val: string | number) {
     setBulk(b => ({ ...b, [type]: { ...b[type], [field]: val } }));

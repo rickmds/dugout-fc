@@ -70,7 +70,17 @@ type ParsedEvent = {
   selected: boolean;
 };
 
-type BulkSettings = { duration: number; arriveEarly: number; rsvpLockHours: number | null };
+type BulkSettings = { duration: number; rsvpLockHours: number | null };
+
+// Arrival buffer isn't a bulk-configurable setting — it's always 30 min
+// for a game, 5 for training, based on each event's own type (a single
+// schedule upload typically mixes both). A per-event override (via the
+// edit modal below) still wins when set.
+function defaultArrivalFor(type: EventType): number | null {
+  if (type === 'game') return 30;
+  if (type === 'training') return 5;
+  return null;
+}
 
 // Matches AI-extracted venue text (e.g. "Williams Field") against the club's
 // saved fields so the real address auto-fills instead of just a bare name.
@@ -111,7 +121,6 @@ function mapSurfaceType(surfaceType: string | null | undefined): 'turf' | 'grass
 }
 
 const BULK_DURATION_OPTIONS = [45, 60, 75, 90, 105, 120];
-const BULK_ARRIVE_OPTIONS   = [5, 10, 15, 20, 30, 45, 60];
 // "None" (null) means no RSVP deadline is ever enforced — not "closes
 // immediately" — so a coach who actually wants the deadline to be the
 // event's own start time needs a real, distinct option for that (the same
@@ -175,7 +184,7 @@ export default function ScheduleUploadScreen() {
   const [warningsOpen, setWarningsOpen] = useState(false);
   const [imported, setImported]   = useState(0);
   const [editing, setEditing]     = useState<ParsedEvent | null>(null);
-  const [bulk, setBulk]           = useState<BulkSettings>({ duration: 90, arriveEarly: 20, rsvpLockHours: 24 });
+  const [bulk, setBulk]           = useState<BulkSettings>({ duration: 90, rsvpLockHours: 24 });
   const [bulkOpen, setBulkOpen]   = useState(false);
   const [processingMsg, setProcessingMsg] = useState(0);
   const [notified, setNotified]   = useState(false);
@@ -478,7 +487,7 @@ export default function ScheduleUploadScreen() {
         tournament_id: tournamentId || null,
         round_label: e.round_label?.trim() || null,
         duration_minutes: e.duration ?? bulk.duration,
-        arrival_buffer_minutes: e.arrival ?? bulk.arriveEarly,
+        arrival_buffer_minutes: e.arrival ?? defaultArrivalFor(e.type),
         require_rsvp: effectiveRequireRsvp,
         rsvp_lock_at: rsvpLockAt,
         created_by: profile.id,
@@ -526,7 +535,7 @@ export default function ScheduleUploadScreen() {
 
   function renderBulkCard() {
     const rsvpSummary = bulk.rsvpLockHours == null ? 'off' : bulk.rsvpLockHours === 0 ? 'at start' : `${bulk.rsvpLockHours} hrs before`;
-    const summary = `${fmtDuration(bulk.duration)} · ${bulk.arriveEarly} min early` + (
+    const summary = `${fmtDuration(bulk.duration)}` + (
       isDatedTournamentImport ? ' · RSVP via tournament' : ` · RSVP ${rsvpSummary}`
     );
     return (
@@ -551,21 +560,6 @@ export default function ScheduleUploadScreen() {
                 >
                   <Text style={[st.bulkChipText, bulk.duration === v && [st.bulkChipTextActive, { color: primaryColor }]]}>
                     {fmtDuration(v)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={[st.bulkFieldLabel, { marginTop: 12 }]}>ARRIVE EARLY</Text>
-            <View style={st.bulkChipRow}>
-              {BULK_ARRIVE_OPTIONS.map((v) => (
-                <TouchableOpacity
-                  key={v}
-                  style={[st.bulkChip, bulk.arriveEarly === v && [st.bulkChipActive, { borderColor: primaryColor, backgroundColor: rgba(0.12) }]]}
-                  onPress={() => setBulk((p) => ({ ...p, arriveEarly: v }))}
-                >
-                  <Text style={[st.bulkChipText, bulk.arriveEarly === v && [st.bulkChipTextActive, { color: primaryColor }]]}>
-                    {v} min before
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -1061,7 +1055,9 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
             <Text style={[st.fieldLabel, { marginTop: 16 }]}>ARRIVE EARLY</Text>
             <TouchableOpacity style={st.pickerRow} onPress={() => setShowArrivalPicker(true)}>
               <Text style={arrival !== null ? [st.fieldValue, { color: primaryColor }] : st.fieldValueMuted}>
-                {arrival !== null ? `${arrival} min before` : `Default (${bulk.arriveEarly} min before)`}
+                {arrival !== null
+                  ? `${arrival} min before`
+                  : defaultArrivalFor(event.type) !== null ? `Default (${defaultArrivalFor(event.type)} min before)` : 'No default'}
               </Text>
               {arrival !== null ? (
                 <TouchableOpacity onPress={() => setArrival(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -1084,7 +1080,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
               visible={showArrivalPicker}
               title="Arrive how early?"
               options={ARRIVAL_OPTIONS}
-              value={arrival ?? bulk.arriveEarly}
+              value={arrival ?? defaultArrivalFor(event.type) ?? 15}
               onChange={setArrival}
               onClose={() => setShowArrivalPicker(false)}
             />

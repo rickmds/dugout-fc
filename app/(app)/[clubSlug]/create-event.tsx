@@ -283,8 +283,21 @@ export default function CreateEventScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [duration, setDuration] = useState<number | null>(tournamentId ? 60 : null);
   const [showDurationPicker, setShowDurationPicker] = useState(false);
-  const [arrival, setArrival] = useState<number | null>(tournamentId ? 30 : null);
+  // Games default to 30 min, training to 5 — tournamentId always implies
+  // 'game' (see eventType's own initializer above), so this already covers
+  // the tournament case without special-casing it separately.
+  const [arrival, setArrival] = useState<number | null>(tournamentId ? 30 : 5);
+  // Flips once the coach has actually touched this field (picked a value,
+  // or explicitly cleared it) — after that, switching the event type tab
+  // below no longer overwrites their choice with the type default.
+  const [arrivalTouched, setArrivalTouched] = useState(false);
   const [showArrivalPicker, setShowArrivalPicker] = useState(false);
+
+  useEffect(() => {
+    if (duplicateFrom || arrivalTouched) return;
+    if (eventType === 'game') setArrival(30);
+    else if (eventType === 'training') setArrival(5);
+  }, [eventType, duplicateFrom, arrivalTouched]);
 
   // Location
   const [locationName, setLocationName] = useState('');
@@ -400,6 +413,7 @@ export default function CreateEventScreen() {
 
       setDuration(data.duration_minutes ?? null);
       setArrival(data.arrival_buffer_minutes ?? null);
+      setArrivalTouched(true);
       setLocationName(data.location ?? '');
       setAddress(data.address ?? '');
       setLat(data.lat ?? null);
@@ -753,7 +767,7 @@ export default function CreateEventScreen() {
                   {arrival !== null ? `${arrival} min before` : '—'}
                 </Text>
                 {arrival !== null && (
-                  <TouchableOpacity onPress={() => setArrival(null)} style={{ marginLeft: 8 }}>
+                  <TouchableOpacity onPress={() => { setArrival(null); setArrivalTouched(true); }} style={{ marginLeft: 8 }}>
                     <Ionicons name="close-circle" size={16} color={colors.muted} />
                   </TouchableOpacity>
                 )}
@@ -1160,7 +1174,7 @@ export default function CreateEventScreen() {
         title="Arrive how early?"
         options={ARRIVAL_OPTIONS}
         value={arrival ?? 15}
-        onChange={setArrival}
+        onChange={(v) => { setArrival(v); setArrivalTouched(true); }}
         onClose={() => setShowArrivalPicker(false)}
       />
     </View>

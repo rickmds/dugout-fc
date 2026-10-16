@@ -12,11 +12,11 @@ const STANDINGS_URL = 'https://www.ncsanj.com/standings.cfm';
 // synced game has nothing to pull this from — but leaving it unset means
 // the event screen's whole "Arrive by" row never renders (it's gated on
 // arrival_buffer_minutes != null), which reads as the sync having silently
-// dropped something rather than NCSA just never having had it. Matches the
-// 20-minute default the admin bulk-import tool already applies to every
-// event it creates (club-schedule.tsx's BulkSettings) — same "many games
-// created at once, not worth leaving blank for every one" reasoning.
-const DEFAULT_ARRIVAL_BUFFER_MINUTES = 20;
+// dropped something rather than NCSA just never having had it. 30 minutes
+// is the app-wide default for games specifically (practices default to 5
+// elsewhere) — every event this file creates is type 'game', so there's no
+// need to branch on type here the way the bulk-import tool does.
+const DEFAULT_ARRIVAL_BUFFER_MINUTES = 30;
 
 // The division code embedded in every team's own raw name (the same
 // [B|G]+age+flight segment ncsa-team-lookup parses out) is exactly what
