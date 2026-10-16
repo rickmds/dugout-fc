@@ -266,7 +266,7 @@ function SplashVideo({ ready, onFinished }: { ready: boolean; onFinished: () => 
   // control just passes to whatever the screen underneath renders for its
   // own not-ready state (index.tsx's spinner/Retry screen), which is
   // always recoverable — unlike an indefinite black overlay.
-  const MAX_WAIT_MS = 10000;
+  const MAX_WAIT_MS = 5000;
   useEffect(() => {
     const t = setTimeout(finish, MAX_WAIT_MS);
     return () => clearTimeout(t);
