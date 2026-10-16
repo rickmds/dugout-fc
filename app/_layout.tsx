@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, AppState, Dimensions, StyleSheet, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
@@ -220,6 +220,17 @@ function SplashVideo({ ready, onFinished }: { ready: boolean; onFinished: () => 
     p.play();
   });
 
+  const finish = useCallback(() => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 400,
+      useNativeDriver: true,
+    }).start(() => onFinished());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onFinished]);
+
   // Fade out as soon as auth is ready, not when the ~5s video finishes —
   // this used to wait for BOTH, which meant a fast cold start (session
   // restored from cache, the common return-visit case — often resolves in
@@ -229,24 +240,37 @@ function SplashVideo({ ready, onFinished }: { ready: boolean; onFinished: () => 
   // the spinner/login screen to avoid by waiting longer than that — the
   // MIN_PRESENT_MS floor below exists only so a genuinely-instant `ready`
   // doesn't read as a broken single-frame flicker, not to protect against
-  // a flash. useAuth's own timeout budget bounds `loading` (and so
-  // `ready`) to resolve either way — success or a Retry screen — so this
-  // never hangs indefinitely waiting on `ready` either.
+  // a flash.
   const MIN_PRESENT_MS = 1200;
   useEffect(() => {
     if (!ready || finishedRef.current) return;
     const wait = Math.max(0, MIN_PRESENT_MS - (Date.now() - mountedAtRef.current));
-    const t = setTimeout(() => {
-      if (finishedRef.current) return;
-      finishedRef.current = true;
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => onFinished());
-    }, wait);
+    const t = setTimeout(finish, wait);
     return () => clearTimeout(t);
-  }, [ready]);
+  }, [ready, finish]);
+
+  // Unconditional ceiling, independent of `ready` entirely — this is the
+  // piece that actually guarantees the overlay can never get permanently
+  // stuck, as opposed to just being bounded by useAuth's own timeout
+  // chain. That chain is deep (session fetch, then a profile fetch, each
+  // with its own retry) and this component has no visibility into
+  // whether every step of it actually completes — a stall anywhere
+  // upstream that neither a timeout nor a catch happens to cover (a
+  // provider failing to mount, a promise that neither resolves, rejects,
+  // nor times out) would otherwise leave this full-screen overlay up
+  // forever with zero way out short of force-quitting. A near-identical
+  // unconditional fallback existed here before (gating on the video's own
+  // `playToEnd` event, since a video can fail to signal completion on some
+  // devices) but was lost when the fade condition moved to `ready` alone —
+  // this restores that same guarantee for the auth side. Once this fires,
+  // control just passes to whatever the screen underneath renders for its
+  // own not-ready state (index.tsx's spinner/Retry screen), which is
+  // always recoverable — unlike an indefinite black overlay.
+  const MAX_WAIT_MS = 10000;
+  useEffect(() => {
+    const t = setTimeout(finish, MAX_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [finish]);
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, styles.overlay, { opacity: fadeAnim }]}>
