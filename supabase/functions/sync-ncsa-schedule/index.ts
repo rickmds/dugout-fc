@@ -8,6 +8,16 @@ const CORS = {
 const NCSA_URL = 'https://www.ncsanj.com/gameSchedule.cfm';
 const STANDINGS_URL = 'https://www.ncsanj.com/standings.cfm';
 
+// NCSA's own schedule page carries no arrival-time concept at all, so a
+// synced game has nothing to pull this from — but leaving it unset means
+// the event screen's whole "Arrive by" row never renders (it's gated on
+// arrival_buffer_minutes != null), which reads as the sync having silently
+// dropped something rather than NCSA just never having had it. Matches the
+// 20-minute default the admin bulk-import tool already applies to every
+// event it creates (club-schedule.tsx's BulkSettings) — same "many games
+// created at once, not worth leaving blank for every one" reasoning.
+const DEFAULT_ARRIVAL_BUFFER_MINUTES = 20;
+
 // The division code embedded in every team's own raw name (the same
 // [B|G]+age+flight segment ncsa-team-lookup parses out) is exactly what
 // standings.cfm's own `div` form field expects — no separate lookup needed.
@@ -375,7 +385,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
         const opponentName = normalize(opponentDisplay(opponent));
         const { data: sameDateMatches } = await supabase
           .from('events')
-          .select('id, title, home_away, uniform')
+          .select('id, title, home_away, uniform, arrival_buffer_minutes')
           .eq('team_id', link.team_id)
           .eq('type', 'game')
           .eq('event_date', eventDate)
@@ -422,6 +432,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
             // — never overrides a value they actually set.
             ...(mm.home_away == null ? { home_away: homeAway } : {}),
             ...(mm.uniform == null ? { uniform: homeAway } : {}),
+            ...(mm.arrival_buffer_minutes == null ? { arrival_buffer_minutes: DEFAULT_ARRIVAL_BUFFER_MINUTES } : {}),
           }).eq('id', mm.id);
           if (mergeErr) writeErrors.push(`merge ${g.gameId}: ${mergeErr.message}`);
           else updated++;
@@ -433,6 +444,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
           event_date: eventDate, event_time: eventTime,
           location: isPostponed ? null : g.field, address: g.address, field_type: g.fieldType,
           field_notes: g.fieldSize, home_away: homeAway, uniform: homeAway,
+          arrival_buffer_minutes: DEFAULT_ARRIVAL_BUFFER_MINUTES,
           score_home: ourScore, score_away: oppScore, tournament_id: tournamentId,
           external_source: 'ncsa', external_id: g.gameId, team_ncsa_link_id: link.id,
           opponent_raw_name: opponent,
