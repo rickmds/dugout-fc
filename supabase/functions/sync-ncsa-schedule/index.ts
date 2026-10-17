@@ -236,6 +236,22 @@ async function resolveParentEmails(
   return recipients;
 }
 
+// Matches the established fmtDate/formatDate convention used by the other
+// Resend-sending functions (generate-cancellation-email, send-guest-invite)
+// — a raw "2026-11-15 17:30:00" read naturally in neither the push
+// notification nor the email body it's copied into verbatim.
+function formatWhen(eventDate: string, eventTime: string | null): string {
+  const dateStr = new Date(eventDate + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric',
+  });
+  if (!eventTime) return `${dateStr} (time TBD)`;
+  const [h, m] = eventTime.split(':').map(Number);
+  const timeStr = new Date(2000, 0, 1, h, m).toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit',
+  });
+  return `${dateStr} at ${timeStr}`;
+}
+
 async function notifyTeam(
   supabase: ReturnType<typeof createClient>,
   teamId: string,
@@ -480,7 +496,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
             updated++;
             await notifyTeam(
               supabase, link.team_id, `Game postponed — ${title}`,
-              `The league has postponed this game. A new date hasn't been set yet.`, 'event_updated',
+              `This game has been postponed. A new date hasn't been set yet.`, 'event_updated',
             );
           }
         }
@@ -511,10 +527,10 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
         } else {
           updated++;
           if (scheduleChanged) {
-            const when = eventTime ? `${eventDate} ${eventTime}` : `${eventDate} (time TBD)`;
+            const when = formatWhen(eventDate, eventTime);
             await notifyTeam(
               supabase, link.team_id, `Game rescheduled — ${title}`,
-              `The league moved this game to ${when} at ${g.field}.`, 'event_updated',
+              `This game has been moved to ${when} at ${g.field}.`, 'event_updated',
             );
           }
         }
@@ -535,7 +551,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
         cancelledCount++;
         await notifyTeam(
           supabase, link.team_id, `Game cancelled — ${existing.title}`,
-          `The league removed this game from the schedule.`, 'event_cancelled',
+          `This game has been removed from the schedule.`, 'event_cancelled',
         );
       }
     }
