@@ -198,7 +198,7 @@ export default function TeamRosterPage() {
                 const status = inviteStatus(p);
                 return (
                   <tr key={p.id}
-                    onClick={() => router.push(`/dashboard/players/${p.id}`)}
+                    onClick={() => router.push(`/dashboard/players/${p.id}?from=${encodeURIComponent(`/dashboard/teams/${teamId}/roster`)}`)}
                     style={{ borderBottom: i < players.length - 1 ? '1px solid #F1F5F9' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F8FAFC'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#fff'}

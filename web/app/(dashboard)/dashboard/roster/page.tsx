@@ -281,7 +281,7 @@ export default function RosterPage() {
               return (
                 <PlayerRow key={p.id} player={p} primary={primary} pos={pos} initials={initials}
                   isLast={idx === paginated.length - 1}
-                  onClick={() => router.push(`/dashboard/players/${p.id}`)}
+                  onClick={() => router.push(`/dashboard/players/${p.id}?from=${encodeURIComponent(`/dashboard/roster?team=${teamFilter}`)}`)}
                   onDelete={(e) => { e.stopPropagation(); setDeleteModal({ player: p, deleting: false }); }}
                 />
               );

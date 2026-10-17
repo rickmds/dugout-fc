@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, usePathname } from 'next/navigation';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft, Hash, Pencil, AlertTriangle, Lock, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +48,17 @@ function ageFromDob(dob: string | null): number | null {
 export default function PlayerProfileLayout({ children }: { children: React.ReactNode }) {
   const { playerId } = useParams<{ playerId: string }>();
   const pathname = usePathname();
+  // Where "back" goes: whatever page linked in here passes its own URL as
+  // ?from=, so clicking back returns to that specific team's roster (or
+  // wherever else) instead of always landing on the global players list.
+  // Read once into state (not derived fresh from useSearchParams() on
+  // every render) so switching tabs below — which doesn't repeat the
+  // query param on every tab's own href — doesn't lose it.
+  const searchParams = useSearchParams();
+  const [fromHref] = useState<string | null>(() => {
+    const raw = searchParams.get('from');
+    return raw ? decodeURIComponent(raw) : null;
+  });
   const { profile, club, teams } = useDashboard();
   const [player, setPlayer] = useState<PlayerMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,8 +116,8 @@ export default function PlayerProfileLayout({ children }: { children: React.Reac
       <div style={{ background: '#fff', borderBottom: '1px solid #E2E8F0' }}>
         <div style={{ padding: '16px 32px 0' }}>
 
-          <Link href="/dashboard/players" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', color: '#64748B', textDecoration: 'none', marginBottom: '14px' }}>
-            <ChevronLeft size={13} /> All Players
+          <Link href={fromHref ?? '/dashboard/players'} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12.5px', color: '#64748B', textDecoration: 'none', marginBottom: '14px' }}>
+            <ChevronLeft size={13} /> {fromHref ? 'Back' : 'All Players'}
           </Link>
 
           {/* Identity row */}
