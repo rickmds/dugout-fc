@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { X, Check, AlertCircle } from 'lucide-react';
+import { X, Check, AlertCircle, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { movePlayerToTeam } from '@/lib/movePlayer';
 import type { PlayerMeta } from '../../../app/(dashboard)/dashboard/players/[playerId]/layout';
@@ -15,9 +15,10 @@ type Props = {
   primary: string;
   onClose: () => void;
   onSaved: (updated: Partial<PlayerMeta>) => void;
+  onDeleted: () => void;
 };
 
-export default function EditDetailsModal({ player, teams, primary, onClose, onSaved }: Props) {
+export default function EditDetailsModal({ player, teams, primary, onClose, onSaved, onDeleted }: Props) {
   const [form, setForm] = useState({
     full_name: player.full_name,
     jersey_number: player.jersey_number?.toString() ?? '',
@@ -31,8 +32,22 @@ export default function EditDetailsModal({ player, teams, primary, onClose, onSa
   });
   const [saving, setSaving] = useState(false);
   const [moveError, setMoveError] = useState('');
+  // Two-step reveal (not a nested <dialog>, since this modal already is
+  // one) — click "Remove player" once to see the warning + real confirm
+  // button, same spirit as the Guardians tab's own delete confirm.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => { dialogRef.current?.showModal(); }, []);
+
+  async function removePlayer() {
+    setDeleting(true); setDeleteError('');
+    const { error } = await supabase.rpc('admin_delete_player', { p_player_id: player.id });
+    if (error) { setDeleting(false); setDeleteError(error.message); return; }
+    dialogRef.current?.close();
+    onDeleted();
+  }
 
   const labelStyle: React.CSSProperties = { fontSize: '11px', fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'block', marginBottom: '5px' };
   const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: '9px', border: '1px solid #E2E8F0', fontSize: '13.5px', color: '#0F172A', background: '#fff', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' };
@@ -144,6 +159,34 @@ export default function EditDetailsModal({ player, teams, primary, onClose, onSa
             <AlertCircle size={12} />{moveError}
           </div>
         )}
+
+        <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '14px', marginTop: '2px' }}>
+          {!confirmingDelete ? (
+            <button onClick={() => setConfirmingDelete(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 12px', background: 'transparent', border: '1px solid #FECACA', borderRadius: '9px', fontSize: '13px', fontWeight: '600', color: '#EF4444', cursor: 'pointer', fontFamily: 'inherit', width: '100%', justifyContent: 'center' }}>
+              <Trash2 size={14} /> Remove player
+            </button>
+          ) : (
+            <div style={{ padding: '12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '10px' }}>
+              <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: '#7F1D1D', lineHeight: '1.5' }}>
+                <strong>{player.full_name}</strong> will be permanently removed from the roster. This cannot be undone.
+              </p>
+              {deleteError && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '10px', fontSize: '12px', fontWeight: '600', color: '#DC2626' }}>
+                  <AlertCircle size={12} />{deleteError}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => { setConfirmingDelete(false); setDeleteError(''); }} disabled={deleting}
+                  style={{ flex: 1, padding: '9px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '8px', fontSize: '13px', fontWeight: '700', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button onClick={removePlayer} disabled={deleting}
+                  style={{ flex: 1, padding: '9px', background: '#EF4444', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: deleting ? 0.6 : 1 }}>
+                  {deleting ? 'Removing…' : 'Yes, remove'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
           <button onClick={onClose} style={{ padding: '9px 16px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: '9px', fontSize: '13px', fontWeight: '700', color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>

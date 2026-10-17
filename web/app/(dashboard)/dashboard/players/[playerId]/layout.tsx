@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, usePathname, useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ChevronLeft, Hash, Pencil, AlertTriangle, Lock, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +48,7 @@ function ageFromDob(dob: string | null): number | null {
 export default function PlayerProfileLayout({ children }: { children: React.ReactNode }) {
   const { playerId } = useParams<{ playerId: string }>();
   const pathname = usePathname();
+  const router = useRouter();
   // Where "back" goes: whatever page linked in here passes its own URL as
   // ?from=, so clicking back returns to that specific team's roster (or
   // wherever else) instead of always landing on the global players list.
@@ -224,6 +225,7 @@ export default function PlayerProfileLayout({ children }: { children: React.Reac
           primary={primary}
           onClose={() => setShowEdit(false)}
           onSaved={(updated) => { setPlayer((prev) => prev ? { ...prev, ...updated } : prev); setShowEdit(false); }}
+          onDeleted={() => router.push(fromHref ?? '/dashboard/players')}
         />
       )}
     </div>
