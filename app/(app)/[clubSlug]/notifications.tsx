@@ -20,7 +20,7 @@ import { useTheme } from '../../../hooks/useTheme';
 import { useTeam } from '../../../hooks/useTeam';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import { formatCurrency } from '../../../lib/formatCurrency';
-import { routeNotificationTap } from '../../../lib/notificationRouting';
+import { routeNotificationTap, NO_OP_NOTIFICATION_TYPES } from '../../../lib/notificationRouting';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -423,6 +423,38 @@ export default function NotificationsScreen() {
             const cfgColor = (n.type === 'new_dm' || n.type === 'invite_accepted') ? primaryColor : cfg.color;
             const isFirst = index === 0;
             const isLast = index === section.data.length - 1;
+            // Nothing this type's data could possibly route to (see
+            // NO_OP_NOTIFICATION_TYPES) — a tappable row that visibly does
+            // nothing on press reads as broken, so these render as a plain,
+            // non-interactive View instead of pretending to be a button.
+            const noOp = NO_OP_NOTIFICATION_TYPES.has(n.type);
+            const RowContent = (
+              <>
+                {/* Unread dot */}
+                <View style={styles.dotCol}>
+                  {!n.read && <View style={[styles.dot, { backgroundColor: primaryColor }]} />}
+                </View>
+
+                {/* Icon */}
+                <View style={[styles.iconCircle, { backgroundColor: `${cfgColor}18` }]}>
+                  <Ionicons name={cfg.icon} size={18} color={cfgColor} />
+                </View>
+
+                {/* Content */}
+                <View style={styles.notifContent}>
+                  <View style={styles.notifTitleRow}>
+                    <Text style={[styles.notifTitle, !n.read && styles.notifTitleUnread]}>{n.title}</Text>
+                    {teamNameByNotifId[n.id] ? (
+                      <View style={styles.notifTeamBadge}>
+                        <Text style={styles.notifTeamBadgeText} numberOfLines={1}>{teamNameByNotifId[n.id]}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {n.body ? <Text style={styles.notifBody} numberOfLines={2}>{n.body}</Text> : null}
+                  <Text style={styles.notifTime}>{relativeTime(n.created_at ?? '')}</Text>
+                </View>
+              </>
+            );
             return (
               <View style={[
                 styles.notifRow,
@@ -431,35 +463,17 @@ export default function NotificationsScreen() {
                 !isLast && styles.notifRowBorder,
                 !n.read && { backgroundColor: `${primaryColor}0C` },
               ]}>
-                <TouchableOpacity
-                  style={styles.notifRowTouchable}
-                  onPress={() => handleNotifPress(n)}
-                  activeOpacity={0.7}
-                >
-                  {/* Unread dot */}
-                  <View style={styles.dotCol}>
-                    {!n.read && <View style={[styles.dot, { backgroundColor: primaryColor }]} />}
-                  </View>
-
-                  {/* Icon */}
-                  <View style={[styles.iconCircle, { backgroundColor: `${cfgColor}18` }]}>
-                    <Ionicons name={cfg.icon} size={18} color={cfgColor} />
-                  </View>
-
-                  {/* Content */}
-                  <View style={styles.notifContent}>
-                    <View style={styles.notifTitleRow}>
-                      <Text style={[styles.notifTitle, !n.read && styles.notifTitleUnread]}>{n.title}</Text>
-                      {teamNameByNotifId[n.id] ? (
-                        <View style={styles.notifTeamBadge}>
-                          <Text style={styles.notifTeamBadgeText} numberOfLines={1}>{teamNameByNotifId[n.id]}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    {n.body ? <Text style={styles.notifBody} numberOfLines={2}>{n.body}</Text> : null}
-                    <Text style={styles.notifTime}>{relativeTime(n.created_at ?? '')}</Text>
-                  </View>
-                </TouchableOpacity>
+                {noOp ? (
+                  <View style={styles.notifRowTouchable}>{RowContent}</View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.notifRowTouchable}
+                    onPress={() => handleNotifPress(n)}
+                    activeOpacity={0.7}
+                  >
+                    {RowContent}
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   onPress={() => deleteNotif(n.id)}
                   disabled={deletingId === n.id}

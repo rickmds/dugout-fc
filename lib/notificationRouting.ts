@@ -73,6 +73,7 @@ export async function routeNotificationTap(opts: {
     case 'attendance_absent':
     case 'video_added':
     case 'reflection_prompt':
+    case 'lineup_published':
       d.event_id
         ? router.push({ pathname: `/(app)/${slug}/event/${d.event_id}` as any, params: notifParams })
         : router.push(`/(app)/${slug}/(tabs)/schedule` as any);
@@ -141,15 +142,32 @@ export async function routeNotificationTap(opts: {
     case 'evaluation_published':
     case 'waiver_reminder':
     case 'payment_disputed': // admin-only alert, no dedicated dispute screen yet
+    case 'cert_reminder': // no dedicated mobile certifications screen yet
+    case 'registration_payment_received': // no dedicated mobile registration screen yet
+    case 'tryout_payment_received': // no dedicated mobile tryout screen yet
+    case 'ncsa_fine':
+    case 'ncsa_tbs':
+    case 'ncsa_missing_score':
+    case 'ncsa_discipline': // no dedicated mobile NCSA reports screen yet
       router.push(`/(app)/${slug}/admin` as any);
       break;
     // ── Fee/payment notifications ──────────────────────────────────────────
     case 'fee_assigned':
+    // The next three carry no entity id the mobile app can do anything
+    // with at all (see NO_OP_NOTIFICATION_TYPES below, used by the
+    // Notification Centre to render these rows genuinely unclickable
+    // rather than just silently no-op on tap) — truly nothing to jump to,
+    // not just "no screen built yet" the way the admin fallbacks above are.
+    case 'installment_charge_failed':
+    case 'tryout_offer_response':
+    case 'payment_reconciliation_gap':
+    case 'emergency_broadcast':
       break; // intentional no-op — informational only, nothing to jump to
     case 'fee_reminder':
     case 'payment_confirmed':
     case 'payment_failed':
     case 'payment_received':
+    case 'payment_refunded':
       if (d.player_fee_id && onFeePaymentTap) onFeePaymentTap(d.player_fee_id as string);
       break;
     case 'fee_payment_claimed':
@@ -160,3 +178,16 @@ export async function routeNotificationTap(opts: {
       router.push(`/(app)/${slug}/notifications` as any);
   }
 }
+
+// Types with no usable entity id to route anywhere — the switch above
+// already no-ops these on tap, but a tappable row that visibly does
+// nothing reads as broken. The Notification Centre uses this to render
+// these rows without the tap affordance at all, rather than relying on
+// "tap it and watch nothing happen" to communicate that.
+export const NO_OP_NOTIFICATION_TYPES = new Set([
+  'fee_assigned',
+  'installment_charge_failed',
+  'tryout_offer_response',
+  'payment_reconciliation_gap',
+  'emergency_broadcast',
+]);
