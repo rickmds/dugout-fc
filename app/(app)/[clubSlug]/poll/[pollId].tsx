@@ -49,6 +49,21 @@ export default function PollDetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollId, team?.id]);
 
+  // Same stuck-notification-centre-item fix already applied to events,
+  // conversations, announcements, guest requests, and tournaments —
+  // nothing cleared a poll notification unless the user separately opened
+  // the Notification Centre and tapped it there.
+  async function markPollNotificationsRead() {
+    if (!profile || !pollId) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .eq('type', 'team_poll')
+      .filter('data->>poll_id', 'eq', pollId);
+  }
+
   async function load() {
     setLoading(true);
     const sb = supabase as any;
@@ -64,6 +79,7 @@ export default function PollDetailScreen() {
       setLoading(false);
       return;
     }
+    markPollNotificationsRead();
 
     // Only realign when we genuinely got here via a notification tap — see
     // the identical fix (and its full reasoning) in event/[eventId].tsx.

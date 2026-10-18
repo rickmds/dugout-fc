@@ -96,6 +96,21 @@ export default function TournamentDetailScreen() {
     tournament?.lng ?? null,
   );
 
+  // Same stuck-notification-centre-item fix already applied to events,
+  // conversations, announcements, and guest requests — nothing cleared a
+  // tournament-scoped notification unless the user separately opened the
+  // Notification Centre and tapped it there.
+  async function markTournamentNotificationsRead() {
+    if (!profile || !tournamentId) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('profile_id', profile.id)
+      .eq('read', false)
+      .in('type', ['tournament_created', 'tournament_rsvp_reminder', 'tournament_advance', 'tournament_eliminated', 'tournament_game_day', 'tournament_cancelled'])
+      .filter('data->>tournament_id', 'eq', tournamentId);
+  }
+
   const load = useCallback(async () => {
     if (!tournamentId) return;
     const { data: tRow } = await (supabase as any)
@@ -105,6 +120,7 @@ export default function TournamentDetailScreen() {
       .single();
     if (!tRow) { setLoading(false); setRefreshing(false); return; }
     setTournament(tRow as Tournament);
+    markTournamentNotificationsRead();
 
     // Only realign when we genuinely got here via a notification tap — see
     // the identical fix (and its full reasoning) in event/[eventId].tsx.
