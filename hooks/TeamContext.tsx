@@ -153,6 +153,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // On cold launch, this runs once with profile still null (the
+    // early-return above fires, setting loading false), then again the
+    // instant profile populates — but without resetting loading back to
+    // true here, that second, REAL fetch ran with loading already reading
+    // false the whole time it was in flight. app/index.tsx's `session &&
+    // teamsLoading` gate therefore let the redirect logic run against a
+    // still-empty allTeams for however long this fetch actually took,
+    // landing on club.slug's bare default instead of waiting for the real
+    // active team.
+    setLoading(true);
     setTeamsLoadError(false);
     let teams: Team[];
 

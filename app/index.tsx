@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../hooks/useAuth';
@@ -6,17 +6,62 @@ import { useTeam } from '../hooks/useTeam';
 import { useTheme } from '../hooks/useTheme';
 import { PULSE_COLORS, ThemeColors } from '../constants/colors';
 
+// Every known stall in this screen's own chain (getSession, the profile
+// fetch, the teams fetch) already has its own timeout — but that's exactly
+// the kind of guarantee that's only as good as this file's knowledge of
+// every path through two other hooks' internals, and already missed one
+// real gap once (TeamContext's loading flag). Rather than keep chasing
+// each new way this chain could stall, this is an unconditional ceiling on
+// the one thing that actually matters: never leave someone looking at a
+// bare, un-actionable spinner. If still gated past this many ms, show
+// Retry regardless of which upstream flag technically caused it — the
+// same "stop trusting the chain to always resolve, force an exit instead"
+// fix already applied to the splash video for the same underlying reason.
+const STUCK_TOO_LONG_MS = 12000;
+
 export default function Index() {
   const { session, club, loading, sessionCheckFailed, retrySessionCheck } = useAuth();
   const { allTeams, loading: teamsLoading, teamsLoadError, refetch: retryTeamsFetch, getActiveTeamId } = useTeam();
   const { colors } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
+  const gated = loading || !!(session && teamsLoading);
+  const [stuckTooLong, setStuckTooLong] = useState(false);
+  const gatedSinceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!gated) {
+      gatedSinceRef.current = null;
+      setStuckTooLong(false);
+      return;
+    }
+    if (gatedSinceRef.current == null) gatedSinceRef.current = Date.now();
+    const elapsed = Date.now() - gatedSinceRef.current;
+    const t = setTimeout(() => setStuckTooLong(true), Math.max(0, STUCK_TOO_LONG_MS - elapsed));
+    return () => clearTimeout(t);
+  }, [gated]);
+
+  if (gated && stuckTooLong) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.retryTitle}>This is taking longer than expected</Text>
+        <Text style={styles.retrySubtitle}>Check your connection and try again.</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => { setStuckTooLong(false); gatedSinceRef.current = null; retrySessionCheck(); if (session) retryTeamsFetch(); }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   // Also wait on TeamContext once there's a confirmed session — it's what
   // knows which team was actually last active, which the redirect below
   // needs before it can safely land anywhere other than the profile's own
   // home club.
-  if (loading || (session && teamsLoading)) {
+  if (gated) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color={PULSE_COLORS.brand.green} size="large" />
