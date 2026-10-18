@@ -3677,6 +3677,7 @@ export type Database = {
           avatar_url: string | null
           club_id: string | null
           created_at: string | null
+          default_team_id: string | null
           emergency_contact_name: string | null
           emergency_contact_phone: string | null
           emergency_contact_relationship: string | null
@@ -3698,6 +3699,7 @@ export type Database = {
           avatar_url?: string | null
           club_id?: string | null
           created_at?: string | null
+          default_team_id?: string | null
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
           emergency_contact_relationship?: string | null
@@ -3719,6 +3721,7 @@ export type Database = {
           avatar_url?: string | null
           club_id?: string | null
           created_at?: string | null
+          default_team_id?: string | null
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
           emergency_contact_relationship?: string | null
@@ -3741,6 +3744,13 @@ export type Database = {
             columns: ["club_id"]
             isOneToOne: false
             referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_default_team_id_fkey"
+            columns: ["default_team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id"]
           },
         ]

@@ -51,6 +51,10 @@ interface TeamContextValue {
    * spinner or a false "you have no teams" state. */
   teamsLoadError: boolean;
   selectTeam: (teamId: string) => Promise<void>;
+  /** Pins which team cold launch should land on, distinct from whatever
+   * was last viewed — pass null to unpin. Persisted on the profile (not
+   * AsyncStorage) so it's the same across devices. */
+  setDefaultTeam: (teamId: string | null) => Promise<void>;
   refetch: () => Promise<void>;
   /** The current selection read synchronously — unlike `team`, this is
    * never stale-by-one-render, so a consumer that needs to check "did a
@@ -111,7 +115,7 @@ function storageKey(profileId: string) {
 const TeamContext = createContext<TeamContextValue | null>(null);
 
 export function TeamProvider({ children }: { children: ReactNode }) {
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const [allTeams, setAllTeams]               = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId]   = useState<string | null>(null);
   const [loading, setLoading]                 = useState(true);
@@ -131,7 +135,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const selectedTeamIdRef = useRef<string | null>(null);
   useEffect(() => { selectedTeamIdRef.current = selectedTeamId; }, [selectedTeamId]);
 
-  const resolveSelection = useCallback((teams: Team[], saved: string | null) => {
+  const resolveSelection = useCallback((teams: Team[], saved: string | null, defaultTeamId: string | null) => {
     const current = teams.find((t) => t.id === selectedTeamIdRef.current);
     if (current) return current.id; // already-active selection still valid — leave it alone
     // A selection that was valid a moment ago and is now missing from
@@ -141,8 +145,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // cycle. Keep the existing selection rather than falling through to
     // teams[0] (a different club entirely) on nothing more than "not
     // found in this possibly-incomplete list". Only a genuinely fresh
-    // session (nothing selected yet) falls through to storage/teams[0].
+    // session (nothing selected yet) falls through to default/storage/teams[0].
     if (selectedTeamIdRef.current) return selectedTeamIdRef.current;
+    // A deliberately pinned default wins over "last viewed" — that's the
+    // whole point of pinning one instead of just relying on whatever was
+    // last tapped in the switcher.
+    const fromDefault = teams.find((t) => t.id === defaultTeamId);
+    if (fromDefault) return fromDefault.id;
     const fromStorage = teams.find((t) => t.id === saved);
     return fromStorage ? fromStorage.id : (teams[0]?.id ?? null);
   }, []);
@@ -250,7 +259,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         .map((t) => (explicitMemberIds.has(t.id) ? { ...t, hasExplicitMembership: true } : t))
         .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
       setAllTeams(teams);
-      setSelectedTeamId(resolveSelection(teams, saved));
+      setSelectedTeamId(resolveSelection(teams, saved, profile.default_team_id ?? null));
     } else {
       const extraAdminTeamsResult = await withTimeout(fetchAdminClubTeams(adminClubIds), TEAMS_TIMEOUT_MS);
       if (extraAdminTeamsResult === TIMEOUT) {
@@ -273,11 +282,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         .map((t) => (explicitMemberIds.has(t.id) ? { ...t, hasExplicitMembership: true } : t))
         .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
       setAllTeams(teams);
-      setSelectedTeamId(resolveSelection(teams, saved));
+      setSelectedTeamId(resolveSelection(teams, saved, profile.default_team_id ?? null));
     }
 
     setLoading(false);
-  }, [profile?.id, profile?.club_id, profile?.role, resolveSelection]);
+  }, [profile?.id, profile?.club_id, profile?.role, profile?.default_team_id, resolveSelection]);
 
   useEffect(() => {
     fetchTeams();
@@ -326,6 +335,17 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     setSelectedTeamId(teamId);
     if (profile?.id) await AsyncStorage.setItem(storageKey(profile.id), teamId);
   }, [profile?.id]);
+
+  const setDefaultTeam = useCallback(async (teamId: string | null) => {
+    if (!profile?.id) return;
+    const { error } = await supabase.from('profiles').update({ default_team_id: teamId }).eq('id', profile.id);
+    if (error) throw error;
+    // Pulls the new value into useAuth's own profile state — resolveSelection
+    // reads profile.default_team_id straight from there, not a local copy,
+    // so without this the pin wouldn't take effect until the next full
+    // session restore.
+    await refreshProfile();
+  }, [profile?.id, refreshProfile]);
 
   // Lets a reader (ClubSlugGuard) check the truly-current selection without
   // waiting on this provider's own next render — see selectTeam above.
@@ -383,8 +403,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // stable via useCallback above, so only `team`/`allTeams`/`loading` need
   // to be in the dependency array.
   const value = useMemo<TeamContextValue>(
-    () => ({ team, allTeams, loading, teamsLoadError, selectTeam, refetch: fetchTeams, getActiveTeamId, teamsWithUnreadChat }),
-    [team, allTeams, loading, teamsLoadError, selectTeam, fetchTeams, getActiveTeamId, teamsWithUnreadChat]
+    () => ({ team, allTeams, loading, teamsLoadError, selectTeam, setDefaultTeam, refetch: fetchTeams, getActiveTeamId, teamsWithUnreadChat }),
+    [team, allTeams, loading, teamsLoadError, selectTeam, setDefaultTeam, fetchTeams, getActiveTeamId, teamsWithUnreadChat]
   );
 
   return (

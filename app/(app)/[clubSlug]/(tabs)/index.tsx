@@ -339,7 +339,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const { profile, club, refreshProfile, signOut } = useAuth();
-  const { team, allTeams, loading: teamLoading, selectTeam, teamsWithUnreadChat } = useTeam();
+  const { team, allTeams, loading: teamLoading, selectTeam, setDefaultTeam, teamsWithUnreadChat } = useTeam();
   const { primaryColor, rgba, clubName, logoUrl, secondaryColor, homeKitColor, awayKitColor, trainingKitColor, timezone } = useClub();
   const { hasFeature } = usePlan();
   const { colors } = useTheme();
@@ -486,6 +486,18 @@ export default function HomeScreen() {
     selectTeam(teamId);
     if (newTeam?.club?.slug && newTeam.club.slug !== slug) {
       router.replace(`/(app)/${newTeam.club.slug}/(tabs)` as never);
+    }
+  }
+
+  const [settingDefaultTeamId, setSettingDefaultTeamId] = useState<string | null>(null);
+  async function handleToggleDefaultTeam(teamId: string) {
+    setSettingDefaultTeamId(teamId);
+    try {
+      await setDefaultTeam(profile?.default_team_id === teamId ? null : teamId);
+    } catch {
+      Alert.alert("Couldn't update", 'Check your connection and try again.');
+    } finally {
+      setSettingDefaultTeamId(null);
     }
   }
 
@@ -2433,7 +2445,7 @@ export default function HomeScreen() {
         <View style={styles.devSheet}>
           <View style={styles.devHandle} />
           <Text style={styles.devTitle}>Switch Team</Text>
-          <Text style={styles.devSub}>Select which team to view</Text>
+          <Text style={styles.devSub}>{hasMultipleTeams ? 'Select which team to view — tap the star to set which one opens by default' : 'Select which team to view'}</Text>
 
           {hasMultipleTeams && (
             <View style={styles.genderFilterRow}>
@@ -2506,6 +2518,19 @@ export default function HomeScreen() {
                               <View style={[styles.teamPickerPill, { backgroundColor: genderTint.bg }]}>
                                 <Text style={[styles.teamPickerPillText, { color: genderTint.text }]}>{GENDER_DISPLAY_LABELS[resolvedGender]}</Text>
                               </View>
+                            )}
+                            {hasMultipleTeams && (
+                              <TouchableOpacity
+                                onPress={() => handleToggleDefaultTeam(t.id)}
+                                disabled={settingDefaultTeamId === t.id}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              >
+                                <Ionicons
+                                  name={profile?.default_team_id === t.id ? 'star' : 'star-outline'}
+                                  size={18}
+                                  color={profile?.default_team_id === t.id ? '#F59E0B' : colors.muted}
+                                />
+                              </TouchableOpacity>
                             )}
                             {isActive && <Ionicons name="checkmark-circle" size={20} color={teamColor} />}
                           </View>
