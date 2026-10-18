@@ -226,7 +226,14 @@ export default function EvalDetailScreen() {
         { label: 'Mental',    val: ev.rating_mental    ?? 0, angle: Math.PI / 2,  color: '#22C55E' },
         { label: 'Tactical',  val: ev.rating_tactical  ?? 0, angle: Math.PI,      color: '#8B5CF6' },
       ];
-      const CX = 160, CY = 140, MR = 90;
+      // Width is wider than tall (not a plain square) specifically for the
+      // PHYSICAL/TACTICAL side labels — anchored at one edge and growing
+      // outward (text-anchor start/end, not middle), same fix as the web
+      // dashboard's identical radar chart (EvaluationReport.tsx), which
+      // was visibly clipping at a tighter margin than this one already
+      // had. Widened further here since a PDF renderer can size the same
+      // font differently than a browser would.
+      const CX = 180, CY = 140, MR = 90;
       function rPt(val: number, angle: number) {
         const r = (val / 5) * MR;
         return { x: CX + r * Math.cos(angle), y: CY + r * Math.sin(angle) };
@@ -237,7 +244,7 @@ export default function EvalDetailScreen() {
       const dataPts  = axes.map(a => rPt(a.val, a.angle));
       const dataPoly = dataPts.map(p => `${p.x},${p.y}`).join(' ');
       const radarSvg = `
-        <svg width="320" height="280" viewBox="0 0 320 280" xmlns="http://www.w3.org/2000/svg">
+        <svg width="360" height="280" viewBox="0 0 360 280" xmlns="http://www.w3.org/2000/svg">
           ${[1,2,3,4,5].map(l => `<polygon points="${gridPoly(l)}" fill="none" stroke="${l===5?'rgba(0,0,0,0.15)':'rgba(0,0,0,0.07)'}" stroke-width="${l===5?1.5:1}"/>`).join('')}
           ${axes.map(a => `<line x1="${CX}" y1="${CY}" x2="${CX+MR*Math.cos(a.angle)}" y2="${CY+MR*Math.sin(a.angle)}" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>`).join('')}
           <polygon points="${dataPoly}" fill="${primary}" fill-opacity="0.15" stroke="${primary}" stroke-width="2.5" stroke-linejoin="round"/>

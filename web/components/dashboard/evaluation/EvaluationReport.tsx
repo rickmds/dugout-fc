@@ -49,7 +49,16 @@ export function RadarChart({ ratings, primary }: {
   ratings: { technical: number | null; tactical: number | null; physical: number | null; mental: number | null };
   primary: string;
 }) {
-  const CX = 110, CY = 110, MR = 72;
+  // Canvas is wider than tall (360x220, not a plain square) specifically
+  // for the PHYSICAL/TACTICAL side labels — they're anchored at one edge
+  // and grow outward (textAnchor start/end, not middle), so at the old
+  // 220-wide canvas "PHYSICAL" ran out of room ~3 characters in and got
+  // clipped at the SVG's own edge. TECHNICAL/MENTAL (top/bottom, centered
+  // text-anchor) never had this problem, which is why only the sides were
+  // visibly cut off. Chart geometry itself (CY/MR) is unchanged — only CX
+  // and the canvas width grew, to re-center the same circle in the middle
+  // of the new wider box.
+  const CX = 180, CY = 110, MR = 72;
   const values = [ratings.technical ?? 0, ratings.physical ?? 0, ratings.mental ?? 0, ratings.tactical ?? 0];
 
   function pt(val: number, angle: number) {
@@ -64,7 +73,7 @@ export function RadarChart({ ratings, primary }: {
   const dataPoly = dataPts.map(p => `${p.x},${p.y}`).join(' ');
 
   return (
-    <svg width="220" height="220" viewBox="0 0 220 220">
+    <svg width="360" height="220" viewBox="0 0 360 220">
       {[1,2,3,4,5].map(l => <polygon key={l} points={gridPoly(l)} fill="none" stroke={l===5?'rgba(0,0,0,0.15)':'rgba(0,0,0,0.07)'} strokeWidth={l===5?1.5:1} />)}
       {RADAR_ANGLES.map((a,i) => <line key={i} x1={CX} y1={CY} x2={CX+MR*Math.cos(a)} y2={CY+MR*Math.sin(a)} stroke="rgba(0,0,0,0.08)" strokeWidth={1}/>)}
       <polygon points={dataPoly} fill={primary} fillOpacity={0.15} stroke={primary} strokeWidth={2.5} strokeLinejoin="round"/>
