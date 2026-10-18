@@ -144,10 +144,16 @@ Deno.serve(async (req) => {
       // Only push to people receiving their first notification for this conversation
       pushProfileIds = newProfileIds;
     } else {
-      // No conversation_id — fall through to normal insert + push
+      // No conversation_id — fall through to normal insert + push. Uses
+      // resolvedType (not the raw notifType, which is undefined for every
+      // real caller — sendTeamPush/sendProfilesPush only ever set data.type,
+      // never a top-level type) — the two other insert paths above/below
+      // already got this right; this one wrote a null type column, which
+      // nothing downstream (markConversationRead, the Notification Centre's
+      // own type filters) would ever match.
       await supabase.from('notifications').insert(
         profileIds.map((profile_id) => ({
-          profile_id, type: notifType, title, body, data: enrichedData, team_id: resolvedTeamId,
+          profile_id, type: resolvedType, title, body, data: enrichedData, team_id: resolvedTeamId,
         })),
       );
     }

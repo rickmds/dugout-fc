@@ -445,6 +445,15 @@ export default function ConversationScreen() {
           return [...prev, { id: raw.id, body: raw.body, created_at: raw.created_at, sender_id: raw.sender_id, sender_name: senderNamesRef.current[raw.sender_id] ?? null, edited: false, image_url: raw.image_url ?? null }];
         });
         setTimeout(() => scrollToRealEnd(true), 50);
+        // markConversationRead() only ran once, at bootstrap — a message
+        // that arrives over this realtime subscription while the screen is
+        // already open (the normal case for an active conversation) still
+        // creates a real unread notification row for every other recipient,
+        // this viewer included, since sendTeamPush/sendProfilesPush has no
+        // way to know who's currently looking at the screen. Someone
+        // actively reading messages as they stream in was the exact case
+        // that never got cleared.
+        if (raw.sender_id !== profile?.id) markConversationRead();
       })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'messages',
