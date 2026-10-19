@@ -135,25 +135,42 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const selectedTeamIdRef = useRef<string | null>(null);
   useEffect(() => { selectedTeamIdRef.current = selectedTeamId; }, [selectedTeamId]);
 
+  // Only the very first successful resolution each cold launch is open to
+  // being corrected by a freshly-arrived default_team_id. useAuth restores
+  // `profile` from a fast AsyncStorage cache first (possibly still holding
+  // the value from BEFORE a just-pinned default finished syncing there,
+  // since persistCache inside refreshProfile is fire-and-forget), then
+  // replaces it with the live-fetched one moments later. Without this, a
+  // selection already auto-resolved from that first, stale pass hits the
+  // "already selected, leave it alone" guard below and permanently
+  // shadows the real pin for the rest of the session — nothing ever
+  // revisits it once set, because that guard exists to protect against a
+  // genuinely different problem (a degraded fetch for one cycle) and
+  // can't tell the two apart. Sits outside resolveSelection itself (not
+  // passed in as data) since it needs to persist across calls, not be
+  // recomputed from this one's arguments.
+  const firstResolutionDoneRef = useRef(false);
+
   const resolveSelection = useCallback((teams: Team[], saved: string | null, defaultTeamId: string | null) => {
-    const current = teams.find((t) => t.id === selectedTeamIdRef.current);
-    if (current) return current.id; // already-active selection still valid — leave it alone
-    // A selection that was valid a moment ago and is now missing from
-    // `teams` reads the same, at this point, as "that team got deleted"
-    // — but it's far more often a degraded fetch (see fetchAdminClubTeams
-    // above) silently dropping an entire club's teams for one refresh
-    // cycle. Keep the existing selection rather than falling through to
-    // teams[0] (a different club entirely) on nothing more than "not
-    // found in this possibly-incomplete list". Only a genuinely fresh
-    // session (nothing selected yet) falls through to default/storage/teams[0].
-    if (selectedTeamIdRef.current) return selectedTeamIdRef.current;
+    if (firstResolutionDoneRef.current) {
+      const current = teams.find((t) => t.id === selectedTeamIdRef.current);
+      if (current) return current.id; // already-active selection still valid — leave it alone
+      // A selection that was valid a moment ago and is now missing from
+      // `teams` reads the same, at this point, as "that team got deleted"
+      // — but it's far more often a degraded fetch (see fetchAdminClubTeams
+      // above) silently dropping an entire club's teams for one refresh
+      // cycle. Keep the existing selection rather than falling through to
+      // teams[0] (a different club entirely) on nothing more than "not
+      // found in this possibly-incomplete list".
+      if (selectedTeamIdRef.current) return selectedTeamIdRef.current;
+    }
     // A deliberately pinned default wins over "last viewed" — that's the
     // whole point of pinning one instead of just relying on whatever was
     // last tapped in the switcher.
     const fromDefault = teams.find((t) => t.id === defaultTeamId);
-    if (fromDefault) return fromDefault.id;
-    const fromStorage = teams.find((t) => t.id === saved);
-    return fromStorage ? fromStorage.id : (teams[0]?.id ?? null);
+    const resolved = fromDefault ? fromDefault.id : (teams.find((t) => t.id === saved)?.id ?? teams[0]?.id ?? null);
+    if (resolved) firstResolutionDoneRef.current = true;
+    return resolved;
   }, []);
 
   const fetchTeams = useCallback(async () => {
