@@ -27,7 +27,7 @@ function NeedHelpLink() {
 
 export default function AuthLayout() {
   const { session, profile, club, loading } = useAuth();
-  const { allTeams, getActiveTeamId } = useTeam();
+  const { team } = useTeam();
 
   // Only bounce a fully-onboarded user back into the app — e.g. if they
   // navigate back to /(auth)/profile-setup after already finishing it.
@@ -36,9 +36,11 @@ export default function AuthLayout() {
     // club the last-active TEAM actually belongs to, not always the
     // profile's home club — otherwise ClubSlugGuard "corrects" the mismatch
     // it sees by switching the active team selection to match this URL
-    // instead of the other way around.
-    const activeTeam = allTeams.find((t) => t.id === getActiveTeamId());
-    const slug = activeTeam?.club?.slug ?? club.slug;
+    // instead of the other way around. Reads the reactive `team` value,
+    // NOT getActiveTeamId() — see app/index.tsx's own comment on this
+    // exact redirect for why that ref-based lookup lags one render behind
+    // on precisely the render this fires on.
+    const slug = team?.club?.slug ?? club.slug;
     return <Redirect href={`/(app)/${slug}/(tabs)`} />;
   }
 

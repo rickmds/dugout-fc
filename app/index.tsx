@@ -21,7 +21,7 @@ const STUCK_TOO_LONG_MS = 12000;
 
 export default function Index() {
   const { session, club, loading, sessionCheckFailed, retrySessionCheck } = useAuth();
-  const { allTeams, loading: teamsLoading, teamsLoadError, refetch: retryTeamsFetch, getActiveTeamId } = useTeam();
+  const { team, loading: teamsLoading, teamsLoadError, refetch: retryTeamsFetch } = useTeam();
   const { colors } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
 
@@ -115,8 +115,21 @@ export default function Index() {
     // the ACTIVE TEAM SELECTION to match this URL instead — a real,
     // persisted switch away from whatever team was actually in use, on
     // every single cold launch.
-    const activeTeam = allTeams.find((t) => t.id === getActiveTeamId());
-    const slug = activeTeam?.club?.slug ?? club.slug;
+    //
+    // Reads the reactive `team` value here, NOT getActiveTeamId() —
+    // that reads selectedTeamIdRef, which is synced from selectedTeamId by
+    // its own separate useEffect and so lags one render behind on the
+    // exact render where `allTeams`/`team` first finish resolving. This
+    // redirect fires synchronously as part of THAT same render, before the
+    // ref's sync effect has had a chance to run — so getActiveTeamId()
+    // read it as still null, and the redirect fell back to the home club
+    // every time, regardless of which team (default-pinned or otherwise)
+    // had actually just been resolved. ClubSlugGuard's identical-looking
+    // use of getActiveTeamId() is intentional and different: it exists to
+    // avoid a real same-tick staleness risk after `selectTeam` fires (see
+    // its own comment) — that risk doesn't apply here, since this is the
+    // very first resolution, not a reaction to an in-flight switch.
+    const slug = team?.club?.slug ?? club.slug;
     return <Redirect href={`/(app)/${slug}/(tabs)`} />;
   }
 
