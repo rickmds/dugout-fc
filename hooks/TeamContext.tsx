@@ -175,22 +175,44 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     setTeamsLoadError(false);
     let teams: Team[];
 
+    // withTimeout only protects against a stalled request — a genuinely
+    // rejected promise (AsyncStorage.getItem throwing, a malformed query,
+    // a real network error) propagates straight through the awaits below
+    // instead of losing the timeout race, and with no catch around any of
+    // this, that left `loading` stuck true forever: nothing downstream of
+    // an unhandled rejection in this function ever runs, teamsLoadError
+    // included. Same reject-vs-timeout gap useAuth.tsx's checkSession was
+    // already hardened against — this was the one place in the cold-launch
+    // chain that never got the equivalent fix.
+    try {
+
     // club_admins grants the same implicit "every team in this club, no
     // team_members row needed" access as a home-club org_admin, but for a
     // SECOND club — fetched for every profile regardless of profile.role,
     // since a plain coach at their home club can independently be an
     // org_admin of a different club too (not just the reverse).
+    //
+    // The 4th slot — every team in the admin's own HOME club — only
+    // depends on profile.club_id, already known before any of this starts,
+    // so it used to wait for this whole wave to finish before even being
+    // ASKED for (in the old "secondWave"), costing every org_admin/
+    // app_admin cold launch a full extra round trip for no real
+    // dependency. Folded in here instead so it fetches in parallel with
+    // everything else; null for a non-admin role, which needs nothing
+    // from this query at all (see the branch below).
+    const isAdminRole = profile.role === 'org_admin' || profile.role === 'app_admin';
     const firstWave = await withTimeout(Promise.all([
       supabase.from('club_admins').select('club_id').eq('profile_id', profile.id),
       supabase.from('team_members').select('role, teams(*, clubs(*))').eq('profile_id', profile.id),
       AsyncStorage.getItem(storageKey(profile.id)),
+      isAdminRole ? supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at') : null,
     ]), TEAMS_TIMEOUT_MS);
     if (firstWave === TIMEOUT) {
       setTeamsLoadError(true);
       setLoading(false);
       return;
     }
-    const [adminClubsRes, memberRes, saved] = firstWave;
+    const [adminClubsRes, memberRes, saved, homeTeamsRes] = firstWave;
     // A transient failure here (a network blip, or an access token that
     // expired while the app was asleep and hasn't refreshed yet — see
     // lib/supabase.ts's AppState-driven startAutoRefresh/stopAutoRefresh)
@@ -210,7 +232,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       .filter((r) => r.teams)
       .map((r: any) => ({ ...r.teams, club: normalizeClub(r.teams.clubs), myRole: r.role, hasExplicitMembership: true } as Team));
 
-    if (profile.role === 'org_admin' || profile.role === 'app_admin') {
+    if (isAdminRole) {
       // Org admins implicitly manage every team in their home club (no
       // team_members row needed — RLS grants this by role+club_id), but may
       // ALSO be an explicit team_members guest coach on teams at other
@@ -227,16 +249,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       // rather than a new tier since "implicit full access to every team
       // in this club" is exactly what that tier already means everywhere
       // else in the app that reads myRole.
-      const secondWave = await withTimeout(Promise.all([
-        supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at'),
-        fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id)),
-      ]), TEAMS_TIMEOUT_MS);
-      if (secondWave === TIMEOUT) {
+      //
+      // Home-club teams already fetched above, in parallel with firstWave
+      // (homeTeamsRes) — only the cross-club admin teams still need their
+      // own request here, since that genuinely depends on firstWave's own
+      // adminClubIds result.
+      const extraAdminTeams = await withTimeout(fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id)), TEAMS_TIMEOUT_MS);
+      if (extraAdminTeams === TIMEOUT) {
         setTeamsLoadError(true);
         setLoading(false);
         return;
       }
-      const [homeRes, extraAdminTeams] = secondWave;
+      const homeRes = homeTeamsRes!;
       // extraAdminTeams === null means fetchAdminClubTeams itself failed —
       // bail the same as a home-query failure instead of treating it as
       // "this admin has zero teams at their other club(s) right now" (see
@@ -286,6 +310,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     setLoading(false);
+    } catch (err) {
+      console.warn('fetchTeams threw', err);
+      setTeamsLoadError(true);
+      setLoading(false);
+    }
   }, [profile?.id, profile?.club_id, profile?.role, profile?.default_team_id, resolveSelection]);
 
   useEffect(() => {

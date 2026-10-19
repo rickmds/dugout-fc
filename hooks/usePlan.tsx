@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { useTeam } from './useTeam';
@@ -79,13 +79,20 @@ export function PlanProvider({ children }: { children: ReactNode }) {
 
   const planId = activeClubId ? (planByClubId[activeClubId] ?? 'free') : 'free';
   const planRow = plansById[planId];
-  const limits: PlanLimits = {
+  // Memoized like every sibling provider's context value — without this,
+  // PlanProvider (which sits above the whole app) handed every usePlan()
+  // consumer a brand-new {hasFeature, limits} object on every render,
+  // including ones triggered by an unrelated re-render in AuthProvider/
+  // TeamProvider/ThemeProvider above it, forcing Home/Roster/etc. to
+  // re-render regardless of whether plan data actually changed.
+  const limits = useMemo<PlanLimits>(() => ({
     maxTeams: planRow?.max_teams ?? Infinity,
     maxPlayers: planRow?.max_players ?? Infinity,
-  };
+  }), [planRow?.max_teams, planRow?.max_players]);
+  const value = useMemo<PlanContextValue>(() => ({ hasFeature, limits }), [hasFeature, limits]);
 
   return (
-    <PlanContext.Provider value={{ hasFeature, limits }}>
+    <PlanContext.Provider value={value}>
       {children}
     </PlanContext.Provider>
   );

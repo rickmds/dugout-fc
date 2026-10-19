@@ -155,6 +155,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
+  // True only until checkSession's own first (mount-time) run settles —
+  // narrower than "forever," so a LATER TOKEN_REFRESHED (the access token
+  // naturally expiring hours into an already-open app) still refetches
+  // profile/club below as intended. See the listener's TOKEN_REFRESHED
+  // branch for why this matters only during that initial window.
+  const initialCheckInFlightRef = useRef(true);
+
   const checkSession = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, sessionCheckFailed: false }));
     // withTimeout only protects against a stalled request — a genuinely
@@ -238,7 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    checkSession();
+    checkSession().finally(() => { initialCheckInFlightRef.current = false; });
 
     const { data: subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mountedRef.current) return;
@@ -249,6 +256,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // fetchProfileAndClubWithRetry() round trips for the same user at
       // once, doubling the network cost of the slowest part of app launch.
       if (event === 'INITIAL_SESSION') return;
+
+      // Same redundancy, different event name: on the routine cold-launch
+      // case where the stored access token has actually expired (the app
+      // was closed a few hours — see lib/supabase.ts's own comment on
+      // this being the common case, not the exception), getSession()
+      // inside checkSession() triggers a real refresh that fires
+      // TOKEN_REFRESHED through this exact listener WHILE checkSession's
+      // own fetchProfileAndClubWithRetry call is already about to run for
+      // that same session — a second full profile+club round trip for no
+      // new information, at the single most congested moment (cold
+      // launch, possibly one-bar LTE). Only guarded during that initial
+      // window: a TOKEN_REFRESHED firing later (the session naturally
+      // expiring hours into an already-open app) is real and still
+      // handled by the branch below.
+      if (event === 'TOKEN_REFRESHED' && initialCheckInFlightRef.current) return;
 
       if (event === 'SIGNED_OUT') {
         clearCache();

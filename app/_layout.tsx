@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, AppState, Dimensions, StyleSheet, View } from 'react-native';
+import { Alert, Animated, AppState, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { Stack, useRouter } from 'expo-router';
+import type { ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
@@ -20,6 +21,7 @@ import UpdateRequiredModal from '../components/ui/UpdateRequiredModal';
 import ClubSuspendedModal from '../components/ui/ClubSuspendedModal';
 import ViewAsBanner from '../components/ui/ViewAsBanner';
 import { checkVersionGate } from '../lib/versionGate';
+import { PULSE_COLORS } from '../constants/colors';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
 
@@ -324,3 +326,30 @@ const styles = StyleSheet.create({
     zIndex: 9999,
   },
 });
+
+// Every fix to the cold-launch chain this week targeted async stalls —
+// a withTimeout race, an unconditional fade ceiling, a loading flag reset.
+// None of that catches a SYNCHRONOUS throw during render (a join coming
+// back shaped differently than expected, a native module erroring on
+// mount) — nothing below this point in the tree had an error boundary at
+// all, so that failure mode white-screened with zero recovery, the one
+// case worse than anything a timeout could bound. Root-level specifically
+// so it catches a throw anywhere in the four providers below, not just
+// inside RootLayoutInner — matches the exact ErrorBoundary convention
+// already used per-tab (schedule.tsx/roster.tsx/chat.tsx), but can't rely
+// on useTheme() the way those do, since the failure might be inside
+// ThemeProvider itself.
+export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000', gap: 16, paddingHorizontal: 32 }}>
+      <Text style={{ color: '#ffffff', fontSize: 17, fontWeight: '800', textAlign: 'center' }}>Something went wrong</Text>
+      <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, textAlign: 'center' }}>Check your connection and try again.</Text>
+      <TouchableOpacity
+        onPress={retry}
+        style={{ marginTop: 4, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: PULSE_COLORS.brand.green }}
+      >
+        <Text style={{ fontSize: 14, fontWeight: '800', color: '#06210F' }}>Try Again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
