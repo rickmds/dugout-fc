@@ -326,9 +326,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const userIdRef = useRef<string | null>(null);
   useEffect(() => { userIdRef.current = state.user?.id ?? null; }, [state.user]);
 
+  // iOS can post 'active' more than once in quick succession for a single
+  // real resume (confirmed live: 3 "appBecomesActive" log lines for one
+  // app-switcher dismiss) — without this, each firing kicked off its own
+  // redundant fetchProfileAndClub round trip. Harmless here specifically
+  // (this handler never touches `loading`, so it never caused a visible
+  // flash the way TeamContext's identical pattern did — see that file's
+  // own fix for the user-visible half of this), but still worth not
+  // tripling the network cost of every single resume.
+  const lastResumeHandledAtRef = useRef(0);
   useEffect(() => {
     function onAppStateChange(next: AppStateStatus) {
       if (next !== 'active' || !userIdRef.current) return;
+      const now = Date.now();
+      if (now - lastResumeHandledAtRef.current < 1000) return;
+      lastResumeHandledAtRef.current = now;
       const uid = userIdRef.current;
       fetchProfileAndClub(uid).then(({ profile, club, error }) => {
         if (error) return;

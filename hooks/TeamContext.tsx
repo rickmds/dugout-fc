@@ -173,11 +173,25 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return resolved;
   }, []);
 
+  // Tracks whether fetchTeams has EVER resolved successfully — only the
+  // first call (cold launch) should show loading/error UI at all. Every
+  // later call is a quiet background refresh (AppState resume, same
+  // philosophy useAuth's own resume handler already uses, which never
+  // touches `loading` either) — and TeamContext's own comment a few lines
+  // up already documents that iOS can fire that resume event repeatedly in
+  // quick succession. Before this, every one of those repeated firings
+  // flipped `loading` true then false again, producing a visible flash of
+  // loading UI on a screen the user was already actively looking at,
+  // completely unrelated to anything actually being slow.
+  const hasLoadedOnceRef = useRef(false);
+
   const fetchTeams = useCallback(async () => {
     if (!profile?.club_id) {
       setLoading(false);
       return;
     }
+
+    const showLoadingUI = !hasLoadedOnceRef.current;
 
     // On cold launch, this runs once with profile still null (the
     // early-return above fires, setting loading false), then again the
@@ -188,8 +202,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // still-empty allTeams for however long this fetch actually took,
     // landing on club.slug's bare default instead of waiting for the real
     // active team.
-    setLoading(true);
-    setTeamsLoadError(false);
+    if (showLoadingUI) setLoading(true);
+    if (showLoadingUI) setTeamsLoadError(false);
     let teams: Team[];
 
     // withTimeout only protects against a stalled request — a genuinely
@@ -225,8 +239,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       isAdminRole ? supabase.from('teams').select('*, clubs(*)').eq('club_id', profile.club_id).order('created_at') : null,
     ]), TEAMS_TIMEOUT_MS);
     if (firstWave === TIMEOUT) {
-      setTeamsLoadError(true);
-      setLoading(false);
+      if (showLoadingUI) setTeamsLoadError(true);
+      if (showLoadingUI) setLoading(false);
       return;
     }
     const [adminClubsRes, memberRes, saved, homeTeamsRes] = firstWave;
@@ -241,7 +255,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // mirroring useAuth.tsx's identical guard for the exact same failure
     // mode on profile/club.
     if (adminClubsRes.error || memberRes.error) {
-      setLoading(false);
+      if (showLoadingUI) setLoading(false);
       return;
     }
     const adminClubIds = (adminClubsRes.data ?? []).map((r) => r.club_id as string);
@@ -273,8 +287,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       // adminClubIds result.
       const extraAdminTeams = await withTimeout(fetchAdminClubTeams(adminClubIds.filter((id) => id !== profile.club_id)), TEAMS_TIMEOUT_MS);
       if (extraAdminTeams === TIMEOUT) {
-        setTeamsLoadError(true);
-        setLoading(false);
+        if (showLoadingUI) setTeamsLoadError(true);
+        if (showLoadingUI) setLoading(false);
         return;
       }
       const homeRes = homeTeamsRes!;
@@ -283,7 +297,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       // "this admin has zero teams at their other club(s) right now" (see
       // fetchAdminClubTeams's own comment for why that used to be wrong).
       if (homeRes.error || extraAdminTeams === null) {
-        setLoading(false);
+        if (showLoadingUI) setLoading(false);
         return;
       }
       const homeTeams = ((homeRes.data ?? []) as any[]).map((t) => ({ ...t, club: normalizeClub(t.clubs), myRole: 'org_admin', hasExplicitMembership: false } as Team));
@@ -304,15 +318,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     } else {
       const extraAdminTeamsResult = await withTimeout(fetchAdminClubTeams(adminClubIds), TEAMS_TIMEOUT_MS);
       if (extraAdminTeamsResult === TIMEOUT) {
-        setTeamsLoadError(true);
-        setLoading(false);
+        if (showLoadingUI) setTeamsLoadError(true);
+        if (showLoadingUI) setLoading(false);
         return;
       }
       // null means fetchAdminClubTeams itself failed — bail rather than
       // treat it as "this profile has zero teams at their other club(s)
       // right now" (see fetchAdminClubTeams's own comment for why).
       if (extraAdminTeamsResult === null) {
-        setLoading(false);
+        if (showLoadingUI) setLoading(false);
         return;
       }
       const extraAdminTeams = extraAdminTeamsResult;
@@ -326,11 +340,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       setSelectedTeamId(resolveSelection(teams, saved, profile.default_team_id ?? null));
     }
 
-    setLoading(false);
+    hasLoadedOnceRef.current = true;
+    if (showLoadingUI) setLoading(false);
     } catch (err) {
       console.warn('fetchTeams threw', err);
-      setTeamsLoadError(true);
-      setLoading(false);
+      if (showLoadingUI) setTeamsLoadError(true);
+      if (showLoadingUI) setLoading(false);
     }
   }, [profile?.id, profile?.club_id, profile?.role, profile?.default_team_id, resolveSelection]);
 
@@ -347,9 +362,22 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const fetchTeamsRef = useRef(fetchTeams);
   useEffect(() => { fetchTeamsRef.current = fetchTeams; }, [fetchTeams]);
 
+  // iOS can post 'active' more than once in quick succession for a single
+  // real resume (confirmed live: 3 "appBecomesActive" log lines for one
+  // app-switcher dismiss) — each firing used to kick off its own full
+  // fetchTeams() round trip. Combined with the (now-fixed) loading flag
+  // flipping on every call, this was the actual visible "flashing loading
+  // circle" bug: 3 rapid fetches, each toggling loading true/false. The
+  // loading flash is fixed at the source (fetchTeams only shows loading
+  // UI on its first-ever successful call), but still worth not tripling
+  // the query cost of every single resume.
+  const lastResumeHandledAtRef = useRef(0);
   useEffect(() => {
     async function onAppStateChange(next: AppStateStatus) {
       if (next !== 'active') return;
+      const now = Date.now();
+      if (now - lastResumeHandledAtRef.current < 1000) return;
+      lastResumeHandledAtRef.current = now;
       // supabase.auth.getSession() silently falls back to the anon key
       // (HTTP 200, not an error) when it's asked for a session before
       // lib/supabase.ts's AppState-driven auto-refresh has had a chance to
