@@ -948,7 +948,7 @@ function EditEventModal({ event, bulk, savedFields, tournamentId, isDatedTournam
   ];
 
   return (
-    <Modal visible animationType="slide" transparent presentationStyle="pageSheet">
+    <Modal visible animationType="slide" presentationStyle="pageSheet">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={st.sheet}>
           <View style={st.sheetHandle} />

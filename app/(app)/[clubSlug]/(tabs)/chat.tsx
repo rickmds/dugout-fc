@@ -808,7 +808,7 @@ function ChatsTab({ team, profile, clubSlug }: { team: Team | null; profile: Pro
       </TouchableOpacity>
 
       {/* New chat modal */}
-      <Modal visible={showNewChat} animationType="slide" transparent presentationStyle="pageSheet">
+      <Modal visible={showNewChat} animationType="slide" presentationStyle="pageSheet">
         <View style={st.sheet}>
           <View style={st.sheetHandle} />
           <View style={st.sheetHeader}>
@@ -1233,7 +1233,7 @@ function AnnouncementsTab({ team, profile, coachEmail }: { team: Team | null; pr
       />
 
       {/* Email recipients picker modal */}
-      <Modal visible={emailModalVisible} animationType="slide" transparent presentationStyle="pageSheet">
+      <Modal visible={emailModalVisible} animationType="slide" presentationStyle="pageSheet">
         <View style={st.sheet}>
           <View style={st.sheetHandle} />
           <View style={st.sheetHeader}>
@@ -1363,7 +1363,7 @@ function CreateAnnouncementModal({ visible, teamId, profileId, teamName, coachNa
   }
 
   return (
-    <Modal visible={visible} animationType="slide" transparent presentationStyle="pageSheet">
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={st.sheet}>
           <View style={st.sheetHandle} />
@@ -1975,7 +1975,7 @@ function EmailTab({ team, profile, coachEmail }: { team: Team | null; profile: P
       </ScrollView>
 
       {/* AI Write modal */}
-      <Modal visible={showAiWrite} animationType="slide" transparent presentationStyle="pageSheet">
+      <Modal visible={showAiWrite} animationType="slide" presentationStyle="pageSheet">
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={st.sheet}>
             <View style={st.sheetHandle} />

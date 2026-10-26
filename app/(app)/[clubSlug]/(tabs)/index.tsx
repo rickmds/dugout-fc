@@ -2686,7 +2686,7 @@ export default function HomeScreen() {
       </Modal>
 
       {/* Callout creation modal */}
-      <Modal visible={showCalloutModal} transparent animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCalloutModal(false)}>
+      <Modal visible={showCalloutModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowCalloutModal(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.calloutSheet}>
             <View style={styles.devHandle} />

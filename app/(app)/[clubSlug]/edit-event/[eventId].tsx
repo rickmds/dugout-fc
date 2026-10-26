@@ -1384,7 +1384,6 @@ export default function EditEventScreen() {
       <Modal
         visible={cancelVisible}
         animationType="slide"
-        transparent
         presentationStyle="pageSheet"
         onRequestClose={() => { if (!cancelling) setCancelVisible(false); }}
       >
