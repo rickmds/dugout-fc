@@ -51,7 +51,7 @@ type Event = {
   duration_minutes: number | null;
   arrival_buffer_minutes: number | null;
   uniform: string | null;
-  field_type: 'turf' | 'grass' | null;
+  field_type: 'turf' | 'grass' | 'indoor' | null;
   cancelled_at: string | null;
   home_away: string | null;
   score_home: number | null;
@@ -1525,15 +1525,21 @@ const EventCard = memo(function EventCardImpl({
                 </View>
               );
             })()}
-            {item.field_type && !isPast && (
-              <View style={[styles.typeBadge, {
-                backgroundColor: item.field_type === 'turf' ? 'rgba(59,130,246,0.10)' : rgba(0.07),
-              }]}>
-                <Text style={[styles.typeText, { color: item.field_type === 'turf' ? '#3B82F6' : '#6EE7B7' }]}>
-                  {item.field_type === 'turf' ? 'Turf' : 'Grass'}
-                </Text>
-              </View>
-            )}
+            {item.field_type && !isPast && (() => {
+              // Was a plain turf/grass binary — 'indoor' silently fell
+              // through to "else" and rendered as Grass, with no visual
+              // indication anything was wrong (a real selection just
+              // displaying as a different one). Gray for indoor matches
+              // the 3-way palette already established correctly on Home's
+              // next-event card.
+              const fieldColor = item.field_type === 'turf' ? '#3B82F6' : item.field_type === 'indoor' ? '#9CA3AF' : '#6EE7B7';
+              const fieldLabel = item.field_type === 'turf' ? 'Turf' : item.field_type === 'indoor' ? 'Indoor' : 'Grass';
+              return (
+                <View style={[styles.typeBadge, { backgroundColor: `${fieldColor}1A` }]}>
+                  <Text style={[styles.typeText, { color: fieldColor }]}>{fieldLabel}</Text>
+                </View>
+              );
+            })()}
             {/* Status chip — "Confirmed" for guests, single-player RSVP status
                 for team members. Skipped when there's more than one guarded
                 player on this team (e.g. twins) — one small chip can't

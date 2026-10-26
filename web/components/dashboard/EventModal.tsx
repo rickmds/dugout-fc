@@ -23,7 +23,7 @@ type FormState = {
   event_date: string; event_time: string; hasTime: boolean;
   duration_minutes: number | null; arrival_buffer_minutes: number | null;
   location: string; address: string; lat: number | null; lng: number | null;
-  field_type: 'turf' | 'grass' | null; field_notes: string;
+  field_type: 'turf' | 'grass' | 'indoor' | null; field_notes: string;
   uniform: 'home' | 'away' | 'training' | null;
   notes: string; coach_notes: string;
   require_rsvp: boolean; rsvp_lock_hours: number; push_notify: boolean;
@@ -108,7 +108,7 @@ function formFromEvent(ev: EventFull): FormState {
     location: ev.location ?? '',
     address: ev.address ?? '',
     lat: ev.lat, lng: ev.lng,
-    field_type: (ev.field_type as 'turf' | 'grass') ?? null,
+    field_type: (ev.field_type as 'turf' | 'grass' | 'indoor') ?? null,
     field_notes: ev.field_notes ?? '',
     uniform: (ev.uniform as 'home' | 'away' | 'training') ?? null,
     notes: ev.notes ?? '',
@@ -460,10 +460,10 @@ export default function EventModal({ event, teamId, teams, primary, profileId, o
               <div>
                 <label style={labelStyle}>Surface</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  {(['turf', 'grass'] as const).map(s => (
+                  {(['turf', 'grass', 'indoor'] as const).map(s => (
                     <button key={s} onClick={() => setForm(f => ({ ...f, field_type: f.field_type === s ? null : s }))}
                       style={{ padding: '8px 20px', borderRadius: '8px', border: `2px solid ${form.field_type === s ? primary : '#E2E8F0'}`, background: form.field_type === s ? `${primary}12` : '#fff', color: form.field_type === s ? primary : '#64748B', fontWeight: form.field_type === s ? '700' : '500', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {s === 'turf' ? 'Turf' : 'Grass'}
+                      {s === 'turf' ? 'Turf' : s === 'grass' ? 'Grass' : 'Indoor'}
                     </button>
                   ))}
                 </div>

@@ -46,7 +46,7 @@ type FormState = {
   event_date: string; event_time: string; hasTime: boolean;
   duration_minutes: number | null; arrival_buffer_minutes: number | null;
   location: string; address: string; lat: number | null; lng: number | null;
-  field_type: 'turf' | 'grass' | null; field_notes: string; field_id: string | null;
+  field_type: 'turf' | 'grass' | 'indoor' | null; field_notes: string; field_id: string | null;
   uniform: 'home' | 'away' | 'training' | null;
   notes: string; coach_notes: string;
   require_rsvp: boolean; rsvp_lock_hours: number; push_notify: boolean;
@@ -263,6 +263,8 @@ function EventInfoPills({ ev, primary }: { ev: Event; primary: string }) {
   if (ev.field_type) {
     pills.push(ev.field_type === 'turf'
       ? { label: 'Turf', color: '#3B82F6', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.25)' }
+      : ev.field_type === 'indoor'
+      ? { label: 'Indoor', color: '#6B7280', bg: 'rgba(107,114,128,0.1)', border: 'rgba(107,114,128,0.25)' }
       : { label: 'Grass', color: '#16A34A', bg: 'rgba(34,197,94,0.08)', border: 'rgba(34,197,94,0.2)' });
   }
   if (ev.uniform) pills.push({ label: ev.uniform.charAt(0).toUpperCase() + ev.uniform.slice(1) + ' kit', color: primary, bg: `${primary}15`, border: `${primary}30` });

@@ -1982,26 +1982,29 @@ export default function EventDetailScreen() {
             )}
 
             {/* Surface */}
-            {event.field_type && (
-              <>
-                <View style={styles.metaDivider} />
-                <View style={styles.metaRow}>
-                  <View style={styles.metaIconWrap}>
-                    <Ionicons name="football-outline" size={17} color={colors.muted} />
+            {event.field_type && (() => {
+              // Was a plain turf/else binary — 'indoor' silently fell
+              // through to "else" and rendered as Grass (in the club's
+              // primary color, not even grass's own green), with no sign
+              // anything was wrong — a real selection just displaying as a
+              // different one. Matches the 3-way turf/grass/indoor palette
+              // already established correctly on Home's next-event card.
+              const fieldColor = event.field_type === 'turf' ? '#3B82F6' : event.field_type === 'indoor' ? '#9CA3AF' : '#22C55E';
+              const fieldLabel = event.field_type === 'turf' ? 'Turf' : event.field_type === 'indoor' ? 'Indoor' : 'Grass';
+              return (
+                <>
+                  <View style={styles.metaDivider} />
+                  <View style={styles.metaRow}>
+                    <View style={styles.metaIconWrap}>
+                      <Ionicons name="football-outline" size={17} color={colors.muted} />
+                    </View>
+                    <View style={[styles.uniformChip, { backgroundColor: `${fieldColor}1F`, borderColor: `${fieldColor}4D` }]}>
+                      <Text style={[styles.uniformChipText, { color: fieldColor }]}>{fieldLabel}</Text>
+                    </View>
                   </View>
-                  <View style={[styles.uniformChip, {
-                    backgroundColor: event.field_type === 'turf' ? 'rgba(59,130,246,0.12)' : rgba(0.10),
-                    borderColor: event.field_type === 'turf' ? 'rgba(59,130,246,0.3)' : rgba(0.28),
-                  }]}>
-                    <Text style={[styles.uniformChipText, {
-                      color: event.field_type === 'turf' ? '#3B82F6' : primaryColor,
-                    }]}>
-                      {event.field_type === 'turf' ? 'Turf' : 'Grass'}
-                    </Text>
-                  </View>
-                </View>
-              </>
-            )}
+                </>
+              );
+            })()}
 
             {/* ── RSVP inside card — parents only (not shown for guest events; invite banner covers status) ──
                  One row per guarded player on this team, so a parent with more than one
