@@ -188,6 +188,9 @@ export default function ConversationScreen() {
   const [reactorSheet, setReactorSheet] = useState<{ emoji: string; profileIds: string[] }[] | null>(null);
   const [reactorNames, setReactorNames] = useState<Record<string, string>>({});
   const [loadingReactors, setLoadingReactors] = useState(false);
+  const [showParticipants, setShowParticipants] = useState(false);
+  const [participants, setParticipants] = useState<{ id: string; name: string }[]>([]);
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ uri: string } | null>(null);
   const [viewerMessage, setViewerMessage] = useState<Message | null>(null);
   const listRef    = useRef<FlatList>(null);
@@ -536,6 +539,33 @@ export default function ConversationScreen() {
     });
   }, [reactorNames]);
 
+  // "Who's in this chat" — a group DM's header only ever showed the title
+  // string frozen at creation time (whoever the creator happened to pick,
+  // comma-joined and truncated), with no way to see the full, CURRENT
+  // participant list. Uses the same RLS-safe RPC ensureSenderNames already
+  // relies on (a direct profiles query fails the same way the old
+  // sender-name join did — a plain parent's full profile row isn't visible
+  // to other parents just for sharing a conversation), fetched fresh here
+  // rather than trusting senderNamesRef, since that only ever covers people
+  // who've actually sent a message — someone added to the group who never
+  // posted would otherwise be missing.
+  async function openParticipantsSheet() {
+    setShowParticipants(true);
+    setLoadingParticipants(true);
+    const { data, error } = await supabase.rpc('get_conversation_participant_names', { p_conversation_id: conversationId as string });
+    if (error) {
+      console.error('[Conversation] get_conversation_participant_names error:', error.message);
+    } else {
+      const rows = (data ?? []) as { profile_id: string; full_name: string | null }[];
+      setParticipants(
+        rows
+          .map((r) => ({ id: r.profile_id, name: r.profile_id === profile?.id ? `${r.full_name || 'You'} (You)` : (r.full_name || 'Someone') }))
+          .sort((a, b) => (a.id === profile?.id ? -1 : b.id === profile?.id ? 1 : a.name.localeCompare(b.name)))
+      );
+    }
+    setLoadingParticipants(false);
+  }
+
   // Applies the change to local state immediately, synchronously with the
   // tap — the realtime INSERT/DELETE handlers above merge their own echo of
   // this same change idempotently, so they never double it up. Without this,
@@ -807,6 +837,7 @@ export default function ConversationScreen() {
         title={convType === 'team_group' ? (convTeamName ?? title) : title}
         subtitle={convType === 'team_group' ? 'Team Chat' : 'Direct Message'}
         onBack={() => router.back()}
+        onPressTitle={openParticipantsSheet}
       />
 
       {loading ? (
@@ -1037,6 +1068,36 @@ export default function ConversationScreen() {
                   ))
                 )}
                 <TouchableOpacity style={st.reactionSheetCancel} onPress={() => setReactorSheet(null)}>
+                  <Text style={st.reactionSheetCancelText}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal visible={showParticipants} animationType="slide" transparent onRequestClose={() => setShowParticipants(false)}>
+        <TouchableWithoutFeedback onPress={() => setShowParticipants(false)}>
+          <View style={st.reactionSheetOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={st.reactionSheet}>
+                <View style={st.sheetHandle} />
+                <Text style={st.reactorSheetTitle}>
+                  {convType === 'team_group' ? 'Team Chat' : participants.length === 1 ? 'Participant' : `${participants.length} People`}
+                </Text>
+                {loadingParticipants ? (
+                  <ActivityIndicator style={{ marginVertical: 16 }} color={primaryColor} />
+                ) : (
+                  participants.map((p) => (
+                    <View key={p.id} style={st.reactorRow}>
+                      <View style={[st.reactorAvatar, { backgroundColor: rgba(0.15) }]}>
+                        <Text style={[st.reactorAvatarText, { color: primaryColor }]}>{initials(p.name)}</Text>
+                      </View>
+                      <Text style={st.reactorName}>{p.name}</Text>
+                    </View>
+                  ))
+                )}
+                <TouchableOpacity style={st.reactionSheetCancel} onPress={() => setShowParticipants(false)}>
                   <Text style={st.reactionSheetCancelText}>Close</Text>
                 </TouchableOpacity>
               </View>
