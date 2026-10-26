@@ -14,13 +14,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Location from 'expo-location';
 import { PULSE_COLORS, ThemeColors } from '../../../constants/colors';
 import { useTheme } from '../../../hooks/useTheme';
+import { useClub } from '../../../hooks/useClub';
 import ClubHeader from '../../../components/ui/ClubHeader';
 import {
   useGameDayFeed, localDateStr, detectClashes, upcomingDates, detectCoachClashes, getCoverageFlag,
   type FeedEvent, type CoverageFlag,
 } from '../../../hooks/useGameDayFeed';
 import { computeArriveBy } from '../../../lib/eventTime';
-import { getDrivingMinutes } from '../../../lib/routes';
+import { fetchDriveTimeBetween, parseDurationText } from '../../../lib/drivetime';
 import { useMapApp } from '../../../hooks/useMapApp';
 import { MapPickerModal } from '../../../components/ui/MapPickerModal';
 import { useTeam } from '../../../hooks/useTeam';
@@ -45,6 +46,14 @@ function fmt12(time: string): string {
 // setting), not kickoff itself — falls back to a flat 15-minute pad only
 // when no arrival_buffer_minutes is set, so events with an explicit buffer
 // aren't padded twice.
+// lib/drivetime.ts's functions take a plain "lat,lng" or address string,
+// not a {lat,lng} object — matches the exact same conversion every other
+// call site (LocationMap, fetchWeatherAndDrive) already does.
+function toLocationString(loc: { lat: number; lng: number } | string | null): string | null {
+  if (!loc) return null;
+  return typeof loc === 'string' ? loc : `${loc.lat},${loc.lng}`;
+}
+
 function subMins(time: string, driveMins: number, arrivalBufferMins: number | null): string {
   const [h, m] = time.split(':').map(Number);
   const total = h * 60 + m - (arrivalBufferMins ?? 15) - driveMins;
@@ -76,6 +85,7 @@ export default function GameDayScreen() {
   const mapApp = useMapApp();
   const { colors } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
+  const { timezone } = useClub();
 
   const { allTeams } = useTeam();
   const teamIds = useMemo(() => allTeams.map((t) => t.id), [allTeams]);
@@ -153,8 +163,8 @@ export default function GameDayScreen() {
   useEffect(() => {
     if (!myDayEvents.length) { setLegs([]); return; }
     computeLegs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- myDayEvents is derived fresh each render; selectedDate+allEvents (its real inputs) plus currentLoc are the true deps
-  }, [selectedDate, allEvents, currentLoc]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- myDayEvents is derived fresh each render; selectedDate+allEvents (its real inputs) plus currentLoc/timezone are the true deps
+  }, [selectedDate, allEvents, currentLoc, timezone]);
 
   useEffect(() => {
     if (legsLoading) {
@@ -200,7 +210,18 @@ export default function GameDayScreen() {
         origin = (prev.lat && prev.lng) ? { lat: prev.lat, lng: prev.lng } : (prev.address ?? prev.location ?? null);
       }
 
-      const mins = origin ? await getDrivingMinutes(origin as any, destination as any) : null;
+      // Routed through lib/drivetime.ts (same cached, traffic-tier-optimized
+      // path every other drive-time call site uses) instead of lib/routes.ts
+      // — that was a second, entirely separate implementation hitting a
+      // different Google API directly in this loop, with no caching and no
+      // date/time-aware traffic tiering at all, for every leg of every visit
+      // to this screen.
+      const originStr = toLocationString(origin);
+      const destStr = toLocationString(destination);
+      const durationText = (originStr && destStr)
+        ? await fetchDriveTimeBetween(originStr, destStr, ev.event_date, ev.event_time, timezone)
+        : null;
+      const mins = durationText ? parseDurationText(durationText) : null;
       const leaveBy = (mins !== null && ev.event_time) ? subMins(ev.event_time, mins, ev.arrival_buffer_minutes) : null;
 
       result.push({ minutes: mins, leaveBy, isClash });
