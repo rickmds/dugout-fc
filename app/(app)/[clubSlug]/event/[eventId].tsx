@@ -3119,7 +3119,22 @@ export default function EventDetailScreen() {
         statusBarTranslucent
         onRequestClose={() => setMatchTrackerOpen(false)}
       >
-        {event && (
+        {/* Mount condition must match the Modal's own `visible` — a RN
+            Modal's children are part of the React tree (and fully render)
+            even while the native modal itself isn't presented, so gating
+            only on `event` kept MatchTrackerContent mounted for the whole
+            time this screen was open, regardless of whether anyone ever
+            tapped Match Tracker. For a currently-live game, its own load()
+            starts a 1s ticker unconditionally (match-tracker.tsx's
+            startTicker, called whenever session.status is half1/half2),
+            re-rendering its ~1000-line view tree every second, invisibly,
+            for the entire match — the real cause of this screen
+            "flickering and crashing" while a game was live. Gating on
+            matchTrackerOpen too means it only mounts (and the ticker only
+            starts) once actually opened, and properly unmounts — running
+            its own `return () => stopTicker()` cleanup — the moment it's
+            closed. */}
+        {event && matchTrackerOpen && (
           <MatchTrackerContent
             eventId={event.id}
             clubSlug={clubSlug!}
