@@ -7,6 +7,7 @@ import {
   Linking,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -189,7 +190,7 @@ export default function ConversationScreen() {
   const [reactorNames, setReactorNames] = useState<Record<string, string>>({});
   const [loadingReactors, setLoadingReactors] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
-  const [participants, setParticipants] = useState<{ id: string; name: string }[]>([]);
+  const [participants, setParticipants] = useState<{ id: string; name: string; isMe: boolean; isCoach: boolean; players: string[] }[]>([]);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [pendingImage, setPendingImage] = useState<{ uri: string } | null>(null);
   const [viewerMessage, setViewerMessage] = useState<Message | null>(null);
@@ -555,14 +556,53 @@ export default function ConversationScreen() {
     const { data, error } = await supabase.rpc('get_conversation_participant_names', { p_conversation_id: conversationId as string });
     if (error) {
       console.error('[Conversation] get_conversation_participant_names error:', error.message);
-    } else {
-      const rows = (data ?? []) as { profile_id: string; full_name: string | null }[];
-      setParticipants(
-        rows
-          .map((r) => ({ id: r.profile_id, name: r.profile_id === profile?.id ? `${r.full_name || 'You'} (You)` : (r.full_name || 'Someone') }))
-          .sort((a, b) => (a.id === profile?.id ? -1 : b.id === profile?.id ? 1 : a.name.localeCompare(b.name)))
-      );
+      setLoadingParticipants(false);
+      return;
     }
+    const rows = (data ?? []) as { profile_id: string; full_name: string | null }[];
+    const ids = rows.map((r) => r.profile_id);
+
+    // Not just WHO is in the chat but which kid each parent is connected
+    // to, and which participants are coaches — the context that actually
+    // matters in a youth-sports roster, not just a bare name list. Scoped
+    // to this conversation's own team (a group DM is always created from
+    // one team's roster).
+    const playersByProfile: Record<string, string[]> = {};
+    const coachIds = new Set<string>();
+    if (convTeamId && ids.length) {
+      // team_members is visible to any fellow team member (is_team_member
+      // RLS), so this one's safe to run for every viewer. player_guardians
+      // is NOT — its RLS only grants a row to that player's own guardians
+      // or a coach of their team (is_player_guardian/is_team_coach), same
+      // restriction the existing 1:1 DM header lookup above already
+      // respects by gating on isCoach. Querying it unconditionally here
+      // would silently come back empty for everyone else's kids when a
+      // plain parent is viewing, showing "Parent of ..." for some
+      // participants and not others for no reason a parent could tell.
+      const [{ data: coachRows }, guardianRows] = await Promise.all([
+        supabase.from('team_members').select('profile_id').eq('team_id', convTeamId).eq('role', 'coach').in('profile_id', ids),
+        isCoach
+          ? supabase.from('player_guardians').select('profile_id, players!inner(full_name, team_id)').in('profile_id', ids).eq('players.team_id', convTeamId).then((r) => r.data)
+          : Promise.resolve(null),
+      ]);
+      for (const row of (guardianRows ?? []) as any[]) {
+        const pname = row.players?.full_name as string | undefined;
+        if (pname) (playersByProfile[row.profile_id as string] ??= []).push(pname);
+      }
+      for (const row of (coachRows ?? []) as { profile_id: string }[]) coachIds.add(row.profile_id);
+    }
+
+    setParticipants(
+      rows
+        .map((r) => ({
+          id: r.profile_id,
+          name: r.full_name || 'Someone',
+          isMe: r.profile_id === profile?.id,
+          isCoach: coachIds.has(r.profile_id),
+          players: playersByProfile[r.profile_id] ?? [],
+        }))
+        .sort((a, b) => (a.isMe !== b.isMe ? (a.isMe ? -1 : 1) : a.isCoach !== b.isCoach ? (a.isCoach ? -1 : 1) : a.name.localeCompare(b.name)))
+    );
     setLoadingParticipants(false);
   }
 
@@ -1083,19 +1123,43 @@ export default function ConversationScreen() {
               <View style={st.reactionSheet}>
                 <View style={st.sheetHandle} />
                 <Text style={st.reactorSheetTitle}>
-                  {convType === 'team_group' ? 'Team Chat' : participants.length === 1 ? 'Participant' : `${participants.length} People`}
+                  {convType === 'team_group' ? convTeamName ?? 'Team Chat' : participants.length === 1 ? 'Participant' : `${participants.length} People`}
                 </Text>
+                {convType === 'team_group' && (
+                  <Text style={st.participantsSubtitle}>Everyone on the team can see this chat</Text>
+                )}
                 {loadingParticipants ? (
-                  <ActivityIndicator style={{ marginVertical: 16 }} color={primaryColor} />
+                  <ActivityIndicator style={{ marginVertical: 20 }} color={primaryColor} />
                 ) : (
-                  participants.map((p) => (
-                    <View key={p.id} style={st.reactorRow}>
-                      <View style={[st.reactorAvatar, { backgroundColor: rgba(0.15) }]}>
-                        <Text style={[st.reactorAvatarText, { color: primaryColor }]}>{initials(p.name)}</Text>
+                  <ScrollView style={st.participantsList} showsVerticalScrollIndicator={false}>
+                    {participants.map((p, i) => (
+                      <View key={p.id} style={[st.participantRow, i > 0 && st.participantRowDivider]}>
+                        <View style={[st.reactorAvatar, { backgroundColor: p.isCoach ? rgba(0.15) : colors.surfaceAlt }]}>
+                          <Text style={[st.reactorAvatarText, { color: p.isCoach ? primaryColor : colors.muted }]}>{initials(p.name)}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <View style={st.participantNameRow}>
+                            <Text style={st.reactorName} numberOfLines={1}>{p.name}</Text>
+                            {p.isMe && (
+                              <View style={[st.participantPill, { backgroundColor: rgba(0.12) }]}>
+                                <Text style={[st.participantPillText, { color: primaryColor }]}>You</Text>
+                              </View>
+                            )}
+                            {p.isCoach && (
+                              <View style={[st.participantPill, { backgroundColor: rgba(0.12) }]}>
+                                <Text style={[st.participantPillText, { color: primaryColor }]}>Coach</Text>
+                              </View>
+                            )}
+                          </View>
+                          {p.players.length > 0 && (
+                            <Text style={st.participantSub} numberOfLines={1}>
+                              {p.players.length === 1 ? `Parent of ${p.players[0]}` : `Parent of ${p.players.join(', ')}`}
+                            </Text>
+                          )}
+                        </View>
                       </View>
-                      <Text style={st.reactorName}>{p.name}</Text>
-                    </View>
-                  ))
+                    ))}
+                  </ScrollView>
                 )}
                 <TouchableOpacity style={st.reactionSheetCancel} onPress={() => setShowParticipants(false)}>
                   <Text style={st.reactionSheetCancelText}>Close</Text>
@@ -1386,6 +1450,14 @@ function getSt(colors: ThemeColors) {
   reactorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   reactorAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   reactorAvatarText: { fontSize: 12, fontWeight: '800' },
-  reactorName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  reactorName: { fontSize: 14, fontWeight: '600', color: colors.text, flexShrink: 1 },
+  participantsSubtitle: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: -6, marginBottom: 14 },
+  participantsList: { maxHeight: 360 },
+  participantRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11 },
+  participantRowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
+  participantNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  participantPill: { borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2 },
+  participantPillText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  participantSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
   });
 }
