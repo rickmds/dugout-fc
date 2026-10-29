@@ -2013,11 +2013,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Game Day Outlook — coaches only */}
-        {isCoach && (
-          <GameDayWidget onPress={handleGameDayPress} />
-        )}
-
         {/* Player Card teasers — parents only, one per guarded player */}
         {playerCards.map((pc2) => (
           <TouchableOpacity
@@ -2434,6 +2429,11 @@ export default function HomeScreen() {
         )}
 
         <GalleryCard onPress={() => router.push(`/(app)/${slug}/gallery` as never)} />
+
+        {/* Game Day Outlook — coaches only, bottom of Home */}
+        {isCoach && (
+          <GameDayWidget onPress={handleGameDayPress} />
+        )}
 
         <View style={{ height: 32 }} />
 
