@@ -1,14 +1,12 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { supabaseAdmin } from '@/lib/supabase';
 import NavBar from '@/components/NavBar';
+import { theme } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'Pulse FC vs SportsEngine — Which is better for your soccer club?',
   description: 'Honest comparison of Pulse FC and SportsEngine for soccer club directors. AI features, pricing transparency, and why SportsEngine is built for leagues, not clubs.',
 };
-
-const GREEN = '#22c55e';
 
 type RowStatus = boolean | 'partial';
 
@@ -130,7 +128,7 @@ const rows: ComparisonRow[] = [
     category: 'Operations',
     feature: 'Fee collection',
     pulse: true,
-    pulseNote: 'Send invoices, record payments, track who owes what',
+    pulseNote: 'Stripe Connect — installment plans, automatic reminders, refunds handled in the app',
     sportsengine: true,
     sportsengineNote: 'Payment processing available — transaction fees apply on top of monthly plan.',
   },
@@ -205,26 +203,26 @@ const categories = Array.from(new Set(rows.map(r => r.category)));
 function StatusIcon({ value }: { value: boolean | 'partial' }) {
   if (value === true) {
     return (
-      <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#0e2016', border: '1px solid #22c55e30', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <div style={{ width: 24, height: 24, borderRadius: '50%', background: theme.greenTint, border: `1px solid ${theme.greenTintBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         <svg width="12" height="9" viewBox="0 0 12 9" fill="none">
-          <path d="M1 4.5l3 3 7-7" stroke="#22c55e" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M1 4.5l3 3 7-7" stroke={theme.green} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
     );
   }
   if (value === 'partial') {
     return (
-      <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1a1400', border: '1px solid #f59e0b30', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#FBF3E4', border: '1px solid #E8C98F', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
         <svg width="10" height="2" viewBox="0 0 10 2" fill="none">
-          <path d="M1 1h8" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"/>
+          <path d="M1 1h8" stroke="#B8842A" strokeWidth="2" strokeLinecap="round"/>
         </svg>
       </div>
     );
   }
   return (
-    <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#1a0808', border: '1px solid #ef444430', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#FBEBEA', border: '1px solid #F0C6C3', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-        <path d="M2 2l6 6M8 2l-6 6" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round"/>
+        <path d="M2 2l6 6M8 2l-6 6" stroke="#C0392B" strokeWidth="1.8" strokeLinecap="round"/>
       </svg>
     </div>
   );
@@ -232,46 +230,40 @@ function StatusIcon({ value }: { value: boolean | 'partial' }) {
 
 export const revalidate = 3600;
 
-export default async function PulseVsSportsEnginePage() {
-  const { count } = await supabaseAdmin()
-    .from('clubs')
-    .select('*', { count: 'exact', head: true });
-  const displayCount = Math.min((count ?? 0) + 31, 49);
-  const remaining = 50 - displayCount;
-
+export default function PulseVsSportsEnginePage() {
   return (
-    <div style={{ minHeight: '100vh', background: '#080808', color: '#f0f0f0', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text }}>
 
       {/* Nav */}
-      <div style={{ borderBottom: '1px solid #111' }}><NavBar /></div>
+      <div style={{ borderBottom: `1px solid ${theme.border}` }}><NavBar /></div>
 
       {/* Hero */}
       <div style={{ maxWidth: 800, margin: '0 auto', padding: '72px 24px 48px', textAlign: 'center' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 100, padding: '6px 16px', fontSize: 12, fontWeight: 700, color: GREEN, marginBottom: 28, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: theme.greenTint, border: `1px solid ${theme.greenTintBorder}`, borderRadius: 100, padding: '6px 16px', fontSize: 12, fontWeight: 700, color: theme.greenDark, marginBottom: 28, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
           Honest comparison
         </div>
-        <h1 style={{ fontSize: 'clamp(36px, 6vw, 64px)', fontWeight: 900, letterSpacing: '-1px', lineHeight: 1.05, marginBottom: 20, color: '#fff' }}>
+        <h1 style={{ fontSize: 'clamp(34px, 5.5vw, 58px)', fontWeight: 700, letterSpacing: '-0.5px', lineHeight: 1.08, marginBottom: 20, color: theme.text, fontFamily: theme.fontDisplay }}>
           Pulse FC vs SportsEngine
         </h1>
-        <p style={{ fontSize: 18, color: '#888', lineHeight: 1.7, maxWidth: 560, margin: '0 auto 48px' }}>
+        <p style={{ fontSize: 18, color: theme.textSecondary, lineHeight: 1.7, maxWidth: 560, margin: '0 auto 48px' }}>
           SportsEngine is enterprise software for state associations running hundreds of teams. Pulse FC is built for the club that just needs to run well — at a fraction of the cost, with AI built in.
         </p>
 
         {/* Quick verdict */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 16, alignItems: 'center', maxWidth: 640, margin: '0 auto' }}>
-          <div style={{ background: '#0a1a0a', border: `2px solid ${GREEN}`, borderRadius: 16, padding: '24px 20px' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+          <div style={{ background: theme.greenTint, border: `2px solid ${theme.green}`, borderRadius: 16, padding: '24px 20px' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
             <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto', marginBottom: 12 }} />
-            <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, marginBottom: 4 }}>Built for soccer clubs</p>
-            <p style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>AI features · Free plan · Tryout management · 20-min setup</p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: theme.greenDark, marginBottom: 4 }}>Built for soccer clubs</p>
+            <p style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5 }}>AI features · Free plan · Tryout management · 20-min setup</p>
           </div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#444', textAlign: 'center' }}>vs</div>
-          <div style={{ background: '#111', border: '1px solid #222', borderRadius: 16, padding: '24px 20px' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: theme.textMuted, textAlign: 'center' }}>vs</div>
+          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 16, padding: '24px 20px' }}>
             <div style={{ background: '#e8521a', borderRadius: 8, padding: '4px 10px', display: 'inline-flex', marginBottom: 12 }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>SportsEngine</span>
             </div>
-            <p style={{ fontSize: 13, fontWeight: 700, color: '#888', marginBottom: 4 }}>Enterprise league software</p>
-            <p style={{ fontSize: 12, color: '#555', lineHeight: 1.5 }}>Any sport · Starts at $79/mo · No AI · Complex setup</p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: theme.textSecondary, marginBottom: 4 }}>Enterprise league software</p>
+            <p style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5 }}>Any sport · Starts at $79/mo · No AI · Complex setup</p>
           </div>
         </div>
       </div>
@@ -284,16 +276,16 @@ export default async function PulseVsSportsEnginePage() {
             { label: 'Starting price', pulse: 'Free', sportsengine: '$79/mo' },
             { label: 'Free plan', pulse: '✓', sportsengine: '✗' },
           ].map(({ label, pulse, sportsengine }) => (
-            <div key={label} style={{ background: '#0d0d0d', border: '1px solid #181818', borderRadius: 14, padding: '20px 16px', textAlign: 'center' }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12 }}>{label}</p>
+            <div key={label} style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 14, padding: '20px 16px', textAlign: 'center', boxShadow: theme.shadowCard }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12 }}>{label}</p>
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'baseline', gap: 12 }}>
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 22, fontWeight: 900, color: GREEN, lineHeight: 1 }}>{pulse}</p>
-                  <p style={{ fontSize: 10, color: '#555', marginTop: 4 }}>Pulse FC</p>
+                  <p style={{ fontSize: 22, fontWeight: 900, color: theme.green, lineHeight: 1 }}>{pulse}</p>
+                  <p style={{ fontSize: 10, color: theme.textMuted, marginTop: 4 }}>Pulse FC</p>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 22, fontWeight: 900, color: '#555', lineHeight: 1 }}>{sportsengine}</p>
-                  <p style={{ fontSize: 10, color: '#333', marginTop: 4 }}>SportsEngine</p>
+                  <p style={{ fontSize: 22, fontWeight: 900, color: theme.textMuted, lineHeight: 1 }}>{sportsengine}</p>
+                  <p style={{ fontSize: 10, color: theme.textMuted, marginTop: 4 }}>SportsEngine</p>
                 </div>
               </div>
             </div>
@@ -303,30 +295,30 @@ export default async function PulseVsSportsEnginePage() {
 
       {/* Comparison table */}
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '0 24px 80px' }}>
-        <h2 style={{ fontSize: 28, fontWeight: 900, color: '#fff', textAlign: 'center', marginBottom: 40, letterSpacing: '-0.5px' }}>
+        <h2 style={{ fontSize: 26, fontWeight: 700, color: theme.text, textAlign: 'center', marginBottom: 40, letterSpacing: '-0.3px', fontFamily: theme.fontDisplay }}>
           Feature by feature
         </h2>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px 280px', gap: 12, marginBottom: 8, padding: '0 0 0 16px' }}>
           <div />
-          <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 800, color: GREEN, padding: '8px 0' }}>Pulse FC</div>
-          <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#555', padding: '8px 0' }}>SportsEngine</div>
+          <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 800, color: theme.greenDark, padding: '8px 0' }}>Pulse FC</div>
+          <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: theme.textMuted, padding: '8px 0' }}>SportsEngine</div>
         </div>
 
         {categories.map((cat) => (
           <div key={cat} style={{ marginBottom: 32 }}>
-            <p style={{ fontSize: 11, fontWeight: 700, color: '#444', textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 8, paddingLeft: 16 }}>{cat}</p>
+            <p style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 8, paddingLeft: 16 }}>{cat}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {rows.filter(r => r.category === cat).map((row) => (
-                <div key={row.feature} style={{ display: 'grid', gridTemplateColumns: '1fr 280px 280px', gap: 12, alignItems: 'start', background: '#0c0c0c', border: '1px solid #161616', borderRadius: 12, padding: '14px 16px' }}>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: '#ccc', margin: 0, paddingTop: 2 }}>{row.feature}</p>
+                <div key={row.feature} style={{ display: 'grid', gridTemplateColumns: '1fr 280px 280px', gap: 12, alignItems: 'start', background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 12, padding: '14px 16px' }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: theme.textSecondary, margin: 0, paddingTop: 2 }}>{row.feature}</p>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                     <StatusIcon value={row.pulse} />
-                    <p style={{ fontSize: 12, color: row.pulse === true ? '#888' : '#444', lineHeight: 1.5, margin: 0 }}>{row.pulseNote}</p>
+                    <p style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5, margin: 0 }}>{row.pulseNote}</p>
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                     <StatusIcon value={row.sportsengine} />
-                    <p style={{ fontSize: 12, color: '#444', lineHeight: 1.5, margin: 0 }}>{row.sportsengineNote}</p>
+                    <p style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5, margin: 0 }}>{row.sportsengineNote}</p>
                   </div>
                 </div>
               ))}
@@ -336,30 +328,30 @@ export default async function PulseVsSportsEnginePage() {
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: 24, padding: '8px 0 0', flexWrap: 'wrap' }}>
           {[
-            { icon: '✓', color: GREEN, bg: '#0e2016', label: 'Yes / available' },
-            { icon: '—', color: '#f59e0b', bg: '#1a1400', label: 'Partial / limited' },
-            { icon: '✗', color: '#ef4444', bg: '#1a0808', label: 'Not available' },
+            { icon: '✓', color: theme.green, bg: theme.greenTint, label: 'Yes / available' },
+            { icon: '—', color: '#B8842A', bg: '#FBF3E4', label: 'Partial / limited' },
+            { icon: '✗', color: '#C0392B', bg: '#FBEBEA', label: 'Not available' },
           ].map(({ icon, color, bg, label }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 20, height: 20, borderRadius: '50%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color, fontWeight: 900 }}>{icon}</div>
-              <span style={{ fontSize: 12, color: '#555' }}>{label}</span>
+              <span style={{ fontSize: 12, color: theme.textMuted }}>{label}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* Which one */}
-      <div style={{ borderTop: '1px solid #111', background: '#060606', padding: '64px 24px' }}>
+      <div style={{ borderTop: `1px solid ${theme.border}`, background: theme.surface, padding: '64px 24px' }}>
         <div style={{ maxWidth: 800, margin: '0 auto' }}>
-          <h2 style={{ fontSize: 28, fontWeight: 900, color: '#fff', textAlign: 'center', marginBottom: 12, letterSpacing: '-0.5px' }}>
+          <h2 style={{ fontSize: 26, fontWeight: 700, color: theme.text, textAlign: 'center', marginBottom: 12, letterSpacing: '-0.3px', fontFamily: theme.fontDisplay }}>
             Which one is right for you?
           </h2>
-          <p style={{ fontSize: 15, color: '#888', textAlign: 'center', marginBottom: 48, lineHeight: 1.6 }}>
+          <p style={{ fontSize: 15, color: theme.textSecondary, textAlign: 'center', marginBottom: 48, lineHeight: 1.6 }}>
             SportsEngine is built for state associations running hundreds of teams across multiple sports. Pulse FC is built for the club that just needs to run well.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-            <div style={{ background: '#0a1a0a', border: `1px solid ${GREEN}22`, borderRadius: 16, padding: 28 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Choose Pulse FC if you…</p>
+            <div style={{ background: theme.greenTint, border: `1px solid ${theme.greenTintBorder}`, borderRadius: 16, padding: 28 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: theme.greenDark, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Choose Pulse FC if you…</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {[
                   'Run a soccer club with multiple teams',
@@ -372,14 +364,14 @@ export default async function PulseVsSportsEnginePage() {
                   'Want a platform built by a coach who still uses it weekly',
                 ].map(item => (
                   <div key={item} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <span style={{ color: GREEN, fontWeight: 900, fontSize: 12, marginTop: 2, flexShrink: 0 }}>✓</span>
-                    <span style={{ fontSize: 13, color: '#888', lineHeight: 1.4 }}>{item}</span>
+                    <span style={{ color: theme.green, fontWeight: 900, fontSize: 12, marginTop: 2, flexShrink: 0 }}>✓</span>
+                    <span style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.4 }}>{item}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <div style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: 16, padding: 28 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#555', marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.1em' }}>SportsEngine might suit you if…</p>
+            <div style={{ background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 16, padding: 28 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: theme.textMuted, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.1em' }}>SportsEngine might suit you if…</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {[
                   'You run a state association or governing body',
@@ -389,8 +381,8 @@ export default async function PulseVsSportsEnginePage() {
                   'You\'re already deeply integrated with their infrastructure',
                 ].map(item => (
                   <div key={item} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <span style={{ color: '#444', fontWeight: 900, fontSize: 12, marginTop: 2, flexShrink: 0 }}>→</span>
-                    <span style={{ fontSize: 13, color: '#555', lineHeight: 1.4 }}>{item}</span>
+                    <span style={{ color: theme.textMuted, fontWeight: 900, fontSize: 12, marginTop: 2, flexShrink: 0 }}>→</span>
+                    <span style={{ fontSize: 13, color: theme.textSecondary, lineHeight: 1.4 }}>{item}</span>
                   </div>
                 ))}
               </div>
@@ -403,50 +395,50 @@ export default async function PulseVsSportsEnginePage() {
       <div style={{ padding: '80px 24px', textAlign: 'center' }}>
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
 
-          {/* Testimonial */}
-          <div style={{ background: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 20, padding: '28px 32px', marginBottom: 48, textAlign: 'left' }}>
-            <div style={{ fontSize: 36, lineHeight: 0.75, color: '#22c55e', opacity: 0.5, fontWeight: 900, marginBottom: 12 }}>&ldquo;</div>
-            <p style={{ fontSize: 16, color: '#ddd', lineHeight: 1.8, fontWeight: 500, marginBottom: 20 }}>
-              We lost 11 families last season. Three said they felt &ldquo;out of the loop.&rdquo; That&rsquo;s <strong style={{ color: '#fff' }}>$16,000 in registration fees.</strong> Pulse FC paid for itself in the first month.
+          {/* Founder note — real, not a fabricated customer testimonial */}
+          <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 20, padding: '28px 32px', marginBottom: 48, textAlign: 'left', boxShadow: theme.shadowCard }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 12 }}>From the founder</p>
+            <p style={{ fontSize: 16, color: theme.text, lineHeight: 1.8, fontWeight: 500, marginBottom: 0 }}>
+              Enterprise league software is built for a different buyer entirely. A single soccer club doesn&apos;t need a sales call to figure out if it can afford to run its season.
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>J.O.</div>
-              <p style={{ fontSize: 12, color: '#555', margin: 0 }}>Director of Coaching · 280-player club</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 20 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: theme.green, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>RB</div>
+              <p style={{ fontSize: 12, color: theme.textMuted, margin: 0 }}>Rick Breheny · Founder, Pulse FC · U14 head coach</p>
             </div>
           </div>
 
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.18)', borderRadius: 100, padding: '5px 14px', fontSize: 11, fontWeight: 700, color: GREEN, marginBottom: 24, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: GREEN, display: 'inline-block' }} />
-            Founding club offer · {remaining} spots remaining
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: theme.greenTint, border: `1px solid ${theme.greenTintBorder}`, borderRadius: 100, padding: '5px 14px', fontSize: 11, fontWeight: 700, color: theme.greenDark, marginBottom: 24, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: theme.green, display: 'inline-block' }} />
+            Founding club pricing
           </div>
-          <h2 style={{ fontSize: 'clamp(28px, 5vw, 44px)', fontWeight: 900, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1.1, marginBottom: 16 }}>
+          <h2 style={{ fontSize: 'clamp(26px, 4.2vw, 42px)', fontWeight: 700, color: theme.text, letterSpacing: '-0.3px', lineHeight: 1.1, marginBottom: 16, fontFamily: theme.fontDisplay }}>
             A soccer club shouldn&rsquo;t pay $79/mo<br />for league software.
           </h2>
-          <p style={{ fontSize: 16, color: '#888', lineHeight: 1.7, marginBottom: 32 }}>
-            Set up tonight. If it doesn&rsquo;t save you 3 hours a week, email us and we&rsquo;ll refund everything. No forms, no arguments.
+          <p style={{ fontSize: 16, color: theme.textSecondary, lineHeight: 1.7, marginBottom: 32 }}>
+            Set up tonight, free, no card required. Paid plans activate once we&rsquo;re in touch — never a surprise charge.
           </p>
-          <Link href="/onboarding" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: GREEN, color: '#000', fontWeight: 800, fontSize: 16, padding: '16px 36px', borderRadius: 14, textDecoration: 'none', boxShadow: '0 4px 32px rgba(34,197,94,0.3)' }}>
+          <Link href="/onboarding" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: theme.green, color: '#fff', fontWeight: 800, fontSize: 16, padding: '16px 36px', borderRadius: 14, textDecoration: 'none', boxShadow: theme.shadowBtn }}>
             Set up your club tonight →
           </Link>
-          <p style={{ fontSize: 12, color: '#22c55e', marginTop: 16, opacity: 0.7, fontWeight: 600 }}>
-            Founding club: 40% off any paid plan, forever · {remaining} spots remaining
+          <p style={{ fontSize: 12, color: theme.greenDark, marginTop: 16, fontWeight: 600 }}>
+            Founding club: 40% off any paid plan, forever, while we onboard our first clubs directly
           </p>
-          <p style={{ fontSize: 12, color: '#444', marginTop: 6 }}>Free plan available · No credit card · Cancel anytime</p>
-          <p style={{ fontSize: 12, color: '#333', marginTop: 12 }}>Built by Rick Breheny · U14 head coach · still used every Saturday.</p>
+          <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>Free plan available · No credit card · Cancel anytime</p>
+          <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 12 }}>Built by Rick Breheny · U14 head coach · still used every Saturday.</p>
         </div>
       </div>
 
-      {/* Footer */}
-      <footer style={{ borderTop: '1px solid #111', padding: '24px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto' }}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+      {/* Footer — cross-links to sibling comparison pages, so not the shared Footer */}
+      <footer style={{ borderTop: `1px solid ${theme.border}`, padding: '24px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1200, margin: '0 auto', flexWrap: 'wrap', gap: 16 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
         <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
-        <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-          <Link href="/pulse-fc-vs-teamsnap" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>vs TeamSnap</Link>
-          <Link href="/pulse-fc-vs-playmetrics" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>vs PlayMetrics</Link>
-          <Link href="/compare" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Full comparison</Link>
-          <Link href="/pricing" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Pricing</Link>
-          <Link href="/privacy" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Privacy</Link>
-          <Link href="/terms" style={{ fontSize: 12, color: '#555', textDecoration: 'none' }}>Terms</Link>
+        <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Link href="/pulse-fc-vs-teamsnap" style={{ fontSize: 12, color: theme.textMuted, textDecoration: 'none' }}>vs TeamSnap</Link>
+          <Link href="/pulse-fc-vs-playmetrics" style={{ fontSize: 12, color: theme.textMuted, textDecoration: 'none' }}>vs PlayMetrics</Link>
+          <Link href="/compare" style={{ fontSize: 12, color: theme.textMuted, textDecoration: 'none' }}>Full comparison</Link>
+          <Link href="/pricing" style={{ fontSize: 12, color: theme.textMuted, textDecoration: 'none' }}>Pricing</Link>
+          <Link href="/privacy" style={{ fontSize: 12, color: theme.textMuted, textDecoration: 'none' }}>Privacy</Link>
+          <Link href="/terms" style={{ fontSize: 12, color: theme.textMuted, textDecoration: 'none' }}>Terms</Link>
         </div>
       </footer>
     </div>
