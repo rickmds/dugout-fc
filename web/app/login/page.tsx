@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { theme } from '@/lib/theme';
 
 type Profile = {
   role: string;
@@ -109,17 +110,17 @@ export default function LoginPage() {
 
   function inputBorder(focused: boolean) {
     if (error) return '1.5px solid #ef4444';
-    if (focused) return '1.5px solid #22C55E';
-    return '1.5px solid #2a2a2a';
+    if (focused) return `1.5px solid ${theme.green}`;
+    return `1.5px solid ${theme.border}`;
   }
 
   const baseInput: React.CSSProperties = {
     width: '100%',
-    background: '#1a1a1a',
+    background: '#fff',
     borderRadius: '10px',
     padding: '11px 14px',
     fontSize: '15px',
-    color: '#f0f0f0',
+    color: theme.text,
     outline: 'none',
     fontFamily: 'inherit',
     boxSizing: 'border-box',
@@ -129,37 +130,37 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      backgroundColor: '#080808',
+      backgroundColor: theme.bg,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       padding: '24px',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
     }}>
       <div style={{ width: '100%', maxWidth: '420px' }}>
 
         {/* Logo lockup */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '36px' }}>
           <Link href="/" style={{ textDecoration: 'none' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
             <img src="/logo.png" alt="Pulse FC" width={48} height={48} style={{ height: '48px', width: 'auto' }} />
           </Link>
         </div>
 
         {/* Card */}
         <div style={{
-          background: '#111',
+          background: theme.surface,
           borderRadius: '20px',
-          border: '1px solid #1e1e1e',
+          border: `1px solid ${theme.border}`,
           padding: '36px',
+          boxShadow: theme.shadowCard,
         }}>
           <h1 style={{
-            fontSize: '20px', fontWeight: '800', color: '#fff',
-            marginBottom: '4px', letterSpacing: '-0.2px',
+            fontSize: '20px', fontWeight: '700', color: theme.text,
+            marginBottom: '4px', letterSpacing: '-0.2px', fontFamily: theme.fontDisplay,
           }}>
             Coach &amp; Admin Sign In
           </h1>
-          <p style={{ fontSize: '14px', color: '#666', marginBottom: '28px', lineHeight: 1.5 }}>
+          <p style={{ fontSize: '14px', color: theme.textMuted, marginBottom: '28px', lineHeight: 1.5 }}>
             Manage your teams from your desktop
           </p>
 
@@ -168,7 +169,7 @@ export default function LoginPage() {
             {/* Email */}
             <div>
               <label style={{
-                fontSize: '11px', fontWeight: '700', color: '#555',
+                fontSize: '11px', fontWeight: '700', color: theme.textMuted,
                 letterSpacing: '0.07em', textTransform: 'uppercase',
                 display: 'block', marginBottom: '7px',
               }}>
@@ -190,7 +191,7 @@ export default function LoginPage() {
             {/* Password */}
             <div>
               <label style={{
-                fontSize: '11px', fontWeight: '700', color: '#555',
+                fontSize: '11px', fontWeight: '700', color: theme.textMuted,
                 letterSpacing: '0.07em', textTransform: 'uppercase',
                 display: 'block', marginBottom: '7px',
               }}>
@@ -212,12 +213,12 @@ export default function LoginPage() {
             {/* Error */}
             {error && (
               <div style={{
-                background: '#1a0808',
-                border: '1px solid #ef444430',
+                background: '#FBEBEA',
+                border: '1px solid #F0C6C3',
                 borderRadius: '10px',
                 padding: '12px 14px',
                 fontSize: '13px',
-                color: '#f87171',
+                color: '#C0392B',
                 lineHeight: 1.5,
               }}>
                 {error}
@@ -230,8 +231,8 @@ export default function LoginPage() {
               disabled={loading}
               style={{
                 width: '100%',
-                background: loading ? '#166534' : btnHover ? '#16A34A' : '#22C55E',
-                color: loading ? '#4ade80' : '#000',
+                background: loading ? '#8FC9A8' : btnHover ? theme.greenDark : theme.green,
+                color: '#fff',
                 fontWeight: '700',
                 fontSize: '15px',
                 padding: '13px',
@@ -241,7 +242,7 @@ export default function LoginPage() {
                 transition: 'background 0.15s, box-shadow 0.15s, transform 0.1s',
                 fontFamily: 'inherit',
                 transform: btnHover && !loading ? 'translateY(-1px)' : 'none',
-                boxShadow: btnHover && !loading ? '0 4px 12px rgba(34,197,94,0.3)' : 'none',
+                boxShadow: btnHover && !loading ? theme.shadowBtn : 'none',
                 letterSpacing: '0.01em',
               }}
               onMouseEnter={() => setBtnHover(true)}
@@ -252,9 +253,9 @@ export default function LoginPage() {
 
             {/* Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ flex: 1, height: '1px', background: '#222' }} />
-              <span style={{ fontSize: '12px', color: '#444', fontWeight: '500' }}>or continue with</span>
-              <div style={{ flex: 1, height: '1px', background: '#222' }} />
+              <div style={{ flex: 1, height: '1px', background: theme.border }} />
+              <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: '500' }}>or continue with</span>
+              <div style={{ flex: 1, height: '1px', background: theme.border }} />
             </div>
 
             {/* OAuth */}
@@ -280,15 +281,15 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p style={{ textAlign: 'center', fontSize: '13px', color: '#555', marginTop: '20px' }}>
+        <p style={{ textAlign: 'center', fontSize: '13px', color: theme.textMuted, marginTop: '20px' }}>
           New club?{' '}
-          <a href="/onboarding" style={{ color: '#22C55E', textDecoration: 'none', fontWeight: '600' }}>
+          <a href="/onboarding" style={{ color: theme.green, textDecoration: 'none', fontWeight: '600' }}>
             Get started →
           </a>
         </p>
-        <p style={{ textAlign: 'center', fontSize: '12px', color: '#444', marginTop: '8px' }}>
+        <p style={{ textAlign: 'center', fontSize: '12px', color: theme.textMuted, marginTop: '8px' }}>
           For parents &amp; players — download the{' '}
-          <Link href="/" style={{ color: '#555', textDecoration: 'none', fontWeight: '500' }}>
+          <Link href="/" style={{ color: theme.textMuted, textDecoration: 'none', fontWeight: '500' }}>
             Pulse FC app
           </Link>
         </p>

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { theme } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — Pulse FC',
@@ -8,25 +9,24 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-[#080808] text-[#f0f0f0]">
+    <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text }}>
       {/* Nav */}
-      <header className="px-6 sm:px-10 py-5 flex items-center justify-between border-b border-[#111] max-w-5xl mx-auto">
+      <header className="px-6 sm:px-10 py-5 flex items-center justify-between max-w-5xl mx-auto" style={{ borderBottom: `1px solid ${theme.border}` }}>
         <Link href="/">
-          {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
           <img src="/logo.png" alt="Pulse FC" width={44} height={44} style={{ height: '44px', width: 'auto' }} />
-          
         </Link>
-        <Link href="/" className="text-[#555] text-[13px] hover:text-white transition-colors">← Back</Link>
+        <Link href="/" className="text-[13px] transition-colors hover:!text-[#2B2420]" style={{ color: theme.textMuted }}>← Back</Link>
       </header>
 
       {/* Content */}
       <main className="max-w-3xl mx-auto px-6 sm:px-10 py-16">
-        <h1 className="text-4xl font-extrabold text-white mb-3">Privacy Policy</h1>
-        <p className="text-[#555] text-sm mb-12">Last updated: 23 June 2026</p>
+        <h1 className="text-4xl font-extrabold mb-3" style={{ color: theme.text, fontFamily: theme.fontDisplay }}>Privacy Policy</h1>
+        <p className="text-sm mb-12" style={{ color: theme.textMuted }}>Last updated: 23 June 2026</p>
 
         <Section title="1. Who we are">
           <p>Pulse FC (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is a soccer club management platform. Our platform is available at pulse-fc.app and through our iOS mobile application.</p>
-          <p>You can contact us at <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>.</p>
+          <p>You can contact us at <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a>.</p>
         </Section>
 
         <Section title="2. What data we collect">
@@ -60,7 +60,7 @@ export default function PrivacyPage() {
           <p>Your data is shared only with the following third-party services, each necessary to operate the platform:</p>
           <ul>
             <li><strong>Supabase</strong> — database, authentication, file storage, and real-time messaging. Data is stored in the US (East region).</li>
-            <li><strong>Anthropic</strong> — powers our AI features. Data sent is limited to the specific content you upload (roster file, schedule, lineup). See <a href="https://www.anthropic.com/privacy" className="text-[#22c55e] hover:underline" target="_blank" rel="noopener noreferrer">Anthropic&apos;s privacy policy</a>.</li>
+            <li><strong>Anthropic</strong> — powers our AI features. Data sent is limited to the specific content you upload (roster file, schedule, lineup). See <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener noreferrer">Anthropic&apos;s privacy policy</a>.</li>
             <li><strong>Resend</strong> — transactional email delivery for invites and notifications.</li>
             <li><strong>Expo / Apple</strong> — push notification delivery via the Apple Push Notification Service (APNs).</li>
             <li><strong>PostHog</strong> — anonymised product analytics. No personal identifiers are sent.</li>
@@ -70,12 +70,12 @@ export default function PrivacyPage() {
 
         <Section title="5. Data retention">
           <p>We retain your personal data for as long as your account is active. If you delete your account, your personal data is deleted within 30 days. Club and team data may be retained in anonymised form for analytics purposes.</p>
-          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a> or using the Delete Account option in the app settings.</p>
+          <p>You can request deletion of your account and data at any time by emailing <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a> or using the Delete Account option in the app settings.</p>
         </Section>
 
         <Section title="6. Children's privacy">
           <p>Our platform is designed for use by coaches and parents. We do not knowingly collect personal data directly from children under 13. Player roster entries (name, jersey number, position) are entered by coaches or parents, not by the players themselves.</p>
-          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>.</p>
+          <p>If you believe we have inadvertently collected personal data from a child under 13, please contact us immediately at <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a>.</p>
         </Section>
 
         <Section title="7. Your rights">
@@ -87,7 +87,7 @@ export default function PrivacyPage() {
             <li>Export your data in a portable format.</li>
             <li>Withdraw consent at any time (this will not affect the lawfulness of prior processing).</li>
           </ul>
-          <p>To exercise any of these rights, email <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>. We will respond within 30 days.</p>
+          <p>To exercise any of these rights, email <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a>. We will respond within 30 days.</p>
         </Section>
 
         <Section title="8. Security">
@@ -106,17 +106,16 @@ export default function PrivacyPage() {
           <p>If you have any questions about this privacy policy or how we handle your data, please contact:</p>
           <p className="mt-2">
             <strong>Pulse FC</strong><br />
-            <a href="mailto:support@pulse-fc.app" className="text-[#22c55e] hover:underline">support@pulse-fc.app</a>
+            <a href="mailto:support@pulse-fc.app">support@pulse-fc.app</a>
           </p>
         </Section>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#111] px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between">
-        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+      <footer className="px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between" style={{ borderTop: `1px solid ${theme.border}` }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
         <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
-        
-        <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Pulse FC</p>
+        <p className="text-[12px]" style={{ color: theme.textMuted }}>© {new Date().getFullYear()} Pulse FC</p>
       </footer>
     </div>
   );
@@ -125,8 +124,8 @@ export default function PrivacyPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-10">
-      <h2 className="text-lg font-bold text-white mb-4">{title}</h2>
-      <div className="text-[#888] text-[15px] leading-relaxed space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2 [&_a]:text-[#22c55e] [&_strong]:text-[#ccc]">
+      <h2 className="text-lg font-bold mb-4" style={{ color: theme.text, fontFamily: theme.fontDisplay }}>{title}</h2>
+      <div className="text-[15px] leading-relaxed space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2 [&_a]:text-[#3FA86B] [&_a]:hover:underline [&_strong]:text-[#2B2420]" style={{ color: theme.textSecondary }}>
         {children}
       </div>
     </section>

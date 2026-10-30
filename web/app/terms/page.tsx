@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { theme } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'Terms of Service — Pulse FC',
@@ -8,21 +9,20 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-[#080808] text-[#f0f0f0]">
+    <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text }}>
       {/* Nav */}
-      <header className="px-6 sm:px-10 py-5 flex items-center justify-between border-b border-[#111] max-w-5xl mx-auto">
+      <header className="px-6 sm:px-10 py-5 flex items-center justify-between max-w-5xl mx-auto" style={{ borderBottom: `1px solid ${theme.border}` }}>
         <Link href="/">
-          {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
           <img src="/logo.png" alt="Pulse FC" width={44} height={44} style={{ height: '44px', width: 'auto' }} />
-          
         </Link>
-        <Link href="/" className="text-[#555] text-[13px] hover:text-white transition-colors">← Back</Link>
+        <Link href="/" className="text-[13px] transition-colors hover:!text-[#2B2420]" style={{ color: theme.textMuted }}>← Back</Link>
       </header>
 
       {/* Content */}
       <main className="max-w-3xl mx-auto px-6 sm:px-10 py-16">
-        <h1 className="text-4xl font-extrabold text-white mb-3">Terms of Service</h1>
-        <p className="text-[#555] text-sm mb-12">Last updated: 23 June 2026</p>
+        <h1 className="text-4xl font-extrabold mb-3" style={{ color: theme.text, fontFamily: theme.fontDisplay }}>Terms of Service</h1>
+        <p className="text-sm mb-12" style={{ color: theme.textMuted }}>Last updated: 23 June 2026</p>
 
         <Section title="1. Acceptance of terms">
           <p>By creating an account or using the Pulse FC platform (the &ldquo;Service&rdquo;), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
@@ -102,13 +102,12 @@ export default function TermsPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#111] px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between">
-        {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
+      <footer className="px-6 sm:px-10 py-8 max-w-5xl mx-auto flex items-center justify-between" style={{ borderTop: `1px solid ${theme.border}` }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
         <img src="/logo.png" alt="Pulse FC" width={36} height={36} style={{ height: '36px', width: 'auto' }} />
-        
         <div className="flex items-center gap-6">
-          <Link href="/privacy" className="text-[#555] text-[12px] hover:text-[#bbb] transition-colors">Privacy Policy</Link>
-          <p className="text-[#555] text-[12px]">© {new Date().getFullYear()} Pulse FC</p>
+          <Link href="/privacy" className="text-[12px] transition-colors hover:!text-[#2B2420]" style={{ color: theme.textMuted }}>Privacy Policy</Link>
+          <p className="text-[12px]" style={{ color: theme.textMuted }}>© {new Date().getFullYear()} Pulse FC</p>
         </div>
       </footer>
     </div>
@@ -118,8 +117,8 @@ export default function TermsPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-10">
-      <h2 className="text-lg font-bold text-white mb-4">{title}</h2>
-      <div className="text-[#888] text-[15px] leading-relaxed space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2 [&_a]:text-[#22c55e] [&_a]:hover:underline [&_strong]:text-[#ccc]">
+      <h2 className="text-lg font-bold mb-4" style={{ color: theme.text, fontFamily: theme.fontDisplay }}>{title}</h2>
+      <div className="text-[15px] leading-relaxed space-y-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2 [&_a]:text-[#3FA86B] [&_a]:hover:underline [&_strong]:text-[#2B2420]" style={{ color: theme.textSecondary }}>
         {children}
       </div>
     </section>
