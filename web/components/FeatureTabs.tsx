@@ -35,23 +35,23 @@ const tabDefs = [
       <div className="flex flex-col sm:flex-row gap-6">
         <Screenshot src="/screenshots/ScheduleTB.png" alt="Schedule screen with AI-imported games" />
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #C9962F30' }}>
             <span className="text-[11px] font-bold" style={{ color: '#C9962F' }}>✦ AI Import</span>
-            <p className="text-white font-bold text-[13px] mt-2 mb-1">Season loaded from one PDF</p>
-            <p className="text-[#888] text-[11px]">Every training and game this season, dates/times/locations, no re-typing.</p>
+            <p className="text-[#2B2420] font-bold text-[13px] mt-2 mb-1">Season loaded from one PDF</p>
+            <p className="text-[#6B6054] text-[11px]">Every training and game this season, dates/times/locations, no re-typing.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Upcoming</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #C9962F30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2">Upcoming</p>
             <div className="flex items-baseline gap-1.5 mb-1">
-              <span className="font-extrabold text-[26px] leading-none text-white">10</span>
-              <span className="text-[#888] text-[11px]">events this month</span>
+              <span className="font-extrabold text-[26px] leading-none text-[#2B2420]">10</span>
+              <span className="text-[#6B6054] text-[11px]">events this month</span>
             </div>
-            <p className="text-[#888] text-[11px]">Weather and a live RSVP count shown on every card.</p>
+            <p className="text-[#6B6054] text-[11px]">Weather and a live RSVP count shown on every card.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Flagged for review</p>
-            <p className="text-white font-bold text-[13px] mb-0.5">Uncertain rows, never guessed</p>
-            <p className="text-[#888] text-[11px]">Anything AI isn&apos;t sure about gets a coach&apos;s one-tap confirm before it&apos;s live.</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #C9962F30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2">Flagged for review</p>
+            <p className="text-[#2B2420] font-bold text-[13px] mb-0.5">Uncertain rows, never guessed</p>
+            <p className="text-[#6B6054] text-[11px]">Anything AI isn&apos;t sure about gets a coach&apos;s one-tap confirm before it&apos;s live.</p>
           </div>
         </div>
       </div>
@@ -69,32 +69,32 @@ const tabDefs = [
       <div className="flex flex-col sm:flex-row gap-6">
         <Screenshot src="/screenshots/clubsMapTB.png" alt="Event details screen with RSVP breakdown and map" />
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Live headcount</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2.5">Live headcount</p>
             <div className="flex items-baseline gap-1.5 mb-2">
-              <span className="text-white font-extrabold text-[28px] leading-none">9</span>
+              <span className="text-[#2B2420] font-extrabold text-[28px] leading-none">9</span>
               <span className="text-[#555] text-[16px] font-medium">/16</span>
             </div>
-            <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#1a1a1a' }}>
+            <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#EDE6DA' }}>
               <div className="h-full rounded-full" style={{ width: '56%', background: '#3FA86B' }} />
             </div>
-            <p className="text-[#888] text-[10px]">9 going · 2 can&apos;t go · 5 no reply</p>
+            <p className="text-[#6B6054] text-[10px]">9 going · 2 can&apos;t go · 5 no reply</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
             <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest">Location</p>
+              <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest">Location</p>
               <span className="text-[10px] font-bold text-[#3FA86B]" style={{ background: '#3FA86B10', border: '1px solid #3FA86B20', padding: '1px 7px', borderRadius: 99 }}>Mapped</span>
             </div>
-            <p className="text-white font-bold text-[13px] mb-0.5">Satellite view + directions</p>
-            <p className="text-[#888] text-[11px]">Every event shows exactly where to go, one tap from the schedule.</p>
+            <p className="text-[#2B2420] font-bold text-[13px] mb-0.5">Satellite view + directions</p>
+            <p className="text-[#6B6054] text-[11px]">Every event shows exactly where to go, one tap from the schedule.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Nudge non-responders</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2.5">Nudge non-responders</p>
             <div className="flex items-start gap-2.5">
               <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#3FA86B', fontSize: 12 }}>🔔</div>
               <div>
-                <p className="text-white text-[11px] font-bold mb-0.5">5 parents haven&apos;t replied</p>
-                <p className="text-[#888] text-[10px]">One tap sends a push reminder to just them.</p>
+                <p className="text-[#2B2420] text-[11px] font-bold mb-0.5">5 parents haven&apos;t replied</p>
+                <p className="text-[#6B6054] text-[10px]">One tap sends a push reminder to just them.</p>
               </div>
             </div>
           </div>
@@ -114,29 +114,29 @@ const tabDefs = [
       <div className="flex flex-col sm:flex-row gap-6">
         <Screenshot src="/screenshots/lineupBuilderTB.png" alt="Lineup builder screen with a 3-2-3 formation" />
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #C9962F30' }}>
             <span className="text-[11px] font-bold" style={{ color: '#C9962F' }}>✦ AI Suggested</span>
-            <p className="text-white font-bold text-[13px] mt-2 mb-1">3-2-3 Classic, 9v9</p>
-            <p className="text-[#888] text-[11px]">All 9 positions filled from confirmed RSVPs — drag any player to swap.</p>
+            <p className="text-[#2B2420] font-bold text-[13px] mt-2 mb-1">3-2-3 Classic, 9v9</p>
+            <p className="text-[#6B6054] text-[11px]">All 9 positions filled from confirmed RSVPs — drag any player to swap.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
-            <span className="text-[11px] font-bold text-[#888]">⏱ Equal Time</span>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #C9962F30' }}>
+            <span className="text-[11px] font-bold text-[#6B6054]">⏱ Equal Time</span>
             <div className="flex items-baseline gap-1.5 mt-2 mb-1">
               <span className="font-extrabold text-[26px] leading-none" style={{ color: '#C9962F' }}>18&prime;</span>
-              <span className="text-[#888] text-[11px]">per player</span>
+              <span className="text-[#6B6054] text-[11px]">per player</span>
             </div>
-            <p className="text-[#888] text-[11px]">Target minutes calculated instantly — pure maths, works offline.</p>
+            <p className="text-[#6B6054] text-[11px]">Target minutes calculated instantly — pure maths, works offline.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Availability</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #C9962F30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2">Availability</p>
             <div className="flex items-baseline gap-1 mb-2">
-              <span className="text-white font-extrabold text-[22px] leading-none">9</span>
+              <span className="text-[#2B2420] font-extrabold text-[22px] leading-none">9</span>
               <span className="text-[#555] text-[14px] font-medium">/9</span>
             </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1a1a1a' }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#EDE6DA' }}>
               <div className="h-full rounded-full" style={{ width: '100%', background: '#3FA86B' }} />
             </div>
-            <p className="text-[#888] text-[10px] mt-1.5">squad confirmed and ready</p>
+            <p className="text-[#6B6054] text-[10px] mt-1.5">squad confirmed and ready</p>
           </div>
         </div>
       </div>
@@ -154,17 +154,17 @@ const tabDefs = [
       <div className="flex flex-col sm:flex-row gap-6">
         <Screenshot src="/screenshots/coachesChatTB.png" alt="Team chat screen" />
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Coach</p>
-            <p className="text-white text-[13px] leading-snug">&quot;Reminder: Saturday&apos;s game moved to 10am kickoff, same field.&quot;</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2">Coach</p>
+            <p className="text-[#2B2420] text-[13px] leading-snug">&quot;Reminder: Saturday&apos;s game moved to 10am kickoff, same field.&quot;</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Parent</p>
-            <p className="text-white text-[13px] leading-snug">&quot;Got it, thanks coach! Jack is excited, ankle feels good this week.&quot;</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2">Parent</p>
+            <p className="text-[#2B2420] text-[13px] leading-snug">&quot;Got it, thanks coach! Jack is excited, ankle feels good this week.&quot;</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">One tab, three jobs</p>
-            <p className="text-[#888] text-[11px]">Team chat, pinned announcements, and 1:1 DMs — all in the same place every parent already has open.</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2.5">One tab, three jobs</p>
+            <p className="text-[#6B6054] text-[11px]">Team chat, pinned announcements, and 1:1 DMs — all in the same place every parent already has open.</p>
           </div>
         </div>
       </div>
@@ -182,26 +182,26 @@ const tabDefs = [
       <div className="flex flex-col sm:flex-row gap-6">
         <Screenshot src="/screenshots/match-trackerTB-crop.png" alt="Match tracker screen, live in-game" />
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Live match timer</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2">Live match timer</p>
             <span className="font-extrabold text-[32px] leading-none font-mono" style={{ color: '#3FA86B' }}>03:57</span>
-            <p className="text-[#888] text-[11px] mt-1">1st half · 2-1 · 2 subs pending confirmation</p>
+            <p className="text-[#6B6054] text-[11px] mt-1">1st half · 2-1 · 2 subs pending confirmation</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Equal playing time</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2">Equal playing time</p>
             <div className="flex items-baseline gap-1.5 mb-1">
               <span className="font-extrabold text-[26px] leading-none" style={{ color: '#C9962F' }}>18&prime;</span>
-              <span className="text-[#888] text-[11px]">target per player</span>
+              <span className="text-[#6B6054] text-[11px]">target per player</span>
             </div>
-            <p className="text-[#888] text-[11px]">Bench shows exactly who subs in next, and when.</p>
+            <p className="text-[#6B6054] text-[11px]">Bench shows exactly who subs in next, and when.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
-            <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Works offline</p>
+          <div className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #3FA86B30' }}>
+            <p className="text-[#6B6054] text-[10px] font-bold uppercase tracking-widest mb-2.5">Works offline</p>
             <div className="flex items-start gap-2.5">
               <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#3FA86B', fontSize: 12 }}>⚽</div>
               <div>
-                <p className="text-white text-[11px] font-bold mb-0.5">No signal, no problem</p>
-                <p className="text-[#888] text-[10px]">Score and sub tracking sync the moment you&apos;re back online.</p>
+                <p className="text-[#2B2420] text-[11px] font-bold mb-0.5">No signal, no problem</p>
+                <p className="text-[#6B6054] text-[10px]">Score and sub tracking sync the moment you&apos;re back online.</p>
               </div>
             </div>
           </div>
@@ -349,12 +349,12 @@ export default function FeatureTabs() {
             {/* Blurred solid blob — smooth falloff, no gradient banding */}
             <div key={`glow-${active}`} style={{
               position: 'absolute', top: '5%', left: '10%', width: '55%', height: '65%', borderRadius: '50%',
-              background: tab.accent, opacity: 0.28, filter: 'blur(90px)', pointerEvents: 'none', zIndex: 0,
+              background: tab.accent, opacity: 0.14, filter: 'blur(90px)', pointerEvents: 'none', zIndex: 0,
               animation: 'tabFadeIn 0.4s ease',
             }} />
             <div className="rounded-2xl p-3 sm:p-6 lg:p-8 relative overflow-hidden" style={{
-              background: '#0a0a0a', border: `1px solid ${tab.accent}45`, minHeight: 480, zIndex: 1,
-              boxShadow: `0 24px 60px -30px ${tab.accent}55`,
+              background: theme.bg, border: `1px solid ${tab.accent}45`, minHeight: 480, zIndex: 1,
+              boxShadow: `0 20px 48px -24px ${tab.accent}40`,
             }}>
               {/* Top beam */}
               <div style={{
