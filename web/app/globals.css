@@ -1,14 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --green: #22c55e;
-  --bg: #080808;
-  --surface: #111111;
-  --border: #1e1e1e;
-  --text: #f0f0f0;
-  --text-secondary: #888;
-  --text-muted: #444;
-  --font: var(--font-jakarta), -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Marketing site tokens — see web/lib/theme.ts for the TS-side source of
+     truth these mirror. The dashboard app sets its own colors directly and
+     does not use these. */
+  --green: #3FA86B;
+  --bg: #FAF7F1;
+  --surface: #FFFFFF;
+  --border: #EDE6DA;
+  --text: #2B2420;
+  --text-secondary: #6B6054;
+  --text-muted: #A69B8C;
+  --font: var(--font-body), -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: var(--font-display), var(--font-body), sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -32,7 +36,7 @@ input[type="radio"] {
 }
 
 input, textarea, select {
-  background: #0f0f0f;
+  background: #fff;
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 10px;
@@ -45,7 +49,7 @@ input, textarea, select {
 }
 
 input:focus, textarea:focus, select:focus {
-  border-color: #333;
+  border-color: var(--green);
 }
 
 input::placeholder, textarea::placeholder {

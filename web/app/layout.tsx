@@ -1,11 +1,22 @@
 import type { Metadata } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
+import { Fredoka, Inter } from 'next/font/google';
 import './globals.css';
 
-const jakarta = Plus_Jakarta_Sans({
+// Display face for headlines — warm, rounded, friendly (the "approachable
+// SaaS" direction) rather than a sharp/technical sans.
+const displayFont = Fredoka({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-jakarta',
+  weight: ['500', '600', '700'],
+  variable: '--font-display',
+  display: 'swap',
+});
+
+// Body copy — kept to a clean, highly-legible sans so long paragraphs of
+// marketing copy stay easy to read at small sizes.
+const bodyFont = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-body',
   display: 'swap',
 });
 
@@ -16,8 +27,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`h-full ${jakarta.variable}`}>
-      <body className="min-h-full flex flex-col bg-[#080808] text-[#f0f0f0]">{children}</body>
+    <html lang="en" className={`h-full ${displayFont.variable} ${bodyFont.variable}`}>
+      <body className="min-h-full flex flex-col bg-[#FAF7F1] text-[#2B2420]">{children}</body>
     </html>
   );
 }

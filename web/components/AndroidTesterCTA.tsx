@@ -13,7 +13,7 @@ function PlayIcon({ size }: { size: number }) {
   );
 }
 
-export function AndroidTesterModal({ open, onClose, accent = '#22c55e' }: {
+export function AndroidTesterModal({ open, onClose, accent = '#3FA86B' }: {
   open: boolean;
   onClose: () => void;
   accent?: string;
@@ -30,47 +30,47 @@ export function AndroidTesterModal({ open, onClose, accent = '#22c55e' }: {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.75)' }}
+      style={{ background: 'rgba(43,36,32,0.55)' }}
       onClick={onClose}
     >
       <div
-        className="relative bg-[#111] border border-[#222] rounded-2xl p-7 max-w-sm w-full"
-        style={{ borderLeft: `3px solid ${accent}` }}
+        className="relative bg-white border border-[#EDE6DA] rounded-2xl p-7 max-w-sm w-full"
+        style={{ borderLeft: `3px solid ${accent}`, boxShadow: '0 20px 48px rgba(43,36,32,0.18)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute top-5 right-5 w-8 h-8 rounded-full border border-[#2e2e2e] flex items-center justify-center text-[#888] hover:text-white hover:border-[#444] transition-all"
+          className="absolute top-5 right-5 w-8 h-8 rounded-full border border-[#EDE6DA] flex items-center justify-center text-[#6B6054] hover:text-[#2B2420] hover:border-[#A69B8C] transition-all"
         >
           ×
         </button>
 
         <p style={{ color: accent }} className="text-[11px] font-bold tracking-widest uppercase mb-2">On Android</p>
-        <h3 className="text-white font-extrabold text-xl mb-6">Get Pulse FC (Beta)</h3>
+        <h3 className="text-[#2B2420] font-extrabold text-xl mb-6">Get Pulse FC (Beta)</h3>
 
         <div className="flex gap-3 mb-6">
-          <div style={{ background: accent }} className="flex-shrink-0 w-6 h-6 rounded-full text-black text-[12px] font-bold flex items-center justify-center">1</div>
+          <div style={{ background: accent }} className="flex-shrink-0 w-6 h-6 rounded-full text-white text-[12px] font-bold flex items-center justify-center">1</div>
           <div>
-            <p className="text-white text-sm font-bold mb-1">Join the tester group</p>
-            <p className="text-[#888] text-[13px] leading-relaxed mb-2">Open this link and tap Join group:</p>
+            <p className="text-[#2B2420] text-sm font-bold mb-1">Join the tester group</p>
+            <p className="text-[#6B6054] text-[13px] leading-relaxed mb-2">Open this link and tap Join group:</p>
             <a href={GOOGLE_GROUP_URL} target="_blank" rel="noopener noreferrer"
               style={{ color: accent }} className="text-sm font-bold underline underline-offset-2 hover:opacity-80 transition-opacity">
               Join the Android tester group
             </a>
-            <p className="text-[#666] text-[12px] leading-relaxed mt-2">Use the same Google account your Play Store is signed in with — usually the main Gmail on your phone.</p>
+            <p className="text-[#A69B8C] text-[12px] leading-relaxed mt-2">Use the same Google account your Play Store is signed in with — usually the main Gmail on your phone.</p>
           </div>
         </div>
 
         <div className="flex gap-3">
-          <div style={{ background: accent }} className="flex-shrink-0 w-6 h-6 rounded-full text-black text-[12px] font-bold flex items-center justify-center">2</div>
+          <div style={{ background: accent }} className="flex-shrink-0 w-6 h-6 rounded-full text-white text-[12px] font-bold flex items-center justify-center">2</div>
           <div>
-            <p className="text-white text-sm font-bold mb-1">Become a tester, then install</p>
+            <p className="text-[#2B2420] text-sm font-bold mb-1">Become a tester, then install</p>
             <a href={PLAY_TESTING_URL} target="_blank" rel="noopener noreferrer"
               style={{ color: accent }} className="text-sm font-bold underline underline-offset-2 hover:opacity-80 transition-opacity">
               Open the Pulse FC testing page
             </a>
-            <p className="text-[#666] text-[12px] leading-relaxed mt-2">Tap Become a tester, then use the Google Play download link that appears.</p>
+            <p className="text-[#A69B8C] text-[12px] leading-relaxed mt-2">Tap Become a tester, then use the Google Play download link that appears.</p>
           </div>
         </div>
       </div>
@@ -86,7 +86,7 @@ export default function AndroidTesterCTA({ size = 'hero' }: { size?: 'hero' | 'f
     <>
       <button
         onClick={() => setOpen(true)}
-        className="relative inline-flex items-center bg-[#22c55e] text-black hover:bg-[#1db954] transition-colors"
+        className="relative inline-flex items-center bg-[#3FA86B] text-white hover:bg-[#2F8755] transition-colors"
         style={{
           gap: isHero ? 8 : 6,
           borderRadius: isHero ? 10 : 8,
@@ -97,7 +97,7 @@ export default function AndroidTesterCTA({ size = 'hero' }: { size?: 'hero' | 'f
       >
         <PlayIcon size={isHero ? 17 : 13} />
         <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
-          <div style={{ fontSize: isHero ? 8.5 : 7.5, fontWeight: 700, opacity: 0.7, letterSpacing: '0.05em' }}>GET IT ON</div>
+          <div style={{ fontSize: isHero ? 8.5 : 7.5, fontWeight: 700, opacity: 0.85, letterSpacing: '0.05em' }}>GET IT ON</div>
           <div style={{ fontSize: isHero ? 13.5 : 11, fontWeight: 900, letterSpacing: '-0.2px' }}>Android Beta</div>
         </div>
       </button>

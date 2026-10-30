@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import PhoneFrame from '@/components/PhoneFrame';
 import AnimatedBar from '@/components/AnimatedBar';
 import LineupBuilder from '@/components/LineupBuilder';
+import { theme } from '@/lib/theme';
 
 const INTERVAL = 5000;
 
@@ -21,7 +22,7 @@ const tabDefs = [
     icon: '📅',
     label: 'Schedule import',
     subtitle: 'Season set up in under a minute',
-    accent: '#E879A0',
+    accent: '#C9962F',
     ai: true,
     checks: ['Any PDF, image, or spreadsheet', 'Flags uncertain rows for review', 'One-click confirm and you\'re live'],
     visual: (
@@ -38,10 +39,10 @@ const tabDefs = [
             </div>
             <div>
               <p className="text-white text-[12px] font-semibold leading-none mb-0.5">season_2026.pdf</p>
-              <p className="text-[#22c55e] text-[10px] font-bold">✓ 14 games imported</p>
+              <p className="text-[#3FA86B] text-[10px] font-bold">✓ 14 games imported</p>
             </div>
           </div>
-          <span className="text-[10px] font-bold text-[#22c55e] px-2.5 py-1 rounded-lg" style={{ background: '#22c55e10', border: '1px solid #22c55e20' }}>Confirmed</span>
+          <span className="text-[10px] font-bold text-[#3FA86B] px-2.5 py-1 rounded-lg" style={{ background: '#3FA86B10', border: '1px solid #3FA86B20' }}>Confirmed</span>
         </div>
         {/* Desktop / tablet — table */}
         <div className="hidden sm:grid px-4 py-2" style={{ gridTemplateColumns: '90px 48px 1fr 60px', gap: '0 8px', borderBottom: '1px solid #111' }}>
@@ -60,7 +61,7 @@ const tabDefs = [
               </div>
               <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded-md text-center"
                 style={g.type === 'Game'
-                  ? { background: '#0e1a0e', color: '#22c55e', border: '1px solid #22c55e18' }
+                  ? { background: '#0e1a0e', color: '#3FA86B', border: '1px solid #3FA86B18' }
                   : { background: '#1a1209', color: '#f59e0b', border: '1px solid #f59e0b18' }}>
                 {g.type}
               </span>
@@ -78,7 +79,7 @@ const tabDefs = [
               </div>
               <span className="text-[9.5px] font-bold px-2 py-1 rounded-md text-center flex-shrink-0"
                 style={g.type === 'Game'
-                  ? { background: '#0e1a0e', color: '#22c55e', border: '1px solid #22c55e18' }
+                  ? { background: '#0e1a0e', color: '#3FA86B', border: '1px solid #3FA86B18' }
                   : { background: '#1a1209', color: '#f59e0b', border: '1px solid #f59e0b18' }}>
                 {g.type}
               </span>
@@ -96,7 +97,7 @@ const tabDefs = [
     icon: '✅',
     label: 'RSVP & attendance',
     subtitle: 'Know exactly who\'s coming',
-    accent: '#22c55e',
+    accent: '#3FA86B',
     ai: false,
     checks: ['Attending or Not Attending — no maybes', 'RSVP auto-locks before game time', 'Parents notified instantly if child absent'],
     visual: (
@@ -106,7 +107,7 @@ const tabDefs = [
             <div className="px-4 py-3" style={{ borderBottom: '1px solid #161616', background: '#0a0a0a' }}>
               <div className="flex items-center justify-between">
                 <p className="text-[#555] text-[9px] font-bold uppercase tracking-widest">Oakwood FC · U14 Boys</p>
-                <div className="w-5 h-5 rounded-full bg-[#22c55e] flex items-center justify-center text-black font-extrabold" style={{ fontSize: 7 }}>RC</div>
+                <div className="w-5 h-5 rounded-full bg-[#3FA86B] flex items-center justify-center text-black font-extrabold" style={{ fontSize: 7 }}>RC</div>
               </div>
             </div>
             <div className="px-4 py-3" style={{ borderBottom: '1px solid #161616' }}>
@@ -116,12 +117,12 @@ const tabDefs = [
                   <p className="text-white font-extrabold text-[13px] leading-tight">vs Riverside Utd</p>
                   <p className="text-[#666] text-[9px] mt-0.5">Riverside Park · Home kit</p>
                 </div>
-                <span className="text-[8px] font-bold text-[#22c55e] flex-shrink-0" style={{ background: '#22c55e10', border: '1px solid #22c55e20', padding: '2px 7px', borderRadius: 99 }}>2 days</span>
+                <span className="text-[8px] font-bold text-[#3FA86B] flex-shrink-0" style={{ background: '#3FA86B10', border: '1px solid #3FA86B20', padding: '2px 7px', borderRadius: 99 }}>2 days</span>
               </div>
               <div className="mt-3">
                 <div className="flex justify-between items-baseline mb-2">
                   <span className="text-white font-bold text-[10px]">Squad availability</span>
-                  <span className="text-[#22c55e] font-extrabold text-[10px]">11 / 14</span>
+                  <span className="text-[#3FA86B] font-extrabold text-[10px]">11 / 14</span>
                 </div>
                 <AnimatedBar total={14} filled={11} />
               </div>
@@ -138,11 +139,11 @@ const tabDefs = [
                 ].map((p) => (
                   <div key={p.init} className="flex items-center gap-2 py-1.5 px-2.5 rounded-xl" style={{ background: '#111', border: '1px solid #181818' }}>
                     <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ fontSize: 7, fontWeight: 800, ...(p.yes ? { background: '#0e2016', border: '1px solid #22c55e22', color: '#22c55e' } : { background: '#1e0f0f', border: '1px solid #f8717122', color: '#f87171' }) }}>
+                      style={{ fontSize: 7, fontWeight: 800, ...(p.yes ? { background: '#0e2016', border: '1px solid #3FA86B22', color: '#3FA86B' } : { background: '#1e0f0f', border: '1px solid #f8717122', color: '#f87171' }) }}>
                       {p.init}
                     </div>
                     <span className="text-[#aaa] flex-1" style={{ fontSize: 10 }}>{p.name}</span>
-                    <span className="font-bold flex-shrink-0" style={{ fontSize: 9, color: p.yes ? '#22c55e' : '#f87171' }}>{p.yes ? '✓' : '✗'}</span>
+                    <span className="font-bold flex-shrink-0" style={{ fontSize: 9, color: p.yes ? '#3FA86B' : '#f87171' }}>{p.yes ? '✓' : '✗'}</span>
                   </div>
                 ))}
               </div>
@@ -154,29 +155,29 @@ const tabDefs = [
           </PhoneFrame>
         </div>
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Live headcount</p>
             <div className="flex items-baseline gap-1.5 mb-2">
               <span className="text-white font-extrabold text-[28px] leading-none">11</span>
               <span className="text-[#555] text-[16px] font-medium">/14</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ background: '#1a1a1a' }}>
-              <div className="h-full rounded-full" style={{ width: '79%', background: '#22c55e' }} />
+              <div className="h-full rounded-full" style={{ width: '79%', background: '#3FA86B' }} />
             </div>
             <p className="text-[#888] text-[10px]">10 going · 1 out · 3 no reply</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest">Auto-lock</p>
-              <span className="text-[10px] font-bold text-[#22c55e]" style={{ background: '#22c55e10', border: '1px solid #22c55e20', padding: '1px 7px', borderRadius: 99 }}>Active</span>
+              <span className="text-[10px] font-bold text-[#3FA86B]" style={{ background: '#3FA86B10', border: '1px solid #3FA86B20', padding: '1px 7px', borderRadius: 99 }}>Active</span>
             </div>
             <p className="text-white font-bold text-[13px] mb-0.5">Closes in 14h 23m</p>
             <p className="text-[#888] text-[11px]">Sat 5 Jul · 8:00am — 2 hrs before kickoff</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Push sent</p>
             <div className="flex items-start gap-2.5">
-              <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#22c55e', fontSize: 12 }}>⚽</div>
+              <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center" style={{ background: '#3FA86B', fontSize: 12 }}>⚽</div>
               <div>
                 <p className="text-white text-[11px] font-bold mb-0.5">Are you coming Saturday?</p>
                 <p className="text-[#888] text-[10px]">vs Riverside Utd · 10:00am · Riverside Park</p>
@@ -192,34 +193,34 @@ const tabDefs = [
     icon: '⚽',
     label: 'Lineup builder',
     subtitle: 'Built in seconds, not 20 minutes',
-    accent: '#E879A0',
+    accent: '#C9962F',
     ai: true,
     checks: ['Only shows confirmed RSVPs', 'AI suggests lineup by position', 'Equal time calculator — instant, offline'],
     visual: (
       <div className="flex flex-col sm:flex-row gap-6">
         <LineupBuilder />
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #E879A030' }}>
-            <span className="text-[11px] font-bold" style={{ color: '#E879A0' }}>✦ AI Suggested</span>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
+            <span className="text-[11px] font-bold" style={{ color: '#C9962F' }}>✦ AI Suggested</span>
             <p className="text-white font-bold text-[13px] mt-2 mb-1">4-3-3 Classic</p>
             <p className="text-[#888] text-[11px]">11 players placed from 13 confirmed RSVPs.</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #E879A030' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
             <span className="text-[11px] font-bold text-[#888]">⏱ Equal Time</span>
             <div className="flex items-baseline gap-1.5 mt-2 mb-1">
-              <span className="font-extrabold text-[26px] leading-none" style={{ color: '#E879A0' }}>18&prime;</span>
+              <span className="font-extrabold text-[26px] leading-none" style={{ color: '#C9962F' }}>18&prime;</span>
               <span className="text-[#888] text-[11px]">per player</span>
             </div>
             <p className="text-[#888] text-[11px]">Sub every 9 min · 13 players · 80 min game</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #E879A030' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #C9962F30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Availability</p>
             <div className="flex items-baseline gap-1 mb-2">
               <span className="text-white font-extrabold text-[22px] leading-none">13</span>
               <span className="text-[#555] text-[14px] font-medium">/15</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1a1a1a' }}>
-              <div className="h-full rounded-full" style={{ width: '87%', background: '#22c55e' }} />
+              <div className="h-full rounded-full" style={{ width: '87%', background: '#3FA86B' }} />
             </div>
             <p className="text-[#888] text-[10px] mt-1.5">confirmed · 2 no reply</p>
           </div>
@@ -232,7 +233,7 @@ const tabDefs = [
     icon: '💬',
     label: 'Team communications',
     subtitle: 'One channel, zero noise',
-    accent: '#22c55e',
+    accent: '#3FA86B',
     ai: false,
     checks: ['Team chat, announcements, and DMs in one tab', 'Email blast from inside the app', 'Coaches control what parents see'],
     visual: (
@@ -241,7 +242,7 @@ const tabDefs = [
           <div className="flex gap-3">
             {['Team Chat', 'Announcements', 'Direct'].map((tab, i) => (
               <span key={tab} className="text-[10px] font-bold pb-2"
-                style={{ color: i === 1 ? '#22c55e' : '#444', borderBottom: i === 1 ? '2px solid #22c55e' : '2px solid transparent' }}>
+                style={{ color: i === 1 ? '#3FA86B' : '#444', borderBottom: i === 1 ? '2px solid #3FA86B' : '2px solid transparent' }}>
                 {tab}
               </span>
             ))}
@@ -254,7 +255,7 @@ const tabDefs = [
             { title: 'Tournament permission slips', body: 'Digital form sent to all parents. Deadline Friday 5pm.', time: 'Mon', pinned: false },
           ].map((a, i) => (
             <div key={i} className="px-4 py-3.5 flex items-start gap-3">
-              <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center mt-0.5" style={{ background: '#0e2016', border: '1px solid #22c55e20' }}>
+              <div className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center mt-0.5" style={{ background: '#0e2016', border: '1px solid #3FA86B20' }}>
                 <span style={{ fontSize: 10 }}>📢</span>
               </div>
               <div className="flex-1 min-w-0">
@@ -265,14 +266,14 @@ const tabDefs = [
                 <p className="text-[#666] text-[10px] leading-relaxed line-clamp-2">{a.body}</p>
               </div>
               {a.pinned && (
-                <span className="text-[8px] font-bold text-[#22c55e] flex-shrink-0 mt-1" style={{ background: '#22c55e10', border: '1px solid #22c55e20', padding: '1px 6px', borderRadius: 99 }}>PINNED</span>
+                <span className="text-[8px] font-bold text-[#3FA86B] flex-shrink-0 mt-1" style={{ background: '#3FA86B10', border: '1px solid #3FA86B20', padding: '1px 6px', borderRadius: 99 }}>PINNED</span>
               )}
             </div>
           ))}
         </div>
         <div className="px-4 py-3 flex items-center gap-2" style={{ borderTop: '1px solid #111', background: '#090909' }}>
           <div className="flex-1 rounded-xl px-3 py-2 text-[10px] text-[#444]" style={{ background: '#111', border: '1px solid #1a1a1a' }}>Post an announcement…</div>
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#22c55e10', border: '1px solid #22c55e20' }}>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#3FA86B10', border: '1px solid #3FA86B20' }}>
             <span style={{ fontSize: 10 }}>✉️</span>
           </div>
         </div>
@@ -284,7 +285,7 @@ const tabDefs = [
     icon: '🏃',
     label: 'Match day',
     subtitle: 'Run the match from your phone',
-    accent: '#22c55e',
+    accent: '#3FA86B',
     ai: false,
     checks: ['Live timer with real-time sub tracking', 'Equal time calculator — works offline', 'Log scores · season record auto-updates'],
     visual: (
@@ -297,23 +298,23 @@ const tabDefs = [
           </div>
         </div>
         <div className="flex flex-col gap-3 flex-1 min-w-0">
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Live match timer</p>
-            <span className="font-extrabold text-[32px] leading-none font-mono" style={{ color: '#22c55e' }}>63:54</span>
+            <span className="font-extrabold text-[32px] leading-none font-mono" style={{ color: '#3FA86B' }}>63:54</span>
             <p className="text-[#888] text-[11px] mt-1">2nd half · 3 subs made · 2 remaining</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2">Equal playing time</p>
             <div className="flex items-baseline gap-1.5 mb-1">
-              <span className="font-extrabold text-[26px] leading-none" style={{ color: '#E879A0' }}>18&prime;</span>
+              <span className="font-extrabold text-[26px] leading-none" style={{ color: '#C9962F' }}>18&prime;</span>
               <span className="text-[#888] text-[11px]">target per player</span>
             </div>
             <p className="text-[#888] text-[11px]">Sub every 9 min · 13 players · 80 min game</p>
           </div>
-          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #22c55e30' }}>
+          <div className="rounded-2xl p-4" style={{ background: '#0e0e0e', border: '1px solid #3FA86B30' }}>
             <p className="text-[#888] text-[10px] font-bold uppercase tracking-widest mb-2.5">Season record</p>
             <div className="flex gap-5">
-              {[{ v: '8', l: 'Won', c: '#22c55e' }, { v: '2', l: 'Lost', c: '#f87171' }, { v: '1', l: 'Drawn', c: '#888' }].map(({ v, l, c }) => (
+              {[{ v: '8', l: 'Won', c: '#3FA86B' }, { v: '2', l: 'Lost', c: '#f87171' }, { v: '1', l: 'Drawn', c: '#888' }].map(({ v, l, c }) => (
                 <div key={l} className="text-center">
                   <p className="font-extrabold text-[22px] leading-none mb-0.5" style={{ color: c }}>{v}</p>
                   <p className="text-[#555] text-[10px] font-bold">{l}</p>
@@ -346,28 +347,31 @@ export default function FeatureTabs() {
   const tab = tabDefs[active];
 
   return (
-    <section id="how" style={{ borderTop: '1px solid #111', position: 'relative', overflow: 'hidden' }}>
+    <section id="how" style={{ borderTop: `1px solid ${theme.border}`, position: 'relative', overflow: 'hidden' }}>
       {/* Ambient section wash — blurred solid blobs, no gradient banding. Smaller + softer on mobile so it doesn't wash out the text. */}
-      <div className="absolute rounded-full pointer-events-none w-[140px] h-[140px] opacity-[0.08] blur-[60px] sm:w-[340px] sm:h-[340px] sm:opacity-[0.14] sm:blur-[120px]" style={{
-        top: -20, left: '4%', background: '#22c55e', zIndex: 0,
+      <div className="absolute rounded-full pointer-events-none w-[140px] h-[140px] opacity-[0.10] blur-[60px] sm:w-[340px] sm:h-[340px] sm:opacity-[0.16] sm:blur-[120px]" style={{
+        top: -20, left: '4%', background: '#3FA86B', zIndex: 0,
         animation: 'ambientPulse 8s ease-in-out infinite',
       }} />
-      <div className="absolute rounded-full pointer-events-none w-[140px] h-[140px] opacity-[0.07] blur-[60px] sm:w-[340px] sm:h-[340px] sm:opacity-[0.13] sm:blur-[120px]" style={{
-        bottom: -20, right: '3%', background: '#E879A0', zIndex: 0,
+      <div className="absolute rounded-full pointer-events-none w-[140px] h-[140px] opacity-[0.09] blur-[60px] sm:w-[340px] sm:h-[340px] sm:opacity-[0.15] sm:blur-[120px]" style={{
+        bottom: -20, right: '3%', background: '#C9962F', zIndex: 0,
         animation: 'ambientPulse 8s ease-in-out infinite 4s',
       }} />
       <div className="max-w-7xl mx-auto px-5 sm:px-10 py-16 sm:py-24" style={{ position: 'relative', zIndex: 1 }}>
 
         <div className="mb-14 max-w-2xl">
-          <div className="inline-flex items-center gap-2.5 text-[#22c55e] text-[11px] font-bold border border-[#22c55e25] bg-[#22c55e0a] px-3.5 py-1.5 rounded-full mb-6 uppercase tracking-[0.16em]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse flex-shrink-0" />
+          <div className="inline-flex items-center gap-2.5 text-[#2F8755] text-[11px] font-bold border border-[#3FA86B40] bg-[#3FA86B14] px-3.5 py-1.5 rounded-full mb-6 uppercase tracking-[0.16em]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#3FA86B] animate-pulse flex-shrink-0" />
             How it works
           </div>
-          <h2 className="font-extrabold text-white leading-tight tracking-tight mb-4" style={{ fontSize: 'clamp(28px, 3.5vw, 48px)' }}>
-            Everything your club needs. <br className="hidden sm:inline" />None of the <span style={{ color: '#22c55e' }}>chaos</span>.
+          <h2
+            className="font-extrabold leading-tight tracking-tight mb-4"
+            style={{ fontSize: 'clamp(28px, 3.5vw, 48px)', color: theme.text, fontFamily: theme.fontDisplay }}
+          >
+            Everything your club needs. <br className="hidden sm:inline" />None of the <span style={{ color: '#3FA86B' }}>chaos</span>.
           </h2>
-          <p className="text-[#888] text-[15px] leading-relaxed">
-            Five tools, one app — <span style={{ color: '#E879A0', fontWeight: 700 }}>two of them powered by AI</span>. Tap through to see exactly what your coaches and parents will use every week.
+          <p className="text-[15px] leading-relaxed" style={{ color: theme.textSecondary }}>
+            Five tools, one app — <span style={{ color: '#B8842A', fontWeight: 700 }}>two of them powered by AI</span>. Tap through to see exactly what your coaches and parents will use every week.
           </p>
         </div>
 
@@ -377,15 +381,15 @@ export default function FeatureTabs() {
             <button key={t.id} onClick={() => select(i)}
               className="flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12px] font-bold transition-all"
               style={{
-                background: active === i ? `${t.accent}14` : '#111',
-                color: active === i ? t.accent : '#666',
-                border: `1px solid ${active === i ? `${t.accent}40` : '#1e1e1e'}`,
+                background: active === i ? `${t.accent}18` : theme.surface,
+                color: active === i ? t.accent : theme.textSecondary,
+                border: `1px solid ${active === i ? `${t.accent}45` : theme.border}`,
               }}>
               <span>{t.icon}</span>
               <span className="whitespace-nowrap">{t.label}</span>
               {t.ai && (
                 <span className="text-[8px] font-extrabold px-1 py-[2px] rounded flex-shrink-0 leading-none" style={{
-                  color: active === i ? t.accent : '#E879A0', background: active === i ? `${t.accent}20` : '#E879A01a',
+                  color: active === i ? t.accent : '#C9962F', background: active === i ? `${t.accent}20` : '#C9962F1a',
                 }}>AI</span>
               )}
             </button>
@@ -398,21 +402,20 @@ export default function FeatureTabs() {
           <div className="hidden lg:flex flex-col gap-2 sticky top-24">
             {tabDefs.map((t, i) => (
               <button key={t.id} onClick={() => select(i)}
-                className={`text-left relative overflow-hidden rounded-2xl px-4 py-4 transition-all duration-200 ${active === i ? '' : 'hover:bg-white/[0.03]'}`}
+                className={`text-left relative overflow-hidden rounded-2xl px-4 py-4 transition-all duration-200 ${active === i ? '' : 'hover:bg-black/[0.025]'}`}
                 style={{
-                  background: active === i ? `linear-gradient(135deg, ${t.accent}22, ${t.accent}06)` : 'transparent',
-                  border: `1px solid ${active === i ? `${t.accent}55` : '#181818'}`,
-                  boxShadow: active === i ? `0 12px 32px -10px ${t.accent}70, inset 0 1px 0 ${t.accent}20` : 'none',
+                  background: active === i ? `linear-gradient(135deg, ${t.accent}1e, ${t.accent}08)` : 'transparent',
+                  border: `1px solid ${active === i ? `${t.accent}55` : theme.border}`,
+                  boxShadow: active === i ? `0 12px 28px -14px ${t.accent}90` : 'none',
                   transform: active === i ? 'translateX(3px)' : 'none',
                 }}>
                 {/* Left accent bar */}
                 <div style={{
                   position: 'absolute', left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2,
                   background: active === i ? t.accent : 'transparent',
-                  boxShadow: active === i ? `0 0 14px ${t.accent}` : 'none',
                 }} />
                 <div className="flex items-center gap-3">
-                  <span className="font-mono font-bold text-[10px] flex-shrink-0 w-4 text-center" style={{ color: active === i ? t.accent : '#333' }}>
+                  <span className="font-mono font-bold text-[10px] flex-shrink-0 w-4 text-center" style={{ color: active === i ? t.accent : theme.textMuted }}>
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
@@ -424,23 +427,23 @@ export default function FeatureTabs() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <p className="font-bold text-[13px] leading-none truncate" style={{ color: active === i ? '#fff' : '#aaa' }}>
+                      <p className="font-bold text-[13px] leading-none truncate" style={{ color: active === i ? theme.text : theme.textSecondary }}>
                         {t.label}
                       </p>
                       {t.ai && (
                         <span className="text-[8px] font-extrabold px-1.5 py-[3px] rounded-md flex-shrink-0 leading-none" style={{
-                          color: '#E879A0', background: '#E879A01e', border: '1px solid #E879A045', letterSpacing: '0.05em',
+                          color: '#9A6B1F', background: '#C9962F1e', border: '1px solid #C9962F45', letterSpacing: '0.05em',
                         }}>AI</span>
                       )}
                     </div>
-                    <p className="text-[11px] truncate" style={{ color: active === i ? '#aaa' : '#555' }}>{t.subtitle}</p>
+                    <p className="text-[11px] truncate" style={{ color: active === i ? theme.textSecondary : theme.textMuted }}>{t.subtitle}</p>
                   </div>
                 </div>
                 {/* Expanded checks when active */}
                 {active === i && (
                   <div className="mt-3 pl-16 flex flex-col gap-1.5" style={{ animation: 'tabFadeIn 0.25s ease' }}>
                     {t.checks.map(c => (
-                      <div key={c} className="flex items-start gap-2 text-[11px]" style={{ color: '#aaa' }}>
+                      <div key={c} className="flex items-start gap-2 text-[11px]" style={{ color: theme.textSecondary }}>
                         <span className="text-[9px] mt-0.5 flex-shrink-0" style={{ color: t.accent }}>✓</span>
                         {c}
                       </div>

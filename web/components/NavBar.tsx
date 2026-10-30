@@ -1,7 +1,8 @@
 import Link from 'next/link';
+import { theme } from '@/lib/theme';
 
 const NAV_LINKS = [
-  { href: '/clubs',   label: 'Clubs' },
+  { href: '/clubs', label: 'Clubs' },
   { href: '/coaches', label: 'Coaches' },
   { href: '/players', label: 'Players' },
   { href: '/pricing', label: 'Pricing' },
@@ -15,9 +16,12 @@ export default function NavBar() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '16px 24px', maxWidth: '1280px', margin: '0 auto',
       }}>
-        <Link href="/" style={{ textDecoration: 'none' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- external/dynamic URL (e.g. Supabase Storage), next/image requires remotePatterns config not yet set up */}
-          <img src="/logo.png" alt="Pulse FC" width={64} height={64} style={{ height: '64px', width: 'auto' }} />
+        <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public */}
+          <img src="/logo.png" alt="Pulse FC" width={44} height={44} style={{ height: '44px', width: 'auto' }} />
+          <span style={{ fontFamily: theme.fontDisplay, fontWeight: 700, fontSize: 19, color: theme.text }}>
+            Pulse FC
+          </span>
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
@@ -27,10 +31,10 @@ export default function NavBar() {
                 key={href}
                 href={href}
                 style={{
-                  fontSize: '13px', fontWeight: '600', color: '#888',
+                  fontSize: '13px', fontWeight: '600', color: theme.textSecondary,
                   textDecoration: 'none', transition: 'color 0.15s',
                 }}
-                className="hover:!text-white"
+                className="hover:!text-[#2B2420]"
               >
                 {label}
               </Link>
@@ -38,9 +42,9 @@ export default function NavBar() {
           </div>
           <Link
             href="/login"
-            className="hidden md:inline hover:!text-white"
+            className="hidden md:inline hover:!text-[#2B2420]"
             style={{
-              fontSize: '13px', fontWeight: '600', color: '#888',
+              fontSize: '13px', fontWeight: '600', color: theme.textSecondary,
               textDecoration: 'none', transition: 'color 0.15s', whiteSpace: 'nowrap',
             }}
           >
@@ -49,9 +53,9 @@ export default function NavBar() {
           <Link
             href="/onboarding"
             style={{
-              fontSize: '13px', fontWeight: '700', color: '#000',
-              background: '#22c55e', padding: '8px 16px', borderRadius: '9px',
-              textDecoration: 'none', whiteSpace: 'nowrap',
+              fontSize: '13px', fontWeight: '700', color: '#fff',
+              background: theme.green, padding: '9px 18px', borderRadius: theme.radiusBtn,
+              textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: theme.shadowBtn,
             }}
           >
             Sign up
