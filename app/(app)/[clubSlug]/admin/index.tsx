@@ -307,7 +307,7 @@ export default function AdminPanel() {
       supabase.from('players')
         .select('*', { count: 'exact', head: true }).eq('team_id', team.id),
       supabase.from('events')
-        .select('id')
+        .select('id, event_date')
         .eq('team_id', team.id).lt('event_date', today)
         .is('cancelled_at', null),
       supabase.from('players')
@@ -320,37 +320,67 @@ export default function AdminPanel() {
     setTotal(playerCount);
 
     // ── Attendance calculation ──────────────────────────────────────────────
-    const pastEventIds = (pastEventsRes.data ?? []).map((e) => e.id);
+    const pastEvents = (pastEventsRes.data ?? []) as { id: string; event_date: string }[];
+    const pastEventIds = pastEvents.map((e) => e.id);
     setPastEventCount(pastEventIds.length);
     if (pastEventIds.length > 0 && (rosterRes.data ?? []).length > 0) {
-      const [{ data: att }, { data: pastRsvps }] = await Promise.all([
+      const roster = (rosterRes.data ?? []) as { id: string; full_name: string; jersey_number: number | null }[];
+      const rosterIds = roster.map((p) => p.id);
+      const [{ data: att }, { data: pastRsvps }, { data: injuryRows }] = await Promise.all([
         supabase.from('event_attendance').select('event_id, player_id, status').in('event_id', pastEventIds),
         supabase.from('event_rsvps').select('event_id, player_id, status').in('event_id', pastEventIds),
+        supabase.from('player_injury_periods').select('player_id, started_at, ended_at').in('player_id', rosterIds),
       ]);
+
+      const injuryPeriodsByPlayer = new Map<string, { started_at: string; ended_at: string | null }[]>();
+      (injuryRows ?? []).forEach((r: any) => {
+        if (!injuryPeriodsByPlayer.has(r.player_id)) injuryPeriodsByPlayer.set(r.player_id, []);
+        injuryPeriodsByPlayer.get(r.player_id)!.push(r);
+      });
+      const isInjuredOn = (playerId: string, dateStr: string) =>
+        (injuryPeriodsByPlayer.get(playerId) ?? []).some((ip) => dateStr >= ip.started_at && dateStr <= (ip.ended_at ?? today));
+
       // Coach-marked attendance wins per event/player; RSVP only fills in
-      // events that haven't been marked yet.
-      const markedKeys = new Set<string>();
-      const attendedMap: Record<string, number> = {};
+      // events that haven't been marked yet; an injury window excuses
+      // whatever's left over, unless the player showed up anyway.
+      const resolvedByKey = new Map<string, 'attended' | 'excused' | 'missed'>();
       (att ?? []).forEach((r) => {
-        markedKeys.add(`${r.event_id}|${r.player_id}`);
-        if (r.status === 'present' || r.status === 'late') {
-          attendedMap[r.player_id] = (attendedMap[r.player_id] ?? 0) + 1;
-        }
+        const key = `${r.event_id}|${r.player_id}`;
+        if (r.status === 'present' || r.status === 'late') resolvedByKey.set(key, 'attended');
+        else if (r.status === 'excused') resolvedByKey.set(key, 'excused');
+        else resolvedByKey.set(key, 'missed');
       });
       (pastRsvps ?? []).forEach((r) => {
-        if (markedKeys.has(`${r.event_id}|${r.player_id}`)) return;
-        if (r.status === 'attending') attendedMap[r.player_id] = (attendedMap[r.player_id] ?? 0) + 1;
+        const key = `${r.event_id}|${r.player_id}`;
+        if (resolvedByKey.has(key)) return;
+        if (r.status === 'attending') resolvedByKey.set(key, 'attended');
+        else if (r.status === 'not_attending') resolvedByKey.set(key, 'missed');
       });
-      const roster = (rosterRes.data ?? []) as { id: string; full_name: string; jersey_number: number | null }[];
+      roster.forEach((p) => {
+        pastEvents.forEach((e) => {
+          const key = `${e.id}|${p.id}`;
+          if (resolvedByKey.get(key) === 'attended') return;
+          if (isInjuredOn(p.id, e.event_date)) resolvedByKey.set(key, 'excused');
+          else if (!resolvedByKey.has(key)) resolvedByKey.set(key, 'missed');
+        });
+      });
+
       const players: AttendancePlayer[] = roster.map((p) => {
-        const attended = attendedMap[p.id] ?? 0;
+        let attended = 0;
+        let excused = 0;
+        pastEventIds.forEach((eid) => {
+          const r = resolvedByKey.get(`${eid}|${p.id}`);
+          if (r === 'attended') attended++;
+          else if (r === 'excused') excused++;
+        });
+        const denom = pastEventIds.length - excused;
         return {
           id: p.id,
           full_name: p.full_name,
           jersey_number: p.jersey_number,
           attended,
-          total: pastEventIds.length,
-          pct: Math.round((attended / pastEventIds.length) * 100),
+          total: denom,
+          pct: denom > 0 ? Math.round((attended / denom) * 100) : 0,
         };
       }).sort((a, b) => b.pct - a.pct);
       setAttendancePlayers(players);

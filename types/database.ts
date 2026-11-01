@@ -942,6 +942,7 @@ export type Database = {
           score_away: number | null
           score_home: number | null
           surface: string | null
+          team_gotsport_link_id: string | null
           team_id: string
           team_ncsa_link_id: string | null
           title: string
@@ -987,6 +988,7 @@ export type Database = {
           score_away?: number | null
           score_home?: number | null
           surface?: string | null
+          team_gotsport_link_id?: string | null
           team_id: string
           team_ncsa_link_id?: string | null
           title: string
@@ -1032,6 +1034,7 @@ export type Database = {
           score_away?: number | null
           score_home?: number | null
           surface?: string | null
+          team_gotsport_link_id?: string | null
           team_id?: string
           team_ncsa_link_id?: string | null
           title?: string
@@ -1053,6 +1056,13 @@ export type Database = {
             columns: ["field_id"]
             isOneToOne: false
             referencedRelation: "tryout_fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_team_gotsport_link_id_fkey"
+            columns: ["team_gotsport_link_id"]
+            isOneToOne: false
+            referencedRelation: "team_gotsport_links"
             referencedColumns: ["id"]
           },
           {
@@ -1651,6 +1661,78 @@ export type Database = {
           },
         ]
       }
+      gotsport_standings: {
+        Row: {
+          division: string
+          draws: number
+          games_played: number
+          goals_against: number
+          goals_for: number
+          gotsport_team_id: string | null
+          id: string
+          is_self: boolean
+          losses: number
+          points: number
+          rank: number
+          team_gotsport_link_id: string
+          team_id: string
+          team_raw_name: string
+          updated_at: string | null
+          wins: number
+        }
+        Insert: {
+          division: string
+          draws: number
+          games_played: number
+          goals_against: number
+          goals_for: number
+          gotsport_team_id?: string | null
+          id?: string
+          is_self?: boolean
+          losses: number
+          points: number
+          rank: number
+          team_gotsport_link_id: string
+          team_id: string
+          team_raw_name: string
+          updated_at?: string | null
+          wins: number
+        }
+        Update: {
+          division?: string
+          draws?: number
+          games_played?: number
+          goals_against?: number
+          goals_for?: number
+          gotsport_team_id?: string | null
+          id?: string
+          is_self?: boolean
+          losses?: number
+          points?: number
+          rank?: number
+          team_gotsport_link_id?: string
+          team_id?: string
+          team_raw_name?: string
+          updated_at?: string | null
+          wins?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gotsport_standings_team_gotsport_link_id_fkey"
+            columns: ["team_gotsport_link_id"]
+            isOneToOne: false
+            referencedRelation: "team_gotsport_links"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gotsport_standings_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guest_request_targets: {
         Row: {
           id: string
@@ -1891,7 +1973,8 @@ export type Database = {
           id: string
           run_at: string | null
           status: string
-          team_ncsa_link_id: string
+          team_gotsport_link_id: string | null
+          team_ncsa_link_id: string | null
         }
         Insert: {
           error_message?: string | null
@@ -1902,7 +1985,8 @@ export type Database = {
           id?: string
           run_at?: string | null
           status: string
-          team_ncsa_link_id: string
+          team_gotsport_link_id?: string | null
+          team_ncsa_link_id?: string | null
         }
         Update: {
           error_message?: string | null
@@ -1913,9 +1997,17 @@ export type Database = {
           id?: string
           run_at?: string | null
           status?: string
-          team_ncsa_link_id?: string
+          team_gotsport_link_id?: string | null
+          team_ncsa_link_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "league_sync_log_team_gotsport_link_id_fkey"
+            columns: ["team_gotsport_link_id"]
+            isOneToOne: false
+            referencedRelation: "team_gotsport_links"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "league_sync_log_team_ncsa_link_id_fkey"
             columns: ["team_ncsa_link_id"]
@@ -3332,6 +3424,38 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_injury_periods: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          id: string
+          player_id: string
+          started_at: string
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          player_id: string
+          started_at?: string
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          player_id?: string
+          started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_injury_periods_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
@@ -4757,6 +4881,59 @@ export type Database = {
           },
         ]
       }
+      team_gotsport_links: {
+        Row: {
+          created_at: string | null
+          gotsport_team_id: string
+          gotsport_team_name: string
+          id: string
+          last_synced_at: string | null
+          national_rank: number | null
+          ranking_points: number | null
+          ranking_updated_at: string | null
+          regional_rank: number | null
+          state_name: string | null
+          state_rank: number | null
+          team_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          gotsport_team_id: string
+          gotsport_team_name: string
+          id?: string
+          last_synced_at?: string | null
+          national_rank?: number | null
+          ranking_points?: number | null
+          ranking_updated_at?: string | null
+          regional_rank?: number | null
+          state_name?: string | null
+          state_rank?: number | null
+          team_id: string
+        }
+        Update: {
+          created_at?: string | null
+          gotsport_team_id?: string
+          gotsport_team_name?: string
+          id?: string
+          last_synced_at?: string | null
+          national_rank?: number | null
+          ranking_points?: number | null
+          ranking_updated_at?: string | null
+          regional_rank?: number | null
+          state_name?: string | null
+          state_rank?: number | null
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_gotsport_links_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_members: {
         Row: {
           created_at: string | null
@@ -5245,6 +5422,7 @@ export type Database = {
           registration_submitted_at: string | null
           reminder_count: number | null
           reminder_sent_at: string | null
+          season_label: string | null
           status: string | null
           stripe_customer_id: string | null
           stripe_payment_method_id: string | null
@@ -5269,6 +5447,7 @@ export type Database = {
           registration_submitted_at?: string | null
           reminder_count?: number | null
           reminder_sent_at?: string | null
+          season_label?: string | null
           status?: string | null
           stripe_customer_id?: string | null
           stripe_payment_method_id?: string | null
@@ -5293,6 +5472,7 @@ export type Database = {
           registration_submitted_at?: string | null
           reminder_count?: number | null
           reminder_sent_at?: string | null
+          season_label?: string | null
           status?: string | null
           stripe_customer_id?: string | null
           stripe_payment_method_id?: string | null
@@ -5384,6 +5564,7 @@ export type Database = {
           notes: string | null
           packet_sent_at: string | null
           phone: string | null
+          profile_id: string | null
         }
         Insert: {
           club_id: string
@@ -5397,6 +5578,7 @@ export type Database = {
           notes?: string | null
           packet_sent_at?: string | null
           phone?: string | null
+          profile_id?: string | null
         }
         Update: {
           club_id?: string
@@ -5410,6 +5592,7 @@ export type Database = {
           notes?: string | null
           packet_sent_at?: string | null
           phone?: string | null
+          profile_id?: string | null
         }
         Relationships: [
           {
@@ -5417,6 +5600,13 @@ export type Database = {
             columns: ["club_id"]
             isOneToOne: false
             referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tryout_coaches_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -5838,6 +6028,7 @@ export type Database = {
           reference: string | null
           refunded_amount: number
           reminder_sent_at: string | null
+          season_label: string | null
         }
         Insert: {
           amount: number
@@ -5858,6 +6049,7 @@ export type Database = {
           reference?: string | null
           refunded_amount?: number
           reminder_sent_at?: string | null
+          season_label?: string | null
         }
         Update: {
           amount?: number
@@ -5878,6 +6070,7 @@ export type Database = {
           reference?: string | null
           refunded_amount?: number
           reminder_sent_at?: string | null
+          season_label?: string | null
         }
         Relationships: [
           {
@@ -7163,6 +7356,10 @@ export type Database = {
           tier_label: string
         }[]
       }
+      profile_in_club: {
+        Args: { p_club_id: string; p_profile_id: string }
+        Returns: boolean
+      }
       revoke_guardian_access: {
         Args: { p_player_id: string; p_profile_id: string }
         Returns: Json
@@ -7186,6 +7383,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      staff_email_for_profile: {
+        Args: { p_club_id: string; p_profile_id: string }
+        Returns: string
       }
       submit_registration: {
         Args: {

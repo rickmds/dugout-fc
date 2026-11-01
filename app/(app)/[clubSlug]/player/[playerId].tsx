@@ -28,7 +28,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { supabase } from '../../../../lib/supabase';
-import { toLocalDateStr } from '../../../../lib/localDate';
+import { toLocalDateStr, todayLocalStr } from '../../../../lib/localDate';
 import { sendParentInviteEmail } from '../../../../lib/inviteApi';
 import { useTeam } from '../../../../hooks/useTeam';
 import { useAuth } from '../../../../hooks/useAuth';
@@ -81,7 +81,7 @@ type EventRsvp = {
   event_title: string;
   event_date: string;
   event_type: string;
-  status: 'attending' | 'not_attending' | null;
+  status: 'attending' | 'not_attending' | 'excused' | null;
 };
 
 type MatchTime = {
@@ -373,9 +373,10 @@ export default function PlayerProfileScreen() {
     const events = (eventsRes.data ?? []) as { id: string; title: string; type: string; event_date: string }[];
     if (events.length > 0) {
       const eventIds = events.map((e) => e.id);
-      const [{ data: rsvps }, { data: attendance }] = await Promise.all([
+      const [{ data: rsvps }, { data: attendance }, { data: injuryPeriods }] = await Promise.all([
         supabase.from('event_rsvps').select('event_id, status').eq('player_id', playerId).in('event_id', eventIds),
         supabase.from('event_attendance').select('event_id, status').eq('player_id', playerId).in('event_id', eventIds),
+        supabase.from('player_injury_periods').select('started_at, ended_at').eq('player_id', playerId),
       ]);
 
       const rsvpMap = new Map((rsvps ?? []).map((r: any) => [r.event_id, r.status]));
@@ -383,15 +384,25 @@ export default function PlayerProfileScreen() {
       // event — RSVP is only what a parent said beforehand, and is used as
       // a fallback for events the coach hasn't marked yet.
       const attMap = new Map((attendance ?? []).map((a: any) => [a.event_id, a.status]));
+      const today = todayLocalStr();
+      const periods = (injuryPeriods ?? []) as { started_at: string; ended_at: string | null }[];
+      const isInjuredOn = (dateStr: string) =>
+        periods.some((ip) => dateStr >= ip.started_at && dateStr <= (ip.ended_at ?? today));
       setRsvpHistory(
         events.map((e) => {
           const att = attMap.get(e.id);
-          const status: EventRsvp['status'] =
+          let status: EventRsvp['status'] =
             att === 'present' || att === 'late'
               ? 'attending'
               : att === 'absent'
               ? 'not_attending'
+              : att === 'excused'
+              ? 'excused'
               : (rsvpMap.get(e.id) as EventRsvp['status']) ?? null;
+          // A date inside a known injury window is excused even with no
+          // explicit attendance/RSVP row — unless the player actually
+          // showed up anyway, which should still count in their favor.
+          if (status !== 'attending' && isInjuredOn(e.event_date)) status = 'excused';
           return {
             event_id: e.id,
             event_title: e.title,
@@ -1653,8 +1664,10 @@ function PlayerTab({
   const gamesStarted  = gameTimes.filter((m) => m.started).length;
   const timePct       = totalAvail > 0 ? Math.round((totalMins / totalAvail) * 100) : null;
 
-  const gameRsvps     = rsvpHistory.filter((r) => r.event_type === 'game');
-  const trainingRsvps = rsvpHistory.filter((r) => r.event_type === 'training');
+  // Excused (explicit or injury-covered) sessions are pulled out of the
+  // attendance-rate denominator entirely — they're not a miss.
+  const gameRsvps     = rsvpHistory.filter((r) => r.event_type === 'game' && r.status !== 'excused');
+  const trainingRsvps = rsvpHistory.filter((r) => r.event_type === 'training' && r.status !== 'excused');
   const gameAttendRate = gameRsvps.length > 0
     ? Math.round((gameRsvps.filter((r) => r.status === 'attending').length / gameRsvps.length) * 100)
     : null;
@@ -1803,13 +1816,16 @@ function PlayerTab({
           {rsvpHistory.map((e, i) => {
             const isAttending    = e.status === 'attending';
             const isNotAttending = e.status === 'not_attending';
+            const isExcused      = e.status === 'excused';
             const statusColor =
               isAttending    ? PULSE_COLORS.rsvp.attending
               : isNotAttending ? PULSE_COLORS.rsvp.not_attending
+              : isExcused ? '#60A5FA'
               : colors.muted;
             const statusIcon =
               isAttending    ? 'checkmark-circle'
               : isNotAttending ? 'close-circle'
+              : isExcused ? 'shield-checkmark-outline'
               : 'remove-circle-outline';
 
             return (

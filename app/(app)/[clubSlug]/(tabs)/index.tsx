@@ -909,9 +909,10 @@ export default function HomeScreen() {
             // attendance record, so the streak keeps moving even when nobody's
             // taking attendance — less precise (an RSVP is "said they'd come,"
             // not confirmed they showed), but far better than staying frozen.
-            const [{ data: attRows }, { data: rsvpRows }] = await Promise.all([
+            const [{ data: attRows }, { data: rsvpRows }, { data: injuryRows }] = await Promise.all([
               supabase.from('event_attendance').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
               supabase.from('event_rsvps').select('event_id, player_id, status').in('player_id', playerIds).in('event_id', pastIds),
+              supabase.from('player_injury_periods').select('player_id, started_at, ended_at').in('player_id', playerIds),
             ]);
             const attRowsByPlayer = new Map<string, { event_id: string; status: string }[]>();
             for (const row of (attRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
@@ -922,6 +923,17 @@ export default function HomeScreen() {
             for (const row of (rsvpRows ?? []) as { event_id: string; player_id: string; status: string }[]) {
               if (!rsvpRowsByPlayer.has(row.player_id)) rsvpRowsByPlayer.set(row.player_id, []);
               rsvpRowsByPlayer.get(row.player_id)!.push(row);
+            }
+            const injuryPeriodsByPlayer = new Map<string, { started_at: string; ended_at: string | null }[]>();
+            for (const row of (injuryRows ?? []) as { player_id: string; started_at: string; ended_at: string | null }[]) {
+              if (!injuryPeriodsByPlayer.has(row.player_id)) injuryPeriodsByPlayer.set(row.player_id, []);
+              injuryPeriodsByPlayer.get(row.player_id)!.push(row);
+            }
+            // An open-ended period (ended_at null) means "still injured as of
+            // today" — treat today as its provisional end for date-range checks.
+            function isInjuredOn(playerId: string, dateStr: string) {
+              const periods = injuryPeriodsByPlayer.get(playerId) ?? [];
+              return periods.some((ip) => dateStr >= ip.started_at && dateStr <= (ip.ended_at ?? today));
             }
             // WHOOP-style streak: one grace period allowed, but grace must be re-earned
             // with 3 consecutive clean sessions before it can be used again.
@@ -962,15 +974,27 @@ export default function HomeScreen() {
             for (const p of guardedPlayers) {
               const attMap = new Map((attRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
               const rsvpMap = new Map((rsvpRowsByPlayer.get(p.id) ?? []).map((r) => [r.event_id, r.status]));
+              // A date inside a known injury window is excused even with no
+              // explicit attendance/RSVP row — unless the player actually
+              // showed up anyway, which should still count in their favor.
               const history: AttendanceEntry[] = pastEvts
-                .filter((e) => attMap.has(e.id) || rsvpMap.has(e.id))
+                .filter((e) => attMap.has(e.id) || rsvpMap.has(e.id) || isInjuredOn(p.id, e.event_date))
                 .map((e) => {
+                  let status: string | null;
+                  let source: 'attendance' | 'rsvp';
                   if (attMap.has(e.id)) {
-                    return { id: e.id, type: e.type, date: e.event_date, status: attMap.get(e.id) ?? null, title: e.title ?? null, source: 'attendance' as const };
+                    status = attMap.get(e.id) ?? null;
+                    source = 'attendance';
+                  } else if (rsvpMap.has(e.id)) {
+                    const rsvp = rsvpMap.get(e.id);
+                    status = rsvp === 'attending' ? 'present' : rsvp === 'not_attending' ? 'absent' : null;
+                    source = 'rsvp';
+                  } else {
+                    status = null;
+                    source = 'attendance';
                   }
-                  const rsvp = rsvpMap.get(e.id);
-                  const status = rsvp === 'attending' ? 'present' : rsvp === 'not_attending' ? 'absent' : null;
-                  return { id: e.id, type: e.type, date: e.event_date, status, title: e.title ?? null, source: 'rsvp' as const };
+                  if (status !== 'present' && status !== 'late' && isInjuredOn(p.id, e.event_date)) status = 'excused';
+                  return { id: e.id, type: e.type, date: e.event_date, status, title: e.title ?? null, source };
                 });
               const trainingHistory = history.filter((e) => e.type !== 'game');
               const gameHistory     = history.filter((e) => e.type === 'game');
@@ -978,14 +1002,17 @@ export default function HomeScreen() {
               // correctly detect "saved" and "re-earned" transitions, but
               // history/trainingHistory/gameHistory are newest-first (for
               // display in the Recent Sessions list) — reverse just for this call.
-              const cResult = whoopStreak([...history].reverse());
-              const tResult = whoopStreak([...trainingHistory].reverse());
-              const gResult = whoopStreak([...gameHistory].reverse());
+              // Excused sessions (explicit or injury-covered) are pulled out
+              // entirely first — they're not a "miss" the grace mechanic should
+              // ever have to absorb, but they're not a save either.
+              const cResult = whoopStreak(history.filter((e) => e.status !== 'excused').reverse());
+              const tResult = whoopStreak(trainingHistory.filter((e) => e.status !== 'excused').reverse());
+              const gResult = whoopStreak(gameHistory.filter((e) => e.status !== 'excused').reverse());
               statsByPlayer[p.id] = {
                 combinedStreak: cResult.streak, combinedAtRisk: cResult.atRisk,
                 trainingStreak: tResult.streak, trainingAtRisk: tResult.atRisk,
                 gameStreak: gResult.streak, gameAtRisk: gResult.atRisk,
-                gamesTotal: gameHistory.length,
+                gamesTotal: gameHistory.filter((e) => e.status !== 'excused').length,
                 gamesAttended: gameHistory.filter((e) => e.status === 'present').length,
                 seasonTotalMarked: history.length,
                 attendanceHistory: history,
@@ -1142,11 +1169,30 @@ export default function HomeScreen() {
           return count;
         }
 
+        // An excused slot isn't a miss — pull it out of the denominator
+        // entirely rather than let it drag the percentage down. (This card's
+        // flat events×roster-size denominator doesn't have individual player
+        // IDs on hand, so it can't also check injury periods the way the
+        // per-player streak and season-overview stats do — excused marks
+        // only.)
+        function excusedCount(idSet: Set<string>): number {
+          let count = 0;
+          for (const [key, status] of attByKey) {
+            const eventId = key.split('|')[0];
+            if (idSet.has(eventId) && status === 'excused') count++;
+          }
+          return count;
+        }
+
         const playerN = pc ?? 0;
+        const gameSet = new Set(gameIds);
+        const trainingSet = new Set(trainingIds);
+        const gameDenom = gameIds.length * playerN - excusedCount(gameSet);
+        const trainingDenom = trainingIds.length * playerN - excusedCount(trainingSet);
         setPulseGameEvents(gameIds.length);
-        setPulseGamePct(gameIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(gameIds)) / (gameIds.length * playerN)) * 100) : null);
+        setPulseGamePct(gameIds.length > 0 && gameDenom > 0 ? Math.round((attendedCount(gameSet) / gameDenom) * 100) : null);
         setPulseTrainingEvents(trainingIds.length);
-        setPulseTrainingPct(trainingIds.length > 0 && playerN > 0 ? Math.round((attendedCount(new Set(trainingIds)) / (trainingIds.length * playerN)) * 100) : null);
+        setPulseTrainingPct(trainingIds.length > 0 && trainingDenom > 0 ? Math.round((attendedCount(trainingSet) / trainingDenom) * 100) : null);
       } else {
         // Without this, switching to a team with no players (or viewing as a
         // non-coach) left these four at whatever the PREVIOUSLY active team
@@ -2835,7 +2881,7 @@ export default function HomeScreen() {
               if (!stats) return null;
               const { combinedStreak, combinedAtRisk, gamesTotal, gamesAttended, attendanceHistory } = stats;
               const superStreak = isSuperStreak(combinedStreak, gamesTotal, gamesAttended);
-              const trainingsTotal = attendanceHistory.filter(e => e.type !== 'game').length;
+              const trainingsTotal = attendanceHistory.filter(e => e.type !== 'game' && e.status !== 'excused').length;
               const trainingsAttended = attendanceHistory.filter(e => e.type !== 'game' && e.status === 'present').length;
               const tPerfect = trainingsTotal > 0 && trainingsAttended === trainingsTotal;
               const tier = getFlameTier(combinedStreak, combinedAtRisk, colors.muted);
@@ -2914,6 +2960,7 @@ export default function HomeScreen() {
                   {seasonStatsByPlayer[seasonSheetPlayerId].attendanceHistory.map((entry) => {
                     const isGame = entry.type === 'game';
                     const present = entry.status === 'present';
+                    const excused = entry.status === 'excused';
                     const d = new Date(entry.date + 'T00:00:00');
                     const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                     return (
@@ -2939,9 +2986,9 @@ export default function HomeScreen() {
                           ) : null}
                         </View>
                         <View style={[styles.attSheetStatusDot, {
-                          backgroundColor: present ? '#22C55E' : '#EF4444',
+                          backgroundColor: present ? '#22C55E' : excused ? '#60A5FA' : '#EF4444',
                         }]}>
-                          <Ionicons name={present ? 'checkmark' : 'close'} size={11} color="#fff" />
+                          <Ionicons name={present ? 'checkmark' : excused ? 'shield-checkmark-outline' : 'close'} size={11} color="#fff" />
                         </View>
                       </View>
                     );

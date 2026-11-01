@@ -401,7 +401,7 @@ export default function EventDetailScreen() {
   const [requestNote,     setRequestNote]     = useState('');
   const [requestSending,      setRequestSending]      = useState(false);
   const [activeMainTab, setActiveMainTab] = useState<'details' | 'availability' | 'attendance'>(section === 'attendance' ? 'attendance' : 'details');
-  const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late'>>(new Map());
+  const [attendanceMap, setAttendanceMap] = useState<Map<string, 'present' | 'absent' | 'late' | 'excused'>>(new Map());
   const [savingAttendance, setSavingAttendance] = useState<string | null>(null);
   const [savingBulkAttendance, setSavingBulkAttendance] = useState(false);
   const [activeRsvpTab, setActiveRsvpTab] = useState<'attending' | 'not_attending' | 'none'>('attending');
@@ -592,7 +592,7 @@ export default function EventDetailScreen() {
 
     // Attendance records
     const attMap = new Map(
-      (attendanceRes.data ?? []).map((r: any) => [r.player_id as string, r.status as 'present' | 'absent' | 'late'])
+      (attendanceRes.data ?? []).map((r: any) => [r.player_id as string, r.status as 'present' | 'absent' | 'late' | 'excused'])
     );
     setAttendanceMap(attMap);
 
@@ -1347,7 +1347,7 @@ export default function EventDetailScreen() {
     Alert.alert('Call out sent!', `Parents on ${teamLabel} have been notified and can volunteer their child.`);
   }
 
-  async function markAttendance(playerId: string, newStatus: 'present' | 'absent' | 'late') {
+  async function markAttendance(playerId: string, newStatus: 'present' | 'absent' | 'late' | 'excused') {
     if (!eventId) return;
     setSavingAttendance(playerId);
     const current = attendanceMap.get(playerId);
@@ -2542,12 +2542,14 @@ export default function EventDetailScreen() {
                         attStatus === 'present' && { backgroundColor: 'rgba(34,197,94,0.12)',  borderColor: 'rgba(34,197,94,0.3)' },
                         attStatus === 'late'    && { backgroundColor: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.3)' },
                         attStatus === 'absent'  && { backgroundColor: 'rgba(239,68,68,0.12)',  borderColor: 'rgba(239,68,68,0.3)' },
+                        attStatus === 'excused' && { backgroundColor: 'rgba(96,165,250,0.12)', borderColor: 'rgba(96,165,250,0.3)' },
                       ]}>
                         <Text style={[
                           styles.jerseyNum,
                           attStatus === 'present' && { color: '#22c55e' },
                           attStatus === 'late'    && { color: '#F59E0B' },
                           attStatus === 'absent'  && { color: '#ef4444' },
+                          attStatus === 'excused' && { color: '#60A5FA' },
                         ]}>
                           {p.jersey_number ?? '—'}
                         </Text>
@@ -2561,9 +2563,9 @@ export default function EventDetailScreen() {
                           <ActivityIndicator size="small" color={primaryColor} />
                         ) : (
                           <>
-                            {(['present', 'late', 'absent'] as const).map((s) => {
-                              const clr = s === 'present' ? '#22c55e' : s === 'late' ? '#F59E0B' : '#ef4444';
-                              const icon: React.ComponentProps<typeof Ionicons>['name'] = s === 'present' ? 'checkmark' : s === 'late' ? 'time-outline' : 'close';
+                            {(['present', 'late', 'absent', 'excused'] as const).map((s) => {
+                              const clr = s === 'present' ? '#22c55e' : s === 'late' ? '#F59E0B' : s === 'absent' ? '#ef4444' : '#60A5FA';
+                              const icon: React.ComponentProps<typeof Ionicons>['name'] = s === 'present' ? 'checkmark' : s === 'late' ? 'time-outline' : s === 'absent' ? 'close' : 'shield-checkmark-outline';
                               return (
                                 <TouchableOpacity
                                   key={s}
