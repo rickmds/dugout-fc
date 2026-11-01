@@ -119,18 +119,6 @@ export default function Home() {
                 }}
               />
 
-              {/* Chip 1 — above left phone */}
-              <div style={{
-                position: 'absolute', top: 18, left: 4, zIndex: 10,
-                background: theme.surface, border: `1px solid ${theme.border}`,
-                borderRadius: 99, padding: '5px 12px',
-                display: 'flex', alignItems: 'center', gap: 7,
-                whiteSpace: 'nowrap', boxShadow: theme.shadowCard,
-              }}>
-                <span style={{ fontSize: 10 }}>📅</span>
-                <span style={{ color: theme.textSecondary, fontSize: 11, fontWeight: 600 }}>AI imported 23 games</span>
-              </div>
-
               {/* Front center — Home */}
               {/* eslint-disable-next-line @next/next/no-img-element -- static asset in /public, left as <img> for this marketing page */}
               <img src="/screenshots/HomeTB.png" alt="Pulse FC — your club at a glance"
@@ -153,18 +141,6 @@ export default function Home() {
                   zIndex: 2, opacity: 0.85,
                 }}
               />
-
-              {/* Chip 2 — above right phone */}
-              <div style={{
-                position: 'absolute', top: 34, right: 14, zIndex: 10,
-                background: theme.surface, border: `1px solid ${theme.border}`,
-                borderRadius: 99, padding: '5px 12px',
-                display: 'flex', alignItems: 'center', gap: 7,
-                whiteSpace: 'nowrap', boxShadow: theme.shadowCard,
-              }}>
-                <span style={{ fontSize: 10 }}>👥</span>
-                <span style={{ color: theme.textSecondary, fontSize: 11, fontWeight: 600 }}>Every player, one tap</span>
-              </div>
 
             </div>
           </div>
