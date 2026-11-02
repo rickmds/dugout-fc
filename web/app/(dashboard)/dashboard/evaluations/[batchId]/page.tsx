@@ -11,6 +11,7 @@ import { EvaluationReportPanel, type EvalRow } from '@/components/dashboard/eval
 type BatchMeta = {
   id: string;
   team_id: string;
+  coach_id: string;
   status: 'in_progress' | 'submitted' | 'approved';
   season_label: string;
   period_label: string;
@@ -179,6 +180,11 @@ export default function BatchReviewPage() {
           </div>
         </div>
 
+        {(isAdmin || profile?.id === batch?.coach_id) && (
+          <button onClick={() => router.push(`/dashboard/evaluations/${batchId}/enter`)} style={{ padding: '9px 16px', borderRadius: '10px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+            Enter Evaluations
+          </button>
+        )}
         {isAdmin && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             {submittedIds.length > 0 && (
