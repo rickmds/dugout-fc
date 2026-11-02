@@ -51,7 +51,8 @@ const emptyForm = (): TeamForm => ({ name: '', age_group: '', gender: '', season
 type SortField = 'name' | 'age_group' | 'player_count' | 'coach_count';
 
 export default function TeamsPage() {
-  const { club, reload, limits } = useDashboard();
+  const { club, reload, limits, profile, teams: myTeams } = useDashboard();
+  const isAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
   const router = useRouter();
   const primary = club?.primary_color && club.primary_color !== '#000000' ? club.primary_color : '#22C55E';
 
@@ -83,11 +84,21 @@ export default function TeamsPage() {
     if (!club) return;
     setLoading(true);
 
-    const { data: teamRows } = await supabase
-      .from('teams')
-      .select('id, name, age_group, gender, season')
-      .eq('club_id', club.id)
-      .order('name');
+    // A coach only ever sees their own team(s) here — admins still get the
+    // full club-wide list. myTeams (from DashboardContext) is already
+    // correctly scoped per-role the same way roster/schedule use it.
+    let teamRows: { id: string; name: string; age_group: string | null; gender: string | null; season: string | null }[] | null;
+    if (isAdmin) {
+      ({ data: teamRows } = await supabase
+        .from('teams')
+        .select('id, name, age_group, gender, season')
+        .eq('club_id', club.id)
+        .order('name'));
+    } else {
+      teamRows = myTeams
+        .filter((t) => t.club_id === club.id)
+        .map((t) => ({ id: t.id, name: t.name, age_group: t.age_group, gender: t.gender, season: t.season }));
+    }
 
     if (!teamRows || !teamRows.length) { setTeams([]); setLoading(false); return; }
 
@@ -133,7 +144,7 @@ export default function TeamsPage() {
 
     setTeams(withStats);
     setLoading(false);
-  }, [club]);
+  }, [club, isAdmin, myTeams]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount / derived-state sync; sets state from a real network call or prop change, not derivable at render time
   useEffect(() => { loadTeams(); }, [loadTeams]);
@@ -357,9 +368,11 @@ export default function TeamsPage() {
           <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '4px' }}>Club</div>
           <h1 style={{ fontSize: '22px', fontWeight: '900', color: '#0D1117', margin: 0, letterSpacing: '-0.5px' }}>Teams</h1>
         </div>
-        <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
-          <Plus size={15} /> Add team
-        </button>
+        {isAdmin && (
+          <button onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <Plus size={15} /> Add team
+          </button>
+        )}
       </div>
 
       {/* Content area */}
@@ -491,10 +504,10 @@ export default function TeamsPage() {
             <Shield size={26} color="#94A3B8" />
           </div>
           <div style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A', marginBottom: '6px' }}>{hasActiveFilter ? 'No teams match' : 'No teams yet'}</div>
-          <div style={{ fontSize: '13px', color: '#64748B', marginBottom: !hasActiveFilter ? '20px' : '0' }}>
-            {hasActiveFilter ? 'Try a different name, or clear the age/gender filters.' : 'Create your first team to get started.'}
+          <div style={{ fontSize: '13px', color: '#64748B', marginBottom: !hasActiveFilter && isAdmin ? '20px' : '0' }}>
+            {hasActiveFilter ? 'Try a different name, or clear the age/gender filters.' : isAdmin ? 'Create your first team to get started.' : 'You’re not linked to a team yet — ask your club admin to add you.'}
           </div>
-          {!hasActiveFilter && (
+          {!hasActiveFilter && isAdmin && (
             <button onClick={openCreate} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: primary, color: '#fff', border: 'none', borderRadius: '6px', padding: '11px 22px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit' }}>
               <Plus size={15} /> Add first team
             </button>
@@ -588,8 +601,11 @@ export default function TeamsPage() {
                     : <span style={{ color: '#CBD5E1' }}>None scheduled</span>}
                 </div>
 
-                {/* Actions — stop propagation so row click doesn't fire */}
+                {/* Actions — stop propagation so row click doesn't fire. Team
+                    management (rollover/edit/delete) stays admin-only; a
+                    coach can view their own team here but not restructure it. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '2px', justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
+                  {isAdmin && <>
                   <button
                     onClick={() => setRollover({ team: t, newSeason: '', newName: t.name, newAgeGroup: t.age_group ?? '', newGender: t.gender ?? '', copyRoster: true, copyStaff: true, saving: false })}
                     title="New season"
@@ -609,6 +625,7 @@ export default function TeamsPage() {
                     onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#CBD5E1'; (e.currentTarget as HTMLElement).style.background = 'none'; }}>
                     <Trash2 size={14} />
                   </button>
+                  </>}
                 </div>
               </div>
             );

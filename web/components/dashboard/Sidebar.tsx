@@ -34,9 +34,9 @@ type NavEntry = {
 
 const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Overview', exact: true },
-  { section: 'Club', adminOnly: true },
-  { href: '/dashboard/teams',         icon: Layers,        label: 'Teams',    adminOnly: true },
-  { href: '/dashboard/players',       icon: Users,         label: 'Players',  adminOnly: true },
+  { section: 'Club' },
+  { href: '/dashboard/teams',         icon: Layers,        label: 'Teams' },
+  { href: '/dashboard/players',       icon: Users,         label: 'Players' },
   { href: '/dashboard/families',      icon: UsersRound,    label: 'Families', adminOnly: true },
   { href: '/dashboard/staff',         icon: UserCog,       label: 'Staff',    adminOnly: true },
   { href: '/dashboard/fields',        icon: MapPin,        label: 'Fields',   adminOnly: true },
@@ -57,8 +57,8 @@ const CLUB_NAV: NavEntry[] = [
     href: '/dashboard/discipline', icon: AlertOctagon, label: 'NCSA Discipline',
     show: (club) => !!club?.ncsa_partner, badgeKey: 'ncsaDiscipline',
   },
-  { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations' },
-  { href: '/dashboard/waivers',       icon: FileLock2,     label: 'Waivers' },
+  { href: '/dashboard/registrations',  icon: ClipboardList, label: 'Registrations', adminOnly: true },
+  { href: '/dashboard/waivers',       icon: FileLock2,     label: 'Waivers',        adminOnly: true },
   { href: '/dashboard/reports',       icon: BarChart2,     label: 'Attendance' },
   { href: '/dashboard/certifications', icon: ShieldCheck,  label: 'Certifications', adminOnly: true },
   { section: 'Develop' },
