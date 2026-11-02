@@ -31,6 +31,7 @@ export default function GuardiansSafetyPage() {
   const [teamId, setTeamId] = useState<string | null>(null);
   const [teamName, setTeamName] = useState('');
   const [playerName, setPlayerName] = useState('');
+  const [guardianEmails, setGuardianEmails] = useState<string[]>([]);
 
   const [invites, setInvites] = useState<Invite[]>([]);
   const [inviteLoading, setInviteLoading] = useState(true);
@@ -56,11 +57,12 @@ export default function GuardiansSafetyPage() {
   const load = useCallback(async () => {
     if (!playerId) return;
 
-    const { data: playerRow } = await supabase.from('players').select('full_name, team_id, teams(name)').eq('id', playerId).single();
+    const { data: playerRow } = await supabase.from('players').select('full_name, team_id, teams(name), guardian_emails').eq('id', playerId).single();
     if (playerRow) {
       setPlayerName(playerRow.full_name);
       setTeamId(playerRow.team_id);
       setTeamName((playerRow.teams as unknown as { name: string } | null)?.name ?? '');
+      setGuardianEmails((playerRow as unknown as { guardian_emails: string[] | null }).guardian_emails ?? []);
     }
 
     setInviteLoading(true);
@@ -172,6 +174,23 @@ export default function GuardiansSafetyPage() {
 
   return (
     <div style={{ maxWidth: '640px' }}>
+      {guardianEmails.length > 0 && (
+        <div style={{ ...card, border: '1px solid #BFDBFE' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+            <Mail size={13} color="#2563EB" />
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#2563EB', textTransform: 'uppercase', letterSpacing: '0.1em' }}>On-File Contact Emails</div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
+            {guardianEmails.map(email => (
+              <div key={email} style={{ fontSize: '13px', color: '#0F172A' }}>{email}</div>
+            ))}
+          </div>
+          <div style={{ fontSize: '11px', color: '#94A3B8' }}>
+            From the original roster import — not linked to any account, nothing is ever sent to these automatically. Separate from the real guardian/invite system below.
+          </div>
+        </div>
+      )}
+
       {(safetyLoading || emergencyContacts.length > 0 || medicalNotes) && (
         <div style={{ ...card, border: '1px solid #FECACA' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px' }}>
