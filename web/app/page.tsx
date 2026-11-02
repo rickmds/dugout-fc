@@ -38,7 +38,7 @@ const aiFeatures = [
 ];
 
 const autoFeatures = [
-  { title: 'Streaks that protect players', body: 'Real attendance streaks with flame tiers and a built-in grace period. A two-week injury or an excused absence never tanks one.' },
+  { title: 'Gamified attendance', body: 'Players earn a real streak just for showing up — flame badges that grow the longer it holds, the same hook as the streak apps kids already use. An injury or excused absence never breaks one, so it rewards real commitment, not perfect luck.' },
   { title: 'Your league, auto-synced', body: 'Link your GotSport team once. Games, reschedules, and scores sync in daily — plus full division standings and your league ranking, rebuilt automatically.' },
   { title: 'Game Day Outlook', body: 'Every weekend, Pulse FC checks your whole club: a coach double-booked across two teams, a game genuinely short on players — flagged before kickoff, not after.' },
   { title: 'Equal playing time, done for you', body: 'The app calculates target minutes and a sub rotation automatically — no more doing math on the sideline.' },
