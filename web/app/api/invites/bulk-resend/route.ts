@@ -19,11 +19,11 @@ export async function POST(req: NextRequest) {
 
   const { data: team, error: teamErr } = await supabase
     .from('teams')
-    .select('id, name, age_group, club_id, clubs(name, logo_url, primary_color, slug)')
+    .select('id, name, age_group, club_id, clubs(name, logo_url, primary_color, slug, outgoing_emails_disabled)')
     .eq('id', team_id)
     .single<{
       id: string; name: string; age_group: string | null; club_id: string;
-      clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string } | null;
+      clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string; outgoing_emails_disabled: boolean } | null;
     }>();
 
   if (teamErr || !team) {
@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
   const allowed = await hasClubAccess(auth, team.club_id, ['org_admin', 'coach', 'app_admin']);
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  if (team.clubs?.outgoing_emails_disabled) {
+    return NextResponse.json({ sent: [], failed: [] });
   }
 
   const { data: invites, error: invitesErr } = await supabase

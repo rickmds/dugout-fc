@@ -19,8 +19,11 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  const { data: club } = await db.from('clubs').select('name, logo_url, primary_color, slug').eq('id', club_id).single();
+  const { data: club } = await db.from('clubs').select('name, logo_url, primary_color, slug, outgoing_emails_disabled').eq('id', club_id).single();
   if (!club) return NextResponse.json({ error: 'Club not found' }, { status: 404 });
+  if (club.outgoing_emails_disabled) {
+    return NextResponse.json({ results: coaches.map(c => ({ email: c.email, ok: false, error: 'Outgoing emails are disabled for this club' })) });
+  }
 
   const clubName = club.name;
   const accent = resolveAccent(club.primary_color);

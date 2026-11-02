@@ -11,10 +11,12 @@ export async function POST(req: NextRequest) {
 
   const sb = supabaseAdmin();
 
-  const { data: team } = await sb.from('teams').select('club_id').eq('id', team_id).single();
+  const { data: team } = await sb.from('teams').select('club_id, clubs(outgoing_emails_disabled)').eq('id', team_id).single();
   if (!team || (auth.role !== 'app_admin' && team.club_id !== auth.clubId)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+  const clubRow = team.clubs as unknown as { outgoing_emails_disabled: boolean } | null;
+  if (clubRow?.outgoing_emails_disabled) return NextResponse.json({ recipients: [] });
 
   const [playersRes, invitesRes, membersRes] = await Promise.all([
     sb.from('players').select('id, full_name, profile_id').eq('team_id', team_id),

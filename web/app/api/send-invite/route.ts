@@ -21,11 +21,11 @@ export async function POST(req: NextRequest) {
 
   const { data: invite, error: invErr } = await supabase
     .from('invites')
-    .select('email, token, player_id, teams(id, name, age_group, club_id, clubs(name, logo_url, primary_color, slug))')
+    .select('email, token, player_id, teams(id, name, age_group, club_id, clubs(name, logo_url, primary_color, slug, outgoing_emails_disabled))')
     .eq('id', invite_id)
     .single<{
       email: string; token: string; player_id: string | null;
-      teams: { id: string; name: string; age_group: string | null; club_id: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string } | null } | null;
+      teams: { id: string; name: string; age_group: string | null; club_id: string; clubs: { name: string; logo_url: string | null; primary_color: string | null; slug: string; outgoing_emails_disabled: boolean } | null } | null;
     }>();
 
   if (invErr || !invite) {
@@ -62,6 +62,9 @@ export async function POST(req: NextRequest) {
   }
   if (!authorized) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  if (team?.clubs?.outgoing_emails_disabled) {
+    return NextResponse.json({ error: 'Outgoing emails are disabled for this club' }, { status: 403 });
   }
   const result = await sendInviteEmail(invite, player_name);
   if (!result.ok) {
