@@ -34,7 +34,7 @@ const EMPTY_REPORT: ReportData = {
   idp: [],
 };
 
-type PlayerRow = { id: string; full_name: string; jersey_number: number | null };
+type PlayerRow = { id: string; full_name: string; jersey_number: number | null; guardian_emails: string[] | null };
 
 type EvalRow = {
   id: string;
@@ -46,6 +46,7 @@ type EvalRow = {
   report_data: Partial<ReportData> | null;
   final_text: string | null;
   status: 'draft' | 'submitted' | 'approved' | 'published';
+  send_to_emails: string[] | null;
 };
 
 type FormState = {
@@ -56,6 +57,7 @@ type FormState = {
   rating_mental: number;
   report_data: ReportData;
   final_text: string;
+  send_to_emails: string[];
   status: 'draft' | 'submitted' | 'approved' | 'published';
   saving: boolean;
   generating: boolean;
@@ -107,13 +109,13 @@ export default function BulkEnterEvaluationsPage() {
     setLoading(true);
     const [{ data: batchRow }, { data: evalRows }] = await Promise.all([
       supabase.from('evaluation_batches').select('team_id, season_label, period_label, coach_id, teams(name)').eq('id', batchId).single(),
-      supabase.from('player_evaluations').select('id, player_id, rating_technical, rating_tactical, rating_physical, rating_mental, report_data, final_text, status').eq('batch_id', batchId),
+      supabase.from('player_evaluations').select('id, player_id, rating_technical, rating_tactical, rating_physical, rating_mental, report_data, final_text, status, send_to_emails').eq('batch_id', batchId),
     ]);
     if (!batchRow) { setLoading(false); return; }
     setBatch(batchRow as unknown as NonNullable<typeof batch>);
 
     const { data: players } = await supabase
-      .from('players').select('id, full_name, jersey_number')
+      .from('players').select('id, full_name, jersey_number, guardian_emails')
       .eq('team_id', batchRow.team_id).order('full_name');
     const rosterRows = (players ?? []) as PlayerRow[];
     setRoster(rosterRows);
@@ -130,6 +132,7 @@ export default function BulkEnterEvaluationsPage() {
         rating_mental: existing?.rating_mental ?? 3,
         report_data: mergeReport(existing?.report_data),
         final_text: existing?.final_text ?? '',
+        send_to_emails: existing?.send_to_emails ?? [],
         status: existing?.status ?? 'draft',
         saving: false,
         generating: false,
@@ -154,6 +157,14 @@ export default function BulkEnterEvaluationsPage() {
       const arr = [...f.report_data[field]] as string[];
       arr[index] = value;
       return { ...prev, [playerId]: { ...f, report_data: { ...f.report_data, [field]: arr }, dirty: true } };
+    });
+  }
+  function toggleEmail(playerId: string, email: string) {
+    setForms(prev => {
+      const f = prev[playerId];
+      const set = new Set(f.send_to_emails);
+      if (set.has(email)) set.delete(email); else set.add(email);
+      return { ...prev, [playerId]: { ...f, send_to_emails: [...set], dirty: true } };
     });
   }
 
@@ -217,6 +228,7 @@ export default function BulkEnterEvaluationsPage() {
       rating_physical: f.rating_physical, rating_mental: f.rating_mental,
       report_data: f.report_data,
       final_text: f.final_text,
+      send_to_emails: f.send_to_emails,
       status: (submitNow ? 'submitted' : 'draft') as 'draft' | 'submitted',
       ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
     };
@@ -273,6 +285,7 @@ export default function BulkEnterEvaluationsPage() {
           const f = forms[player.id];
           if (!f) return null;
           const isOpen = expanded.has(player.id);
+          const emails = player.guardian_emails ?? [];
           return (
             <div key={player.id} style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
               <button onClick={() => toggleExpanded(player.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
@@ -286,6 +299,17 @@ export default function BulkEnterEvaluationsPage() {
                   )}
                   {f.status === 'draft' && f.evalId && (
                     <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '99px', padding: '2px 8px' }}>Draft saved</span>
+                  )}
+                  {emails.length > 0 && (
+                    f.send_to_emails.length > 0 ? (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#2563EB', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '99px', padding: '2px 8px' }}>
+                        {f.send_to_emails.length} recipient{f.send_to_emails.length !== 1 ? 's' : ''}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '99px', padding: '2px 8px' }}>
+                        0 recipients selected
+                      </span>
+                    )
                   )}
                 </div>
                 {isOpen ? <ChevronUp size={16} color="#94A3B8" /> : <ChevronDown size={16} color="#94A3B8" />}
@@ -350,6 +374,34 @@ export default function BulkEnterEvaluationsPage() {
                       rows={3}
                       style={{ width: '100%', padding: '9px 11px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
                     />
+                  </div>
+
+                  {/* Send recipients — opt-in on purpose. An email on file isn't proof it
+                      belongs to this family (see players.guardian_emails' own sourcing
+                      caveats), so nothing is pre-checked; the coach who knows these kids
+                      is the one confirming who actually receives it. */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Send Evaluation To</div>
+                    {emails.length === 0 ? (
+                      <div style={{ fontSize: '13px', color: '#94A3B8', fontStyle: 'italic' }}>No email on file for this player.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {emails.map(email => {
+                          const checked = f.send_to_emails.includes(email);
+                          return (
+                            <label key={email} style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '8px 11px', borderRadius: '7px', border: `1.5px solid ${checked ? primary : '#E2E8F0'}`, background: checked ? `${primary}14` : '#fff', cursor: 'pointer', fontSize: '13px', color: '#0F172A' }}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleEmail(player.id, email)} style={{ accentColor: primary, width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }} />
+                              {email}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {emails.length > 0 && (
+                      <div style={{ fontSize: '11px', color: f.send_to_emails.length === 0 ? '#B45309' : '#94A3B8', fontWeight: f.send_to_emails.length === 0 ? '700' : '400', marginTop: '7px' }}>
+                        {f.send_to_emails.length} of {emails.length} selected{f.send_to_emails.length === 0 ? ' — nothing will be sent to this player until at least one is checked' : ''}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
