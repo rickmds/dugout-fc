@@ -41,6 +41,14 @@ const autoFeatures = [
   { title: 'Streaks that protect players', body: 'Real attendance streaks with flame tiers and a built-in grace period. A two-week injury or an excused absence never tanks one.' },
   { title: 'Your league, auto-synced', body: 'Link your GotSport team once. Games, reschedules, and scores sync in daily — plus full division standings and your league ranking, rebuilt automatically.' },
   { title: 'Game Day Outlook', body: 'Every weekend, Pulse FC checks your whole club: a coach double-booked across two teams, a game genuinely short on players — flagged before kickoff, not after.' },
+  { title: 'Equal playing time, done for you', body: 'The app calculates target minutes and a sub rotation automatically — no more doing math on the sideline.' },
+  { title: 'Certification tracking', body: 'Coach certifications get tracked automatically, with reminders sent before anything lapses — no admin chasing paperwork.' },
+];
+
+const moneyFeatures = [
+  { title: 'Tryout & registration payments', body: 'Parents pay online, Stripe routes it straight to your club’s own account — no more collecting checks at the field.' },
+  { title: 'Installment plans, handled', body: 'Team fees split into payments automatically. No spreadsheet, no chasing down the second half.' },
+  { title: 'Refunds without the headache', body: 'Disputes and refunds run through Stripe directly, not a manual IOU list.' },
 ];
 
 export default function Home() {
@@ -201,8 +209,22 @@ export default function Home() {
           <Reveal>
             <p className="text-[12px] font-bold uppercase tracking-[0.1em] mb-5" style={{ color: theme.green }}>Runs itself — nobody has to open the app</p>
           </Reveal>
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-14">
             {autoFeatures.map(({ title, body }, i) => (
+              <Reveal key={title} delay={i * 60}>
+                <div className="h-full p-6" style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: theme.radiusCard, boxShadow: theme.shadowCard }}>
+                  <p className="font-extrabold text-[15.5px] mb-2" style={{ color: theme.text }}>{title}</p>
+                  <p className="text-[13.5px] leading-[1.6]" style={{ color: theme.textSecondary }}>{body}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+
+          <Reveal>
+            <p className="text-[12px] font-bold uppercase tracking-[0.1em] mb-5" style={{ color: theme.green }}>Handles the money, too</p>
+          </Reveal>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {moneyFeatures.map(({ title, body }, i) => (
               <Reveal key={title} delay={i * 60}>
                 <div className="h-full p-6" style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: theme.radiusCard, boxShadow: theme.shadowCard }}>
                   <p className="font-extrabold text-[15.5px] mb-2" style={{ color: theme.text }}>{title}</p>
