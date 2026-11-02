@@ -19,12 +19,12 @@ type NavEntry = {
   icon?: React.ElementType;
   label?: string;
   exact?: boolean;
+  // Hides the item (and, on a `section` entry, the whole section header)
+  // from anyone who isn't org_admin/app_admin.
   adminOnly?: boolean;
-  // Unlike adminOnly above (declared but never actually read by the render
-  // loop below — leave it alone rather than retrofit it here), this is a
-  // real, working per-item visibility check. Used for NCSA-partner-only
-  // nav entries — a club that hasn't flagged itself as an NCSA partner
-  // must never see them at all, not just have them disabled.
+  // A second, independent visibility check — used for NCSA-partner-only
+  // nav entries, which must never show at all for a non-partner club,
+  // regardless of role.
   show?: (club: Club | null) => boolean;
   // Looked up in the `badges` state map by this key — a small red count
   // pill next to the label. Only ever set for entries that need one; most
@@ -34,12 +34,12 @@ type NavEntry = {
 
 const CLUB_NAV: NavEntry[] = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Overview', exact: true },
-  { section: 'Club' },
-  { href: '/dashboard/teams',         icon: Layers,        label: 'Teams' },
-  { href: '/dashboard/players',       icon: Users,         label: 'Players' },
-  { href: '/dashboard/families',      icon: UsersRound,    label: 'Families' },
-  { href: '/dashboard/staff',         icon: UserCog,       label: 'Staff' },
-  { href: '/dashboard/fields',        icon: MapPin,        label: 'Fields' },
+  { section: 'Club', adminOnly: true },
+  { href: '/dashboard/teams',         icon: Layers,        label: 'Teams',    adminOnly: true },
+  { href: '/dashboard/players',       icon: Users,         label: 'Players',  adminOnly: true },
+  { href: '/dashboard/families',      icon: UsersRound,    label: 'Families', adminOnly: true },
+  { href: '/dashboard/staff',         icon: UserCog,       label: 'Staff',    adminOnly: true },
+  { href: '/dashboard/fields',        icon: MapPin,        label: 'Fields',   adminOnly: true },
   { section: 'Schedule' },
   { href: '/dashboard/schedule',      icon: CalendarDays,  label: 'Schedule' },
   { href: '/dashboard/games',         icon: Trophy,        label: 'Field Scheduler' },
@@ -91,6 +91,7 @@ const TRYOUTS_NAV: NavEntry[] = [
 
 export default function Sidebar() {
   const { profile, club, myClubs, switchClub, signOut } = useDashboard();
+  const isAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
   const pathname    = usePathname();
   const router      = useRouter();
   const [clubMenuOpen, setClubMenuOpen] = useState(false);
@@ -308,6 +309,7 @@ export default function Sidebar() {
       <nav ref={navRef} style={{ flex: 1, padding: '8px 8px 12px', overflowY: 'auto' }}>
         {activeNav.map((item, i) => {
           if (item.section) {
+            if (item.adminOnly && !isAdmin) return null;
             return (
               <div key={i} style={{ padding: '12px 12px 4px', fontSize: '9px', fontWeight: '800', color: 'rgba(255,255,255,0.25)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
                 {item.section}
@@ -315,6 +317,7 @@ export default function Sidebar() {
             );
           }
           if (!item.href || !item.icon || !item.label) return null;
+          if (item.adminOnly && !isAdmin) return null;
           if (item.show && !item.show(club)) return null;
           return <NavItem key={item.href} href={item.href} icon={item.icon} label={item.label} exact={item.exact} badge={item.badgeKey ? badges[item.badgeKey] : undefined} />;
         })}
