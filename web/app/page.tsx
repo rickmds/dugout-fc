@@ -29,6 +29,20 @@ const paths = [
   },
 ];
 
+const aiFeatures = [
+  { title: 'AI schedule import', body: 'Upload the PDF, photo, or spreadsheet your league sent you. Every game, time, and location is live in under a minute.' },
+  { title: 'AI tournament uploads', body: 'Snap a photo of a flyer or bracket. Pulse FC tells a round-robin weekend from a multi-day bracket apart and builds every game correctly.' },
+  { title: 'AI roster import', body: 'Any spreadsheet, any format. AI maps the columns and imports your whole team in one upload — no re-typing 18 kids by hand.' },
+  { title: 'AI lineup suggester', body: 'Pick a formation. AI builds a starting XI from who’s actually confirmed to play — you adjust from there, not from scratch.' },
+  { title: 'AI cancellation emails', body: 'Fields closed, weather’s bad — type one line and AI writes the parent email. Game back on an hour later? It writes that one too.' },
+];
+
+const autoFeatures = [
+  { title: 'Streaks that protect players', body: 'Real attendance streaks with flame tiers and a built-in grace period. A two-week injury or an excused absence never tanks one.' },
+  { title: 'Your league, auto-synced', body: 'Link your GotSport team once. Games, reschedules, and scores sync in daily — plus full division standings and your league ranking, rebuilt automatically.' },
+  { title: 'Game Day Outlook', body: 'Every weekend, Pulse FC checks your whole club: a coach double-booked across two teams, a game genuinely short on players — flagged before kickoff, not after.' },
+];
+
 export default function Home() {
   return (
     <div style={{ minHeight: '100vh', background: theme.bg, color: theme.text }}>
@@ -153,6 +167,52 @@ export default function Home() {
       </div>
 
       <FeatureTabs />
+
+      {/* What makes us different */}
+      <section className="px-6 sm:px-10 py-20">
+        <div className="max-w-6xl mx-auto">
+          <Reveal>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] mb-3 text-center" style={{ color: theme.textMuted }}>What makes us different</p>
+            <h2
+              className="font-extrabold leading-tight mb-4 tracking-tight text-center"
+              style={{ fontSize: 'clamp(26px, 3.5vw, 44px)', color: theme.text, fontFamily: theme.fontDisplay }}
+            >
+              The busywork does itself.
+            </h2>
+            <p className="text-[15px] text-center mb-14 max-w-2xl mx-auto" style={{ color: theme.textSecondary }}>
+              Other apps digitize the clipboard. Pulse FC automates what used to take a volunteer&apos;s whole evening.
+            </p>
+          </Reveal>
+
+          <Reveal>
+            <p className="text-[12px] font-bold uppercase tracking-[0.1em] mb-5" style={{ color: theme.green }}>AI handles the busywork</p>
+          </Reveal>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-14">
+            {aiFeatures.map(({ title, body }, i) => (
+              <Reveal key={title} delay={i * 60}>
+                <div className="h-full p-6" style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: theme.radiusCard, boxShadow: theme.shadowCard }}>
+                  <p className="font-extrabold text-[15.5px] mb-2" style={{ color: theme.text }}>{title}</p>
+                  <p className="text-[13.5px] leading-[1.6]" style={{ color: theme.textSecondary }}>{body}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+
+          <Reveal>
+            <p className="text-[12px] font-bold uppercase tracking-[0.1em] mb-5" style={{ color: theme.green }}>Runs itself — nobody has to open the app</p>
+          </Reveal>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {autoFeatures.map(({ title, body }, i) => (
+              <Reveal key={title} delay={i * 60}>
+                <div className="h-full p-6" style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: theme.radiusCard, boxShadow: theme.shadowCard }}>
+                  <p className="font-extrabold text-[15.5px] mb-2" style={{ color: theme.text }}>{title}</p>
+                  <p className="text-[13.5px] leading-[1.6]" style={{ color: theme.textSecondary }}>{body}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Pick your path */}
       <section style={{ borderTop: `1px solid ${theme.border}`, background: theme.surface }} className="px-6 sm:px-10 py-20">
