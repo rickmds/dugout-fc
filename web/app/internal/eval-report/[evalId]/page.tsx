@@ -2,6 +2,13 @@ import { notFound } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabase';
 import { EvaluationReportCard, type EvalRow } from '@/components/dashboard/evaluation/EvaluationReportCard';
 
+// Without this, Next statically pre-renders this page at build time, when
+// there's no real `key` to check against — notFound() fires during that
+// build-time pass, and the resulting 404 gets cached and served to every
+// real request afterward regardless of the actual key. Forcing dynamic
+// rendering makes every request run the key check fresh, for real.
+export const dynamic = 'force-dynamic';
+
 // Render-only target for the PDF pipeline (web/lib/evaluationPdf.tsx) —
 // Puppeteer navigates here and prints the result. Never a page a person
 // browses to: the access decision already happened in

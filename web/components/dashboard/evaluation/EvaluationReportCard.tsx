@@ -148,7 +148,13 @@ export function EvaluationReportCard({ ev, primary, clubLogoUrl, clubName }: {
     : '';
 
   return (
-          <div style={{ background: '#fff', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
+          // data-report-ready: a deterministic marker the PDF pipeline
+          // waits for (web/lib/evaluationPdf.tsx) instead of trusting the
+          // page's 'load' event — that event can fire on the initial
+          // streamed Suspense fallback shell, before this real content
+          // streams in and replaces it, which was capturing a blank
+          // loading skeleton instead of the report.
+          <div data-report-ready="true" style={{ background: '#fff', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
 
             {/* Band */}
             <div style={{ background: primary, padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

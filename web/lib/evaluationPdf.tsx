@@ -32,6 +32,21 @@ export async function renderPdfFromUrl(url: string): Promise<Buffer> {
     await page.setViewport({ width, height: 1200 });
     const res = await page.goto(url, { waitUntil: 'load' });
     if (!res || !res.ok()) throw new Error(`internal eval-report page returned ${res?.status()}`);
+    // 'load' can fire on the initial streamed Suspense fallback shell,
+    // before the real report streams in and replaces it. waitForSelector
+    // alone isn't enough either — it only confirms the node exists in the
+    // DOM, not that layout has actually settled, and proved flaky in
+    // practice (page.pdf() would sometimes still capture a near-empty
+    // page even after the selector resolved). Polling the element's real
+    // measured height forces Puppeteer to query actual layout, not just
+    // DOM presence, until the report has visibly rendered.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-report-ready="true"]');
+        return !!el && el.getBoundingClientRect().height > 300;
+      },
+      { timeout: 15000 },
+    );
     // The report is one continuous card, never meant to paginate — size
     // the PDF page to the content's real rendered height instead of
     // defaulting to Letter, which split it across two pages with the
