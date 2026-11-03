@@ -42,8 +42,8 @@ export function IdeaPickerButton({ type, primary, onPick }: {
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
           <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50,
-            width: '340px', maxHeight: '380px', overflowY: 'auto',
+            position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 50,
+            width: '340px', maxWidth: 'calc(100vw - 32px)', maxHeight: '380px', overflowY: 'auto',
             background: '#fff', border: '1px solid #E2E8F0', borderRadius: '10px',
             boxShadow: '0 10px 28px rgba(0,0,0,0.14)', padding: '10px',
           }}>
