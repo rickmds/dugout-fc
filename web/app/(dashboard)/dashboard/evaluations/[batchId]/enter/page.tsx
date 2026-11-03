@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronDown, ChevronUp, Sparkles, Check, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
+import { IdeaPickerButton, type IdeaType } from '@/components/dashboard/evaluation/IdeaPicker';
 
 // Same shape as the mobile entry form (app/(app)/[clubSlug]/admin/evaluation-form.tsx)
 // for the fields that actually carry evaluation content. bio/stats/idp are
@@ -86,10 +87,10 @@ const RATING_AREAS = [
 const RATING_LABELS: Record<number, string> = { 1: 'Needs Work', 2: 'Developing', 3: 'Good', 4: 'Strong', 5: 'Excellent' };
 
 const NOTE_SECTIONS = [
-  { field: 'super_strengths' as const, label: 'Strengths', count: 3, placeholder: (i: number) => `Strength ${i + 1}` },
-  { field: 'areas_of_development' as const, label: 'Areas to Develop', count: 3, placeholder: (i: number) => `Area ${i + 1}` },
-  { field: 'outcome_goals' as const, label: 'Outcome Goals', count: 2, placeholder: (i: number) => `Goal ${i + 1} (e.g. "Start for the A team")` },
-  { field: 'performance_goals' as const, label: 'Performance Goals', count: 2, placeholder: (i: number) => `Goal ${i + 1} (e.g. "Win 70% of 1v1 duels")` },
+  { field: 'super_strengths' as const, label: 'Strengths', count: 3, ideaType: 'strengths' as IdeaType, placeholder: (i: number) => `Strength ${i + 1}` },
+  { field: 'areas_of_development' as const, label: 'Areas to Develop', count: 3, ideaType: 'weaknesses' as IdeaType, placeholder: (i: number) => `Area ${i + 1}` },
+  { field: 'outcome_goals' as const, label: 'Outcome Goals', count: 2, ideaType: 'outcomeGoals' as IdeaType, placeholder: (i: number) => `Goal ${i + 1} (e.g. "Start for the A team")` },
+  { field: 'performance_goals' as const, label: 'Performance Goals', count: 2, ideaType: 'performanceGoals' as IdeaType, placeholder: (i: number) => `Goal ${i + 1} (e.g. "Win 70% of 1v1 duels")` },
 ];
 
 export default function BulkEnterEvaluationsPage() {
@@ -156,6 +157,19 @@ export default function BulkEnterEvaluationsPage() {
       const f = prev[playerId];
       const arr = [...f.report_data[field]] as string[];
       arr[index] = value;
+      return { ...prev, [playerId]: { ...f, report_data: { ...f.report_data, [field]: arr }, dirty: true } };
+    });
+  }
+  // Drops a picked idea into the next empty slot for that section; if every
+  // slot is already filled, replaces the last one rather than doing nothing
+  // silently — the coach can still edit it right after.
+  function pickIdea(playerId: string, field: typeof NOTE_SECTIONS[number]['field'], text: string) {
+    setForms(prev => {
+      const f = prev[playerId];
+      const arr = [...f.report_data[field]] as string[];
+      const emptyIdx = arr.findIndex(v => !v.trim());
+      const idx = emptyIdx !== -1 ? emptyIdx : arr.length - 1;
+      arr[idx] = text;
       return { ...prev, [playerId]: { ...f, report_data: { ...f.report_data, [field]: arr }, dirty: true } };
     });
   }
@@ -342,7 +356,10 @@ export default function BulkEnterEvaluationsPage() {
                   {/* Note sections */}
                   {NOTE_SECTIONS.map(section => (
                     <div key={section.field} style={{ marginBottom: '12px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>{section.label}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px' }}>{section.label}</div>
+                        <IdeaPickerButton type={section.ideaType} primary={primary} onPick={text => pickIdea(player.id, section.field, text)} />
+                      </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {Array.from({ length: section.count }).map((_, i) => (
                           <input
