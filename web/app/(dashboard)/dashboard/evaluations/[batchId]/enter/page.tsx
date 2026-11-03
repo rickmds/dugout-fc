@@ -149,6 +149,24 @@ export default function BulkEnterEvaluationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const doneCount = useMemo(() => Object.values(forms).filter(f => f.status !== 'draft').length, [forms]);
+  const dirtyIds = useMemo(() => Object.entries(forms).filter(([, f]) => f.dirty).map(([id]) => id), [forms]);
+
+  // Real risk, not cosmetic: a coach can fill in several players, get
+  // pulled away, and close the tab — nothing here autosaves. Warn on an
+  // actual tab close/navigation, and on the in-app Back button too, since
+  // beforeunload never fires for a Next.js client-side route change.
+  useEffect(() => {
+    function handler(e: BeforeUnloadEvent) {
+      if (dirtyIds.length > 0) { e.preventDefault(); e.returnValue = ''; }
+    }
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirtyIds.length]);
+
+  function goBack() {
+    if (dirtyIds.length > 0 && !confirm(`You have unsaved changes for ${dirtyIds.length} player${dirtyIds.length !== 1 ? 's' : ''}. Leave without saving?`)) return;
+    router.push(`/dashboard/evaluations/${batchId}`);
+  }
 
   function patchForm(playerId: string, patch: Partial<FormState>) {
     setForms(prev => ({ ...prev, [playerId]: { ...prev[playerId], ...patch, dirty: true } }));
@@ -230,7 +248,7 @@ export default function BulkEnterEvaluationsPage() {
     }
   }
 
-  async function saveOne(player: PlayerRow, submitNow: boolean) {
+  async function saveOne(player: PlayerRow, submitNow: boolean, silent = false) {
     const f = forms[player.id];
     if (!batch || !profile) return;
     patchForm(player.id, { saving: true });
@@ -254,9 +272,8 @@ export default function BulkEnterEvaluationsPage() {
 
     if (error) {
       patchForm(player.id, { saving: false });
-      setToast(`Could not save ${player.full_name}: ${error.message}`);
-      setTimeout(() => setToast(''), 4000);
-      return;
+      if (!silent) { setToast(`Could not save ${player.full_name}: ${error.message}`); setTimeout(() => setToast(''), 4000); }
+      return false;
     }
 
     const { count } = await supabase
@@ -265,8 +282,23 @@ export default function BulkEnterEvaluationsPage() {
     await supabase.from('evaluation_batches').update({ completed_count: count ?? 0 }).eq('id', batchId);
 
     setForms(prev => ({ ...prev, [player.id]: { ...prev[player.id], evalId: data?.id ?? prev[player.id].evalId, status: payload.status, saving: false, dirty: false } }));
-    setToast(submitNow ? `${player.full_name} submitted` : `${player.full_name} saved`);
-    setTimeout(() => setToast(''), 2000);
+    if (!silent) { setToast(submitNow ? `${player.full_name} submitted` : `${player.full_name} saved`); setTimeout(() => setToast(''), 2000); }
+    return true;
+  }
+
+  const [savingAll, setSavingAll] = useState(false);
+  async function saveAllDrafts() {
+    const toSave = roster.filter(p => dirtyIds.includes(p.id));
+    if (!toSave.length) return;
+    setSavingAll(true);
+    let ok = 0, failed = 0;
+    for (const player of toSave) {
+      const success = await saveOne(player, false, true);
+      if (success) ok++; else failed++;
+    }
+    setSavingAll(false);
+    setToast(failed ? `Saved ${ok}, ${failed} failed — check those players` : `Saved ${ok} draft${ok !== 1 ? 's' : ''}`);
+    setTimeout(() => setToast(''), 3000);
   }
 
   function toggleExpanded(playerId: string) {
@@ -276,6 +308,9 @@ export default function BulkEnterEvaluationsPage() {
       return next;
     });
   }
+  function toggleExpandAll() {
+    setExpanded(prev => (prev.size > 0 ? new Set() : new Set(roster.map(p => p.id))));
+  }
 
   if (loading) return <div style={{ padding: '60px', textAlign: 'center', color: '#64748B' }}>Loading…</div>;
   if (!batch) return <div style={{ padding: '60px', textAlign: 'center', color: '#64748B' }}>Batch not found.</div>;
@@ -283,15 +318,28 @@ export default function BulkEnterEvaluationsPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#F0F2F5', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: `3px solid ${primary}`, padding: '14px 32px' }}>
-        <button onClick={() => router.push(`/dashboard/evaluations/${batchId}`)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#64748B', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: 0, marginBottom: '8px', fontFamily: 'inherit' }}>
+        <button onClick={goBack} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#64748B', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: 0, marginBottom: '8px', fontFamily: 'inherit' }}>
           <ArrowLeft size={14} /> Back to batch
         </button>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
           <div>
             <h1 style={{ fontSize: '20px', fontWeight: '900', color: '#0D1117', margin: 0 }}>{batch.teams?.name ?? 'Team'} — Evaluations</h1>
             <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>{batch.period_label} · {batch.season_label}</div>
           </div>
-          <div style={{ fontSize: '13px', fontWeight: '700', color: primary }}>{doneCount} / {roster.length} submitted</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {dirtyIds.length > 0 && (
+              <button onClick={saveAllDrafts} disabled={savingAll}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '8px', border: 'none', background: primary, color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: savingAll ? 'default' : 'pointer', opacity: savingAll ? 0.7 : 1, fontFamily: 'inherit' }}>
+                {savingAll ? <Loader2 size={12} className="spin" /> : null}
+                {savingAll ? 'Saving…' : `Save All Drafts (${dirtyIds.length})`}
+              </button>
+            )}
+            <button onClick={toggleExpandAll}
+              style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
+              {expanded.size > 0 ? 'Collapse All' : 'Expand All'}
+            </button>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: primary, whiteSpace: 'nowrap' }}>{doneCount} / {roster.length} submitted</div>
+          </div>
         </div>
       </div>
 
@@ -330,6 +378,11 @@ export default function BulkEnterEvaluationsPage() {
                       </span>
                     )
                   )}
+                  {f.dirty && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '11px', fontWeight: '700', color: '#DC2626', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '99px', padding: '2px 8px' }}>
+                      Unsaved
+                    </span>
+                  )}
                 </div>
                 {isOpen ? <ChevronUp size={16} color="#94A3B8" /> : <ChevronDown size={16} color="#94A3B8" />}
               </button>
@@ -340,7 +393,10 @@ export default function BulkEnterEvaluationsPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', margin: '14px 0' }}>
                     {RATING_AREAS.map(area => (
                       <div key={area.key}>
-                        <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>{area.label}</div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px' }}>{area.label}</div>
+                          <div style={{ fontSize: '10px', fontWeight: '700', color: primary }}>{RATING_LABELS[f[area.key]]}</div>
+                        </div>
                         <div style={{ display: 'flex', gap: '3px' }}>
                           {[1, 2, 3, 4, 5].map(n => (
                             <button key={n} onClick={() => patchForm(player.id, { [area.key]: n } as Partial<FormState>)}
