@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, Sparkles, Check, Loader2 } from 'luc
 import { supabase } from '@/lib/supabase';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import { IdeaPickerButton, type IdeaType } from '@/components/dashboard/evaluation/IdeaPicker';
+import { getUsedCategoryIds } from '@/lib/evaluationIdeas';
 
 // Same shape as the mobile entry form (app/(app)/[clubSlug]/admin/evaluation-form.tsx)
 // for the fields that actually carry evaluation content. bio/stats/idp are
@@ -300,6 +301,10 @@ export default function BulkEnterEvaluationsPage() {
           if (!f) return null;
           const isOpen = expanded.has(player.id);
           const emails = player.guardian_emails ?? [];
+          // Which idea categories this player's already-picked strengths/
+          // weaknesses came from — lets the two Goals pickers suggest goals
+          // that actually follow from what's already been identified.
+          const usedCategoryIds = getUsedCategoryIds(f.report_data.super_strengths, f.report_data.areas_of_development);
           return (
             <div key={player.id} style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
               <button onClick={() => toggleExpanded(player.id)} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
@@ -358,7 +363,11 @@ export default function BulkEnterEvaluationsPage() {
                     <div key={section.field} style={{ marginBottom: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px' }}>{section.label}</div>
-                        <IdeaPickerButton type={section.ideaType} primary={primary} onPick={text => pickIdea(player.id, section.field, text)} />
+                        <IdeaPickerButton
+                          type={section.ideaType} primary={primary}
+                          onPick={text => pickIdea(player.id, section.field, text)}
+                          suggestedCategoryIds={section.ideaType === 'outcomeGoals' || section.ideaType === 'performanceGoals' ? usedCategoryIds : undefined}
+                        />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {Array.from({ length: section.count }).map((_, i) => (
