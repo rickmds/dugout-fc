@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // puppeteer-core / chromium-min reach their own binary via runtime-
+  // computed paths, not static imports — externalizing keeps bundling from
+  // mangling those paths.
+  serverExternalPackages: ['@sparticuz/chromium-min', 'puppeteer-core'],
   async redirects() {
     return [
       {
