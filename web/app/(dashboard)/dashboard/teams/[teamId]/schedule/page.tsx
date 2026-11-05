@@ -9,6 +9,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { sendEventPush } from '@/lib/pushEvent';
 import { sendTeamEmail } from '@/lib/emailTeam';
+import { buildMapsUrl } from '@/lib/mapsLink';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
 import GuestSection from '@/components/dashboard/GuestSection';
 import type { ConfirmedGuest } from '@/components/dashboard/GuestSection';
@@ -27,7 +28,8 @@ type Event = {
   field_type: string | null; field_notes: string | null; field_id: string | null;
   uniform: string | null; notes: string | null; coach_notes: string | null;
   require_rsvp: boolean; rsvp_lock_at: string | null; team_id: string;
-  recurrence_id: string | null;
+  recurrence_id: string | null; event_group_id: string | null;
+  cancelled_at: string | null; cancellation_reason: string | null;
   attending: number; not_attending: number; total: number;
 };
 
@@ -114,11 +116,13 @@ function describeScheduleChanges(
   const origTime = orig.time?.slice(0, 5) ?? null;
   const nextTime = next.time?.slice(0, 5) ?? null;
   if (nextTime !== origTime) changes.push({ field: 'Time', from: fmtTime(origTime), to: fmtTime(nextTime) });
+  // Address is deliberately not its own diff line — it's just the Location
+  // change spelled out in full street-address form (changing one updates
+  // the other), so showing both read as the same fact said twice. The
+  // full address is still there for anyone who wants it, via the facts
+  // card's maps link below.
   if ((next.location ?? '').trim() !== (orig.location ?? '').trim()) {
     changes.push({ field: 'Location', from: orig.location.trim() || '(none)', to: next.location.trim() || '(none)' });
-  }
-  if ((next.address ?? '').trim() !== (orig.address ?? '').trim()) {
-    changes.push({ field: 'Address', from: orig.address.trim() || '(none)', to: next.address.trim() || '(none)' });
   }
   if (next.uniform !== orig.uniform) {
     const label = (u: string | null) => u ? u.charAt(0).toUpperCase() + u.slice(1) : 'Not set';
@@ -149,6 +153,18 @@ function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTim
   // and every comparison below silently falls through to 48.
   const diff = Math.round((new Date(`${eventDate}T${eventTime.slice(0, 5)}:00`).getTime() - new Date(rsvpLockAt).getTime()) / 3600000);
   if (diff <= 0) return 0; if (diff <= 12) return 12; if (diff <= 24) return 24; return 48;
+}
+
+// "by Tue, Nov 10, 7:30 PM" — plain device-local Date parsing, matching
+// this file's own (non-timezone-aware) handling of rsvp_lock_at elsewhere
+// (computeLockAt above also just does `new Date(...)` with no explicit
+// timeZone), rather than introducing timezone-awareness this file doesn't
+// otherwise have.
+function fmtRsvpDeadline(lockAtIso: string): string {
+  const d = new Date(lockAtIso);
+  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `by ${fmtDate(dateStr)}, ${fmtTime(timeStr)}`;
 }
 
 // ── Recurrence ─────────────────────────────────────────────────────────────────
@@ -299,8 +315,9 @@ function EventRow({ ev, primary, selected, onSelect, onEdit, onDelete }: {
         display: 'flex', alignItems: 'stretch', overflow: 'hidden',
         boxShadow: hover ? '0 4px 16px rgba(0,0,0,0.07)' : '0 1px 3px rgba(0,0,0,0.04)',
         transition: 'all 0.15s', transform: hover ? 'translateY(-1px)' : 'none', cursor: 'pointer',
+        opacity: ev.cancelled_at ? 0.6 : 1,
       }}>
-      <div style={{ width: '5px', flexShrink: 0, background: `linear-gradient(180deg, ${color}, ${color}80)` }} />
+      <div style={{ width: '5px', flexShrink: 0, background: ev.cancelled_at ? '#EF4444' : `linear-gradient(180deg, ${color}, ${color}80)` }} />
       <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '14px 16px 14px 14px', borderRight: '1px solid #F8FAFC', minWidth: '72px' }}>
         <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A', lineHeight: 1 }}>{ev.event_time ? fmtTime(ev.event_time).split(' ')[0] : '—'}</span>
         {ev.event_time && <span style={{ fontSize: '11px', fontWeight: '600', color: '#94A3B8', marginTop: '2px' }}>{fmtTime(ev.event_time).split(' ')[1]}</span>}
@@ -312,7 +329,10 @@ function EventRow({ ev, primary, selected, onSelect, onEdit, onDelete }: {
             <span style={{ fontSize: '11px', fontWeight: '700', color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{TYPE_LABELS[ev.type]}</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.title}</div>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: ev.cancelled_at ? 'line-through' : 'none' }}>
+              {ev.cancelled_at && <span style={{ color: '#EF4444', textDecoration: 'none' }}>CANCELLED · </span>}
+              {ev.title}
+            </div>
             {ev.location && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
                 <MapPin size={11} color="#94A3B8" />
@@ -403,6 +423,11 @@ export default function TeamSchedulePage() {
 
   const dialogRef    = useRef<HTMLDialogElement>(null);
   const delDialogRef = useRef<HTMLDialogElement>(null);
+  // Staged, not immediate — toggling this only updates local state; the
+  // actual cancel/restore (and its notification) only happens on Save,
+  // same as every other field in this form. null = no change from
+  // whatever the event's real cancelled_at currently is.
+  const [pendingCancelled, setPendingCancelled] = useState<{ cancelled: boolean; reason: string } | null>(null);
   // Snapshot of an event's parent-relevant fields at the moment its edit
   // dialog opens, so handleSave can email an old-vs-new diff instead of
   // just "this event was updated".
@@ -425,7 +450,7 @@ export default function TeamSchedulePage() {
     setLoading(true);
     const { data: evs } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,field_id,uniform,notes,coach_notes,require_rsvp,rsvp_lock_at,team_id,recurrence_id')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,duration_minutes,arrival_buffer_minutes,field_type,field_notes,field_id,uniform,notes,coach_notes,require_rsvp,rsvp_lock_at,team_id,recurrence_id,event_group_id,cancelled_at,cancellation_reason')
       .eq('team_id', teamId)
       .order('event_date', { ascending: tab === 'upcoming' })
       .order('event_time', { ascending: true });
@@ -560,6 +585,7 @@ export default function TeamSchedulePage() {
     setWeekDays([new Date().getDay()]);
     setMonthlyMode('date');
     setEndMode('never');
+    setPendingCancelled(null);
     dialogRef.current?.showModal();
   }
 
@@ -588,6 +614,7 @@ export default function TeamSchedulePage() {
     };
     setEditId(ev.id);
     setRecurrence('none'); // editing a single occurrence never re-exposes "repeat" setup
+    setPendingCancelled(null);
     dialogRef.current?.showModal();
   }
 
@@ -622,11 +649,56 @@ export default function TeamSchedulePage() {
         coach_notes: form.coach_notes.trim() || null,
         require_rsvp: form.require_rsvp, rsvp_lock_at: lockAt,
         created_by: profile?.id,
+        // Folded into the same save transaction as every other field — the
+        // Cancelled toggle is staged (see pendingCancelled's own comment),
+        // not applied the moment it's clicked.
+        ...(pendingCancelled ? {
+          cancelled_at: pendingCancelled.cancelled ? new Date().toISOString() : null,
+          cancellation_reason: pendingCancelled.cancelled ? (pendingCancelled.reason.trim() || null) : null,
+        } : {}),
       };
       if (editId) {
-        const { error } = await supabase.from('events').update(payload).eq('id', editId);
+        const linked = pendingCancelled ? await getLinkedTeams({ id: editId, event_group_id: events.find(e => e.id === editId)?.event_group_id ?? null }) : [];
+        const propagateCancel = linked.length > 0;
+        const { error } = propagateCancel
+          ? await supabase.from('events').update(payload).eq('event_group_id', events.find(e => e.id === editId)?.event_group_id as string)
+          : await supabase.from('events').update(payload).eq('id', editId);
         if (error) throw error;
-        if (form.push_notify) {
+
+        if (form.push_notify && pendingCancelled) {
+          // Cancel/restore gets its own distinct notification instead of
+          // the generic "event updated" one below.
+          const notifyTeamIds = propagateCancel ? [teamId, ...linked.map((t) => t.id)] : [teamId];
+          const cancelled = pendingCancelled.cancelled;
+          const bodyText = cancelled
+            ? (pendingCancelled.reason.trim() ? `${savedTitle} cancelled: ${pendingCancelled.reason.trim()}` : `${savedTitle} has been cancelled`)
+            : `${savedTitle} is back on`;
+          for (const tid of notifyTeamIds) {
+            const teamLabel = teams.find((t) => t.id === tid)?.name;
+            sendEventPush({
+              team_id: tid, exclude_profile_id: profile?.id, type: 'event_cancelled',
+              title: `${cancelled ? '⚠️ Event cancelled' : '✅ Event restored'} — ${teamLabel ?? 'your team'}`,
+              body: bodyText, data: { type: 'event_cancelled', event_id: editId },
+            }).catch(() => {});
+          }
+          sendTeamEmail({
+            teamIds: notifyTeamIds,
+            subject: cancelled ? 'Event cancelled' : 'Event reinstated',
+            body: bodyText,
+            fromName: profile?.full_name ?? club?.name ?? 'Coach',
+            teamName: teams.find((t) => t.id === teamId)?.name ?? club?.name ?? '',
+            clubName: club?.name ?? null,
+            logoUrl: club?.logo_url ?? null,
+            primaryColor: club?.primary_color ?? null,
+            eventInfo: cancelled
+              ? { date: fmtDate(form.event_date), time: eventTime ? fmtTime(eventTime) : undefined, location: form.location.trim() || undefined }
+              : {
+                  date: fmtDate(form.event_date), time: eventTime ? fmtTime(eventTime) : undefined,
+                  location: form.location.trim() || undefined,
+                  mapsUrl: buildMapsUrl({ address: form.address, lat: form.lat, lng: form.lng }) ?? undefined,
+                },
+          });
+        } else if (form.push_notify) {
           try {
             const teamName = teams.find(t => t.id === teamId)?.name ?? 'your team';
             const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -653,6 +725,16 @@ export default function TeamSchedulePage() {
               clubName: club?.name ?? null,
               logoUrl: club?.logo_url ?? null,
               primaryColor: club?.primary_color ?? null,
+              // Resulting (post-update) date/time/location, so a parent
+              // doesn't have to mentally reconstruct the picture from the
+              // diff alone.
+              eventInfo: {
+                date: fmtDate(form.event_date),
+                time: eventTime ? fmtTime(eventTime) : undefined,
+                location: form.location.trim() || undefined,
+                mapsUrl: buildMapsUrl({ address: form.address, lat: form.lat, lng: form.lng }) ?? undefined,
+                rsvpDeadline: form.require_rsvp && lockAt ? fmtRsvpDeadline(lockAt) : undefined,
+              },
             });
           }
         }
@@ -677,6 +759,15 @@ export default function TeamSchedulePage() {
             clubName: club?.name ?? null,
             logoUrl: club?.logo_url ?? null,
             primaryColor: club?.primary_color ?? null,
+            eventInfo: {
+              date: label,
+              time: form.hasTime ? fmtTime(form.event_time) : undefined,
+              location: form.location.trim() || undefined,
+              mapsUrl: buildMapsUrl({ address: form.address, lat: form.lat, lng: form.lng }) ?? undefined,
+              homeAway: form.type === 'game' ? form.homeAway : undefined,
+              rsvpDeadline: form.require_rsvp && lockAt ? fmtRsvpDeadline(lockAt) : undefined,
+              note: form.notes.trim() || undefined,
+            },
           });
         }
       } else {
@@ -720,6 +811,15 @@ export default function TeamSchedulePage() {
             clubName: club?.name ?? null,
             logoUrl: club?.logo_url ?? null,
             primaryColor: club?.primary_color ?? null,
+            eventInfo: {
+              date: label,
+              time: form.hasTime ? fmtTime(form.event_time) : undefined,
+              location: form.location.trim() || undefined,
+              mapsUrl: buildMapsUrl({ address: form.address, lat: form.lat, lng: form.lng }) ?? undefined,
+              homeAway: form.type === 'game' ? form.homeAway : undefined,
+              rsvpDeadline: form.require_rsvp && lockAt ? fmtRsvpDeadline(lockAt) : undefined,
+              note: form.notes.trim() || undefined,
+            },
           });
         }
       }
@@ -735,10 +835,40 @@ export default function TeamSchedulePage() {
     }
   }
 
+  // Mirrors edit-event/[eventId].tsx (mobile)'s groupPropagates() exactly:
+  // same role gate (org_admin/app_admin only), same "same event, one row
+  // per linked team" model via event_group_id, same confirm-before-affecting-
+  // another-team's schedule behavior. Queried on demand (not pre-loaded with
+  // every event) since it's only ever needed at the moment of a destructive
+  // action.
+  async function getLinkedTeams(ev: { id: string; event_group_id: string | null }): Promise<{ id: string; name: string }[]> {
+    const isOrgAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
+    if (!isOrgAdmin || !ev.event_group_id) return [];
+    const { data: siblings } = await supabase
+      .from('events')
+      .select('team_id, teams(name)')
+      .eq('event_group_id', ev.event_group_id)
+      .neq('id', ev.id);
+    return ((siblings ?? []) as { team_id: string; teams: { name: string }[] | { name: string } | null }[])
+      .map((s) => ({ id: s.team_id, name: (Array.isArray(s.teams) ? s.teams[0]?.name : s.teams?.name) ?? 'another team' }));
+  }
+
   async function handleDelete(id: string, scope: 'this' | 'future' = 'this') {
     const ev = events.find((e) => e.id === id);
+    if (!ev) return;
+
+    const linked = await getLinkedTeams(ev);
+    if (linked.length > 0) {
+      const ok = window.confirm(`This event is also scheduled for ${linked.map((t) => t.name).join(', ')}. Delete it for all of them? This cannot be undone.`);
+      if (!ok) return;
+    }
+    const propagate = linked.length > 0;
+
     let deletedCount = 1;
-    if (scope === 'future' && ev?.recurrence_id) {
+    if (propagate) {
+      const { data: deleted } = await supabase.from('events').delete().eq('event_group_id', ev.event_group_id as string).select('id');
+      deletedCount = deleted?.length ?? 1;
+    } else if (scope === 'future' && ev.recurrence_id) {
       const { data: deleted } = await supabase.from('events')
         .delete()
         .eq('recurrence_id', ev.recurrence_id)
@@ -750,27 +880,35 @@ export default function TeamSchedulePage() {
     }
     if (selectedEvent?.id === id) setSelectedEvent(null);
     delDialogRef.current?.close();
+    dialogRef.current?.close();
     load();
-    if (ev && teamId) {
-      // "deleted", not "cancelled" — this page has no soft-cancel, only a
-      // hard, unrecoverable delete; the push text shouldn't claim otherwise.
-      const bodyText = scope === 'future' && deletedCount > 1
+
+    // "deleted", not "cancelled" — this page has no soft-cancel, only a
+    // hard, unrecoverable delete; the push text shouldn't claim otherwise.
+    const bodyText = propagate
+      ? `${ev.title} has been deleted`
+      : (scope === 'future' && deletedCount > 1
         ? `${ev.title} and ${deletedCount - 1} future occurrence${deletedCount - 1 !== 1 ? 's' : ''} have been deleted`
-        : `${ev.title} has been deleted`;
-      const teamLabel = teams.find((t) => t.id === teamId)?.name;
-      sendEventPush({ team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled', title: teamLabel ? `🗑️ Event deleted — ${teamLabel}` : '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
-      sendTeamEmail({
-        teamIds: [teamId],
-        subject: 'Event deleted',
-        body: bodyText,
-        fromName: profile?.full_name ?? club?.name ?? 'Coach',
-        teamName: teams.find((t) => t.id === teamId)?.name ?? club?.name ?? '',
-        clubName: club?.name ?? null,
-        logoUrl: club?.logo_url ?? null,
-        primaryColor: club?.primary_color ?? null,
-      });
+        : `${ev.title} has been deleted`);
+    const notifyTeamIds = propagate ? [ev.team_id, ...linked.map((t) => t.id)] : [ev.team_id];
+    const eventInfo = { date: fmtDate(ev.event_date), time: ev.event_time ? fmtTime(ev.event_time) : undefined, location: ev.location ?? undefined };
+    for (const tid of notifyTeamIds) {
+      const teamLabel = teams.find((t) => t.id === tid)?.name;
+      sendEventPush({ team_id: tid, exclude_profile_id: profile?.id, type: 'event_cancelled', title: teamLabel ? `🗑️ Event deleted — ${teamLabel}` : '🗑️ Event deleted', body: bodyText, data: { type: 'event_cancelled' } }).catch(() => {});
     }
+    sendTeamEmail({
+      teamIds: notifyTeamIds,
+      subject: 'Event deleted',
+      body: bodyText,
+      fromName: profile?.full_name ?? club?.name ?? 'Coach',
+      teamName: teams.find((t) => t.id === ev.team_id)?.name ?? club?.name ?? '',
+      clubName: club?.name ?? null,
+      logoUrl: club?.logo_url ?? null,
+      primaryColor: club?.primary_color ?? null,
+      eventInfo,
+    });
   }
+
 
   // Date grouping
   const grouped: Record<string, Event[]> = {};
@@ -1083,6 +1221,13 @@ export default function TeamSchedulePage() {
               teamClubId={teams.find(t => t.id === teamId)?.club_id ?? ''}
               eventTitle={selectedEvent.title}
               primary={primary}
+              eventInfo={{
+                date: fmtDate(selectedEvent.event_date),
+                time: selectedEvent.event_time ? fmtTime(selectedEvent.event_time) : undefined,
+                location: selectedEvent.location ?? undefined,
+                mapsUrl: buildMapsUrl({ address: selectedEvent.address, lat: selectedEvent.lat, lng: selectedEvent.lng }) ?? undefined,
+                homeAway: selectedEvent.type === 'game' ? parseGameTitle(selectedEvent.title).homeAway : undefined,
+              }}
             />
             </div>
           </div>
@@ -1341,6 +1486,36 @@ export default function TeamSchedulePage() {
                 <textarea value={form.coach_notes} onChange={e => setForm(f => ({ ...f, coach_notes: e.target.value }))} placeholder="Notes for coaching staff only…" rows={3}
                   style={{ ...inputStyle, resize: 'vertical', lineHeight: '1.5', display: 'block' }} />
               </div>
+              {editId && (() => {
+                const current = events.find(e => e.id === editId);
+                if (!current) return null;
+                const isCancelled = pendingCancelled ? pendingCancelled.cancelled : !!current.cancelled_at;
+                return (
+                  <div style={{ padding: '12px 14px', background: isCancelled ? '#FFF5F5' : '#F8FAFC', borderRadius: '10px', border: `1px solid ${isCancelled ? '#FEE2E2' : '#E2E8F0'}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: isCancelled ? '#B91C1C' : '#0F172A' }}>Cancelled</span>
+                      <button onClick={() => {
+                        if (!isCancelled) {
+                          const reason = window.prompt('Reason for cancelling? (optional)') ?? '';
+                          setPendingCancelled({ cancelled: true, reason });
+                        } else {
+                          setPendingCancelled({ cancelled: false, reason: '' });
+                        }
+                      }} style={{ width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer', background: isCancelled ? '#EF4444' : '#CBD5E1', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                        <div style={{ position: 'absolute', top: '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', left: isCancelled ? '22px' : '2px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                      </button>
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#94A3B8', lineHeight: '1.5' }}>
+                      {isCancelled ? 'Parents will be notified when you save.' : 'Stays in the schedule and can be restored anytime.'}
+                    </p>
+                    {(pendingCancelled ? pendingCancelled.reason : current.cancellation_reason) && (
+                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#B91C1C' }}>
+                        Reason: {pendingCancelled ? pendingCancelled.reason : current.cancellation_reason}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                 <span style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Require RSVP</span>
                 <button onClick={() => setForm(f => ({ ...f, require_rsvp: !f.require_rsvp }))}

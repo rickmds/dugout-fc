@@ -12,8 +12,9 @@ const TEAM_PALETTE = ['#6366F1', '#F59E0B', '#10B981', '#EC4899', '#14B8A6', '#F
 import { supabase } from '@/lib/supabase';
 import { sendEventPush } from '@/lib/pushEvent';
 import { sendTeamEmail } from '@/lib/emailTeam';
+import { buildMapsUrl } from '@/lib/mapsLink';
 import { useDashboard } from '@/components/dashboard/DashboardContext';
-import { zonedTimeToUtc } from '@/lib/timezone';
+import { zonedTimeToUtc, zonedDateString } from '@/lib/timezone';
 import AIScheduleImport from '@/components/dashboard/AIScheduleImport';
 import UpgradePrompt from '@/components/dashboard/UpgradePrompt';
 import GuestSection from '@/components/dashboard/GuestSection';
@@ -143,11 +144,13 @@ function describeScheduleChanges(
   const origTime = orig.time?.slice(0, 5) ?? null;
   const nextTime = next.time?.slice(0, 5) ?? null;
   if (nextTime !== origTime) changes.push({ field: 'Time', from: fmtTime(origTime), to: fmtTime(nextTime) });
+  // Address is deliberately not its own diff line — it's just the Location
+  // change spelled out in full street-address form (changing one updates
+  // the other), so showing both read as the same fact said twice. The
+  // full address is still there for anyone who wants it, via the facts
+  // card's maps link below.
   if ((next.location ?? '').trim() !== (orig.location ?? '').trim()) {
     changes.push({ field: 'Location', from: orig.location.trim() || '(none)', to: next.location.trim() || '(none)' });
-  }
-  if ((next.address ?? '').trim() !== (orig.address ?? '').trim()) {
-    changes.push({ field: 'Address', from: orig.address.trim() || '(none)', to: next.address.trim() || '(none)' });
   }
   if (next.uniform !== orig.uniform) {
     const label = (u: string | null) => u ? u.charAt(0).toUpperCase() + u.slice(1) : 'Not set';
@@ -187,6 +190,14 @@ function computeLockHours(rsvpLockAt: string | null, eventDate: string, eventTim
   } catch {
     return 24;
   }
+}
+
+// "by Tue, Nov 10, 7:30 PM" in the club's own timezone — this file already
+// does timezone-aware rsvp_lock_at math elsewhere (computeLockAt below),
+// unlike teams/[teamId]/schedule/page.tsx's simpler device-local version.
+function fmtRsvpDeadline(lockAtIso: string, tz: string): string {
+  const timeStr = new Date(lockAtIso).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+  return `by ${fmtDate(zonedDateString(lockAtIso, tz))}, ${timeStr}`;
 }
 
 const emptyForm = (teamId: string): FormState => ({
@@ -251,6 +262,11 @@ export default function SchedulePage() {
   // always stays scoped to their own row (plain .eq('id', editId)).
   const [editGroupId, setEditGroupId] = useState<string | null>(null);
   const [linkedTeams, setLinkedTeams] = useState<{ id: string; name: string }[]>([]);
+  // Staged, not immediate — toggling this only updates local state; the
+  // actual cancel/restore (and its notification) only happens on Save,
+  // same as every other field in this form. null = no change from
+  // whatever the event's real cancelled_at currently is.
+  const [pendingCancelled, setPendingCancelled] = useState<{ cancelled: boolean; reason: string } | null>(null);
   const isOrgAdmin = profile?.role === 'org_admin' || profile?.role === 'app_admin';
   const [saving, setSaving]         = useState(false);
   const [savedFields, setSavedFields] = useState<{ id: string; name: string; address: string | null; lat: number | null; lng: number | null }[]>([]);
@@ -456,6 +472,7 @@ export default function SchedulePage() {
     setEditId(null);
     setEditGroupId(null);
     setLinkedTeams([]);
+    setPendingCancelled(null);
     setShowModal(true);
   }
 
@@ -509,6 +526,7 @@ export default function SchedulePage() {
             .map((e) => ({ id: e.team_id, name: e.team_name ?? 'another team' }))
         : []
     );
+    setPendingCancelled(null);
     setShowModal(true);
   }
 
@@ -553,6 +571,13 @@ export default function SchedulePage() {
         clubName: club?.name ?? null,
         logoUrl: club?.logo_url ?? null,
         primaryColor: club?.primary_color ?? null,
+        // date is the critical field — currently the email doesn't even
+        // say which date the deleted event was on.
+        eventInfo: {
+          date: fmtDate(ev.event_date),
+          time: ev.event_time ? fmtTime(ev.event_time) : undefined,
+          location: ev.location ?? undefined,
+        },
       });
     }
   }
@@ -601,6 +626,11 @@ export default function SchedulePage() {
       clubName: club?.name ?? null,
       logoUrl: club?.logo_url ?? null,
       primaryColor: club?.primary_color ?? null,
+      eventInfo: {
+        date: fmtDate(ev.event_date),
+        time: ev.event_time ? fmtTime(ev.event_time) : undefined,
+        location: ev.location ?? undefined,
+      },
     });
 
     setCancelConfirm(null);
@@ -629,6 +659,8 @@ export default function SchedulePage() {
         data: { type: 'event_cancelled', event_id: ev.id },
       }).catch(() => {});
     }
+    // Treated like "new game added" — the parent likely needs to re-add it
+    // to their calendar and may not remember the original details.
     sendTeamEmail({
       teamIds: notifyTeamIds,
       subject: 'Event restored',
@@ -638,6 +670,16 @@ export default function SchedulePage() {
       clubName: club?.name ?? null,
       logoUrl: club?.logo_url ?? null,
       primaryColor: club?.primary_color ?? null,
+      eventInfo: {
+        date: fmtDate(ev.event_date),
+        time: ev.event_time ? fmtTime(ev.event_time) : undefined,
+        location: ev.location ?? undefined,
+        mapsUrl: buildMapsUrl({ address: ev.address, lat: ev.lat, lng: ev.lng }) ?? undefined,
+        homeAway: ev.type === 'game' ? parseGameTitle(ev.title).homeAway : undefined,
+        rsvpDeadline: ev.require_rsvp && ev.rsvp_lock_at
+          ? fmtRsvpDeadline(ev.rsvp_lock_at, club?.timezone ?? 'America/New_York')
+          : undefined,
+      },
     });
 
     loadEvents();
@@ -686,6 +728,13 @@ export default function SchedulePage() {
       require_rsvp: form.require_rsvp,
       rsvp_lock_at: computeLockAt(),
       created_by: profile?.id,
+      // Folded into the same save transaction as every other field — the
+      // Cancelled toggle is staged (see pendingCancelled's own comment),
+      // not applied the moment it's clicked.
+      ...(pendingCancelled ? {
+        cancelled_at: pendingCancelled.cancelled ? new Date().toISOString() : null,
+        cancellation_reason: pendingCancelled.cancelled ? (pendingCancelled.reason.trim() || null) : null,
+      } : {}),
     };
     const label = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
@@ -705,7 +754,42 @@ export default function SchedulePage() {
         if (error) { alert(`Could not save event: ${error.message}`); return; }
         shouldClose = true;
 
-        if (form.push_notify) {
+        if (form.push_notify && pendingCancelled) {
+          // Cancel/restore gets its own distinct notification instead of
+          // the generic "event updated" one below — a parent needs to know
+          // "this is off" or "this is back on", not read a field-by-field
+          // diff to infer it.
+          const notifyTeamIds = propagate ? [form.team_id, ...linkedTeams.map((t) => t.id)] : [form.team_id];
+          const cancelled = pendingCancelled.cancelled;
+          const bodyText = cancelled
+            ? (pendingCancelled.reason.trim() ? `${savedTitle} cancelled: ${pendingCancelled.reason.trim()}` : `${savedTitle} has been cancelled`)
+            : `${savedTitle} is back on`;
+          for (const teamId of notifyTeamIds) {
+            const teamName = teams.find((t) => t.id === teamId)?.name ?? 'your team';
+            sendEventPush({
+              team_id: teamId, exclude_profile_id: profile?.id, type: 'event_cancelled',
+              title: `${cancelled ? '⚠️ Event cancelled' : '✅ Event restored'} — ${teamName}`,
+              body: bodyText, data: { type: 'event_cancelled', event_id: editId },
+            }).catch(() => {});
+          }
+          sendTeamEmail({
+            teamIds: notifyTeamIds,
+            subject: cancelled ? 'Event cancelled' : 'Event reinstated',
+            body: bodyText,
+            fromName: profile?.full_name ?? club?.name ?? 'Coach',
+            teamName: club?.name ?? '',
+            clubName: club?.name ?? null,
+            logoUrl: club?.logo_url ?? null,
+            primaryColor: club?.primary_color ?? null,
+            eventInfo: cancelled
+              ? { date: fmtDate(eventDate), time: eventTime ? fmtTime(eventTime) : undefined, location: form.location.trim() || undefined }
+              : {
+                  date: fmtDate(eventDate), time: eventTime ? fmtTime(eventTime) : undefined,
+                  location: form.location.trim() || undefined,
+                  mapsUrl: buildMapsUrl({ address: form.address, lat: form.lat, lng: form.lng }) ?? undefined,
+                },
+          });
+        } else if (form.push_notify) {
           const notifyTeamIds = propagate ? [form.team_id, ...linkedTeams.map((t) => t.id)] : [form.team_id];
           for (const teamId of notifyTeamIds) {
             const teamName = teams.find((t) => t.id === teamId)?.name ?? 'your team';
@@ -743,6 +827,18 @@ export default function SchedulePage() {
               clubName: club?.name ?? null,
               logoUrl: club?.logo_url ?? null,
               primaryColor: club?.primary_color ?? null,
+              // Resulting (post-update) date/time/location, so a parent
+              // doesn't have to mentally reconstruct the picture from the
+              // diff alone.
+              eventInfo: {
+                date: fmtDate(eventDate),
+                time: eventTime ? fmtTime(eventTime) : undefined,
+                location: form.location.trim() || undefined,
+                mapsUrl: buildMapsUrl({ address: form.address, lat: form.lat, lng: form.lng }) ?? undefined,
+                rsvpDeadline: form.require_rsvp && basePayload.rsvp_lock_at
+                  ? fmtRsvpDeadline(basePayload.rsvp_lock_at, club?.timezone ?? 'America/New_York')
+                  : undefined,
+              },
             });
           }
         }
@@ -806,6 +902,17 @@ export default function SchedulePage() {
             clubName: club?.name ?? null,
             logoUrl: club?.logo_url ?? null,
             primaryColor: club?.primary_color ?? null,
+            eventInfo: {
+              date: label,
+              time: eventTime ? fmtTime(eventTime) : undefined,
+              location: form.location.trim() || undefined,
+              mapsUrl: buildMapsUrl({ address: form.address, lat: form.lat, lng: form.lng }) ?? undefined,
+              homeAway: form.type === 'game' ? form.homeAway : undefined,
+              rsvpDeadline: form.require_rsvp && basePayload.rsvp_lock_at
+                ? fmtRsvpDeadline(basePayload.rsvp_lock_at, club?.timezone ?? 'America/New_York')
+                : undefined,
+              note: form.notes.trim() || undefined,
+            },
           });
         }
       }
@@ -1504,6 +1611,13 @@ export default function SchedulePage() {
               teamClubId={teams.find(t => t.id === selectedEvent.team_id)?.club_id ?? club?.id ?? ''}
               eventTitle={selectedEvent.title}
               primary={primary}
+              eventInfo={{
+                date: fmtDate(selectedEvent.event_date),
+                time: selectedEvent.event_time ? fmtTime(selectedEvent.event_time) : undefined,
+                location: selectedEvent.location ?? undefined,
+                mapsUrl: buildMapsUrl({ address: selectedEvent.address, lat: selectedEvent.lat, lng: selectedEvent.lng }) ?? undefined,
+                homeAway: selectedEvent.type === 'game' ? parseGameTitle(selectedEvent.title).homeAway : undefined,
+              }}
             />
             </div>
           </div>
@@ -1518,7 +1632,15 @@ export default function SchedulePage() {
             {/* Header */}
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
               <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#0F172A' }}>{editId ? 'Edit Event' : 'New Event'}</h2>
-              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '6px', display: 'flex' }}><X size={18} color="#64748B" /></button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {editId && (
+                  <button onClick={() => { const ev = events.find((e) => e.id === editId); if (ev) { setShowModal(false); setDeleteConfirm(ev); } }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', borderRadius: '8px', border: '1px solid #FEE2E2', background: '#FFF5F5', cursor: 'pointer', fontSize: '12px', color: '#EF4444', fontWeight: '600', fontFamily: 'inherit' }}>
+                    <Trash2 size={12} /> Delete
+                  </button>
+                )}
+                <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '6px', display: 'flex' }}><X size={18} color="#64748B" /></button>
+              </div>
             </div>
 
             {/* Scrollable body */}
@@ -1776,6 +1898,36 @@ export default function SchedulePage() {
                     <textarea value={form.coach_notes} onChange={(e) => setForm((f) => ({ ...f, coach_notes: e.target.value }))} placeholder="Notes for coaching staff only…" rows={3}
                       style={{ ...inputStyle, resize: 'vertical' as const, lineHeight: '1.5', display: 'block' }} />
                   </div>
+                  {editId && (() => {
+                    const current = events.find((e) => e.id === editId);
+                    if (!current) return null;
+                    const isCancelled = pendingCancelled ? pendingCancelled.cancelled : !!current.cancelled_at;
+                    return (
+                      <div style={{ padding: '12px 14px', background: isCancelled ? '#FFF5F5' : '#F8FAFC', borderRadius: '10px', border: `1px solid ${isCancelled ? '#FEE2E2' : '#E2E8F0'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: isCancelled ? '#B91C1C' : '#0F172A' }}>Cancelled</span>
+                          <button onClick={() => {
+                            if (!isCancelled) {
+                              const reason = window.prompt('Reason for cancelling? (optional)') ?? '';
+                              setPendingCancelled({ cancelled: true, reason });
+                            } else {
+                              setPendingCancelled({ cancelled: false, reason: '' });
+                            }
+                          }} style={{ width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer', background: isCancelled ? '#EF4444' : '#CBD5E1', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+                            <div style={{ position: 'absolute', top: '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', left: isCancelled ? '22px' : '2px', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                          </button>
+                        </div>
+                        <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#94A3B8', lineHeight: '1.5' }}>
+                          {isCancelled ? 'Parents will be notified when you save.' : 'Stays in the schedule and can be restored anytime.'}
+                        </p>
+                        {(pendingCancelled ? pendingCancelled.reason : current.cancellation_reason) && (
+                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#B91C1C' }}>
+                            Reason: {pendingCancelled ? pendingCancelled.reason : current.cancellation_reason}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: '#F8FAFC', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                     <span style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>Require RSVP</span>
                     <button onClick={() => setForm((f) => ({ ...f, require_rsvp: !f.require_rsvp }))}

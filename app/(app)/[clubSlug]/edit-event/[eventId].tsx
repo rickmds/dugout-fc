@@ -27,6 +27,7 @@ import { zonedTimeToUtc } from '../../../../lib/timezone';
 import ClubHeader, { headerBtnStyle } from '../../../../components/ui/ClubHeader';
 import { sendTeamPush } from '../../../../lib/push';
 import { sendTeamEmail } from '../../../../lib/emailTeam';
+import { buildMapsUrl } from '../../../../lib/mapsLink';
 import { DateTimeSheet } from '../../../../components/ui/DateTimeSheet';
 import SmartLocationInput from '../../../../components/ui/SmartLocationInput';
 import PickerSheet from '../../../../components/ui/PickerSheet';
@@ -75,6 +76,16 @@ function fmtTime(d: Date): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+// "by Tue, Nov 10, 7:30 PM" — matches how the rest of the app already
+// displays an rsvp_lock_at instant to a user (e.g. game-day.tsx's
+// rsvpLock), i.e. the viewing device's own local time, not a club-timezone
+// conversion — reasonable since a parent reading this email is almost
+// always in the same region as their kid's club.
+function fmtRsvpDeadline(lockAtIso: string): string {
+  const d = new Date(lockAtIso);
+  return `by ${fmtDate(d)}, ${fmtTime(d)}`;
+}
+
 function fmtDuration(mins: number): string {
   const h = Math.floor(mins / 60), m = mins % 60;
   return h > 0 && m > 0 ? `${h}h ${m}min` : h > 0 ? `${h}h` : `${m}min`;
@@ -100,11 +111,13 @@ function describeScheduleChanges(
     const toTimeStr = (t: string) => { const [h, m] = t.split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return fmtTime(d); };
     changes.push({ field: 'Time', from: origTime ? toTimeStr(origTime) : 'TBD', to: next.time ? toTimeStr(next.time) : 'TBD' });
   }
+  // Address is deliberately not its own diff line — it's just the Location
+  // change spelled out in full street-address form (changing one updates
+  // the other), so showing both read as the same fact said twice. The
+  // full address is still there for anyone who wants it, via the facts
+  // card's maps link below.
   if (next.location.trim() !== orig.location.trim()) {
     changes.push({ field: 'Location', from: orig.location.trim() || '(none)', to: next.location.trim() || '(none)' });
-  }
-  if (next.address.trim() !== orig.address.trim()) {
-    changes.push({ field: 'Address', from: orig.address.trim() || '(none)', to: next.address.trim() || '(none)' });
   }
   if (next.uniform !== orig.uniform) {
     const label = (u: typeof orig.uniform) => u ? u.charAt(0).toUpperCase() + u.slice(1) : 'Not set';
@@ -442,36 +455,40 @@ export default function EditEventScreen() {
 
   const isDatedTournamentGame = !!tournamentId && !!tournamentStartDate;
 
+  // `undefined` means "computation failed, leave the existing saved value
+  // alone" — distinct from `null`, which means "no deadline applies" (RSVP
+  // not required, or a dated tournament game). Collapsing these two into one
+  // null used to mean any transient failure here (a bad timezone lookup, an
+  // unparseable time) silently WIPED a coach's already-correct RSVP deadline
+  // back to "no deadline" on every save, including "this and future" saves
+  // that touched an entire recurring series in one shot.
+  //
+  // Hoisted to component scope (reading hasTime/startTime/requireRsvp/
+  // rsvpLockHours directly, rather than handleSave's own local `eventTime`)
+  // so handleUncancelEvent's reinstate email can also derive the current
+  // RSVP deadline for display, not just handleSave's own DB write.
+  function computeLockAtFor(dateStr: string): string | null | undefined {
+    if (isDatedTournamentGame || !requireRsvp) return null;
+    if (!hasTime) return null;
+    try {
+      // Anchored to the club's own timezone, not this device's — see
+      // create-event.tsx's computeLockAt for the full reasoning.
+      const dt = zonedTimeToUtc(dateStr, `${toDbTime(startTime)}:00`, timezone);
+      dt.setHours(dt.getHours() - rsvpLockHours);
+      if (isNaN(dt.getTime())) throw new Error('computed an invalid date');
+      return dt.toISOString();
+    } catch (err) {
+      console.warn('[edit-event] could not compute rsvp_lock_at — leaving existing value untouched', err);
+      return undefined;
+    }
+  }
+
   async function handleSave(scope: RecurringScope) {
     if (!title.trim() || !eventId) return;
     setSaving(true);
 
     const eventDate = toDbDate(date);
     const eventTime = hasTime ? toDbTime(startTime) : null;
-
-    // `undefined` means "computation failed, leave the existing saved value
-    // alone" — distinct from `null`, which means "no deadline applies"
-    // (RSVP not required, or a dated tournament game). Collapsing these two
-    // into one null used to mean any transient failure here (a bad
-    // timezone lookup, an unparseable time) silently WIPED a coach's
-    // already-correct RSVP deadline back to "no deadline" on every save,
-    // including "this and future" saves that touched an entire recurring
-    // series in one shot.
-    function computeLockAtFor(dateStr: string): string | null | undefined {
-      if (isDatedTournamentGame || !requireRsvp) return null;
-      if (!eventTime) return null;
-      try {
-        // Anchored to the club's own timezone, not this device's — see
-        // create-event.tsx's computeLockAt for the full reasoning.
-        const dt = zonedTimeToUtc(dateStr, `${eventTime}:00`, timezone);
-        dt.setHours(dt.getHours() - rsvpLockHours);
-        if (isNaN(dt.getTime())) throw new Error('computed an invalid date');
-        return dt.toISOString();
-      } catch (err) {
-        console.warn('[edit-event] could not compute rsvp_lock_at — leaving existing value untouched', err);
-        return undefined;
-      }
-    }
 
     const savedTitle = eventType === 'game'
       ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
@@ -554,6 +571,19 @@ export default function EditEventScreen() {
       };
       const changes = orig ? describeScheduleChanges(orig, nextSnapshot) : [];
 
+      // The RESULTING (post-save) date/time/location — same for both scopes
+      // below, since "future" still starts by updating this occurrence's own
+      // date. Lets a parent see the full picture rather than reconstructing
+      // it from a diff alone.
+      const resultLockAt = computeLockAtFor(eventDate);
+      const resultEventInfo = {
+        date: fmtDate(date),
+        time: hasTime ? fmtTime(startTime) : undefined,
+        location: locationName.trim() || undefined,
+        mapsUrl: buildMapsUrl({ address, lat, lng }) ?? undefined,
+        rsvpDeadline: requireRsvp && resultLockAt ? fmtRsvpDeadline(resultLockAt) : undefined,
+      };
+
       if (scope === 'future') {
         sendTeamPush({
           teamId: eventTeamId,
@@ -575,6 +605,7 @@ export default function EditEventScreen() {
             clubName,
             logoUrl,
             primaryColor,
+            eventInfo: resultEventInfo,
           });
         }
       } else {
@@ -609,10 +640,11 @@ export default function EditEventScreen() {
             subject: `Schedule updated — ${savedTitle}`,
             body: scheduleChangesToEmailBody(savedTitle, changes),
             fromName: profile?.full_name ?? 'Coach',
-            teamName: clubName ?? '',
+            teamName: teamNameFor(eventTeamId) ?? clubName ?? '',
             clubName,
             logoUrl,
             primaryColor,
+            eventInfo: resultEventInfo,
           });
         }
         for (const teamId of notifyTeamIds) {
@@ -710,10 +742,15 @@ export default function EditEventScreen() {
         subject: 'Event deleted',
         body: deleteBody,
         fromName: profile?.full_name ?? 'Coach',
-        teamName: clubName ?? '',
+        teamName: teamNameFor(eventTeamId) ?? clubName ?? '',
         clubName,
         logoUrl,
         primaryColor,
+        eventInfo: {
+          date: fmtDate(date),
+          time: hasTime ? fmtTime(startTime) : undefined,
+          location: locationName.trim() || undefined,
+        },
       });
     }
     router.back();
@@ -818,10 +855,15 @@ export default function EditEventScreen() {
         subject: cancelSubject,
         body: cancelBody,
         fromName: profile?.full_name ?? 'Coach',
-        teamName: clubName ?? '',
+        teamName: teamNameFor(eventTeamId) ?? clubName ?? '',
         clubName,
         logoUrl,
         primaryColor,
+        eventInfo: {
+          date: fmtDate(date),
+          time: hasTime ? fmtTime(startTime) : undefined,
+          location: locationName.trim() || undefined,
+        },
       });
     }
     setIsCancelled(true);
@@ -866,15 +908,26 @@ export default function EditEventScreen() {
           data: { type: 'event_cancelled', event_id: eventId },
         });
       }
+      // Treated like "new game added" — the parent likely needs to re-add
+      // it to their calendar and may not remember the original details.
+      const reinstateLockAt = computeLockAtFor(toDbDate(date));
       sendTeamEmail({
         teamIds: notifyTeamIds,
         subject: 'Event reinstated',
         body: bodyText,
         fromName: profile?.full_name ?? 'Coach',
-        teamName: clubName ?? '',
+        teamName: teamNameFor(eventTeamId) ?? clubName ?? '',
         clubName,
         logoUrl,
         primaryColor,
+        eventInfo: {
+          date: fmtDate(date),
+          time: hasTime ? fmtTime(startTime) : undefined,
+          location: locationName.trim() || undefined,
+          mapsUrl: buildMapsUrl({ address, lat, lng }) ?? undefined,
+          homeAway: eventType === 'game' ? homeAway : undefined,
+          rsvpDeadline: requireRsvp && reinstateLockAt ? fmtRsvpDeadline(reinstateLockAt) : undefined,
+        },
       });
     }
     setIsCancelled(false);
