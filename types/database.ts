@@ -3149,6 +3149,7 @@ export type Database = {
           team_id: string
           tryout_watch: string | null
           tryout_contacted_at: string | null
+          admin_feedback: string | null
         }
         Insert: {
           ai_draft?: string | null
@@ -3178,6 +3179,7 @@ export type Database = {
           team_id: string
           tryout_watch?: string | null
           tryout_contacted_at?: string | null
+          admin_feedback?: string | null
         }
         Update: {
           ai_draft?: string | null
@@ -3207,6 +3209,7 @@ export type Database = {
           team_id?: string
           tryout_watch?: string | null
           tryout_contacted_at?: string | null
+          admin_feedback?: string | null
         }
         Relationships: [
           {

@@ -19,6 +19,7 @@ export * from './EvaluationReportCard';
 // stay fully functional with just the display props above.
 export type EvaluationReportPanelActions = {
   onMarkGood?: () => void;
+  onMarkNotGood?: () => void;
   onReleaseNow?: () => void;
   onSchedule?: () => void;
   actionBusy?: boolean;
@@ -26,7 +27,7 @@ export type EvaluationReportPanelActions = {
 
 export function EvaluationReportPanel({
   ev, primary, clubLogoUrl, clubName, onClose, onPrev, onNext, hasPrev, hasNext,
-  onMarkGood, onReleaseNow, onSchedule, actionBusy,
+  onMarkGood, onMarkNotGood, onReleaseNow, onSchedule, actionBusy,
 }: {
   ev: EvalRow; primary: string; clubLogoUrl: string | null; clubName: string;
   onClose: () => void; onPrev: () => void; onNext: () => void; hasPrev: boolean; hasNext: boolean;
@@ -79,11 +80,16 @@ export function EvaluationReportPanel({
         </div>
 
         {/* Admin actions — only rendered when the caller wired them up */}
-        {(onMarkGood || onReleaseNow || onSchedule) && (
+        {(onMarkGood || onMarkNotGood || onReleaseNow || onSchedule) && (
           <div style={{ position: 'sticky', top: '53px', zIndex: 9, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             {ev.status === 'submitted' && onMarkGood && (
               <button onClick={onMarkGood} disabled={actionBusy} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', border: 'none', background: '#22C55E', color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
                 ✓ Mark Good
+              </button>
+            )}
+            {ev.status === 'submitted' && onMarkNotGood && (
+              <button onClick={onMarkNotGood} disabled={actionBusy} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 14px', borderRadius: '8px', border: '1px solid #FECACA', background: '#fff', color: '#DC2626', fontSize: '12.5px', fontWeight: '700', cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.7 : 1 }}>
+                Send Back
               </button>
             )}
             {ev.status === 'approved' && (

@@ -99,6 +99,7 @@ type FormState = {
   status: 'draft' | 'submitted';
   tryout_watch: TryoutWatch;
   tryout_contacted_at: string | null;
+  admin_feedback: string | null;
 };
 
 const RATING_LABELS: Record<number, string> = {
@@ -326,7 +327,7 @@ export default function EvaluationFormScreen() {
     rating_technical: 0, rating_tactical: 0, rating_physical: 0, rating_mental: 0,
     report_data: { ...EMPTY_REPORT, idp: [{ ...EMPTY_REPORT.idp[0] }] },
     ai_draft: '', final_text: '', status: 'draft',
-    tryout_watch: null, tryout_contacted_at: null,
+    tryout_watch: null, tryout_contacted_at: null, admin_feedback: null,
   });
   const [loading,       setLoading]       = useState(true);
   const [generating,    setGenerating]    = useState(false);
@@ -379,7 +380,7 @@ export default function EvaluationFormScreen() {
     if (evalId) {
       const { data } = await supabase
         .from('player_evaluations')
-        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status,tryout_watch,tryout_contacted_at')
+        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status,tryout_watch,tryout_contacted_at,admin_feedback')
         .eq('id', evalId)
         .single();
       if (data) {
@@ -395,6 +396,7 @@ export default function EvaluationFormScreen() {
           status:       data.status as 'draft' | 'submitted',
           tryout_watch: (data as any).tryout_watch ?? null,
           tryout_contacted_at: (data as any).tryout_contacted_at ?? null,
+          admin_feedback: (data as any).admin_feedback ?? null,
         });
         setLoading(false);
         return;
@@ -713,7 +715,7 @@ export default function EvaluationFormScreen() {
       tryout_watch: form.tryout_watch,
       tryout_contacted_at: form.tryout_contacted_at,
       status: (submitNow ? 'submitted' : 'draft') as 'submitted' | 'draft',
-      ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
+      ...(submitNow ? { submitted_at: new Date().toISOString(), admin_feedback: null } : {}),
     };
 
     if (isEdit) {
@@ -758,6 +760,13 @@ export default function EvaluationFormScreen() {
             <Ionicons name="ribbon-outline" size={14} color="#A855F7" />
             <Text style={st.periodText}>{periodLabel} · {seasonLabel}</Text>
           </View>
+
+          {form.admin_feedback ? (
+            <View style={{ backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 12, padding: 12, gap: 4 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', color: '#DC2626', letterSpacing: 1 }}>SENT BACK — NEEDS A FIX</Text>
+              <Text style={{ fontSize: 13, color: '#7F1D1D', lineHeight: 18 }}>{form.admin_feedback}</Text>
+            </View>
+          ) : null}
 
           {/* ── PLAYER PROFILE ─────────────────────── */}
           <SectionCard title="PLAYER PROFILE" color={primary} icon="person-outline" note="Secondary and developmental positions are optional — leave blank to show just the one pill">

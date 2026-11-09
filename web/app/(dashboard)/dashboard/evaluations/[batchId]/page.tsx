@@ -27,6 +27,12 @@ type BatchMeta = {
 // reads as "14 players, 0 started" instead of a bare "no evaluations yet".
 type NotStartedPlayer = { id: string; full_name: string; jersey_number: number | null; photo_url: string | null };
 
+// admin_feedback is staff-only — deliberately not part of the shared
+// EvalRow in EvaluationReportCard.tsx (same reasoning as tryout_watch
+// there: never let a field meant only for this admin/coach page end up in
+// a type that parent-facing render paths also use).
+type ReviewRow = EvalRow & { admin_feedback: string | null };
+
 const AREAS = ['technical', 'tactical', 'physical', 'mental'] as const;
 
 export default function BatchReviewPage() {
@@ -37,13 +43,15 @@ export default function BatchReviewPage() {
   const isAdmin     = profile?.role === 'org_admin' || profile?.role === 'app_admin';
 
   const [batch,     setBatch]     = useState<BatchMeta | null>(null);
-  const [evals,     setEvals]     = useState<EvalRow[]>([]);
+  const [evals,     setEvals]     = useState<ReviewRow[]>([]);
   const [notStarted, setNotStarted] = useState<NotStartedPlayer[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [selected,  setSelected]  = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [scheduleFor, setScheduleFor] = useState<{ ids: string[] } | null>(null);
   const [scheduleAt, setScheduleAt] = useState('');
+  const [rejectFor, setRejectFor] = useState<{ id: string } | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,7 +60,7 @@ export default function BatchReviewPage() {
       supabase.from('player_evaluations').select('*, players(full_name, jersey_number, photo_url), teams(name)').eq('batch_id', batchId).order('players(full_name)'),
     ]);
     const batchRow = bRes.data as BatchMeta | null;
-    const evalRows = (eRes.data ?? []) as EvalRow[];
+    const evalRows = (eRes.data ?? []) as ReviewRow[];
     setBatch(batchRow);
     setEvals(evalRows);
 
@@ -96,6 +104,22 @@ export default function BatchReviewPage() {
       .update({ status: 'approved', approved_by: profile.id, approved_at: now })
       .in('id', evalIds)
       .eq('status', 'submitted');
+    await load();
+    setActionBusy(false);
+  }
+
+  // Sends one eval back to draft with a note on what to fix — the coach
+  // sees it the next time they open this player on the entry page, and it
+  // clears itself once they resubmit (see enter/page.tsx's saveOne).
+  async function markNotGood(evalId: string, note: string) {
+    if (!isAdmin) return;
+    setActionBusy(true);
+    await supabase.from('player_evaluations')
+      .update({ status: 'draft', admin_feedback: note.trim() || null })
+      .eq('id', evalId)
+      .eq('status', 'submitted');
+    setRejectFor(null);
+    setRejectNote('');
     await load();
     setActionBusy(false);
   }
@@ -224,6 +248,8 @@ export default function BatchReviewPage() {
             ? { background: 'rgba(34,197,94,0.1)', color: '#22C55E', label: ev.scheduled_publish_at ? `Scheduled ${new Date(ev.scheduled_publish_at).toLocaleDateString()}` : 'Reviewed — Good' }
             : ready
             ? { background: 'rgba(59,130,246,0.1)', color: '#3B82F6', label: 'Submitted' }
+            : ev.admin_feedback
+            ? { background: 'rgba(220,38,38,0.12)', color: '#DC2626', label: 'Sent Back' }
             : { background: 'rgba(252,165,165,0.2)', color: '#EF4444', label: 'Draft' };
           return (
             <div
@@ -298,9 +324,36 @@ export default function BatchReviewPage() {
           hasNext={selectedIdx < evals.length - 1}
           actionBusy={actionBusy}
           onMarkGood={isAdmin ? () => markGood([selectedEv.id]) : undefined}
+          onMarkNotGood={isAdmin ? () => setRejectFor({ id: selectedEv.id }) : undefined}
           onReleaseNow={isAdmin ? () => releaseNow([selectedEv.id]) : undefined}
           onSchedule={isAdmin ? () => setScheduleFor({ ids: [selectedEv.id] }) : undefined}
         />
+      )}
+
+      {/* Send back modal */}
+      {rejectFor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600, padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: '24px' }}>
+            <div style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A', marginBottom: '4px' }}>Send back to coach</div>
+            <div style={{ fontSize: '12.5px', color: '#64748B', marginBottom: '16px' }}>
+              This goes back to a draft so the coach can fix it. Tell them what needs to change.
+            </div>
+            <textarea
+              value={rejectNote}
+              onChange={e => setRejectNote(e.target.value)}
+              placeholder={'e.g. "Ratings don’t match the written notes — double check Tactical."'}
+              rows={3}
+              autoFocus
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' as const, resize: 'vertical' as const }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '18px' }}>
+              <button onClick={() => { setRejectFor(null); setRejectNote(''); }} style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', fontSize: '13px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={() => rejectFor && markNotGood(rejectFor.id, rejectNote)} disabled={actionBusy || !rejectNote.trim()} style={{ padding: '8px 22px', borderRadius: '8px', border: 'none', background: '#DC2626', fontSize: '13px', fontWeight: '700', color: '#fff', cursor: actionBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: !rejectNote.trim() ? 0.5 : 1 }}>
+                {actionBusy ? 'Sending…' : 'Send Back'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Schedule modal */}

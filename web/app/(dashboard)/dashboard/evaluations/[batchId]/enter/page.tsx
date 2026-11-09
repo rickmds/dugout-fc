@@ -63,6 +63,7 @@ type EvalRow = {
   send_to_emails: string[] | null;
   tryout_watch: TryoutWatch;
   tryout_contacted_at: string | null;
+  admin_feedback: string | null;
 };
 
 type FormState = {
@@ -77,6 +78,7 @@ type FormState = {
   status: 'draft' | 'submitted' | 'approved' | 'published';
   tryout_watch: TryoutWatch;
   tryout_contacted_at: string | null;
+  admin_feedback: string | null;
   saving: boolean;
   generating: boolean;
   dirty: boolean;
@@ -134,7 +136,7 @@ export default function BulkEnterEvaluationsPage() {
     setLoading(true);
     const [{ data: batchRow }, { data: evalRows }] = await Promise.all([
       supabase.from('evaluation_batches').select('team_id, season_label, period_label, coach_id, teams(name)').eq('id', batchId).single(),
-      supabase.from('player_evaluations').select('id, player_id, rating_technical, rating_tactical, rating_physical, rating_mental, report_data, final_text, status, send_to_emails, tryout_watch, tryout_contacted_at').eq('batch_id', batchId),
+      supabase.from('player_evaluations').select('id, player_id, rating_technical, rating_tactical, rating_physical, rating_mental, report_data, final_text, status, send_to_emails, tryout_watch, tryout_contacted_at, admin_feedback').eq('batch_id', batchId),
     ]);
     if (!batchRow) { setLoading(false); return; }
     setBatch(batchRow as unknown as NonNullable<typeof batch>);
@@ -161,6 +163,7 @@ export default function BulkEnterEvaluationsPage() {
         status: existing?.status ?? 'draft',
         tryout_watch: existing?.tryout_watch ?? null,
         tryout_contacted_at: existing?.tryout_contacted_at ?? null,
+        admin_feedback: existing?.admin_feedback ?? null,
         saving: false,
         generating: false,
         dirty: false,
@@ -309,7 +312,9 @@ export default function BulkEnterEvaluationsPage() {
       tryout_watch: f.tryout_watch,
       tryout_contacted_at: f.tryout_contacted_at,
       status: (submitNow ? 'submitted' : 'draft') as 'draft' | 'submitted',
-      ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
+      // Resubmitting clears whatever an admin sent back — a stale note
+      // from before the fix would otherwise sit there forever.
+      ...(submitNow ? { submitted_at: new Date().toISOString(), admin_feedback: null } : {}),
     };
 
     const { data, error } = f.evalId
@@ -327,7 +332,7 @@ export default function BulkEnterEvaluationsPage() {
       .eq('batch_id', batchId).neq('status', 'draft');
     await supabase.from('evaluation_batches').update({ completed_count: count ?? 0 }).eq('id', batchId);
 
-    setForms(prev => ({ ...prev, [player.id]: { ...prev[player.id], evalId: data?.id ?? prev[player.id].evalId, status: payload.status, saving: false, dirty: false } }));
+    setForms(prev => ({ ...prev, [player.id]: { ...prev[player.id], evalId: data?.id ?? prev[player.id].evalId, status: payload.status, admin_feedback: submitNow ? null : prev[player.id].admin_feedback, saving: false, dirty: false } }));
     if (!silent) { setToast(submitNow ? `${player.full_name} submitted` : `${player.full_name} saved`); setTimeout(() => setToast(''), 2000); }
     return true;
   }
@@ -445,7 +450,11 @@ export default function BulkEnterEvaluationsPage() {
                     </span>
                   )}
                   {f.status === 'draft' && f.evalId && (
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '99px', padding: '2px 8px' }}>Draft saved</span>
+                    f.admin_feedback ? (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#DC2626', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '99px', padding: '2px 8px' }}>Sent back</span>
+                    ) : (
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '99px', padding: '2px 8px' }}>Draft saved</span>
+                    )
                   )}
                   {emails.length > 0 ? (
                     f.send_to_emails.length > 0 ? (
@@ -473,6 +482,12 @@ export default function BulkEnterEvaluationsPage() {
 
               {isOpen && (
                 <div style={{ padding: '4px 18px 18px', borderTop: '1px solid #F1F5F9' }}>
+                  {f.admin_feedback && (
+                    <div style={{ marginTop: '14px', padding: '10px 13px', borderRadius: '8px', background: '#FEF2F2', border: '1px solid #FECACA' }}>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#DC2626', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Sent back — needs a fix</div>
+                      <div style={{ fontSize: '13px', color: '#7F1D1D', lineHeight: 1.5 }}>{f.admin_feedback}</div>
+                    </div>
+                  )}
                   {/* Ratings */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', margin: '16px 0' }}>
                     {RATING_AREAS.map((area, areaIdx) => (
