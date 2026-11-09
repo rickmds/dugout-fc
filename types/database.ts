@@ -3147,6 +3147,8 @@ export type Database = {
           status: string | null
           submitted_at: string | null
           team_id: string
+          tryout_watch: string | null
+          tryout_contacted_at: string | null
         }
         Insert: {
           ai_draft?: string | null
@@ -3174,6 +3176,8 @@ export type Database = {
           status?: string | null
           submitted_at?: string | null
           team_id: string
+          tryout_watch?: string | null
+          tryout_contacted_at?: string | null
         }
         Update: {
           ai_draft?: string | null
@@ -3201,6 +3205,8 @@ export type Database = {
           status?: string | null
           submitted_at?: string | null
           team_id?: string
+          tryout_watch?: string | null
+          tryout_contacted_at?: string | null
         }
         Relationships: [
           {

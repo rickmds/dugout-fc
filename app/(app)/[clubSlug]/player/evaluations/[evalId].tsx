@@ -38,6 +38,7 @@ type ReportData = {
   outcome_goals:        [string, string];
   performance_goals:    [string, string];
   idp: IdpRow[];
+  tryout_outlook?: string;
 };
 
 type EvalDetail = {
@@ -194,9 +195,12 @@ export default function EvalDetailScreen() {
   useEffect(() => {
     async function load() {
       setLoading(true);
+      // Explicit column list, not '*' — this is a parent-facing read, and
+      // player_evaluations also carries staff-only columns (tryout_watch,
+      // tryout_contacted_at) that must never reach a parent's client.
       const { data } = await supabase
         .from('player_evaluations')
-        .select('*, players(full_name,jersey_number), teams(name)')
+        .select('id,season_label,period_label,rating_technical,rating_tactical,rating_physical,rating_mental,report_data,final_text,published_at,players(full_name,jersey_number),teams(name)')
         .eq('id', evalId)
         .single();
       if (data) setEv(data as EvalDetail);
@@ -403,6 +407,11 @@ export default function EvalDetailScreen() {
               <div class="idp-head-cell" style="flex:4">ACTION PLAN</div>
             </div>
             ${idpRows(rd.idp, primary)}
+          </div>` : ''}
+          ${rd?.tryout_outlook?.trim() ? `
+          <div class="summary" style="border-top:1px solid #f1f5f9;padding-top:18px">
+            <div class="section-head">TRYOUT OUTLOOK</div>
+            <p class="summary-text">${rd.tryout_outlook}</p>
           </div>` : ''}
           ${ev.final_text?.trim() ? `
           <div class="summary" style="border-top:1px solid #f1f5f9;padding-top:18px">
@@ -657,6 +666,17 @@ export default function EvalDetailScreen() {
             </>
           )}
 
+          {/* ── Tryout Outlook ── */}
+          {rd?.tryout_outlook?.trim() && (
+            <>
+              <View style={st.sectionSep} />
+              <View style={st.summarySection}>
+                <SectionHead label="TRYOUT OUTLOOK" color={primary} />
+                <Text style={st.tryoutOutlookText}>{rd.tryout_outlook}</Text>
+              </View>
+            </>
+          )}
+
           {/* ── Coach's summary ── */}
           {ev.final_text?.trim() && (
             <>
@@ -748,6 +768,7 @@ function getSt(colors: ThemeColors) {
   // Summary
   summarySection: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 },
   summaryText:    { fontSize: 13.5, color: '#334155', lineHeight: 22, fontStyle: 'italic' },
+  tryoutOutlookText: { fontSize: 13.5, color: '#334155', lineHeight: 21, fontWeight: '500' },
 
   // Footer
   footer:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 13, marginHorizontal: 18, borderTopWidth: 1, marginTop: 10 },

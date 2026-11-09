@@ -24,6 +24,12 @@ type ReportData = {
   outcome_goals: [string, string];
   performance_goals: [string, string];
   idp: { goal: string; measurables: string; action_items: [string, string, string] }[];
+  // Coach-written, parent-facing. Always framed around what's next for this
+  // player, never a comparison to teammates — see the Tryout Watch note
+  // below for why severity itself never reaches the report as a label.
+  // Blank hides the section on the rendered report, same as every other
+  // optional field here.
+  tryout_outlook: string;
 };
 
 const EMPTY_REPORT: ReportData = {
@@ -34,9 +40,15 @@ const EMPTY_REPORT: ReportData = {
   outcome_goals: ['', ''],
   performance_goals: ['', ''],
   idp: [],
+  tryout_outlook: '',
 };
 
 type PlayerRow = { id: string; full_name: string; jersey_number: number | null; guardian_emails: string[] | null };
+
+// tryout_watch/tryout_contacted_at are staff-only — never put either in
+// report_data or anywhere a parent-facing query selects. See the migration
+// that added them for the full reasoning.
+type TryoutWatch = 'watch' | 'priority' | null;
 
 type EvalRow = {
   id: string;
@@ -49,6 +61,8 @@ type EvalRow = {
   final_text: string | null;
   status: 'draft' | 'submitted' | 'approved' | 'published';
   send_to_emails: string[] | null;
+  tryout_watch: TryoutWatch;
+  tryout_contacted_at: string | null;
 };
 
 type FormState = {
@@ -61,10 +75,18 @@ type FormState = {
   final_text: string;
   send_to_emails: string[];
   status: 'draft' | 'submitted' | 'approved' | 'published';
+  tryout_watch: TryoutWatch;
+  tryout_contacted_at: string | null;
   saving: boolean;
   generating: boolean;
   dirty: boolean;
 };
+
+const TRYOUT_WATCH_OPTIONS: { value: TryoutWatch; label: string; color: string }[] = [
+  { value: null, label: 'No flag', color: '#94A3B8' },
+  { value: 'watch', label: 'Flag', color: '#D97706' },
+  { value: 'priority', label: 'Priority', color: '#DC2626' },
+];
 
 function mergeReport(raw: Partial<ReportData> | null | undefined): ReportData {
   if (!raw) return { ...EMPTY_REPORT };
@@ -76,6 +98,7 @@ function mergeReport(raw: Partial<ReportData> | null | undefined): ReportData {
     outcome_goals: raw.outcome_goals?.length === 2 ? raw.outcome_goals : EMPTY_REPORT.outcome_goals,
     performance_goals: raw.performance_goals?.length === 2 ? raw.performance_goals : EMPTY_REPORT.performance_goals,
     idp: raw.idp ?? [],
+    tryout_outlook: raw.tryout_outlook ?? '',
   };
 }
 
@@ -88,10 +111,10 @@ const RATING_AREAS = [
 const RATING_LABELS: Record<number, string> = { 1: 'Needs Work', 2: 'Developing', 3: 'Good', 4: 'Strong', 5: 'Excellent' };
 
 const NOTE_SECTIONS = [
-  { field: 'super_strengths' as const, label: 'Strengths', count: 3, ideaType: 'strengths' as IdeaType, placeholder: (i: number) => `Strength ${i + 1}` },
-  { field: 'areas_of_development' as const, label: 'Areas to Develop', count: 3, ideaType: 'weaknesses' as IdeaType, placeholder: (i: number) => `Area ${i + 1}` },
-  { field: 'outcome_goals' as const, label: 'Outcome Goals', count: 2, ideaType: 'outcomeGoals' as IdeaType, placeholder: (i: number) => `Goal ${i + 1} (e.g. "Start for the A team")` },
-  { field: 'performance_goals' as const, label: 'Performance Goals', count: 2, ideaType: 'performanceGoals' as IdeaType, placeholder: (i: number) => `Goal ${i + 1} (e.g. "Win 70% of 1v1 duels")` },
+  { field: 'super_strengths' as const, label: 'Strengths', count: 3, ideaType: 'strengths' as IdeaType, placeholder: 'What stood out as a strength' },
+  { field: 'areas_of_development' as const, label: 'Areas to Develop', count: 3, ideaType: 'weaknesses' as IdeaType, placeholder: 'What should they focus on next' },
+  { field: 'outcome_goals' as const, label: 'Outcome Goals', count: 2, ideaType: 'outcomeGoals' as IdeaType, placeholder: 'e.g. "Start for the A team"' },
+  { field: 'performance_goals' as const, label: 'Performance Goals', count: 2, ideaType: 'performanceGoals' as IdeaType, placeholder: 'e.g. "Win 70% of 1v1 duels"' },
 ];
 
 export default function BulkEnterEvaluationsPage() {
@@ -111,7 +134,7 @@ export default function BulkEnterEvaluationsPage() {
     setLoading(true);
     const [{ data: batchRow }, { data: evalRows }] = await Promise.all([
       supabase.from('evaluation_batches').select('team_id, season_label, period_label, coach_id, teams(name)').eq('id', batchId).single(),
-      supabase.from('player_evaluations').select('id, player_id, rating_technical, rating_tactical, rating_physical, rating_mental, report_data, final_text, status, send_to_emails').eq('batch_id', batchId),
+      supabase.from('player_evaluations').select('id, player_id, rating_technical, rating_tactical, rating_physical, rating_mental, report_data, final_text, status, send_to_emails, tryout_watch, tryout_contacted_at').eq('batch_id', batchId),
     ]);
     if (!batchRow) { setLoading(false); return; }
     setBatch(batchRow as unknown as NonNullable<typeof batch>);
@@ -136,6 +159,8 @@ export default function BulkEnterEvaluationsPage() {
         final_text: existing?.final_text ?? '',
         send_to_emails: existing?.send_to_emails ?? [],
         status: existing?.status ?? 'draft',
+        tryout_watch: existing?.tryout_watch ?? null,
+        tryout_contacted_at: existing?.tryout_contacted_at ?? null,
         saving: false,
         generating: false,
         dirty: false,
@@ -150,6 +175,17 @@ export default function BulkEnterEvaluationsPage() {
 
   const doneCount = useMemo(() => Object.values(forms).filter(f => f.status !== 'draft').length, [forms]);
   const dirtyIds = useMemo(() => Object.entries(forms).filter(([, f]) => f.dirty).map(([id]) => id), [forms]);
+  // Internal-only roll-up — never rendered on a player's report. Lets the
+  // coach/admin make sure every flagged player actually gets a real,
+  // human conversation before tryouts instead of relying on the written
+  // report to carry that news.
+  const flaggedForTryout = useMemo(
+    () => roster
+      .map(p => ({ player: p, f: forms[p.id] }))
+      .filter((row): row is { player: PlayerRow; f: FormState } => !!row.f && !!row.f.tryout_watch)
+      .sort((a, b) => (a.f.tryout_watch === b.f.tryout_watch ? 0 : a.f.tryout_watch === 'priority' ? -1 : 1)),
+    [roster, forms],
+  );
 
   // Real risk, not cosmetic: a coach can fill in several players, get
   // pulled away, and close the tab — nothing here autosaves. Warn on an
@@ -198,6 +234,12 @@ export default function BulkEnterEvaluationsPage() {
       const set = new Set(f.send_to_emails);
       if (set.has(email)) set.delete(email); else set.add(email);
       return { ...prev, [playerId]: { ...f, send_to_emails: [...set], dirty: true } };
+    });
+  }
+  function toggleContacted(playerId: string) {
+    setForms(prev => {
+      const f = prev[playerId];
+      return { ...prev, [playerId]: { ...f, tryout_contacted_at: f.tryout_contacted_at ? null : new Date().toISOString(), dirty: true } };
     });
   }
 
@@ -262,6 +304,8 @@ export default function BulkEnterEvaluationsPage() {
       report_data: f.report_data,
       final_text: f.final_text,
       send_to_emails: f.send_to_emails,
+      tryout_watch: f.tryout_watch,
+      tryout_contacted_at: f.tryout_contacted_at,
       status: (submitNow ? 'submitted' : 'draft') as 'draft' | 'submitted',
       ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
     };
@@ -328,13 +372,13 @@ export default function BulkEnterEvaluationsPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             {dirtyIds.length > 0 && (
-              <button onClick={saveAllDrafts} disabled={savingAll}
+              <button className="btn-interactive" onClick={saveAllDrafts} disabled={savingAll}
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '8px', border: 'none', background: primary, color: '#fff', fontSize: '12.5px', fontWeight: '700', cursor: savingAll ? 'default' : 'pointer', opacity: savingAll ? 0.7 : 1, fontFamily: 'inherit' }}>
                 {savingAll ? <Loader2 size={12} className="spin" /> : null}
                 {savingAll ? 'Saving…' : `Save All Drafts (${dirtyIds.length})`}
               </button>
             )}
-            <button onClick={toggleExpandAll}
+            <button className="btn-interactive" onClick={toggleExpandAll}
               style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: '12.5px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit' }}>
               {expanded.size > 0 ? 'Collapse All' : 'Expand All'}
             </button>
@@ -344,6 +388,40 @@ export default function BulkEnterEvaluationsPage() {
       </div>
 
       <div style={{ maxWidth: '900px', margin: '0 auto', padding: '20px 24px 80px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {flaggedForTryout.length > 0 && (
+          <div style={{ background: '#fff', borderRadius: '10px', border: '1px solid #E2E8F0', overflow: 'hidden', marginBottom: '6px' }}>
+            <div style={{ padding: '14px 18px 10px' }}>
+              <div style={{ fontSize: '15px', fontWeight: '900', color: '#0D1117' }}>Pre-Tryout Conversations</div>
+              <p style={{ margin: '4px 0 8px', fontSize: '12.5px', color: '#64748B', lineHeight: 1.5 }}>
+                Internal only — never shown to a parent or on any report. Make sure each of these gets a real conversation before tryouts.
+              </p>
+              <div style={{ fontSize: '11.5px', fontWeight: '700', color: '#475569' }}>
+                {flaggedForTryout.length} flagged · {flaggedForTryout.filter(({ f }) => f.tryout_contacted_at).length} contacted
+              </div>
+            </div>
+            {flaggedForTryout.map(({ player, f }) => (
+              <div key={player.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 18px', borderTop: '1px solid #F1F5F9', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: f.tryout_watch === 'priority' ? '#DC2626' : '#D97706', flexShrink: 0 }} />
+                  <span style={{ fontSize: '13.5px', fontWeight: '700', color: '#0F172A' }}>{player.full_name}</span>
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: f.tryout_watch === 'priority' ? '#DC2626' : '#D97706' }}>
+                    {f.tryout_watch === 'priority' ? 'Priority' : 'Flag'}
+                  </span>
+                </div>
+                <button className="btn-interactive" onClick={() => toggleContacted(player.id)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: '700',
+                    borderRadius: '99px', padding: '8px 14px', minHeight: '36px', cursor: 'pointer', fontFamily: 'inherit',
+                    background: f.tryout_contacted_at ? '#F0FDF4' : '#fff',
+                    border: `1.5px solid ${f.tryout_contacted_at ? '#BBF7D0' : '#E2E8F0'}`,
+                    color: f.tryout_contacted_at ? '#16A34A' : '#64748B',
+                  }}>
+                  {f.tryout_contacted_at ? 'Contacted ✓' : 'Mark as contacted'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {roster.map(player => {
           const f = forms[player.id];
           if (!f) return null;
@@ -367,7 +445,7 @@ export default function BulkEnterEvaluationsPage() {
                   {f.status === 'draft' && f.evalId && (
                     <span style={{ fontSize: '11px', fontWeight: '700', color: '#B45309', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '99px', padding: '2px 8px' }}>Draft saved</span>
                   )}
-                  {emails.length > 0 && (
+                  {emails.length > 0 ? (
                     f.send_to_emails.length > 0 ? (
                       <span style={{ fontSize: '11px', fontWeight: '700', color: '#2563EB', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '99px', padding: '2px 8px' }}>
                         {f.send_to_emails.length} recipient{f.send_to_emails.length !== 1 ? 's' : ''}
@@ -377,6 +455,10 @@ export default function BulkEnterEvaluationsPage() {
                         0 recipients selected
                       </span>
                     )
+                  ) : (
+                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748B', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '99px', padding: '2px 8px' }}>
+                      No email on file
+                    </span>
                   )}
                   {f.dirty && (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '11px', fontWeight: '700', color: '#DC2626', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '99px', padding: '2px 8px' }}>
@@ -390,16 +472,13 @@ export default function BulkEnterEvaluationsPage() {
               {isOpen && (
                 <div style={{ padding: '4px 18px 18px', borderTop: '1px solid #F1F5F9' }}>
                   {/* Ratings */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', margin: '14px 0' }}>
-                    {RATING_AREAS.map(area => (
-                      <div key={area.key}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '6px' }}>
-                          <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px' }}>{area.label}</div>
-                          <div style={{ fontSize: '10px', fontWeight: '700', color: primary }}>{RATING_LABELS[f[area.key]]}</div>
-                        </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', margin: '16px 0' }}>
+                    {RATING_AREAS.map((area, areaIdx) => (
+                      <div key={area.key} style={{ paddingLeft: areaIdx > 0 ? '12px' : 0, borderLeft: areaIdx > 0 ? '1px solid #F1F5F9' : 'none' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>{area.label}</div>
                         <div style={{ display: 'flex', gap: '3px' }}>
                           {[1, 2, 3, 4, 5].map(n => (
-                            <button key={n} onClick={() => patchForm(player.id, { [area.key]: n } as Partial<FormState>)}
+                            <button key={n} className="btn-interactive" onClick={() => patchForm(player.id, { [area.key]: n } as Partial<FormState>)}
                               title={RATING_LABELS[n]}
                               style={{
                                 flex: 1, padding: '8px 0', borderRadius: '6px', border: `1.5px solid ${f[area.key] === n ? primary : '#E2E8F0'}`,
@@ -410,6 +489,7 @@ export default function BulkEnterEvaluationsPage() {
                             </button>
                           ))}
                         </div>
+                        <div style={{ fontSize: '10.5px', fontWeight: '700', color: primary, marginTop: '6px', textAlign: 'center' }}>{RATING_LABELS[f[area.key]]}</div>
                       </div>
                     ))}
                   </div>
@@ -426,18 +506,41 @@ export default function BulkEnterEvaluationsPage() {
                         />
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {Array.from({ length: section.count }).map((_, i) => (
-                          <input
-                            key={i}
-                            value={f.report_data[section.field][i]}
-                            onChange={e => patchNote(player.id, section.field, i, e.target.value)}
-                            placeholder={section.placeholder(i)}
-                            style={{ width: '100%', padding: '8px 11px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-                          />
-                        ))}
+                        {Array.from({ length: section.count }).map((_, i) => {
+                          const value = f.report_data[section.field][i];
+                          const filled = value.trim().length > 0;
+                          return (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ flexShrink: 0, width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '800', color: filled ? '#fff' : '#94A3B8', background: filled ? primary : '#F1F5F9' }}>
+                                {i + 1}
+                              </span>
+                              <input
+                                value={value}
+                                onChange={e => patchNote(player.id, section.field, i, e.target.value)}
+                                placeholder={section.placeholder}
+                                style={{ flex: 1, minWidth: 0, padding: '8px 11px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
+
+                  {/* Tryout Outlook — parent-facing, always framed around what's
+                      next for this player, never a comparison to teammates.
+                      Every player gets this same field; it only renders on the
+                      report if filled in. */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Tryout Outlook</div>
+                    <textarea
+                      value={f.report_data.tryout_outlook}
+                      onChange={e => patchForm(player.id, { report_data: { ...f.report_data, tryout_outlook: e.target.value } })}
+                      placeholder={`What matters most for ${player.full_name.split(' ')[0]} heading into tryouts — specific and honest, framed around what's next for them, never a comparison to teammates.`}
+                      rows={2}
+                      style={{ width: '100%', padding: '9px 11px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
+                    />
+                  </div>
 
                   {/* AI summary */}
                   <div style={{ marginBottom: '14px' }}>
@@ -486,13 +589,35 @@ export default function BulkEnterEvaluationsPage() {
                     )}
                   </div>
 
+                  {/* Tryout Watch — internal only, never sent to the parent or
+                      rendered on any report. Feeds the Pre-Tryout Conversations
+                      tracker above so the club makes sure a real conversation
+                      happens, rather than relying on the written report alone. */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Tryout Watch — internal only</div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {TRYOUT_WATCH_OPTIONS.map(opt => (
+                        <button key={opt.value ?? 'none'} className="btn-interactive" onClick={() => patchForm(player.id, { tryout_watch: opt.value })}
+                          style={{
+                            padding: '8px 14px', minHeight: '36px', borderRadius: '99px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit',
+                            border: `1.5px solid ${f.tryout_watch === opt.value ? opt.color : '#E2E8F0'}`,
+                            background: f.tryout_watch === opt.value ? opt.color : '#fff',
+                            color: f.tryout_watch === opt.value ? '#fff' : '#94A3B8',
+                          }}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '7px' }}>Never shown to the parent — flags this player for a real conversation before tryouts.</div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                    <button onClick={() => saveOne(player, false)} disabled={f.saving}
-                      style={{ padding: '8px 16px', borderRadius: '7px', border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: '13px', fontWeight: '700', cursor: f.saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                    <button className="btn-interactive" onClick={() => saveOne(player, false)} disabled={f.saving}
+                      style={{ padding: '8px 16px', borderRadius: '7px', border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: '13px', fontWeight: '700', cursor: f.saving ? 'default' : 'pointer', opacity: f.saving ? 0.6 : 1, fontFamily: 'inherit' }}>
                       Save draft
                     </button>
-                    <button onClick={() => saveOne(player, true)} disabled={f.saving}
-                      style={{ padding: '8px 16px', borderRadius: '7px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: f.saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                    <button className="btn-interactive" onClick={() => saveOne(player, true)} disabled={f.saving}
+                      style={{ padding: '8px 16px', borderRadius: '7px', border: 'none', background: primary, color: '#fff', fontSize: '13px', fontWeight: '700', cursor: f.saving ? 'default' : 'pointer', opacity: f.saving ? 0.6 : 1, fontFamily: 'inherit' }}>
                       {f.saving ? 'Saving…' : 'Submit'}
                     </button>
                   </div>
@@ -509,7 +634,13 @@ export default function BulkEnterEvaluationsPage() {
         </div>
       )}
 
-      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .btn-interactive { transition: filter 0.1s ease, transform 0.05s ease; }
+        .btn-interactive:not(:disabled):hover { filter: brightness(0.95); }
+        .btn-interactive:not(:disabled):active { transform: scale(0.97); }
+      `}</style>
     </div>
   );
 }

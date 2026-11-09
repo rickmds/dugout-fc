@@ -20,6 +20,11 @@ export type ReportData = {
   outcome_goals:        [string, string];
   performance_goals:    [string, string];
   idp?: IdpRow[];
+  // Coach-written, always framed around what's next for this player, never
+  // a comparison to teammates — see enter/page.tsx's tryout_watch note for
+  // why this stays a free-text field and never a rank/label. Blank hides
+  // the section entirely, same as every other optional section here.
+  tryout_outlook?: string;
 };
 
 export type EvalRow = {
@@ -302,6 +307,14 @@ export function EvaluationReportCard({ ev, primary, clubLogoUrl, clubName }: {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Tryout Outlook */}
+            {rd?.tryout_outlook?.trim() && (
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9' }}>
+                <SectionHead label="Tryout Outlook" primary={primary} />
+                <p style={{ margin: 0, fontSize: '13px', color: '#334155', lineHeight: 1.65 }}>{rd.tryout_outlook}</p>
               </div>
             )}
 

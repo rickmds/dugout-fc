@@ -61,6 +61,10 @@ type ReportData = {
   outcome_goals:        [string, string];
   performance_goals:    [string, string];
   idp: IdpRow[];
+  // Parent-facing. Always framed around what's next for this player, never
+  // a comparison to teammates. Blank hides the section on the rendered
+  // report, same as every other optional field here.
+  tryout_outlook: string;
 };
 
 const EMPTY_REPORT: ReportData = {
@@ -71,7 +75,18 @@ const EMPTY_REPORT: ReportData = {
   outcome_goals:        ['', ''],
   performance_goals:    ['', ''],
   idp: [{ goal: '', measurables: '', action_items: ['', '', ''] }],
+  tryout_outlook: '',
 };
+
+// tryout_watch/tryout_contacted_at are staff-only — never put either in
+// report_data or anywhere a parent-facing query selects.
+type TryoutWatch = 'watch' | 'priority' | null;
+
+const TRYOUT_WATCH_OPTIONS: { value: TryoutWatch; label: string; color: string }[] = [
+  { value: null, label: 'No flag', color: '#94A3B8' },
+  { value: 'watch', label: 'Flag', color: '#D97706' },
+  { value: 'priority', label: 'Priority', color: '#DC2626' },
+];
 
 type FormState = {
   rating_technical: number;
@@ -82,6 +97,8 @@ type FormState = {
   ai_draft:    string;
   final_text:  string;
   status: 'draft' | 'submitted';
+  tryout_watch: TryoutWatch;
+  tryout_contacted_at: string | null;
 };
 
 const RATING_LABELS: Record<number, string> = {
@@ -100,6 +117,7 @@ function mergeReport(raw: Partial<ReportData> | null | undefined): ReportData {
     outcome_goals:        (raw.outcome_goals?.length === 2        ? raw.outcome_goals        : EMPTY_REPORT.outcome_goals),
     performance_goals:    (raw.performance_goals?.length === 2    ? raw.performance_goals    : EMPTY_REPORT.performance_goals),
     idp: raw.idp?.length ? raw.idp : EMPTY_REPORT.idp,
+    tryout_outlook: raw.tryout_outlook ?? '',
   };
 }
 
@@ -308,6 +326,7 @@ export default function EvaluationFormScreen() {
     rating_technical: 0, rating_tactical: 0, rating_physical: 0, rating_mental: 0,
     report_data: { ...EMPTY_REPORT, idp: [{ ...EMPTY_REPORT.idp[0] }] },
     ai_draft: '', final_text: '', status: 'draft',
+    tryout_watch: null, tryout_contacted_at: null,
   });
   const [loading,       setLoading]       = useState(true);
   const [generating,    setGenerating]    = useState(false);
@@ -360,7 +379,7 @@ export default function EvaluationFormScreen() {
     if (evalId) {
       const { data } = await supabase
         .from('player_evaluations')
-        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status')
+        .select('rating_technical,rating_tactical,rating_physical,rating_mental,report_data,ai_draft,final_text,status,tryout_watch,tryout_contacted_at')
         .eq('id', evalId)
         .single();
       if (data) {
@@ -374,6 +393,8 @@ export default function EvaluationFormScreen() {
           ai_draft:     data.ai_draft   ?? '',
           final_text:   data.final_text ?? '',
           status:       data.status as 'draft' | 'submitted',
+          tryout_watch: (data as any).tryout_watch ?? null,
+          tryout_contacted_at: (data as any).tryout_contacted_at ?? null,
         });
         setLoading(false);
         return;
@@ -685,6 +706,8 @@ export default function EvaluationFormScreen() {
       rating_physical:  form.rating_physical,  rating_mental: form.rating_mental,
       report_data: form.report_data,
       ai_draft: form.ai_draft, final_text: form.final_text,
+      tryout_watch: form.tryout_watch,
+      tryout_contacted_at: form.tryout_contacted_at,
       status: (submitNow ? 'submitted' : 'draft') as 'submitted' | 'draft',
       ...(submitNow ? { submitted_at: new Date().toISOString() } : {}),
     };
@@ -831,6 +854,42 @@ export default function EvaluationFormScreen() {
                   onChange={v => setListItem('performance_goals', i, v)}
                 />
               ))}
+            </View>
+          </SectionCard>
+
+          {/* ── TRYOUT OUTLOOK ──────────────────────── */}
+          <SectionCard title="TRYOUT OUTLOOK" color="#0EA5E9" icon="compass-outline" note="Parent-facing — framed around what's next for them, never a comparison to teammates">
+            <TextInput
+              style={[inp.base, { minHeight: 70 }]}
+              multiline
+              value={rd.tryout_outlook}
+              onChangeText={v => setForm(prev => ({ ...prev, report_data: { ...prev.report_data, tryout_outlook: v } }))}
+              placeholder={`What matters most for ${playerName.split(' ')[0] || 'this player'} heading into tryouts`}
+              placeholderTextColor={colors.muted}
+              textAlignVertical="top"
+            />
+          </SectionCard>
+
+          {/* ── TRYOUT WATCH (internal only) ────────── */}
+          <SectionCard title="TRYOUT WATCH — INTERNAL ONLY" color="#DC2626" icon="eye-off-outline" note="Never shown to the parent — flags this player for a real conversation before tryouts">
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              {TRYOUT_WATCH_OPTIONS.map(opt => {
+                const selected = form.tryout_watch === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value ?? 'none'}
+                    onPress={() => setForm(prev => ({ ...prev, tryout_watch: opt.value }))}
+                    activeOpacity={0.8}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 9, borderRadius: 99,
+                      borderWidth: 1.5, borderColor: selected ? opt.color : colors.border,
+                      backgroundColor: selected ? opt.color : 'transparent',
+                    }}
+                  >
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: selected ? '#fff' : colors.textSecondary }}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </SectionCard>
 
@@ -1151,6 +1210,17 @@ export default function EvaluationFormScreen() {
                             </View>
                           </View>
                         ))}
+                      </View>
+                    </>
+                  ) : null}
+
+                  {/* Tryout Outlook */}
+                  {rd?.tryout_outlook?.trim() ? (
+                    <>
+                      <View style={pvSt.sectionSep} />
+                      <View style={{ paddingHorizontal: 18, paddingTop: 18, paddingBottom: 10 }}>
+                        <PvSectionHead label="TRYOUT OUTLOOK" color={primary} />
+                        <Text style={{ fontSize: 13.5, color: '#334155', lineHeight: 21, fontWeight: '500' }}>{rd.tryout_outlook}</Text>
                       </View>
                     </>
                   ) : null}
