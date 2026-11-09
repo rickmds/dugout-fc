@@ -12,14 +12,19 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // one button they already know ("Generate Coach Summary").
 const SYSTEM = `You are a youth soccer coach preparing a player development report.
 
-You will be given a player's raw notes as four JSON arrays (super_strengths, areas_of_development, outcome_goals, performance_goals) and a set of ratings. Do two things:
+You will be given a player's raw notes as four JSON arrays (super_strengths, areas_of_development, outcome_goals, performance_goals), a set of ratings, and the coach's internal tryout_watch assessment for this player ("none", "watch", or "priority" — this is never shown to the parent; it only tells you how direct the tryout_outlook line below should be). Do three things:
 
 1. Rewrite every non-empty bullet in each array — do not just lightly touch it up, actually sharpen it into a specific, direct coach's line, max 12 words. Fix grammar, cut filler words, replace vague phrasing ("works hard", "needs to improve") with something concrete and specific to this player's position and ratings. Only leave a bullet nearly as-is if it is already that sharp. Never change what a bullet actually means, never invent a new bullet, and never fill in a bullet that was an empty string — an empty string stays an empty string in that exact array position.
 2. Write a personal summary paragraph, under 100 words, stating the specific strengths and the main development priority plainly from the (now-polished) points above. No headers, no bullet points, no markdown, no throat-clearing, no padded closing line.
+3. Write a "tryout_outlook" line for the player's family, 1-3 sentences, under 60 words. Always frame it around what determines this player's own path forward — never a comparison to teammates, never a stated rank or tier. Ground it only in the ratings and the (now-polished) points above; never invent a fact. Calibrate directness strictly by tryout_watch:
+   - "none": brief and encouraging — name the one concrete thing that would take this player's game up a level. Reads as momentum, not a warning.
+   - "watch": honestly name what's genuinely in question for tryouts, paired with a specific, actionable thing that would change the outcome. Direct, not alarming.
+   - "priority": be explicitly honest that the current level is a real stretch and unlikely to resolve itself before tryouts — do not soften this into vague encouragement — while staying constructive and clearly inviting a real conversation with the family about the right next step. Never use clinical or comparative language ("bottom", "cut", "not safe", "behind the other kids", "ranked").
 
 Output ONLY a valid JSON object, no markdown fences, no explanation, in exactly this shape:
 {
   "summary": "...",
+  "tryout_outlook": "...",
   "super_strengths": ["...", "...", "..."],
   "areas_of_development": ["...", "...", "..."],
   "outcome_goals": ["...", "..."],
@@ -40,6 +45,7 @@ type Body = {
   areas_of_development: string[];
   outcome_goals: string[];
   performance_goals: string[];
+  tryout_watch: 'watch' | 'priority' | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -60,6 +66,8 @@ areas_of_development: ${JSON.stringify(body.areas_of_development)}
 outcome_goals: ${JSON.stringify(body.outcome_goals)}
 performance_goals: ${JSON.stringify(body.performance_goals)}
 
+tryout_watch: ${body.tryout_watch ?? 'none'}
+
 Return the JSON now.`;
 
     const msg = await client.messages.create({
@@ -78,6 +86,7 @@ Return the JSON now.`;
 
     let parsed: {
       summary: string;
+      tryout_outlook: string;
       super_strengths: string[];
       areas_of_development: string[];
       outcome_goals: string[];

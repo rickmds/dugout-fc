@@ -662,14 +662,17 @@ export default function EvaluationFormScreen() {
           areas_of_development: rd.areas_of_development,
           outcome_goals:        rd.outcome_goals,
           performance_goals:    rd.performance_goals,
+          tryout_watch:         form.tryout_watch,
         }),
       });
       const json = await res.json();
       if (json.summary) {
         // AI polishes whatever the coach typed in the four bullet
         // sections (same length/order, blanks stay blank — see the
-        // endpoint's own system prompt) and writes the summary from
-        // that polished version in the same call.
+        // endpoint's own system prompt), writes the summary from that
+        // polished version, and drafts the Tryout Outlook line — tone
+        // calibrated server-side by tryout_watch, never a label in the
+        // text itself — all in the same call.
         setForm(prev => ({
           ...prev,
           ai_draft: json.summary,
@@ -680,6 +683,7 @@ export default function EvaluationFormScreen() {
             areas_of_development: json.areas_of_development ?? prev.report_data.areas_of_development,
             outcome_goals:        json.outcome_goals        ?? prev.report_data.outcome_goals,
             performance_goals:    json.performance_goals    ?? prev.report_data.performance_goals,
+            tryout_outlook:       json.tryout_outlook        ?? prev.report_data.tryout_outlook,
           },
         }));
       } else {
@@ -980,7 +984,7 @@ export default function EvaluationFormScreen() {
             </Text>
           </TouchableOpacity>
           <Text style={{ fontSize: 11, color: '#64748B', textAlign: 'center', marginTop: -8, marginBottom: 4 }}>
-            Also tightens the wording in Super Strengths, Development, Outcome Goals, and Performance Goals above
+            Also tightens the wording in Super Strengths, Development, Outcome Goals, and Performance Goals above, and drafts Tryout Outlook
           </Text>
 
           {/* ── COACH SUMMARY ────────────────────────── */}

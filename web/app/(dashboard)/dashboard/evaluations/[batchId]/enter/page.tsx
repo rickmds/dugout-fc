@@ -261,6 +261,7 @@ export default function BulkEnterEvaluationsPage() {
           areas_of_development: f.report_data.areas_of_development,
           outcome_goals: f.report_data.outcome_goals,
           performance_goals: f.report_data.performance_goals,
+          tryout_watch: f.tryout_watch,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -278,6 +279,7 @@ export default function BulkEnterEvaluationsPage() {
               areas_of_development: polished.areas_of_development ?? cur.report_data.areas_of_development,
               outcome_goals: polished.outcome_goals ?? cur.report_data.outcome_goals,
               performance_goals: polished.performance_goals ?? cur.report_data.performance_goals,
+              tryout_outlook: polished.tryout_outlook ?? cur.report_data.tryout_outlook,
             },
             generating: false, dirty: true,
           },
@@ -559,6 +561,7 @@ export default function BulkEnterEvaluationsPage() {
                       rows={3}
                       style={{ width: '100%', padding: '9px 11px', borderRadius: '7px', border: '1px solid #E2E8F0', fontSize: '13px', color: '#0F172A', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
                     />
+                    <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '6px' }}>Also tightens the wording above and drafts Tryout Outlook, toned by Tryout Watch below.</div>
                   </div>
 
                   {/* Send recipients — opt-in on purpose. An email on file isn't proof it
