@@ -2155,10 +2155,16 @@ export default function HomeScreen() {
           </>
         )}
 
-        {/* MY SEASON — one card per guarded player with coach-marked attendance */}
+        {/* MY SEASON — one card per guarded player, once their team has at
+            least one past event. Showing nothing when this player's own
+            seasonTotalMarked is 0 (e.g. just added to the roster, or no
+            RSVP/attendance recorded for the one event they were eligible
+            for) made the whole feature look missing/broken to a parent —
+            getFlameTier already renders a muted "No streak yet" state for
+            combinedStreak === 0, so just let that show instead of hiding. */}
         {!isCoach && myPlayers.map((p) => {
           const stats = seasonStatsByPlayer[p.id];
-          if (!stats || stats.seasonTotalMarked === 0) return null;
+          if (!stats) return null;
           const { combinedStreak, combinedAtRisk, gamesTotal, gamesAttended } = stats;
           const superStreak = isSuperStreak(combinedStreak, gamesTotal, gamesAttended);
           const flameTier = getFlameTier(combinedStreak, combinedAtRisk, colors.muted);
