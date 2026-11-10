@@ -185,6 +185,25 @@ function ageFromDob(dob: string): number {
 
 const FOOT_LABEL: Record<string, string> = { left: 'Left foot', right: 'Right foot', both: 'Both feet' };
 
+// Shared by PlayerTab (teammate messaging a guardian) and GuardiansTab
+// (coach messaging a guardian) — same two RPCs the Chat tab's own "New
+// Chat" composer uses to find-or-create a 1:1 conversation.
+async function findOrCreateDirectConversation(
+  teamId: string,
+  otherProfileId: string,
+  title: string
+): Promise<{ id: string } | { error: string }> {
+  const { data: existingId } = await supabase.rpc('find_direct_conversation', { p_other_profile_id: otherProfileId });
+  if (existingId) return { id: existingId };
+  const { data: newConvId, error } = await supabase.rpc('create_direct_conversation', {
+    p_team_id: teamId,
+    p_participant_ids: [otherProfileId],
+    p_title: title,
+  });
+  if (error || !newConvId) return { error: error?.message ?? 'Could not start conversation.' };
+  return { id: newConvId };
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function PlayerProfileScreen() {
@@ -1133,6 +1152,7 @@ export default function PlayerProfileScreen() {
           medicalNotes={player.medical_notes}
           playerName={player.full_name}
           teamName={team?.name ?? ''}
+          teamId={team?.id ?? ''}
           onAddGuardian={openAddGuardian}
           onEditInvite={openEditGuardian}
           onRevokeAccess={confirmRevokeAccess}
@@ -1683,21 +1703,12 @@ function PlayerTab({
     if (!contact.profile_id || !teamId) return;
     setMessagingId(contact.profile_id);
     try {
-      const { data: existingId } = await supabase.rpc('find_direct_conversation', { p_other_profile_id: contact.profile_id });
-      if (existingId) {
-        router.push(`/(app)/${clubSlug}/conversation/${existingId}` as any);
+      const result = await findOrCreateDirectConversation(teamId, contact.profile_id, contact.guardian_name ?? 'Conversation');
+      if ('error' in result) {
+        Alert.alert('Error', result.error);
         return;
       }
-      const { data: newConvId, error } = await supabase.rpc('create_direct_conversation', {
-        p_team_id: teamId,
-        p_participant_ids: [contact.profile_id],
-        p_title: contact.guardian_name ?? 'Conversation',
-      });
-      if (error || !newConvId) {
-        Alert.alert('Error', error?.message ?? 'Could not start conversation.');
-        return;
-      }
-      router.push(`/(app)/${clubSlug}/conversation/${newConvId}` as any);
+      router.push(`/(app)/${clubSlug}/conversation/${result.id}` as any);
     } finally {
       setMessagingId(null);
     }
@@ -2414,6 +2425,7 @@ function GuardiansTab({
   medicalNotes,
   playerName,
   teamName,
+  teamId,
   onAddGuardian,
   onEditInvite,
   onRevokeAccess,
@@ -2433,6 +2445,7 @@ function GuardiansTab({
   medicalNotes: string | null;
   playerName: string;
   teamName: string;
+  teamId: string;
   onAddGuardian: () => void;
   onEditInvite: (invite: Invite) => void;
   onRevokeAccess: (access: GuardianAccess) => void;
@@ -2445,9 +2458,29 @@ function GuardiansTab({
   const { primaryColor, rgba } = useClub();
   const { colors } = useTheme();
   const st = useMemo(() => getSt(colors), [colors]);
+  const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
+  const router = useRouter();
+  const [messagingId, setMessagingId] = useState<string | null>(null);
   const canManage = isCoach || isMyPlayer;
   const hasAny = guardianProfile || guardianAccess.length > 0 || invites.some(i => !i.accepted_at);
   const primaryInvite = invites.find((i) => i.accepted_by === guardianProfile?.id) ?? invites[0] ?? null;
+
+  // Coach-only — a parent already has the Chat tab's own composer and
+  // shouldn't need a way to message their own co-guardian from here.
+  async function messageGuardian(profileId: string, name: string | null) {
+    if (!teamId) return;
+    setMessagingId(profileId);
+    try {
+      const result = await findOrCreateDirectConversation(teamId, profileId, name ?? 'Conversation');
+      if ('error' in result) {
+        Alert.alert('Error', result.error);
+        return;
+      }
+      router.push(`/(app)/${clubSlug}/conversation/${result.id}` as any);
+    } finally {
+      setMessagingId(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -2515,6 +2548,17 @@ function GuardiansTab({
                 <View style={[st.linkedDot, { backgroundColor: primaryColor }]} />
                 <Text style={[st.linkedBadgeText, { color: primaryColor }]}>Linked</Text>
               </View>
+              {isCoach && (
+                <TouchableOpacity
+                  style={st.editGuardianBtn}
+                  onPress={() => messageGuardian(guardianProfile.id, guardianProfile.full_name)}
+                  disabled={messagingId === guardianProfile.id}
+                >
+                  {messagingId === guardianProfile.id
+                    ? <ActivityIndicator size="small" color={primaryColor} />
+                    : <Ionicons name="chatbubble-outline" size={14} color={primaryColor} />}
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Contact details — same shape as the secondary-guardian cards
@@ -2652,6 +2696,17 @@ function GuardiansTab({
                   </View>
                   {canManage && (
                     <View style={st.guardianCardActions}>
+                      {isCoach && row.isAccepted && row.accessProfileId && (
+                        <TouchableOpacity
+                          style={st.editGuardianBtn}
+                          onPress={() => messageGuardian(row.accessProfileId!, row.displayName)}
+                          disabled={messagingId === row.accessProfileId}
+                        >
+                          {messagingId === row.accessProfileId
+                            ? <ActivityIndicator size="small" color={primaryColor} />
+                            : <Ionicons name="chatbubble-outline" size={14} color={primaryColor} />}
+                        </TouchableOpacity>
+                      )}
                       {!row.isAccepted && row.invite && (
                         <TouchableOpacity style={st.resendBtn} onPress={() => onResendInvite(row.invite!)}>
                           <Ionicons name="send-outline" size={13} color={primaryColor} />
