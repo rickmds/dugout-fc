@@ -124,6 +124,19 @@ type GuardianAccess = {
   avatarUrl: string | null;
 };
 
+// get_team_contacts() is the one teammate-safe source of another family's
+// guardian info — unlike `invites`/get_player_guardian_info (coach or this
+// player's own guardian only), it's reachable by any team member and
+// already respects share_contact_with_team + player privacy server-side.
+type TeamContact = {
+  player_id: string;
+  player_name: string;
+  profile_id: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
+  is_coach_viewer: boolean;
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const POSITIONS = ['GK', 'DEF', 'MID', 'FWD'];
@@ -199,6 +212,7 @@ export default function PlayerProfileScreen() {
   const [guardianAccess, setGuardianAccess]     = useState<GuardianAccess[]>([]);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [teamContacts, setTeamContacts]         = useState<TeamContact[]>([]);
 
   // Add/edit emergency contact modal
   const [showEmergencyModal, setShowEmergencyModal]     = useState(false);
@@ -471,7 +485,7 @@ export default function PlayerProfileScreen() {
     // someone else's full profile row) — get_player_guardian_info covers
     // both in one call, gated to this player's own guardians/coaches
     // rather than trusting the client-side canSeeDetails check alone.
-    const [guardianInfoRes, inviteRes, accessRes, emergencyRes] = await Promise.all([
+    const [guardianInfoRes, inviteRes, accessRes, emergencyRes, teamContactsRes] = await Promise.all([
       supabase.rpc('get_player_guardian_info', { p_player_id: player.id }),
       (supabase as any)
         .from('invites')
@@ -490,6 +504,10 @@ export default function PlayerProfileScreen() {
         .select('id, name, phone, relationship')
         .eq('player_id', player.id)
         .order('created_at', { ascending: true }),
+      // Fetched for everyone (not just teammates viewing someone else's
+      // kid) so it's ready the instant canSeeDetails/isCoach settle —
+      // get_team_contacts itself gates what actually comes back.
+      team ? (supabase as any).rpc('get_team_contacts', { p_team_id: team.id }) : Promise.resolve({ data: [] }),
     ]);
 
     const infoByProfileId = new Map((guardianInfoRes.data ?? []).map((p) => [p.profile_id, p]));
@@ -506,6 +524,7 @@ export default function PlayerProfileScreen() {
     );
     setInvites(((inviteRes as any).data as Invite[]) ?? []);
     setEmergencyContacts((emergencyRes.data as EmergencyContact[]) ?? []);
+    setTeamContacts(((teamContactsRes as any).data as TeamContact[]) ?? []);
     setGuardiansLoading(false);
   }
 
@@ -1082,8 +1101,8 @@ export default function PlayerProfileScreen() {
           isCoach={isCoach}
           isMyPlayer={isMyPlayer}
           canSeeDetails={canSeeDetails}
-          invites={invites}
-          guardianProfile={guardianProfile}
+          teamContacts={teamContacts}
+          teamId={team?.id ?? ''}
           onDelete={confirmDelete}
           deleting={deleting}
         />
@@ -1633,8 +1652,8 @@ function PlayerTab({
   isCoach,
   isMyPlayer,
   canSeeDetails,
-  invites,
-  guardianProfile,
+  teamContacts,
+  teamId,
   onDelete,
   deleting,
 }: {
@@ -1644,8 +1663,8 @@ function PlayerTab({
   isCoach: boolean;
   isMyPlayer: boolean;
   canSeeDetails: boolean;
-  invites: Invite[];
-  guardianProfile: GuardianProfile | null;
+  teamContacts: TeamContact[];
+  teamId: string;
   onDelete: () => void;
   deleting: boolean;
 }) {
@@ -1654,9 +1673,36 @@ function PlayerTab({
   const st = useMemo(() => getSt(colors), [colors]);
   const { clubSlug } = useLocalSearchParams<{ clubSlug: string }>();
   const router = useRouter();
-  const primaryInvite = invites[0] ?? null;
-  const guardianName = primaryInvite?.guardian_name ?? guardianProfile?.full_name ?? null;
-  const guardianAddress = guardianProfile?.address ?? primaryInvite?.address ?? null;
+  const [messagingId, setMessagingId] = useState<string | null>(null);
+  // Other-family guardian contacts — the one piece of this screen that's
+  // meant for a teammate, not this player's own family. Drop the
+  // placeholder row (no guardian at all) rather than rendering an empty name.
+  const otherFamilyContacts = teamContacts.filter((c) => c.player_id === player.id && c.guardian_name);
+
+  async function messageGuardian(contact: TeamContact) {
+    if (!contact.profile_id || !teamId) return;
+    setMessagingId(contact.profile_id);
+    try {
+      const { data: existingId } = await supabase.rpc('find_direct_conversation', { p_other_profile_id: contact.profile_id });
+      if (existingId) {
+        router.push(`/(app)/${clubSlug}/conversation/${existingId}` as any);
+        return;
+      }
+      const { data: newConvId, error } = await supabase.rpc('create_direct_conversation', {
+        p_team_id: teamId,
+        p_participant_ids: [contact.profile_id],
+        p_title: contact.guardian_name ?? 'Conversation',
+      });
+      if (error || !newConvId) {
+        Alert.alert('Error', error?.message ?? 'Could not start conversation.');
+        return;
+      }
+      router.push(`/(app)/${clubSlug}/conversation/${newConvId}` as any);
+    } finally {
+      setMessagingId(null);
+    }
+  }
+
   const gameTimes     = matchTimes.filter((m) => m.event_type === 'game');
   const gamesPlayed   = gameTimes.length;
   const totalMins     = gameTimes.reduce((s, m) => s + m.minutes, 0);
@@ -1841,7 +1887,12 @@ function PlayerTab({
       )}
       </>)}
 
-      {/* ── Guardian contact — for other parents when player is not private ── */}
+      {/* ── Guardian contact — for teammates, when this player isn't private.
+          Sourced from get_team_contacts(), not the invites table: invites
+          is correctly RLS-locked to coaches and this player's own guardian,
+          which is why a teammate previously always saw this card empty —
+          home address and email stay in that coach/own-guardian-only path
+          (the Guardians tab); this is phone-only and toggle-respecting. ── */}
       {!isCoach && !isMyPlayer && (
         <>
           <Text style={[st.sectionLabel, { marginTop: 24 }]}>GUARDIAN CONTACT</Text>
@@ -1852,60 +1903,44 @@ function PlayerTab({
                 <Text style={{ color: colors.muted, fontSize: 14 }}>Contact details are private</Text>
               </View>
             </View>
-          ) : primaryInvite ? (
+          ) : otherFamilyContacts.length > 0 ? (
             <View style={st.card}>
-              {guardianName && (
-                <View style={[st.tableRow, st.tableRowBorder]}>
-                  <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
-                  <Ionicons name="person-outline" size={15} color={colors.muted} style={{ marginRight: 8 }} />
-                  <Text style={[st.tableTitle, { flex: 1 }]}>{guardianName}</Text>
+              {otherFamilyContacts.map((c, i) => (
+                <View
+                  key={c.profile_id ?? `${c.guardian_name}-${i}`}
+                  style={[st.tableRow, i < otherFamilyContacts.length - 1 && st.tableRowBorder, { gap: 10 }]}
+                >
+                  <Ionicons name="person-outline" size={15} color={colors.muted} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.tableTitle}>{c.guardian_name}</Text>
+                    {c.guardian_phone ? (
+                      <TouchableOpacity onPress={() => Linking.openURL(`tel:${c.guardian_phone}`)} activeOpacity={0.65}>
+                        <Text style={{ color: primaryColor, fontSize: 13, marginTop: 2 }}>{formatPhone(c.guardian_phone)}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={{ color: colors.muted, fontSize: 13, marginTop: 2 }}>Phone not shared</Text>
+                    )}
+                  </View>
+                  {c.profile_id && (
+                    <TouchableOpacity
+                      style={[st.messageBtn, { borderColor: rgba(0.3) }]}
+                      onPress={() => messageGuardian(c)}
+                      disabled={messagingId === c.profile_id}
+                      activeOpacity={0.7}
+                    >
+                      {messagingId === c.profile_id
+                        ? <ActivityIndicator size="small" color={primaryColor} />
+                        : <Ionicons name="chatbubble-outline" size={13} color={primaryColor} />}
+                      <Text style={[st.messageBtnText, { color: primaryColor }]}>Message</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-              )}
-              <TouchableOpacity
-                style={st.tableRow}
-                onPress={() => Linking.openURL(`mailto:${primaryInvite.email}`)}
-                activeOpacity={0.65}
-              >
-                <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
-                <Ionicons name="mail-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
-                <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{primaryInvite.email}</Text>
-                <Ionicons name="chevron-forward" size={13} color={colors.muted} />
-              </TouchableOpacity>
-              {primaryInvite.phone && (
-                <>
-                  <View style={st.tableRowBorder} />
-                  <TouchableOpacity
-                    style={st.tableRow}
-                    onPress={() => Linking.openURL(`tel:${primaryInvite.phone}`)}
-                    activeOpacity={0.65}
-                  >
-                    <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
-                    <Ionicons name="call-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
-                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{formatPhone(primaryInvite.phone)}</Text>
-                    <Ionicons name="chevron-forward" size={13} color={colors.muted} />
-                  </TouchableOpacity>
-                </>
-              )}
-              {guardianAddress && (
-                <>
-                  <View style={st.tableRowBorder} />
-                  <TouchableOpacity
-                    style={st.tableRow}
-                    onPress={() => Linking.openURL(`maps://?q=${encodeURIComponent(guardianAddress)}`)}
-                    activeOpacity={0.65}
-                  >
-                    <View style={[st.typeDot, { backgroundColor: 'transparent' }]} />
-                    <Ionicons name="home-outline" size={15} color={primaryColor} style={{ marginRight: 8 }} />
-                    <Text style={[st.tableTitle, { flex: 1, color: primaryColor }]}>{guardianAddress}</Text>
-                    <Ionicons name="chevron-forward" size={13} color={colors.muted} />
-                  </TouchableOpacity>
-                </>
-              )}
+              ))}
             </View>
           ) : (
             <View style={st.card}>
               <View style={[st.tableRow, { gap: 10, justifyContent: 'center' }]}>
-                <Text style={{ color: colors.muted, fontSize: 14 }}>No contact details added yet</Text>
+                <Text style={{ color: colors.muted, fontSize: 14 }}>No guardian linked yet</Text>
               </View>
             </View>
           )}
@@ -2956,6 +2991,14 @@ function getSt(colors: ThemeColors) {
       paddingVertical: 4,
     },
     emptyText: { color: colors.muted, fontSize: 14 },
+
+    // ── Message button (guardian contact row)
+    messageBtn: {
+      flexDirection: 'row', alignItems: 'center', gap: 5,
+      borderRadius: 10, borderWidth: 1,
+      paddingHorizontal: 10, paddingVertical: 6,
+    },
+    messageBtnText: { fontSize: 12, fontWeight: '700' },
 
     // ── Delete
     evalBtn: {

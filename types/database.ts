@@ -7282,6 +7282,7 @@ export type Database = {
           is_coach_viewer: boolean
           player_id: string
           player_name: string
+          profile_id: string
         }[]
       }
       get_team_member_names: {
