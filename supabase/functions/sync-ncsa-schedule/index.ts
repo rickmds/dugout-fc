@@ -328,7 +328,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
     // each other's the moment either one synced).
     const { data: existingEvents } = await supabase
       .from('events')
-      .select('id, event_date, event_time, location, address, field_type, home_away, score_home, score_away, external_id, cancelled_at, title, schedule_locked')
+      .select('id, event_date, event_time, location, address, field_type, home_away, score_home, score_away, external_id, cancelled_at, title, schedule_locked, tournament_id')
       .eq('external_source', 'ncsa')
       .eq('team_ncsa_link_id', link.id)
       .not('external_id', 'is', null);
@@ -401,7 +401,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
         const opponentName = normalize(opponentDisplay(opponent));
         const { data: sameDateMatches } = await supabase
           .from('events')
-          .select('id, title, home_away, uniform, arrival_buffer_minutes')
+          .select('id, title, home_away, uniform, arrival_buffer_minutes, tournament_id')
           .eq('team_id', link.team_id)
           .eq('type', 'game')
           .eq('event_date', eventDate)
@@ -440,15 +440,24 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
             // actually moved. Confirmed live against a real team.
             location: isPostponed ? null : g.field, event_time: eventTime,
             address: g.address, field_type: g.fieldType, field_notes: g.fieldSize,
-            score_home: ourScore, score_away: oppScore, tournament_id: tournamentId,
+            score_home: ourScore, score_away: oppScore,
             external_source: 'ncsa', external_id: g.gameId, team_ncsa_link_id: link.id,
             opponent_raw_name: opponent,
             ...(isPostponed ? { cancelled_at: new Date().toISOString() } : {}),
             // Only fills these in if the coach's own entry left them blank
-            // — never overrides a value they actually set.
+            // — never overrides a value they actually set. tournament_id is
+            // the same deal: confirmed live that a coach's own State Cup
+            // game, picked up here purely because the league was providing
+            // referees for it, had its tournament_id silently reset to this
+            // link's own (null, for a plain league link) value — turning a
+            // cup game into what read as a regular season game. A league
+            // link's games are rarely tournament-scoped, but a coach's own
+            // choice of which tournament a game belongs to is never this
+            // sync's call to make.
             ...(mm.home_away == null ? { home_away: homeAway } : {}),
             ...(mm.uniform == null ? { uniform: homeAway } : {}),
             ...(mm.arrival_buffer_minutes == null ? { arrival_buffer_minutes: DEFAULT_ARRIVAL_BUFFER_MINUTES } : {}),
+            ...(mm.tournament_id == null ? { tournament_id: tournamentId } : {}),
           }).eq('id', mm.id);
           if (mergeErr) writeErrors.push(`merge ${g.gameId}: ${mergeErr.message}`);
           else updated++;
@@ -528,9 +537,17 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
             address: g.address, field_type: g.fieldType, field_notes: g.fieldSize,
             home_away: homeAway, uniform: homeAway,
           }),
-          score_home: ourScore, score_away: oppScore, tournament_id: tournamentId,
+          score_home: ourScore, score_away: oppScore,
           team_ncsa_link_id: link.id, cancelled_at: null,
           opponent_raw_name: opponent,
+          // Same reasoning as the merge-at-discovery branch above: never
+          // stomp a tournament_id the coach actually chose (a cup game a
+          // league link picked up only because the league was providing
+          // referees for it) with whatever this link's own competition
+          // type computes to. Keeps re-asserting it once it matches, which
+          // covers the legitimate case (an NCSA Cup link's games getting
+          // their "NCSA Cup" tournament re-applied every run).
+          ...(existing.tournament_id == null || existing.tournament_id === tournamentId ? { tournament_id: tournamentId } : {}),
         }).eq('id', existing.id);
         if (updateErr) {
           writeErrors.push(`update ${g.gameId}: ${updateErr.message}`);
