@@ -230,9 +230,14 @@ export default function EditEventScreen() {
   const [isCancelled, setIsCancelled] = useState(false);
   const [eventTeamId, setEventTeamId] = useState<string | null>(null);
   const [eventTeamName, setEventTeamName] = useState<string | null>(null);
+  // Gates the schedule_locked write in handleSave below — only an
+  // NCSA-synced game needs that protection; a coach's own manual event has
+  // no league feed trying to overwrite it in the first place.
+  const [isNcsaEvent, setIsNcsaEvent] = useState(false);
   const originalRef = useRef<{
     date: string; time: string | null; location: string; videoUrl: string | null;
     address: string; uniform: UniformOption | null; duration: number | null;
+    fieldType: FieldOption | null; fieldNotes: string; homeAway: 'home' | 'away' | null;
   } | null>(null);
 
   // Multi-team occurrences (created via the web dashboard's multi-team
@@ -353,7 +358,7 @@ export default function EditEventScreen() {
   async function loadEvent() {
     const { data } = await supabase
       .from('events')
-      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,event_group_id,tournament_id,round_label,teams(club_id,name),tournaments(start_date)')
+      .select('id,title,type,event_date,event_time,location,address,lat,lng,field_id,duration_minutes,arrival_buffer_minutes,field_type,field_notes,uniform,home_away,notes,coach_notes,video_url,require_rsvp,rsvp_lock_at,team_id,cancelled_at,recurrence_id,event_group_id,tournament_id,round_label,external_source,teams(club_id,name),tournaments(start_date)')
       .eq('id', eventId)
       .single();
     if (data) {
@@ -438,6 +443,7 @@ export default function EditEventScreen() {
     setRsvpLockHours(computeLockHours(data.rsvp_lock_at, data.event_date, data.event_time, timezone));
     setIsCancelled(!!(data as any).cancelled_at);
     setRecurrenceId((data as any).recurrence_id ?? null);
+    setIsNcsaEvent((data as any).external_source === 'ncsa');
 
     originalRef.current = {
       date: data.event_date,
@@ -447,6 +453,9 @@ export default function EditEventScreen() {
       address: data.address ?? '',
       uniform: (data.uniform as UniformOption) ?? null,
       duration: data.duration_minutes ?? null,
+      fieldType: (data.field_type as FieldOption) ?? null,
+      fieldNotes: data.field_notes ?? '',
+      homeAway: (data.home_away as 'home' | 'away') ?? null,
     };
 
     setLocationKey(k => k + 1);
@@ -494,6 +503,24 @@ export default function EditEventScreen() {
       ? `${homeAway === 'home' ? 'vs' : '@'} ${title.trim()}`
       : title.trim();
 
+    // sync-ncsa-schedule rewrites these exact 8 fields from the league's own
+    // feed every run. Once a coach has corrected one of them here, that
+    // correction must survive the next sync instead of quietly reverting —
+    // compared against what this screen loaded with (the coach's own point
+    // of reference for "did I just change something"), not re-read from the
+    // DB, since a save always starts from that loaded snapshot.
+    const orig = originalRef.current;
+    const scheduleFieldsEdited = !!orig && (
+      eventDate !== orig.date
+      || eventTime !== orig.time
+      || (locationName.trim() || null) !== (orig.location || null)
+      || (address || null) !== (orig.address || null)
+      || (fieldType ?? null) !== orig.fieldType
+      || (fieldNotes.trim() || null) !== (orig.fieldNotes || null)
+      || (eventType === 'game' ? homeAway : null) !== orig.homeAway
+      || (uniform ?? null) !== orig.uniform
+    );
+
     // event_date is deliberately excluded — bulk-applying to future
     // occurrences only ever changes time-of-day and other details, never
     // collapses the series onto one date.
@@ -517,6 +544,7 @@ export default function EditEventScreen() {
       video_url: videoUrl.trim() || null,
       require_rsvp: requireRsvp,
       round_label: roundLabel.trim() || null,
+      ...(isNcsaEvent && scheduleFieldsEdited ? { schedule_locked: true } : {}),
     };
 
     // Combining cross-team propagation with the recurring "future" scope

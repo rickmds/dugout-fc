@@ -939,6 +939,7 @@ export type Database = {
           rsvp_lock_at: string | null
           rsvp_reminder_24h_sent_at: string | null
           rsvp_reminder_2h_sent_at: string | null
+          schedule_locked: boolean
           score_away: number | null
           score_home: number | null
           surface: string | null
@@ -985,6 +986,7 @@ export type Database = {
           rsvp_lock_at?: string | null
           rsvp_reminder_24h_sent_at?: string | null
           rsvp_reminder_2h_sent_at?: string | null
+          schedule_locked?: boolean
           score_away?: number | null
           score_home?: number | null
           surface?: string | null
@@ -1031,6 +1033,7 @@ export type Database = {
           rsvp_lock_at?: string | null
           rsvp_reminder_24h_sent_at?: string | null
           rsvp_reminder_2h_sent_at?: string | null
+          schedule_locked?: boolean
           score_away?: number | null
           score_home?: number | null
           surface?: string | null

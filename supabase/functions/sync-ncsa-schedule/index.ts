@@ -328,7 +328,7 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
     // each other's the moment either one synced).
     const { data: existingEvents } = await supabase
       .from('events')
-      .select('id, event_date, event_time, location, address, field_type, home_away, score_home, score_away, external_id, cancelled_at, title')
+      .select('id, event_date, event_time, location, address, field_type, home_away, score_home, score_away, external_id, cancelled_at, title, schedule_locked')
       .eq('external_source', 'ncsa')
       .eq('team_ncsa_link_id', link.id)
       .not('external_id', 'is', null);
@@ -503,21 +503,31 @@ async function syncOneLink(supabase: ReturnType<typeof createClient>, link: Ncsa
         continue;
       }
 
+      // A coach can hand-edit these same fields on an already-synced game
+      // (edit-event.tsx sets schedule_locked the moment they do) — once
+      // that's happened, this sync must stop overwriting their correction
+      // back to NCSA's own data on every subsequent run. Score and
+      // bookkeeping columns below are never coach-editable there, so they
+      // stay unconditionally synced even on a locked game.
+      const scheduleLocked = !!existing.schedule_locked;
+
       // Schedule-affecting changes (what parents actually need a push/email
       // about) are tracked separately from everything else that can quietly
       // stay in sync — a score getting filled in after the game is played,
       // or a field's address/surface being corrected upstream, isn't a
       // reschedule and shouldn't trigger the same notification.
-      const scheduleChanged = existing.event_date !== eventDate || existing.event_time !== eventTime || existing.location !== g.field;
-      const otherChanged = existing.address !== g.address || existing.field_type !== g.fieldType
-        || existing.home_away !== homeAway || existing.score_home !== ourScore || existing.score_away !== oppScore;
+      const scheduleChanged = !scheduleLocked && (existing.event_date !== eventDate || existing.event_time !== eventTime || existing.location !== g.field);
+      const otherChanged = (!scheduleLocked && (existing.address !== g.address || existing.field_type !== g.fieldType || existing.home_away !== homeAway))
+        || existing.score_home !== ourScore || existing.score_away !== oppScore;
       const wasCancelled = wasCancelledBefore;
 
       if (scheduleChanged || otherChanged || wasCancelled) {
         const { error: updateErr } = await supabase.from('events').update({
-          event_date: eventDate, event_time: eventTime, location: g.field,
-          address: g.address, field_type: g.fieldType, field_notes: g.fieldSize,
-          home_away: homeAway, uniform: homeAway,
+          ...(scheduleLocked ? {} : {
+            event_date: eventDate, event_time: eventTime, location: g.field,
+            address: g.address, field_type: g.fieldType, field_notes: g.fieldSize,
+            home_away: homeAway, uniform: homeAway,
+          }),
           score_home: ourScore, score_away: oppScore, tournament_id: tournamentId,
           team_ncsa_link_id: link.id, cancelled_at: null,
           opponent_raw_name: opponent,
