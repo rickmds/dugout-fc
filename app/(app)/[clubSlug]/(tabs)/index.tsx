@@ -48,6 +48,11 @@ import { PLAYER_CARD_ENABLED } from '../../../../lib/featureFlags';
 import PlayerCard, { type CardTierKey } from '../../../../components/player-card/PlayerCard';
 
 const APP_BASE = process.env.EXPO_PUBLIC_APP_URL ?? 'https://pulse-fc.app';
+// Most team comms happen in chat, so announcements are posted rarely — without
+// a cutoff, the "FROM THE COACH" card just shows whatever was last posted,
+// even if that was weeks ago. Hiding it once it's stale is simpler than adding
+// an expires_at column + author-set expiry UI for something nobody's asked to set per-post.
+const ANNOUNCEMENT_MAX_AGE_DAYS = 7;
 
 type NextEvent = {
   id: string;
@@ -659,7 +664,7 @@ export default function HomeScreen() {
     ] = await Promise.all([
       withTimeout(supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).eq('type', 'game').order('event_date').order('event_time').limit(1), CRITICAL_TIMEOUT_MS),
       withTimeout(supabase.from('events').select('id, title, type, event_date, event_time, location, address, lat, lng, uniform, home_away, field_type, rsvp_lock_at, arrival_buffer_minutes, tournament_id').eq('team_id', team.id).gte('event_date', today).is('cancelled_at', null).in('type', ['training', 'other']).order('event_date').order('event_time').limit(1), CRITICAL_TIMEOUT_MS),
-      withTimeout(supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).order('created_at', { ascending: false }).limit(1).maybeSingle(), CRITICAL_TIMEOUT_MS),
+      withTimeout(supabase.from('announcements').select('id, title, body, created_at').eq('team_id', team.id).gte('created_at', new Date(Date.now() - ANNOUNCEMENT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle(), CRITICAL_TIMEOUT_MS),
       // get_my_guarded_players() also checks player_guardians — a second
       // guardian otherwise never saw their own kid's card/RSVP on Home at all.
       // Not .maybeSingle() — a guardian can have more than one player on this
